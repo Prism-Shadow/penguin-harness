@@ -297,6 +297,10 @@ export function PluginCard(props: PluginCardProps) {
         ...(mod.state !== "none" ? [false] : []),
       ];
       for (const install of verbs) {
+        const cannotInstall =
+          install && !mod.shipped && mod.entry?.installable === false
+            ? S.plugins.cannotInstallHere
+            : null;
         const label = install
           ? props.busy
             ? S.plugins.installing
@@ -309,12 +313,19 @@ export function PluginCard(props: PluginCardProps) {
             className={look}
             aria-label={`${label} ${row.name}`}
             aria-busy={props.busy}
-            title={install ? label : (mod.removeBlocked ?? label)}
-            data-tooltip-extra={!install && mod.removeBlocked !== undefined}
+            title={install ? (cannotInstall ?? label) : (mod.removeBlocked ?? label)}
+            data-tooltip-extra={
+              (!install && mod.removeBlocked !== undefined) || cannotInstall !== null
+            }
             aria-describedby={
               !install && mod.shared === true ? `${sharedId}-tag ${sharedId}-hint` : undefined
             }
-            disabled={props.busy || props.blocked || (!install && mod.removeBlocked !== undefined)}
+            disabled={
+              props.busy ||
+              props.blocked ||
+              cannotInstall !== null ||
+              (!install && mod.removeBlocked !== undefined)
+            }
             onClick={() => props.onModuleApply(install)}
           >
             {props.busy ? (
@@ -386,6 +397,20 @@ export function PluginCard(props: PluginCardProps) {
     tags.push(
       <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
         {S.plugins.installedOnServer}
+      </PluginTag>,
+    );
+  }
+  if (row.module?.entry?.sources.includes("store")) {
+    tags.push(
+      <PluginTag key="source-store" title={S.plugins.sourceStoreHint}>
+        {S.plugins.sourceStore}
+      </PluginTag>,
+    );
+  }
+  if (row.module?.entry?.sources.includes("index")) {
+    tags.push(
+      <PluginTag key="source-index" title={S.plugins.sourceIndexHint}>
+        {S.plugins.sourceIndex}
       </PluginTag>,
     );
   }

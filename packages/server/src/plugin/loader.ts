@@ -11,9 +11,9 @@
  * The closure is read from the FILES, without the database: this runs at boot, before the
  * platform exists, and a Project is a directory holding a `.project_config.toml`.
  *
- * Resolution is anchored at `process.argv[1]`, for the same reason the packaged
- * bundle's own resolver is: a bundle running from `hmr/store` has no node_modules of
- * its own, so anchoring at the bundle would find nothing.
+ * A name resolves in ONE place: the current generation under `<root>/plugins/`, which the
+ * closure is resolved to against the plugin store before anything is imported
+ * (plugin/activation.ts). An absolute path — a dev checkout's plugin — is imported as it is.
  *
  * Failure is per-entry and non-fatal: an unresolvable or malformed plugin is reported
  * and skipped, leaving its capability unavailable rather than failing the boot. A
@@ -27,9 +27,10 @@ import {
   effectivePluginTable,
   parsePluginTables,
   projectConfigPath,
+  type PluginTable,
+  type PluginTables,
 } from "@prismshadow/penguin-core";
-import { findPackageJSON } from "node:module";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -40,8 +41,16 @@ import type {
   Resources,
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
-import { pluginsPrefix } from "./install.js";
-import { unpackedAssetsDir } from "../hmr/asset-archives.js";
+import {
+  activatePlugins,
+  currentGenerationDir,
+  generationSource,
+  lendHostPackages,
+  type Activation,
+  type PluginAsk,
+} from "./activation.js";
+import { shippedNames, storeSources } from "./store.js";
+import { sweepPlugins, type PluginPin } from "./gc.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -64,6 +73,8 @@ export interface PluginLoadResult {
   loaded: LoadedPlugin[];
   /** specifier → why it was skipped. */
   failed: Map<string, string>;
+  /** The generation this load activated, or null when activation failed and the current one was kept. */
+  activation: Activation | null;
 }
 /** The Project ids of a data root: every directory holding a `.project_config.toml`. */
 export async function listProjectIds(root: string): Promise<string[]> {
@@ -97,11 +108,29 @@ export async function readProjectPluginList(
   projectId: string,
   machineId: string | null = null,
 ): Promise<string[]> {
+  return Object.keys(await readProjectPluginTable(root, projectId, machineId));
+}
+
+/** What one Project asks `machineId` to run, name → requirement, in the order it wrote them. */
+async function readProjectPluginTable(
+  root: string,
+  projectId: string,
+  machineId: string | null,
+): Promise<PluginTable> {
+  const tables = await readProjectPluginTables(root, projectId);
+  return tables === undefined ? {} : effectivePluginTable(tables, machineId);
+}
+
+/** One Project's whole `[plugins]` key — the shared table and every machine's — or undefined. */
+async function readProjectPluginTables(
+  root: string,
+  projectId: string,
+): Promise<PluginTables | undefined> {
   let text: string;
   try {
     text = await fs.readFile(projectConfigPath(root, projectId), "utf8");
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     // A Project whose config cannot be read (permissions, a directory in its place) is a
     // configuration fault, but not this one's to fail the boot over: its models are just as
     // unreadable, and the deployment must still come up for every other Project. The list
@@ -109,7 +138,7 @@ export async function readProjectPluginList(
     console.warn(
       `[plugins] ${projectId}: .project_config.toml could not be read, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return [];
+    return undefined;
   }
   let parsed: unknown;
   try {
@@ -119,10 +148,56 @@ export async function readProjectPluginList(
     console.warn(
       `[plugins] ${projectId}: .project_config.toml is not valid TOML, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return [];
+    return undefined;
   }
-  const tables = parsePluginTables((parsed as { plugins?: unknown }).plugins);
-  return tables === undefined ? [] : Object.keys(effectivePluginTable(tables, machineId));
+  return parsePluginTables((parsed as { plugins?: unknown }).plugins);
+}
+
+/**
+ * Every content a Project pins, in any of its tables — the shared one or any machine's: what
+ * the sweep keeps in the store whatever this machine runs (plugin/gc.ts).
+ */
+export async function readPluginPins(root: string): Promise<PluginPin[]> {
+  const out: PluginPin[] = [];
+  for (const projectId of await listProjectIds(root)) {
+    const tables = await readProjectPluginTables(root, projectId);
+    if (tables === undefined) continue;
+    for (const table of [tables.all, ...Object.values(tables.machines)]) {
+      for (const [name, ask] of Object.entries(table)) {
+        if (ask.integrity !== undefined) out.push({ name, integrity: ask.integrity });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The roots this process has swept at its first activation, across every copy of this file a
+ * push loads — so "once at startup" means once per process, not once per bundle.
+ */
+const SWEPT = Symbol.for("penguin.plugins.swept");
+function sweptRoots(): Set<string> {
+  const g = globalThis as { [SWEPT]?: Set<string> };
+  return (g[SWEPT] ??= new Set());
+}
+
+/**
+ * The closure with what each Project asks of every name in it, first-asked order: the input a
+ * generation is resolved from (plugin/activation.ts).
+ */
+export async function readPluginAsks(
+  root: string,
+  machineId: string | null = null,
+): Promise<Map<string, PluginAsk[]>> {
+  const out = new Map<string, PluginAsk[]>();
+  for (const projectId of await listProjectIds(root)) {
+    for (const [name, ask] of Object.entries(
+      await readProjectPluginTable(root, projectId, machineId),
+    )) {
+      out.set(name, [...(out.get(name) ?? []), ask]);
+    }
+  }
+  return out;
 }
 
 /**
@@ -135,39 +210,23 @@ export async function readPluginClosure(
   root: string,
   machineId: string | null = null,
 ): Promise<string[]> {
-  const out: string[] = [];
-  for (const projectId of await listProjectIds(root)) {
-    for (const specifier of await readProjectPluginList(root, projectId, machineId)) {
-      if (!out.includes(specifier)) out.push(specifier);
-    }
-  }
-  return out;
+  return [...(await readPluginAsks(root, machineId)).keys()];
 }
 
 /**
- * Where plugins are looked for, in order. Each is an npm prefix (`<dir>/package.json` +
- * `<dir>/node_modules/…`) except the installation entry, which resolves as the running
- * program does:
+ * An npm prefix a package name is looked up in (`<dir>/package.json` + `<dir>/node_modules/…`),
+ * under its own `node_modules` only.
  *
- *   1. `<root>/plugins` — what the Plugins page installs; the operator's explicit choice.
- *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
- *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
- *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
- *      stages them beside `skills/`), for a deployment nothing was ever pushed to.
- *   4. the installation entry — a plugin installed globally beside the program.
- *
- * A prefix marked `builtin` is one the harness ships, not one the operator installed.
+ * The loader has ONE: the current generation under `<root>/plugins/` (plugin/activation.ts).
+ * The prefixes a hot push and the installation carry are sources of the plugin store, not
+ * lookup locations; a path (a dev checkout's plugin) is the one specifier resolved elsewhere.
+ * `builtin` marks a prefix the harness ships — for a generation, whether the package came from
+ * the build is read per package from its store entry. `root` marks a generation of that root.
  */
 export interface PluginBase {
   file: string;
   builtin: boolean;
-  /**
-   * The running program's entry rather than an npm prefix: a specifier resolves from it the
-   * way the program's own imports do, `node_modules` upward. A prefix answers only for what
-   * is under its OWN `node_modules` — the walk upward would otherwise find a package beside
-   * the program from the builtin prefix and label it built in.
-   */
-  program?: true;
+  root?: string;
 }
 
 /** A bare package name, scoped or not — never a subpath, a path, a URL or a version range. */
@@ -179,27 +238,22 @@ export function specifierFault(specifier: string): string | null {
   return `'${specifier}' is not a package name: a plugin is named by its package, never by a subpath, a URL or a version range`;
 }
 
-export function pluginBases(root: string | undefined, assetsDir: string | null): PluginBase[] {
-  const bases: PluginBase[] = [];
-  if (root !== undefined && root !== "") {
-    bases.push({ file: path.join(pluginsPrefix(root), "package.json"), builtin: false });
-  }
-  if (assetsDir !== null) {
-    // A push carries the prefix as archives; they are unpacked before anything resolves.
-    bases.push({
-      file: path.join(unpackedAssetsDir(assetsDir), "plugins", "package.json"),
-      builtin: true,
-    });
-  }
-  const entry = process.argv[1];
-  if (typeof entry === "string" && entry.length > 0) {
-    bases.push({
-      file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
-      builtin: true,
-    });
-    bases.push({ file: entry, builtin: false, program: true });
-  }
-  return bases;
+/** Where a package name is looked up: the current generation, or nowhere before the first activation. */
+export function pluginBases(root: string | undefined): PluginBase[] {
+  if (root === undefined || root === "") return [];
+  const dir = currentGenerationDir(root);
+  return dir === null ? [] : [{ file: path.join(dir, "package.json"), builtin: false, root }];
+}
+
+/**
+ * The prefixes this build ships (the push's, the installation's): where a catalogue reads a
+ * shipped package's readme. Not a lookup location — nothing is loaded from them.
+ */
+export function shippedBases(assetsDir: string | null): PluginBase[] {
+  return storeSources(assetsDir).map(({ dir }) => ({
+    file: path.join(dir, "package.json"),
+    builtin: true,
+  }));
 }
 
 /** The assets directory of the committed version, read from harness.json without a host. */
@@ -210,33 +264,19 @@ export async function committedAssetsDir(root: string): Promise<string | null> {
 }
 
 /**
- * The package a bare specifier names, looked up from a base the way Node looks up any
- * package (`node_modules` upward from the base): its directory, its manifest, and the base
- * that found it — or null. Nothing about the package is assumed: it is whatever npm put there.
+ * The package a bare name names under a base's own `node_modules`: its directory, its
+ * manifest, and the base that found it — or null. Nothing about the package is assumed: it is
+ * whatever the prefix holds there (in a generation, a link to a store entry's package).
  */
 export function resolvePluginPackage(
   specifier: string,
   bases: readonly PluginBase[],
 ): { dir: string; manifest: string; base: PluginBase } | null {
-  // A path names a file, not a package: the nearest package.json above it is the
-  // package (a dev checkout's plugin, written beside its manifest). As a URL, so that a
-  // Windows drive letter is not read as a URL scheme.
-  const lookup = path.isAbsolute(specifier) ? pathToFileURL(specifier).href : specifier;
+  if (!PACKAGE_NAME.test(specifier)) return null;
   for (const base of bases) {
-    let manifest: string | undefined;
-    try {
-      manifest = findPackageJSON(lookup, base.file);
-    } catch {
-      manifest = undefined;
-    }
-    if (manifest === undefined) continue;
-    // findPackageJSON walks `node_modules` upward from the base; a prefix speaks only for
-    // its own (see PluginBase.program).
-    if (base.program !== true) {
-      const own = path.join(path.dirname(base.file), "node_modules") + path.sep;
-      if (!manifest.startsWith(own)) continue;
-    }
-    return { dir: path.dirname(manifest), manifest, base };
+    const dir = path.join(path.dirname(base.file), "node_modules", ...specifier.split("/"));
+    const manifest = path.join(dir, "package.json");
+    if (existsSync(manifest)) return { dir, manifest, base };
   }
   return null;
 }
@@ -293,32 +333,26 @@ function resolvePlugin(
   const found = resolvePluginPackage(specifier, bases);
   if (found === null) return null;
   const file = packageEntry(found.dir, found.manifest);
-  return file === null ? null : { file, base: found.base };
+  if (file === null) return null;
+  // Through the generation's link, to the store entry: one content is one file, whichever
+  // generation names it, so a re-activation that keeps a package keeps its imported module.
+  let real = file;
+  try {
+    real = realpathSync(file);
+  } catch {
+    // Missing: importPlugin says so.
+  }
+  return { file: real, base: found.base };
 }
 
 /**
- * The plugins a set of bases SHIPS: every package under a builtin prefix's node_modules
- * (scoped or not) whose package.json declares `penguin`. Being shipped means installing one
- * needs no download — it does not mean it is installed. Nothing here loads; the list is what
- * marks a catalogue row as available offline and lets an install skip npm.
+ * The plugins this build SHIPS: the names in the push's prefix manifest and the installation's
+ * (what npm installed beside them, their dependencies, is not offered). Being shipped means
+ * installing one needs no download — it does not mean it is installed. Nothing here loads;
+ * the list is what marks a catalogue row as available offline and lets an install skip npm.
  */
-export async function discoverBuiltinPlugins(bases: readonly PluginBase[]): Promise<string[]> {
-  const names: string[] = [];
-  for (const base of bases) {
-    if (!base.builtin) continue;
-    // The prefix's own manifest names what the build shipped; what npm installed beside
-    // them (their dependencies) is not offered.
-    let manifest: { dependencies?: unknown };
-    try {
-      manifest = JSON.parse(await fs.readFile(base.file, "utf8")) as { dependencies?: unknown };
-    } catch {
-      continue;
-    }
-    const deps = manifest.dependencies;
-    if (typeof deps !== "object" || deps === null) continue;
-    for (const name of Object.keys(deps)) if (!names.includes(name)) names.push(name);
-  }
-  return names.sort();
+export async function shippedPlugins(assetsDir: string | null): Promise<string[]> {
+  return shippedNames(storeSources(assetsDir));
 }
 
 /**
@@ -380,7 +414,7 @@ export async function readPluginDeclaration(
   const resolved = resolvePlugin(specifier, bases);
   if (resolved === null) {
     return {
-      error: `'${specifier}' is not installed on this machine (nothing under <root>/plugins, the shipped plugins or the installation resolves it)`,
+      error: `'${specifier}' is not installed on this machine (the current plugin generation under <root>/plugins does not hold it)`,
     };
   }
   if (!existsSync(resolved.file)) {
@@ -393,10 +427,12 @@ export async function readPluginDeclaration(
     return { error: err instanceof Error ? err.message : String(err) };
   }
   if (read === null) return { error: `no package.json above ${resolved.file}` };
+  const root = resolved.base.root;
+  const source = root === undefined ? null : await generationSource(root, specifier);
   return {
     modules: [...read.plugin.modules],
     replaces: [...read.plugin.replaces],
-    builtin: resolved.base.builtin,
+    builtin: resolved.base.builtin || source === "push" || source === "builtin",
   };
 }
 
@@ -553,8 +589,8 @@ export async function loadPlugins(
    * Entries an earlier App already imported, by specifier. Reused when the specifier still
    * resolves to the FILE that entry came from, unchanged since — the objects then keep their
    * identity across a swap, which is what the plugin host is parked for. A different file
-   * (a push moves the builtin plugins to a new assets directory) or a file rewritten in
-   * place (a package updated under `<root>/plugins`) means different code, and that is imported.
+   * (the generation now links another store entry) or a file rewritten in place (a dev
+   * checkout's plugin) means different code, and that is imported.
    */
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
   /** This server's own machine id, which selects its `[plugins.<id>]` tables; null reads the shared tables alone. */
@@ -562,19 +598,45 @@ export async function loadPlugins(
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
   const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
-  const bases = pluginBases(root, pushedAssets);
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
   // available without a download — that is what `builtin` means — but availability is not
   // consent: it loads when a Project asks for it, like every other plugin.
-  const specifiers = await readPluginClosure(root, machineId);
+  const asks = await readPluginAsks(root, machineId);
+  // The generation the closure resolves to becomes current before anything is imported. When
+  // activation itself fails, whatever generation was current stays so and is loaded.
+  let activation: Activation | null = null;
+  try {
+    activation = await activatePlugins(root, asks, pushedAssets);
+  } catch (err) {
+    console.warn(
+      `[plugins] activation failed, the current generation is kept: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  // The sweep follows the flip, in this boot — so on the assembly queue, never beside a
+  // generation being written — and runs once at the first activation of the process.
+  if (activation !== null) {
+    const first = !sweptRoots().has(root);
+    if (first || activation.current !== activation.previous) {
+      sweptRoots().add(root);
+      await sweepPlugins(root, { pins: await readPluginPins(root), assetsDir: pushedAssets });
+    }
+  }
+  const bases = pluginBases(root);
+  // A stored plugin runs from its store entry; the host SDK it keeps external is lent to it.
+  lendHostPackages(root);
   const loaded: LoadedPlugin[] = [];
-  for (const specifier of specifiers) {
-    // Reused only when the SAME FILE is behind the name. A push writes the builtin plugins to
-    // a new assets directory, so keeping an entry by specifier alone would run the previous
-    // build's plugin code forever — the push would land everywhere except the plugins.
+  for (const specifier of asks.keys()) {
+    // Reused only when the SAME FILE is behind the name. A push brings new content to a new
+    // store entry, so keeping an entry by specifier alone would run the previous build's
+    // plugin code forever — the push would land everywhere except the plugins.
     const fault = specifierFault(specifier);
     if (fault !== null) {
       failed.set(specifier, fault);
+      continue;
+    }
+    const missing = activation?.missing.get(specifier);
+    if (missing !== undefined) {
+      failed.set(specifier, missing);
       continue;
     }
     const held = reuse.get(specifier);
@@ -636,7 +698,7 @@ export async function loadPlugins(
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }
   }
-  return { loaded, failed };
+  return { loaded, failed, activation };
 }
 
 /**

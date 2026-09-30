@@ -3,8 +3,8 @@
  * received is kept, keyed by its content.
  *
  * `<root>/plugin-store/` has the shape of the `plugins/` subtree of the index repository
- * (penguin-plugins): one entry per `<npm name>/<version>/<first 16 hex digits of integrity>/`,
- * holding
+ * (penguin-plugins) and of the tree the build lays out (scripts/build-plugins.mjs): one entry
+ * per `<npm name>/<version>/<first 16 hex digits of integrity>/`, holding
  *
  *   manifest.toml      the index manifest (the repository's fields, `integrity` required)
  *   package-lock.json  the lock of the package's nested dependencies
@@ -14,12 +14,12 @@
  * An entry without `.stored` does not exist: it is a write that did not finish, and the next
  * write of the same content replaces it.
  *
- * THE KEY IS THE CONTENT. `integrity` is `sha256-<hex>` over `package/` packed by the same
- * deterministic archiver the hot push packs with (scripts/asset-archives.mjs): sorted entries,
- * the epoch as every mtime, no owners, 0755 for what executes and 0644 otherwise. It is the hash
- * of the tar stream, before gzip — the bytes gzip produces depend on the zlib that ran it, and
- * this hash is computed by every machine that stores a package. Two versions of one name, or
- * two contents of one version, are two entries; one content is stored once.
+ * THE KEY IS THE CONTENT. `integrity` is `sha256-<hex>` over `package/` archived by the
+ * deterministic ustar archiver of scripts/plugin-entry.mjs — the index repository's algorithm,
+ * so the integrity an index entry names is the one this store computes over the package it
+ * fetched. Two versions of one name, or two contents of one version, are two entries; one
+ * content is stored once. How an entry is laid out is that module's too: the build and the
+ * store run one copy.
  *
  * THREE SOURCES, ONE WAY IN. Everything reaches the store through `storePackage`:
  *
@@ -31,22 +31,39 @@
  *   - registry  a package fetched by npm into `.staging/<pid>/`, packed, hashed, compared with
  *               the integrity its index entry names, stored, and the staging directory removed.
  *
- * The store is not a lookup location. Nothing resolves or imports a module from it; which
- * plugins a process loads, and from where, is unchanged by it. Its own `index.json` is rebuilt
+ * Every write and the sweep take turns on one queue (`onStoreQueue`): a fetch never lands an
+ * entry in a directory the sweep is emptying, and the sweep never removes a content a write
+ * has just found already stored. What the sweep keeps and removes is plugin/gc.ts.
+ *
+ * The store is not a lookup location. Nothing resolves a module from it by name: the process
+ * loads from the current generation under `<root>/plugins/`, whose `node_modules/<name>` links
+ * to an entry's `package/` (plugin/activation.ts). Its own `index.json` is rebuilt
  * from the tree after every write, in the index repository's shape — the machine's local
  * source for the plugin catalogue.
  */
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import * as tar from "tar";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { PACKAGE_NAME } from "./loader.js";
 import { npmCommand, npmReason, PluginInstallError } from "./install.js";
+import {
+  entryDir,
+  entryKey,
+  INDEX_FILE,
+  LOCK_FILE,
+  layOutEntry,
+  MANIFEST_FILE,
+  PACKAGE_DIR,
+  readPackageJson,
+  sortIndex,
+} from "../../../../scripts/plugin-entry.mjs";
+import type { EntryManifest } from "../../../../scripts/plugin-entry.mjs";
+
+export { INDEX_FILE, LOCK_FILE, MANIFEST_FILE, PACKAGE_DIR };
 
 const execFileAsync = promisify(execFile);
 
@@ -56,10 +73,6 @@ export const PLUGIN_STORE_DIR = "plugin-store";
 export const STAGING_DIR = ".staging";
 /** The completion marker, written last. */
 export const STORED_FILE = ".stored";
-export const MANIFEST_FILE = "manifest.toml";
-export const LOCK_FILE = "package-lock.json";
-export const PACKAGE_DIR = "package";
-export const INDEX_FILE = "index.json";
 
 /** Where a package came from — recorded in `.stored`, never part of the key. */
 export type StoreSource = "push" | "builtin" | "registry";
@@ -74,19 +87,8 @@ export interface StoredEntry {
   dir: string;
 }
 
-/** One row of the store's `index.json`: the index repository's entry, plus `integrity`. */
-export interface StoreIndexEntry {
-  name: string;
-  version: string;
-  description: string;
-  authors: string[];
-  license: string;
-  repository?: string;
-  homepage?: string;
-  keywords?: string[];
-  categories?: string[];
-  integrity: string;
-}
+/** One row of the store's `index.json`: the index repository's entry, `integrity` included. */
+export type StoreIndexEntry = EntryManifest;
 
 export class PluginStoreError extends Error {}
 
@@ -98,15 +100,15 @@ export class PluginIntegrityMismatch extends PluginStoreError {
     readonly expected: string,
     readonly actual: string,
   ) {
-    super(`${name}@${version}: the package's integrity is ${actual}, the index names ${expected}`);
+    super(
+      `${name}@${version}: the fetched package's integrity is ${actual}, the index names ${expected}; nothing was stored`,
+    );
   }
 }
 
 export function pluginStoreDir(root: string): string {
   return path.join(root, PLUGIN_STORE_DIR);
 }
-
-const INTEGRITY = /^sha256-([0-9a-f]{64})$/;
 
 /** An entry's directory: `<store>/<name>/<version>/<first 16 hex digits>`. */
 export function storeEntryDir(
@@ -115,211 +117,14 @@ export function storeEntryDir(
   version: string,
   integrity: string,
 ): string {
-  const hex = INTEGRITY.exec(integrity)?.[1];
-  if (hex === undefined) throw new PluginStoreError(`'${integrity}' is not a sha256 integrity`);
-  return path.join(pluginStoreDir(root), ...name.split("/"), version, hex.slice(0, 16));
-}
-
-/** Files under `dir`, sorted relative posix paths; symlinks (`.bin` shims) are not files. */
-async function walk(dir: string, prefix = ""): Promise<string[]> {
-  const out: string[] = [];
-  for (const e of await fsp.readdir(dir, { withFileTypes: true })) {
-    const rel = prefix === "" ? e.name : `${prefix}/${e.name}`;
-    if (e.isDirectory()) out.push(...(await walk(path.join(dir, e.name), rel)));
-    else if (e.isFile()) out.push(rel);
+  if (entryKey(integrity) === null) {
+    throw new PluginStoreError(`'${integrity}' is not a sha256 integrity`);
   }
-  return out;
-}
-
-const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
-/**
- * The deterministic tar of `rels` under `cwd`, into `file` — the archiver the hot push packs
- * with (scripts/asset-archives.mjs `packArchive`), without its gzip: sorted entries, no
- * directory entries, epoch mtimes, no owners. The modes are the files' own, which is why a
- * package is copied into the store with them normalized (see `copyNormalized`) before it is
- * packed.
- */
-export async function packTar(cwd: string, rels: readonly string[], file: string): Promise<void> {
-  await tar.c(
-    { file, cwd, portable: true, mtime: new Date(0), noDirRecurse: true },
-    [...rels].sort(byCodeUnit),
-  );
-}
-
-/** The integrity of the `package/` directory under `entry`: sha256 of its deterministic tar. */
-export async function packageIntegrity(entry: string, scratch: string): Promise<string> {
-  const rels = (await walk(path.join(entry, PACKAGE_DIR))).map((r) => `${PACKAGE_DIR}/${r}`);
-  if (rels.length === 0) throw new PluginStoreError(`${entry}: the package has no files`);
-  await packTar(entry, rels, scratch);
-  try {
-    const hash = createHash("sha256");
-    for await (const chunk of fs.createReadStream(scratch)) hash.update(chunk as Buffer);
-    return `sha256-${hash.digest("hex")}`;
-  } finally {
-    await fsp.rm(scratch, { force: true });
-  }
-}
-
-/** Copies `from`'s files to `to`, each 0755 when anything may execute it and 0644 otherwise. */
-async function copyNormalized(from: string, to: string): Promise<void> {
-  for (const rel of await walk(from)) {
-    const src = path.join(from, ...rel.split("/"));
-    const dest = path.join(to, ...rel.split("/"));
-    await fsp.mkdir(path.dirname(dest), { recursive: true });
-    await fsp.copyFile(src, dest);
-    const exec = ((await fsp.stat(src)).mode & 0o111) !== 0;
-    await fsp.chmod(dest, exec ? 0o755 : 0o644);
-  }
-}
-
-interface PackageJson {
-  name?: unknown;
-  version?: unknown;
-  description?: unknown;
-  author?: unknown;
-  contributors?: unknown;
-  license?: unknown;
-  repository?: unknown;
-  homepage?: unknown;
-  keywords?: unknown;
-  dependencies?: unknown;
-  optionalDependencies?: unknown;
-}
-
-async function readPackageJson(dir: string): Promise<PackageJson | null> {
-  try {
-    return JSON.parse(await fsp.readFile(path.join(dir, "package.json"), "utf8")) as PackageJson;
-  } catch {
-    return null;
-  }
+  return entryDir(pluginStoreDir(root), name, version, integrity);
 }
 
 const names = (table: unknown): string[] =>
   table !== null && typeof table === "object" ? Object.keys(table) : [];
-
-/**
- * The dependencies of the package at `pkgDir` that live OUTSIDE it, in the prefix `prefixDir`
- * it was installed into: what npm hoisted to `<prefix>/node_modules/<dep>`, found the way Node
- * finds a package (`node_modules` upward, stopping at the prefix), for its dependencies and
- * optional dependencies, transitively. A dependency nested inside the package already travels
- * with it; an optional one npm did not install (another platform's binary) is skipped.
- */
-async function hoistedDependencies(
-  pkgDir: string,
-  prefixDir: string,
-): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  const top = path.resolve(prefixDir);
-  const inside = (dir: string) => dir === pkgDir || dir.startsWith(pkgDir + path.sep);
-  const visit = async (from: string) => {
-    const manifest = await readPackageJson(from);
-    if (manifest === null) return;
-    for (const dep of [...names(manifest.dependencies), ...names(manifest.optionalDependencies)]) {
-      let found: string | null = null;
-      for (let dir = from; ; dir = path.dirname(dir)) {
-        const candidate = path.join(dir, "node_modules", ...dep.split("/"));
-        if (fs.existsSync(path.join(candidate, "package.json"))) {
-          found = candidate;
-          break;
-        }
-        if (dir === top || path.dirname(dir) === dir) break;
-      }
-      if (found === null || inside(found) || out.has(dep)) continue;
-      out.set(dep, found);
-      await visit(found);
-    }
-  };
-  await visit(pkgDir);
-  return out;
-}
-
-/** An `npm install --install-strategy=nested` lock of the package under `stage/package`. */
-async function lockOf(stage: string, name: string, version: string): Promise<string> {
-  const packages: Record<string, unknown> = {
-    "": { name: "plugin-store-entry", version: "0.0.0", dependencies: { [name]: version } },
-  };
-  const pkgRoot = path.join(stage, PACKAGE_DIR);
-  for (const rel of await walk(pkgRoot)) {
-    if (rel !== "package.json" && !rel.endsWith("/package.json")) continue;
-    const dir = path.posix.dirname(rel);
-    // Only a package's own manifest: `node_modules/<name>/package.json`, not a fixture inside it.
-    const parent = path.posix.dirname(dir);
-    const isPackage =
-      dir === "." ||
-      path.posix.basename(parent) === "node_modules" ||
-      (path.posix.basename(parent).startsWith("@") &&
-        path.posix.basename(path.posix.dirname(parent)) === "node_modules");
-    if (!isPackage) continue;
-    const manifest = await readPackageJson(path.join(pkgRoot, dir));
-    if (manifest === null) continue;
-    const key = dir === "." ? `node_modules/${name}` : `node_modules/${name}/${dir}`;
-    const row: Record<string, unknown> = {
-      version: typeof manifest.version === "string" ? manifest.version : "0.0.0",
-    };
-    if (typeof manifest.license === "string") row.license = manifest.license;
-    for (const field of ["dependencies", "optionalDependencies"] as const) {
-      if (names(manifest[field]).length > 0) row[field] = manifest[field];
-    }
-    packages[key] = row;
-  }
-  const sorted = Object.fromEntries(Object.entries(packages).sort(([a], [b]) => byCodeUnit(a, b)));
-  return `${JSON.stringify(
-    {
-      name: "plugin-store-entry",
-      version: "0.0.0",
-      lockfileVersion: 3,
-      requires: true,
-      packages: sorted,
-    },
-    null,
-    2,
-  )}\n`;
-}
-
-/** An author as the index repository writes one: a display name, optionally `<contact>`. */
-function authorOf(value: unknown): string | null {
-  if (typeof value === "string") return value.trim() === "" ? null : value.trim();
-  if (value === null || typeof value !== "object") return null;
-  const a = value as { name?: unknown; email?: unknown; url?: unknown };
-  if (typeof a.name !== "string" || a.name.trim() === "") return null;
-  const contact = typeof a.email === "string" ? a.email : typeof a.url === "string" ? a.url : null;
-  return contact === null ? a.name.trim() : `${a.name.trim()} <${contact}>`;
-}
-
-/** The index manifest of a package, from its own package.json, with `integrity`. */
-function manifestOf(
-  pkg: PackageJson,
-  name: string,
-  version: string,
-  integrity: string,
-): StoreIndexEntry {
-  const authors = [pkg.author, ...(Array.isArray(pkg.contributors) ? pkg.contributors : [])]
-    .map(authorOf)
-    .filter((a): a is string => a !== null);
-  const repository =
-    typeof pkg.repository === "string"
-      ? pkg.repository
-      : pkg.repository !== null &&
-          typeof pkg.repository === "object" &&
-          typeof (pkg.repository as { url?: unknown }).url === "string"
-        ? (pkg.repository as { url: string }).url.replace(/^git\+/, "")
-        : undefined;
-  const keywords = Array.isArray(pkg.keywords)
-    ? pkg.keywords.filter((k): k is string => typeof k === "string")
-    : [];
-  return {
-    name,
-    version,
-    description: typeof pkg.description === "string" ? pkg.description : "",
-    authors,
-    license: typeof pkg.license === "string" ? pkg.license : "",
-    ...(repository !== undefined ? { repository } : {}),
-    ...(typeof pkg.homepage === "string" ? { homepage: pkg.homepage } : {}),
-    ...(keywords.length > 0 ? { keywords } : {}),
-    integrity,
-  };
-}
 
 /** Is `dir` a complete entry? */
 function isStored(dir: string): boolean {
@@ -328,7 +133,7 @@ function isStored(dir: string): boolean {
 
 let stagingSeq = 0;
 /** A fresh directory under `.staging/<pid>/`. */
-async function stagingDir(root: string, label: string): Promise<string> {
+export async function stagingDir(root: string, label: string): Promise<string> {
   stagingSeq += 1;
   const dir = path.join(
     pluginStoreDir(root),
@@ -342,7 +147,7 @@ async function stagingDir(root: string, label: string): Promise<string> {
 }
 
 /** Removes `.staging/<pid>/` once nothing of this process is left in it. */
-async function tidyStaging(root: string): Promise<void> {
+export async function tidyStaging(root: string): Promise<void> {
   const mine = path.join(pluginStoreDir(root), STAGING_DIR, String(process.pid));
   try {
     await fsp.rmdir(mine);
@@ -375,24 +180,18 @@ export async function storePackage(
   }
   const stage = await stagingDir(root, "entry");
   try {
-    await copyNormalized(pkgDir, path.join(stage, PACKAGE_DIR));
-    for (const [dep, dir] of await hoistedDependencies(path.resolve(pkgDir), prefixDir)) {
-      await copyNormalized(dir, path.join(stage, PACKAGE_DIR, "node_modules", ...dep.split("/")));
-    }
-    const integrity = await packageIntegrity(stage, `${stage}.tar`);
-    if (expected !== undefined && expected !== integrity) {
-      throw new PluginIntegrityMismatch(name, version, expected, integrity);
-    }
-    const dest = storeEntryDir(root, name, version, integrity);
-    const entry: StoredEntry = { name, version, integrity, dir: dest };
+    const laid = await layOutEntry(stage, pkgDir, prefixDir, {
+      stringifyToml: (value) => stringifyToml(value),
+      lock,
+      check: ({ integrity }) => {
+        if (expected !== undefined && expected !== integrity) {
+          throw new PluginIntegrityMismatch(name, version, expected, integrity);
+        }
+      },
+    });
+    const dest = storeEntryDir(root, name, version, laid.integrity);
+    const entry: StoredEntry = { name, version, integrity: laid.integrity, dir: dest };
     if (isStored(dest)) return entry;
-    await fsp.writeFile(
-      path.join(stage, MANIFEST_FILE),
-      stringifyToml(
-        manifestOf(pkg, name, version, integrity) as unknown as Record<string, unknown>,
-      ),
-    );
-    await fsp.writeFile(path.join(stage, LOCK_FILE), lock ?? (await lockOf(stage, name, version)));
     // A directory without the marker is a write that did not finish: replaced, not trusted.
     await fsp.rm(dest, { recursive: true, force: true });
     await fsp.mkdir(path.dirname(dest), { recursive: true });
@@ -473,10 +272,19 @@ function nameOf(specifier: string): string {
  * its index entry names) when there is one, and stored; the staging directory is removed
  * whatever happened. npm's own lock of the install is the entry's lock.
  */
-export async function fetchIntoStore(
+export function fetchIntoStore(
   root: string,
   specifier: string,
   { expected, install = npmInstall }: { expected?: string; install?: RegistryInstall } = {},
+): Promise<StoredEntry> {
+  return onStoreQueue(() => fetchNow(root, specifier, expected, install));
+}
+
+async function fetchNow(
+  root: string,
+  specifier: string,
+  expected: string | undefined,
+  install: RegistryInstall,
 ): Promise<StoredEntry> {
   const prefix = await stagingDir(root, "fetch");
   try {
@@ -540,7 +348,7 @@ export async function readStore(root: string): Promise<StoreIndexEntry[]> {
           manifest.name !== name ||
           manifest.version !== version ||
           typeof integrity !== "string" ||
-          INTEGRITY.exec(integrity)?.[1]?.slice(0, 16) !== key
+          entryKey(integrity) !== key
         ) {
           continue;
         }
@@ -548,12 +356,7 @@ export async function readStore(root: string): Promise<StoreIndexEntry[]> {
       }
     }
   }
-  return out.sort(
-    (a, b) =>
-      byCodeUnit(a.name, b.name) ||
-      byCodeUnit(a.version, b.version) ||
-      byCodeUnit(a.integrity, b.integrity),
-  );
+  return sortIndex(out);
 }
 
 /**
@@ -585,14 +388,35 @@ export function storeSources(
   return out;
 }
 
-/** Prefixes this process already imported: a push's assets never change, nor does the installation. */
-const imported = new Set<string>();
+/**
+ * Prefixes this process already imported, with the entries each yielded: a push's assets never
+ * change, nor does the installation.
+ */
+const imported = new Map<string, StoredEntry[]>();
 let chain: Promise<unknown> = Promise.resolve();
 
 /**
+ * Runs `fn` after every store write and sweep queued before it, and before any queued after:
+ * the one order the store's writers and its sweep keep within the process. A failure is the
+ * caller's; the queue goes on.
+ */
+export function onStoreQueue<T>(fn: () => Promise<T>): Promise<T> {
+  const next = chain.then(fn);
+  chain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+const importKey = (root: string, dir: string) => `${root}\0${path.resolve(dir)}`;
+
+/**
  * Brings the store up to date with the prefixes of this boot (`storeSources`), each once per
- * process, then rebuilds its index. Serialized within the process, best effort: a failure is
- * logged and never fails the boot — the store is not where anything loads from.
+ * process — and again once the sweep has removed an entry one of them yielded — then rebuilds
+ * its index. On the store's queue, best effort: a failure is logged and never fails the boot —
+ * a package that did not reach the store is reported by the activation that cannot find it
+ * (plugin/activation.ts).
  */
 export function syncPluginStore(
   root: string,
@@ -602,18 +426,43 @@ export function syncPluginStore(
   const run = async () => {
     let wrote = false;
     for (const { dir, source } of sources) {
-      const key = `${root}\0${path.resolve(dir)}`;
-      if (imported.has(key) || !fs.existsSync(path.join(dir, "package.json"))) continue;
+      const key = importKey(root, dir);
+      // A shipped package no generation holds is swept like any other entry (plugin/gc.ts);
+      // the prefix still ships it, so it is stored again the next time it is asked for.
+      const held = imported.get(key);
+      if (held !== undefined && held.every((e) => isStored(e.dir))) continue;
+      if (!fs.existsSync(path.join(dir, "package.json"))) continue;
       const { stored, failed } = await importPrefix(root, dir, source);
-      imported.add(key);
+      imported.set(key, stored);
       wrote ||= stored.length > 0;
       for (const [name, why] of failed) log(`[plugin-store] ${source} ${name}: ${why}`);
     }
     if (wrote) await rebuildStoreIndex(root);
   };
-  const next = chain.then(run).catch((err: unknown) => {
+  return onStoreQueue(run).catch((err: unknown) => {
     log(`[plugin-store] ${err instanceof Error ? err.message : String(err)}`);
   });
-  chain = next;
-  return next;
+}
+
+/**
+ * The entries this boot's sources put in the store — what the running build carries — once
+ * `syncPluginStore` has imported them.
+ */
+export async function shippedEntries(
+  root: string,
+  sources: ReadonlyArray<{ dir: string; source: StoreSource }>,
+): Promise<StoredEntry[]> {
+  await syncPluginStore(root, sources);
+  return sources.flatMap(({ dir }) => imported.get(importKey(root, dir)) ?? []);
+}
+
+/** The names the prefixes of `sources` ship: each prefix's own package.json `dependencies`. */
+export async function shippedNames(
+  sources: ReadonlyArray<{ dir: string; source: StoreSource }>,
+): Promise<string[]> {
+  const out = new Set<string>();
+  for (const { dir } of sources) {
+    for (const name of names((await readPackageJson(dir))?.dependencies)) out.add(name);
+  }
+  return [...out].sort();
 }

@@ -11,7 +11,7 @@ import type { InstalledPackage } from "../plugin/install.js";
 @Interface()
 export abstract class PluginPackages {
   /** A registry name (`name`, `name@range`) or a link npm fetches; answers which package that was. */
-  abstract install(root: string, source: string): Promise<InstalledPackage>;
+  abstract install(root: string, source: string, expected?: string): Promise<InstalledPackage>;
   /** An uploaded package's files, relative path → bytes (checked by the caller). */
   abstract installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage>;
   abstract remove(root: string, name: string): Promise<void>;

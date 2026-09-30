@@ -33,7 +33,7 @@ import type {
   HookItem,
   InstalledPluginsResponse,
   PluginGroupItem,
-  PluginIndexEntry,
+  PluginCatalogueEntry,
   PluginItem,
   QuickStartItem,
   SkillMetadataItem,
@@ -206,7 +206,7 @@ export function PluginsPage() {
     }
   };
   /** The registry: every module plugin this deployment could ask for. */
-  const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
+  const [index, setIndex] = useState<PluginCatalogueEntry[] | null>(null);
   /**
    * Sources that answered with nothing. A published index that is down shortens the list
    * instead of emptying it (the server merges tolerantly), so the page has to say so — a

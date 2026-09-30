@@ -5,32 +5,34 @@
  * per-version entries). Discovery only: a Project asks for an entry on the Plugins page
  * (http/routes/plugins-installed.ts), and nothing here imports plugin code.
  *
- * Two implementations, one contract:
- *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the four sandbox backends the workspace ships, each row carrying
- *     the descriptions of the package's own package.json `penguin` block and its icon, so its
- *     card renders on a server the package is not installed on);
- *   - the HTTP registry fetches an `index.json` URL and runs it through the same
- *     validator, so a remote index is trusted no further than the embedded one — and less
- *     in one respect: its entries lose their `icon`, an SVG the Web App inlines into the
- *     page, which only what ships with this server may supply (the embedded index, and a
- *     package's own icon on this machine, see localPluginDisplay).
- *
- * A deployment's list is the builtin registry plus the published index (see
- * NIGHTLY_INDEX_URL), merged in http/routes/plugins.ts.
+ * Three sources, one shape — every entry names its content (`integrity`, the plugin store's
+ * key), and the catalogue is the three merged:
+ *   - the builtin registry serves the index the running BUILD carries: rebuilt by
+ *     scripts/build-plugins.mjs from the store-shaped tree of what it packed, shipped beside
+ *     the packages (`plugins/index.json` in a push's assets, or in the installation);
+ *   - the store registry serves this machine's plugin store's own `index.json`, rebuilt from
+ *     its tree after every write (plugin/store.ts);
+ *   - the HTTP registry fetches the published `index.json` (see NIGHTLY_INDEX_URL), which the
+ *     index repository rebuilds from the same tree shape, and runs it through the same
+ *     validator — a remote index is trusted no further than the build's own.
+ * Remote SVG icons are never trusted; on-machine package display fields are read locally.
  */
-import type { PluginIndexEntry } from "../api/types.js";
-import builtinIndex from "./builtin-index.json" with { type: "json" };
-import fs from "node:fs/promises";
+import type { PluginCatalogueEntry, PluginEntrySource, PluginIndexEntry } from "../api/types.js";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import { parsePluginPackage, readPluginIcon, userAgent } from "@prismshadow/penguin-core";
 import type { PluginPackageFields } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
+import { INDEX_FILE, readStore, storeSources } from "./store.js";
+import { compareVersions, satisfies } from "./activation.js";
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
   readonly source: string;
+  /** Which of the three channels it is: what the catalogue tags its rows with. */
+  readonly kind: PluginEntrySource;
   index(): Promise<PluginIndexEntry[]>;
   /**
    * Long-form documentation for one entry, or null when this source has none for it.
@@ -72,8 +74,20 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
     if (e[key] !== undefined && !isStringArray(e[key])) return null;
   }
   if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;
+  // Optional, so an index from before it still lists — but a present one must be a key the
+  // store can use: a malformed integrity is a broken artifact, not an unpinned entry.
+  if (
+    e.integrity !== undefined &&
+    (typeof e.integrity !== "string" || !INTEGRITY.test(e.integrity))
+  ) {
+    return null;
+  }
+  if (e.yanked !== undefined && typeof e.yanked !== "boolean") return null;
   return value as PluginIndexEntry;
 }
+
+/** `sha256-<64 lowercase hex digits>`: an entry's content, the plugin store's key. */
+export const INTEGRITY = /^sha256-[0-9a-f]{64}$/;
 
 /**
  * Validates a whole index document. Strict, not per-entry-tolerant: an index is one
@@ -110,31 +124,65 @@ export function withoutIcon(entry: PluginIndexEntry): PluginIndexEntry {
 }
 
 export const BUILTIN_REGISTRY_SOURCE = "builtin";
+export const STORE_REGISTRY_SOURCE = "store";
+
+/** A package's own README.md, from wherever it is on this machine; null when it is not. */
+async function readmeOf(name: string, bases: readonly PluginBase[]): Promise<string | null> {
+  const found = resolvePluginPackage(name, bases);
+  if (found === null) return null;
+  try {
+    return await fsp.readFile(path.join(found.dir, "README.md"), "utf8");
+  } catch {
+    return null;
+  }
+}
 
 /**
- * The registry embedded in this package: the workspace's own plugin packages. The index is
- * the listing; a readme is the package's own README.md, read from wherever the package is on
- * this machine (`bases`: the shipped prefix, the data root's, the installation) — the file
- * npm shipped with it, never a second copy. A listed package that is not on this machine
+ * The index the running build carries: `index.json` in the first of its prefixes that has one
+ * — a push's assets before the installation's, as a boot imports them (plugin/store.ts
+ * `storeSources`). Empty when neither does: a run from source ships no prefix.
+ */
+export async function shippedIndex(assetsDir: string | null): Promise<PluginIndexEntry[]> {
+  for (const { dir } of storeSources(assetsDir)) {
+    const file = path.join(dir, INDEX_FILE);
+    if (!fs.existsSync(file)) continue;
+    const text = await fsp.readFile(file, "utf8");
+    return parsePluginIndex(JSON.parse(text), BUILTIN_REGISTRY_SOURCE);
+  }
+  return [];
+}
+
+/**
+ * The registry of the running build: the index scripts/build-plugins.mjs rebuilt from what it
+ * packed (`shippedIndex`). A readme is the package's own README.md, read from wherever the
+ * package is on this machine (`bases`: the current generation, the shipped prefixes) — the
+ * file npm shipped with it, never a second copy. A listed package that is not on this machine
  * has none to show.
  */
 export function builtinPluginRegistry(
   bases: () => readonly PluginBase[] = () => [],
+  assetsDir: () => string | null = () => null,
 ): PluginRegistry {
   return {
     source: BUILTIN_REGISTRY_SOURCE,
-    // Validated like any other source: a broken embedded index should fail loudly
-    // in tests rather than serve garbage.
-    index: () => Promise.resolve(parsePluginIndex(builtinIndex, BUILTIN_REGISTRY_SOURCE)),
-    readme: async (name) => {
-      const found = resolvePluginPackage(name, bases());
-      if (found === null) return null;
-      try {
-        return await fs.readFile(path.join(found.dir, "README.md"), "utf8");
-      } catch {
-        return null;
-      }
-    },
+    kind: "builtin",
+    // Validated like any other source: a broken shipped index fails loudly rather than
+    // serving garbage.
+    index: () => shippedIndex(assetsDir()),
+    readme: (name) => readmeOf(name, bases()),
+  };
+}
+
+/** The registry of this machine's plugin store: what it holds, read off its tree. */
+export function storePluginRegistry(
+  root: string,
+  bases: () => readonly PluginBase[] = () => [],
+): PluginRegistry {
+  return {
+    source: STORE_REGISTRY_SOURCE,
+    kind: "store",
+    index: async () => parsePluginIndex(await readStore(root), STORE_REGISTRY_SOURCE),
+    readme: (name) => readmeOf(name, bases()),
   };
 }
 
@@ -160,7 +208,7 @@ export async function localPluginDisplay(
   if (found === null) return {};
   let penguin: PluginPackageFields;
   try {
-    const raw = JSON.parse(await fs.readFile(found.manifest, "utf8")) as unknown;
+    const raw = JSON.parse(await fsp.readFile(found.manifest, "utf8")) as unknown;
     penguin = parsePluginPackage(raw, found.manifest).manifest.penguin;
   } catch {
     return {};
@@ -231,6 +279,7 @@ export function httpPluginRegistry(
   };
   return {
     source: indexUrl,
+    kind: "index",
     index: async () => {
       const res = await request();
       if (!res.ok) {
@@ -353,6 +402,7 @@ export function cachedRegistry(
       }));
   return {
     source: inner.source,
+    kind: inner.kind,
     snapshot: () => good,
     index: async () => {
       if (good !== null && now() - good.at < ttlMs) return good.entries;
@@ -393,14 +443,14 @@ async function within<T>(work: Promise<T>, ms: number): Promise<T | null> {
 
 /** What merging the sources gave: their entries, and the sources that failed or are still being read. */
 export interface MergedIndex {
-  entries: PluginIndexEntry[];
+  entries: PluginCatalogueEntry[];
   failures: { source: string; error: string }[];
   /** Sources that had not answered within `waitMs`: their entries are missing from this listing. */
   pending: string[];
 }
 
 /**
- * Merge several registries into one listing, tolerating a source that fails.
+ * Merge several registries into one catalogue, tolerating a source that fails.
  *
  * Deliberately unlike the within-document rule: a malformed row still kills its own index,
  * because that index is one publisher's single artifact, but a source that is unreachable,
@@ -410,9 +460,13 @@ export interface MergedIndex {
  * by then is reported as pending rather than waited for, for the same reason: a slow source must
  * not hold back the ones that answered.
  *
- * On a name collision the FIRST source wins, and the builtin registry is listed first: what this
- * deployment actually ships is the truth about it, and a published index claiming the same
- * specifier does not get to describe a package the operator already has.
+ * A row is one CONTENT: name, version and integrity. The sources that list the same content
+ * are one row tagged with each of them, and the FIRST source's metadata describes it — the
+ * builtin registry is listed first, so what this deployment ships is the truth about it. Two
+ * contents under one name and version are two rows. A row is installable here when it names
+ * its integrity: a shipped or stored one is already on this machine, and a published one can
+ * be checked when it is fetched; one without an integrity is listed and cannot be installed.
+ * A yanked entry is left out.
  */
 export async function mergeIndexes(
   registries: readonly PluginRegistry[],
@@ -422,9 +476,10 @@ export async function mergeIndexes(
     registries.map(async (r) => {
       const read = (async () => {
         try {
-          return { entries: await r.index(), error: null };
+          return { kind: r.kind, entries: await r.index(), error: null };
         } catch (err) {
           return {
+            kind: r.kind,
             entries: [] as PluginIndexEntry[],
             error: err instanceof Error ? err.message : String(err),
           };
@@ -434,8 +489,7 @@ export async function mergeIndexes(
       return { source: r.source, answer };
     }),
   );
-  const seen = new Set<string>();
-  const entries: PluginIndexEntry[] = [];
+  const rows = new Map<string, PluginCatalogueEntry>();
   const failures: MergedIndex["failures"] = [];
   const pending: string[] = [];
   for (const { source, answer } of settled) {
@@ -445,11 +499,58 @@ export async function mergeIndexes(
     }
     if (answer.error !== null) failures.push({ source, error: answer.error });
     for (const entry of answer.entries) {
-      const key = `${entry.name}@${entry.version}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      entries.push(entry);
+      if (entry.yanked === true) continue;
+      const key = `${entry.name}@${entry.version}#${entry.integrity ?? ""}`;
+      const row = rows.get(key);
+      if (row === undefined) {
+        rows.set(key, {
+          ...entry,
+          sources: [answer.kind],
+          installable: entry.integrity !== undefined,
+        });
+      } else if (!row.sources.includes(answer.kind)) {
+        row.sources.push(answer.kind);
+      }
     }
   }
-  return { entries, failures, pending };
+  return { entries: [...rows.values()], failures, pending };
+}
+
+/**
+ * The catalogue row an install of `name` takes, or why there is none: with `integrity`, that
+ * content; otherwise the highest version `version` admits (yanked rows are not in the
+ * catalogue), a row already on this machine first among equal versions. A row without an
+ * integrity is never taken — it cannot be checked — and is named when it is all there is.
+ */
+export function pickCatalogueEntry(
+  entries: readonly PluginCatalogueEntry[],
+  name: string,
+  ask: { version?: string; integrity?: string },
+): PluginCatalogueEntry | { refused: string } {
+  const listed = entries.filter((e) => e.name === name);
+  if (listed.length === 0) {
+    return { refused: `'${name}' is in none of the plugin catalogue's sources` };
+  }
+  const fits = listed.filter(
+    (e) =>
+      satisfies(e.version, ask.version) &&
+      (ask.integrity === undefined || e.integrity === ask.integrity),
+  );
+  const wanted = ask.integrity ?? ask.version ?? "*";
+  if (fits.length === 0) {
+    return {
+      refused: `no listed '${name}' satisfies ${wanted} (listed: ${listed.map((e) => e.version).join(", ")})`,
+    };
+  }
+  const onMachine = (e: PluginCatalogueEntry) =>
+    Number(e.sources.includes("builtin") || e.sources.includes("store"));
+  const best = fits
+    .filter((e) => e.installable)
+    .sort((a, b) => compareVersions(b.version, a.version) || onMachine(b) - onMachine(a))[0];
+  if (best === undefined) {
+    return {
+      refused: `'${name}' ${wanted} is listed without an integrity, so a fetched copy could not be checked: it cannot be installed`,
+    };
+  }
+  return best;
 }

@@ -53,12 +53,13 @@ describe("startHarness", () => {
     const api = await harness.login();
     const me = await api.get<{ user: { userId: string } }>("/api/me");
     expect(me.user.userId).toBe("admin");
-    // Listed but not resolvable: the row says so, and the server still boots — the
-    // same per-entry tolerance a deployment gets.
+    // Listed but not resolvable: the row says so — the loader's own reason, that no store
+    // entry holds it — and the server still boots: the same per-entry tolerance a
+    // deployment gets.
     const rows = await harness.installedPlugins();
     expect(rows.map((r) => r.specifier)).toEqual(["@someone/not-installed"]);
     expect(rows[0]!.active).toBe(false);
-    expect(rows[0]!.error).toMatch(/not installed on this machine/);
+    expect(rows[0]!.error).toMatch(/not in the plugin store/);
   });
 
   it("a failed call carries the status and the server's body", async () => {

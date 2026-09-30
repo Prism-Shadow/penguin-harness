@@ -4847,11 +4847,36 @@ export interface PluginIndexEntry {
   categories?: string[];
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
+  /**
+   * `sha256-<64 hex digits>`: the entry's content, with the same algorithm as the plugin
+   * store's key (the deterministic archive of the package — scripts/plugin-entry.mjs). A
+   * fetched package is compared with it before it enters the store; an entry without one is
+   * listed and cannot be installed.
+   */
+  integrity?: string;
+  /** A yanked entry stays in its source as a record and is left out of the catalogue. */
+  yanked?: boolean;
 }
 
-/** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
+/** Where a catalogue row comes from: the running build, this machine's plugin store, or the published index. */
+export type PluginEntrySource = "builtin" | "store" | "index";
+
+/**
+ * One row of the plugin catalogue: one content (name, version, integrity), with every source
+ * that lists it — the first one's metadata describes it.
+ */
+export interface PluginCatalogueEntry extends PluginIndexEntry {
+  sources: PluginEntrySource[];
+  /**
+   * Whether this machine can install it: it names its integrity — shipped with the build,
+   * already in the store, or published with one that a fetched copy is checked against.
+   */
+  installable: boolean;
+}
+
+/** GET /api/plugins/registry: the catalogue — the build's index, the store's and the published one, merged. */
 export interface PluginIndexResponse {
-  plugins: PluginIndexEntry[];
+  plugins: PluginCatalogueEntry[];
   /**
    * Sources that could not be read, by `source` and reason. Present and empty when every
    * source answered. A remote index that is down shortens the listing rather than emptying

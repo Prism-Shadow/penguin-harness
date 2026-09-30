@@ -5,6 +5,10 @@
   "type": "module",
   "description": "Proposals for PenguinHarness company mode: an employee writes a short, paragraph-commentable proposal while another builds it, the person reads, comments in batches and approves, and a proposals page with unread counts keeps the queue in view.",
   "license": "Apache-2.0",
+  "author": "Prism Shadow",
+  "categories": [
+    "company"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
