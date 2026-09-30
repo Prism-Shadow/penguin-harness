@@ -4853,42 +4853,8 @@ export interface PluginIndexEntry {
    * listed and cannot be installed.
    */
   integrity?: string;
-  /** A yanked entry stays in its source as a record and is left out of the catalogue. */
+  /** A yanked entry stays in its source as a record and is left out of the listing. */
   yanked?: boolean;
-}
-
-/** Where a catalogue row comes from: the running build, this machine's plugin store, or the published index. */
-export type PluginEntrySource = "builtin" | "store" | "index";
-
-/**
- * One row of the plugin catalogue: one content (name, version, integrity), with every source
- * that lists it — the first one's metadata describes it.
- */
-export interface PluginCatalogueEntry extends PluginIndexEntry {
-  sources: PluginEntrySource[];
-  /**
-   * Whether this machine can install it: it names its integrity — shipped with the build,
-   * already in the store, or published with one that a fetched copy is checked against.
-   */
-  installable: boolean;
-}
-
-/** GET /api/plugins/registry: the catalogue — the build's index, the store's and the published one, merged. */
-export interface PluginIndexResponse {
-  plugins: PluginCatalogueEntry[];
-  /**
-   * Sources that could not be read, by `source` and reason. Present and empty when every
-   * source answered. A remote index that is down shortens the listing rather than emptying
-   * it, so the page needs to be able to say so instead of silently showing less.
-   */
-  failures: { source: string; error: string }[];
-  /**
-   * Sources the server was still reading when it answered, by `source`. Present and empty when
-   * every source answered. The listing does not wait long for a published index, so one on a slow
-   * or unreachable network is named here and its entries are missing; a later read lists them
-   * once they have arrived, or names the source under `failures` once it has failed.
-   */
-  pending: string[];
 }
 
 /**

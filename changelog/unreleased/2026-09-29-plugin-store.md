@@ -38,16 +38,16 @@ Every server plugin a machine receives is kept in `<data root>/plugin-store/`, f
 - When the App fails to boot on a new generation, `current` is pointed back at the previous one. The failed generation stays on disk.
 - A linked plugin runs from its store entry. When its own package cannot resolve `@prismshadow/penguin-core`, which a plugin bundle may keep external (discord-bot does), the import resolves from the running program instead, through a `module.registerHooks` resolve hook. Before, only a plugin loaded from beside the installation found the program's copy; one carried by a hot push did not.
 
-## The index and the catalogue
+## The index
 
 - The index the server embedded by hand (`builtin-index.json`) is gone. `scripts/build-plugins.mjs` lays every package it ships out as a store entry and rebuilds `index.json` from that tree into the shipped prefix, so the index travels with the build: in a push's `plugins/`, in the desktop build and in a release install. A server run from source ships no prefix and lists no builtin entries.
-- An entry's metadata is its package.json's. The code plugins in `plugins/` declare `author` and a top-level `categories`, which the catalogue groups by.
-- `GET /api/plugins/registry` merges the build's index, this machine's store and the published index into one table. Each row is one content with `sources` (`builtin`, `store`, `index`) and `installable`. A row without an integrity is listed and cannot be installed, and a yanked entry is left out.
-- The Plugins page tags rows that are already on this machine or published, and a row that cannot be installed here says why and disables Install.
+- An entry's metadata is its package.json's. The code plugins in `plugins/` declare `author` and a top-level `categories`, which the Plugins page groups by.
+- `GET /api/plugins/registry` returns a flat array of index entries, merged from the build's index, this machine's store and the published index in that order: one entry per content, the first source's kept, a yanked entry left out. It no longer carries `failures`: a source that cannot be read is logged on the server and shortens the listing.
+- An entry without an integrity is listed and cannot be installed; its row on the Plugins page says why and disables Install. The page no longer shows a notice when a source could not be reached.
 
 ## Installing and removing
 
-- Installing a package that is not on this machine takes the catalogue row the ask resolves to — the pinned content, or the highest version the range admits — fetches that exact version and compares its integrity before it enters the store. A mismatch returns `400 plugin_integrity_mismatch` with both values, and the staging directory is discarded. A name no source lists, or one listed only without an integrity, returns `400 plugin_not_installable`.
+- Installing a package that is not on this machine takes the index entry the ask resolves to — the pinned content, or the highest version the range admits — fetches that exact version and compares its integrity before it enters the store. A mismatch returns `400 plugin_integrity_mismatch` with both values, and the staging directory is discarded. A name no source lists, or one listed only without an integrity, returns `400 plugin_not_installable`.
 - `POST …/plugins/installed` accepts `integrity` and writes the pin.
 - Removing a plugin no longer runs `npm uninstall`. The next generation leaves it out, and its store entry stays until the sweep removes it.
 

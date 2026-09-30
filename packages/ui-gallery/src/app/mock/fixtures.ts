@@ -29,7 +29,7 @@ import type {
   ModelInfo,
   ModelsResponse,
   PluginConfigEntry,
-  PluginIndexResponse,
+  PluginIndexEntry,
   PluginLibraryResponse,
   ProjectScheduleItem,
   ProviderConnectionDto,
@@ -172,7 +172,7 @@ export interface DemoFixtures {
   pluginFiles: Record<string, Record<string, string>>;
   installed: Record<string, { skills: SkillMetadataItem[]; hooks: HookItem[] }>;
   installedPlugins: InstalledPluginsResponse;
-  pluginIndex: PluginIndexResponse;
+  pluginIndex: PluginIndexEntry[];
   readmes: Record<string, string>;
   benchmarks: BenchmarkSummary[];
   benchmarkCases: Record<string, BenchmarkCaseSummary[]>;
@@ -998,56 +998,52 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   // icons the packages' own package.json (its `penguin` block) and icon hold.
   const shield = (inner: string) =>
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
-  const pluginIndex: PluginIndexResponse = {
-    plugins: [
-      {
-        name: "@penguinharness/sandbox-bwrap",
-        version: "0.2.13",
-        description: "Confines agent commands with bubblewrap on Linux.",
-        descriptionZh: "在 Linux 上用 bubblewrap 封禁 Agent 的命令。",
-        shortDescription: "Linux: confine file writes, cut the network, mask paths.",
-        shortDescriptionZh: "Linux：限制文件写入、断开网络、屏蔽路径。",
-        icon: shield(
-          '<circle cx="10.4" cy="10.3" r="1.7" /><circle cx="14.2" cy="12.3" r="1.1" /><circle cx="11.3" cy="14.9" r="0.8" />',
-        ),
-        authors: ["PenguinHarness"],
-        license: "MIT",
-        repository: "https://github.com/prismshadow/penguin-harness",
-        keywords: ["linux", "sandbox"],
-        categories: ["sandbox"],
-        updatedAt: Math.floor(ago(19) / 1000),
-      },
-      {
-        name: "@penguinharness/sandbox-seatbelt",
-        version: "0.2.13",
-        description: "Confines agent commands with Seatbelt on macOS.",
-        descriptionZh: "在 macOS 上用 Seatbelt 封禁 Agent 的命令。",
-        shortDescription: "macOS: confine file writes, cut the network, mask paths.",
-        shortDescriptionZh: "macOS：限制文件写入、断开网络、屏蔽路径。",
-        icon: shield(
-          '<path d="M8.6 15.4l6.8-6.8" /><rect x="10.4" y="10.4" width="3.2" height="3.2" rx="0.6" />',
-        ),
-        authors: ["PenguinHarness"],
-        license: "MIT",
-        repository: "https://github.com/prismshadow/penguin-harness",
-        keywords: ["macos", "sandbox"],
-        categories: ["sandbox"],
-        updatedAt: Math.floor(ago(19) / 1000),
-      },
-      {
-        name: "@penguinharness/messaging-feishu",
-        version: "0.2.12",
-        description: "Relays a Session to a Feishu bot.",
-        authors: ["PenguinHarness"],
-        license: "MIT",
-        keywords: ["messaging", "feishu"],
-        categories: ["messaging"],
-        updatedAt: Math.floor(ago(40) / 1000),
-      },
-    ],
-    failures: [],
-    pending: [],
-  };
+  const pluginIndex: PluginIndexEntry[] = [
+    {
+      name: "@penguinharness/sandbox-bwrap",
+      version: "0.2.13",
+      description: "Confines agent commands with bubblewrap on Linux.",
+      descriptionZh: "在 Linux 上用 bubblewrap 封禁 Agent 的命令。",
+      shortDescription: "Linux: confine file writes, cut the network, mask paths.",
+      shortDescriptionZh: "Linux：限制文件写入、断开网络、屏蔽路径。",
+      icon: shield(
+        '<circle cx="10.4" cy="10.3" r="1.7" /><circle cx="14.2" cy="12.3" r="1.1" /><circle cx="11.3" cy="14.9" r="0.8" />',
+      ),
+      authors: ["PenguinHarness"],
+      license: "MIT",
+      repository: "https://github.com/prismshadow/penguin-harness",
+      keywords: ["linux", "sandbox"],
+      categories: ["sandbox"],
+      updatedAt: Math.floor(ago(19) / 1000),
+    },
+    {
+      name: "@penguinharness/sandbox-seatbelt",
+      version: "0.2.13",
+      description: "Confines agent commands with Seatbelt on macOS.",
+      descriptionZh: "在 macOS 上用 Seatbelt 封禁 Agent 的命令。",
+      shortDescription: "macOS: confine file writes, cut the network, mask paths.",
+      shortDescriptionZh: "macOS：限制文件写入、断开网络、屏蔽路径。",
+      icon: shield(
+        '<path d="M8.6 15.4l6.8-6.8" /><rect x="10.4" y="10.4" width="3.2" height="3.2" rx="0.6" />',
+      ),
+      authors: ["PenguinHarness"],
+      license: "MIT",
+      repository: "https://github.com/prismshadow/penguin-harness",
+      keywords: ["macos", "sandbox"],
+      categories: ["sandbox"],
+      updatedAt: Math.floor(ago(19) / 1000),
+    },
+    {
+      name: "@penguinharness/messaging-feishu",
+      version: "0.2.12",
+      description: "Relays a Session to a Feishu bot.",
+      authors: ["PenguinHarness"],
+      license: "MIT",
+      keywords: ["messaging", "feishu"],
+      categories: ["messaging"],
+      updatedAt: Math.floor(ago(40) / 1000),
+    },
+  ];
   const readmes: Record<string, string> = {
     "@penguinharness/sandbox-bwrap":
       '# sandbox-bwrap\n\nRuns every agent command inside a bubblewrap namespace: the Workspace is writable, the rest of the filesystem read-only, and the network follows the Session\'s sandbox level.\n\n```toml\n[plugins]\nsandbox-bwrap = "@penguinharness/sandbox-bwrap"\n```\n',

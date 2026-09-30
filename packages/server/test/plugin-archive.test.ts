@@ -45,14 +45,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import type {
   InstalledPluginsResponse,
   PluginLibraryResponse,
-  PluginIndexResponse,
+  PluginIndexEntry,
 } from "../src/api/types.js";
 import {
   installPluginFiles,
   PluginInstallError,
   type InstalledPackage,
 } from "../src/plugin/install.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { integrityOf, writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -232,8 +232,8 @@ describe("plugin import and export", () => {
     expect(await projectConfig()).toContain(`[plugins.${body.machineId}]\n"@acme/sandbox-x"`);
     // The registry lists it from its own package — its npm fields, then its `penguin` block — so
     // its card and its export have a row.
-    const index = (await (await admin.get("/api/plugins/registry")).json()) as PluginIndexResponse;
-    expect(index.plugins.find((e) => e.name === "@acme/sandbox-x")).toMatchObject({
+    const index = (await (await admin.get("/api/plugins/registry")).json()) as PluginIndexEntry[];
+    expect(index.find((e) => e.name === "@acme/sandbox-x")).toMatchObject({
       version: "0.3.0",
       description: "A sandbox.",
       shortDescription: "Sandbox X.",
@@ -462,6 +462,7 @@ describe("plugin import and export", () => {
         name: "@acme/sandbox-x",
         module: "ShippedX",
       });
+      await writeShippedIndex(prefix);
       const impostor = await modulePackage();
 
       // A zip under its name is refused before anything installs.
@@ -502,50 +503,72 @@ describe("plugin import and export", () => {
 
   it("installs a registry name or an https link, and refuses anything else before npm runs", async () => {
     const admin = await boot();
-    const post = (specifier: string, machineId?: string) =>
-      admin.post("/api/projects/default_project/plugins/installed", {
-        specifier,
-        ...(machineId === undefined ? {} : { machineId }),
-      });
-    for (const bad of [
-      "",
-      "Has Spaces",
-      "../evil",
-      "/srv/plugin",
-      "file:../plugin",
-      "foo@file:x.tgz",
-      "foo@npm:bar",
-      "http://example.com/x.tgz",
-      "git+ssh://git@github.com/acme/notes.git",
-      "https://user:secret@example.com/x.tgz",
-      // A folder or a file inside a repository: npm installs a whole repository or nothing.
-      "https://github.com/acme/plugins/tree/main/plugins/notes",
-      "https://github.com/acme/plugins/blob/main/plugins/notes/README.md",
-    ]) {
-      const res = await post(bad);
-      expect(res.status, bad).toBe(400);
-      expect(await res.json()).toMatchObject({ error: { code: "bad_request" } });
-    }
-    const folder = await post("https://github.com/acme/plugins/tree/main/plugins/notes");
-    expect(((await folder.json()) as { error: { message: string } }).error.message).toContain(
-      "a folder or a file inside a repository",
-    );
-    expect(npm.calls).toEqual([]);
+    const programEntry = process.argv[1];
+    const indexOnlyPrefix = path.join(t.root, "install", "plugins");
+    process.argv[1] = path.join(t.root, "install", "bin", "server.js");
+    try {
+      // A build may list a registry package without carrying it; its SRI gates the download.
+      await fs.mkdir(indexOnlyPrefix, { recursive: true });
+      await fs.writeFile(
+        path.join(indexOnlyPrefix, "index.json"),
+        JSON.stringify([
+          {
+            name: "@acme/notes",
+            version: "1.0.0",
+            description: "Take notes.",
+            authors: [],
+            license: "MIT",
+            integrity: integrityOf("@acme/notes", "1.0.0", "archive-registry-fixture"),
+          },
+        ]),
+      );
+      const post = (specifier: string, machineId?: string) =>
+        admin.post("/api/projects/default_project/plugins/installed", {
+          specifier,
+          ...(machineId === undefined ? {} : { machineId }),
+        });
+      for (const bad of [
+        "",
+        "Has Spaces",
+        "../evil",
+        "/srv/plugin",
+        "file:../plugin",
+        "foo@file:x.tgz",
+        "foo@npm:bar",
+        "http://example.com/x.tgz",
+        "git+ssh://git@github.com/acme/notes.git",
+        "https://user:secret@example.com/x.tgz",
+        // A folder or a file inside a repository: npm installs a whole repository or nothing.
+        "https://github.com/acme/plugins/tree/main/plugins/notes",
+        "https://github.com/acme/plugins/blob/main/plugins/notes/README.md",
+      ]) {
+        const res = await post(bad);
+        expect(res.status, bad).toBe(400);
+        expect(await res.json()).toMatchObject({ error: { code: "bad_request" } });
+      }
+      const folder = await post("https://github.com/acme/plugins/tree/main/plugins/notes");
+      expect(((await folder.json()) as { error: { message: string } }).error.message).toContain(
+        "a folder or a file inside a repository",
+      );
+      expect(npm.calls).toEqual([]);
 
-    for (const good of [
-      "@acme/notes@^1.0.0",
-      "https://github.com/acme/notes",
-      "git+https://github.com/acme/notes.git",
-      "github:acme/notes#v1.0.0",
-      "https://example.com/notes-1.0.0.tgz",
-    ]) {
-      npm.links.set(good, notesPackage());
-      expect((await post(good)).status, good).toBe(200);
+      for (const good of [
+        "@acme/notes@^1.0.0",
+        "https://github.com/acme/notes",
+        "git+https://github.com/acme/notes.git",
+        "github:acme/notes#v1.0.0",
+        "https://example.com/notes-1.0.0.tgz",
+      ]) {
+        npm.links.set(good.startsWith("@") ? "@acme/notes@1.0.0" : good, notesPackage());
+        expect((await post(good)).status, good).toBe(200);
+      }
+      expect(npm.calls).toHaveLength(5);
+      // A link installs here only: another machine handed it would install whatever its own npm
+      // resolves the package's name to.
+      expect((await post("https://github.com/acme/notes", "Other00000000000")).status).toBe(400);
+    } finally {
+      if (programEntry !== undefined) process.argv[1] = programEntry;
     }
-    expect(npm.calls).toHaveLength(5);
-    // A link installs here only: another machine handed it would install whatever its own npm
-    // resolves the package's name to.
-    expect((await post("https://github.com/acme/notes", "Other00000000000")).status).toBe(400);
   });
 
   it("exports a plugin as a zip that imports back as it was", async () => {

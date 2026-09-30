@@ -298,7 +298,7 @@ export function PluginCard(props: PluginCardProps) {
       ];
       for (const install of verbs) {
         const cannotInstall =
-          install && !mod.shipped && mod.entry?.installable === false
+          install && !mod.shipped && mod.entry !== undefined && mod.entry.integrity === undefined
             ? S.plugins.cannotInstallHere
             : null;
         const label = install
@@ -397,20 +397,6 @@ export function PluginCard(props: PluginCardProps) {
     tags.push(
       <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
         {S.plugins.installedOnServer}
-      </PluginTag>,
-    );
-  }
-  if (row.module?.entry?.sources.includes("store")) {
-    tags.push(
-      <PluginTag key="source-store" title={S.plugins.sourceStoreHint}>
-        {S.plugins.sourceStore}
-      </PluginTag>,
-    );
-  }
-  if (row.module?.entry?.sources.includes("index")) {
-    tags.push(
-      <PluginTag key="source-index" title={S.plugins.sourceIndexHint}>
-        {S.plugins.sourceIndex}
       </PluginTag>,
     );
   }

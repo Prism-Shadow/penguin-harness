@@ -25,12 +25,10 @@
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  *
- * The registry merges three sources into one catalogue: the index the running build carries,
- * this machine's plugin store, and the one published by the index repository — each row one
- * content, tagged with every source that lists it and whether this machine can install it.
- * The published document is cached, a failure to reach it is reported alongside the entries
- * rather than emptying the page, and a listing waits for it only briefly before answering
- * without it — see plugin/registry.ts for these rules.
+ * The registry merges three sources into one flat array of index entries: the index the
+ * running build carries, this machine's plugin store, and the one published by the index
+ * repository — one entry per content. The published document is cached, and a source that
+ * cannot be read shortens the listing rather than emptying it — see plugin/registry.ts.
  */
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
@@ -56,7 +54,6 @@ import type {
   AgentPluginsInstallResponse,
   PluginFilesResponse,
   PluginIndexEntry,
-  PluginIndexResponse,
   PluginLibraryResponse,
   PluginReadmeResponse,
 } from "../../api/types.js";
@@ -77,7 +74,6 @@ import {
   mergeIndexes,
   withoutIcon,
   NIGHTLY_INDEX_URL,
-  SOURCE_WAIT_MS,
   storePluginRegistry,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
@@ -369,25 +365,15 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   const bases = options.bases ?? (() => []);
   const prefix = options.prefix ?? (() => null);
 
-  /**
-   * Every entry this deployment lists: the indexes' and the prefix's own server modules. A source
-   * still being read is not waited for past SOURCE_WAIT_MS — the shipped entries list without it,
-   * and its own join on a later read, once the cache has them.
-   */
+  /** Every entry this deployment lists: the indexes' and the prefix's own server modules. */
   const listing = async () => {
-    const { entries, failures, pending } = await mergeIndexes(registries, {
-      waitMs: SOURCE_WAIT_MS,
-    });
+    const entries = await mergeIndexes(registries);
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
-    return {
-      entries: [...entries, ...own.map((entry) => ({ ...entry, sources: [], installable: false }))],
-      failures,
-      pending,
-    };
+    return [...entries, ...own];
   };
 
   app.get("/", async (c) => {
-    const { entries, failures, pending } = await listing();
+    const entries = await listing();
     // A package on this machine describes itself: its own package.json `penguin` block and icon
     // win over what an index row says, so an installed package's card shows its icon and both
     // languages even where its index row carries neither.
@@ -395,7 +381,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     const plugins = await Promise.all(
       entries.map(async (entry) => ({ ...entry, ...(await localPluginDisplay(entry.name, here)) })),
     );
-    const body: PluginIndexResponse = { plugins, failures, pending };
+    const body: PluginIndexEntry[] = plugins;
     return c.json(body);
   });
   app.get("/readme", async (c) => {
@@ -406,7 +392,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     // Only entries this deployment actually lists, by a package name (an index row's name is
     // not trusted to be one): answering for anything else would make the endpoint a probe of
     // what exists, or of what a path above a prefix holds.
-    const { entries } = await listing();
+    const entries = await listing();
     if (!PACKAGE_NAME.test(name) || !entries.some((e) => e.name === name)) {
       return c.json({ error: { code: "not_found", message: "no such plugin" } }, 404);
     }
@@ -429,7 +415,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     if (name === undefined || name === "") {
       throw new HttpError(400, "bad_request", "name is required");
     }
-    const { entries } = await listing();
+    const entries = await listing();
     if (!PACKAGE_NAME.test(name) || !entries.some((e) => e.name === name)) {
       throw new HttpError(404, "not_found", "no such plugin");
     }
@@ -454,7 +440,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   return app;
 }
 
-/** The catalogue's sources, in precedence order: the build, the store, the published index. */
+/** The index's sources, in precedence order: the build, the store, the published index. */
 export function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   const local = [
     builtinPluginRegistry(options.bases, options.assetsDir),

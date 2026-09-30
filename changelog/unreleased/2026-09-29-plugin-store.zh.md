@@ -38,16 +38,16 @@
 - App 在新的一代上启动失败时，`current` 翻回上一代；失败的那一代留在磁盘上。
 - 链接进来的插件从仓条目运行。插件包自己解析不到 `@prismshadow/penguin-core` 时（插件 bundle 可以把它留作外部依赖，discord-bot 就是这样），改从正在运行的程序解析，经一个 `module.registerHooks` 的 resolve hook 实现。此前只有从安装目录旁加载的插件能找到程序的那一份，随热推送到达的找不到。
 
-## 索引与插件目录
+## 索引
 
 - server 原来手写内嵌的索引（`builtin-index.json`）已删除。`scripts/build-plugins.mjs` 把它打出的每个包排成仓条目，并从这棵树重建 `index.json`、放进发布的 prefix，索引随构建走：在推送的 `plugins/` 里、在桌面构建里、在发行版安装里。从源码运行的 server 不带 prefix，不列内置条目。
-- 条目的元数据取自包自己的 package.json。`plugins/` 下的代码插件声明 `author` 与顶层 `categories`，目录按它分组。
-- `GET /api/plugins/registry` 把构建的索引、本机插件仓与发布的索引合成一张表。每行是一份内容，带 `sources`（`builtin`、`store`、`index`）与 `installable`。没有 integrity 的行照列但不可安装，yanked 的条目不列。
-- 插件页给本机已有、已发布的行打标签；此处无法安装的行说明原因并禁用「安装」。
+- 条目的元数据取自包自己的 package.json。`plugins/` 下的代码插件声明 `author` 与顶层 `categories`，插件页按它分组。
+- `GET /api/plugins/registry` 返回一个扁平的索引条目数组，按构建的索引、本机插件仓、发布的索引依次合并：每份内容一个条目，保留第一个来源的，yanked 的条目不列。响应不再带 `failures`：读不到的来源记入服务端日志，只让列表变短。
+- 没有 integrity 的条目照列但不可安装，插件页上它那一行说明原因并禁用「安装」。某个来源无法访问时，插件页不再显示提示。
 
 ## 安装与移除
 
-- 安装本机没有的包时，取该请求对应的目录行——钉住的内容，或范围所允许的最高版本——按那个确切版本现取，入仓前比对 integrity。不一致返回 `400 plugin_integrity_mismatch` 并写明期望值与实际值，临时目录丢弃。没有任何来源列出的名称、或只以无 integrity 的条目列出的名称，返回 `400 plugin_not_installable`。
+- 安装本机没有的包时，取该请求对应的索引条目——钉住的内容，或范围所允许的最高版本——按那个确切版本现取，入仓前比对 integrity。不一致返回 `400 plugin_integrity_mismatch` 并写明期望值与实际值，临时目录丢弃。没有任何来源列出的名称、或只以无 integrity 的条目列出的名称，返回 `400 plugin_not_installable`。
 - `POST …/plugins/installed` 接受 `integrity` 并写入钉住。
 - 移除插件不再跑 `npm uninstall`：下一代不包含它，它在仓里的条目保留到被清扫为止。
 

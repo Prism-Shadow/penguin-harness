@@ -61,7 +61,7 @@ import type {
   InstalledPlugin,
   InstalledPluginsResponse,
   PluginInstallOutcome,
-  PluginCatalogueEntry,
+  PluginIndexEntry,
   UnsatisfiedPlugin,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
@@ -96,7 +96,7 @@ import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginIntegrityMismatch, PluginStoreError, readStore } from "../../plugin/store.js";
 import { satisfies } from "../../plugin/activation.js";
-import { INTEGRITY, mergeIndexes, pickCatalogueEntry } from "../../plugin/registry.js";
+import { INTEGRITY, mergeIndexes, pickIndexEntry } from "../../plugin/registry.js";
 import { resolveRegistries } from "./plugins.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
@@ -109,8 +109,8 @@ export interface InstalledPluginsDeps {
   machineId: string;
   /** The current version's assets, where the builtin plugins a push carried live. */
   assetsDir: () => string | null;
-  /** The plugin catalogue (plugin/registry.ts mergeIndexes): what a download is chosen from. */
-  catalogue: () => Promise<PluginCatalogueEntry[]>;
+  /** The merged plugin index (plugin/registry.ts mergeIndexes): what a download is chosen from. */
+  index: () => Promise<PluginIndexEntry[]>;
   /** What the process's plugin host holds, by specifier, and what it could not load, with why. */
   running: () => {
     loaded: ReadonlySet<string>;
@@ -222,7 +222,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
     return {
       plugins,
-      // What the build ships, asked for or not: the catalogue marks these rows "built in",
+      // What the build ships, asked for or not: the Plugins page marks these rows "built in",
       // and asking for one is a list edit rather than a download.
       shipped: await shippedPlugins(deps.assetsDir()),
       file: PLUGINS_FILE,
@@ -473,7 +473,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
     let installed: InstalledPackage | null = null;
     if (runsHere && !onMachine) {
-      const pick = pickCatalogueEntry(await deps.catalogue(), source.name, {
+      const pick = pickIndexEntry(await deps.index(), source.name, {
         version: source.version,
         integrity,
       });
@@ -625,7 +625,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         id: "InstalledPluginRoutes.routes",
         prefix: "/api/projects/:projectId/plugins/installed",
         auth: "user",
-        // Ahead of the catalogue group, whose "/" would otherwise answer here.
+        // Ahead of the registry group, whose "/" would otherwise answer here.
         order: 60,
       },
     ],
@@ -655,7 +655,7 @@ export class InstalledPluginRoutes {
       root,
       machineId: new MachinesRepo(this.db as unknown as DatabaseSync).ownId(),
       assetsDir: () => hmr.assetsDir(),
-      catalogue: async () => (await mergeIndexes(registries)).entries,
+      index: () => mergeIndexes(registries),
       // Claimed per call rather than captured: the host belongs to the process, and a hot
       // swap hands the same one to the next platform.
       running: () => {

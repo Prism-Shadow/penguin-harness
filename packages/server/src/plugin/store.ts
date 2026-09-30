@@ -39,7 +39,7 @@
  * loads from the current generation under `<root>/plugins/`, whose `node_modules/<name>` links
  * to an entry's `package/` (plugin/activation.ts). Its own `index.json` is rebuilt
  * from the tree after every write, in the index repository's shape — the machine's local
- * source for the plugin catalogue.
+ * source for the merged plugin index.
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs";

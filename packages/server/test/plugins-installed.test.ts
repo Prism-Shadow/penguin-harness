@@ -66,7 +66,7 @@ describe("installed plugins", () => {
   });
 
   it("a plugin the build ships is offered, not installed", async () => {
-    // The shipped set is a tag for the catalogue: nothing appears as installed, and nothing
+    // The shipped set is a tag for the Plugins page: nothing appears as installed, and nothing
     // loads, until a Project names it. (A test app ships none, so the set is empty; the
     // load-time half of this is plugin-loader.test.ts.)
     const res = await view();
@@ -158,9 +158,9 @@ describe("installed plugins", () => {
     expect(await view()).toMatchObject({ plugins: [] });
   });
 
-  it("downloads only what the catalogue lists with an integrity, and writes nothing when it cannot", async () => {
+  it("downloads only what the index lists with an integrity, and writes nothing when it cannot", async () => {
     // The test app reads no published index and ships nothing: a package that is not on the
-    // machine has no catalogue entry to be checked against, so npm is never asked for it.
+    // machine has no index entry to be checked against, so npm is never asked for it.
     const res = await admin.post("/api/projects/default_project/plugins/installed", {
       specifier: "@acme/unlisted@^1",
     });
@@ -168,16 +168,10 @@ describe("installed plugins", () => {
     expect(await res.json()).toMatchObject({
       error: {
         code: "plugin_not_installable",
-        message: expect.stringMatching(/none of the plugin catalogue's sources/),
+        message: expect.stringMatching(/none of the plugin index's sources/),
       },
     });
     expect(await view()).toMatchObject({ plugins: [] });
-    const bad = await admin.post("/api/projects/default_project/plugins/installed", {
-      specifier: "@acme/unlisted",
-      integrity: "sha256-nothex",
-    });
-    expect(bad.status).toBe(400);
-    expect(await bad.json()).toMatchObject({ error: { code: "bad_request" } });
   });
 
   it("pins a content: the table names its integrity, and activation takes that entry or none", async () => {

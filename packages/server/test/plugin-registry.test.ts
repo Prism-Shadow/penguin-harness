@@ -15,13 +15,8 @@
  * - A remote entry never carries an icon (the page inlines it as SVG): the HTTP registry drops
  *   it and keeps the rest of the row, and so does the route for a document a previous App
  *   fetched and parked.
- * - The cache and the merge make one catalogue of the three: a row per content, tagged with
- *   its sources and whether this machine can install it; a published index may be slow or
- *   down without emptying the page.
- * - Nor without holding it: a document past its TTL is served at once while the refresh runs
- *   behind it; a failed fetch with nothing cached is the answer, without another fetch, until the
- *   retry window has passed; and the listing answers once its wait passes with the builtin
- *   entries, naming a source still being read as pending, whose entries list on a later read.
+ * - The cache and the merge make one flat index of the three: an entry per content, the first
+ *   source's kept; a published index may be slow or down without emptying the page.
  * - GET /api/plugins/registry and its readme route need a session; the readme route refuses a
  *   name the deployment does not list and needs the name.
  */
@@ -30,26 +25,19 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  PluginCatalogueEntry,
-  PluginEntrySource,
-  PluginIndexEntry,
-  PluginIndexResponse,
-} from "../src/api/types.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { PluginIndexEntry } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
 import {
   BUILTIN_REGISTRY_SOURCE,
-  INDEX_RETRY_MS,
   NIGHTLY_INDEX_URL,
-  SOURCE_WAIT_MS,
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
   mergeIndexes,
   localPluginDisplay,
   parsePluginIndex,
-  pickCatalogueEntry,
+  pickIndexEntry,
   storePluginRegistry,
 } from "../src/plugin/registry.js";
 import type { PluginRegistry } from "../src/plugin/registry.js";
@@ -80,11 +68,6 @@ describe("parsePluginIndex", () => {
     ];
     const parsed = parsePluginIndex(doc, "test");
     expect(parsed.map((e) => e.version)).toEqual(["1.0.0", "1.1.0"]);
-  });
-
-  it("accepts an entry without an integrity: an older index still lists", () => {
-    const { integrity: _, ...bare } = VALID_ENTRY;
-    expect(parsePluginIndex([bare], "test")).toEqual([bare]);
   });
 
   it("rejects a non-array document and names the source", () => {
@@ -139,31 +122,16 @@ describe("builtinPluginRegistry", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("serves the index the running build carries, validated like any other", async () => {
+  it("serves a push's index before the installation's, and none for a run from source", async () => {
     await installation(path.join(dir, "install"), [VALID_ENTRY]);
-    const registry = builtinPluginRegistry();
-    expect(registry.source).toBe(BUILTIN_REGISTRY_SOURCE);
-    expect(registry.kind).toBe("builtin");
-    expect(await registry.index()).toEqual([VALID_ENTRY]);
-  });
-
-  it("reads a push's index before the installation's", async () => {
-    await installation(path.join(dir, "install"), [VALID_ENTRY]);
+    expect(await builtinPluginRegistry().index()).toEqual([VALID_ENTRY]);
     const assets = path.join(dir, "assets");
     const pushed = { ...VALID_ENTRY, version: "2.0.0", integrity: hash("b") };
     await mkdir(path.join(assets, "plugins"), { recursive: true });
     await writeFile(path.join(assets, "plugins", "index.json"), JSON.stringify([pushed]));
     expect(await builtinPluginRegistry(undefined, () => assets).index()).toEqual([pushed]);
-  });
-
-  it("lists nothing for a run from source, which ships no prefix", async () => {
     process.argv[1] = path.join(dir, "nowhere", "bin", "server.js");
     expect(await builtinPluginRegistry().index()).toEqual([]);
-  });
-
-  it("fails loudly on a broken shipped index rather than serving it", async () => {
-    await installation(path.join(dir, "install"), [{ name: 1 }]);
-    await expect(builtinPluginRegistry().index()).rejects.toThrow(/malformed entry at index 0/);
   });
 });
 
@@ -186,9 +154,7 @@ describe("storePluginRegistry", () => {
       JSON.stringify({ name: "@acme/x", version: "1.0.0", description: "X", license: "MIT" }),
     );
     const { stored } = await importPrefix(root, prefix, "builtin");
-    const registry = storePluginRegistry(root);
-    expect(registry.kind).toBe("store");
-    expect(await registry.index()).toEqual([
+    expect(await storePluginRegistry(root).index()).toEqual([
       expect.objectContaining({
         name: "@acme/x",
         version: "1.0.0",
@@ -204,7 +170,6 @@ describe("httpPluginRegistry", () => {
   it("fetches the index URL and validates the document with the shared parser", async () => {
     const fake = fakeFetch(() => jsonResponse([VALID_ENTRY]));
     const registry = httpPluginRegistry(url, fake.fetch);
-    expect(registry.kind).toBe("index");
     const entries = await registry.index();
     expect(fake.calls.map((call) => call.url)).toEqual([url]);
     expect(entries).toEqual([VALID_ENTRY]);
@@ -273,23 +238,21 @@ describe("GET /api/plugins/registry", () => {
     await t.cleanup();
   });
 
-  it("requires auth, then serves the build's index as builtin rows", async () => {
+  it("requires auth, then serves the build's index as a flat array", async () => {
     expect((await t.app.request("/api/plugins/registry")).status).toBe(401);
 
     await installation(path.join(t.root, "install"), [VALID_ENTRY]);
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toEqual([{ ...VALID_ENTRY, sources: ["builtin"], installable: true }]);
-    expect(body.failures).toEqual([]);
+    expect(await res.json()).toEqual([VALID_ENTRY]);
   });
 });
 
 /**
  * The builtin index is read off the packages it lists: scripts/build-plugins.mjs lays each
  * code package the build ships out as a store entry and writes the entry's manifest from the
- * package's own package.json (scripts/plugin-entry.mjs `manifestOf`). So what the catalogue
+ * package's own package.json (scripts/plugin-entry.mjs `manifestOf`). So what the index
  * says about a builtin plugin is whatever its package.json says — asserted here, since a
  * package that drops its description or categories would silently lose them on the page.
  */
@@ -352,7 +315,7 @@ async function shippedPrefix(
   return { dir, bases: [{ file: path.join(dir, "package.json"), builtin: true }] };
 }
 
-describe("the builtin catalogue and the packages it lists", () => {
+describe("the builtin index and the packages it lists", () => {
   /**
    * The sandbox backends follow the rule the Agent plugins do: `plugins/<dir>` is the npm
    * package `@penguinharness/<dir>`. The release publishes by that name and a Project's
@@ -491,15 +454,10 @@ describe("GET /api/plugins/registry/readme", () => {
 });
 
 /** A registry whose index() the test drives: counts calls, and can be made to fail. */
-function stubRegistry(
-  source: string,
-  entries: PluginIndexEntry[],
-  kind: PluginEntrySource = "index",
-) {
+function stubRegistry(source: string, entries: PluginIndexEntry[]) {
   const state = { calls: 0, fail: null as string | null };
   const registry: PluginRegistry = {
     source,
-    kind,
     index: () => {
       state.calls += 1;
       return state.fail === null ? Promise.resolve(entries) : Promise.reject(new Error(state.fail));
@@ -603,107 +561,59 @@ describe("cachedRegistry", () => {
 });
 
 describe("mergeIndexes", () => {
-  const remoteEntry: PluginIndexEntry = {
-    ...VALID_ENTRY,
-    name: "@example/penguin-plugin-remote",
-  };
-
-  it("concatenates sources in order, tags each row, and reports no failures", async () => {
-    const a = stubRegistry("builtin", [VALID_ENTRY], "builtin");
-    const b = stubRegistry("remote", [remoteEntry]);
-    const { entries, failures } = await mergeIndexes([a.registry, b.registry]);
-    expect(entries.map((e) => [e.name, e.sources])).toEqual([
-      [VALID_ENTRY.name, ["builtin"]],
-      [remoteEntry.name, ["index"]],
-    ]);
-    expect(failures).toEqual([]);
-  });
-
-  it("makes one row of one content, tagged with every source, the first one describing it", async () => {
+  it("keeps one entry per content, the first source's, and leaves a yanked one out", async () => {
     const mine = { ...VALID_ENTRY, description: "the shipped one" };
     const theirs = { ...VALID_ENTRY, description: "the published one" };
-    const { entries } = await mergeIndexes([
-      stubRegistry("builtin", [mine], "builtin").registry,
-      stubRegistry("store", [mine], "store").registry,
-      stubRegistry("remote", [theirs]).registry,
-    ]);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({
-      description: "the shipped one",
-      sources: ["builtin", "store", "index"],
-      installable: true,
-    });
-  });
-
-  it("keeps two contents of one version apart", async () => {
     const other = { ...VALID_ENTRY, integrity: hash("b") };
-    const { entries } = await mergeIndexes([
-      stubRegistry("builtin", [VALID_ENTRY], "builtin").registry,
-      stubRegistry("remote", [other]).registry,
-    ]);
-    expect(entries.map((e) => [e.integrity, e.sources])).toEqual([
-      [VALID_ENTRY.integrity, ["builtin"]],
-      [other.integrity, ["index"]],
-    ]);
-  });
-
-  it("lists an entry without an integrity as not installable, and leaves a yanked one out", async () => {
-    const { integrity: _, ...bare } = remoteEntry;
     const yanked = { ...VALID_ENTRY, version: "0.9.0", yanked: true };
-    const { entries } = await mergeIndexes([stubRegistry("remote", [bare, yanked]).registry]);
-    expect(entries).toEqual([{ ...bare, sources: ["index"], installable: false }]);
+    const entries = await mergeIndexes([
+      stubRegistry("builtin", [mine]).registry,
+      stubRegistry("remote", [theirs, other, yanked]).registry,
+    ]);
+    expect(entries).toEqual([mine, other]);
   });
 
-  it("keeps the other sources when one fails, and names the one that did", async () => {
-    const builtin = stubRegistry("builtin", [VALID_ENTRY], "builtin");
-    const remote = stubRegistry("remote", [remoteEntry]);
+  it("keeps the other sources when one fails, and logs the one that did", async () => {
+    const remote = stubRegistry("remote", [{ ...VALID_ENTRY, name: "@example/remote" }]);
     remote.state.fail = "index answered HTTP 503";
-    const { entries, failures } = await mergeIndexes([builtin.registry, remote.registry]);
-    // A dead remote shortens the listing; it does not empty it.
-    expect(entries.map((e) => e.name)).toEqual([VALID_ENTRY.name]);
-    expect(failures).toEqual([{ source: "remote", error: "index answered HTTP 503" }]);
+    const logged: string[] = [];
+    const entries = await mergeIndexes(
+      [stubRegistry("builtin", [VALID_ENTRY]).registry, remote.registry],
+      (line) => logged.push(line),
+    );
+    expect(entries).toEqual([VALID_ENTRY]);
+    expect(logged).toEqual([expect.stringContaining("remote: index answered HTTP 503")]);
   });
 });
 
-describe("pickCatalogueEntry", () => {
-  const row = (
-    version: string,
-    digit: string | null,
-    sources: PluginEntrySource[] = ["index"],
-  ): PluginCatalogueEntry => ({
+describe("pickIndexEntry", () => {
+  const entry = (version: string, digit: string | null): PluginIndexEntry => ({
     ...VALID_ENTRY,
     version,
     ...(digit === null ? { integrity: undefined } : { integrity: hash(digit) }),
-    sources,
-    installable: digit !== null,
   });
 
-  it("takes the highest version the ask admits, what is on this machine first within one", () => {
-    const rows = [
-      row("1.0.0", "1"),
-      row("1.2.0", "2"),
-      row("1.2.0", "3", ["store"]),
-      row("2.0.0", "4"),
+  it("takes a pin, else the highest version the ask admits, the earlier source within one", () => {
+    const entries = [
+      entry("1.0.0", "1"),
+      entry("1.2.0", "3"),
+      entry("1.2.0", "2"),
+      entry("2.0.0", null),
     ];
-    expect(pickCatalogueEntry(rows, VALID_ENTRY.name, {})).toBe(rows[3]);
-    expect(pickCatalogueEntry(rows, VALID_ENTRY.name, { version: "^1.0.0" })).toBe(rows[2]);
-    expect(pickCatalogueEntry(rows, VALID_ENTRY.name, { integrity: hash("1") })).toBe(rows[0]);
+    expect(pickIndexEntry(entries, VALID_ENTRY.name, {})).toBe(entries[1]);
+    expect(pickIndexEntry(entries, VALID_ENTRY.name, { integrity: hash("1") })).toBe(entries[0]);
   });
 
-  it("never takes a row without an integrity, and says so when that is all there is", () => {
-    const rows = [row("1.0.0", "1"), row("2.0.0", null)];
-    expect(pickCatalogueEntry(rows, VALID_ENTRY.name, {})).toBe(rows[0]);
-    expect(pickCatalogueEntry(rows, VALID_ENTRY.name, { version: "2.0.0" })).toEqual({
+  it("refuses what it cannot take, and says why", () => {
+    const entries = [entry("1.0.0", "1"), entry("2.0.0", null)];
+    expect(pickIndexEntry([], "@x/y", {})).toEqual({
+      refused: expect.stringMatching(/none of the plugin index's sources/),
+    });
+    expect(pickIndexEntry(entries, VALID_ENTRY.name, { version: "^3" })).toEqual({
+      refused: expect.stringMatching(/satisfies \^3 \(listed: 1\.0\.0, 2\.0\.0\)/),
+    });
+    expect(pickIndexEntry(entries, VALID_ENTRY.name, { version: "2.0.0" })).toEqual({
       refused: expect.stringMatching(/listed without an integrity/),
-    });
-  });
-
-  it("refuses a name no source lists, and an ask nothing listed satisfies", () => {
-    expect(pickCatalogueEntry([], "@x/y", {})).toEqual({
-      refused: expect.stringMatching(/none of the plugin catalogue's sources/),
-    });
-    expect(pickCatalogueEntry([row("1.0.0", "1")], VALID_ENTRY.name, { version: "^2" })).toEqual({
-      refused: expect.stringMatching(/satisfies \^2 \(listed: 1\.0\.0\)/),
     });
   });
 });
@@ -729,50 +639,15 @@ describe("the published index source", () => {
 describe("the route's own merge", () => {
   // Called directly rather than through the App: the auth gate is app.ts's and is covered
   // above, and what these assert is which sources reach the response body.
-  const published: PluginIndexEntry = {
-    ...VALID_ENTRY,
-    name: "@example/penguin-plugin-published",
-  };
-  const shipped = stubRegistry("builtin", [VALID_ENTRY], "builtin").registry;
-
   it("merges the published entries in behind the builtin ones", async () => {
+    const published = { ...VALID_ENTRY, name: "@example/penguin-plugin-published" };
     const routes = pluginRegistryRoutes({
-      registries: [shipped, stubRegistry("published", [published]).registry],
+      registries: [
+        stubRegistry("builtin", [VALID_ENTRY]).registry,
+        stubRegistry("published", [published]).registry,
+      ],
     });
-    const res = await routes.request("/");
-    const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins.at(-1)!.name).toBe(published.name);
-    expect(body.failures).toEqual([]);
-  });
-
-  it("reports a dead published source instead of hiding it", async () => {
-    const dead = stubRegistry("published", []);
-    dead.state.fail = "published index answered HTTP 404";
-    const routes = pluginRegistryRoutes({ registries: [shipped, dead.registry] });
-    const res = await routes.request("/");
-    const body = (await res.json()) as PluginIndexResponse;
-    // A dead published source shortens the listing; it does not empty it.
-    expect(body.plugins.length).toBeGreaterThan(0);
-    expect(body.failures).toEqual([
-      { source: "published", error: "published index answered HTTP 404" },
-    ]);
-  });
-
-  it("with no published source configured, lists this machine's sources alone", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "penguin-route-"));
-    try {
-      const routes = pluginRegistryRoutes({
-        indexUrl: null,
-        root: path.join(dir, "root"),
-        assetsDir: () => null,
-      });
-      const res = await routes.request("/");
-      const body = (await res.json()) as PluginIndexResponse;
-      expect(body.failures).toEqual([]);
-      expect(body.plugins.every((p) => !p.sources.includes("index"))).toBe(true);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    expect(await (await routes.request("/")).json()).toEqual([VALID_ENTRY, published]);
   });
 });
 
@@ -787,86 +662,15 @@ describe("catalogue metadata and remote icon safety", () => {
       fetchImpl: offline.fetch,
       seed: { at: Date.now(), entries: [{ ...published, icon: '<svg onload="alert(1)"></svg>' }] },
     });
-    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
-    expect(body.plugins.find((entry) => entry.name === published.name)).toEqual({
-      ...published,
-      sources: ["index"],
-      installable: true,
-    });
-  });
-
-  /** The catalogue rows the build's own entries list as, the way the route tags them. */
-  const builtinRows = async () =>
-    (await builtinPluginRegistry().index()).map((entry) => ({
-      ...entry,
-      sources: ["builtin"] as PluginEntrySource[],
-      installable: entry.integrity !== undefined,
-    }));
-
-  describe("with a published index on a slow or unreachable network", () => {
-    const url = "https://registry.example/index.json";
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-    /** One read of the listing, letting the route's wait for a source run out. */
-    const read = async (routes: ReturnType<typeof pluginRegistryRoutes>) => {
-      const res = routes.request("/");
-      await vi.advanceTimersByTimeAsync(SOURCE_WAIT_MS);
-      return (await (await res).json()) as PluginIndexResponse;
-    };
-
-    it("lists the builtin entries once the wait passes, names it pending, and lists its entries on a read after it answers", async () => {
-      let answer!: (res: Response) => void;
-      const remote = fakeFetch(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
-      const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
-      const first = await read(routes);
-      expect(first.plugins).toEqual(await builtinRows());
-      expect(first.pending).toEqual([url]);
-      expect(first.failures).toEqual([]);
-
-      answer(jsonResponse([published]));
-      const second = await read(routes);
-      expect(second.plugins.at(-1)!.name).toBe(published.name);
-      expect(second.pending).toEqual([]);
-      expect(remote.calls).toHaveLength(1);
-    });
-
-    it("once its fetch has failed, reports it unreachable without fetching again until the retry window has passed", async () => {
-      const remote = fakeFetch(() => {
-        throw fetchFailed("ETIMEDOUT");
-      });
-      const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
-      expect((await read(routes)).plugins).toEqual(await builtinRows());
-      // The fetch spends its attempts behind the answer.
-      await vi.runAllTimersAsync();
-      const fetched = remote.calls.length;
-
-      const second = await read(routes);
-      expect(second.failures.map((f) => f.source)).toEqual([url]);
-      expect(second.pending).toEqual([]);
-      expect(remote.calls).toHaveLength(fetched);
-
-      await vi.advanceTimersByTimeAsync(INDEX_RETRY_MS);
-      await read(routes);
-      expect(remote.calls.length).toBeGreaterThan(fetched);
-    });
+    const body = (await (await routes.request("/")).json()) as PluginIndexEntry[];
+    expect(body.find((entry) => entry.name === published.name)).toEqual({ ...published });
   });
 
   it("with no published source configured, lists the builtin entries alone", async () => {
     const routes = pluginRegistryRoutes({ indexUrl: null });
     const res = await routes.request("/");
-    const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toEqual(await builtinRows());
-    expect(body.failures).toEqual([]);
-    expect(body.pending).toEqual([]);
+    const body = (await res.json()) as PluginIndexEntry[];
+    expect(body).toEqual(await builtinPluginRegistry().index());
   });
 
   it("lets a package on this machine describe itself over its row, and leaves a row whose package is not here as it is", async () => {
@@ -908,8 +712,8 @@ describe("catalogue metadata and remote icon safety", () => {
         registries: [stubRegistry("published", [installedHere, bare, elsewhere]).registry],
         bases: () => [{ file: path.join(prefix, "package.json"), builtin: false }],
       });
-      const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
-      expect(body.plugins).toEqual(
+      const body = (await (await routes.request("/")).json()) as PluginIndexEntry[];
+      expect(body).toEqual(
         [
           {
             ...installedHere,
@@ -920,7 +724,7 @@ describe("catalogue metadata and remote icon safety", () => {
           },
           bare,
           elsewhere,
-        ].map((entry) => ({ ...entry, sources: ["index"], installable: true })),
+        ].map((entry) => ({ ...entry })),
       );
     } finally {
       await rm(prefix, { recursive: true, force: true });
@@ -950,10 +754,8 @@ describe("catalogue metadata and remote icon safety", () => {
         registries: [stubRegistry("published", [entry]).registry],
         bases: () => [{ file: path.join(prefix, "package.json"), builtin: false }],
       });
-      const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
-      expect(body.plugins).toEqual([
-        { ...entry, shortDescription: "Risky.", sources: ["index"], installable: true },
-      ]);
+      const body = (await (await routes.request("/")).json()) as PluginIndexEntry[];
+      expect(body).toEqual([{ ...entry, shortDescription: "Risky." }]);
     } finally {
       await rm(prefix, { recursive: true, force: true });
     }

@@ -84,7 +84,7 @@ import type {
   PluginConfigActionResponse,
   PluginConfigResponse,
   PluginFilesResponse,
-  PluginIndexResponse,
+  PluginIndexEntry,
   PluginLibraryResponse,
   PluginReadmeResponse,
   PrefsResponse,
@@ -2118,7 +2118,7 @@ const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) 
 
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
-  .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
+  .get("/api/plugins/registry", ({ store }): PluginIndexEntry[] => store.f.pluginIndex)
   // The demo installs no languages plugin: every fence is one the bundle carries or plain.
   .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
@@ -2128,7 +2128,7 @@ router
   // A listed server module's package as a zip: the demo's bytes stand in for the package.
   .get("/api/plugins/registry/archive", ({ store, query }) => {
     const name = query.get("name") ?? "";
-    if (!store.f.pluginIndex.plugins.some((e) => e.name === name)) notFound("Plugin");
+    if (!store.f.pluginIndex.some((e) => e.name === name)) notFound("Plugin");
     return raw("PK\u0003\u0004 demo archive", {
       "content-type": "application/zip",
       "content-disposition": `attachment; filename="${name.replace(/^@[^/]+\//, "")}.zip"`,

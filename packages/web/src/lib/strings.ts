@@ -2936,12 +2936,7 @@ export const zh = {
   plugins: {
     builtin: "内置",
     builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
-    /** Catalogue source tags: the build's is "内置" above. */
-    sourceStore: "本机已有",
-    sourceStoreHint: "已在本机的插件仓里：安装它不需要下载。",
-    sourceIndex: "已发布",
-    sourceIndexHint: "列在发布的插件索引里：安装时会下载，并按索引给出的 integrity 校验。",
-    /** A catalogue row this machine cannot install, and why: the channels it is missing from. */
+    /** An index entry this machine cannot install, and why: the channels it is missing from. */
     cannotInstallHere:
       "此处无法安装：本次构建和本机插件仓里都没有它，索引条目也没有给出可用于校验下载的 integrity。",
     installedRestart: "待重启",
@@ -3261,16 +3256,6 @@ export const zh = {
     empty: "暂无插件",
     /** Card metadata: the entry's package specifier doubles as the install string. */
     specifierHint: "包名，即 Project 插件列表里写的那串",
-    /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
-    sourceUnavailable: (count: number): string =>
-      count === 1
-        ? "有 1 个插件来源无法访问，下面的列表可能不完整。"
-        : `有 ${count} 个插件来源无法访问，下面的列表可能不完整。`,
-    /** Shown while the server is still reading a source: the list holds what has answered so far. */
-    sourcePending: (count: number): string =>
-      count === 1
-        ? "有 1 个插件来源仍在加载，加载完成后其中的插件会出现在这里。"
-        : `有 ${count} 个插件来源仍在加载，加载完成后其中的插件会出现在这里。`,
     copySpecifier: "复制包名",
   },
 

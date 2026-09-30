@@ -246,7 +246,7 @@ export function pluginBases(root: string | undefined): PluginBase[] {
 }
 
 /**
- * The prefixes this build ships (the push's, the installation's): where a catalogue reads a
+ * The prefixes this build ships (the push's, the installation's): where the registry reads a
  * shipped package's readme. Not a lookup location — nothing is loaded from them.
  */
 export function shippedBases(assetsDir: string | null): PluginBase[] {
@@ -349,7 +349,7 @@ function resolvePlugin(
  * The plugins this build SHIPS: the names in the push's prefix manifest and the installation's
  * (what npm installed beside them, their dependencies, is not offered). Being shipped means
  * installing one needs no download — it does not mean it is installed. Nothing here loads;
- * the list is what marks a catalogue row as available offline and lets an install skip npm.
+ * the list is what marks an index entry as available offline and lets an install skip npm.
  */
 export async function shippedPlugins(assetsDir: string | null): Promise<string[]> {
   return shippedNames(storeSources(assetsDir));

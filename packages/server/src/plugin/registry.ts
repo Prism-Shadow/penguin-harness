@@ -6,7 +6,7 @@
  * plugin code.
  *
  * Three sources, one shape — every entry names its content (`integrity`, the plugin store's
- * key), and the catalogue is the three merged:
+ * key), and `GET /api/plugins/registry` lists the three merged (`mergeIndexes`):
  *   - the builtin registry serves the index the running BUILD carries: rebuilt by
  *     scripts/build-plugins.mjs from the store-shaped tree of what it packed, shipped beside
  *     the packages (`plugins/index.json` in a push's assets, or in the installation);
@@ -17,7 +17,7 @@
  *     validator — a remote index is trusted no further than the build's own.
  * Remote SVG icons are never trusted; on-machine package display fields are read locally.
  */
-import type { PluginCatalogueEntry, PluginEntrySource, PluginIndexEntry } from "../api/types.js";
+import type { PluginIndexEntry } from "../api/types.js";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -31,8 +31,6 @@ import { compareVersions, satisfies } from "./activation.js";
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
   readonly source: string;
-  /** Which of the three channels it is: what the catalogue tags its rows with. */
-  readonly kind: PluginEntrySource;
   index(): Promise<PluginIndexEntry[]>;
   /**
    * Long-form documentation for one entry, or null when this source has none for it.
@@ -165,7 +163,6 @@ export function builtinPluginRegistry(
 ): PluginRegistry {
   return {
     source: BUILTIN_REGISTRY_SOURCE,
-    kind: "builtin",
     // Validated like any other source: a broken shipped index fails loudly rather than
     // serving garbage.
     index: () => shippedIndex(assetsDir()),
@@ -180,7 +177,6 @@ export function storePluginRegistry(
 ): PluginRegistry {
   return {
     source: STORE_REGISTRY_SOURCE,
-    kind: "store",
     index: async () => parsePluginIndex(await readStore(root), STORE_REGISTRY_SOURCE),
     readme: (name) => readmeOf(name, bases()),
   };
@@ -279,7 +275,6 @@ export function httpPluginRegistry(
   };
   return {
     source: indexUrl,
-    kind: "index",
     index: async () => {
       const res = await request();
       if (!res.ok) {
@@ -402,7 +397,6 @@ export function cachedRegistry(
       }));
   return {
     source: inner.source,
-    kind: inner.kind,
     snapshot: () => good,
     index: async () => {
       if (good !== null && now() - good.at < ttlMs) return good.entries;
@@ -420,116 +414,54 @@ export function cachedRegistry(
 }
 
 /**
- * How long a listing waits for a source that has not answered yet. Long enough for a reachable
- * index to arrive in the same answer, so a page load renders once; short enough that one behind a
- * network that drops the connection (a host that cannot reach GitHub) costs the page a moment
- * rather than every retry the fetch is allowed. The fetch goes on behind the answer, and a later
- * read gets its entries from the cache.
- */
-export const SOURCE_WAIT_MS = 1_500;
-
-/** `work`'s value, or null once `ms` has passed first; `work` runs on either way. */
-async function within<T>(work: Promise<T>, ms: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
-  });
-  try {
-    return await Promise.race([work, late]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** What merging the sources gave: their entries, and the sources that failed or are still being read. */
-export interface MergedIndex {
-  entries: PluginCatalogueEntry[];
-  failures: { source: string; error: string }[];
-  /** Sources that had not answered within `waitMs`: their entries are missing from this listing. */
-  pending: string[];
-}
-
-/**
- * Merge several registries into one catalogue, tolerating a source that fails.
+ * Merge several registries into one flat index, tolerating a source that fails.
  *
  * Deliberately unlike the within-document rule: a malformed row still kills its own index,
  * because that index is one publisher's single artifact, but a source that is unreachable,
- * misconfigured or serving garbage must not empty the page of everything else. The failure is
- * reported alongside the entries rather than swallowed, so the Web App can say which source is
- * down instead of quietly showing a shorter list. With `waitMs`, a source that has not answered
- * by then is reported as pending rather than waited for, for the same reason: a slow source must
- * not hold back the ones that answered.
+ * misconfigured or serving garbage must not empty the listing of everything else. A failed
+ * source is logged and leaves the listing shorter.
  *
- * A row is one CONTENT: name, version and integrity. The sources that list the same content
- * are one row tagged with each of them, and the FIRST source's metadata describes it — the
- * builtin registry is listed first, so what this deployment ships is the truth about it. Two
- * contents under one name and version are two rows. A row is installable here when it names
- * its integrity: a shipped or stored one is already on this machine, and a published one can
- * be checked when it is fetched; one without an integrity is listed and cannot be installed.
- * A yanked entry is left out.
+ * An entry is one CONTENT: name, version and integrity. When several sources list the same
+ * content the FIRST one's entry is kept — the registries are in precedence order (the build,
+ * the store, the published index), so what this deployment ships is the truth about it. Two
+ * contents under one name and version are two entries. A yanked entry is left out.
  */
 export async function mergeIndexes(
   registries: readonly PluginRegistry[],
-  { waitMs }: { waitMs?: number } = {},
-): Promise<MergedIndex> {
+  log: (line: string) => void = console.warn,
+): Promise<PluginIndexEntry[]> {
   const settled = await Promise.all(
-    registries.map(async (r) => {
-      const read = (async () => {
-        try {
-          return { kind: r.kind, entries: await r.index(), error: null };
-        } catch (err) {
-          return {
-            kind: r.kind,
-            entries: [] as PluginIndexEntry[],
-            error: err instanceof Error ? err.message : String(err),
-          };
-        }
-      })();
-      const answer = waitMs === undefined ? await read : await within(read, waitMs);
-      return { source: r.source, answer };
-    }),
+    registries.map((r) =>
+      r.index().catch((err: unknown) => {
+        log(`[plugins] ${r.source}: ${err instanceof Error ? err.message : String(err)}`);
+        return [] as PluginIndexEntry[];
+      }),
+    ),
   );
-  const rows = new Map<string, PluginCatalogueEntry>();
-  const failures: MergedIndex["failures"] = [];
-  const pending: string[] = [];
-  for (const { source, answer } of settled) {
-    if (answer === null) {
-      pending.push(source);
-      continue;
-    }
-    if (answer.error !== null) failures.push({ source, error: answer.error });
-    for (const entry of answer.entries) {
-      if (entry.yanked === true) continue;
-      const key = `${entry.name}@${entry.version}#${entry.integrity ?? ""}`;
-      const row = rows.get(key);
-      if (row === undefined) {
-        rows.set(key, {
-          ...entry,
-          sources: [answer.kind],
-          installable: entry.integrity !== undefined,
-        });
-      } else if (!row.sources.includes(answer.kind)) {
-        row.sources.push(answer.kind);
-      }
-    }
+  const merged = new Map<string, PluginIndexEntry>();
+  for (const entry of settled.flat()) {
+    if (entry.yanked === true) continue;
+    const key = `${entry.name}@${entry.version}#${entry.integrity ?? ""}`;
+    if (!merged.has(key)) merged.set(key, entry);
   }
-  return { entries: [...rows.values()], failures, pending };
+  return [...merged.values()];
 }
 
 /**
- * The catalogue row an install of `name` takes, or why there is none: with `integrity`, that
- * content; otherwise the highest version `version` admits (yanked rows are not in the
- * catalogue), a row already on this machine first among equal versions. A row without an
- * integrity is never taken — it cannot be checked — and is named when it is all there is.
+ * The entry an install of `name` takes, or why there is none: with `integrity`, that content;
+ * otherwise the highest version `version` admits, the earlier source first among equal
+ * versions (`entries` is in precedence order, so a copy already on this machine wins). An
+ * entry without an integrity is never taken — a fetched copy could not be checked — and is
+ * named when it is all there is.
  */
-export function pickCatalogueEntry(
-  entries: readonly PluginCatalogueEntry[],
+export function pickIndexEntry(
+  entries: readonly PluginIndexEntry[],
   name: string,
   ask: { version?: string; integrity?: string },
-): PluginCatalogueEntry | { refused: string } {
+): PluginIndexEntry | { refused: string } {
   const listed = entries.filter((e) => e.name === name);
   if (listed.length === 0) {
-    return { refused: `'${name}' is in none of the plugin catalogue's sources` };
+    return { refused: `'${name}' is in none of the plugin index's sources` };
   }
   const fits = listed.filter(
     (e) =>
@@ -542,11 +474,10 @@ export function pickCatalogueEntry(
       refused: `no listed '${name}' satisfies ${wanted} (listed: ${listed.map((e) => e.version).join(", ")})`,
     };
   }
-  const onMachine = (e: PluginCatalogueEntry) =>
-    Number(e.sources.includes("builtin") || e.sources.includes("store"));
+  // Array.prototype.sort is stable: among equal versions the earlier source stays first.
   const best = fits
-    .filter((e) => e.installable)
-    .sort((a, b) => compareVersions(b.version, a.version) || onMachine(b) - onMachine(a))[0];
+    .filter((e) => e.integrity !== undefined)
+    .sort((a, b) => compareVersions(b.version, a.version))[0];
   if (best === undefined) {
     return {
       refused: `'${name}' ${wanted} is listed without an integrity, so a fetched copy could not be checked: it cannot be installed`,

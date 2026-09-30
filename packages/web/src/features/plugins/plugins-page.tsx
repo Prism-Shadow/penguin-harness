@@ -33,7 +33,7 @@ import type {
   HookItem,
   InstalledPluginsResponse,
   PluginGroupItem,
-  PluginCatalogueEntry,
+  PluginIndexEntry,
   PluginItem,
   QuickStartItem,
   SkillMetadataItem,
@@ -109,9 +109,6 @@ import {
 } from "./plugin-status";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
-
-/** How soon the registry is read again while the server is still reading one of its sources. */
-export const INDEX_RECHECK_MS = 3_000;
 
 /** The three lists an install response carries, folded into one Agent's snapshot entry. */
 function installsOf(
@@ -206,20 +203,12 @@ export function PluginsPage() {
     }
   };
   /** The registry: every module plugin this deployment could ask for. */
-  const [index, setIndex] = useState<PluginCatalogueEntry[] | null>(null);
+  const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
   /**
    * Sources that answered with nothing. A published index that is down shortens the list
    * instead of emptying it (the server merges tolerantly), so the page has to say so — a
    * silently shorter list reads as "that plugin does not exist".
    */
-  const [indexFailures, setIndexFailures] = useState<{ source: string; error: string }[]>([]);
-  /**
-   * How many sources the server was still reading when it last answered. It answers without a
-   * published index that is slow to arrive (on a network that cannot reach it, that is every
-   * retry the fetch is allowed), so the shipped entries list at once, and the page reads again
-   * until the source has answered or failed.
-   */
-  const [indexPending, setIndexPending] = useState(0);
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
@@ -330,32 +319,20 @@ export function PluginsPage() {
   /** Whether the machine in view is this server itself. */
   const viewingHere = viewMachine === selfId;
 
-  // The registry, fetched on page entry and again after an import or a delete — and, while a
-  // source is still being read, again every INDEX_RECHECK_MS until it has answered or failed.
+  // The registry, fetched on page entry and again after an import or a delete.
   useEffect(() => {
     let cancelled = false;
-    let recheck: ReturnType<typeof setTimeout> | undefined;
-    const read = () =>
-      api.getPluginIndex().then(
-        (res) => {
-          if (cancelled) return;
-          setIndex(res.plugins);
-          setIndexFailures(res.failures ?? []);
-          const pending = res.pending?.length ?? 0;
-          setIndexPending(pending);
-          if (pending > 0) recheck = setTimeout(() => void read(), INDEX_RECHECK_MS);
-        },
-        () => {
-          if (cancelled) return;
-          // A re-read that fails keeps what the last one listed.
-          setIndex((prev) => prev ?? []);
-          setIndexPending(0);
-        },
-      );
-    void read();
+    api.getPluginIndex().then(
+      (res) => {
+        if (cancelled) return;
+        setIndex(res);
+      },
+      () => {
+        if (!cancelled) setIndex([]);
+      },
+    );
     return () => {
       cancelled = true;
-      clearTimeout(recheck);
     };
   }, [reloadKey]);
 
@@ -907,16 +884,6 @@ export function PluginsPage() {
             dismissLabel={S.todo.dismiss}
             onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
           />
-        )}
-        {indexFailures.length > 0 && (
-          <Notice tone="attention" className="mt-4">
-            {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
-          </Notice>
-        )}
-        {indexPending > 0 && (
-          <Notice tone="attention" className="mt-4">
-            {S.pluginRegistry.sourcePending(indexPending)}
-          </Notice>
         )}
         {remote !== null &&
           "error" in remote &&

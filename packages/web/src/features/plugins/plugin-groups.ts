@@ -14,7 +14,7 @@
 import type {
   InstalledPluginsResponse,
   PluginGroupItem,
-  PluginCatalogueEntry,
+  PluginIndexEntry,
   PluginItem,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -26,7 +26,7 @@ export interface ModulePart {
   /** The package specifier a Project's `[plugins]` table names. */
   specifier: string;
   /** Its registry entry, when an index lists it. */
-  entry: PluginCatalogueEntry | undefined;
+  entry: PluginIndexEntry | undefined;
   state: ModuleState;
   /** Why the process could not load it, when `state` is `failed`. */
   error?: string;
@@ -107,16 +107,19 @@ function stateIn(
  * registry's entries it does not list, and what the build ships that no index knows (offered
  * without a description: the build has it, so it installs without a download).
  */
-export function catalogueEntryOf(
-  index: readonly PluginCatalogueEntry[],
+export function indexEntryOf(
+  index: readonly PluginIndexEntry[],
   name: string,
-): PluginCatalogueEntry | undefined {
-  return index.find((e) => e.name === name && e.installable) ?? index.find((e) => e.name === name);
+): PluginIndexEntry | undefined {
+  return (
+    index.find((e) => e.name === name && e.integrity !== undefined) ??
+    index.find((e) => e.name === name)
+  );
 }
 
 export function moduleParts(
   deployment: InstalledPluginsResponse | null,
-  index: readonly PluginCatalogueEntry[],
+  index: readonly PluginIndexEntry[],
   view?: PluginView,
 ): ModulePart[] {
   const machineId = view?.machineId ?? deployment?.machineId;
@@ -126,7 +129,7 @@ export function moduleParts(
     const shared = listed.everywhere !== false;
     parts.push({
       specifier: listed.specifier,
-      entry: catalogueEntryOf(index, listed.specifier),
+      entry: indexEntryOf(index, listed.specifier),
       ...stateIn(listed, view, deployment?.machineId),
       shipped:
         listed.builtin || (view?.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
@@ -142,7 +145,7 @@ export function moduleParts(
   for (const { name } of index) {
     if (listed.has(name) || seen.has(name)) continue;
     seen.add(name);
-    const entry = catalogueEntryOf(index, name)!;
+    const entry = indexEntryOf(index, name)!;
     parts.push({
       specifier: entry.name,
       entry,

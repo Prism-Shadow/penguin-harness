@@ -142,7 +142,7 @@ test("plugins: the Plugins page renders the library and index the server serves,
   const library = await (await page.request.get(`${BASE}/api/plugins`)).json();
   const plugins = library.groups.flatMap((g) => g.plugins);
   expect(plugins.length, "the library this build ships").toBeGreaterThan(0);
-  const index = (await (await page.request.get(`${BASE}/api/plugins/registry`)).json()).plugins;
+  const index = await (await page.request.get(`${BASE}/api/plugins/registry`)).json();
   const deployment = await (
     await page.request.get(`${BASE}/api/projects/${projectId}/plugins/installed`)
   ).json();
@@ -217,9 +217,7 @@ test("plugins: the Plugins page renders the library and index the server serves,
   await expect(uninstallRow).toBeVisible();
   await expect(uninstallRow).toContainText("已安装");
   // The server holds what the library says the plugin ships — and nothing besides.
-  await expect
-    .poll(() => agentSkills(page.request, projectId, TARGET))
-    .toEqual(expectedSkills);
+  await expect.poll(() => agentSkills(page.request, projectId, TARGET)).toEqual(expectedSkills);
 
   // —— The other direction: uninstalling deletes files, so it confirms first ——
   const deletes = [];
@@ -247,7 +245,7 @@ test("plugins: a registry entry's detail page renders the index entry and the re
 }) => {
   await provisionAndLogin(page.request, U, P);
   await configureProjectModel(page.request);
-  const index = (await (await page.request.get(`${BASE}/api/plugins/registry`)).json()).plugins;
+  const index = await (await page.request.get(`${BASE}/api/plugins/registry`)).json();
   expect(index.length, "the builtin registry this build embeds").toBeGreaterThan(0);
   const entry = index[0];
   const readme = (
@@ -260,7 +258,10 @@ test("plugins: a registry entry's detail page renders the index entry and the re
 
   // The available row's own link is the way in — the splat route the manifest declares.
   await page.goto(`${BASE}/plugins`);
-  await page.getByRole("link", { name: new RegExp(escapeRe(entry.name)) }).first().click();
+  await page
+    .getByRole("link", { name: new RegExp(escapeRe(entry.name)) })
+    .first()
+    .click();
   await expect(page).toHaveURL(new RegExp(`/plugins/registry/${escapeRe(entry.name)}$`));
 
   // The header and the metadata table are the index entry, field for field.
