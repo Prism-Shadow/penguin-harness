@@ -497,7 +497,7 @@ function OverviewTab({
             </p>
             <div className="flex items-start gap-1.5">
               <span
-                title={data.stateDir}
+                data-tooltip={data.stateDir}
                 className="min-w-0 flex-1 break-all font-mono text-xs leading-5"
               >
                 {data.stateDir}
@@ -574,7 +574,7 @@ function OverviewTab({
               {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
               <span
                 role="img"
-                title={S.agent.kernelOutdatedHint}
+                data-tooltip={S.agent.kernelOutdatedHint}
                 aria-label={S.agent.kernelOutdatedHint}
                 className="self-center text-gray-500 dark:text-gray-400"
               >
@@ -714,7 +714,7 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
               <button
                 type="button"
                 onClick={() => insertPlaceholder(ph)}
-                title={S.agent.insertPlaceholder}
+                data-tooltip={S.agent.insertPlaceholder}
                 className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
               >
                 {ph}

@@ -29,7 +29,7 @@ import type { AskEvaluationParams } from "./benchmark-prompts";
 function SessionCell({ sessionId }: { sessionId?: string }) {
   if (!sessionId) return <span className="text-gray-400">—</span>;
   return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
+    <span className="font-mono text-gray-600 dark:text-gray-300" data-tooltip={sessionId}>
       {sessionId}
     </span>
   );

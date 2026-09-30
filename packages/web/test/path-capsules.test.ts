@@ -230,7 +230,7 @@ describe("ticket Markdown with capsules", () => {
     const html = render(`结果在 ${LAB}/workspace/experiments/dep-eval/。`);
     expect(capsuleCount(html)).toBe(1);
     expect(html).toContain(">dep-eval</span></button>");
-    expect(html).toContain(`title="${LAB.replace(/</g, "&lt;").replace(/>/g, "&gt;")}`);
+    expect(html).toContain(`data-tooltip="${LAB.replace(/</g, "&lt;").replace(/>/g, "&gt;")}`);
     expect(html).toContain("。");
     expect(html).not.toContain(
       "organizations/co_research_paper_lab/workspace/experiments/dep-eval/。",

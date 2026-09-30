@@ -126,7 +126,7 @@ export function BrowserTabStrip({
                 type="button"
                 role="tab"
                 aria-selected={active}
-                title={title}
+                data-tooltip={title}
                 onClick={() => onSelect(tab.id)}
                 // A middle click closes a tab, as in every browser.
                 onAuxClick={(event) => {
@@ -155,7 +155,7 @@ export function BrowserTabStrip({
               </button>
               <button
                 type="button"
-                title={S.builtinBrowser.closeTab}
+                data-tooltip={S.builtinBrowser.closeTab}
                 aria-label={`${S.builtinBrowser.closeTab}: ${label}`}
                 onClick={() => onClose(tab.id)}
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
@@ -168,7 +168,7 @@ export function BrowserTabStrip({
       </div>
       <button
         type="button"
-        title={S.builtinBrowser.newTab}
+        data-tooltip={S.builtinBrowser.newTab}
         aria-label={S.builtinBrowser.newTab}
         data-testid="builtin-browser-new-tab"
         onClick={onNew}

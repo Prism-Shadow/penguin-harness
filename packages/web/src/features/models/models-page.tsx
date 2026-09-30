@@ -142,10 +142,11 @@ import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { KeyAuthDialog } from "./key-auth-dialog";
 import type { KeyAuthTexts } from "./key-auth-dialog";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 import { groupHeaderActions, groupKeyStored } from "./group-header";
 import type { GroupHeaderAction } from "./group-header";
 import { GroupBalance } from "./group-balance";
@@ -1208,7 +1209,7 @@ export function ModelsPage() {
         return (
           <span className="flex shrink-0 items-center gap-2">
             <span
-              title={status}
+              data-tooltip={status}
               className="flex items-center gap-1.5 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
             >
               <span
@@ -1341,7 +1342,7 @@ export function ModelsPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
               {S.models.title}
               {!isOwner && (
                 <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
@@ -1459,7 +1460,7 @@ export function ModelsPage() {
                   {drag.dropEdge !== null && (
                     <div
                       aria-hidden
-                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
                         drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
                       }`}
                     />
@@ -2140,7 +2141,7 @@ function AddGroupDialog({
                   type="button"
                   disabled={detecting || busy}
                   onClick={() => void detect()}
-                  title={S.models.detectProtocolHint}
+                  data-tooltip={S.models.detectProtocolHint}
                   className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
                 >
                   {detecting && (
@@ -2302,7 +2303,7 @@ export function ModelRow({
           {speed.ttftMs !== undefined && (
             <span
               className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
-              title={S.models.ttftTitle}
+              data-tooltip={S.models.ttftTitle}
             >
               <GlyphIcon d={CLOCK_ICON} size={11} />
               {Math.round(speed.ttftMs)}ms
@@ -2311,7 +2312,7 @@ export function ModelRow({
           {speed.tps !== undefined && (
             <span
               className={`flex items-center gap-0.5 ${TONE_CLASS[tpsTone(speed.tps)]}`}
-              title={S.models.tpsTitle}
+              data-tooltip={S.models.tpsTitle}
             >
               <GlyphIcon d={ZAP_ICON} size={11} />
               {speed.tps} tok/s
@@ -2321,7 +2322,7 @@ export function ModelRow({
       ) : (
         <span
           className="shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
-          title={speed.message}
+          data-tooltip={speed.message}
         >
           {S.models.speedFailed}
         </span>
@@ -2335,7 +2336,7 @@ export function ModelRow({
       <button
         type="button"
         onClick={onOpen}
-        title={title}
+        data-tooltip={title}
         className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/40"
       >
         <ProviderLogo provider={row.provider} className="h-4 w-4 shrink-0" />
@@ -2346,7 +2347,7 @@ export function ModelRow({
           {tags.map((tag) => (
             <span
               key={tag.key}
-              title={tag.title}
+              data-tooltip={tag.title}
               className={`${TAG_SHAPE} shrink-0 ${tag.className}`}
             >
               {tag.label}
@@ -2366,7 +2367,7 @@ export function ModelRow({
         {usedTokens !== undefined && usedTokens > 0 && (
           <span
             className="hidden shrink-0 text-[10px] tabular-nums text-gray-400 @lg:inline dark:text-gray-500"
-            title={S.models.usedTokensTitle}
+            data-tooltip={S.models.usedTokensTitle}
           >
             {S.models.usedTokens(humanizeTokens(usedTokens))}
           </span>
@@ -2374,7 +2375,7 @@ export function ModelRow({
         {!hasKey(row) && (
           <span
             role="img"
-            title={S.models.noKey}
+            data-tooltip={S.models.noKey}
             aria-label={S.models.noKey}
             className="shrink-0 text-gray-400 dark:text-gray-500"
           >
@@ -2387,8 +2388,9 @@ export function ModelRow({
           sync, or the move the config dialog's own button performs — so the owner lands where
           the problem is fixed rather than on a second explanation. */}
       {fix !== null && (
-        <div
-          className={`mx-4 mb-1.5 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-[11px] ${toneStrip.attention}`}
+        <NoticeStrip
+          tone="attention"
+          className="mx-4 mb-1.5 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-[11px]"
         >
           <span className="min-w-0">
             {fix === "sync" ? S.models.vendorRowStalePin : S.models.vendorRowUnroutable}
@@ -2403,7 +2405,7 @@ export function ModelRow({
               {S.models.moveToCustomGroup}
             </Button>
           )}
-        </div>
+        </NoticeStrip>
       )}
     </li>
   );
@@ -3067,9 +3069,10 @@ function ModelDialog({
         {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
       </label>
       {routingFix !== null && (
-        <div
+        <NoticeStrip
+          tone="attention"
           role="alert"
-          className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+          className="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs"
         >
           {/* A built-in model whose stored entry lost its protocol pin needs the preset sync,
               not a move: the same split the card makes, so the two places the owner can read
@@ -3097,7 +3100,7 @@ function ModelDialog({
               {S.models.useCustomGroup}
             </Button>
           )}
-        </div>
+        </NoticeStrip>
       )}
       <div className="grid grid-cols-2 gap-2">
         <Input
@@ -3451,7 +3454,7 @@ function ModelDialog({
                 type="button"
                 disabled={detecting}
                 onClick={() => void detectFromButton()}
-                title={S.models.detectProtocolHint}
+                data-tooltip={S.models.detectProtocolHint}
                 className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
               >
                 {detecting && (
@@ -3714,7 +3717,7 @@ function ModelDialog({
                       type="button"
                       disabled={visionDetecting}
                       onClick={() => void detectVisionFromButton()}
-                      title={S.models.detectVisionHint}
+                      data-tooltip={S.models.detectVisionHint}
                       className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
                     >
                       {visionDetecting && (
@@ -3746,7 +3749,7 @@ function ModelDialog({
               <div className={toggleCellClass}>
                 <label
                   className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-                  title={S.models.fastModeHint}
+                  data-tooltip={S.models.fastModeHint}
                 >
                   <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
                     {S.models.fastMode}

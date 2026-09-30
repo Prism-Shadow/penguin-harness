@@ -33,7 +33,6 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatRelativeDate } from "../../lib/format";
-import { toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -66,6 +65,7 @@ import {
 import type { MemoryImportPlan } from "./memory-transfer";
 
 import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -566,14 +566,15 @@ export function MemoryTab({
       </div>
 
       {!templateHasMemory && (
-        <div
-          className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
+        <NoticeStrip
+          tone="attention"
+          className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
         >
           <p className="text-xs">{S.memory.templateMissing}</p>
           <Button size="sm" onClick={() => void insertPlaceholder()}>
             {S.memory.insertPlaceholder}
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {groups === null ? (
@@ -641,7 +642,7 @@ export function MemoryTab({
                   {isOwner && (
                     <label
                       className={`${GHOST_LABEL_CLASS} shrink-0`}
-                      title={S.memory.importScopeHint}
+                      data-tooltip={S.memory.importScopeHint}
                       aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
                     >
                       <HiddenFileInput
@@ -740,7 +741,7 @@ export function MemoryTab({
                           token!,
                         )
                   }
-                  title={S.memory.insertToken}
+                  data-tooltip={S.memory.insertToken}
                   className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
                 >
                   {token}

@@ -98,7 +98,7 @@ test("selected conversation text offers Copy and Add to conversation", async ({ 
 
   // Staged as a chip whose tooltip is the whole excerpt. The draft stays empty, nothing was
   // sent, the menu has closed, and the text is still selected.
-  const chip = page.locator(`span[title="${SENTENCE}"]`);
+  const chip = page.locator(`span[data-tooltip="${SENTENCE}"]`);
   await expect(chip).toBeVisible();
   await expect(composer).toHaveValue("");
   await expect(addRow).toHaveCount(0);

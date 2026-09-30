@@ -1825,7 +1825,7 @@ export function Sidebar({
         {onCollapse && (
           <button
             type="button"
-            title={collapseTitle}
+            data-tooltip={collapseTitle}
             aria-label={S.nav.collapseSidebar}
             onClick={onCollapse}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -1847,7 +1847,7 @@ export function Sidebar({
                 onClick={() => setProjectOpen(!projectOpen)}
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-semibold transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
               >
-                <span className="min-w-0 flex-1 truncate text-left">
+                <span className="min-w-0 flex-1 truncate font-sans text-left">
                   {currentProject ? projectDisplayName(currentProject) : S.common.loading}
                 </span>
                 <span className="text-gray-400">
@@ -1868,7 +1868,7 @@ export function Sidebar({
                   p.projectId === currentProject?.projectId ? "font-semibold" : ""
                 }`}
               >
-                <span className="truncate">{projectDisplayName(p)}</span>
+                <span className="truncate font-sans">{projectDisplayName(p)}</span>
                 <Badge tone="gray">{p.role}</Badge>
               </button>
             ))}
@@ -1918,7 +1918,7 @@ export function Sidebar({
         <div className="shrink-0 px-2 pb-2 pt-2">
           <button
             type="button"
-            title={newChatTitle}
+            data-tooltip={newChatTitle}
             onClick={() => newChat()}
             className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors duration-150 ${
               activeSessionId === DRAFT_SESSION_ID
@@ -1926,7 +1926,7 @@ export function Sidebar({
                 : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
             }`}
           >
-            <span className="text-gray-500 dark:text-gray-400">
+            <span className="ui-icon-decor text-gray-500 dark:text-gray-400" data-role="nav">
               <Icon d={NEW_CHAT_ICON} />
             </span>
             {S.chat.newSessionMenu}
@@ -1943,8 +1943,12 @@ export function Sidebar({
           (each row's sr-only Agent name) anchor and scroll inside it — anchored to the
           initial containing block instead, rows past the fold would bypass this
           overflow-y-auto and stretch the **document**, so expanding "More" / a source
-          folder made the whole page scroll (composer pushed up, blank space below). */}
-      <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          folder made the whole page scroll (composer pushed up, blank space below).
+          overflow-x-clip: the list scrolls one way only. With overflow-y set, a horizontal
+          overflow of a single pixel — a group header's actions in a theme with wider type or
+          roomier controls — would otherwise turn into a sideways scrollbar under the list;
+          nothing here is meant to be reached by scrolling sideways. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2">
         <nav className="space-y-0.5">
           {/* Expand/collapse SLIDE: grid-template-rows tweens between 0fr and 1fr with the
               inner overflow-hidden clipping the rows (the skills/models-page convention) —
@@ -1985,7 +1989,10 @@ export function Sidebar({
                         aria-disabled="true"
                         className="relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-gray-400 dark:text-gray-600"
                       >
-                        <span className="text-gray-300 dark:text-gray-700">
+                        <span
+                          className="ui-icon-decor text-gray-300 dark:text-gray-700"
+                          data-role="nav"
+                        >
                           <Icon d={item.icon} />
                         </span>
                         {item.label}
@@ -2015,7 +2022,10 @@ export function Sidebar({
                         }`
                       }
                     >
-                      <span className="text-gray-500 dark:text-gray-400">
+                      <span
+                        className="ui-icon-decor text-gray-500 dark:text-gray-400"
+                        data-role="nav"
+                      >
                         <Icon d={item.icon} />
                       </span>
                       {item.label}
@@ -2043,7 +2053,7 @@ export function Sidebar({
             onClick={toggleNavGroup}
             aria-expanded={!navCollapsed}
             aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+            data-tooltip={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
             className="flex h-4 w-full items-center justify-center rounded-md bg-gray-200/70 text-gray-400 transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:bg-gray-800/70 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
           >
             <ChevronDown
@@ -2091,7 +2101,7 @@ export function Sidebar({
               }`}
             >
               <span
-                className={`min-w-0 overflow-hidden whitespace-nowrap px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${
+                className={`ui-eyebrow min-w-0 overflow-hidden whitespace-nowrap px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${
                   searchOpen ? "opacity-0" : "opacity-100"
                 }`}
               >
@@ -2124,7 +2134,7 @@ export function Sidebar({
                     />
                     <button
                       type="button"
-                      title={S.chat.searchClear}
+                      data-tooltip={S.chat.searchClear}
                       aria-label={S.chat.searchClear}
                       onClick={closeSearch}
                       className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
@@ -2135,7 +2145,7 @@ export function Sidebar({
                 ) : (
                   <button
                     type="button"
-                    title={searchTitle}
+                    data-tooltip={searchTitle}
                     aria-label={S.chat.searchSessions}
                     onClick={() => setSearchOpen(true)}
                     className={headerControlClass(false)}
@@ -2151,7 +2161,7 @@ export function Sidebar({
                   button={
                     <button
                       type="button"
-                      title={S.chat.listSettings}
+                      data-tooltip={S.chat.listSettings}
                       aria-label={S.chat.listSettings}
                       aria-haspopup="menu"
                       aria-expanded={listSettingsOpen}
@@ -2225,7 +2235,7 @@ export function Sidebar({
                 {newEntity === "agent" ? (
                   <button
                     type="button"
-                    title={newEntityLabel}
+                    data-tooltip={newEntityLabel}
                     aria-label={newEntityLabel}
                     onClick={() => {
                       navigate("/agents", { state: { create: true } });
@@ -2238,7 +2248,7 @@ export function Sidebar({
                 ) : newEntity === "chat" ? (
                   <button
                     type="button"
-                    title={newEntityLabel}
+                    data-tooltip={newEntityLabel}
                     aria-label={newEntityLabel}
                     onClick={() => newChat()}
                     className={headerControlClass(false)}
@@ -2262,7 +2272,7 @@ export function Sidebar({
                     trigger={(open, toggle) => (
                       <button
                         type="button"
-                        title={newEntityLabel}
+                        data-tooltip={newEntityLabel}
                         aria-label={newEntityLabel}
                         aria-expanded={open}
                         onClick={toggle}
@@ -2285,7 +2295,10 @@ export function Sidebar({
                   open={searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)}
                   onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
                   icon={
-                    <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                    <span
+                      className="ui-icon-decor shrink-0 text-gray-400 dark:text-gray-500"
+                      data-role="group"
+                    >
                       <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
                     </span>
                   }
@@ -2364,7 +2377,7 @@ export function Sidebar({
                             {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
                             <button
                               type="button"
-                              title={S.chat.newSessionMenu}
+                              data-tooltip={S.chat.newSessionMenu}
                               aria-label={S.chat.newSessionMenu}
                               onClick={() => newChat({ agentId: agent.agentId })}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -2373,7 +2386,8 @@ export function Sidebar({
                             </button>
                             <button
                               type="button"
-                              title={S.agent.settings}
+                              data-tooltip={S.agent.settings}
+                              aria-label={S.agent.settings}
                               onClick={() => go(`/agents/${agent.agentId}`)}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                             >
@@ -2455,7 +2469,10 @@ export function Sidebar({
                       onToggle={() => toggleGroup(group.key, foldedOnly !== undefined)}
                       icon={
                         /* Folder opens and closes with the group */
-                        <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                        <span
+                          className="ui-icon-decor shrink-0 text-gray-400 dark:text-gray-500"
+                          data-role="group"
+                        >
                           <Icon
                             d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
                             size={ICON_SIZE.groupHeaderGlyph}
@@ -2481,7 +2498,7 @@ export function Sidebar({
                           {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the Project's new-chat default, like any other new chat */}
                           <button
                             type="button"
-                            title={S.chat.newSessionInWorkspace}
+                            data-tooltip={S.chat.newSessionInWorkspace}
                             aria-label={S.chat.newSessionInWorkspace}
                             onClick={() =>
                               newChat({
@@ -2547,7 +2564,10 @@ export function Sidebar({
                         open={!collapsed}
                         onToggle={() => toggleGroup(group.key)}
                         icon={
-                          <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                          <span
+                            className="ui-icon-decor shrink-0 text-gray-400 dark:text-gray-500"
+                            data-role="group"
+                          >
                             <Icon d={GROUP_MODE_ICONS.time} size={ICON_SIZE.groupHeaderGlyph} />
                           </span>
                         }
@@ -2624,7 +2644,7 @@ export function Sidebar({
                 ? {
                     // The dot alone is mysterious: name what is waiting on the trigger (hover
                     // tooltip + accessible name), in the update row's own wording.
-                    title: badges.softwareNote,
+                    "data-tooltip": badges.softwareNote,
                     "aria-label": `${user?.displayName ?? user?.userId ?? ""} · ${badges.softwareNote}`,
                   }
                 : {})}
@@ -2639,7 +2659,7 @@ export function Sidebar({
                     it, and the trigger's tooltip/label above say what it is. */}
                 {badges.software !== null && <UpdateDot />}
               </UserAvatar>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              <span className="min-w-0 flex-1 truncate font-sans text-sm font-medium">
                 {user?.displayName ?? user?.userId}
               </span>
               <PinnedBalanceBadge />
@@ -2837,7 +2857,7 @@ function DraftRow({
           <Truncated
             scrollReveal
             text={title}
-            className={`min-w-0 flex-1 text-sm ${
+            className={`min-w-0 flex-1 font-sans text-sm ${
               active
                 ? "font-medium text-gray-900 dark:text-gray-100"
                 : "text-gray-700 dark:text-gray-300"
@@ -2847,7 +2867,7 @@ function DraftRow({
         <div className="flex shrink-0 items-center">
           <button
             type="button"
-            title={S.chat.deleteDraft}
+            data-tooltip={S.chat.deleteDraft}
             aria-label={S.chat.deleteDraft}
             onClick={onDelete}
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
@@ -2886,7 +2906,7 @@ function GroupBlock({
       {dropEdge !== null && (
         <div
           aria-hidden
-          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-accent ${
             dropEdge === "above" ? "top-1" : "-bottom-1"
           }`}
         />
@@ -2911,7 +2931,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
   return (
     <button
       type="button"
-      title={pinned ? S.nav.unpinGroup : S.nav.pinGroup}
+      data-tooltip={pinned ? S.nav.unpinGroup : S.nav.pinGroup}
       aria-label={S.nav.pinGroup}
       aria-pressed={pinned}
       onClick={onToggle}
@@ -3046,7 +3066,7 @@ function SessionRow({
       {dropEdge !== null && (
         <div
           aria-hidden
-          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-accent ${
             dropEdge === "above" ? "-top-px" : "-bottom-px"
           }`}
         />
@@ -3082,7 +3102,7 @@ function SessionRow({
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >
           {agentHint !== undefined && (
-            <span title={agentHint} className="flex shrink-0 items-center">
+            <span data-tooltip={agentHint} className="flex shrink-0 items-center">
               <AgentAvatar id={s.agentId} name={agentHint} size={14} className="rounded" />
               {/* The avatar is aria-hidden and title only serves pointer users: expose the Agent name to keyboard/screen-reader users as visually hidden text inside the row button. */}
               <span className="sr-only">{agentHint}</span>
@@ -3098,7 +3118,7 @@ function SessionRow({
           <Truncated
             scrollReveal
             text={s.title ?? S.chat.defaultSessionTitle}
-            className={`min-w-0 flex-1 text-sm ${
+            className={`min-w-0 flex-1 font-sans text-sm ${
               active
                 ? "font-medium text-gray-900 dark:text-gray-100"
                 : s.archived
@@ -3114,7 +3134,7 @@ function SessionRow({
               and in sr text, which is what lets them recede this far. */}
           {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
-            <span title={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
+            <span data-tooltip={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
               <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
@@ -3124,7 +3144,7 @@ function SessionRow({
               dialog lives in the row menu). */}
           {s.messagingChannel !== undefined && (
             <span
-              title={S.messaging.enabledIndicator[s.messagingChannel]}
+              data-tooltip={S.messaging.enabledIndicator[s.messagingChannel]}
               className={`shrink-0 ${toneInk.muted}`}
             >
               <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
@@ -3146,9 +3166,14 @@ function SessionRow({
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusGlyph activity={activity} />
+          {/* The count is a numeral in the attention ink, with no pill: a filled chip beside the
+              title read as a second button and fought every theme's row. */}
           {s.pendingApprovalCount > 0 && (
-            <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
-              <Badge tone="amber">{s.pendingApprovalCount}</Badge>
+            <span
+              data-tooltip={S.chat.pendingApprovals(s.pendingApprovalCount)}
+              className={`shrink-0 text-xs font-semibold tabular-nums ${toneInk.attention}`}
+            >
+              {s.pendingApprovalCount}
             </span>
           )}
         </button>
@@ -3249,7 +3274,7 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
            glyph the dot columns line up with the rows' trailing slot below. */
         <button
           type="button"
-          title={S.chat.workspaceMenu}
+          data-tooltip={S.chat.workspaceMenu}
           aria-label={S.chat.workspaceMenu}
           aria-haspopup="menu"
           aria-expanded={open}

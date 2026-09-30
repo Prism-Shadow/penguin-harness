@@ -114,7 +114,7 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   await page.getByPlaceholder(/Type a message/).waitFor();
   let d = await docWidths(page);
   expect(d.scrollWidth, "draft @1280 no horizontal overflow").toBeLessThanOrEqual(d.clientWidth);
-  await expect(page.locator('[title*="Context usage"]')).toHaveCount(0);
+  await expect(page.locator('[data-tooltip*="Context usage"]')).toHaveCount(0);
 
   // Goal mode keeps its chip compact: the committed budget is a value button, while editing
   // happens in a fixed upward popover (never inline and never covering the objective textarea).
@@ -215,7 +215,7 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
   await page.getByPlaceholder(/Type a message/).waitFor();
-  await expect(page.locator('[title*="Context usage"]')).toHaveCount(1);
+  await expect(page.locator('[data-tooltip*="Context usage"]')).toHaveCount(1);
 
   // --- Models page @390: must not overflow, text must not overlap ---
   await page.setViewportSize({ width: 390, height: 844 });
@@ -724,10 +724,13 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   // Chips at 390: input/output/elapsed shown (no pricing configured -> no cost chip); TPS is
   // deliberately dropped below sm to keep the row inside the width.
   for (const chip of ["Input tokens", "Output tokens", "Elapsed"]) {
-    await expect(footer.locator(`[title="${chip}"]`), `${chip} chip present @390`).toBeVisible();
+    await expect(
+      footer.locator(`[data-tooltip="${chip}"]`),
+      `${chip} chip present @390`,
+    ).toBeVisible();
   }
-  await expect(footer.locator('[title="Output TPS"]'), "TPS chip in DOM").toHaveCount(1);
-  await expect(footer.locator('[title="Output TPS"]'), "TPS chip hidden @390").toBeHidden();
+  await expect(footer.locator('[data-tooltip="Output TPS"]'), "TPS chip in DOM").toHaveCount(1);
+  await expect(footer.locator('[data-tooltip="Output TPS"]'), "TPS chip hidden @390").toBeHidden();
   // With TPS dropped and compact decimals the common case FITS at 390 — no sideways scroll
   // needed (the scroll container remains only as a fallback for extreme values).
   const statsSpan = footer.locator("span").first();

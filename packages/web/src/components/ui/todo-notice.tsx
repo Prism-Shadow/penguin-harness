@@ -42,7 +42,7 @@
 import { Button } from "./button";
 import { UPDATE_DOT_INLINE } from "./update-dot";
 import { ICON_GAP } from "../../lib/icon-scale";
-import { toneStrip } from "../../lib/tone";
+import { NoticeStrip } from "./notice-strip";
 
 export function TodoNotice({
   text,
@@ -72,11 +72,12 @@ export function TodoNotice({
 }) {
   const offersAction = actionLabel !== undefined && onAction !== undefined;
   return (
-    <div
-      className={`mt-3 flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
+    <NoticeStrip
+      tone="attention"
+      className="mt-3 flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
     >
       <p className={`flex min-w-0 items-center text-xs ${ICON_GAP.menu}`}>
-        <span aria-hidden className={`shrink-0 ${UPDATE_DOT_INLINE}`} />
+        <span aria-hidden data-slot="icon" className={`shrink-0 ${UPDATE_DOT_INLINE}`} />
         <span className="min-w-0">{text}</span>
       </p>
       {/* The update sits to the RIGHT of the dismiss, which is where every ConfirmModal in the
@@ -104,6 +105,6 @@ export function TodoNotice({
           </Button>
         )}
       </div>
-    </div>
+    </NoticeStrip>
   );
 }

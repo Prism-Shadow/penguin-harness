@@ -251,9 +251,9 @@ Keep in mind:
 
 TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance, for example `¥110.00`; an account holding several currencies lists each one. The server asks the provider with the stored key, so the key never reaches the browser.
 
-- Select the balance to read it again. Point at it to see when it was read.
-- A balance that cannot be read shows "—". Point at it for the reason.
-- Answers are kept on the server for a minute; selecting the balance skips that.
+- The refresh icon beside the balance reads it again; point at the icon to see when the balance was read. The icon shows when you point at the header.
+- A balance that cannot be read shows "—", with the refresh icon beside it; point at the icon for the reason.
+- Answers are kept on the server for a minute; the refresh icon skips that.
 - Select the pin beside a balance to show it next to your name at the bottom of the sidebar, and in the tooltip of your avatar when the sidebar is collapsed. One balance can be pinned at a time: pinning another replaces it. The pin is saved with your account, not in the browser. The pinned balance is read when the app loads and every five minutes after that.
 
 The balance is read with `GET /api/projects/:id/models/balance?provider=<group>`, which every member of the Project may call.

@@ -44,6 +44,7 @@ describe("what a balance reads as", () => {
   it("a reading: the amounts, with the group and the time in the tooltip", () => {
     const view = balanceView({ loading: false, answer: reading }, "DeepSeek");
     expect(view.text).toBe("¥110.00 · $5.00");
+    expect(view.failed).toBe(false);
     expect(view.title).toContain("DeepSeek");
     expect(view.title).not.toContain(S.models.balanceUnavailable);
   });
@@ -72,6 +73,7 @@ describe("what a balance reads as", () => {
       "TokenDance",
     );
     expect(view.text).toBe("—");
+    expect(view.failed).toBe(true);
     expect(view.title).toContain(S.models.balanceErrors.upstream_failed!);
     expect(view.title).toContain("401");
   });
@@ -80,6 +82,7 @@ describe("what a balance reads as", () => {
     expect(balanceView({ loading: false, requestError: "Network error" }, "TokenDance")).toEqual({
       text: "—",
       title: "Network error",
+      failed: true,
     });
     expect(balanceView(undefined, "TokenDance").text).toBe("…");
     expect(balanceView({ loading: true }, "TokenDance").text).toBe("…");

@@ -37,8 +37,8 @@ import { Textarea } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
 import { useSaveConfirm } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -225,8 +225,9 @@ export function usePromptInjection({
   // features that can report legacySectionPresent); everything else gets the plain insert.
   const legacy = state?.legacySectionPresent === true;
   const alertStrip = promptStrings !== null && state !== null && !state.templateHasPlaceholder && (
-    <div
-      className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
+    <NoticeStrip
+      tone="attention"
+      className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
     >
       <p className="text-xs">
         {legacy
@@ -240,7 +241,7 @@ export function usePromptInjection({
             : promptStrings.insertPlaceholder}
         </Button>
       )}
-    </div>
+    </NoticeStrip>
   );
 
   const promptSection = promptStrings !== null && state !== null && (
@@ -271,7 +272,7 @@ export function usePromptInjection({
                 type="button"
                 disabled={!canEdit}
                 onClick={() => insertPromptToken(promptRef, prompt, setPrompt, token!)}
-                title={S.memory.insertToken}
+                data-tooltip={S.memory.insertToken}
                 className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 disabled:pointer-events-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
               >
                 {token}

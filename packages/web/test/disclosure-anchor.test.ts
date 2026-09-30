@@ -12,24 +12,14 @@
  * beside a "?" is a question about sibling nodes, and a regex cannot see siblings.
  */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** Web and the shared UI package: the rule follows InfoPopover's call sites wherever they live. */
+const SCAN = scanSources();
 
 /** Components whose whole job is to render a field's or a section's title. */
 const TITLE_ELEMENTS = new Set(["FieldLabel"]);
-
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
-  }
-  return out;
-}
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -68,10 +58,10 @@ function slotIn(node: ts.Node): { host: ts.JsxElement | ts.JsxFragment; slot: ts
 /** Every `<InfoPopover>` in the tree that has no title among its preceding siblings. */
 function findOrphans(): string[] {
   const orphans: string[] = [];
-  for (const path of tsxFiles()) {
+  for (const file of SCAN.files.filter((f) => f.name.endsWith(".tsx"))) {
     const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
+      file.path,
+      file.text,
       ts.ScriptTarget.Latest,
       /* setParentNodes */ true,
       ts.ScriptKind.TSX,
@@ -86,7 +76,7 @@ function findOrphans(): string[] {
             .some(rendersTitle);
         if (!anchored) {
           const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          orphans.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line}`);
+          orphans.push(`${file.id}:${line}`);
         }
       }
       ts.forEachChild(node, visit);
@@ -97,6 +87,12 @@ function findOrphans(): string[] {
 }
 
 describe("disclosure anchoring", () => {
+  it("scans every source root, and finds the two disclosures in one place each", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, "packages/web/src/components/ui/info-popover.tsx");
+    expectSingleHome(SCAN, "packages/web/src/components/ui/help-fold.tsx");
+  });
+
   it("never leaves an InfoPopover standing without a title beside it", () => {
     expect(
       findOrphans(),

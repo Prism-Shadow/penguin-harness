@@ -68,7 +68,8 @@ export function CommandPalette({ actions }: { actions: readonly PaletteAction[] 
   return createPortal(
     <div
       // z-50 like Modal's overlay: a portaled menu or tooltip (z-[60]) opened from inside still paints above it.
-      className="anim-fade fixed inset-0 z-50 flex justify-center bg-black/45 px-4 pt-[10vh]"
+      // ui-scrim: the overlay is the dimmed layer, with the palette inside it.
+      className="ui-scrim anim-fade fixed inset-0 z-50 flex justify-center bg-black/45 px-4 pt-[10vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}

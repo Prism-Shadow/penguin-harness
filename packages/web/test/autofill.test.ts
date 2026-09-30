@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { autofillProps } from "../src/components/ui/input";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 const IGNORES = {
   "data-1p-ignore": "",
@@ -13,6 +14,14 @@ const IGNORES = {
   "data-bwignore": "",
   "data-form-type": "other",
 };
+
+describe("autofill sources", () => {
+  it("scan every source root, and find the policy in one place", () => {
+    const scan = scanSources();
+    expectEveryRootScanned(scan);
+    expectSingleHome(scan, "packages/web/src/components/ui/input.tsx");
+  });
+});
 
 describe("autofillProps", () => {
   it("opts an undeclared field out, extension attributes included", () => {

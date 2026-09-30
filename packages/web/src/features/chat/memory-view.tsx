@@ -137,13 +137,13 @@ export function ChatMemoryView({
           <button
             type="button"
             onClick={() => setMode(memoryNavBack())}
-            title={S.chat.memoryBack}
+            data-tooltip={S.chat.memoryBack}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
             <span className="sr-only">{S.chat.memoryBack}</span>
           </button>
-          <span title={glyph.title} className="shrink-0 text-gray-400">
+          <span data-tooltip={glyph.title} className="shrink-0 text-gray-400">
             <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
             <span className="sr-only">{glyph.title}</span>
           </span>
@@ -194,7 +194,7 @@ export function ChatMemoryView({
           <button
             type="button"
             onClick={onOpenSettings}
-            title={S.chat.openAgentMemory}
+            data-tooltip={S.chat.openAgentMemory}
             className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             <GlyphIcon d={OPEN_SETTINGS_ICON} size={ICON_SIZE.inlineGlyph} />
@@ -225,7 +225,8 @@ export function ChatMemoryView({
                 </span>
                 <p
                   className="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-gray-400"
-                  title={group.workspacePath}
+                  data-tooltip={group.workspacePath}
+                  data-tooltip-content="text"
                 >
                   {groupTitle(group)}
                 </p>
@@ -245,7 +246,7 @@ export function ChatMemoryView({
                         <p className="flex items-center gap-1.5 truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
                           {row.changed !== undefined && (
                             <span
-                              title={S.chat.memoryChangedMark}
+                              data-tooltip={S.chat.memoryChangedMark}
                               className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500"
                             >
                               <span className="sr-only">{S.chat.memoryChangedMark}</span>

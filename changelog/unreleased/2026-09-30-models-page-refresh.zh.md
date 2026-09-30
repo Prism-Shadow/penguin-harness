@@ -31,7 +31,7 @@
 
 - `ModelProviderInfo.balance` 声明厂商的账户余额接口及其答复的读法：TokenDance（`https://tokendance.space/portal/api/v1/user/balance`，`balance.balance`，单位微元）与 DeepSeek（`https://api.deepseek.com/user/balance`，每种货币一项）。
 - 新增 `GET /api/projects/:projectId/models/balance?provider=<分组>[&force=1]`，Project 成员均可调用：服务端用分组已存的 key 查询，key 不离开服务端；5 秒超时，走出网代理设置；按 Project × 分组缓存 60 秒，换了 key 即不命中（`force=1` 跳过缓存）。答复为 `{ ok: true, provider, amount, currency, available?, others?, fetchedAt }`，或 `{ ok: false, error, status?, message }`，`error` 为 `unsupported`、`no_key` 或 `upstream_failed`；厂商原文不回传。
-- 标题栏以灰色小字显示余额（`¥110.00`），点击即重新查询，悬停提示显示查询时间；查不到时显示灰色「—」，原因在悬停提示里。
+- 标题栏以灰色小字显示余额（`¥110.00`），旁边一个刷新图标，与图钉一样在指向标题栏时显出，其悬停提示显示查询时间。查不到时显示灰色「—」，旁边的刷新图标保持可见，原因在它的悬停提示里（共享提示只为没有文字的元素显示）。
 - 余额旁的图钉（即会话列表的分组图钉）把一个余额置顶到侧栏底部的用户名旁，收起的图标栏则写进头像的悬停提示。置顶按账户记在 `ui_prefs.pinnedBalance`，置顶另一个即替换；置顶的余额在页面加载时查询一次，此后每五分钟一次。
 
 ## 添加模型

@@ -35,9 +35,9 @@ export function FinanceGauge({
       viewBox={`0 0 ${size} ${size}`}
       role="img"
       aria-label={label}
+      data-tooltip={label}
       className={`block shrink-0 ${toneInk[tone]}`}
     >
-      <title>{label}</title>
       <circle
         cx={center}
         cy={center}
@@ -100,7 +100,7 @@ export function SpendMeter({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(width)}
-      title={label}
+      data-tooltip={label}
       className="relative block h-4 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
     >
       <span

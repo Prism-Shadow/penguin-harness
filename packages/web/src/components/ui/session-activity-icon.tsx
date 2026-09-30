@@ -87,7 +87,7 @@ export function BackgroundTasksMark({ label, size }: { label: string; size: numb
     <span
       role="img"
       aria-label={label}
-      title={label}
+      data-tooltip={label}
       className={`flex shrink-0 items-center ${toneInk.busy}`}
     >
       <GlyphIcon d={BACKGROUND_TASKS_ICON} size={size} />
@@ -116,7 +116,7 @@ export function ScheduleMark({ size }: { size: number }) {
     <span
       role="img"
       aria-label={label}
-      title={label}
+      data-tooltip={label}
       className={`flex shrink-0 items-center ${toneInk.muted}`}
     >
       <GlyphIcon d={SCHEDULE_ICON} size={size} />
@@ -137,7 +137,7 @@ export function SessionActivityIcon({ activity }: { activity: Activity }) {
       <span
         role="img"
         aria-label={label}
-        title={label}
+        data-tooltip={label}
         style={{ width: size, height: size }}
         className="flex shrink-0 items-center justify-center"
       >
@@ -159,10 +159,9 @@ export function SessionActivityIcon({ activity }: { activity: Activity }) {
       // completion is already announced by the notification path, not this glyph).
       role="status"
       aria-label={label}
+      data-tooltip={label}
       className={`block shrink-0 ${APPEARANCE[activity]}`}
     >
-      {/* The svg <title> child doubles as the hover tooltip (svg has no HTML title attribute). */}
-      <title>{label}</title>
       <path d={ACTIVITY_GLYPH[activity]} />
     </svg>
   );

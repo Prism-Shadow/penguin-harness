@@ -76,5 +76,7 @@ describe("blog post in-page anchors", () => {
       const dangling = inPageHrefs(html).filter((href) => !ids.has(targetOf(href)));
       expect(dangling, `dangling in-page anchors in ${file}`).toEqual([]);
     }
-  });
+    // Renders every post through the full markdown pipeline: on hosted runners that alone sits at
+    // the 5 s default, so the budget grows with the blog rather than flaking at its edge.
+  }, 30_000);
 });

@@ -76,6 +76,14 @@ const KIND_CLASS: Record<ToastKind, string> = {
     "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200",
 };
 
+/** A toast's kind in the `ui-notice` hook's vocabulary, so a theme can style it like any notice. */
+const KIND_TONE: Record<ToastKind, "success" | "danger" | "info" | "warning"> = {
+  success: "success",
+  error: "danger",
+  info: "info",
+  attention: "warning",
+};
+
 /** Toast container: mount once at the app root. */
 export function Toaster() {
   const list = useStore(toastStore, (s) => s.items);
@@ -87,9 +95,10 @@ export function Toaster() {
           key={t.id}
           type="button"
           onClick={() => dismiss(t.id)}
-          className={`pointer-events-auto max-w-lg break-words rounded-md border px-3 py-2 text-left text-sm shadow-lg ${t.leaving ? "anim-toast-out" : "anim-toast-in"} ${KIND_CLASS[t.kind]}`}
+          data-tone={KIND_TONE[t.kind]}
+          className={`ui-notice pointer-events-auto max-w-lg break-words rounded-md border px-3 py-2 text-left text-sm shadow-lg ${t.leaving ? "anim-toast-out" : "anim-toast-in"} ${KIND_CLASS[t.kind]}`}
         >
-          {t.text}
+          <span data-slot="body">{t.text}</span>
         </button>
       ))}
     </div>,

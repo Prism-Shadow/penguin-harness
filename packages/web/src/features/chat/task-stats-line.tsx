@@ -71,7 +71,7 @@ function StatChip({
   display?: string;
 }) {
   return (
-    <span title={label} aria-label={label} className={`${display} items-center gap-1`}>
+    <span data-tooltip={label} aria-label={label} className={`${display} items-center gap-1`}>
       <GlyphIcon d={icon} />
       {compactValue !== undefined && compactValue !== value ? (
         <>
@@ -199,7 +199,7 @@ export function TaskStatsLine({
           <button
             type="button"
             disabled={forking}
-            title={S.chat.forkSession}
+            data-tooltip={S.chat.forkSession}
             aria-label={S.chat.forkSession}
             onClick={() => setConfirmingFork(true)}
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-300"

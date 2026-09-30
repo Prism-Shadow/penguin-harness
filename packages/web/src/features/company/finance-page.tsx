@@ -40,7 +40,7 @@ import { formatDateTime, formatMoney, formatPercent } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
@@ -86,6 +86,7 @@ import {
 } from "./finance-tree";
 import type { SpendStateKey } from "./finance-tree";
 import { agentPrincipal } from "./principals";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Pencil (lucide): the budget cell's edit affordance. */
 const PENCIL_ICON =
@@ -236,7 +237,7 @@ function BudgetEditor({
         <MoneyPerMonthUnit currency={currency} />
         <button
           type="button"
-          title={S.company.finance.saveBudget}
+          data-tooltip={S.company.finance.saveBudget}
           aria-label={S.company.finance.saveBudget}
           disabled={busy}
           onMouseDown={(e) => e.preventDefault()}
@@ -247,7 +248,7 @@ function BudgetEditor({
         </button>
         <button
           type="button"
-          title={S.company.finance.cancelEdit}
+          data-tooltip={S.company.finance.cancelEdit}
           aria-label={S.company.finance.cancelEdit}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onCancel}
@@ -441,8 +442,9 @@ export function FinancePage() {
   return (
     <OrgPage title={S.nav.org.finance} info={S.company.finance.info} actions={periodSwitch}>
       {error !== null && (
-        <div
-          className={`mb-4 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs ${toneStrip.danger}`}
+        <NoticeStrip
+          tone="danger"
+          className="mb-4 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs"
         >
           <span>
             {S.company.finance.refreshFailed} · {error}
@@ -450,7 +452,7 @@ export function FinancePage() {
           <Button size="sm" onClick={() => void load()}>
             {S.common.retry}
           </Button>
-        </div>
+        </NoticeStrip>
       )}
       <div className={stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
         {/* Top row: what the period cost against the budget, beside how it accumulated. */}
@@ -548,7 +550,7 @@ export function FinancePage() {
                     return (
                       <tr
                         key={employee.agentId}
-                        title={spendRowTooltip(
+                        data-tooltip={spendRowTooltip(
                           employee,
                           {
                             own: S.company.finance.own,
@@ -630,7 +632,7 @@ export function FinancePage() {
                                 </span>
                                 <button
                                   type="button"
-                                  title={S.company.finance.editBudget}
+                                  data-tooltip={S.company.finance.editBudget}
                                   aria-label={S.company.finance.editBudgetOf(employee.name)}
                                   onClick={() => setEditingId(employee.agentId)}
                                   className={`group inline-flex items-center ${ICON_GAP.tight} rounded px-1 py-0.5 tabular-nums transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
@@ -695,7 +697,7 @@ export function FinancePage() {
                         // tooltip: three columns the table cannot afford beside the spend tree.
                         <tr
                           key={ticket.ticketId}
-                          title={ticketRowTooltip(
+                          data-tooltip={ticketRowTooltip(
                             ticket,
                             owner === undefined ? undefined : principalLabel(owner, names),
                             {
@@ -714,7 +716,7 @@ export function FinancePage() {
                                 <button
                                   type="button"
                                   aria-expanded={open}
-                                  title={
+                                  data-tooltip={
                                     open
                                       ? S.company.finance.collapseChildren
                                       : S.company.finance.expandChildren

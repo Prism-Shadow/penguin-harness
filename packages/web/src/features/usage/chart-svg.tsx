@@ -45,18 +45,23 @@ import {
   sparseLabelIdx,
   type ChartGeom,
 } from "./chart-geom";
+import {
+  ChartAxis,
+  ChartAxisBreak,
+  ChartCursor,
+  ChartGrid,
+  ChartHit,
+} from "../../components/ui/chart";
 
 /** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 2px stroke is too thin to aim at. */
 export const LINE_HIT_H = 10;
 
-/**
- * Stroke width of every data line on the page — the cost line, the
- * success-rate lines, the cache-hit-rate curve. One weight for all of them,
- * so no line reads as more important than another just because it was written
- * later. Chrome (grid lines, the hover indicator, axis-break marks) stays at
- * 1 and is deliberately not this.
+/*
+ * Every data line on the page — the cost line, the success-rate lines, the cache-hit-rate
+ * curve — is drawn at the theme's one line width (useChartStyle), so no line reads as more
+ * important than another just because it was written later. Chrome (grid lines, the hover
+ * indicator, axis-break marks) stays at 1 and is deliberately not that width.
  */
-export const DATA_STROKE_W = 2;
 
 /** Cell width (CSS px) below which axis-break marks are dropped: any narrower and successive marks sit closer together than they are wide, smearing into a hatched baseline. */
 const AXIS_BREAK_MIN_STEP = 8;
@@ -84,14 +89,13 @@ export function LineHits({
   onLeave?: () => void;
 }) {
   return values.map((v, i) => (
-    <rect
+    <ChartHit
       key={i}
       x={geom.x(i) - geom.step / 2}
       y={geom.y(v) - LINE_HIT_H / 2}
       width={geom.step}
       height={LINE_HIT_H}
-      fill="transparent"
-      className="cursor-pointer"
+      cursor="pointer"
       onMouseEnter={() => onEnter(i)}
       onMouseLeave={onLeave}
     />
@@ -232,7 +236,9 @@ export function ChartFrame({
         viewBox={`0 0 ${w} ${CHART_H}`}
         width={w}
         height={CHART_H}
-        className="text-gray-600 dark:text-gray-400"
+        // ui-chart: a theme may redraw the parts, which carry data-part — the grid, the axis
+        // labels and breaks here, the series, areas, bars and points in the caller's marks.
+        className="ui-chart text-gray-600 dark:text-gray-400"
         role="img"
         onMouseLeave={() => {
           onHover(null);
@@ -248,50 +254,23 @@ export function ChartFrame({
         {/* Grid lines and y-axis ticks (recessive gray) */}
         {gridLevels.map((v, i) => (
           <g key={i}>
-            <line
-              x1={PAD_L}
-              x2={w - geom.padR}
-              y1={y(v)}
-              y2={y(v)}
-              className="stroke-gray-200 dark:stroke-gray-800"
-              strokeWidth={1}
-            />
-            <text
-              x={PAD_L - 6}
-              y={y(v) + 3}
-              textAnchor="end"
-              className="fill-gray-400 dark:fill-gray-500"
-              fontSize={9}
-            >
+            <ChartGrid x1={PAD_L} x2={w - geom.padR} y={y(v)} />
+            <ChartAxis x={PAD_L - 6} y={y(v) + 3} anchor="end">
               {fmtY(v)}
-            </text>
+            </ChartAxis>
           </g>
         ))}
 
         {/* Right-hand axis ticks (an overlay's own scale, e.g. a percentage) */}
         {rightAxis?.ticks.map((v) => (
-          <text
-            key={`r${v}`}
-            x={w - geom.padR + 6}
-            y={rightAxis.y(v) + 3}
-            textAnchor="start"
-            className="fill-gray-400 dark:fill-gray-500"
-            fontSize={9}
-          >
+          <ChartAxis key={`r${v}`} x={w - geom.padR + 6} y={rightAxis.y(v) + 3} anchor="start">
             {rightAxis.fmt(v)}
-          </text>
+          </ChartAxis>
         ))}
 
         {/* Hover vertical indicator line (line-chart-only: the bar chart's bar itself is the x indicator, see hoverLine) */}
         {hoverLine && hover !== null && dates[hover] && (
-          <line
-            x1={x(hover)}
-            x2={x(hover)}
-            y1={PAD_T}
-            y2={PAD_T + innerH}
-            className="stroke-gray-300 dark:stroke-gray-700"
-            strokeWidth={1}
-          />
+          <ChartCursor x={x(hover)} y1={PAD_T} y2={PAD_T + innerH} />
         )}
 
         {/* Data marks (provided by the caller) */}
@@ -304,24 +283,7 @@ export function ChartFrame({
         {step >= AXIS_BREAK_MIN_STEP &&
           axisBreaks?.map((i) =>
             i + 1 < geom.n ? (
-              <g
-                key={`break-${i}`}
-                className="pointer-events-none stroke-gray-400 dark:stroke-gray-500"
-                strokeWidth={1}
-              >
-                {[-2, 2].map((dx) => {
-                  const cx = (x(i) + x(i + 1)) / 2 + dx / 2;
-                  return (
-                    <line
-                      key={dx}
-                      x1={cx - 2}
-                      y1={PAD_T + innerH + 3}
-                      x2={cx + 2}
-                      y2={PAD_T + innerH - 3}
-                    />
-                  );
-                })}
-              </g>
+              <ChartAxisBreak key={`break-${i}`} x={(x(i) + x(i + 1)) / 2} y={PAD_T + innerH} />
             ) : null,
           )}
 
@@ -330,30 +292,21 @@ export function ChartFrame({
           const d = dates[i];
           if (!d) return null;
           return (
-            <text
-              key={i}
-              x={x(i)}
-              y={CHART_H - 6}
-              textAnchor="middle"
-              className="fill-gray-400 dark:fill-gray-500"
-              fontSize={9}
-            >
+            <ChartAxis key={i} x={x(i)} y={CHART_H - 6} anchor="middle">
               {(fmtX ?? ((v: string) => v.slice(5)))(d)}
-            </text>
+            </ChartAxis>
           );
         })}
 
         {/* Hover hit area (larger than the mark itself): whole column by default, the bar chart swaps in hitLayer for per-segment */}
         {hitLayer ??
           dates.map((_, i) => (
-            <rect
+            <ChartHit
               key={`hit-${i}`}
               x={PAD_L + step * i}
               y={PAD_T}
               width={step}
               height={innerH}
-              fill="transparent"
-              className="cursor-crosshair"
               onMouseEnter={() => onHover(i)}
             />
           ))}
