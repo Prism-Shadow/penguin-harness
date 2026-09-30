@@ -21,6 +21,7 @@ import {
   AgentAvatar,
   AvatarStack,
   Button,
+  Card,
   ConfirmModal,
   EmptyState,
   GlyphIcon,
@@ -28,6 +29,8 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Input,
+  PageFrame,
+  PageHeader,
   Select,
   Skeleton,
   SkeletonCard,
@@ -46,7 +49,8 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
+import { AiCreateModal, pickDefaultAgent } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
 import { benchmarkRoute } from "./benchmark-route";
@@ -82,7 +86,7 @@ export function BenchmarkCreateButtons({
   onAi: () => void;
   onManual: () => void;
 }) {
-  return <CreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
+  return <AiCreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
 }
 
 /**
@@ -184,7 +188,7 @@ export function BenchmarkCard({
     ? S.benchmark.creationFailedHint
     : S.benchmark.creationFailedHintMember;
   return (
-    <div className="relative flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
+    <Card padding="md" className="relative flex flex-wrap items-center gap-x-6 gap-y-2">
       <button
         type="button"
         onClick={onOpen}
@@ -236,7 +240,7 @@ export function BenchmarkCard({
               {formatScore(latest.score)}
             </span>
             <span
-              className={`block whitespace-nowrap text-[11px] tabular-nums ${deltaTone(latest.delta)}`}
+              className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
             >
               {latest.delta === null
                 ? S.benchmark.firstEvaluation
@@ -277,7 +281,7 @@ export function BenchmarkCard({
         <div
           role="note"
           data-tooltip={failed ? failedHint : S.benchmark.buildingHint}
-          className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-md bg-white/75 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/75"
+          className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-[inherit] bg-white/75 px-4 text-center dark:bg-gray-900/75"
         >
           {/* A failed creation is the one thing here the user has to act on, so its title takes
               the danger ink; the line under it stays secondary text either way. */}
@@ -291,7 +295,7 @@ export function BenchmarkCard({
           </span>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -300,7 +304,7 @@ function CardSkeletons({ rows }: { rows: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: rows }, (_, i) => (
-        <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
+        <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
           <div className="min-w-[14rem] flex-1">
             <Skeleton className="h-[18px] w-40" />
             <Skeleton className="mt-1.5 h-4 w-2/3" />
@@ -478,17 +482,17 @@ export function BenchmarkPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-5xl">
-        {/* The title row, the intro block and the step cards share one block, so the gap below
-            stays one gap — the Agents and Models headers have the same shape. */}
-        <div className="mb-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="ui-display text-xl font-semibold">{S.benchmark.title}</h1>
-            {/* Search plus the two create entry points. Below sm the search box takes a line of
-                its own and the pair of buttons wraps under it: three controls sharing a phone's
-                width would leave the box too narrow to read what was typed into it. */}
-            <div className="flex min-w-0 max-w-full grow flex-wrap items-center gap-2 sm:grow-0">
+    <>
+      <PageFrame width="lg">
+        {/* The title row and the step cards are one header, so the gap below it stays one gap —
+            the Agents and Models headers have the same shape. Search plus the two create entry
+            points: below sm the search box takes a line of its own and the pair of buttons
+            wraps under it, since three controls sharing a phone's width would leave the box too
+            narrow to read what was typed into it. */}
+        <PageHeader
+          title={S.benchmark.title}
+          actions={
+            <>
               <div className="w-full min-w-0 sm:w-56 sm:flex-none">
                 <Input
                   size="sm"
@@ -503,10 +507,11 @@ export function BenchmarkPage() {
                 onAi={openAi}
                 onManual={() => setManualOpen(true)}
               />
-            </div>
-          </div>
+            </>
+          }
+        >
           <GuideSteps isOwner={isOwner} />
-        </div>
+        </PageHeader>
 
         {/* What the address is filtering by, and the way out of it: the list is narrowed by a
             query parameter, which nothing else on the page would otherwise account for. */}
@@ -532,7 +537,7 @@ export function BenchmarkPage() {
         )}
 
         {body}
-      </div>
+      </PageFrame>
 
       <AiCreateModal
         open={aiOpen}
@@ -593,6 +598,6 @@ export function BenchmarkPage() {
           {S.benchmark.deleteConfirm(deletingBenchmark?.title ?? deleting ?? "")}
         </p>
       </ConfirmModal>
-    </div>
+    </>
   );
 }

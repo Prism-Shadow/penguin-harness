@@ -1,6 +1,6 @@
 /**
- * The shared page notice (src/components/ui/todo-notice.tsx) and the decisions behind its
- * bulk-update button (src/lib/bulk-update.ts).
+ * The shared page notice (the UI package's `TodoNotice`, todo-notice.tsx) and the decisions
+ * behind its bulk-update button (src/lib/bulk-update.ts).
  *
  * Three rules are defended here, and each is a rule rather than a preference because breaking it
  * produces a screen the user cannot reason about:
@@ -24,7 +24,7 @@ import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers
 
 /** Web and the shared UI package: the notice's call sites are counted wherever they live. */
 const SCAN = scanSources();
-const TODO_NOTICE = "packages/web/src/components/ui/todo-notice.tsx";
+const TODO_NOTICE = "packages/ui/src/components/feedback/todo-notice/todo-notice.tsx";
 
 /** Every `<TodoNotice …>` in the scanned roots, as its file's repo-relative id plus its attributes by name. */
 function noticeSites(): { file: string; attrs: Map<string, string>; source: string }[] {

@@ -17,7 +17,7 @@ vi.mock("../src/api/endpoints", async (importOriginal) => ({
 }));
 
 import * as api from "../src/api/endpoints";
-import { BETA_NOTICE_KEY } from "../src/features/company/beta-badge";
+import { BETA_NOTICE_KEY } from "../src/features/company/company-beta";
 import { WORK_MODE_KEY } from "../src/lib/work-mode";
 import { companyModeAvailable, createCompanyStore, effectiveWorkMode } from "../src/state/company";
 

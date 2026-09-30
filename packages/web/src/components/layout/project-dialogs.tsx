@@ -22,6 +22,8 @@ import {
   InfoPopover,
   Input,
   Modal,
+  NavList,
+  NavRow,
   Select,
   SettingRow,
   Switch,
@@ -177,25 +179,6 @@ const TAB_ICON_PATHS = {
 
 type SettingsTab = keyof typeof TAB_ICON_PATHS;
 
-function TabIcon({ d }: { d: string }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="shrink-0"
-    >
-      <path d={d} />
-    </svg>
-  );
-}
-
 /**
  * Project settings dialog: a left tab rail (General / Members / Defaults / Security
  * policy) with a row-styled content pane per tab; on narrow screens the rail degrades to a
@@ -234,27 +217,21 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   return (
     <Modal open={open} title={S.project.settingsTitle} onClose={onClose} widthClass="sm:max-w-3xl">
       <div className="flex flex-col gap-3 sm:min-h-[26rem] sm:flex-row sm:gap-0">
-        <nav
-          aria-label={S.project.settingsTitle}
-          className="flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-x-visible sm:border-r sm:border-gray-100 sm:pr-3 dark:sm:border-gray-800"
+        <NavList
+          label={S.project.settingsTitle}
+          orientation="responsive"
+          className="shrink-0 sm:w-44 sm:border-r sm:border-line-muted sm:pr-3"
         >
           {tabs.map((t) => (
-            <button
+            <NavRow
               key={t.key}
-              type="button"
-              aria-current={active.key === t.key ? "page" : undefined}
+              label={t.label}
+              glyph={TAB_ICON_PATHS[t.key]}
+              active={active.key === t.key}
               onClick={() => setTab(t.key)}
-              className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
-                active.key === t.key
-                  ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/60"
-              }`}
-            >
-              <TabIcon d={TAB_ICON_PATHS[t.key]} />
-              <span className="truncate">{t.label}</span>
-            </button>
+            />
           ))}
-        </nav>
+        </NavList>
         <section className="min-w-0 flex-1 sm:pl-5">
           <h3 className="flex items-center gap-1.5 text-base font-semibold">
             {active.label}

@@ -2,8 +2,8 @@
  * PagedDialog: a large modal whose left rail switches sub-pages — the shared shell for multi-page
  * settings surfaces (Settings today; Project settings converges on the same shell). Purely
  * presentational: the caller owns which pages exist, which one is active, and what the pane
- * renders; the shell draws the rail (grouped, icon + label, solid-fill active row — the sidebar's
- * convention), the pane heading, and the close control.
+ * renders; the shell draws the rail (a `NavList` of `NavRow`s, grouped, icon + label, solid-fill
+ * active row — the sidebar's convention), the pane heading, and the close control.
  *
  * Built on Modal, so it inherits the portal, the Escape layer stack (nested dialogs and menus
  * close in visual order) and the bottom-sheet posture on narrow screens — where the rail folds
@@ -13,6 +13,7 @@
 import type { ReactNode } from "react";
 import { CloseButton } from "../../actions/close-button/close-button";
 import { ICON_GAP } from "../../../icon-scale";
+import { NavList, NavRow } from "../../navigation/nav-list/nav-list";
 import { InfoPopover } from "../info-popover/info-popover";
 import { Modal } from "../modal/modal";
 
@@ -36,14 +37,6 @@ export interface PagedDialogGroup<K extends string> {
   label?: string;
   items: ReadonlyArray<PagedDialogItem<K>>;
 }
-
-/** Rail entry: a solid fill when active, a lighter fill on hover otherwise (the sidebar's convention). */
-const railItemClass = (active: boolean) =>
-  `flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
-    active
-      ? "bg-line-muted font-medium text-fg"
-      : "text-fg-muted hover:bg-surface-muted hover:text-fg"
-  }`;
 
 export function PagedDialog<K extends string>({
   open,
@@ -75,9 +68,10 @@ export function PagedDialog<K extends string>({
     <Modal open={open} onClose={onClose} title={title} headerless bare widthClass="sm:max-w-3xl">
       <div className="flex h-[min(40rem,85vh)] flex-col sm:flex-row">
         {/* Rail: vertical on desktop, a horizontal scroller above the pane on narrow screens. */}
-        <nav
-          aria-label={title}
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-line-muted p-2 sm:w-44 sm:flex-col sm:overflow-x-visible sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-3"
+        <NavList
+          label={title}
+          orientation="responsive"
+          className="shrink-0 border-b border-line-muted p-2 sm:w-44 sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-3"
         >
           {groups.map((group) => (
             <div key={group.key} className="contents sm:mt-3 sm:block sm:first:mt-0">
@@ -89,28 +83,17 @@ export function PagedDialog<K extends string>({
                 </p>
               )}
               {group.items.map((item) => (
-                <button
+                <NavRow
                   key={item.key}
-                  type="button"
-                  className={railItemClass(item.key === active)}
-                  aria-current={item.key === active ? "page" : undefined}
+                  label={item.label}
+                  glyph={item.icon}
+                  active={item.key === active}
                   onClick={() => onSelect(item.key)}
-                >
-                  {item.icon !== undefined && (
-                    <span
-                      aria-hidden
-                      className="ui-icon-decor shrink-0 text-fg-subtle"
-                      data-role="nav"
-                    >
-                      {item.icon}
-                    </span>
-                  )}
-                  <span className="min-w-0 truncate">{item.label}</span>
-                </button>
+                />
               ))}
             </div>
           ))}
-        </nav>
+        </NavList>
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6 sm:pt-5">

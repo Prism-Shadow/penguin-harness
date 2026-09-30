@@ -15,7 +15,8 @@
  * component is de-slopped when it moves, and not after.
  *
  * Rule 20 (palette classes, `dark:`, hex) is the package's: the web app speaks the palette until
- * each wave moves it to tokens. Rule 22 waits for a `PageHeader` (W4).
+ * each wave moves it to tokens. Rule 22 reads a `PageHeader`, and the one the app renders is the
+ * package's (W4), whose suite runs the rule; here it runs only if the web app declares its own.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -56,37 +57,16 @@ const POLICY: DeslopPolicy = {
  * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
  */
 const ALLOWLIST: DeslopAllowlist = {
-  "components/account/update-modal.tsx": { 1: [1, "W4"], 3: [1, "W4"], 6: [1, "W4"] },
   "components/layout/app-layout.tsx": { 1: [1, "W7"] },
-  "components/layout/sidebar.tsx": {
-    1: [3, "W7"],
-    12: [5, "W7"],
-    13: [2, "W7"],
-    14: [2, "W7"],
-  },
-  "components/ui/group-list.tsx": { 12: [1, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
-  "features/agents/agent-settings-page.tsx": { 12: [3, "W4"] },
-  "features/agents/hooks-tab.tsx": { 12: [1, "W4"], 13: [2, "W4"] },
-  "features/agents/mcp-servers-section.tsx": { 13: [3, "W4"] },
-  "features/agents/memory-tab.tsx": { 1: [1, "W4"], 4: [1, "W4"], 12: [8, "W4"], 13: [5, "W4"] },
-  "features/agents/prompt-injection-controls.tsx": { 4: [1, "W4"], 12: [2, "W4"] },
-  "features/agents/schedules-tab.tsx": { 12: [1, "W4"] },
-  "features/agents/skills-tab.tsx": { 12: [1, "W4"], 13: [2, "W4"] },
-  "features/ai-create/ai-create-panel.tsx": { 13: [1, "W4"] },
-  "features/benchmark/benchmark-case-browser.tsx": { 13: [2, "W4"] },
-  "features/benchmark/benchmark-detail.tsx": { 13: [2, "W4"] },
-  "features/benchmark/benchmark-page.tsx": { 13: [1, "W4"], 18: [1, "W4"] },
+  "components/layout/sidebar.tsx": { 1: [3, "W7"], 12: [5, "W7"], 13: [2, "W7"], 14: [2, "W7"] },
   "features/builtin-browser/browser-tab-strip.tsx": { 12: [2, "W10"] },
   "features/chat/agent-topology-view.tsx": { 12: [1, "W6"], 13: [3, "W6"] },
   "features/chat/chat-input.tsx": { 7: [1, "W6"], 12: [7, "W6"], 13: [5, "W6"] },
-  "features/chat/chat-page.tsx": { 12: [2, "W6"], 13: [3, "W6"], 15: [1, "W4"] },
-  "features/chat/code-block.tsx": { 13: [1, "W5"] },
+  "features/chat/chat-page.tsx": { 12: [2, "W6"], 13: [3, "W6"] },
   "features/chat/context-gauge.tsx": { 12: [5, "W8"] },
   "features/chat/conversation-outline.tsx": { 12: [1, "W6"] },
-  "features/chat/disclosure-row.tsx": { 13: [1, "W4"], 14: [2, "W4"] },
   "features/chat/draft-view.tsx": { 12: [1, "W6"], 13: [1, "W6"] },
   "features/chat/drop-zone.tsx": { 18: [1, "W7"] },
-  "features/chat/live-duration.tsx": { 6: [1, "W4"] },
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
   "features/chat/message-item.tsx": { 4: [2, "W6"], 13: [3, "W6"] },
   "features/chat/model-picker-modal.tsx": { 12: [1, "W10"] },
@@ -94,7 +74,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/chat/step-banner.tsx": { 13: [1, "W6"], 14: [2, "W6"] },
   "features/chat/subagent-chip.tsx": { 13: [1, "W6"] },
   "features/chat/subagents-view.tsx": { 13: [2, "W6"], 14: [2, "W6"] },
-  "features/chat/task-stats-line.tsx": { 13: [1, "W6"], 15: [1, "W4"] },
+  "features/chat/task-stats-line.tsx": { 13: [1, "W6"] },
   "features/chat/tool-call-card.tsx": { 6: [2, "W6"] },
   "features/chat/work-group.tsx": { 13: [1, "W6"] },
   "features/chat/workspace-browser.tsx": {
@@ -105,52 +85,21 @@ const ALLOWLIST: DeslopAllowlist = {
   },
   "features/chat/workspace-finder.tsx": { 12: [5, "W10"] },
   "features/chat/workspace-tree-view.tsx": { 13: [1, "W7"] },
-  "features/company/beta-badge.tsx": { 13: [1, "W4"] },
-  "features/company/calendar-page.tsx": { 12: [3, "W4"], 13: [10, "W4"] },
   "features/company/channel-composer.tsx": { 13: [2, "W6"] },
   "features/company/channel-header.tsx": { 13: [3, "W6"] },
-  "features/company/channel-sidebar.tsx": { 12: [2, "W4"], 13: [6, "W4"], 14: [2, "W4"] },
   "features/company/channel-view.tsx": { 12: [1, "W6"], 13: [6, "W6"] },
   "features/company/chart-card.tsx": { 12: [1, "W8"], 13: [5, "W8"] },
-  "features/company/employee-dialogs.tsx": { 12: [1, "W4"] },
   "features/company/finance-gauge.tsx": { 13: [1, "W8"] },
-  "features/company/finance-page.tsx": { 12: [3, "W4"], 13: [6, "W4"] },
-  "features/company/handbook-explorer.tsx": { 13: [1, "W4"] },
-  "features/company/handbook-page.tsx": { 12: [2, "W4"], 13: [3, "W4"] },
-  "features/company/org-chart-page.tsx": { 13: [2, "W4"] },
-  "features/company/org-dialogs.tsx": { 13: [1, "W4"] },
-  "features/company/org-layout.tsx": { 12: [1, "W4"], 13: [2, "W4"], 14: [2, "W4"] },
-  "features/company/org-session-groups.tsx": { 12: [2, "W4+W10"], 13: [1, "W10"] },
-  "features/company/org-switcher.tsx": { 13: [2, "W4"] },
-  "features/company/overview-page.tsx": { 12: [2, "W4"], 13: [2, "W4"], 14: [4, "W4"] },
-  "features/company/shared.tsx": { 13: [3, "W4"] },
-  "features/company/ticket-dialog.tsx": { 12: [6, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
-  "features/company/tickets-page.tsx": { 12: [4, "W4"], 13: [6, "W4"] },
   "features/dock/dock-drag.tsx": { 3: [1, "W7"], 12: [1, "W7"] },
   "features/dock/dock-launcher.tsx": { 13: [1, "W7"], 18: [3, "W7"], 19: [4, "W7"] },
   "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"] },
-  "features/models/model-tags.ts": { 13: [1, "W10"] },
-  "features/models/models-page.tsx": { 1: [1, "W4"], 12: [7, "W4"], 13: [8, "W4"] },
-  "features/plugins/plugin-detail-page.tsx": { 13: [2, "W4"] },
-  "features/plugins/plugin-detail.tsx": { 13: [1, "W4"] },
-  "features/plugins/plugins-page.tsx": {
-    1: [1, "W4"],
-    12: [6, "W4"],
-    13: [11, "W4"],
-    14: [2, "W4"],
-  },
-  "features/schedules/schedule-panel.tsx": { 12: [1, "W4"] },
-  "features/schedules/schedule-suggestions.tsx": { 12: [1, "W4"], 13: [1, "W4"] },
   "features/settings/shortcut-recorder.tsx": { 12: [1, "W10"], 13: [1, "W10"] },
   "features/settings/shortcuts-section.tsx": { 13: [1, "W10"] },
   "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
   "features/terminal/terminal-keybar.tsx": { 12: [1, "W10"] },
   "features/traces/timeline-chart.tsx": { 6: [2, "W8"], 13: [10, "W8"] },
-  "features/traces/trace-event-row.tsx": { 12: [2, "W4"], 13: [1, "W4"] },
-  "features/traces/trace-file-view.tsx": { 12: [2, "W4"], 13: [5, "W4"], 15: [1, "W4"] },
   "features/usage/usage-charts.tsx": { 13: [3, "W8"] },
   "features/usage/usage-page.tsx": { 12: [1, "W8"] },
-  "pages/login.tsx": { 9: [1, "W4"] },
 };
 
 const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;
@@ -188,7 +137,7 @@ describe("de-slop rules over packages/web/src", () => {
         analyzeFile(file).components.some((c) => PAGE_HEADER_COMPONENTS.includes(c.name)),
       )
     ) {
-      it.skip(`${title} — PENDING: the web app has no PageHeader (W4 adds it to the package)`, () => {});
+      it.skip(`${title} — the PageHeader is the package's, whose suite runs this rule`, () => {});
       continue;
     }
     it(title, () => {
