@@ -17,12 +17,22 @@ import type {
   BenchmarkSummary,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  AvatarStack,
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+  SkeletonCard,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -30,14 +40,9 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
-import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
 import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
@@ -125,25 +130,16 @@ function TestedAgents({
   nameOf: (agentId: string) => string;
 }) {
   if (agentIds.length === 0) return null;
-  const shown = agentIds.slice(0, AVATARS_SHOWN);
-  const rest = agentIds.length - shown.length;
   return (
     <div
-      className="hidden shrink-0 items-center gap-1 sm:flex"
-      title={`${S.benchmark.testedAgents}: ${agentIds.map(nameOf).join(", ")}`}
+      className="hidden shrink-0 sm:flex"
+      data-tooltip={`${S.benchmark.testedAgents}: ${agentIds.map(nameOf).join(", ")}`}
     >
-      {shown.map((agentId) => (
-        <AgentAvatar
-          key={agentId}
-          id={agentId}
-          name={nameOf(agentId)}
-          size={ICON_SIZE.rowLead}
-          className="shrink-0 rounded"
-        />
-      ))}
-      {rest > 0 && (
-        <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">+{rest}</span>
-      )}
+      <AvatarStack
+        items={agentIds.map((agentId) => ({ id: agentId, name: nameOf(agentId) }))}
+        max={AVATARS_SHOWN}
+        size={ICON_SIZE.rowLead}
+      />
     </div>
   );
 }
@@ -215,7 +211,7 @@ export function BenchmarkCard({
           {latest && (
             <span
               className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}
-              title={S.benchmark.lastEvaluated(formatRelativeShort(latest.time, locale))}
+              data-tooltip={S.benchmark.lastEvaluated(formatRelativeShort(latest.time, locale))}
             >
               <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
               {formatRelativeShort(latest.time, locale)}
@@ -237,7 +233,7 @@ export function BenchmarkCard({
           <>
             <span
               className="block font-mono text-sm font-semibold tabular-nums"
-              title={S.benchmark.latestScoreLabel}
+              data-tooltip={S.benchmark.latestScoreLabel}
             >
               {formatScore(latest.score)}
             </span>
@@ -282,7 +278,7 @@ export function BenchmarkCard({
       {masked && (
         <div
           role="note"
-          title={failed ? failedHint : S.benchmark.buildingHint}
+          data-tooltip={failed ? failedHint : S.benchmark.buildingHint}
           className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-md bg-white/75 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/75"
         >
           {/* A failed creation is the one thing here the user has to act on, so its title takes
@@ -490,7 +486,7 @@ export function BenchmarkPage() {
             stays one gap — the Agents and Models headers have the same shape. */}
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-xl font-semibold">{S.benchmark.title}</h1>
+            <h1 className="ui-display text-xl font-semibold">{S.benchmark.title}</h1>
             {/* Search plus the two create entry points. Below sm the search box takes a line of
                 its own and the pair of buttons wraps under it: three controls sharing a phone's
                 width would leave the box too narrow to read what was typed into it. */}
@@ -524,7 +520,11 @@ export function BenchmarkPage() {
               size={ICON_SIZE.rowLead}
               className="shrink-0 rounded"
             />
-            <span className="min-w-0 truncate" title={nameOf(filterAgentId)}>
+            <span
+              className="min-w-0 truncate"
+              data-tooltip={nameOf(filterAgentId)}
+              data-tooltip-content="text"
+            >
               {S.benchmark.filterByAgent(filterAgentId)}
             </span>
             <Button size="sm" variant="ghost" onClick={clearAgentFilter}>

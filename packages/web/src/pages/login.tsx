@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { Button, PenguinLogo } from "@prismshadow/penguin-ui";
 import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
@@ -18,11 +19,9 @@ import { useLocale } from "../state/locale";
 import type { LangPref } from "../state/locale";
 import { useTheme } from "../state/theme";
 import type { ThemeMode } from "../state/theme";
-import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
 import { Modal } from "../components/ui/modal";
-import { PenguinLogo } from "../components/ui/penguin-logo";
 import { Segmented } from "../components/ui/segmented";
 import { LoginCircuit } from "./login-circuit";
 
@@ -101,13 +100,13 @@ export function LoginPage() {
         <div aria-label={S.settings.language}>
           <Segmented options={langOptions} value={lang} onChange={setLang} />
         </div>
-        <div aria-label={S.settings.theme}>
+        <div aria-label={S.settings.colorMode}>
           <Segmented options={themeOptions} value={mode} onChange={setMode} />
         </div>
       </div>
       <div className="anim-rise relative w-full max-w-sm">
         {/* Brand penguin logo (part of the form area, not background graphics, so it doesn't clash with the trace animation) */}
-        <PenguinLogo className="mx-auto mb-3 h-16 w-16 rounded-2xl" />
+        <PenguinLogo src="/penguin-logo.svg" className="mx-auto mb-3 h-16 w-16 rounded-2xl" />
         <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight">{S.appName}</h1>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">

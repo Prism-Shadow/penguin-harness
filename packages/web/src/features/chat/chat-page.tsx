@@ -32,7 +32,20 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import {
+  ActivityIcon,
+  Button,
+  CopyButton,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { switchDeskModel } from "../company/desk-model";
+import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
@@ -46,7 +59,11 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
-import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
+import {
+  sessionActivity,
+  sessionActivityLabel,
+  sessionBackgroundTasks,
+} from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
   approvalKey,
@@ -69,16 +86,8 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { EmptyState } from "../../components/ui/empty-state";
-import {
-  SessionActivityIcon,
-  sessionActivityLabel,
-} from "../../components/ui/session-activity-icon";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -150,10 +159,7 @@ import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
@@ -163,7 +169,7 @@ const PROCESS_POLL_MS = 15_000;
 function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
   return (
     <span
-      title={label}
+      data-tooltip={label}
       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
     >
       <GlyphIcon d={icon} />
@@ -186,7 +192,7 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
       </p>
       <div className="flex items-start gap-1.5">
         <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
-        <CopyButton text={sessionId} label={S.chat.copySessionId} className={ROW_COPY_CLASS} />
+        <CopyButton text={sessionId} label={S.chat.copySessionId} size="sm" className="shrink-0" />
       </div>
     </div>
   );
@@ -308,6 +314,7 @@ export function ChatPage() {
   const location = useLocation();
   const params = useParams<{ sessionId?: string }>();
   const { user } = useAuth();
+  const company = useCompany();
   const { currency } = useTheme();
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -1262,6 +1269,38 @@ export function ChatPage() {
           prevModelId: selected.modelId,
         }),
       };
+      // A desk is not forked: the switch is the EMPLOYEE's. Its model goes into the chart and
+      // its desk is renewed onto it (features/company/desk-model.ts), so the organization —
+      // its sidebar, its calendar rounds, its @mentions — follows to the Session the person
+      // is now talking in, instead of staying on the old one while a stray one is opened.
+      if (selected.orgId !== undefined) {
+        try {
+          const deskId = await switchDeskModel(
+            api,
+            {
+              projectId,
+              orgId: selected.orgId,
+              agentId: selected.agentId,
+              sessionId: selected.sessionId,
+            },
+            ref,
+          );
+          if (deskId !== null) {
+            const res = await api.postTask(deskId, { input: [origin, ...input] });
+            discardSessionDraft();
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+            navigate(`/chat/${res.sessionId}`);
+            return true;
+          }
+        } catch (e) {
+          // The model may be written and the desk renewed by now; the lists say which.
+          void company.reloadOrgChart();
+          void company.reloadOrgSessions();
+          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          return false;
+        }
+      }
       let createdId: string | null = null;
       try {
         const created = await api.createSession(
@@ -1293,7 +1332,7 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate],
+    [projectId, selected, addSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -2004,7 +2043,10 @@ export function ChatPage() {
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
     // ratio all measure this column (dock-drag.tsx / dock-panel.tsx).
-    <div data-dock-host className="relative flex h-full flex-col bg-white dark:bg-gray-950">
+    // bg-canvas: the chat column is the page, so it takes the theme's page colour — white and
+    // gray-950 in Primer, exactly what it painted before; paper in Console, the sheet in Frost —
+    // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
+    <div data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workflow tabs: the Agent's own pages beside the chat. A workflow tab covers the
           chat (which stays mounted, so its state survives a look at the page) below the
           strip; the strip is absent when the Agent has no workflow with a UI. */}
@@ -2035,7 +2077,7 @@ export function ChatPage() {
       {selected && (
         <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <h1 className="flex min-w-0 text-[15px] font-semibold">
+            <h1 className="flex min-w-0 font-sans text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
             {/* Session-level state: a turning hourglass while the run is active, and nothing at
@@ -2045,10 +2087,13 @@ export function ChatPage() {
                 Below sm only the glyph remains so the title keeps its room. */}
             {headerActivity === "running" && (
               <span
-                title={sessionActivityLabel(headerActivity)}
+                data-tooltip={sessionActivityLabel(headerActivity)}
                 className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
               >
-                <SessionActivityIcon activity={headerActivity} />
+                <ActivityIcon
+                  activity={headerActivity}
+                  label={sessionActivityLabel(headerActivity)}
+                />
                 <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
               </span>
             )}
@@ -2084,7 +2129,7 @@ export function ChatPage() {
             button={
               <button
                 type="button"
-                title={S.chat.infoPanel}
+                data-tooltip={S.chat.infoPanel}
                 aria-label={S.chat.infoPanel}
                 aria-expanded={infoOpen}
                 onClick={() => setInfoOpen(!infoOpen)}
@@ -2128,17 +2173,17 @@ export function ChatPage() {
                       wherever they appear; the title still names the count in words. */}
                   {backgroundCount > 0 && (
                     <span
-                      title={S.chat.backgroundTasks(backgroundCount)}
+                      data-tooltip={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
+                      <GlyphIcon d={ICONS.pulse} />
                       {backgroundCount}
                     </span>
                   )}
                 </span>
                 {/* Narrow: the info icon alone (the chips would crowd the title out). */}
                 <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
-                  <GlyphIcon d={INFO_ICON} size={ICON_SIZE.navRow} />
+                  <GlyphIcon d={ICONS.info} size={ICON_SIZE.navRow} />
                 </span>
               </button>
             }
@@ -2239,7 +2284,7 @@ export function ChatPage() {
                     {exitedIds.length > 0 && (
                       <button
                         type="button"
-                        title={S.chat.processClearExitedHint}
+                        data-tooltip={S.chat.processClearExitedHint}
                         disabled={procBusy !== null}
                         onClick={() => void onClearExitedProcesses()}
                         className="shrink-0 cursor-pointer text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
@@ -2274,7 +2319,7 @@ export function ChatPage() {
                                   href={p.serviceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  title={p.serviceUrl}
+                                  data-tooltip={p.serviceUrl}
                                   className="text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:decoration-gray-500 dark:text-gray-400 dark:decoration-gray-600 dark:hover:text-gray-200"
                                 >
                                   {p.serviceUrl.replace(/^https?:\/\//i, "")}
@@ -2307,7 +2352,7 @@ export function ChatPage() {
                                 says what leaves with it. */}
                             <button
                               type="button"
-                              title={S.chat.processRemoveHint}
+                              data-tooltip={S.chat.processRemoveHint}
                               disabled={procBusy !== null}
                               onClick={() => void onRemoveProcess(p.processId)}
                               className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
@@ -2429,7 +2474,7 @@ export function ChatPage() {
                           while that dock is hidden, and opens its panels in one click. */}
                       <DockLauncher agentsPending={anySubagentPending} />
                     </div>
-                    <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
+                    <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
                       <div className="mx-auto max-w-3xl">
                         {/* Goal banner docked above the composer: an in-flight goal's progress
                             (restored on load while still active), or the terminal state reached

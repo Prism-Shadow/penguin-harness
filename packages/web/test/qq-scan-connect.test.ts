@@ -82,8 +82,8 @@ describe("QQScanConnect", () => {
     expect(html).toContain("disabled=");
     // A rebind would swap the credentials under a live connector, so it is refused with a
     // reason rather than silently doing it.
-    expect(html).toContain(`title="${S.qq.scanDisableFirst}"`);
-    expect(render(false)).not.toContain(`title="${S.qq.scanDisableFirst}"`);
+    expect(html).toContain(`data-tooltip="${S.qq.scanDisableFirst}"`);
+    expect(render(false)).not.toContain(`data-tooltip="${S.qq.scanDisableFirst}"`);
   });
 });
 

@@ -30,10 +30,10 @@ import type {
   WeChatBindingInfo,
   WeChatScanPollResponse,
 } from "@prismshadow/penguin-server/api";
+import { Button } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { QrCode } from "./qq-scan-connect";

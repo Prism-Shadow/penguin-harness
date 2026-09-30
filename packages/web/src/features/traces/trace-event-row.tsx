@@ -12,21 +12,22 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
-import { HOOK_ICON } from "../../components/ui/icons";
+import { Badge, ICONS } from "@prismshadow/penguin-ui";
+import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
-import { Badge, stopReasonTone } from "../../components/ui/badge";
+import { stopReasonTone } from "../../lib/stop-reason-tone";
 import { RequiredMark } from "../../components/ui/field";
-import type { BadgeTone } from "../../components/ui/badge";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 
-export function typeTone(type: string): BadgeTone {
-  if (type === "session_meta") return "brand";
-  if (type === "model_msg") return "gray";
-  return "amber";
+/** An event type as a badge: the session header stands out as a neutral solid tag. */
+export function typeBadge(type: string): BadgeStyle {
+  if (type === "session_meta") return { tone: "neutral", variant: "solid" };
+  if (type === "model_msg") return { tone: "neutral" };
+  return { tone: "attention" };
 }
 
 /** Icon for each event type (24×24 line path). */
@@ -35,9 +36,9 @@ const TYPE_ICON: Record<string, string> = {
   thinking: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3 11v2h6v-2a6 6 0 0 0-3-11z",
   image_url: "M3 5h18v14H3zM3 15l5-5 4 4 3-3 6 6",
   inline_data: "M3 5h18v14H3zM3 15l5-5 4 4 3-3 6 6",
-  tool_call: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
+  tool_call: ICONS.wrench,
   tool_call_output: "M4 6l4 4-4 4M12 18h8",
-  token_usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  token_usage: ICONS.barChart,
   request_begin: "M5 12h14M13 6l6 6-6 6",
   request_end: "M19 12H5M11 6l-6 6 6 6",
   approval_decision: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z",
@@ -46,11 +47,11 @@ const TYPE_ICON: Record<string, string> = {
   abort: "M6 6h12v12H6z",
   subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
   // A hook's answer: the hook glyph the settings tab and the harness card use.
-  hook: HOOK_ICON,
+  hook: ICONS.fishHook,
   // MCP connect pair: a plug shape; tool_list_ready reuses the wrench (a toolset record).
   mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
   mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
-  tool_list_ready: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
+  tool_list_ready: ICONS.wrench,
 };
 const DEFAULT_ICON = "M12 8v5m0 3h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z";
 
@@ -434,8 +435,8 @@ export function EventRow({
           {formatTime(msg.timestamp)}
         </span>
         <TypeIcon type={payloadType} />
-        <Badge tone={typeTone(msg.type)}>{payloadType}</Badge>
-        {msg.origin && msg.origin.length > 0 && <Badge tone="brand">origin</Badge>}
+        <Badge {...typeBadge(msg.type)}>{payloadType}</Badge>
+        {msg.origin && msg.origin.length > 0 && <Badge variant="solid">origin</Badge>}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
           {summarizeEvent(msg)}
         </span>

@@ -26,6 +26,20 @@ import type {
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Badge,
+  Button,
+  CloseIcon,
+  EmptyState,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  ICON_SIZE,
+  Skeleton,
+  SkeletonCard,
+  UpdatePill,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -38,29 +52,14 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { FormPicker } from "../../components/ui/form-picker";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { Badge } from "../../components/ui/badge";
-import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
-import { EmptyState } from "../../components/ui/empty-state";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
-import {
-  CloseIcon,
-  GEAR_ICON,
-  HOOK_ICON,
-  MEMORY_ICON,
-  PLUGIN_ICON,
-  SCHEDULE_ICON,
-} from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
@@ -71,12 +70,10 @@ import {
   agentIdFromSnapshotName,
   fileToBase64,
 } from "./snapshot-file";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { mergeAgents } from "../../lib/benchmark-merge";
 import type { AgentSource } from "../../lib/benchmark-merge";
@@ -88,23 +85,23 @@ const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
   /** New chat (plus sign) */
-  newChat: "M12 5v14M5 12h14",
+  newChat: ICONS.plus,
   /** Delete (trash can) */
   trash:
     "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6",
   /** Total session count (chat bubble) */
   sessions: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** Vault key count (key: bow + teeth) */
-  vaultKeys: "M15.5 7.5l3 3L22 7l-3-3M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z",
+  vaultKeys: ICONS.key,
   /** Schedule count: the alarm clock every scheduled-task surface wears. */
-  schedules: SCHEDULE_ICON,
+  schedules: ICONS.alarmClock,
   /** Installed skill count (open book, same family as the plugin library) */
   skills:
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
-  usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  usage: ICONS.barChart,
   /** Memory count: the brain every Memory surface wears; opens the settings tab. */
-  memory: MEMORY_ICON,
+  memory: ICONS.brain,
 } as const;
 
 /**
@@ -121,7 +118,7 @@ const STAT_LINK_CLASS =
  * puzzle piece rather than the book.
  */
 function pluginPickItems(plugins: readonly PluginItem[]): PickableItem[] {
-  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: PLUGIN_ICON }));
+  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
 }
 
 export function AgentsPage() {
@@ -483,7 +480,7 @@ export function AgentsPage() {
             header has the same shape. */}
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
+            <h1 className="ui-display text-xl font-semibold">{S.agent.listTitle}</h1>
             {/* Search plus the create pair, in the Models page header's shape: on a narrow
                 screen flex-wrap drops the pair onto its own line and the box shrinks with it,
                 fixed width from sm up. Both controls take the form rung — CreateButtons defaults
@@ -579,8 +576,8 @@ export function AgentsPage() {
                       </span>
                       {machineName !== null && (
                         <span
-                          className="shrink-0 font-mono text-[11px] normal-case text-gray-400 dark:text-gray-500"
-                          title={elsewhereTitle}
+                          className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
+                          data-tooltip={elsewhereTitle}
                         >
                           {S.chat.machineTag(machineName)}
                         </span>
@@ -588,7 +585,7 @@ export function AgentsPage() {
                       <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
                         {a.agentId}
                       </span>
-                      <Badge tone="gray">v{a.version}</Badge>
+                      <Badge>v{a.version}</Badge>
                       {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                           names the state in words rather than as another bare dot — a capsule in
                           the version badge's own geometry, tinted the same pale red the dots on
@@ -619,7 +616,7 @@ export function AgentsPage() {
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                       <span
                         className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-                        title={S.agent.sessionCount(a.sessionCount)}
+                        data-tooltip={S.agent.sessionCount(a.sessionCount)}
                       >
                         <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
                         {a.sessionCount}
@@ -628,7 +625,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.toolCount(a.toolCount)}
+                        data-tooltip={S.agent.toolCount(a.toolCount)}
                         aria-label={S.agent.toolCount(a.toolCount)}
                         onClick={() => openSettingsTab(a.agentId, "tools")}
                       >
@@ -639,7 +636,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.skills.skillCount(a.skillCount)}
+                        data-tooltip={S.skills.skillCount(a.skillCount)}
                         aria-label={S.skills.skillCount(a.skillCount)}
                         onClick={() => openSettingsTab(a.agentId, "skills")}
                       >
@@ -650,18 +647,18 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.hooks.hookCount(a.hookCount)}
+                        data-tooltip={S.hooks.hookCount(a.hookCount)}
                         aria-label={S.hooks.hookCount(a.hookCount)}
                         onClick={() => openSettingsTab(a.agentId, "hooks")}
                       >
-                        <GlyphIcon d={HOOK_ICON} size={ICON_SIZE.inlineGlyph} />
+                        <GlyphIcon d={ICONS.fishHook} size={ICON_SIZE.inlineGlyph} />
                         {a.hookCount}
                       </button>
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.memoryCount(a.memoryCount)}
+                        data-tooltip={S.agent.memoryCount(a.memoryCount)}
                         aria-label={S.agent.memoryCount(a.memoryCount)}
                         onClick={() => openSettingsTab(a.agentId, "memory")}
                       >
@@ -672,7 +669,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.vaultKeyCount(a.vaultKeyCount)}
+                        data-tooltip={S.agent.vaultKeyCount(a.vaultKeyCount)}
                         aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
                         onClick={() => openSettingsTab(a.agentId, "vault")}
                       >
@@ -683,7 +680,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.scheduleCount(a.scheduleCount)}
+                        data-tooltip={S.agent.scheduleCount(a.scheduleCount)}
                         aria-label={S.agent.scheduleCount(a.scheduleCount)}
                         onClick={() => openSettingsTab(a.agentId, "schedules")}
                       >
@@ -692,7 +689,7 @@ export function AgentsPage() {
                       </button>
                       <span
                         className="inline-flex shrink-0 items-center gap-1"
-                        title={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
+                        data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
                       >
                         <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
                         {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
@@ -726,7 +723,7 @@ export function AgentsPage() {
                         navigate(`/agents/${a.agentId}`);
                       }}
                     >
-                      <GlyphIcon d={GEAR_ICON} />
+                      <GlyphIcon d={ICONS.gear} />
                       {S.common.settings}
                     </Button>
                     <Button
@@ -749,7 +746,7 @@ export function AgentsPage() {
                     {builtin ? (
                       <span
                         role="img"
-                        title={S.agent.builtinUndeletable}
+                        data-tooltip={S.agent.builtinUndeletable}
                         aria-label={S.agent.builtinUndeletable}
                         className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-transparent p-1.5 text-gray-300 dark:text-gray-600"
                       >
@@ -860,7 +857,7 @@ export function AgentsPage() {
                 </span>
                 <button
                   type="button"
-                  title={S.agent.createSnapshotClear}
+                  data-tooltip={S.agent.createSnapshotClear}
                   aria-label={S.agent.createSnapshotClear}
                   disabled={busy}
                   onClick={() => setSnapshotFile(null)}

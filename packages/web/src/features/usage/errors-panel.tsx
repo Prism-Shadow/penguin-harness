@@ -11,11 +11,11 @@
  */
 import { useEffect, useState } from "react";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
+import { Badge } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { Badge } from "../../components/ui/badge";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Empty } from "./usage-charts";
@@ -313,13 +313,16 @@ export function ErrorsPanel({
                       <span className="block break-words">{sourceCode(e.source, e.code)}</span>
                     </td>
                     <td className="py-1.5 pr-2 align-top">
-                      <Badge tone={key === "unexpected" ? "red" : "gray"}>{kindLabel(key)}</Badge>
+                      <Badge tone={key === "unexpected" ? "danger" : "neutral"}>
+                        {kindLabel(key)}
+                      </Badge>
                     </td>
                     <td className="py-1.5 align-top text-gray-500 dark:text-gray-400">
                       {/* One line by default; click to expand to the full message (wrapping), click again to collapse. */}
                       <button
                         type="button"
-                        title={e.message}
+                        data-tooltip={e.message}
+                        data-tooltip-content="text"
                         onClick={() => toggle(i)}
                         className={`block w-full cursor-pointer text-left transition-colors hover:text-gray-700 dark:hover:text-gray-300 ${
                           expanded.has(i) ? "whitespace-pre-wrap break-words" : "truncate"

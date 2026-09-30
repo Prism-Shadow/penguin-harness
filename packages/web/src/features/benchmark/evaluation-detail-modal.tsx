@@ -10,15 +10,18 @@
  */
 import { useState } from "react";
 import type { BenchmarkCaseScore, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  Chevron,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
@@ -29,7 +32,7 @@ import type { AskEvaluationParams } from "./benchmark-prompts";
 function SessionCell({ sessionId }: { sessionId?: string }) {
   if (!sessionId) return <span className="text-gray-400">—</span>;
   return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
+    <span className="font-mono text-gray-600 dark:text-gray-300" data-tooltip={sessionId}>
       {sessionId}
     </span>
   );
@@ -195,7 +198,7 @@ export function EvaluationDetailModal({
               {S.common.close}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>
-              <GlyphIcon d={MAGIC_WAND_ICON} />
+              <GlyphIcon d={ICONS.wand} />
               {S.benchmark.askAi}
             </Button>
           </>

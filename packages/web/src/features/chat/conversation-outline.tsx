@@ -36,9 +36,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, MouseEvent, RefObject } from "react";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import type { OutlineEntry } from "./outline-model";
 import {
   globalTurnNumber,
@@ -418,7 +418,7 @@ export function OutlineMenuButton({
       button={
         <button
           type="button"
-          title={S.chat.outlineTitle}
+          data-tooltip={S.chat.outlineTitle}
           aria-label={S.chat.outlineTitle}
           onClick={() => setOpenComputing(!open)}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"

@@ -18,12 +18,13 @@
  */
 import { useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import { ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { filterSkills, localizedShortText } from "../chat/skill-use";
 import { SkillIcon } from "./skill-icon-view";
+import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** A bulk-row action: a plain text button, sized to sit inside the panel's chrome without competing with the rows. */
 const bulkActionClass =
@@ -110,11 +111,7 @@ export function SkillPickList({
                 type="button"
                 aria-pressed={on}
                 onClick={() => onToggle(s.name)}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  on
-                    ? "font-medium text-gray-900 dark:text-gray-100"
-                    : "text-gray-600 dark:text-gray-400"
-                }`}
+                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(on)}`}
               >
                 {/* Each row's icon (icon.svg, sanitized and inlined), else the kind's glyph. */}
                 <SkillIcon
@@ -128,7 +125,7 @@ export function SkillPickList({
                 <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
                   {localizedShortText(locale, s)}
                 </span>
-                <span className="w-3 shrink-0 text-center">{on ? "✓" : ""}</span>
+                <ChoiceCheck on={on} />
               </button>
             );
           })

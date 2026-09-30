@@ -24,15 +24,12 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import { Button, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
-import { toneStrip } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { FieldHint, FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { Segmented } from "../../components/ui/segmented";
@@ -42,6 +39,7 @@ import { ModelSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams } from "./benchmark-prompts";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The Skill the evaluator agent must carry; the dialog warns when the chosen agent lacks it. */
 const EVALUATION_SKILL = "agent-evaluation";
@@ -215,7 +213,9 @@ export function UseBenchmarkModal({
   );
   const missingSkillStrip = (missing: boolean, message: string) =>
     missing ? (
-      <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>{message}</div>
+      <NoticeStrip tone="attention" className="rounded-md border px-3 py-2 text-xs">
+        {message}
+      </NoticeStrip>
     ) : null;
   const testedAgentSelect = (hint: string) => (
     <Select
@@ -256,7 +256,7 @@ export function UseBenchmarkModal({
             parameter of the open tab is in range.
           */}
           <Button size="sm" variant="primary" disabled={!ready} onClick={go}>
-            <GlyphIcon d={MAGIC_WAND_ICON} />
+            <GlyphIcon d={ICONS.wand} />
             {S.aiCreate.editInChat}
           </Button>
         </>
@@ -306,9 +306,9 @@ export function UseBenchmarkModal({
               {S.benchmark.optimizeDescription}
             </p>
             {baseline === null ? (
-              <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>
+              <NoticeStrip tone="attention" className="rounded-md border px-3 py-2 text-xs">
                 {S.benchmark.noBaseline}
-              </div>
+              </NoticeStrip>
             ) : (
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {S.benchmark.baselineLine(formatScore(baseline.score), optimizeParams.targetScore)}

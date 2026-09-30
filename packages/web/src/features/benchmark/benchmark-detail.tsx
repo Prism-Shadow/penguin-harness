@@ -11,22 +11,25 @@
  */
 import { useEffect, useState } from "react";
 import type { BenchmarkCaseSummary, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
-import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
-import { makeRangeGeom, segmentPath } from "../usage/chart-geom";
+import { NEUTRAL_SERIES } from "../../lib/category-colors";
+import { makeRangeGeom, segmentPoints } from "../usage/chart-geom";
+import { ChartLine, ChartPoint, ChartSwatch, type ChartPaint } from "../../components/ui/chart";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
@@ -42,6 +45,10 @@ import type { EvaluationSeries } from "./benchmark-metrics";
 import { askCaseExamples, askCaseTail } from "./benchmark-prompts";
 import type { AskCaseParams } from "./benchmark-prompts";
 import { EvaluationDetailModal } from "./evaluation-detail-modal";
+
+/** A score series' paint: palette slot i, or the neutral for the evaluations with no label. */
+const scoreSeriesPaint = (s: EvaluationSeries, i: number): ChartPaint =>
+  s.unlabeled ? { ink: NEUTRAL_SERIES.text, swatch: NEUTRAL_SERIES.swatch } : { series: i };
 
 /**
  * Score-over-time line chart: one x slot per evaluation in scoreboard order, labeled with its
@@ -102,27 +109,23 @@ function ScoreTrendChart({
         >
           {series.map((s, si) => {
             const points = seriesPoints(evaluations, s);
+            const paint = scoreSeriesPaint(s, si);
             return (
-              <g
-                key={s.unlabeled ? "unlabeled" : s.key}
-                className={(s.unlabeled ? NEUTRAL_SERIES : seriesColor(si)).text}
-              >
+              <g key={s.unlabeled ? "unlabeled" : s.key}>
                 {points.length > 1 && (
-                  <path
-                    d={segmentPath(geom, points)}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
+                  <ChartLine
+                    points={segmentPoints(geom, points)}
+                    paint={paint}
                     opacity={hover !== null ? 0.35 : 1}
                   />
                 )}
                 {points.map((p) => (
-                  <circle
+                  <ChartPoint
                     key={p.index}
                     cx={geom.x(p.index)}
                     cy={geom.y(p.value)}
-                    r={hover === p.index ? 4 : 2.5}
-                    className="fill-current"
+                    paint={paint}
+                    grow={hover === p.index}
                     opacity={hover !== null && hover !== p.index ? 0.25 : 1}
                   />
                 ))}
@@ -155,9 +158,7 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
               key={s.unlabeled ? "unlabeled" : s.key}
               className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400"
             >
-              <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${(s.unlabeled ? NEUTRAL_SERIES : seriesColor(i)).swatch}`}
-              />
+              <ChartSwatch paint={scoreSeriesPaint(s, i)} shape="block" />
               <span className="font-mono">{labelOf(s)}</span>
             </span>
           ))}
@@ -230,7 +231,8 @@ function EvaluationRow({
       </td>
       <td
         className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
-        title={evaluation.provider}
+        data-tooltip={evaluation.provider}
+        data-tooltip-content="code"
       >
         {evaluation.modelId}
       </td>
@@ -307,9 +309,7 @@ function CasesSection({
                 <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
                   {item.title}
                 </span>
-                <span className="block truncate font-mono text-[11px] text-gray-400">
-                  {item.id}
-                </span>
+                <span className="block truncate font-mono text-xs text-gray-400">{item.id}</span>
               </span>
               {/* Styled as the quiet gray action the Workspace download link is, not as a
                   link: the row itself is the button, so an accent-colored label here read as
@@ -453,7 +453,7 @@ export function BenchmarkDetail({
           }}
           footer={
             <Button size="sm" variant="secondary" onClick={() => setAskingCaseId(openCase.id)}>
-              <GlyphIcon d={MAGIC_WAND_ICON} />
+              <GlyphIcon d={ICONS.wand} />
               {S.benchmark.askAi}
             </Button>
           }

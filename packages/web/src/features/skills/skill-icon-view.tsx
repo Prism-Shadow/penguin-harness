@@ -13,7 +13,7 @@
  * color).
  */
 import { useMemo } from "react";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { BOOK_ICON } from "../chat/skill-use";
 import { sanitizeSkillIcon } from "./skill-icon";
 

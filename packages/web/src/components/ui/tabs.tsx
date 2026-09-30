@@ -2,7 +2,7 @@
  * Tab switcher component (controlled): GitHub-style underline; scrolls
  * horizontally on narrow screens.
  */
-import { UpdateDot } from "./update-dot";
+import { UpdateDot } from "@prismshadow/penguin-ui";
 
 export interface TabItem<K extends string = string> {
   key: K;
@@ -28,7 +28,9 @@ export function Tabs<K extends string>({
     <div
       role="tablist"
       // overflow-y-hidden: only allow horizontal scroll on narrow screens, otherwise some browsers reserve a vertical scrollbar gutter for overflow-x-auto.
-      className="flex max-w-full gap-1 overflow-x-auto overflow-y-hidden border-b border-gray-200 dark:border-gray-800"
+      // ui-underline-nav: the selected-tab marker is the theme's to draw (the recipes select the
+      // tabs by role and aria-selected); in the default theme it is the border below.
+      className="ui-underline-nav flex max-w-full gap-1 overflow-x-auto overflow-y-hidden border-b border-gray-200 dark:border-gray-800"
     >
       {items.map((item) => {
         const badge = item.badge ?? null;
@@ -38,7 +40,9 @@ export function Tabs<K extends string>({
             type="button"
             role="tab"
             aria-selected={item.key === active}
-            {...(badge !== null ? { title: badge, "aria-label": `${item.label} · ${badge}` } : {})}
+            {...(badge !== null
+              ? { "data-tooltip": badge, "aria-label": `${item.label} · ${badge}` }
+              : {})}
             onClick={() => onChange(item.key)}
             className={`relative -mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors duration-150 ${
               item.key === active

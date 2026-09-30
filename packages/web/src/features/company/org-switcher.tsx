@@ -13,17 +13,23 @@
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import {
+  Badge,
+  Button,
+  CheckIcon,
+  ChevronDown,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  PlusIcon,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneSurface } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Dropdown } from "../../components/ui/dropdown";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown, GEAR_ICON, PlusIcon } from "../../components/ui/icons";
 import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
 import {
   CreateOrganizationDialog,
@@ -31,8 +37,11 @@ import {
   useOrganizationCreated,
 } from "./org-dialogs";
 import { OrgStatusDot, OrgStatusPill, orgStatusText } from "./shared";
+import { menuRowClass, menuRowTone } from "../../components/ui/field";
 
-const menuItemClass = `flex w-full items-center ${ICON_GAP.menu} px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`;
+/** The switcher's rows: the shared menu row, a list of organizations and the actions under it. */
+const menuItemBase = `flex items-center ${ICON_GAP.menu} ${menuRowClass} text-sm`;
+const menuItemClass = `${menuItemBase} ${menuRowTone()}`;
 
 export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
@@ -89,7 +98,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            title={triggerLabel}
+            data-tooltip={triggerLabel}
             // The count beside the name renders aria-hidden — it is a bare `@3` — so the
             // accessible name has to carry the same fact in words.
             aria-label={triggerLabel}
@@ -153,20 +162,20 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                 <button
                   key={key}
                   type="button"
-                  title={S.company.inProject(projectName(o.projectId), o.name)}
+                  data-tooltip={S.company.inProject(projectName(o.projectId), o.name)}
                   aria-current={active ? "true" : undefined}
                   onClick={() => {
                     setOpen(false);
                     go(orgPagePath(o.projectId, o.orgId, "overview"));
                   }}
-                  className={`${menuItemClass} ${active ? "font-semibold" : ""}`}
+                  className={`${menuItemBase} ${menuRowTone(active)}`}
                 >
                   <OrgStatusDot org={o} />
                   <span className="min-w-0 flex-1 truncate">{o.name}</span>
                   {o.invalid !== undefined ? (
-                    <Badge tone="red">{S.company.orgInvalid}</Badge>
+                    <Badge tone="danger">{S.company.orgInvalid}</Badge>
                   ) : o.status === "paused" ? (
-                    <Badge tone="amber">{S.company.orgPaused}</Badge>
+                    <Badge tone="attention">{S.company.orgPaused}</Badge>
                   ) : null}
                   {active && (
                     <span className="shrink-0 text-gray-500 dark:text-gray-400">
@@ -208,7 +217,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
               }}
             >
               <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                <GlyphIcon d={GEAR_ICON} size={ICON_SIZE.rowLead} />
+                <GlyphIcon d={ICONS.gear} size={ICON_SIZE.rowLead} />
               </span>
               {S.company.orgSettings}
             </button>
@@ -233,6 +242,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           orgId={settingsTarget.orgId}
           onClose={() => setSettingsOpen(false)}
           onChanged={() => void company.reloadOrganizations()}
+          // The list drops it, and the shell then moves off its pages by itself (the settled
+          // listing no longer holds the current organization).
+          onDeleted={() => void company.reloadOrganizations()}
         />
       )}
     </>

@@ -17,10 +17,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
+import type { RunState } from "@prismshadow/penguin-ui";
 import { humanizeDuration } from "../../lib/format";
-import { Chevron } from "../../components/ui/chevron";
-import { StatusIcon } from "../../components/ui/status-icon";
-import type { RunState } from "../../components/ui/status-icon";
 import { LiveDuration } from "./live-duration";
 import { toneInk } from "../../lib/tone";
 
@@ -70,7 +69,11 @@ export function StepBanner({
           right edge. min-w-0 (not flex-1) lets a long detail truncate while a short one
           keeps the duration snug against it. */}
       {detail !== undefined && (
-        <span title={detail} className="min-w-0 truncate font-mono text-xs text-gray-400">
+        <span
+          data-tooltip={detail}
+          data-tooltip-content="code"
+          className="min-w-0 truncate font-mono text-xs text-gray-400"
+        >
           {detail}
         </span>
       )}

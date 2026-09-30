@@ -12,12 +12,9 @@
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Chevron } from "../../components/ui/chevron";
 import { FormPickerTrigger } from "../../components/ui/form-picker";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { WorkspaceFinder } from "./workspace-finder";
 import { baseName } from "./workspace-finder-model";
 
@@ -123,7 +120,11 @@ export function WorkspaceSelect({
 
   /** Folder glyph shared by both built-in triggers. */
   const folderIcon = (extraClass: string) => (
-    <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.rowLead} className={`text-gray-400 ${extraClass}`} />
+    <GlyphIcon
+      d={ICONS.folder}
+      size={ICON_SIZE.rowLead}
+      className={`text-gray-400 ${extraClass}`}
+    />
   );
 
   if (trigger) {
@@ -160,7 +161,7 @@ export function WorkspaceSelect({
     <>
       <button
         type="button"
-        title={title}
+        data-tooltip={title}
         aria-label={fieldName}
         aria-haspopup="dialog"
         aria-expanded={open}

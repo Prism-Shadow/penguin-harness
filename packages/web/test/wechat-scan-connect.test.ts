@@ -58,8 +58,8 @@ describe("WeChatScanConnect", () => {
     expect(html).toContain("disabled=");
     // A rebind would swap the credential under a live connector, so it is refused with a
     // reason rather than silently done.
-    expect(html).toContain(`title="${S.wechat.scanDisableFirst}"`);
-    expect(render()).not.toContain(`title="${S.wechat.scanDisableFirst}"`);
+    expect(html).toContain(`data-tooltip="${S.wechat.scanDisableFirst}"`);
+    expect(render()).not.toContain(`data-tooltip="${S.wechat.scanDisableFirst}"`);
   });
 });
 

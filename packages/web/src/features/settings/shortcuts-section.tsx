@@ -8,11 +8,9 @@
  * tab never receives ⌘W; ⌘P takes over the browser's Print; the desktop menu also carries ⌘R).
  */
 import { useState } from "react";
+import { Button, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { conflictsOf, findConflicts, type Conflict } from "../../lib/shortcuts/conflicts";
 import { currentHost, currentPlatform } from "../../lib/shortcuts/platform";
 import { SHORTCUT_COMMANDS, SHORTCUT_GROUPS, commandById } from "../../lib/shortcuts/registry";
@@ -101,7 +99,7 @@ function ShortcutRow({
         {overridden && (
           <button
             type="button"
-            title={S.shortcuts.resetRow}
+            data-tooltip={S.shortcuts.resetRow}
             aria-label={`${S.shortcuts.resetRow}: ${S.shortcuts.commands[cmd.id]}`}
             onClick={() => resetBinding(cmd.id)}
             className="flex h-6 w-6 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"

@@ -36,17 +36,13 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ELLIPSIS_ICON } from "../../components/ui/session-row-menu";
-import { FOLDER_ICON } from "../../components/ui/group-list";
 import { budgetTone } from "./finance-tree";
 import { INVALID_ICON } from "./shared";
 import { CHART_NODE_H, CHART_NODE_W, workspaceTail } from "./org-chart-tree";
@@ -153,7 +149,7 @@ export function ChartCard({
       {/* The tooltip carries what the two truncating lines may have cut, and nothing else:
           the face has no click of its own, so it must not promise one either. */}
       <div
-        title={
+        data-tooltip={
           flag !== undefined ? `${employee.name} · ${flag}` : `${employee.name} · ${employee.title}`
         }
         className={`absolute inset-0 flex flex-col rounded-lg border bg-white px-3 py-2.5 shadow-sm dark:bg-gray-900 ${
@@ -180,14 +176,14 @@ export function ChartCard({
           <ChartStateDot state={state} />
           <span
             className="flex min-w-0 flex-1 items-center gap-1 font-mono text-[10px] text-gray-400 dark:text-gray-500"
-            title={flag ?? employee.resolvedWorkspace ?? employee.workspace}
+            data-tooltip={flag ?? employee.resolvedWorkspace ?? employee.workspace}
           >
             {flag !== undefined ? (
               <span className={toneInk.danger}>
                 <GlyphIcon d={INVALID_ICON} size={10} />
               </span>
             ) : (
-              <GlyphIcon d={FOLDER_ICON} size={10} />
+              <GlyphIcon d={ICONS.folder} size={10} />
             )}
             <span className="truncate">{workspaceTail(employee.workspace)}</span>
           </span>
@@ -195,7 +191,7 @@ export function ChartCard({
             className={`shrink-0 tabular-nums ${
               tone === "attention" || tone === "danger" ? `font-medium ${toneInk[tone]}` : ""
             }`}
-            title={spendTitle}
+            data-tooltip={spendTitle}
           >
             {spend}
           </span>
@@ -229,7 +225,7 @@ export function ChartCard({
           button={
             <button
               type="button"
-              title={S.company.chart.nodeMenu}
+              data-tooltip={S.company.chart.nodeMenu}
               aria-label={`${employee.name} · ${S.company.chart.nodeMenu}`}
               aria-haspopup="menu"
               aria-expanded={ctx.open}
@@ -245,7 +241,7 @@ export function ChartCard({
                 ctx.open ? "opacity-100" : "opacity-70"
               }`}
             >
-              <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.groupHeaderAction} filled />
+              <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.groupHeaderAction} filled />
             </button>
           }
         >

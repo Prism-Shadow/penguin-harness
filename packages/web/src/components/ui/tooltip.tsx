@@ -1,11 +1,26 @@
 /**
- * Hover/focus tooltip for a control whose visible form is an icon alone — and for a line of
- * code a row truncates, whose full text has nowhere else to show (`content="code"`).
+ * The app's one tooltip: a hover/focus panel for a control whose visible form is an icon
+ * alone, for a line a row truncates (`content="code"` or `"text"`), and for any hint an
+ * element offers on hover.
  *
- * What it replaces is the native `title` attribute: that one waits about a second before it
- * appears, cannot be styled, and never shows on keyboard focus — so an icon rail labeled
- * only by `title` reads as unlabeled. A trigger must carry one or the other, never both, or
- * two tooltips appear over each other.
+ * What it replaces is the native `title` attribute, which the app does not use at all: that
+ * one waits about a second before it appears, cannot be styled or themed, and never shows on
+ * keyboard focus — so an icon rail labeled only by `title` reads as unlabeled. A guard test
+ * fails on a `title` attribute on an intrinsic element.
+ *
+ * Either way in, a hint shows only for an element with no visible text of its own or one
+ * whose visible text is cut off (`hintAllowed`, checked when the hint would open): a label the
+ * reader can already read in full gets no tooltip.
+ *
+ * Two ways in, one panel:
+ * - `<Tooltip label>` wraps its trigger in a measuring span — for a trigger that needs the
+ *   wrapper's extras (`suppressed`, a placement beside a rail).
+ * - `data-tooltip="…"` on any element, read by the one `<TooltipLayer />` mounted at the app
+ *   root, which listens once on the document. It adds no wrapper, so it is what replaces a
+ *   `title` in place: a table cell, a truncated span or a flex child keeps its layout exactly.
+ *   `data-tooltip-content` picks the panel's kind, `data-tooltip-placement` its side
+ *   (default `bottom`). Unlike `title`, it names nothing to assistive technology, so an
+ *   element whose only name was its title carries an `aria-label` with the same words.
  *
  * Portaled to document.body at fixed viewport coordinates, like every other overlay here
  * (see use-portal-panel.ts): an in-place absolute panel is a descendant of its trigger, so a
@@ -53,19 +68,84 @@ export type TooltipPlacement = "right" | "bottom";
  *   the row it stands for, and wider, because it is read rather than glanced at. It breaks
  *   anywhere — a path or a run of flags has no space to wrap at — and keeps its own line
  *   breaks, so a multi-line command reads the way it was written.
+ * - `text`: prose a row truncated (a title, a description, an error). As wide as `code`, set
+ *   in the interface face, wrapping at words and keeping its own line breaks.
  */
-export type TooltipContent = "label" | "code";
+export type TooltipContent = "label" | "code" | "text";
 
 const contentClass: Record<TooltipContent, string> = {
   label: "",
   code: "whitespace-pre-wrap wrap-anywhere font-mono",
+  text: "whitespace-pre-wrap wrap-break-word",
 };
 
 /** The width each kind wraps at, before the room left on screen caps it further. */
 const contentMaxWidth: Record<TooltipContent, string> = {
   label: "16rem",
   code: "24rem",
+  text: "24rem",
 };
+
+/** The attribute `TooltipLayer` reads; its value is the panel's text. */
+export const TOOLTIP_ATTR = "data-tooltip";
+
+/** A box that may clip its content: the four numbers a truncation check reads. */
+export interface ClipBox {
+  scrollWidth: number;
+  clientWidth: number;
+  scrollHeight: number;
+  clientHeight: number;
+}
+
+/** Layout reports up to a pixel of overflow for text that fits (line boxes, rounding). */
+const CUT_SLACK_PX = 1;
+
+/** Whether a box's content runs past its visible area: its text is cut off. */
+export function isCutOff(box: ClipBox): boolean {
+  return (
+    box.scrollWidth > box.clientWidth + CUT_SLACK_PX ||
+    box.scrollHeight > box.clientHeight + CUT_SLACK_PX
+  );
+}
+
+/**
+ * The tooltip rule: a hint shows only where its words are not already on screen — for an
+ * element that shows no text of its own (an icon-only control, a chart mark, a status glyph)
+ * or one whose visible text is cut off. An element whose text is fully visible gets no hint,
+ * whatever it carries: a hint that repeats what the reader can see is noise, and one that
+ * adds to it hides that information behind a hover. `boxes` are the element and its
+ * descendants, measured when the hint would open, since a column resize can cut a label off
+ * or give it back at any time.
+ */
+export function hintAllowed(visibleText: string, boxes: Iterable<ClipBox>): boolean {
+  if (visibleText.trim() === "") return true;
+  for (const box of boxes) if (isCutOff(box)) return true;
+  return false;
+}
+
+/** Text a reader cannot see: screen-reader-only copy, or anything the page does not render. */
+function unseen(node: Element | null): boolean {
+  if (node === null) return false;
+  if (node.closest(".sr-only") !== null) return true;
+  const check = (node as { checkVisibility?: () => boolean }).checkVisibility;
+  return check !== undefined && !check.call(node);
+}
+
+/** `hintAllowed`, with its inputs read off the element at the moment the hint would open. */
+export function hintAllowedFor(el: Element): boolean {
+  let text = "";
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (!unseen(node.parentElement)) text += node.textContent ?? "";
+  }
+  const boxes: ClipBox[] = [];
+  for (const node of [el, ...el.querySelectorAll("*")]) {
+    // An inline box or a hidden one has no area to clip, and a screen-reader-only span is
+    // clipped on purpose — neither says the visible text was cut.
+    if (node instanceof HTMLElement && node.clientWidth > 0 && !unseen(node)) boxes.push(node);
+  }
+  return hintAllowed(text, boxes);
+}
 
 /** The trigger's viewport box — the part of a DOMRect the geometry reads. */
 export type TriggerRect = Pick<DOMRect, "top" | "bottom" | "left" | "right" | "width" | "height">;
@@ -164,8 +244,11 @@ export function Tooltip({
     if (suppressed === true || timerRef.current !== null) return;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (!rect) return;
+      const anchor = anchorRef.current;
+      // Measured now, not when the trigger rendered: whether its label is cut off depends on
+      // the width it has at this moment.
+      if (anchor === null || !hintAllowedFor(anchor)) return;
+      const rect = anchor.getBoundingClientRect();
       const viewport = { width: window.innerWidth, height: window.innerHeight };
       setPosition(
         placement === "bottom" ? belowTrigger(rect, viewport) : besideTrigger(rect, viewport),
@@ -211,24 +294,158 @@ export function Tooltip({
       onBlur={hide}
     >
       {children}
-      {position !== null &&
-        createPortal(
-          <div
-            data-testid="tooltip"
-            aria-hidden
-            style={{
-              position: "fixed",
-              top: position.top,
-              left: position.left,
-              right: position.right,
-              maxWidth: `min(${contentMaxWidth[content]}, ${position.room}px)`,
-            }}
-            className={`anim-fade pointer-events-none z-[60] w-max rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${contentClass[content]} ${placement === "right" ? "-translate-y-1/2" : ""}`}
-          >
-            {label}
-          </div>,
-          document.body,
-        )}
+      {position !== null && (
+        <TooltipPanel label={label} position={position} content={content} placement={placement} />
+      )}
     </span>
   );
+}
+
+/** The panel itself, portaled to the body; both ways in render exactly this. */
+function TooltipPanel({
+  label,
+  position,
+  content,
+  placement,
+}: {
+  label: string;
+  position: PanelPosition;
+  content: TooltipContent;
+  placement: TooltipPlacement;
+}) {
+  return createPortal(
+    <div
+      data-testid="tooltip"
+      aria-hidden
+      style={{
+        position: "fixed",
+        top: position.top,
+        left: position.left,
+        right: position.right,
+        maxWidth: `min(${contentMaxWidth[content]}, ${position.room}px)`,
+      }}
+      className={`ui-glass anim-fade pointer-events-none z-[60] w-max rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${contentClass[content]} ${placement === "right" ? "-translate-y-1/2" : ""}`}
+    >
+      {label}
+    </div>,
+    document.body,
+  );
+}
+
+export interface TooltipRequest {
+  label: string;
+  content: TooltipContent;
+  placement: TooltipPlacement;
+}
+
+/** Reads an element's `data-tooltip` request, or null when it carries none (or an empty one). */
+export function tooltipRequest(el: Pick<Element, "getAttribute">): TooltipRequest | null {
+  const label = el.getAttribute(TOOLTIP_ATTR);
+  if (label === null || label.trim() === "") return null;
+  const content = el.getAttribute(`${TOOLTIP_ATTR}-content`);
+  const placement = el.getAttribute(`${TOOLTIP_ATTR}-placement`);
+  return {
+    label,
+    content: content === "code" || content === "text" ? content : "label",
+    placement: placement === "right" ? "right" : "bottom",
+  };
+}
+
+/**
+ * The document-wide reader of `data-tooltip`, mounted once at the app root. One set of
+ * listeners serves every element, so a hint costs an attribute rather than a wrapper and a set
+ * of handlers per element. The innermost element carrying the attribute wins, the delay is
+ * `<Tooltip>`'s, and the panel closes on leave, blur, Escape, any scroll, a resize and a press
+ * — a press because the element is being used now, not asked about.
+ */
+export function TooltipLayer() {
+  const [open, setOpen] = useState<(TooltipRequest & { position: PanelPosition }) | null>(null);
+
+  useEffect(() => {
+    let current: Element | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const close = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      current = null;
+      setOpen(null);
+    };
+    const holder = (node: EventTarget | null): Element | null =>
+      node instanceof Element ? node.closest(`[${TOOLTIP_ATTR}]`) : null;
+    const start = (el: Element | null) => {
+      if (el === current) return;
+      close();
+      if (el === null || tooltipRequest(el) === null) return;
+      current = el;
+      timer = setTimeout(() => {
+        timer = null;
+        const el = current;
+        const request = el === null ? null : tooltipRequest(el);
+        if (el === null || request === null || !el.isConnected || !hintAllowedFor(el)) return;
+        const rect = el.getBoundingClientRect();
+        const viewport = { width: window.innerWidth, height: window.innerHeight };
+        setOpen({
+          ...request,
+          position:
+            request.placement === "right"
+              ? besideTrigger(rect, viewport)
+              : belowTrigger(rect, viewport),
+        });
+      }, OPEN_DELAY_MS);
+    };
+    const onOver = (e: PointerEvent) => start(holder(e.target));
+    const onOut = (e: PointerEvent) => {
+      if (current === null) return;
+      const next = e.relatedTarget;
+      if (next instanceof Node && current.contains(next)) return;
+      close();
+    };
+    const onFocusIn = (e: FocusEvent) => start(holder(e.target));
+    const onKey = (e: KeyboardEvent) => {
+      // Heard, not stopped: the panel is not a dismissible layer, so the same press still
+      // reaches the dialog or menu behind it.
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("pointerover", onOver);
+    document.addEventListener("pointerout", onOut);
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", close);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      close();
+      document.removeEventListener("pointerover", onOver);
+      document.removeEventListener("pointerout", onOut);
+      document.removeEventListener("pointerdown", close, true);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", close);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, []);
+
+  return open === null ? null : (
+    <TooltipPanel
+      label={open.label}
+      position={open.position}
+      content={open.content}
+      placement={open.placement}
+    />
+  );
+}
+
+/**
+ * The attributes of a mark whose only content is its hint — a chart segment, a glyph with no
+ * words beside it: the hint shows in the shared tooltip, and the same words name the mark for
+ * assistive technology, which a `data-tooltip` alone does not.
+ */
+export function namedHint(label: string): {
+  role: "img";
+  "aria-label": string;
+  "data-tooltip": string;
+} {
+  return { role: "img", "aria-label": label, "data-tooltip": label };
 }

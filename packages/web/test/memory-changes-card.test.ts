@@ -9,8 +9,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ICONS } from "@prismshadow/penguin-ui";
 import { MemoryChangesCard } from "../src/features/chat/memory-changes-card";
-import { MEMORY_ICON } from "../src/components/ui/icons";
 import type { MemoryChangeRow } from "../src/lib/omni/memory-changes";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -30,7 +30,7 @@ const render = (onOpenPanel?: () => void) =>
   );
 
 /** How many times the brain mark is drawn in the markup. */
-const memoryMarks = (html: string) => html.split(`d="${MEMORY_ICON}"`).length - 1;
+const memoryMarks = (html: string) => html.split(`d="${ICONS.brain}"`).length - 1;
 
 afterEach(() => {
   setActiveStrings(zh);

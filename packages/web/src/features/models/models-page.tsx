@@ -49,17 +49,27 @@ import type {
   ModelUpdateEntry,
   ModelVisionDetectRequest,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Chevron,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Link,
+  ProviderLogo,
+  SkeletonList,
+  buttonClass,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
@@ -70,12 +80,6 @@ import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { EXTERNAL_LINK_ICON } from "../../components/ui/icons";
-import { ProviderLogo } from "../../components/ui/provider-logo";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { EmptyState } from "../../components/ui/empty-state";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
@@ -141,10 +145,11 @@ import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { KeyAuthDialog } from "./key-auth-dialog";
 import type { KeyAuthTexts } from "./key-auth-dialog";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /**
  * The authorization flows a group's "authorize a key" dialog can run, keyed by the flow named
@@ -214,17 +219,15 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
 
-/** Group-header action glyphs (24x24 line paths): add, bulk key, external link, gauge for speed test. */
-const PLUS_ICON = "M12 5v14M5 12h14";
-/** Trash can (same drawing as the agent cards' delete action). */
+/**
+ * Group-header action glyphs this page draws itself (24x24 line paths); add, bulk key and the
+ * catalog sync read `ICONS.plus`, `ICONS.key` and `ICONS.rotateCw`. The trash can is the tapered
+ * bin the agent cards' delete action wears, not the registry's straight-sided `ICONS.trash`.
+ */
 const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-const KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
 /** Arrow entering a door: authorize with the provider and come back with a key. */
 const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
-/** Rotate clockwise: refresh an already-authorized platform catalog. */
-const SYNC_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
@@ -1160,7 +1163,7 @@ export function ModelsPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
               {S.models.title}
               {!isOwner && (
                 <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
@@ -1264,7 +1267,7 @@ export function ModelsPage() {
                   {drag.dropEdge !== null && (
                     <div
                       aria-hidden
-                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
                         drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
                       }`}
                     />
@@ -1312,10 +1315,9 @@ export function ModelsPage() {
                             section. `shrink-0` keeps it whole: the vendor name beside it is
                             the element allowed to truncate on a narrow page. */}
                         {group.provider.recommended && (
-                          // Not a `Badge`: its `brand` tone is deliberately gray — neutral
-                          // emphasis outside the status vocabulary — and an endorsement is
-                          // neither a status nor neutral, which is the category tone.ts keeps
-                          // out on purpose. Unfilled, like the card marks below it: an outline
+                          // Not a `Badge`: every Badge tone is a status or `neutral`, and an
+                          // endorsement is neither, which is the category tone.ts keeps out on
+                          // purpose. Unfilled, like the card marks below it: an outline
                           // is enough to make it a pill, and a block of colour on the collapse
                           // bar competes with the vendor name it is endorsing. It holds on
                           // longer than the model count beside it and gives way before the
@@ -1346,7 +1348,7 @@ export function ModelsPage() {
                           title={S.models.platformSync}
                           onClick={() => void syncPlatformModels()}
                         >
-                          <GlyphIcon d={SYNC_ICON} size={ICON_SIZE.groupHeaderAction} />
+                          <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.groupHeaderAction} />
                           <span className="hidden @3xl:inline">{S.models.platformSync}</span>
                         </Button>
                       )}
@@ -1369,7 +1371,7 @@ export function ModelsPage() {
                           title={S.models.addToGroup}
                           onClick={() => setAddingTo(group.provider.id)}
                         >
-                          <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.groupHeaderAction} />
+                          <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
                           <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
                         </Button>
                       )}
@@ -1408,7 +1410,7 @@ export function ModelsPage() {
                           title={S.models.groupApiKey}
                           onClick={() => setGroupKeyFor(group.provider.id)}
                         >
-                          <GlyphIcon d={KEY_ICON} size={ICON_SIZE.groupHeaderAction} />
+                          <GlyphIcon d={ICONS.key} size={ICON_SIZE.groupHeaderAction} />
                           <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
                         </Button>
                       )}
@@ -1454,19 +1456,18 @@ export function ModelsPage() {
                       )}
                       {group.provider.apiKeyUrl && (
                         // External link: its label is the last one admitted as space grows
-                        // (@4xl); below that it collapses to the external-link glyph with a
+                        // (@4xl); below that only the link's external glyph is left, with a
                         // small padding bump for a usable touch target.
-                        <a
+                        <Link
                           href={group.provider.apiKeyUrl}
-                          target="_blank"
-                          rel="noreferrer noopener"
+                          external
+                          variant="standalone"
                           aria-label={`${S.models.getApiKey} ${group.provider.label}`}
-                          title={S.models.getApiKey}
-                          className="inline-flex shrink-0 items-center whitespace-nowrap p-1 text-xs text-brand-600 underline-offset-2 hover:underline @4xl:p-0 dark:text-brand-300"
+                          data-tooltip={S.models.getApiKey}
+                          className="shrink-0 whitespace-nowrap p-1 text-xs @4xl:p-0"
                         >
-                          <GlyphIcon d={EXTERNAL_LINK_ICON} size={13} className="@4xl:hidden" />
-                          <span className="hidden @4xl:inline">{S.models.getApiKey} ↗</span>
-                        </a>
+                          <span className="hidden @4xl:inline">{S.models.getApiKey}</span>
+                        </Link>
                       )}
                       {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}
                       <button
@@ -2066,21 +2067,24 @@ function AddGroupDialog({
                 <FieldLabel required block={false}>
                   {S.models.baseUrl}
                 </FieldLabel>
-                <button
-                  type="button"
+                <Button
+                  variant="link"
+                  size="sm"
                   disabled={detecting || busy}
                   onClick={() => void detect()}
                   title={S.models.detectProtocolHint}
-                  className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                  className="shrink-0"
+                  leading={
+                    detecting && (
+                      <span
+                        aria-hidden
+                        className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                      />
+                    )
+                  }
                 >
-                  {detecting && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                    />
-                  )}
                   {detecting ? S.models.detecting : S.models.detectProtocol}
-                </button>
+                </Button>
               </span>
               <div className="relative">
                 <Input
@@ -2234,7 +2238,7 @@ export function ModelCard({
           {speed.ttftMs !== undefined && (
             <span
               className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
-              title={S.models.ttftTitle}
+              data-tooltip={S.models.ttftTitle}
             >
               <GlyphIcon d={CLOCK_ICON} size={11} />
               {Math.round(speed.ttftMs)}ms
@@ -2243,7 +2247,7 @@ export function ModelCard({
           {speed.tps !== undefined && (
             <span
               className={`flex items-center gap-0.5 ${TONE_CLASS[tpsTone(speed.tps)]}`}
-              title={S.models.tpsTitle}
+              data-tooltip={S.models.tpsTitle}
             >
               <GlyphIcon d={ZAP_ICON} size={11} />
               {speed.tps} tok/s
@@ -2253,7 +2257,7 @@ export function ModelCard({
       ) : (
         <span
           className="shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
-          title={speed.message}
+          data-tooltip={speed.message}
         >
           {S.models.speedFailed}
         </span>
@@ -2284,7 +2288,7 @@ export function ModelCard({
           {usedTokens !== undefined && usedTokens > 0 && (
             <span
               className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
-              title={S.models.usedTokensTitle}
+              data-tooltip={S.models.usedTokensTitle}
             >
               {S.models.usedTokens(humanizeTokens(usedTokens))}
             </span>
@@ -2297,7 +2301,11 @@ export function ModelCard({
             the tags' own, so a card with marks and a card without are exactly as tall. */}
         <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
-            <span key={tag.key} title={tag.title} className={`${TAG_SHAPE} ${tag.className}`}>
+            <span
+              key={tag.key}
+              data-tooltip={tag.title}
+              className={`${TAG_SHAPE} ${tag.className}`}
+            >
               {tag.label}
             </span>
           ))}
@@ -2321,8 +2329,9 @@ export function ModelCard({
           sync, or the move the config dialog's own button performs — so the owner lands where
           the problem is fixed rather than on a second explanation. */}
       {fix !== null && (
-        <div
-          className={`flex items-center justify-between gap-2 border-t px-3 py-2 text-[11px] ${toneStrip.attention}`}
+        <NoticeStrip
+          tone="attention"
+          className="flex items-center justify-between gap-2 border-t px-3 py-2 text-[11px]"
         >
           <span className="min-w-0">
             {fix === "sync" ? S.models.vendorRowStalePin : S.models.vendorRowUnroutable}
@@ -2337,7 +2346,7 @@ export function ModelCard({
               {S.models.moveToCustomGroup}
             </Button>
           )}
-        </div>
+        </NoticeStrip>
       )}
     </div>
   );
@@ -2976,14 +2985,14 @@ function ModelDialog({
           <span className="flex shrink-0 items-baseline gap-2.5">
             {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
             {dialogProvider?.modelsUrl && (
-              <a
+              <Link
                 href={dialogProvider.modelsUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+                external
+                variant="standalone"
+                className="shrink-0 text-xs"
               >
-                {S.models.getModelIds} ↗
-              </a>
+                {S.models.getModelIds}
+              </Link>
             )}
           </span>
         </span>
@@ -3001,9 +3010,10 @@ function ModelDialog({
         {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
       </label>
       {routingFix !== null && (
-        <div
+        <NoticeStrip
+          tone="attention"
           role="alert"
-          className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+          className="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs"
         >
           {/* A built-in model whose stored entry lost its protocol pin needs the preset sync,
               not a move: the same split the card makes, so the two places the owner can read
@@ -3031,7 +3041,7 @@ function ModelDialog({
               {S.models.useCustomGroup}
             </Button>
           )}
-        </div>
+        </NoticeStrip>
       )}
       <div className="grid grid-cols-2 gap-2">
         <Input
@@ -3203,12 +3213,12 @@ function ModelDialog({
               <a
                 href={modelHomepageUrl(row.provider, row.modelId)}
                 target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                rel="noopener noreferrer"
+                className={`${buttonClass("secondary", "sm")} shrink-0`}
               >
                 {S.models.homepage}
                 {/* External-link glyph (opens in a new tab) */}
-                <GlyphIcon d={EXTERNAL_LINK_ICON} />
+                <GlyphIcon d={ICONS.externalLink} />
               </a>
             )}
           </div>
@@ -3283,14 +3293,14 @@ function ModelDialog({
           <span className="mb-1 flex items-baseline justify-between gap-2">
             <FieldLabel block={false}>{S.models.apiKey}</FieldLabel>
             {dialogProvider?.apiKeyUrl && (
-              <a
+              <Link
                 href={dialogProvider.apiKeyUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+                external
+                variant="standalone"
+                className="shrink-0 text-xs"
               >
-                {S.models.getApiKey} ↗
-              </a>
+                {S.models.getApiKey}
+              </Link>
             )}
           </span>
           <PasswordInput
@@ -3374,21 +3384,24 @@ function ModelDialog({
               {/* Always live: no API key is needed (the server falls back to the stored key
                   and then to the protocol's env var), and anything that does go wrong is
                   explained in a popup. `detecting` only guards re-entrancy. */}
-              <button
-                type="button"
+              <Button
+                variant="link"
+                size="sm"
                 disabled={detecting}
                 onClick={() => void detectFromButton()}
                 title={S.models.detectProtocolHint}
-                className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                className="shrink-0"
+                leading={
+                  detecting && (
+                    <span
+                      aria-hidden
+                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                    />
+                  )
+                }
               >
-                {detecting && (
-                  <span
-                    aria-hidden
-                    className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                  />
-                )}
                 {detecting ? S.models.detecting : S.models.detectProtocol}
-              </button>
+              </Button>
             </span>
           ) : (
             <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
@@ -3637,21 +3650,24 @@ function ModelDialog({
                     />
                   </label>
                   {canEdit && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="link"
+                      size="sm"
                       disabled={visionDetecting}
                       onClick={() => void detectVisionFromButton()}
                       title={S.models.detectVisionHint}
-                      className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                      className="shrink-0"
+                      leading={
+                        visionDetecting && (
+                          <span
+                            aria-hidden
+                            className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                          />
+                        )
+                      }
                     >
-                      {visionDetecting && (
-                        <span
-                          aria-hidden
-                          className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                        />
-                      )}
                       {visionDetecting ? S.models.detectingVision : S.models.detectVision}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {!form.vision && (
@@ -3673,7 +3689,7 @@ function ModelDialog({
               <div className={toggleCellClass}>
                 <label
                   className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-                  title={S.models.fastModeHint}
+                  data-tooltip={S.models.fastModeHint}
                 >
                   <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
                     {S.models.fastMode}
@@ -3833,14 +3849,9 @@ function GroupKeyDialog({
           </p>
         )}
         {provider.apiKeyUrl && (
-          <a
-            href={provider.apiKeyUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-block text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-          >
-            {S.models.getApiKey} ↗
-          </a>
+          <Link href={provider.apiKeyUrl} external variant="standalone" className="text-xs">
+            {S.models.getApiKey}
+          </Link>
         )}
       </div>
     </Modal>
@@ -4070,13 +4081,9 @@ function ModelOAuthDialog({
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         {phase !== "done" && (
-          <button
-            type="button"
-            onClick={() => setManual((v) => !v)}
-            className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-          >
+          <Button variant="link" size="sm" onClick={() => setManual((v) => !v)}>
             {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
-          </button>
+          </Button>
         )}
       </div>
     </Modal>

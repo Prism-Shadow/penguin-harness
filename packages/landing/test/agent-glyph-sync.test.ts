@@ -1,7 +1,8 @@
 /**
  * Landing ↔ Web App agent-glyph sync: the page that sells the product and the product itself
- * draw the Agent with the same mark, and there is no shared module to draw it from — the
- * landing page deliberately carries zero icon dependencies, so the path exists twice.
+ * draw the Agent with the same mark (the shared UI package's `ICONS.robot`), and there is no
+ * shared module to draw it from — the landing page deliberately carries zero icon dependencies,
+ * so the path exists twice.
  *
  * A copy is exactly what drifts: this glyph was hand-copied once before (the new-chat page's
  * example folder) and quietly stayed on the old drawing the day it was redrawn. Both sides are
@@ -11,22 +12,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const webGlyphSource = join(
-  __dirname,
-  "..",
-  "..",
-  "web",
-  "src",
-  "components",
-  "ui",
-  "group-list.tsx",
-);
+const webGlyphSource = join(__dirname, "..", "..", "ui", "src", "components", "icons", "icons.ts");
 const landingIconsSource = join(__dirname, "..", "src", "components", "icons.tsx");
 
-/** `export const AGENT_GROUP_ICON = "…"`, however prettier has wrapped it. */
+/** The registry's `robot: "…"` entry, however prettier has wrapped it. */
 function webAgentGlyph(): string | null {
   const source = readFileSync(webGlyphSource, "utf8");
-  return /export const AGENT_GROUP_ICON\s*=\s*"([^"]+)"/.exec(source)?.[1] ?? null;
+  return /\brobot:\s*"([^"]+)"/.exec(source)?.[1] ?? null;
 }
 
 /** The single `<path d="…">` of the landing set's BotIcon. */

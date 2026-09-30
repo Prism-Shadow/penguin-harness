@@ -18,8 +18,8 @@
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { usePortalPanel } from "./use-portal-panel";
 
 /** Circled question mark: the app's 9-radius status circle, with a mark and a dot inside it. */
@@ -62,7 +62,7 @@ export function InfoPopover({
         ref={triggerRef}
         type="button"
         aria-label={name}
-        title={name}
+        data-tooltip={name}
         aria-expanded={open}
         aria-controls={panelId}
         // While open the panel is also the trigger's description, so a screen reader reads the
@@ -99,7 +99,7 @@ export function InfoPopover({
               bottom: position.bottomPx,
               left: position.left,
             }}
-            className="anim-pop z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-relaxed text-gray-600 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+            className="ui-glass anim-pop z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-relaxed text-gray-600 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
           >
             {children}
           </div>,

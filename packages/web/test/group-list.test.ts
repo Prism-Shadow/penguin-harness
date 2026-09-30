@@ -13,17 +13,10 @@
  * its glyphs from the same map the two-icon header toggle uses, so a mode cannot end up
  * wearing one icon in the toggle and another in the menu.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { ICONS } from "@prismshadow/penguin-ui";
 import {
-  AGENT_GROUP_ICON,
-  CALENDAR_ICON,
-  CLOCK_ICON,
-  FOLDER_ICON,
   GROUP_MODE_ICONS,
-  REORDER_ICON,
   SORT_MODE_ICONS,
   newEntityForGroupMode,
 } from "../src/components/ui/group-list";
@@ -31,6 +24,16 @@ import type { GroupMode } from "../src/components/ui/group-list";
 import type { SessionSortMode } from "../src/lib/session-order";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+
+const SCAN = scanSources();
+
+describe("the group list's sources", () => {
+  it("scan every source root, and find the group list in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, "packages/web/src/components/ui/group-list.tsx");
+  });
+});
 
 describe("newEntityForGroupMode", () => {
   it("agent grouping creates an Agent; workspace grouping (the default) creates a Workspace", () => {
@@ -47,23 +50,21 @@ describe("list-options glyphs", () => {
   it("names each grouping mode by what the list is grouped into", () => {
     // The same glyphs the header's grouping toggle shows, so the two surfaces agree.
     expect(GROUP_MODE_ICONS).toEqual({
-      workspace: FOLDER_ICON,
-      agent: AGENT_GROUP_ICON,
-      time: CALENDAR_ICON,
+      workspace: ICONS.folder,
+      agent: ICONS.robot,
+      time: ICONS.calendar,
     });
   });
 
   it("names each sort mode by what decides the order: a clock, and the reorder arrows", () => {
-    expect(SORT_MODE_ICONS).toEqual({ recent: CLOCK_ICON, manual: REORDER_ICON });
+    expect(SORT_MODE_ICONS).toEqual({ recent: ICONS.clock, manual: ICONS.arrowUpDown });
   });
 
   it("is what the list-options menu actually renders", () => {
     // The claim worth pinning is not the map's contents but that nothing re-picks an icon
     // beside it: a hardcoded glyph at a call site is how a row and the mode it names would
     // drift apart. Node-only suite, so this reads the sources (title-reveal.test.ts).
-    const read = (p: string) =>
-      readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), p), "utf8");
-    const sidebar = read("../src/components/layout/sidebar.tsx");
+    const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
     for (const mode of ["workspace", "agent", "time"] satisfies GroupMode[])
       expect(sidebar).toContain(`icon={GROUP_MODE_ICONS.${mode}}`);
     for (const mode of ["recent", "manual"] satisfies SessionSortMode[])

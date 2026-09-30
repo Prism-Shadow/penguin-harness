@@ -47,6 +47,19 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import {
+  Button,
+  CloseIcon,
+  CopiedStatus,
+  CopyCheckGlyph,
+  EmptyState,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  ICON_SIZE,
+  SkeletonList,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -57,6 +70,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { joinWorkspacePath } from "../../lib/file-path";
+import { writeClipboard } from "../../lib/clipboard";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
 import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
@@ -99,36 +113,14 @@ import {
 } from "../../lib/workspace-tree";
 import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import {
-  CopiedStatus,
-  CopyCheckGlyph,
-  useCopied,
-  writeClipboard,
-} from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_OPEN_ICON } from "../../components/ui/group-list";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import {
-  CloseIcon,
-  DOWNLOAD_ICON,
-  EXTERNAL_LINK_ICON,
-  FILE_EDIT_ICON,
-  REFRESH_ICON,
-  UPLOAD_ICON,
-  WRAP_TEXT_ICON,
-} from "../../components/ui/icons";
 import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
@@ -158,8 +150,6 @@ const SNIFF_BYTES = 8 * 1024;
 const SEARCH_DEBOUNCE_MS = 250;
 /** Window with a left pane: the tree toggle. */
 const PANEL_LEFT_ICON = "M4 5h16v14H4zM10 5v14";
-/** Left-pointing chevron: the narrow layout's back-to-tree button. */
-const BACK_ICON = "M15 18l-6-6 6-6";
 
 /** An external reference with a scheme (http(s)/mailto/data, etc.), passed through as-is in the md rendered view. */
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
@@ -590,7 +580,7 @@ export function WorkspaceBrowser({
   /**
    * The preview header's copy action. Driven by the hook rather than a plain CopyButton
    * because the tooltip is a Tooltip panel here, not a `title`, and a trigger may carry only
-   * one of the two — the glyph swap and the live region are the ones copy-button.tsx owns.
+   * one of the two — the glyph swap and the live region are the ones CopyButton uses.
    */
   const { copied, flash: flashCopy } = useCopied();
   const [width, setWidth] = useState(0);
@@ -1505,9 +1495,9 @@ export function WorkspaceBrowser({
   const copyPath = (target: FileMenuTarget): void => {
     // A menu row cannot carry the copy button's own at-the-control feedback: the row acts and
     // the panel closes out from under it. A toast is the confirmation that survives that, and
-    // it says the same word (sidebar.tsx's copy-id row does the same).
-    writeClipboard(target.path);
-    toastSuccess(S.common.copied);
+    // it says the same word (sidebar.tsx's copy-id row does the same) — only once the write
+    // has landed.
+    void writeClipboard(target.path).then((ok) => ok && toastSuccess(S.common.copied));
   };
 
   const addToChat = (target: FileMenuTarget): void => {
@@ -1779,7 +1769,7 @@ export function WorkspaceBrowser({
             <button
               type="button"
               aria-label={S.files.searchClear}
-              title={S.files.searchClear}
+              data-tooltip={S.files.searchClear}
               onClick={() => setQuery("")}
               className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             >
@@ -1794,7 +1784,7 @@ export function WorkspaceBrowser({
             onClick={refreshAll}
             className={iconActionClass}
           >
-            <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
           </button>
         </Tooltip>
         {/* The picker's own input carries the name: a label with no text names nothing, and the
@@ -1813,7 +1803,7 @@ export function WorkspaceBrowser({
             {uploading !== null ? (
               <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
             ) : (
-              <GlyphIcon d={UPLOAD_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
             )}
           </label>
         </Tooltip>
@@ -1913,7 +1903,7 @@ export function WorkspaceBrowser({
       // Before the first measurement there is no ceiling yet (clampTreeWidth applies none),
       // so the current width is the honest maximum for that frame.
       aria-valuemax={Math.max(maxTreeWidth(width), treeWidth)}
-      title={S.files.treeWidth}
+      data-tooltip={S.files.treeWidth}
       tabIndex={0}
       {...treeResizeProps}
       onKeyDown={onDividerKey}
@@ -1939,7 +1929,7 @@ export function WorkspaceBrowser({
         onClick={() => setWrap(!wrapLines)}
         className={iconToggleClass(wrapLines)}
       >
-        <GlyphIcon d={WRAP_TEXT_ICON} size={ICON_SIZE.iconButton} />
+        <GlyphIcon d={ICONS.wrapText} size={ICON_SIZE.iconButton} />
       </button>
     </Tooltip>
   );
@@ -1989,11 +1979,7 @@ export function WorkspaceBrowser({
         {/* Copies the text that was read, which is all of the file unless the preview was cut off. */}
         {sourceShown && preview.content !== undefined && (
           <>
-            <Tooltip
-              label={copied ? S.common.copied : S.chat.copyCode}
-              placement="bottom"
-              className="shrink-0"
-            >
+            <Tooltip label={S.chat.copyCode} placement="bottom" className="shrink-0">
               <button
                 type="button"
                 aria-label={S.chat.copyCode}
@@ -2016,7 +2002,7 @@ export function WorkspaceBrowser({
               onClick={() => void startEdit()}
               className={iconActionClass}
             >
-              <GlyphIcon d={FILE_EDIT_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}
@@ -2037,7 +2023,7 @@ export function WorkspaceBrowser({
               aria-label={openInNewTabLabel}
               className={`${iconActionClass} ${previewIsolated ? "" : toneInk.attention}`}
             >
-              <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.iconButton} />
             </a>
           </Tooltip>
         )}
@@ -2335,7 +2321,7 @@ export function WorkspaceBrowser({
         {editor.changedOnDisk === true && (
           <span
             className={`shrink-0 text-xs ${toneInk.attention}`}
-            title={S.files.changedOnDiskHint}
+            data-tooltip={S.files.changedOnDiskHint}
           >
             {S.files.changedOnDisk}
           </span>
@@ -2392,7 +2378,7 @@ export function WorkspaceBrowser({
             aria-label={S.files.download}
             className={iconActionClass}
           >
-            <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.download} size={ICON_SIZE.iconButton} />
           </a>
         </Tooltip>
         {isShellWindow && (
@@ -2403,7 +2389,7 @@ export function WorkspaceBrowser({
               onClick={() => void revealInFolder(preview.path)}
               className={iconActionClass}
             >
-              <GlyphIcon d={FOLDER_OPEN_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.folderOpen} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}
@@ -2454,7 +2440,7 @@ export function WorkspaceBrowser({
               onClick={backToTree}
               className={iconActionClass}
             >
-              <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}
@@ -2465,7 +2451,7 @@ export function WorkspaceBrowser({
           <button
             type="button"
             aria-pressed={treeVisible}
-            title={treeVisible ? S.files.hideTree : S.files.showTree}
+            data-tooltip={treeVisible ? S.files.hideTree : S.files.showTree}
             aria-label={S.files.showTree}
             onClick={() => setTree(!treeVisible)}
             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150 ${
@@ -2482,7 +2468,7 @@ export function WorkspaceBrowser({
             unsaved-changes guard. */}
         <div
           ref={crumbsRef}
-          title={crumbPath}
+          data-tooltip={crumbPath}
           className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden px-1 text-sm"
         >
           {crumbFit.collapsed && (
@@ -2588,7 +2574,12 @@ export function WorkspaceBrowser({
           </p>
           <ul className="max-h-40 overflow-y-auto rounded-md border border-gray-200 px-3 py-1.5 dark:border-gray-800">
             {(pendingUpload?.clashes ?? []).map((name) => (
-              <li key={name} className="truncate py-0.5 font-mono text-xs" title={name}>
+              <li
+                key={name}
+                className="truncate py-0.5 font-mono text-xs"
+                data-tooltip={name}
+                data-tooltip-content="code"
+              >
                 {name}
               </li>
             ))}

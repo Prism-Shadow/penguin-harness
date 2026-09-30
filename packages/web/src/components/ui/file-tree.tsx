@@ -30,13 +30,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { subtreeEnd, treeKeyStep } from "../../lib/file-tree";
 import type { FileTreeRow } from "../../lib/file-tree";
-import { Chevron } from "./chevron";
-import { GlyphIcon } from "./glyph-icon";
-import { FOLDER_ICON, FOLDER_OPEN_ICON } from "./group-list";
-import { FILE_ICON } from "./icons";
-import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** Left padding of a depth-0 row, in px; deeper rows add `TREE_INDENT_PX` per level. */
 const TREE_PAD_PX = 6;
@@ -234,7 +230,7 @@ export function FileTree<Row extends FileTreeRow>({
         // A retained row carries no path: rowElement() and a caller's pointer hit test both
         // resolve a row by this attribute, and neither may land on one that is on its way out.
         {...(retained ? {} : { "data-tree-path": row.path, "data-tree-kind": row.kind })}
-        title={rowTitle?.(row) ?? row.path}
+        data-tooltip={rowTitle?.(row) ?? row.path}
         aria-label={rowLabel?.(row)}
         {...(retained ? {} : { onClick: () => activate(row), onFocus: () => setFocused(row.path) })}
         style={{ paddingLeft: TREE_PAD_PX + row.depth * TREE_INDENT_PX }}
@@ -250,7 +246,7 @@ export function FileTree<Row extends FileTreeRow>({
           {row.kind === "dir" && <Chevron open={row.expanded} size={ICON_SIZE.chevronDense} />}
         </span>
         <GlyphIcon
-          d={row.kind === "dir" ? (row.expanded ? FOLDER_OPEN_ICON : FOLDER_ICON) : FILE_ICON}
+          d={row.kind === "dir" ? (row.expanded ? ICONS.folderOpen : ICONS.folder) : ICONS.file}
           size={ICON_SIZE.rowLead}
           className="text-gray-400"
         />

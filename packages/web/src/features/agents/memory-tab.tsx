@@ -29,30 +29,37 @@ import type {
   MemoryScopeExport,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Chevron,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  IconButton,
+  SkeletonList,
+  UploadIcon,
+  buttonClass,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatRelativeDate } from "../../lib/format";
-import { toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Button, labelButtonClass } from "../../components/ui/button";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { HelpFold } from "../../components/ui/help-fold";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
 import { rowDescClass } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
-import { Chevron } from "../../components/ui/chevron";
-import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Drawer } from "../../components/ui/drawer";
 import { Sheet, type SheetSnap } from "../../components/ui/sheet";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { useAiBridge } from "../ai-create";
@@ -66,25 +73,26 @@ import {
 import type { MemoryImportPlan } from "./memory-transfer";
 
 import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
-/** Row-action glyphs (icon-only buttons, the skills tab's affordance): view = the agents page's eye, edit = the shared pencil-line, delete = the shared trash can. */
-const EYE_ICON =
-  "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z";
+/**
+ * Row-action glyphs (icon-only buttons, the skills tab's affordance) that differ from the
+ * registry's drawings: edit is feather's edit-3 (`ICONS.penLine` is a wider pen), delete is the
+ * tapered bin (`ICONS.trash` is straight-sided). View reads `ICONS.eye`.
+ */
 const PENCIL_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
 const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-/** "Add" plus glyph on the group headers, matching the models page's per-group add entry. */
-const PLUS_ICON = "M12 5v14M5 12h14";
 
 /**
  * The small ghost button's look on a `<label>`: the Button component only renders a `<button>`,
  * and the import control has to wrap a file input (the Agent State section's transfer label does
  * the same for its own size). Mirrors Button's `ghost` variant at `sm`, icon + text.
  */
-const GHOST_LABEL_CLASS = labelButtonClass("ghost", "sm");
+const GHOST_LABEL_CLASS = buttonClass("ghost", "sm");
 
 /**
  * Collapsed scope keys, persisted per user \u00d7 Project \u00d7 Agent (localStorage, same conventions as
@@ -484,31 +492,28 @@ export function MemoryTab({
   // variant with red text/hover for delete); the tooltip + aria-label carry the wording.
   const rowActions = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <div className="flex shrink-0 items-center gap-1.5">
-      <Button
-        size="icon"
+      <IconButton
+        label={`${S.memory.view} ${file.title}`}
         title={S.memory.view}
-        aria-label={`${S.memory.view} ${file.title}`}
         onClick={() => void openView(scope, file)}
       >
-        <GlyphIcon d={EYE_ICON} size={14} className="text-gray-600 dark:text-gray-300" />
-      </Button>
-      <Button
-        size="icon"
+        <GlyphIcon d={ICONS.eye} size={14} className="text-gray-600 dark:text-gray-300" />
+      </IconButton>
+      <IconButton
+        label={`${S.memory.edit} ${file.title}`}
         title={S.memory.edit}
-        aria-label={`${S.memory.edit} ${file.title}`}
         onClick={() => openEditor(scope, file)}
       >
         <GlyphIcon d={PENCIL_ICON} size={14} className="text-gray-600 dark:text-gray-300" />
-      </Button>
-      <Button
-        size="icon"
+      </IconButton>
+      <IconButton
         variant="danger"
+        label={`${S.memory.delete} ${file.title}`}
         title={S.memory.delete}
-        aria-label={`${S.memory.delete} ${file.title}`}
         onClick={() => setRemoving({ scope, file })}
       >
         <GlyphIcon d={TRASH_ICON} size={14} />
-      </Button>
+      </IconButton>
     </div>
   );
 
@@ -566,14 +571,15 @@ export function MemoryTab({
       </div>
 
       {!templateHasMemory && (
-        <div
-          className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
+        <NoticeStrip
+          tone="attention"
+          className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
         >
           <p className="text-xs">{S.memory.templateMissing}</p>
           <Button size="sm" onClick={() => void insertPlaceholder()}>
             {S.memory.insertPlaceholder}
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {groups === null ? (
@@ -641,7 +647,7 @@ export function MemoryTab({
                   {isOwner && (
                     <label
                       className={`${GHOST_LABEL_CLASS} shrink-0`}
-                      title={S.memory.importScopeHint}
+                      data-tooltip={S.memory.importScopeHint}
                       aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
                     >
                       <HiddenFileInput
@@ -660,7 +666,7 @@ export function MemoryTab({
                       aria-label={S.memory.addScopeLabel(scopeTitle(scope))}
                       onClick={() => openAdd(scope)}
                     >
-                      <GlyphIcon d={PLUS_ICON} size={13} />
+                      <GlyphIcon d={ICONS.plus} size={13} />
                       <span className="hidden @md:inline">{S.memory.add}</span>
                     </Button>
                   </span>
@@ -740,7 +746,7 @@ export function MemoryTab({
                           token!,
                         )
                   }
-                  title={S.memory.insertToken}
+                  data-tooltip={S.memory.insertToken}
                   className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
                 >
                   {token}

@@ -11,8 +11,8 @@
  * clear checkbox.
  */
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
+import { Button } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import {
   MessagingBindingBody,

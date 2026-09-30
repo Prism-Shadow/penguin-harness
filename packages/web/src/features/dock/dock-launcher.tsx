@@ -36,18 +36,11 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
+import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import {
-  COLLAPSE_ICON,
-  EXPAND_ICON,
-  HIDDEN_ICON,
-  NAV_ICONS,
-  WORKBENCH_ICON,
-} from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { toastInfo } from "../../components/ui/toast";
 import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { scrollMovesAnchor } from "../../lib/context-menu";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
@@ -153,7 +146,7 @@ interface FanEntry {
 // Every entry's box sits on the ball's centre; --fan-x / --fan-y carry it out to its place
 // on the arc, as both the resting transform and the entrance animation's end state.
 const ENTRY_CLASS =
-  "absolute flex items-center justify-center rounded-full border border-gray-200/80 bg-white/90 text-gray-600 shadow-[0_2px_8px_rgba(0,0,0,0.10)] backdrop-blur-md transition-colors duration-150 hover:bg-white hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-bg)] dark:border-white/10 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+  "absolute flex items-center justify-center rounded-full border border-gray-200/80 bg-white/90 text-gray-600 shadow-[0_2px_8px_rgba(0,0,0,0.10)] backdrop-blur-md transition-colors duration-150 hover:bg-white hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:border-white/10 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
 
 /**
  * The one always-visible name, under the ball: a small pill on the same glass, with no
@@ -164,7 +157,7 @@ const CAPTION_CLASS =
   "pointer-events-none absolute whitespace-nowrap rounded-md border border-gray-200/80 bg-white/85 px-2 py-0.5 text-[13px] font-medium leading-5 shadow-[0_1px_4px_rgba(0,0,0,0.08)] backdrop-blur-md transition-colors duration-150 dark:border-white/10 dark:bg-gray-900/85";
 
 const BALL_CLASS =
-  "anim-pop relative flex touch-none select-none items-center justify-center rounded-full border border-gray-200/80 text-gray-500 shadow-[0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-md transition-[background-color,color,opacity,box-shadow] duration-150 hover:bg-white/95 hover:text-gray-800 hover:opacity-100 hover:shadow-[0_4px_16px_rgba(0,0,0,0.14)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-bg)] dark:border-white/10 dark:text-gray-400 dark:hover:bg-gray-800/95 dark:hover:text-gray-100";
+  "anim-pop relative flex touch-none select-none items-center justify-center rounded-full border border-gray-200/80 text-gray-500 shadow-[0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-md transition-[background-color,color,opacity,box-shadow] duration-150 hover:bg-white/95 hover:text-gray-800 hover:opacity-100 hover:shadow-[0_4px_16px_rgba(0,0,0,0.14)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:border-white/10 dark:text-gray-400 dark:hover:bg-gray-800/95 dark:hover:text-gray-100";
 
 function LauncherBall({
   agentsPending,
@@ -465,7 +458,7 @@ function LauncherBall({
     label: S.dock.launcherHide,
     // The struck-through eye, in the muted ink so it reads as a lesser thing than the panels
     // above it — and keeps reading that way when the ball mirrors it.
-    glyphAt: (size) => <GlyphIcon d={HIDDEN_ICON} size={size} className={toneInk.muted} />,
+    glyphAt: (size) => <GlyphIcon d={ICONS.eyeOff} size={size} className={toneInk.muted} />,
     badge: false,
     testId: "dock-launcher-hide",
     // Writing the preference unmounts the launcher under its own click, so the toast is
@@ -488,7 +481,7 @@ function LauncherBall({
     hovered.glyphAt(ICON_SIZE.launcherBall)
   ) : (
     <GlyphIcon
-      d={ballActive ? (fanOpen ? COLLAPSE_ICON : EXPAND_ICON) : WORKBENCH_ICON}
+      d={ballActive ? (fanOpen ? ICONS.cornersIn : ICONS.cornersOut) : ICONS.tiles}
       size={ICON_SIZE.launcherBall}
     />
   );

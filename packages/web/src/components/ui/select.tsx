@@ -9,10 +9,17 @@
 import { Children, isValidElement, useId, useState } from "react";
 import type { ChangeEvent, ReactNode, SelectHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
+import { ChevronDown } from "@prismshadow/penguin-ui";
 import { errorClass, sizeClass, sizeTextClass } from "./input";
 import type { ControlSize } from "./input";
-import { Field, controlBase, menuRowClass } from "./field";
-import { CheckIcon, ChevronDown } from "./icons";
+import {
+  ChoiceCheck,
+  Field,
+  controlBase,
+  menuPanelClass,
+  menuRowClass,
+  menuRowTone,
+} from "./field";
 import { usePortalPanel } from "./use-portal-panel";
 
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
@@ -109,7 +116,7 @@ export function Select({
           <div
             ref={panelRef}
             role="listbox"
-            className="anim-pop fixed z-[60] max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className={`ui-glass ${menuPanelClass} fixed z-[60] max-h-60`}
             style={{
               left: position.left,
               width: position.triggerWidth,
@@ -127,14 +134,12 @@ export function Select({
                 onClick={() => pick(o.value)}
                 // Menu-row text takes the control's own tier, so the dropdown reads exactly
                 // like an Input of that tier.
-                className={`flex items-center ${menuRowClass} ${sizeTextClass[size]} disabled:opacity-50 ${
-                  o.value === current
-                    ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                    : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                }`}
+                className={`flex items-center gap-2 ${menuRowClass} ${sizeTextClass[size]} disabled:opacity-50 ${menuRowTone(
+                  o.value === current,
+                )}`}
               >
                 <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                {o.value === current && <CheckIcon className="text-gray-500 dark:text-gray-400" />}
+                <ChoiceCheck on={o.value === current} />
               </button>
             ))}
           </div>,

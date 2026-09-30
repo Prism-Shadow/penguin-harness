@@ -25,6 +25,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ChevronDown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
@@ -32,15 +40,11 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
+import { toneDot, toneInk } from "../../lib/tone";
 import { Dropdown } from "../../components/ui/dropdown";
-import { Skeleton } from "../../components/ui/skeleton";
 import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
   anyJobPending,
@@ -57,6 +61,7 @@ import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machin
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 import { SshHostDialog } from "./ssh-host-dialog";
 import type { HostFormMode } from "./ssh-host-dialog";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
@@ -69,15 +74,13 @@ const POLL_MS = 1500;
 const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
 const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
 
-/** The + in the picker's foot: a new host for the ssh config. */
-const PLUS_PATH = "M12 5v14M5 12h14";
 /** The expand verb's glyph, on the 24-grid like the others; turned over when unfolded. */
 const CHEVRON_PATH = "M6 9l6 6 6-6";
 /** Select all: a box with a check. Select none: the empty box. */
 const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
 const SELECT_NONE_PATH = "M4 5h16v14H4z";
 
-const MONO = "font-mono text-[13px] tabular-nums";
+const MONO = "font-mono text-xs tabular-nums";
 
 /** The reason a card gives under its name, when it has one: the far side's own words. */
 function reasonText(reading: MachineReading): string | null {
@@ -325,7 +328,7 @@ export function MachinesPage() {
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-3xl">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">{S.machines.pageTitle}</h1>
+          <h1 className="ui-display text-xl font-semibold">{S.machines.pageTitle}</h1>
           <div className="flex items-center gap-2">
             {behind.length > 0 && (
               <Button
@@ -381,10 +384,8 @@ export function MachinesPage() {
                       <button
                         type="button"
                         onClick={() => toggleAdding(machine.id)}
-                        className={`flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                          on
-                            ? "bg-gray-100 shadow-[inset_3px_0_0_var(--accent-bg)] dark:bg-gray-800/60"
-                            : ""
+                        className={`flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                          on ? "bg-gray-100 dark:bg-gray-800/60" : ""
                         }`}
                       >
                         <span
@@ -431,7 +432,7 @@ export function MachinesPage() {
                     label={showAll ? S.machines.fewer : S.machines.expand}
                     title={showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
                     d={CHEVRON_PATH}
-                    glyphClass={`transition-transform ${showAll ? "rotate-180" : ""}`}
+                    glyphClass={showAll ? "rotate-180" : ""}
                     ariaExpanded={showAll}
                     onClick={() => setShowAll((open) => !open)}
                   />
@@ -441,7 +442,7 @@ export function MachinesPage() {
                 <Verb
                   label={S.machines.host.newVerb}
                   title={S.machines.host.addTitle}
-                  d={PLUS_PATH}
+                  d={ICONS.plus}
                   onClick={() => {
                     setPickerOpen(false);
                     setHostForm({ kind: "add" });
@@ -483,14 +484,14 @@ export function MachinesPage() {
         )}
 
         {error !== null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
+          <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {error}
-          </div>
+          </NoticeStrip>
         )}
         {noImage && error === null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+          <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {S.machines.noImage}
-          </div>
+          </NoticeStrip>
         )}
 
         {/* The selection bar: a fixed slot between the title and the cards, so the cards
@@ -619,7 +620,7 @@ function Verb({
       <button
         type="button"
         disabled={disabled}
-        title={title ?? label}
+        data-tooltip={title ?? label}
         aria-label={label}
         aria-expanded={ariaExpanded}
         onClick={click}
@@ -669,10 +670,7 @@ function ExpandButton({
       }}
       className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
     >
-      <ChevronDown
-        size={ICON_SIZE.chevron}
-        className={`transition-transform ${open ? "rotate-180" : ""}`}
-      />
+      <ChevronDown size={ICON_SIZE.chevron} className={open ? "rotate-180" : ""} />
     </button>
   );
 }
@@ -681,15 +679,17 @@ function ExpandButton({
 function Stepper({ step, caption }: { step: number; caption: string }) {
   return (
     <div className="mt-1.5 w-44 max-w-full">
-      <div className="flex gap-0.5" aria-hidden="true">
+      <div className="flex gap-px" aria-hidden="true">
         {MACHINE_PHASES.map((phase, index) => (
           <span
             key={phase}
+            // The segment being worked on pulses as a live signal, so a theme can re-time it.
+            data-live={index === step ? "dot" : undefined}
             className={`h-[3px] flex-1 rounded-sm ${
               index < step
                 ? toneDot.busy
                 : index === step
-                  ? `${toneDot.busy} animate-pulse`
+                  ? `${toneDot.busy} ui-live animate-pulse`
                   : "bg-gray-200 dark:bg-gray-700"
             }`}
           />
@@ -723,7 +723,7 @@ function LocalCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`${MONO} truncate font-medium`}>{machine.alias}</span>
-            <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
+            <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-xs text-gray-500 dark:border-gray-700">
               {S.machines.localTitle}
             </span>
           </div>
@@ -798,7 +798,8 @@ function MachineCard({
           ) : (
             <div
               className={`mt-0.5 truncate text-xs ${lineInk}`}
-              title={reasonText(reading) ?? undefined}
+              data-tooltip={reasonText(reading) ?? undefined}
+              data-tooltip-content="text"
             >
               {stateLine(reading, machine, locale)}
             </div>
@@ -808,7 +809,8 @@ function MachineCard({
           <Verb label={S.machines.use} d={PLUG_PATH} disabled={busy} onClick={() => onUse(false)} />
         )}
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "ui-live animate-pulse" : ""}`}
+          data-live={moving ? "dot" : undefined}
           aria-hidden="true"
         />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
@@ -843,7 +845,7 @@ function MachineCard({
           <Verb
             label={S.machines.host.configureVerb}
             title={S.machines.host.configure}
-            d={GEAR_ICON}
+            d={ICONS.gear}
             disabled={busy}
             onClick={onConfigure}
           />
@@ -901,7 +903,7 @@ function Output({ job }: { job: MachineJob | null }) {
   return (
     <div className="mt-3">
       <div className="mb-1 text-xs text-gray-500">{S.machines.output}</div>
-      <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
+      <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
         {job.log.slice(0, -1).join("\n")}
         {job.log.length > 1 ? "\n" : ""}
         <span className="text-gray-900 dark:text-gray-100">{job.log.at(-1)}</span>

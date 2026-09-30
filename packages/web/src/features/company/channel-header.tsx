@@ -17,26 +17,26 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import type { OrgChannelDetail, OrgChannelMember } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  AvatarStack,
+  Button,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  UserAvatar,
+} from "@prismshadow/penguin-ui";
+import type { AvatarStackItem } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useProject } from "../../state/project";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Input, noAutofill } from "../../components/ui/input";
-import {
-  ARCHIVE_ICON,
-  ELLIPSIS_ICON,
-  PENCIL_ICON,
-  UNARCHIVE_ICON,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
+import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
 import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
@@ -45,6 +45,7 @@ import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
 import type { InviteCandidate } from "./channel-list";
 import { parsePrincipal } from "./principals";
+import { menuPanelClass, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Invite (lucide user-plus): the header's "add somebody to this channel" action. */
 const INVITE_ICON =
@@ -64,23 +65,25 @@ const AVATAR_STACK = 3;
 
 const PANEL_WIDTH = 288;
 
+/** One member as an avatar: an employee's tile keyed by its agent id, a person's initial disc. */
+function memberAvatarItem(member: OrgChannelMember): AvatarStackItem {
+  const parsed = parsePrincipal(member.principal);
+  return parsed.kind === "agent"
+    ? { id: parsed.id, name: member.name }
+    : {
+        id: parsed.kind === "user" ? parsed.id : member.principal,
+        name: member.name,
+        kind: "user",
+      };
+}
+
 /** One member's avatar: an employee's tile, a person's initial disc. */
 function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number }) {
-  const parsed = parsePrincipal(member.principal);
-  if (parsed.kind === "agent") {
-    return (
-      <AgentAvatar id={parsed.id} name={member.name} size={size} className="shrink-0 rounded" />
-    );
+  const item = memberAvatarItem(member);
+  if (item.kind === "user") {
+    return <UserAvatar userId={item.id} displayName={item.name} size={size} />;
   }
-  return (
-    <span
-      aria-hidden
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.55) }}
-      className="flex shrink-0 items-center justify-center rounded-full bg-gray-900 font-bold text-white dark:bg-gray-200 dark:text-gray-900"
-    >
-      {member.name.slice(0, 1).toUpperCase()}
-    </span>
-  );
+  return <AgentAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded" />;
 }
 
 /** The member list: who is in the channel, with an employee's desk session one click away. */
@@ -108,24 +111,18 @@ function MemberPopover({
       <button
         ref={triggerRef}
         type="button"
-        title={label}
+        data-tooltip={label}
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
       >
-        <span className="flex -space-x-1">
-          {members.slice(0, AVATAR_STACK).map((m) => (
-            <span
-              key={m.principal}
-              className="rounded-full ring-2 ring-white dark:ring-gray-950"
-              // The ring separates overlapping tiles; it is the page ground, not a colour.
-            >
-              <MemberAvatar member={m} size={ICON_SIZE.groupHeaderAvatar} />
-            </span>
-          ))}
-        </span>
+        {/* The first few only: the count beside the stack already says how many there are. */}
+        <AvatarStack
+          items={members.slice(0, AVATAR_STACK).map(memberAvatarItem)}
+          size={ICON_SIZE.groupHeaderAvatar}
+        />
         <span className="tabular-nums">{S.company.channels.memberCount(members.length)}</span>
       </button>
       {open &&
@@ -142,7 +139,7 @@ function MemberPopover({
               left: position.left,
               width: PANEL_WIDTH,
             }}
-            className="z-[60] max-h-[60vh] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className={`${menuPanelClass} z-[60] max-h-[60vh]`}
           >
             {members.length === 0 ? (
               <p className="px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
@@ -235,7 +232,7 @@ function InvitePicker({
                   onQuery("");
                   onPick(c);
                 }}
-                className={`flex w-full items-center justify-between gap-3 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800`}
+                className={`flex items-center justify-between gap-3 ${menuRowClass} text-xs disabled:opacity-60 ${menuRowTone()}`}
               >
                 <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                   <MemberAvatar
@@ -391,7 +388,7 @@ export function ChannelHeader({
               what test/disclosure-anchor.test.ts reads. The row clips rather than wraps: the
               server caps a channel name at 100 characters and the tooltip carries it whole. */}
           <h1
-            title={label}
+            data-tooltip={label}
             className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row} text-[15px] font-semibold`}
           >
             <span className="shrink-0 text-gray-400 dark:text-gray-500">
@@ -411,7 +408,8 @@ export function ChannelHeader({
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
           {purpose !== null && (
             <span
-              title={purpose}
+              data-tooltip={purpose}
+              data-tooltip-content="text"
               className="hidden min-w-0 flex-1 truncate text-xs text-gray-500 sm:block dark:text-gray-400"
             >
               {purpose}
@@ -454,14 +452,14 @@ export function ChannelHeader({
             button={
               <button
                 type="button"
-                title={S.company.channels.channelMenu}
+                data-tooltip={S.company.channels.channelMenu}
                 aria-label={`${S.company.channels.channelMenu}: ${label}`}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
                 className="flex h-7 w-7 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
               >
-                <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.iconButton} filled />
+                <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.iconButton} filled />
               </button>
             }
           >
@@ -475,7 +473,7 @@ export function ChannelHeader({
                     setRenameOpen(true);
                   }}
                 >
-                  {overflowMenuGlyph(PENCIL_ICON)}
+                  {overflowMenuGlyph(ICONS.pencil)}
                   {S.company.channels.rename}
                 </button>
                 <button
@@ -503,7 +501,7 @@ export function ChannelHeader({
                     void setArchived(false);
                   }}
                 >
-                  {overflowMenuGlyph(UNARCHIVE_ICON)}
+                  {overflowMenuGlyph(ICONS.archiveRestore)}
                   {S.company.channels.unarchive}
                 </button>
               ) : (
@@ -515,7 +513,7 @@ export function ChannelHeader({
                     setArchiveOpen(true);
                   }}
                 >
-                  {overflowMenuGlyph(ARCHIVE_ICON)}
+                  {overflowMenuGlyph(ICONS.archive)}
                   {S.company.channels.archive}
                 </button>
               ))}

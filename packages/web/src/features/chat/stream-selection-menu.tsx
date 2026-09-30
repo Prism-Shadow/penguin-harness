@@ -28,6 +28,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
+import { ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { isDesktopShellWindow } from "../../lib/account-menu";
@@ -45,14 +46,8 @@ import {
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { useAuth } from "../../state/auth";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
+import { writeClipboard } from "../../lib/clipboard";
 import { Dropdown } from "../../components/ui/dropdown";
-import {
-  ADD_TO_CHAT_ICON,
-  EXTERNAL_LINK_ICON,
-  GLOBE_ICON,
-  LINK_ICON,
-} from "../../components/ui/icons";
 import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { toastSuccess } from "../../components/ui/toast";
@@ -97,8 +92,7 @@ export function SelectionMenuRows({
             type="button"
             className={overflowMenuRowClass}
             onClick={() => {
-              writeClipboard(selection.text);
-              toastSuccess(S.common.copied);
+              void writeClipboard(selection.text).then((ok) => ok && toastSuccess(S.common.copied));
               onDone(selection);
             }}
           >
@@ -115,7 +109,7 @@ export function SelectionMenuRows({
               onDone(selection);
             }}
           >
-            {overflowMenuGlyph(ADD_TO_CHAT_ICON)}
+            {overflowMenuGlyph(ICONS.messagePlus)}
             {S.files.addToChat}
           </button>
         ),
@@ -162,7 +156,7 @@ export function LinkMenuRows({
                 className={overflowMenuRowClass}
                 onClick={run(() => openLinkInBrowser(href))}
               >
-                {overflowMenuGlyph(GLOBE_ICON)}
+                {overflowMenuGlyph(ICONS.globe)}
                 {S.chat.linkMenu.openInBuiltinBrowser}
               </button>
             );
@@ -174,7 +168,7 @@ export function LinkMenuRows({
                 className={overflowMenuRowClass}
                 onClick={run(() => window.open(href, "_blank", "noopener,noreferrer"))}
               >
-                {overflowMenuGlyph(EXTERNAL_LINK_ICON)}
+                {overflowMenuGlyph(ICONS.externalLink)}
                 {desktopShell ? S.chat.linkMenu.openExternal : S.chat.linkMenu.openInNewTab}
               </button>
             );
@@ -185,11 +179,10 @@ export function LinkMenuRows({
                 type="button"
                 className={overflowMenuRowClass}
                 onClick={run(() => {
-                  writeClipboard(href);
-                  toastSuccess(S.common.copied);
+                  void writeClipboard(href).then((ok) => ok && toastSuccess(S.common.copied));
                 })}
               >
-                {overflowMenuGlyph(LINK_ICON)}
+                {overflowMenuGlyph(ICONS.chainLink)}
                 {S.chat.linkMenu.copyLink}
               </button>
             );

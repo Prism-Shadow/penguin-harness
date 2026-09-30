@@ -60,7 +60,7 @@ export function markBetaNoticeShown(storage?: BetaNoticeStorage): void {
 export function BetaBadge() {
   return (
     <span
-      title={S.company.betaTitle}
+      data-tooltip={S.company.betaTitle}
       className="whitespace-nowrap rounded-sm border border-gray-300 px-0.5 py-px text-[9px] font-medium leading-none text-gray-500 dark:border-gray-600 dark:text-gray-400"
     >
       {S.company.beta}

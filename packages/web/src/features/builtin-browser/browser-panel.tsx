@@ -12,9 +12,8 @@
  * desktop app, an older shell) the panel says so instead.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Button, EmptyState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
 import { isBlankUrl, isWebUrl } from "./address";
 import { activateBrowserTab, closeBrowserTab, openBrowserTab } from "./browser-actions";
 import {

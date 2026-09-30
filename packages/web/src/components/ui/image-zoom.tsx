@@ -9,8 +9,8 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { CloseIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { CloseIcon } from "./icons";
 
 export function ZoomableImage({
   src,
@@ -44,7 +44,8 @@ function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: ()
 
   return createPortal(
     <div
-      className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-10"
+      // ui-scrim: the overlay is the dimmed layer, with the image inside it.
+      className="ui-scrim anim-fade fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-10"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
