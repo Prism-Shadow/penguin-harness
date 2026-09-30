@@ -104,6 +104,8 @@ export const OLDER_UNITS = 50;
 const PREPEND_ID_SPAN = 1_000_000;
 
 export interface StreamControllerDeps {
+  /** The Session whose stream this is: the owner of the model a history window starts on (see MessagesPageInfo.contextModel). */
+  sessionId: string;
   /**
    * Fetch history messages (GET /api/sessions/:id/messages), including the live tail while
    * running. `serverNowMs` is the server's clock at read time (the response's `Date` header);
@@ -423,6 +425,19 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     return [...pre, ...seeds, ...post];
   };
 
+  /**
+   * Seeds a model with what came before the window it is about to take: the stats accrued
+   * ahead of it, so header chips and per-turn cumulative rows equal a full load (see
+   * seedPriorStats), and the model its first context runs on, whose `session_meta` a window
+   * that starts partway into that context does not hold.
+   */
+  const seedWindow = (target: StreamModel, page: MessagesPageInfo): void => {
+    seedPriorStats(target.stats, page.prior);
+    if (page.contextModel !== undefined) {
+      target.contextModel = { sessionId: deps.sessionId, ...page.contextModel };
+    }
+  };
+
   const load = async (
     currentEpoch: number,
     freshModel?: StreamModel,
@@ -459,9 +474,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // freshModel and keep operating on the current model.
       if (freshModel) model = freshModel;
       const target = model;
-      // Windowed loads seed the stats accrued before the window, so header chips and
-      // per-turn cumulative rows equal a full load (see seedPriorStats).
-      if (res.page !== undefined) seedPriorStats(target.stats, res.page.prior);
+      if (res.page !== undefined) seedWindow(target, res.page);
       pushMessages(target, messages, now(), serverNowMs ?? null);
       const dedup = buildDedupIndex(messages, 100);
       // Replay the buffer (events that arrived while fetching history), with dedup; while a
@@ -529,7 +542,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       prependCount += 1;
       const m = createStreamModel(localDecisions);
       m.nextItemId = -prependCount * PREPEND_ID_SPAN;
-      seedPriorStats(m.stats, res.page.prior);
+      seedWindow(m, res.page);
       pushMessages(m, res.messages, now(), null);
       finalizeHistory(m);
       prefixItems = [...m.items, ...prefixItems];

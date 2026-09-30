@@ -10,8 +10,11 @@ import { describe, expect, it } from "vitest";
 import {
   approvalDecision,
   assistantText,
+  compactionBegin,
+  compactionEnd,
   partialText,
   partialToolCallOutput,
+  sessionMeta,
   tokenUsage,
   toolCall,
   userText,
@@ -82,6 +85,7 @@ function createHarness(): Harness {
   const pageArgs: Array<MessagesPageQuery | undefined> = [];
   let calls = 0;
   const controller = createStreamController({
+    sessionId: "s1",
     loadMessages: (page) =>
       new Promise<{
         messages: OmniMessage[];
@@ -617,6 +621,61 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     // Its cumulative stats column carries on into the live window's figures.
     const oldStats = h.controller.prefixItems.find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(oldStats.stats!.tokens).toBe(400);
+  });
+
+  it("a window is seeded with the model of the context it starts in: its first Tasks name it and a switch further down is marked, in the tail and in a backfilled window alike", async () => {
+    const metaOn = (provider: string, modelId: string): OmniMessage =>
+      sessionMeta({
+        session_id: "s1",
+        provider,
+        model_id: modelId,
+        model_context_window: 1000,
+        system_prompt: "",
+        agent_state: "/tmp/a",
+        workspace: "/tmp/w",
+      });
+    const A = { provider: "anthropic", modelId: "a-1" };
+    const B = { provider: "openai", modelId: "b-2" };
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    // The tail starts partway into a context on a-1 — no meta of it in the window — and crosses
+    // a switch: an ordinary manual compaction, then the next context's meta on b-2.
+    h.resolveLoad(
+      [
+        ...HISTORY_TASK,
+        at(
+          compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 1 }),
+          "2026-07-05T00:01:00.000Z",
+        ),
+        at(
+          compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+          "2026-07-05T00:01:05.000Z",
+        ),
+        at(metaOn(B.provider, B.modelId), "2026-07-05T00:01:06.000Z"),
+        at(userText("next question"), "2026-07-05T00:02:00.000Z"),
+        at(assistantText("next answer"), "2026-07-05T00:02:03.000Z"),
+        at(tokenUsage(counts(300), counts(300)), "2026-07-05T00:02:05.000Z"),
+      ],
+      undefined,
+      null,
+      pageInfo({ before: "1:8", earlierTurns: 1, contextModel: A }),
+    );
+    await p;
+    const items = h.controller.model.items;
+    const stats = items.filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+    expect(stats.map((s) => s.model)).toEqual([A, B]);
+    expect(items.filter((i) => i.kind === "model_change")).toMatchObject([{ from: A, to: B }]);
+    // The running context is the one the window ends in, under the Session the stream is of.
+    expect(h.controller.model.contextModel).toEqual({ sessionId: "s1", ...B });
+
+    // The window before starts in an earlier context of its own.
+    const C = { provider: "zhipu", modelId: "c-0" };
+    const older = h.controller.loadOlder();
+    h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ earlierTurns: 0, contextModel: C }));
+    await older;
+    const oldStats = h.controller.prefixItems.find((i) => i.kind === "task_stats") as TaskStatsItem;
+    expect(oldStats.model).toEqual(C);
   });
 
   it("loadOlder without more history, while loading, or before the initial load is a no-op", async () => {

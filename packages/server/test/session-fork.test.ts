@@ -408,6 +408,8 @@ describe("session fork", () => {
       (message) => (message.payload as { text?: string }).text === "fork shard two",
     );
     expect(selected?.tracePosition).toEqual({ fileIndex: 2, ordinal: 4 });
+    // The window starts partway into shard two: the page says which model that context is on.
+    expect(tail.page?.contextModel).toEqual({ provider: meta.provider, modelId: meta.model_id });
 
     const response = await api.post(`/api/sessions/${SID}/fork`, {
       position: selected!.tracePosition,

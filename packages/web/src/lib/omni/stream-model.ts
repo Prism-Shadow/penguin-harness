@@ -449,8 +449,10 @@ export interface TaskStatsItem {
   memoryChanges?: MemoryChangeRow[];
   /**
    * The model this Task ran on — the one its context's `session_meta` names (see
-   * `StreamModel.contextModel`). Absent when the window held no meta before the Task began;
-   * the cost shown beside the row is then priced on the Session's current model.
+   * `StreamModel.contextModel`). Absent when nothing had said which by the time the Task
+   * began — the history was read before the Session's Trace existed, and a first context's
+   * meta is never streamed; the cost shown beside the row is then priced on the Session's
+   * current model.
    */
   model?: { provider: string; modelId: string };
 }
@@ -500,10 +502,11 @@ export interface StreamModel {
   agentState: string | null;
   /**
    * The model the running context was opened on, and the Session its `session_meta` names (null
-   * until one arrives). A Session's model can change between contexts — each context's meta
-   * records its own — so this follows rotations, and a main-session meta naming another model
-   * than the one held pushes a model-change marker. The chat page moves its Session row to this
-   * model when the two disagree (see `sessionRowStale`).
+   * until one arrives, or a history window says which model it starts on). A Session's model
+   * can change between contexts — each context's meta records its own — so this follows
+   * rotations, and a main-session meta naming another model than the one held pushes a
+   * model-change marker. The chat page moves its Session row to this model when the two
+   * disagree (see `sessionRowStale`).
    */
   contextModel: { sessionId: string; provider: string; modelId: string } | null;
   /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
@@ -775,8 +778,8 @@ export function pushMessage(
   // child, on which model); the main session takes the rest of its identity/config from the
   // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values. On
   // the main session a meta naming another model than the one held means the Session switched
-  // models: a marker says so — never for the window's first meta, a same-model rewrite, or a
-  // nested child's meta.
+  // models: a marker says so — never for a same-model rewrite, a nested child's meta, or the
+  // first meta of a model that was told nothing of the context it starts in.
   if (msg.type === "session_meta") {
     const p = msg.payload as SessionMetaPayload;
     model.agentState = p.agent_state;

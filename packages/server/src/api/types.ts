@@ -1754,6 +1754,14 @@ export interface MessagesPageInfo {
     sessionTokens: number;
     contextTokens: number;
   };
+  /**
+   * The model of the context this window starts in — what the `session_meta` heading that
+   * context's Trace file names. A Session can switch models between contexts, and a window
+   * that starts partway into one does not hold that record: the client seeds it, so the Tasks
+   * ahead of the window's first `session_meta` have their model, and a switch further down the
+   * window is told from a plain rotation. Absent when the Session has no Trace yet.
+   */
+  contextModel?: ModelRefDto;
 }
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */

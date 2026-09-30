@@ -49,9 +49,8 @@ export function switchContextShape(items: ReadonlyArray<ThinkingSwitchItem>): Sw
  * context's `session_meta` (the stream model's `contextModel`) is of this Session and says so —
  * a switch completed, on this tab or another one watching the Session, or the row was held from
  * before a switch. The page then moves the row to that model; the server moved its own before
- * it published the record. False while no meta of this Session has been seen: a history window
- * that starts after the context's meta derives nothing, and the stream of a conversation the
- * page has just left says nothing about the row it now holds.
+ * it published the record. False while the stream says nothing of this Session's model: before
+ * its history has loaded, and for the stream of a conversation the page has just left.
  */
 export function sessionRowStale(
   contextModel: (ModelRefDto & { sessionId: string }) | null,

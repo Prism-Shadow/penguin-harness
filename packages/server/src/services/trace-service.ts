@@ -178,6 +178,12 @@ export interface MessagesPageResult {
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
   prior: WindowPriorStats;
+  /**
+   * The model of the context the window starts in: the `session_meta` heading the shard its
+   * first unit lies in. One shard is one model context, and a window that starts partway into
+   * one does not hold that record. Absent for an empty transcript.
+   */
+  contextModel?: { provider: string; modelId: string };
 }
 
 export interface ForkTraceResult {
@@ -629,7 +635,21 @@ export class TraceService implements Traces {
       }
     }
     const expanded = await this.expandMessages(projectId, windowRaw, ctx);
-    return { messages: expanded, ...(before !== undefined ? { before } : {}), prior };
+    // The start shard was read for the window above, so its head is on hand.
+    const startMeta = shardMessages.get(start.pos)?.find(isSessionMeta);
+    return {
+      messages: expanded,
+      ...(before !== undefined ? { before } : {}),
+      prior,
+      ...(startMeta
+        ? {
+            contextModel: {
+              provider: startMeta.payload.provider,
+              modelId: startMeta.payload.model_id,
+            },
+          }
+        : {}),
+    };
   }
 
   /**
