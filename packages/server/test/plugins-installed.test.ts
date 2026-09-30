@@ -26,8 +26,12 @@ describe("installed plugins", () => {
    * directory of the temp root for the file's duration.
    */
   const ship = async (pkg: ClassPackage) => {
-    const prefix = path.join(t.root, "install", "plugins");
     process.argv[1] = path.join(t.root, "install", "bin", "server.js");
+    await shipInto(path.join(t.root, "install", "plugins"), pkg);
+  };
+
+  /** Writes a package into a builtin prefix, named in the prefix's manifest. */
+  const shipInto = async (prefix: string, pkg: ClassPackage) => {
     const manifestFile = path.join(prefix, "package.json");
     const manifest = JSON.parse(
       await fs.readFile(manifestFile, "utf8").catch(() => '{"name":"prefix","private":true}'),
@@ -68,6 +72,33 @@ describe("installed plugins", () => {
     expect(res.shipped).toEqual([]);
     expect(res.plugins).toEqual([]);
   });
+
+  // npm links a global package's bin into <prefix>/bin, and the Docker image links `penguin` the
+  // same way, so argv[1] names the link rather than the package's dist/penguin.js. The prefix
+  // the package carries beside dist/ is found through the link. Symlink creation needs a
+  // privilege or developer mode on Windows, where npm writes .cmd shims instead.
+  it.skipIf(process.platform === "win32")(
+    "installs a plugin shipped beside the program when argv[1] is a symlink to its entry",
+    async () => {
+      const pkg = path.join(t.root, "global", "lib", "node_modules", "@acme", "cli");
+      await fs.mkdir(path.join(pkg, "dist"), { recursive: true });
+      await fs.writeFile(path.join(pkg, "dist", "penguin.js"), "");
+      await shipInto(path.join(pkg, "plugins"), { name: "@acme/linked", module: "Linked" });
+      const bin = path.join(t.root, "global", "bin", "penguin");
+      await fs.mkdir(path.dirname(bin), { recursive: true });
+      await fs.symlink(path.join(pkg, "dist", "penguin.js"), bin);
+      process.argv[1] = bin;
+
+      expect((await view()).shipped).toEqual(["@acme/linked"]);
+      const res = await admin.post("/api/projects/default_project/plugins/installed", {
+        specifier: "@acme/linked",
+      });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as InstalledPluginsResponse).plugins).toEqual([
+        expect.objectContaining({ specifier: "@acme/linked", active: true, builtin: true }),
+      ]);
+    },
+  );
 
   it("says a listed plugin is not active, and why when it cannot even be read", async () => {
     await fs.writeFile(listFile(), 'models = []\n[plugins]\n"@acme/not-installed" = "*"\n');

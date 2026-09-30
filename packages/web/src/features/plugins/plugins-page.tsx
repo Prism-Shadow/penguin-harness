@@ -1556,11 +1556,12 @@ function InstallRow({
  * installed → nothing yet; installed but not loaded → the restart it waits for; running → the
  * modules it holds), then the tag line — its categories, "built in" when this build ships
  * it, the license, the keywords. The trailing cluster is the verb: Install on an available
- * row, Remove on an installed one. The row is a link to the registry page when the registry
+ * row this build ships, Remove on an installed one; an available row the build does not ship
+ * has none, and is muted. The row is a link to the registry page when the registry
  * knows the package; the cluster sits BESIDE that link — a button inside an anchor is invalid
  * markup, and the click would have two meanings.
  */
-function ModuleRow({
+export function ModuleRow({
   specifier,
   entry,
   state,
@@ -1592,8 +1593,12 @@ function ModuleRow({
   onRemove: (() => void) | null;
 }) {
   const { locale } = useLocale();
-  const stateText =
-    state === "active"
+  // Installing names a package this build carries; the server refuses any other. A row the
+  // registry lists but the build lacks therefore offers no Install, and says why instead.
+  const unshipped = state === "none" && !shipped;
+  const stateText = unshipped
+    ? S.plugins.notShipped
+    : state === "active"
       ? S.plugins.stateActive
       : state === "pending"
         ? S.plugins.installedRestart
@@ -1648,6 +1653,7 @@ function ModuleRow({
                   ? toneInk.danger
                   : undefined
           }
+          title={unshipped ? S.plugins.notShippedHint : undefined}
         >
           {stateText}
         </span>
@@ -1672,7 +1678,10 @@ function ModuleRow({
     </>
   );
   return (
-    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+    <div
+      className={`flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60 ${unshipped ? "opacity-60" : ""}`}
+      title={unshipped ? S.plugins.notShippedHint : undefined}
+    >
       {entry !== undefined ? (
         <Link to={`/plugins/registry/${specifier}`} className="min-w-0 flex-1">
           {body}
@@ -1684,7 +1693,8 @@ function ModuleRow({
           aria-label and title. While it runs, a spinner stands in for the glyph. */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
         {state === "none"
-          ? onInstall !== null && (
+          ? onInstall !== null &&
+            shipped && (
               <Button
                 size="sm"
                 className="h-8 w-8 shrink-0 justify-center p-0"

@@ -11,6 +11,11 @@ packages/desktop/stage/
 packages/desktop/out/
 packages/desktop/skills/
 
+# the builtin plugin prefix scripts/build-plugins.mjs stages beside the CLI's dist/ and the
+# dev server's src/
+packages/cli/plugins/
+packages/server/plugins/
+
 # docs-only area (mostly Chinese; not machine-formatted)
 specs/
 *.md

@@ -29,7 +29,7 @@ import {
   projectConfigPath,
 } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -152,8 +152,10 @@ export async function readPluginClosure(
  *      (nothing in the product writes it yet; a registry install would).
  *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
  *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
- *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
- *      stages them beside `skills/`), for a deployment nothing was ever pushed to.
+ *   3. `<installation>/plugins` — the builtin plugins the build shipped, one directory above
+ *      the program's entry: every distribution stages them there (the CLI package beside its
+ *      `dist/`, the desktop app beside its `dist/server.js`), for a deployment nothing was
+ *      ever pushed to.
  *   4. the installation entry — a plugin installed globally beside the program.
  *
  * A prefix marked `builtin` is one the harness ships, not one the operator installed.
@@ -184,6 +186,23 @@ export function pluginsPrefix(root: string): string {
   return path.join(root, "plugins");
 }
 
+/**
+ * The file the running program was started from: `process.argv[1]` with symlinks resolved.
+ * npm puts a global package's bin on PATH as a symlink to its entry, and so does the Docker
+ * image for `penguin`; argv[1] then names the link, whose directory is the bin directory
+ * rather than the package's `dist/`. The resolved path is the file Node loaded and resolves
+ * the program's own imports from. An entry that does not exist is taken as written.
+ */
+function programEntry(): string | null {
+  const entry = process.argv[1];
+  if (typeof entry !== "string" || entry.length === 0) return null;
+  try {
+    return realpathSync(entry);
+  } catch {
+    return entry;
+  }
+}
+
 export function pluginBases(root: string | undefined, assetsDir: string | null): PluginBase[] {
   const bases: PluginBase[] = [];
   if (root !== undefined && root !== "") {
@@ -196,8 +215,8 @@ export function pluginBases(root: string | undefined, assetsDir: string | null):
       builtin: true,
     });
   }
-  const entry = process.argv[1];
-  if (typeof entry === "string" && entry.length > 0) {
+  const entry = programEntry();
+  if (entry !== null) {
     bases.push({
       file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
       builtin: true,

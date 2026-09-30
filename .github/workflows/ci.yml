@@ -113,6 +113,16 @@ jobs:
             echo "$listing" | grep -q -- "$want" || { echo "::error::packages/server tarball is missing $want"; exit 1; }
           done
           echo "server tarball carries web-dist/ and LICENSE"
+      # The builtin plugins reach an npm install only as the prefix the CLI's build stages beside
+      # dist/ (the sandbox packages are private and never published). A tarball without it
+      # installs a server that can install no plugin, and nothing else here would notice.
+      - name: The CLI tarball carries the builtin plugins
+        run: |
+          listing="$(cd packages/cli && npm pack --dry-run 2>&1)"
+          for want in plugins/package.json plugins/node_modules/@prismshadow/penguin-plugin-sandbox-wsl/package.json; do
+            echo "$listing" | grep -q -- "$want" || { echo "::error::packages/cli tarball is missing $want"; exit 1; }
+          done
+          echo "cli tarball carries the builtin plugin prefix"
 
   # tsc over every package, so this one does need the whole build. Results are
   # platform-independent, which is why neither macOS nor Windows repeats it.

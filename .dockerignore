@@ -16,6 +16,8 @@
 **/dist
 **/*.tsbuildinfo
 packages/server/web-dist
+packages/cli/plugins
+packages/server/plugins
 packages/desktop/out
 packages/desktop/stage
 .turbo

@@ -4,7 +4,10 @@
  * servers consume: packages/core, and packages/cli for the `penguin` a dev server hands the
  * Agents it runs (it writes a shim at `<root>/bin/penguin` pointing at
  * `packages/cli/dist/penguin.js`, so that file has to exist and be current when the server
- * starts — `tsx watch` never rebuilds it).
+ * starts — `tsx watch` never rebuilds it). Then the builtin plugins the dev server offers:
+ * the server finds them in the npm prefix one directory above its program's entry, which
+ * under `tsx watch src/index.ts` is `packages/server/plugins`, so the prefix the CLI's build
+ * just produced (scripts/build-plugins.mjs, cached by content) is staged there as well.
  *
  * dev:server and dev:web must build packages/core before starting
  * (never start on stale deps — see the 2026-07-17 design changelog entry), and every dev
@@ -46,6 +49,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildBuiltinPlugins, stagePrefix } from "./build-plugins.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL_ONLY = process.argv.includes("--install-only");
@@ -224,6 +228,8 @@ try {
         { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" },
       );
       if (res.status === 0) {
+        const built = await buildBuiltinPlugins({ log: (m) => console.log(`[dev-prebuild] ${m}`) });
+        await stagePrefix(built, path.join(ROOT, "packages", "server", "plugins"));
         writeFileSync(BUILD_STAMP, String(Date.now()));
         refreshViteCache();
       }

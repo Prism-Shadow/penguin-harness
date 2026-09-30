@@ -2032,6 +2032,10 @@ export const zh = {
     /** The second list: registry entries this Project does not ask for yet. */
     availableSection: (n: number): string => `可安装 (${n})`,
     notInstalled: "未安装",
+    /** An available row this build does not ship: the server cannot install it, so the row offers no Install. */
+    notShipped: "本构建未附带",
+    /** Hover text on that row: why it cannot be installed. */
+    notShippedHint: "本构建没有附带这个插件，因此无法在这里安装。",
     /** The filter column beside the lists, and the empty result. */
     filterCategories: "分类",
     filterKind: "包含",

@@ -156,7 +156,7 @@ To add a server plugin to the current Project:
 
 To remove one, select **Remove** on its row under **Installed plugins**, and confirm. The plugin leaves the Project's list; nothing is deleted from disk.
 
-Only admins see **Install** and **Remove**. Only plugins that ship with PenguinHarness can be added, so nothing is downloaded. A change applies without restarting the server: the server rebuilds its business surface around the new list, which is why runs in progress stop. Afterwards the row's status reads **running**, **restart to load** when the server could not apply the change without a restart, or **failed to load** with the reason.
+Only admins see **Install** and **Remove**. Only plugins that ship with PenguinHarness can be added, so nothing is downloaded. Every way of installing PenguinHarness carries them: the desktop app, the installer, the npm package and the Docker image. A registry entry that the running build does not ship is dimmed, reads **not in this build**, and has no **Install**. A change applies without restarting the server: the server rebuilds its business surface around the new list, which is why runs in progress stop. Afterwards the row's status reads **running**, **restart to load** when the server could not apply the change without a restart, or **failed to load** with the reason.
 
 The list is the `[plugins]` table of the Project's config; see [Configuration Reference](/configuration#plugins). For the routes, see [Server API](/server-api#plugin-registry-and-project-plugins), and for how the server loads plugins, see [Server Boot and Subsystems](/server-boot#re-assembly).
 

@@ -2000,6 +2000,10 @@ export const en: Strings = {
     /** The second list: registry entries this Project does not ask for yet. */
     availableSection: (n: number): string => `Available (${n})`,
     notInstalled: "not installed",
+    /** An available row this build does not ship: the server cannot install it, so the row offers no Install. */
+    notShipped: "not in this build",
+    /** Hover text on that row: why it cannot be installed. */
+    notShippedHint: "This build does not ship this plugin, so it cannot be installed here.",
     /** The filter column beside the lists, and the empty result. */
     filterCategories: "Categories",
     filterKind: "Contains",

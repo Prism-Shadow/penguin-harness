@@ -8,6 +8,10 @@ dist/
 *.tsbuildinfo
 # web assets copied into the server package at npm publish time
 packages/server/web-dist/
+# the builtin plugin prefix (scripts/build-plugins.mjs), staged one directory above an entry:
+# the CLI's build writes it beside dist/, the dev prestep beside the dev server's src/
+packages/cli/plugins/
+packages/server/plugins/
 
 # secrets / local config
 .env

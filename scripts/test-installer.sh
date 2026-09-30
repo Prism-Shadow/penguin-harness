@@ -62,6 +62,26 @@ write_sha256() {
   (cd "$(dirname "$file")" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
 }
 
+# --- The builtin plugins. A release payload's lib/ is the CLI package deployed, and that package
+#     carries the npm prefix scripts/build-plugins.mjs stages beside its dist/: lib/plugins, whose
+#     package.json names what the build ships. The server finds it one directory above the
+#     program's entry, which the launcher runs as lib/dist/penguin.js (pluginBases in
+#     packages/server/src/plugin/loader.ts), and offers nothing else for install. The fixture
+#     entry is a probe doing that same lookup,
+#     so running it prints every builtin plugin and the manifest it resolves to. ---
+BUILTIN_PROBE="$WORK_DIR/builtin-probe.js"
+cat > "$BUILTIN_PROBE" <<'EOF'
+const { readFileSync, realpathSync } = require("node:fs");
+const { findPackageJSON } = require("node:module");
+const path = require("node:path");
+
+const prefix = path.join(path.dirname(realpathSync(process.argv[1])), "..", "plugins", "package.json");
+for (const name of Object.keys(JSON.parse(readFileSync(prefix, "utf8")).dependencies ?? {})) {
+  console.log(`${name} ${findPackageJSON(name, prefix)}`);
+}
+EOF
+BUILTIN_PLUGIN="@fixture/penguin-plugin-sandbox"
+
 make_posix_payload() {
   target="$1"
   output="$2"
@@ -87,6 +107,14 @@ make_posix_payload() {
   printf '%s\n' fixture > "$payload/penguin/lib/fixture.txt"
   mkdir -p "$payload/penguin/lib/vendor"
   printf '%s\n' vendored > "$payload/penguin/lib/vendor/data.txt"
+  builtin="$payload/penguin/lib/plugins/node_modules/$BUILTIN_PLUGIN"
+  mkdir -p "$payload/penguin/lib/dist" "$builtin/dist"
+  cp "$BUILTIN_PROBE" "$payload/penguin/lib/dist/penguin.js"
+  printf '{"name":"penguin-builtin-plugins","private":true,"version":"0.0.0","dependencies":{"%s":"0.0.0"}}\n' \
+    "$BUILTIN_PLUGIN" > "$payload/penguin/lib/plugins/package.json"
+  printf '{"name":"%s","version":"0.0.0","main":"./dist/index.js"}\n' "$BUILTIN_PLUGIN" \
+    > "$builtin/package.json"
+  printf '%s\n' 'module.exports = { modules: [] };' > "$builtin/dist/index.js"
   printf '%s\n' fixture > "$payload/penguin/web/index.html"
   printf '{"schemaVersion":1,"target":"%s"}\n' "$target" > "$payload/penguin/package-manifest.json"
   tar -czf "$output" -C "$payload" penguin
@@ -94,6 +122,7 @@ make_posix_payload() {
 
 command -v sha256sum >/dev/null 2>&1 || fail_test "sha256sum is required"
 command -v unzip >/dev/null 2>&1 || fail_test "unzip is required"
+command -v node >/dev/null 2>&1 || fail_test "node is required"
 mkdir -p "$ARTIFACT_DIR" "$PAYLOAD_DIR" "$STUB_BIN" "$TEST_HOME"
 
 case "$(uname -s):$(uname -m)" in
@@ -296,6 +325,12 @@ HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$OFFLINE_INSTALL" PATH="$STUB_BIN:$PATH" 
   || fail_test "offline install from the extracted bundle failed"
 [ "$("$OFFLINE_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
   || fail_test "offline install did not produce a working command"
+[ -f "$OFFLINE_INSTALL/lib/plugins/package.json" ] \
+  || fail_test "offline install did not keep the builtin plugin prefix at lib/plugins"
+OFFLINE_REAL="$(cd "$OFFLINE_INSTALL" && pwd -P)"
+[ "$(node "$OFFLINE_INSTALL/lib/dist/penguin.js")" = \
+  "$BUILTIN_PLUGIN $OFFLINE_REAL/lib/plugins/node_modules/$BUILTIN_PLUGIN/package.json" ] \
+  || fail_test "a builtin plugin does not resolve from the installed program's entry"
 
 # A second installation beside the first leaves `penguin` with the first: with
 # --no-modify-path the ~/.local/bin symlink is not repointed.
@@ -405,6 +440,8 @@ rm -f "$STUB_BIN/mv" "$STUB_BIN/rmdir"
   || fail_test "pinned-lib upgrade did not install the new version"
 [ -f "$LOCAL_INSTALL/lib/vendor/data.txt" ] \
   || fail_test "pinned-lib upgrade lost the copied lib subdirectory"
+[ -f "$LOCAL_INSTALL/lib/plugins/node_modules/$BUILTIN_PLUGIN/dist/index.js" ] \
+  || fail_test "pinned-lib upgrade lost the builtin plugins"
 [ -z "$(ls -A "$LOCAL_INSTALL" | grep -E '^\.(old|staging)\.' || :)" ] \
   || fail_test "pinned-lib upgrade left staging or backup directories behind"
 
