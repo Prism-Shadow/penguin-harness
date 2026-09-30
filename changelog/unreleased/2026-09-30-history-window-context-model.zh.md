@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#903](https://github.com/Prism-Shadow/penguin-harness/pull/903)
 
 [English](2026-09-30-history-window-context-model.md)
 
