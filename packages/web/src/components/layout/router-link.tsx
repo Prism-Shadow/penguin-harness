@@ -15,6 +15,7 @@ export function renderRouterLink(link: NavRowLinkProps) {
       aria-current={link["aria-current"]}
       aria-label={link["aria-label"]}
       data-tooltip={link["data-tooltip"]}
+      draggable={link.draggable}
       onClick={link.onClick}
     >
       {link.children}
