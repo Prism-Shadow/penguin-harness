@@ -6,8 +6,9 @@
  *
  * Who may do what follows the roles: the person delegates, comments, requests changes and
  * approves; the author publishes, marks ready, asks for an implementer and resolves
- * comments; the implementer reports merged; anybody in the organization — a person or an
- * employee — gives feedback and rejects. A person may also do what the author or the
+ * comments; the implementer reports merged, and so may anybody in the organization once
+ * GitHub reads the impl PR as merged into its default branch; anybody in the organization —
+ * a person or an employee — gives feedback and rejects. A person may also do what the author or the
  * implementer may, so a stuck proposal never waits on an employee that is not answering.
  *
  * Reads are per person: a read position (the last `seq` seen) per proposal, kept in the
@@ -949,7 +950,7 @@ export class ProposalService {
       [to],
       p.implementer !== null
         ? `approved by ${whoOf(caller)} — merge the PR and run \`penguin org proposal merged ${number}\`.`
-        : `approved by ${whoOf(caller)} with nobody building it yet — build it with \`penguin org proposal implement ${number}\` (or \`--agent <id>\` to hand it to a colleague), or merge it and run \`penguin org proposal merged ${number}\`.`,
+        : `approved by ${whoOf(caller)} with nobody building it yet — build it with \`penguin org proposal implement ${number}\` (or \`--agent <id>\` to hand it to a colleague); once ${p.implPr !== null ? `its impl PR ${p.implPr.label}` : `its impl PR (register it: \`penguin org proposal impl ${number} <url>\`)`} is merged into the default branch, run \`penguin org proposal merged ${number}\`.`,
     );
     return this.answer(
       delivery,
@@ -1000,12 +1001,6 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(ledger, number);
-    if (!this.isPerson(caller) && caller.agentId !== p.implementer) {
-      throw forbidden(
-        "not_implementer",
-        `Only the implementer (${p.implementer ?? "none yet"}) or a person can report a merge.`,
-      );
-    }
     if (p.status !== "approved") {
       throw new ProposalError(
         409,
@@ -1013,8 +1008,44 @@ export class ProposalService {
         `Proposal #${number} is ${p.status}, not approved.`,
       );
     }
+    // A person and the implementer report on their word. Anybody else in the organization
+    // reports on GitHub's: the impl PR merged into its repository's default branch.
+    if (!this.isPerson(caller) && caller.agentId !== p.implementer) {
+      await this.requireLanded(p);
+    }
     await this.setStatus(org, ledger, p, "merged", caller);
     return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+  }
+
+  /** The proposal's impl PR merged into its repository's default branch, read from GitHub now; else 409. */
+  private async requireLanded(p: Proposal): Promise<void> {
+    const n = p.number;
+    if (p.implPr === null) {
+      throw new ProposalError(
+        409,
+        "impl_pr_missing",
+        `Proposal #${n} has no impl PR to check the merge against — register it (\`penguin org proposal impl ${n} <url>\`), or ask the implementer (${p.implementer ?? "none yet"}) or a person to report it.`,
+      );
+    }
+    const read = await this.prStatus.landing(p.implPr.url);
+    if (read === null) {
+      throw new ProposalError(
+        409,
+        "impl_pr_not_merged",
+        `Proposal #${n}'s impl PR ${p.implPr.label} could not be read from GitHub, so its merge cannot be confirmed — try again, or ask the implementer (${p.implementer ?? "none yet"}) or a person to report it.`,
+      );
+    }
+    if (!read.landed) {
+      const where =
+        read.status === "merged"
+          ? `merged into ${read.base ?? "?"}, not the default branch ${read.defaultBranch ?? "?"}`
+          : read.status;
+      throw new ProposalError(
+        409,
+        "impl_pr_not_merged",
+        `Proposal #${n}'s impl PR ${p.implPr.label} is ${where} — report the merge once it is merged into the default branch, or ask the implementer (${p.implementer ?? "none yet"}) or a person.`,
+      );
+    }
   }
 
   async implement(

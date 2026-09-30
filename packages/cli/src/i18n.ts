@@ -1889,7 +1889,8 @@ const en: Messages = {
       "Rewrite a proposal's brief (the author or a person); the revisions, comments and approval stay",
     proposalReadyDesc: "Mark a proposal ready for reading (the author or a person)",
     proposalApproveDesc: "Approve a proposal and request its merge (a person)",
-    proposalMergedDesc: "Report the implementation merged (the implementer or a person)",
+    proposalMergedDesc:
+      "Report the implementation merged (the implementer or a person; anybody else once the impl PR is merged into its default branch)",
     proposalRejectDesc: "Reject a proposal with a reason (a person or any employee)",
     proposalImplementDesc:
       "Open an implementation session for an employee on the proposal; prints the session id",
@@ -3124,7 +3125,7 @@ const zh: Messages = {
     proposalBriefDesc: "改写提案的简介（作者或人）；修订、评论与认可都不动",
     proposalReadyDesc: "标记提案可以读了（作者或人）",
     proposalApproveDesc: "认可提案并请求合并（人）",
-    proposalMergedDesc: "报告实施已合并（实施者或人）",
+    proposalMergedDesc: "报告实施已合并（实施者或人；其他人须 impl PR 已合入默认分支）",
     proposalRejectDesc: "拒绝提案并给出理由（人或任一员工）",
     proposalImplementDesc: "开一个实施会话来做这份提案——作者自己的，或指定的同事的；打印会话 id",
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",

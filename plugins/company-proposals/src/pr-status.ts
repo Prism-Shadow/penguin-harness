@@ -101,6 +101,23 @@ export function ghRunner(command = "gh"): RunGh {
     });
 }
 
+/** The part of GitHub's pull-request JSON the reader looks at. */
+type PullBody = Parameters<typeof statusOf>[0] & {
+  base?: { ref?: unknown; repo?: { default_branch?: unknown } | null };
+};
+
+/** A pull request's fresh reading for a write: its status, where it points, whether it landed. */
+export interface PrLanding {
+  status: ProposalPrStatus;
+  /** The branch it targets (`base.ref`), null when GitHub did not say. */
+  base: string | null;
+  /** The target repository's default branch, null when GitHub did not say. */
+  defaultBranch: string | null;
+  /** Merged, into the target repository's default branch. */
+  landed: boolean;
+  checkedAt: string;
+}
+
 interface Cached {
   status: ProposalPrStatus | null;
   checkedAt: number;
@@ -159,7 +176,39 @@ export class PrStatusReader {
     return run;
   }
 
+  /**
+   * Whether a PR URL landed: asked of GitHub now, past the cache — a write is decided on it,
+   * and a minute-old `open` would refuse a PR merged a moment ago. The answer refreshes the
+   * cache the page reads. `landed` is merged into the repository's default branch; null when
+   * the URL is not a pull request or GitHub could not be asked.
+   */
+  async landing(url: string): Promise<PrLanding | null> {
+    const ref = parsePullUrl(url);
+    if (ref === null) return null;
+    const key = `${ref.owner}/${ref.repo}#${ref.number}`;
+    const pull = await this.fetchPull(key, ref);
+    const checkedAt = this.now();
+    this.cache.set(key, { status: pull === null ? null : statusOf(pull), checkedAt });
+    if (pull === null) return null;
+    const status = statusOf(pull);
+    const base = typeof pull.base?.ref === "string" ? pull.base.ref : null;
+    const defaultBranch =
+      typeof pull.base?.repo?.default_branch === "string" ? pull.base.repo.default_branch : null;
+    return {
+      status,
+      base,
+      defaultBranch,
+      landed: status === "merged" && base !== null && base === defaultBranch,
+      checkedAt: new Date(checkedAt).toISOString(),
+    };
+  }
+
   private async fetchStatus(key: string, ref: PullRef): Promise<ProposalPrStatus | null> {
+    const pull = await this.fetchPull(key, ref);
+    return pull === null ? null : statusOf(pull);
+  }
+
+  private async fetchPull(key: string, ref: PullRef): Promise<PullBody | null> {
     if (!GITHUB_NAME.test(ref.owner) || !GITHUB_NAME.test(ref.repo)) {
       this.failed(key, "not a GitHub repository name");
       return null;
@@ -170,8 +219,7 @@ export class PrStatusReader {
         timeoutMs: TIMEOUT_MS,
         maxBytes: MAX_OUTPUT_BYTES,
       });
-      const body = JSON.parse(stdout) as Parameters<typeof statusOf>[0];
-      return statusOf(body);
+      return JSON.parse(stdout) as PullBody;
     } catch (err) {
       this.failed(key, err instanceof Error ? err.message : String(err));
       return null;

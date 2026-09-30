@@ -134,7 +134,38 @@ describe("PrStatusReader", () => {
   it("does not look up a URL that names no pull request", async () => {
     const { r, calls } = reader({ answers: [] });
     expect(await r.read("https://github.com/o/r/issues/7")).toBeNull();
+    expect(await r.landing("https://github.com/o/r/issues/7")).toBeNull();
     expect(calls).toHaveLength(0);
+  });
+
+  it("landing asks GitHub past the cache, and lands only a merge into the default branch", async () => {
+    const pull = (merged: boolean, base: string) =>
+      json({
+        state: merged ? "closed" : "open",
+        merged,
+        base: { ref: base, repo: { default_branch: "main" } },
+      });
+    const { r, calls } = reader({
+      answers: [
+        json({ state: "open" }),
+        pull(true, "dev"),
+        pull(true, "main"),
+        () => Promise.reject(new Error("gh: HTTP 502")),
+      ],
+    });
+    expect((await r.read(URL))?.status).toBe("open");
+    expect(await r.landing(URL)).toMatchObject({
+      status: "merged",
+      base: "dev",
+      defaultBranch: "main",
+      landed: false,
+    });
+    expect(await r.landing(URL)).toMatchObject({ status: "merged", base: "main", landed: true });
+    // The fresh answer is what the page reads next, within the minute.
+    expect((await r.read(URL))?.status).toBe("merged");
+    expect(calls).toHaveLength(3);
+    expect(await r.landing(URL)).toBeNull();
+    expect(calls).toHaveLength(4);
   });
 });
 

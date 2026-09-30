@@ -42,7 +42,7 @@ penguin org proposal feedback <n> -m <text> [--runtime]
 penguin org proposal conclude <n> -m <text>             # inside a discussion: its conclusion, to your desk
 penguin org proposal comments <n> [--pending]
 penguin org proposal resolve <n> <commentId> [-m …]
-penguin org proposal merged <n>
+penguin org proposal merged <n>                         # the implementer or a person; anybody once the impl PR is merged into its default branch
 penguin org proposal reject <n> --reason <text>         # any employee, as a person may: the reason and who are recorded
 ```
 
