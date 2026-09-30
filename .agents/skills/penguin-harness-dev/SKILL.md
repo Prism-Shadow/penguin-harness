@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-dev
-description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; or auditing prose that reads like a leaked authoring session. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
+description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; auditing prose that reads like a leaked authoring session; or changing anything a user sees or reads — a component, a style, UI strings, docs, landing copy — which must not read as AI slop. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
 ---
 
 # Developing PenguinHarness
@@ -12,7 +12,7 @@ per plugin under the repo root's `plugins/`, with `packages/plugins` as the load
 them all. It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider
 clients of its own.
 
-This page is the part that applies to every change. Four reference files carry the detail, read
+This page is the part that applies to every change. The reference files carry the detail, read
 them when the task reaches them:
 
 | Read | When |
@@ -22,6 +22,17 @@ them when the task reaches them:
 | `reference/model-catalog.md` | Touching `model-catalog.ts`, pricing, provider groups or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
 | `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
+| `reference/ai-slop.md` | **Every** change a user sees or reads: UI, styles, UI strings, docs, landing, blog, changelog — the rules, the scanner, the catalogue of tells |
+
+## No AI slop — every time something is rendered or written
+
+Whatever you add to the UI or the copy, check it before you call it done: **decide before you
+decorate; one accent, one voice; hierarchy from scale and space; subtract first; specific beats
+punchy; decoration must mean something.** No gradients, glows, emoji, pill spam, cards in cards,
+coloured keywords or "it's not just X — it's Y". Reuse the theme tokens and `lib/tone.ts`; status
+is an icon plus a tooltip; sections are ruled, not boxed. Run
+`node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <what you touched>` and triage
+every hit. `reference/ai-slop.md` has the repo's own decisions and the full catalogue.
 
 ## Repo shape — read before your first edit
 
