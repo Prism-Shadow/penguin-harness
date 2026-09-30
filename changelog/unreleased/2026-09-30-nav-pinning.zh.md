@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-30
 - **Type:** feature
-- **Scope:** `web`, `docs`
+- **Scope:** `web`, `ui`, `docs`
 - **PR:** [#909](https://github.com/Prism-Shadow/penguin-harness/pull/909)
 
 [English](2026-09-30-nav-pinning.md)
@@ -21,4 +21,5 @@
 - 新建对话仍在滚动区上方的固定位置，没有图钉按钮，也不能拖动。
 - 选择按浏览器保存在 `penguin.sidebarNavPinned`，只记录与默认不同的入口。清单里没有的键会被忽略，没有记录的页面取默认值。已保存在 `penguin.sidebarNavGroupCollapsed` 的折叠状态继续生效，只折叠收起区。
 - 公司模式的六个入口仍整组折叠，没有图钉。
+- 这些部件属于 UI 包：`SidebarNavGroup` 可在折叠区上方放置常驻入口，可将折叠区设为放置目标，也可省去折叠区；`SidebarNavArea` 是一段可接受放置的常驻入口；`SidebarNavEntry` 是带图钉按钮与拖动手柄的 `NavRow`。`NavRow` 新增 `groupHover` 与 `draggable={false}`，供这类入口中的行使用。
 - 文档的 Web App 页面补充了这些入口、图钉和机器管理一行（仅管理员）。

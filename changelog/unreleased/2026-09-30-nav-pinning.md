@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-30
 - **Type:** feature
-- **Scope:** `web`, `docs`
+- **Scope:** `web`, `ui`, `docs`
 - **PR:** [#909](https://github.com/Prism-Shadow/penguin-harness/pull/909)
 
 [中文版](2026-09-30-nav-pinning.zh.md)
@@ -36,4 +36,8 @@ New chat is the exception: it is always pinned.
   choice takes its default. A folded state already stored in `penguin.sidebarNavGroupCollapsed`
   keeps folding, now only the collapsible area.
 - Company mode's six entries still fold as one group, with no pins.
+- The pieces are the UI package's: `SidebarNavGroup` takes the pinned entries above its fold, a
+  drop target for the fold and a way to leave the fold out, `SidebarNavArea` is a run of pinned
+  entries that takes a drop, and `SidebarNavEntry` is a `NavRow` with the pin toggle and the drag
+  handle. `NavRow` gains `groupHover` and `draggable={false}` for a row inside such an entry.
 - The docs' Web App page describes the entries, the pins and the Machines row (admins only).
