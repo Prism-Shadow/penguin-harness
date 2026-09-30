@@ -1313,16 +1313,26 @@ describe("session-manager", () => {
       },
     };
     const manager = makeManager(loader);
-    manager.adopt(ROW, approvalFakeSession("session-1"));
+    let disposed = 0;
+    manager.adopt(ROW, {
+      ...approvalFakeSession("session-1"),
+      dispose: () => {
+        disposed++;
+      },
+    });
     // Not evicted before timeout: startTask reuses the active-table entry, bypassing the loader.
     manager.sweepIdle(Date.now() + 1000, 30 * 60 * 1000);
     sessions.updateApprovalMode("session-1", "allow-all");
     await manager.startTask("session-1", [userText("a")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(0);
+    expect(disposed).toBe(0);
 
-    // Evicted after timeout: once the entry is released, the next startTask reloads it.
+    // Evicted after timeout: the runtime is disposed — core keeps its background registries
+    // in a module-level set until then, and they reach the whole Session, so dropping the
+    // entry alone would never let it be collected. The next startTask reloads it.
     manager.sweepIdle(Date.now() + 31 * 60 * 1000, 30 * 60 * 1000);
+    expect(disposed).toBe(1);
     await manager.startTask("session-1", [userText("b")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);
@@ -1373,7 +1383,13 @@ describe("session-manager", () => {
     const manager = makeManager(loader);
     sessions.updateApprovalMode("session-1", "allow-all");
     // Adopted after creation: records the current generation, so Tasks reuse it without loading.
-    manager.adopt(ROW, approvalFakeSession("session-1"));
+    let disposed = 0;
+    manager.adopt(ROW, {
+      ...approvalFakeSession("session-1"),
+      dispose: () => {
+        disposed++;
+      },
+    });
 
     // Another Agent's vault update leaves this entry alone.
     manager.invalidateAgentRuntimes("p1", "other_agent");
@@ -1381,11 +1397,14 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(0);
 
-    // This Agent's vault update: the next Task rebuilds the runtime via the loader.
+    // This Agent's vault update: the next Task rebuilds the runtime via the loader, and the
+    // discarded runtime is disposed so it can be collected.
+    expect(disposed).toBe(0);
     manager.invalidateAgentRuntimes("p1", "a1");
     await manager.startTask("session-1", [userText("b")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);
+    expect(disposed).toBe(1);
 
     // Rebuilt once only: the fresh entry is current again.
     await manager.startTask("session-1", [userText("c")]);
@@ -1393,11 +1412,12 @@ describe("session-manager", () => {
     expect(loads).toBe(1);
   });
 
-  it("invalidateAgentRuntimes: the discarded runtime's background-task count is published as cleared", async () => {
-    // The discard path drops the entry WITHOUT disposing it, so the replacement resumes with
-    // empty registries. The counts move without any core ping to carry them: without the
-    // publish below, a Session list that had drawn the background-task mark would sit on a
-    // count nothing can move again, while a plain list fetch already reports none.
+  it("invalidateAgentRuntimes: a live background process pins the stale runtime until it exits", async () => {
+    // The discard disposes the runtime it drops, and dispose kills what is still running:
+    // a dev server the conversation started would die on the next model or hooks save. So
+    // the stale entry is kept (old values, not disposed) while the process runs.
+    let running = true;
+    let disposed = 0;
     const withProcess: RuntimeSession = {
       ...approvalFakeSession("session-1"),
       listBackgroundCommands: () => [
@@ -1407,16 +1427,25 @@ describe("session-manager", () => {
           cmd: "pnpm dev",
           cwd: "/tmp/w",
           startedAt: Date.UTC(2026, 8, 2, 10, 0, 0),
-          running: true,
+          running,
         },
       ],
+      dispose: () => {
+        disposed++;
+      },
     };
+    let loads = 0;
     const published: ServerEvent[] = [];
     const manager = new SessionManager({
       sessions,
       channels,
       sources,
-      loader: loaderOf(approvalFakeSession("session-1")),
+      loader: {
+        load: async () => {
+          loads++;
+          return approvalFakeSession("session-1");
+        },
+      },
       recorder: { record: async () => undefined },
       notifyProjectUsers: (_projectId, event) => published.push(event),
       log: () => {},
@@ -1428,11 +1457,61 @@ describe("session-manager", () => {
     manager.invalidateAgentRuntimes("p1", "a1");
     await manager.startTask("session-1", [userText("a")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+    expect(disposed).toBe(0);
+    expect(manager.backgroundTasksOf("session-1")).toEqual({ processes: 1, subagents: 0 });
 
+    // The process exits without a background-state ping (the entry still records one): the
+    // next Task discards the runtime, disposes it, and publishes the cleared counts, so a
+    // Session list that had drawn the background-task mark does not keep it.
+    running = false;
+    await manager.startTask("session-1", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
+    expect(disposed).toBe(1);
     expect(published.filter((e) => e.type === "session_background")).toEqual([
       { type: "session_background", sessionId: "session-1", processes: 0, subagents: 0 },
     ]);
     expect(manager.backgroundTasksOf("session-1")).toBeUndefined();
+  });
+
+  it("invalidateAgentRuntimes: a working background subagent or an undelivered notice pins the stale runtime too", async () => {
+    let subagentRunning = true;
+    let noticePending = false;
+    let disposed = 0;
+    let loads = 0;
+    const manager = makeManager({
+      load: async () => {
+        loads++;
+        return approvalFakeSession("session-1");
+      },
+    });
+    sessions.updateApprovalMode("session-1", "allow-all");
+    manager.adopt(ROW, {
+      ...approvalFakeSession("session-1"),
+      hasRunningBackgroundSubagents: () => subagentRunning,
+      hasPendingBackgroundNotices: () => noticePending,
+      dispose: () => {
+        disposed++;
+      },
+    });
+    manager.invalidateAgentRuntimes("p1", "a1");
+
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect([loads, disposed]).toEqual([0, 0]);
+
+    // The child settled but its completion notice is not delivered yet: still pinned.
+    subagentRunning = false;
+    noticePending = true;
+    await manager.startTask("session-1", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect([loads, disposed]).toEqual([0, 0]);
+
+    noticePending = false;
+    await manager.startTask("session-1", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect([loads, disposed]).toEqual([1, 1]);
   });
 
   it("invalidateAgentRuntimes mid-run: the in-flight Task keeps its runtime; the first Task after it finishes re-resumes", async () => {
@@ -1516,8 +1595,12 @@ describe("session-manager", () => {
       fakeSession("session-1", {
         hasRunningBackgroundSubagents: () => running,
         onBackgroundMessage: (cb) => (forward = cb),
+        dispose: () => {
+          disposed++;
+        },
         async *run() {},
       });
+    let disposed = 0;
     const manager = makeManager({
       load: async () => {
         loads++;
@@ -1543,9 +1626,13 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(0);
 
+    // Pinned all along, so never disposed: disposing would have killed the child.
+    expect(disposed).toBe(0);
+
     // Once it settles, the entry is an ordinary idle one again and evicts on schedule.
     running = false;
     manager.sweepIdle(Date.now() + long, 30 * 60 * 1000);
+    expect(disposed).toBe(1);
     await manager.startTask("session-1", [userText("c")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);

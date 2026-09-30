@@ -624,6 +624,25 @@ function backgroundTaskCounts(session: RuntimeSession): SessionBackgroundTasks {
   return { processes, subagents };
 }
 
+/**
+ * Whether the runtime still owns background work that dropping it would strand. Both paths
+ * that drop an idle entry (sweepIdle, and ensureEntry's discard of a stale generation) dispose
+ * the runtime they drop, and dispose kills what is still running — so either path keeps an
+ * entry that answers yes here:
+ *   - a live background process (e.g. a dev server the conversation started): a resumed entry
+ *     starts with a fresh environment, so the process list and its stop control would go
+ *     blind while the OS process kept running. Exited-but-listed processes don't count;
+ *   - a background subagent still working: a run_in_background child outlives the call that
+ *     launched it, and its completion report and live messages are delivered through the very
+ *     Session object the drop would lose;
+ *   - undelivered background completion notices: they live in the core Session object too.
+ */
+function holdsBackgroundWork(session: RuntimeSession): boolean {
+  if (session.listBackgroundCommands?.().some((p) => p.running)) return true;
+  if (session.hasRunningBackgroundSubagents?.()) return true;
+  return session.hasPendingBackgroundNotices?.() === true;
+}
+
 /** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
 function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
   return {
@@ -1816,7 +1835,9 @@ export class SessionManager {
    * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
    * Agent / Project is the one intent that must also end the background processes the
    * conversation started (a dev server surviving its deleted conversation is
-   * unreachable from every UI, running forever).
+   * unreachable from every UI, running forever). The two idle drops (sweepIdle and the
+   * stale-generation discard) dispose too, but only entries holdsBackgroundWork clears,
+   * so for them dispose releases memory and kills nothing.
    */
   private disposeRemoved(entry: RuntimeEntry): void {
     const dispose = (): void => entry.session.dispose?.();
@@ -1940,35 +1961,27 @@ export class SessionManager {
 
   /**
    * Active-table idle eviction: removes entries that are idle (idle status, no pending
-   * approvals, no in-flight drive) and have been inactive past the timeout, releasing
-   * the core Session's full in-memory history. This is purely memory reclamation: the
-   * next access re-resumes via the loader, so correctness is unaffected. Lock-table
-   * entries are auto-cleaned by withLock once their chain drains (including leftover
-   * entries under the old id after self-heal). `now` / `idleMs` are injectable for
-   * tests and timers.
+   * approvals, no in-flight drive, no background work — see holdsBackgroundWork) and have
+   * been inactive past the timeout, and disposes their runtime, releasing the core
+   * Session's full in-memory history. Dropping the entry alone is not enough: the
+   * runtime's background registries stay in core's module-level live set until disposed,
+   * and they reach the whole Session. This is purely memory reclamation: the next access
+   * re-resumes via the loader, so correctness is unaffected. Lock-table entries are
+   * auto-cleaned by withLock once their chain drains (including leftover entries under
+   * the old id after self-heal). `now` / `idleMs` are injectable for tests and timers.
    */
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
       if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
-      // A live background process (e.g. a dev server the conversation started) pins the
-      // entry: eviction would strand the process — a resumed entry starts with a fresh
-      // environment, so the process list and its stop control would go blind while the
-      // OS process kept running. Exited-but-listed processes don't pin anything.
-      if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
-      // A background subagent still working pins it for the same reason: a run_in_background
-      // child outlives the call that launched it, and its completion report and live messages
-      // are delivered through the very Session object eviction would drop.
-      if (entry.session.hasRunningBackgroundSubagents?.()) continue;
-      // Undelivered background completion notices pin the entry too: they live in the core
-      // Session object, so evicting it would silently drop them.
-      if (entry.session.hasPendingBackgroundNotices?.()) continue;
+      if (holdsBackgroundWork(entry.session)) continue;
       // An enabled messaging connection pins it for latency rather than correctness: the
       // Session is where a bot lives on this server, and the next chat message after a quiet
       // half hour would otherwise wait for a resume from the Trace (see keepLoaded).
       if (this.keptLoaded.has(key)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
   }
 
@@ -2101,15 +2114,19 @@ export class SessionManager {
       // Built before the last credential change: discard once idle and fall through to a
       // fresh load (resume re-reads the Project config). A busy entry is returned as-is — the
       // in-flight run keeps its values and assertIdle rejects the new Task anyway;
-      // it is rebuilt on the first access after it finishes.
+      // it is rebuilt on the first access after it finishes. So is one that still holds
+      // background work: the discard disposes the runtime, which would kill it, so the entry
+      // keeps its old values until that work is over (same guard as sweepIdle).
       if (
         existing.status !== "idle" ||
         existing.running !== null ||
-        existing.approvals.size !== 0
+        existing.approvals.size !== 0 ||
+        holdsBackgroundWork(existing.session)
       ) {
         return existing;
       }
       this.entries.delete(sessionId);
+      this.disposeRemoved(existing);
       discardedBackgroundTasks = existing.backgroundTasks;
     }
     const row = this.deps.sessions.findById(sessionId);
