@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `web`, `server`, `cli`, `model-catalog`, `docs`
+- **PR:** [#914](https://github.com/Prism-Shadow/penguin-harness/pull/914)
 
 [English](2026-09-30-models-page-refresh.md)
 

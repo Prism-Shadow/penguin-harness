@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** process
 - **Scope:** `server`, `cli`, `web`, `model-catalog`
+- **PR:** [#914](https://github.com/Prism-Shadow/penguin-harness/pull/914)
 - **Breaking:** yes — 模型表 PUT 与 `penguin config model add` 若要往 custom、vLLM 以外的内置分组新增不属于该分组预置的模型，一律拒绝（`400 model_not_addable` / 退出码 1）；已存的条目照常工作，也从不被改写
 
 [English](2026-09-30-backward-compatibility.md)

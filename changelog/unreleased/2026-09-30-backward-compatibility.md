@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** process
 - **Scope:** `server`, `cli`, `web`, `model-catalog`
+- **PR:** [#914](https://github.com/Prism-Shadow/penguin-harness/pull/914)
 - **Breaking:** yes — a models PUT, or `penguin config model add`, that adds a model which is not one of the group's presets to any built-in group but custom and vLLM is refused (`400 model_not_addable` / exit code 1); entries already stored keep working and are never rewritten
 
 [中文版](2026-09-30-backward-compatibility.zh.md)
