@@ -109,6 +109,8 @@ export interface FakeOrgState {
   proposals?: Map<number, Json>;
   /** What `GET …/proposals/graph` answers (ProposalGraphResponse); absent = 409 graph_not_configured. */
   proposalGraph?: Json;
+  /** The registry `…/proposals/servers` answers; `this` alone until a POST adds one (a repeated name is 409). */
+  proposalServers?: Json[];
 }
 
 /** One agent's public API settings: the management DTO's shape, keys included. */
@@ -1338,6 +1340,28 @@ export class FakeServer {
       return org.proposalGraph === undefined
         ? this.error(409, "graph_not_configured", "The PR graph has no delivery repository.")
         : this.json(org.proposalGraph);
+    }
+    if (b === "servers") {
+      const self = { name: "this", url: null, self: true, installId: "self-id", registeredAt: null, by: null };
+      const registry = (org.proposalServers ??= [self]);
+      if (method === "POST") {
+        if (!isNonEmptyString(body?.name) || !isNonEmptyString(body?.url)) {
+          return this.badRequest("name and url are required.");
+        }
+        const name = body.name;
+        if (registry.some((s) => s.name === name)) {
+          return this.error(409, "server_registered", `The name ${name} is registered already.`);
+        }
+        registry.push({
+          name,
+          url: body.url,
+          self: false,
+          installId: `${name}-id`,
+          registeredAt: ORG_NOW,
+          by: isNonEmptyString(body.agentId) ? `agent:${body.agentId}` : "user:admin",
+        });
+      }
+      return this.json({ servers: registry });
     }
     if (b === "test-groups" && method === "GET") {
       return this.json({

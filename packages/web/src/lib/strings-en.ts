@@ -6352,6 +6352,17 @@ Scenarios:
         detachedHint:
           "Their declared base leads to neither the base branch nor any open PR — not even through merged or closed PRs — or the bases form a cycle. This is not the same as off the chain.",
         unplaced: "Proposals whose impl PR is not on the graph",
+        serversOff: "Servers on no layer",
+        serversOffHint:
+          "The commit it runs could not be read, or compares with no layer on the graph (for instance a commit only on some machine's local deployment line).",
+        serverTitle: (
+          name: string,
+          commit: string,
+          describe: string | null,
+          ahead: number | null,
+        ): string =>
+          `Server ${name} runs ${describe ?? commit}${ahead !== null && ahead > 0 ? `, ${ahead} commits past this layer` : ""}`,
+        serverUnread: "commit not read",
         unplacedHint:
           "The impl PR is registered but is not an open PR on the delivery repository; each line says why — merged, already in the base branch, closed, open on another repository, or an open PR here carries its branch (the registration names the other one).",
         unplacedReason: (reason: string, at: string, into: string, base: string): string =>

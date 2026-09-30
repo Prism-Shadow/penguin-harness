@@ -13,6 +13,8 @@
  * `?proposal=<n>`, and the page scrolls to that proposal's row and tints it, or says in one line
  * why the proposal has no row. Under the graph, pr-graph-rows.tsx lists apart the PRs off the chain,
  * the PRs the graph cannot draw, and the proposals whose impl PR is not on it, each with its reason.
+ * Each registered penguin server is marked on the row its commit sits on, and listed under the
+ * graph when it sits on none.
  *
  * The lanes are an SVG drawn behind fixed-height rows, so a row's geometry never depends on how
  * its text wraps: the text truncates and carries the full value in its tooltip.
@@ -47,6 +49,7 @@ import {
   UnplacedSection,
 } from "./pr-graph-rows";
 import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy";
+import { ServerMarks, ServersOff } from "./pr-graph-servers";
 
 /** Row height and lane pitch of the drawn graph, in px. */
 const ROW = 44;
@@ -256,6 +259,7 @@ export function GraphPage() {
             onOpenProposal={openProposal}
             wrapRow={deployable}
           />
+          <ServersOff servers={graph.servers} />
           <UnplacedSection graph={graph} focus={focus} onOpenProposal={openProposal} />
         </div>
       )}
@@ -338,6 +342,7 @@ function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
         </span>
       )}
       {graph.base.fork && <Mark tone="attention">{t.baseForked}</Mark>}
+      <ServerMarks servers={graph.servers} at={0} />
     </div>
   );
 }

@@ -1816,6 +1816,79 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     );
   });
 
+  it("server add registers under the caller's identity, a repeat fails, and server ls lists this one first", async () => {
+    server.addProposal("acme", { number: 1 });
+    expect(await cli(["org", "proposal", "server", "add", "desk", "http://localhost:53531"])).toBe(0);
+    expect(out()).toContain(t.org.serverRegistered("desk", "http://localhost:53531"));
+    const post = server.requests.find(
+      (r) => r.method === "POST" && r.path.endsWith("/proposals/servers"),
+    );
+    expect(post?.body).toMatchObject({ name: "desk", url: "http://localhost:53531" });
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "server", "add", "desk", "http://127.0.0.1:53531"])).toBe(1);
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "server", "ls"])).toBe(0);
+    expect(out().split("\n").slice(0, 2)).toEqual([
+      "this  -  self-id",
+      "desk  http://localhost:53531  desk-id  user:admin  2026-09-02T10:00:00.000Z",
+    ]);
+  });
+
+  it("graph marks each server on its layer and lists the ones on no layer", async () => {
+    server.addProposal("acme", { number: 1 });
+    server.orgs.get("acme")!.proposalGraph = {
+      repo: "acme/site",
+      base: { branch: "dev", head: "aaaaaaaaaaaa", fork: false },
+      origins: [],
+      nodes: [
+        {
+          number: 11,
+          url: "https://github.com/acme/site/pull/11",
+          title: "PR 11",
+          draft: false,
+          branch: "feat/a",
+          head: "bbbbbbbbbbbb",
+          base: "dev",
+          parent: 0,
+          relation: "ahead",
+          ahead: 2,
+          behind: 0,
+          via: [],
+          stacked: true,
+          stale: false,
+          onChain: true,
+          off: null,
+          fork: false,
+          proposal: null,
+          origins: [],
+        },
+      ],
+      top: 11,
+      unplaced: [],
+      errors: [],
+      checkedAt: "2026-09-30T00:00:00.000Z",
+      servers: [
+        { name: "this", url: null, self: true, commit: "bbbbbbbbbbbb", describe: "v1-1-gbbbbbbb", at: 11, relation: "same", ahead: 0, error: null },
+        { name: "old", url: "http://h:1", self: false, commit: "aaaaaaaaaaaa", describe: "v1", at: 0, relation: "same", ahead: 0, error: null },
+        { name: "late", url: "http://h:2", self: false, commit: "eeeeeeeeeeee", describe: "v1-9-geeeeeee", at: 11, relation: "ahead", ahead: 3, error: null },
+        { name: "local", url: "http://h:3", self: false, commit: "fffffffff", describe: "v1-5-gfffffffff", at: null, relation: null, ahead: null, error: null },
+        { name: "dark", url: "http://h:4", self: false, commit: null, describe: null, at: null, relation: null, ahead: null, error: "/api/install answered 404" },
+      ],
+    };
+    expect(await cli(["org", "proposal", "graph"])).toBe(0);
+    expect(out()).toBe(
+      [
+        "acme/site dev aaaaaaaaa  @old aaaaaaaaa",
+        `  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  @this bbbbbbbbb  @late eeeeeeeee +3`,
+        "",
+        t.org.graphServersOff(),
+        "  @local fffffffff  v1-5-gfffffffff  http://h:3",
+        "  @dark ?  -  http://h:4  (/api/install answered 404)",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("material add, feedback and the status commands post their bodies with the caller's identity", async () => {
     server.addProposal("acme", { number: 5 });
     expect(

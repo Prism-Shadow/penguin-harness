@@ -87,6 +87,8 @@ import type {
   ProposalDetail,
   ProposalGraphNode,
   ProposalGraphResponse,
+  ProposalGraphServer,
+  ProposalServersResponse,
   ProposalTestGroupsResponse,
   ProposalTestEntry,
   ProposalItem,
@@ -647,15 +649,34 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
     }
     return d;
   };
+  // Each server sits on a layer (0 = the base branch) or on none; a server older than the field sends none.
+  const servers = g.servers ?? [];
+  const serverMark = (s: ProposalGraphServer): string =>
+    `@${s.name} ${short(s.commit)}${s.relation === "ahead" ? ` +${s.ahead}` : ""}`;
+  const on = (at: number): string => {
+    const marks = servers.filter((s) => s.at === at).map(serverMark);
+    return marks.length > 0 ? `  ${marks.join("  ")}` : "";
+  };
+  const offServers = servers.filter((s) => s.at === null);
   const chain = g.nodes.filter((n) => n.onChain);
   const off = g.nodes.filter((n) => !n.onChain);
   const blocks = [
     [
-      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? "  [fork]" : ""}`,
-      ...chain.map((n) => indent(depth(n), line(n))),
+      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? "  [fork]" : ""}${on(0)}`,
+      ...chain.map((n) => indent(depth(n), line(n) + on(n.number))),
     ].join("\n"),
     ...(off.length > 0
-      ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n)))].join("\n")]
+      ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n) + on(n.number)))].join("\n")]
+      : []),
+    ...(offServers.length > 0
+      ? [
+          [
+            t.org.graphServersOff(),
+            ...offServers.map((s) =>
+              indent(1, `@${s.name} ${short(s.commit)}  ${s.describe ?? "-"}${s.url === null ? "" : `  ${s.url}`}${s.error === null ? "" : `  (${s.error})`}`),
+            ),
+          ].join("\n"),
+        ]
       : []),
     ...(g.unplaced.length > 0
       ? [
@@ -680,6 +701,14 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
       : []),
   ];
   return `${blocks.join("\n\n")}\n`;
+}
+
+/** `proposal server ls`: one server per line — name, address (`-` for this one), install id, who registered it. */
+function renderServers(res: ProposalServersResponse): string {
+  const lines = res.servers.map((s) =>
+    [s.name, s.url ?? "-", s.installId ?? "?", ...(s.by === null ? [] : [s.by, s.registeredAt ?? ""])].join("  "),
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 /** The order when the server sends no declared groups (one older than the declaration). */
@@ -2300,6 +2329,38 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     printJson,
     write: (text) => process.stdout.write(text),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  });
+
+  const server = proposal.command("server").description(t.org.proposalServerDesc);
+  scoped(server.command("add <name> <url>").description(t.org.proposalServerAddDesc), t).action(
+    async (name: string, url: string, opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      const res = await proposalRequest<ProposalServersResponse>(scope, t, "POST", "/servers", {
+        name,
+        url,
+        ...actorFields(),
+      });
+      if (res === null) return;
+      if (opts.json === true) printJson(res);
+      else {
+        const added = res.servers.find((s) => s.name === name);
+        printLine(t.org.serverRegistered(name, added?.url ?? url));
+      }
+    },
+  );
+  scoped(server.command("ls").description(t.org.proposalServerLsDesc), t).action(async (opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const res = await proposalRequest<ProposalServersResponse>(
+      scope,
+      t,
+      "GET",
+      `/servers${query(actorQuery())}`,
+    );
+    if (res === null) return;
+    if (opts.json === true) printJson(res);
+    else process.stdout.write(renderServers(res));
   });
 
   const material = proposal.command("material").description(t.org.proposalMaterialDesc);

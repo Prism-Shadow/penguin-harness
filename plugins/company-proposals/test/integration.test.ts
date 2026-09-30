@@ -20,6 +20,7 @@ import {
   type HarnessApiError,
 } from "@prismshadow/penguin-plugin-test";
 import { DEFAULT_TEST_GROUPS } from "../src/config.js";
+import { fetchProbe } from "../src/servers.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = "/api/projects/default_project/organizations/acme/proposals";
@@ -64,6 +65,16 @@ describe("the company-proposals plugin on a real server", () => {
       nav: "org",
       renderer: { builtin: "OrgProposalsPage" },
     });
+  });
+
+  it("reads a real server's identity and commit over its public /api/install, as the registry does", async () => {
+    const identity = await fetchProbe()(harness.baseUrl);
+    const version = await api.get<{ commit: string | null; describe: string }>("/api/version");
+    expect(identity.installId).toMatch(/\S/);
+    // A source build run from a checkout knows its commit; the registry reads the same one.
+    expect(identity.commit).toBe(version.commit);
+    expect(identity.describe).toBe(version.describe);
+    await expect(fetchProbe()(`${harness.baseUrl}/nothing-here`)).rejects.toThrow();
   });
 
   it("declares its settings group on the Plugins page: the default test groups, and a line that is not `id: description` refused", async () => {
