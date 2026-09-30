@@ -386,7 +386,7 @@ A desk or ticket session also creates its directory when it opens. `--budget` is
 
 ### employee set
 
-`employee set` changes only the fields you give. `--workspace` works as it does for `hire` but has no default: the partition changes only when you pass the flag. `--budget` is the monthly budget in USD for the employee plus everyone below it. The model pair is both-or-neither, as everywhere.
+`employee set` changes only the fields you give. `--workspace` works as it does for `hire` but has no default: the partition changes only when you pass the flag. `--budget` is the monthly budget in USD for the employee plus everyone below it. The model pair is both-or-neither, as everywhere; it names the model the employee's next desk opens on and leaves the open desk as it is (see [Desk sessions](/company-mode#desk-sessions)).
 
 ### calendar
 

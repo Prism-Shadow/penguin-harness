@@ -12,6 +12,8 @@
  * and usage is attributed to the model that served each request — the switch's own compaction
  * request to the previous model, the next Task to the new one.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   abortEvent,
@@ -34,6 +36,8 @@ import type {
   TaskCreateResponse,
 } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
+import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
+import { OrgStore } from "../src/organization/store.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { compactionThresholdFor } from "../src/services/context-breakdown.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
@@ -580,5 +584,96 @@ describe("POST /switch-model", () => {
     expect(feed.messages).toEqual([]);
     expect(feed.events).toEqual([]);
     expect(usageModels()).toEqual([]);
+  });
+
+  it("tells its listeners when a Session's model moves — once per switch that completes, the row already on it — and a listener that throws stops nothing", async () => {
+    adopt(switchFake(A, { kind: "stream", status: "completed" }));
+    const heard: Array<{ sessionId: string; model: ModelRefDto; row: ModelRefDto }> = [];
+    t.deps.manager.onModelChanged(() => {
+      throw new Error("a listener of another module broke");
+    });
+    const off = t.deps.manager.onModelChanged((sessionId, model) => {
+      const r = row();
+      heard.push({ sessionId, model, row: { provider: r.provider, modelId: r.modelId } });
+    });
+
+    expect((await api.post(url, B)).status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    expect(heard).toEqual([{ sessionId: SID, model: B, row: B }]);
+    expect(row()).toMatchObject(B);
+    expect(t.deps.errorsRepo.recent(PROJECT).map((r) => r.code)).toEqual([
+      "session_model_listener_failed",
+    ]);
+
+    // Unsubscribed: the next switch is not heard.
+    off();
+    expect((await api.post(url, A)).status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    expect(row()).toMatchObject(A);
+    expect(heard).toHaveLength(1);
+  });
+
+  it("a switch completed inside the request is heard too", async () => {
+    const heard: ModelRefDto[] = [];
+    t.deps.manager.onModelChanged((_sessionId, model) => void heard.push(model));
+    adopt(switchFake(A, { kind: "inline" }));
+    expect((await api.post(url, B)).status).toBe(200);
+    expect(heard).toEqual([B]);
+  });
+
+  it("company mode: a switch on an employee's current desk reaches its chart entry — through the app's own wiring, not a call made for it", async () => {
+    // The organization as its files describe it: a CEO and one report, whose desk is this Session.
+    const store = new OrgStore(t.deps.config.root);
+    const dir = store.dir(PROJECT, "acme");
+    await store.createLayout(dir);
+    await store.writeConfig(dir, {
+      ...ORG_CONFIG_DEFAULTS,
+      name: "Acme",
+      mission: "Ship the site",
+      timezone: "UTC",
+      createdBy: "switcher",
+    });
+    await store.writeChart(dir, {
+      employees: [
+        { agentId: "acme_ceo", title: "CEO", reportsTo: null, workspace: "." },
+        { agentId: "default_agent", title: "Developer", reportsTo: "acme_ceo", workspace: "." },
+      ],
+    });
+    await store.writeDesks(dir, {
+      default_agent: {
+        sessionId: SID,
+        workspace: path.join(dir, "workspace"),
+        openedAt: "2026-09-16T10:00:00.000Z",
+        previous: [],
+      },
+    });
+    t.deps.orgCacheRepo.syncDeskSessions(PROJECT, "acme", [
+      { sessionId: SID, agentId: "default_agent", current: true },
+    ]);
+    const chartFile = path.join(dir, "org_chart.yaml");
+    expect(fs.readFileSync(chartFile, "utf8")).not.toContain(B.modelId);
+    adopt(switchFake(A, { kind: "stream", status: "completed" }));
+
+    expect((await api.post(url, B)).status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    // The chart write is the organization's own step, behind the switch.
+    await waitFor(() => fs.readFileSync(chartFile, "utf8").includes(B.modelId));
+
+    const employees = new Map(
+      (await t.deps.orgService.chart(PROJECT, "acme")).employees.map((e) => [e.agentId, e]),
+    );
+    expect(employees.get("default_agent")!.model).toEqual(B);
+    expect(employees.get("acme_ceo")).not.toHaveProperty("model");
+    expect(t.deps.errorsRepo.recent(PROJECT).map((r) => r.code)).toEqual([]);
+  });
+
+  it("a failed switch tells nobody", async () => {
+    const heard: ModelRefDto[] = [];
+    t.deps.manager.onModelChanged((_sessionId, model) => void heard.push(model));
+    adopt(switchFake(A, { kind: "stream", status: "fatal" }));
+    expect((await api.post(url, B)).status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    expect(row()).toMatchObject(A);
+    expect(heard).toEqual([]);
   });
 });

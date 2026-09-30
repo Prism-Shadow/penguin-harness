@@ -66,6 +66,8 @@ export async function ensureDesk(
       error: `workspace directory does not exist for ${agentId}: ${employee.workspace}`,
     };
   }
+  // What a desk is opened on. The chart follows an in-session switch made on the desk (see
+  // OrganizationService.deskModelChanged), so a renewal keeps the employee's model.
   const model = employee.model ?? org.config.model;
   const existing = org.desks[agentId];
   if (
@@ -117,6 +119,21 @@ export async function ensureDesk(
     ok: true,
     desk: { sessionId: created.sessionId, workspace: created.workspace, openedAt, created: true },
   };
+}
+
+/**
+ * The model an employee's current desk Session runs on, or undefined when it has no desk (or
+ * the desk's Session is gone). The chart's `model` is what a desk is OPENED on; from then on
+ * the desk Session is where the employee's model is read.
+ */
+export function deskModel(
+  deps: OrgDeps,
+  org: LoadedOrg,
+  agentId: string,
+): { provider: string; modelId: string } | undefined {
+  const desk = org.desks[agentId];
+  const row = desk ? deps.sessions.findById(desk.sessionId) : null;
+  return row ? { provider: row.provider, modelId: row.modelId } : undefined;
 }
 
 /** Projects the ledger into `org_sessions` (current desks and their history). */
@@ -215,7 +232,10 @@ export async function openTicketSession(
   if (workspace === null) {
     return { ok: false, error: `workspace directory does not exist: ${spec}` };
   }
-  const model = employee.model ?? org.config.model;
+  // An employee's model is its desk Session's: a ticket Session opens on the model the
+  // current desk runs on now — an in-session switch there moved it — and on the chart's only
+  // for an employee that has no desk.
+  const model = deskModel(deps, org, agentId) ?? employee.model ?? org.config.model;
   let created: { sessionId: string; workspace: string };
   try {
     created = await deps.sessionCreator.createSession({
