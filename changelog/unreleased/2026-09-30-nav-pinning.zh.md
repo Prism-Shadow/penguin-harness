@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#909](https://github.com/Prism-Shadow/penguin-harness/pull/909)
 
 [English](2026-09-30-nav-pinning.md)
 
