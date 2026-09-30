@@ -12,8 +12,9 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { SseParser } from "../src/socket/sse-text.js";
 import type { SseEvent } from "../src/socket/sse-text.js";
-import { MachineEventHub, machineEventsStream } from "../src/machines/event-hub.js";
-import type { MachineEventSource } from "../src/machines/event-hub.js";
+import { MachineEventHub } from "../src/machines/event-hub.js";
+import { machineEventsStream } from "../src/machines/aggregate-stream.js";
+import type { WatchedMachine } from "../src/machines/aggregate-stream.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { MachineSocketRelay } from "../src/machines/socket-relay.js";
 
@@ -215,6 +216,12 @@ const targetOf = (port: number) => ({
   session: 1,
 });
 
+/** A machine a tab watches whose connection is always the one given. */
+const watch = (machineId: string, target: ReturnType<typeof targetOf>): WatchedMachine => ({
+  machineId,
+  target: async () => target,
+});
+
 describe("the machine event hub", () => {
   const stops: Array<() => Promise<void>> = [];
   afterEach(async () => {
@@ -317,12 +324,12 @@ describe("the machine event hub", () => {
     const b = await machine();
     stops.push(a.close, b.close);
     const { hub } = setup();
-    const sources: MachineEventSource[] = [
-      { machineId: "mA", target: targetOf(a.port) },
-      { machineId: "mB", target: targetOf(b.port) },
+    const sources: WatchedMachine[] = [
+      watch("mA", targetOf(a.port)),
+      watch("mB", targetOf(b.port)),
     ];
 
-    const tab = machineEventsStream(hub, ["mA", "mB"], sources, null, undefined, {
+    const tab = machineEventsStream(hub, () => sources, null, undefined, {
       heartbeatMs: 40,
     });
     const tap = new Tap(tab.body!);
@@ -346,7 +353,7 @@ describe("the machine event hub", () => {
     expect(a.eventCalls()).toHaveLength(1);
     expect(b.eventCalls()).toHaveLength(1);
 
-    const secondTab = machineEventsStream(hub, ["mA", "mB"], sources, null, undefined, {
+    const secondTab = machineEventsStream(hub, () => sources, null, undefined, {
       heartbeatMs: 40,
     });
     const secondTap = new Tap(secondTab.body!);
@@ -374,9 +381,9 @@ describe("the machine event hub", () => {
     const m = await machine();
     stops.push(m.close);
     const { hub } = setup();
-    const sources: MachineEventSource[] = [{ machineId: "mA", target: targetOf(m.port) }];
+    const sources: WatchedMachine[] = [watch("mA", targetOf(m.port))];
 
-    const first = machineEventsStream(hub, ["mA"], sources, null);
+    const first = machineEventsStream(hub, () => sources, null);
     const tap = new Tap(first.body!);
     await m.waitForCalls(1);
     m.emit("1-1", { type: "credentials_updated" });
@@ -394,7 +401,7 @@ describe("the machine event hub", () => {
     // The tab went away (a reload, a lost network): its stream ends, its id is what it brings back.
     await tap.close();
 
-    const back = machineEventsStream(hub, ["mA"], sources, cursor ?? null);
+    const back = machineEventsStream(hub, () => sources, cursor ?? null);
     const backTap = new Tap(back.body!);
     const until3 = Date.now() + 3_000;
     while (backTap.events.length < 1 && Date.now() < until3) {
@@ -410,7 +417,7 @@ describe("the machine event hub", () => {
     ]);
 
     // An id from another generation (a restart, a hot push) is a miss, and says so.
-    const stale = machineEventsStream(hub, ["mA"], sources, "deadbeef-7");
+    const stale = machineEventsStream(hub, () => sources, "deadbeef-7");
     const staleTap = new Tap(stale.body!);
     expect((await staleTap.waitFor(1))[0]?.data).toBe('{"type":"resync_required"}');
   });
@@ -420,8 +427,8 @@ describe("the machine event hub", () => {
     stops.push(m.close);
     const { hub, sockets, relay, lines } = setup();
     const failures = () => lines.filter((line) => line.includes("socket to mA failed"));
-    const sources: MachineEventSource[] = [{ machineId: "mA", target: targetOf(m.port) }];
-    const tab = machineEventsStream(hub, ["mA"], sources, null, undefined, { heartbeatMs: 40 });
+    const sources: WatchedMachine[] = [watch("mA", targetOf(m.port))];
+    const tab = machineEventsStream(hub, () => sources, null, undefined, { heartbeatMs: 40 });
     const tap = new Tap(tab.body!);
     stops.push(() => tap.close());
     await m.waitForCalls(1);
@@ -473,16 +480,16 @@ describe("the machine event hub", () => {
     stops.push(old.close, replaced.close);
     const { hub } = setup();
     // The ssh session the first dial rode is replaced: this server holds no connection for a
-    // while, then a new one (another session, here another port).
+    // while, then a new one (another session, here another port). The first read is the tab's
+    // own, as the stream attaches the machine.
     let asked = 0;
-    const retarget = async () => {
+    const target = async () => {
       asked += 1;
-      return asked < 3 ? null : { ...targetOf(replaced.port), session: 2 };
+      if (asked === 1) return targetOf(old.port);
+      return asked < 4 ? null : { ...targetOf(replaced.port), session: 2 };
     };
-    const sources: MachineEventSource[] = [
-      { machineId: "mA", target: targetOf(old.port), retarget },
-    ];
-    const tab = machineEventsStream(hub, ["mA"], sources, null, undefined, { heartbeatMs: 40 });
+    const sources: WatchedMachine[] = [{ machineId: "mA", target }];
+    const tab = machineEventsStream(hub, () => sources, null, undefined, { heartbeatMs: 40 });
     const tap = new Tap(tab.body!);
     stops.push(() => tap.close());
     await old.waitForCalls(1);
@@ -491,11 +498,87 @@ describe("the machine event hub", () => {
 
     old.goDark();
     await replaced.waitForCalls(1, 5_000);
-    expect(asked).toBe(3);
+    expect(asked).toBe(4);
     expect(replaced.eventCalls()[0]?.headers["last-event-id"]).toBe("1-1");
     // No dial went to the old session after the one that found it dark.
     expect(old.upgrades).toBe(1);
   }, 15_000);
+
+  it("attaches a machine connected after the tab opened, on the stream the tab already holds", async () => {
+    const a = await machine();
+    const b = await machine();
+    stops.push(a.close, b.close);
+    const { hub } = setup();
+    // mA is connected when the tab opens; mB only later — brought into use from this tab, or
+    // re-held after a restart. The tab does not re-issue its stream when a machine appears.
+    const connected = new Map([["mA", targetOf(a.port)]]);
+    const watched = (): WatchedMachine[] =>
+      [...connected].map(([machineId, target]) => watch(machineId, target));
+    const tab = machineEventsStream(hub, watched, null, undefined, { heartbeatMs: 40 });
+    const tap = new Tap(tab.body!);
+    stops.push(() => tap.close());
+    expect((await tap.waitFor(1))[0]?.data).toBe('{"type":"hello"}');
+    await a.waitForCalls(1);
+    expect(hub.subscriptions).toBe(1);
+    expect(b.eventCalls()).toHaveLength(0);
+
+    connected.set("mB", targetOf(b.port));
+    await b.waitForCalls(1);
+    expect(b.eventCalls()).toHaveLength(1);
+    expect(hub.subscriptions).toBe(2);
+    b.emit("2-1", { type: "credentials_updated" });
+    await waitUntil(() => tap.frames("machine_event").length === 1);
+    expect(JSON.parse(tap.frames("machine_event")[0]!.data)).toEqual({
+      machineId: "mB",
+      event: { type: "credentials_updated" },
+    });
+    // Still the tab's first stream, and the beats that follow attach nothing twice: one
+    // subscription and one socket per machine.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(tap.closed).toBe(false);
+    expect(hub.subscriptions).toBe(2);
+    expect(a.upgrades).toBe(1);
+    expect(b.upgrades).toBe(1);
+  });
+
+  it("attaches a watched machine once its connection can be read, and stops reading when the tab goes away", async () => {
+    const m = await machine();
+    stops.push(m.close);
+    const { hub } = setup();
+    // Listed as connected, but its connection cannot be read yet (the ssh session is being
+    // reopened, or no session could be had over there): the first two reads answer null.
+    let reads = 0;
+    let asked = 0;
+    const watched = (): WatchedMachine[] => {
+      reads += 1;
+      return [
+        {
+          machineId: "mA",
+          target: async () => {
+            asked += 1;
+            return asked < 3 ? null : targetOf(m.port);
+          },
+        },
+      ];
+    };
+    const tab = machineEventsStream(hub, watched, null, undefined, { heartbeatMs: 40 });
+    const tap = new Tap(tab.body!);
+    stops.push(() => tap.close());
+    await m.waitForCalls(1);
+    expect(asked).toBe(3);
+    expect(hub.subscriptions).toBe(1);
+    m.emit("1-1", { type: "credentials_updated" });
+    await waitUntil(() => tap.frames("machine_event").length === 1);
+    expect(JSON.parse(tap.frames("machine_event")[0]!.data)).toMatchObject({ machineId: "mA" });
+
+    // The tab goes away: its machine is let go, and its list is not read again.
+    await tap.close();
+    await waitUntil(() => hub.subscriptions === 0);
+    expect(hub.subscriptions).toBe(0);
+    const readsAtClose = reads;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(reads).toBe(readsAtClose);
+  });
 
   it("reports what each machine's socket is doing, for the Machines page", async () => {
     const m = await machine();
