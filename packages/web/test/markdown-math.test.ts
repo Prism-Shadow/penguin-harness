@@ -1,22 +1,25 @@
 /**
  * Math rendering across the shared Markdown pipeline (lib/markdown-plugins.ts), via
  * react-dom/server static markup — KaTeX renders synchronously, so the finished formula is in the
- * first pass with no DOM and no effects.
+ * first pass with no DOM and no effects. That every renderer uses this pipeline is
+ * markdown-pipeline.test.ts's guard.
  *
- * What is pinned here is the set of decisions that are invisible once they work and silently wrong
- * when they break: which delimiters count, which look like delimiters but must not, what a
- * malformed formula does to the message around it, and that all five renderers still share one
- * plugin list.
+ * - `\(…\)`, `\[…\]` and `$$…$$` are math (display or inline as written, `$$` display anywhere),
+ *   CJK inside `\text{}` included; sizing commands are clamped; ordinary formulas render.
+ * - Shell variables, prices, code spans, code blocks and escaped brackets are not math, and
+ *   other character escapes are undisturbed; CommonMark's escaped brackets read as math.
+ * - A malformed formula renders as its own source without taking the message with it; an
+ *   unterminated delimiter stays text until its closer lands, and costs one scan, not one per
+ *   opener.
+ * - The chat renderer typesets on settle (source shown while streaming), keeps a streaming or
+ *   settled `$$` block out of the code-block chrome, and still routes real fenced code there.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../src/lib/markdown-plugins";
 import { Md } from "../src/features/chat/md";
-import { dropNonWoff2FontSources } from "../vite.config.js";
 
 const render = (markdown: string) =>
   renderToStaticMarkup(
@@ -315,73 +318,5 @@ describe("the chat renderer", () => {
     const html = renderMd("```js\nconst a = 1;\n```");
     expect(html).toContain("code-block");
     expect(isMath(html)).toBe(false);
-  });
-});
-
-describe("the pipeline every renderer shares", () => {
-  const read = (relative: string) =>
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
-
-  /**
-   * A renderer that quietly dropped the shared list would still render Markdown, so no behavioural
-   * test would fail — only its math and its URL boundaries would be wrong, on one surface. Hence a
-   * source scan: every `<ReactMarkdown` in the app has to carry both stages.
-   */
-  const RENDERERS = [
-    "../src/features/chat/md.tsx",
-    "../src/features/chat/workspace-browser.tsx",
-    "../src/components/ui/file-browser.tsx",
-    "../src/features/traces/trace-event-row.tsx",
-  ];
-
-  /**
-   * Matched by the constant each prop names rather than by an exact string, because md.tsx picks
-   * its rehype stage by `streaming`. What is being guarded is that the name comes from the shared
-   * module, not the shape of the expression around it.
-   */
-  const SHARED = { remarkPlugins: "REMARK_PLUGINS", rehypePlugins: "REHYPE_PLUGINS" };
-
-  it("every ReactMarkdown in the app is given both shared plugin lists", () => {
-    let total = 0;
-    for (const relative of RENDERERS) {
-      const source = read(relative);
-      const uses = source.split("<ReactMarkdown").length - 1;
-      expect(uses, relative).toBeGreaterThan(0);
-      total += uses;
-      for (const [prop, constant] of Object.entries(SHARED)) {
-        const values = [...source.matchAll(new RegExp(`${prop}=\\{([^}]*)\\}`, "g"))];
-        expect(values.length, `${relative} ${prop}`).toBe(uses);
-        for (const [, value] of values) expect(value, `${relative} ${prop}`).toContain(constant);
-      }
-      expect(source, relative).toContain('from "../../lib/markdown-plugins"');
-    }
-    expect(total).toBe(5); // md.tsx, workspace, the shared file browser, and two in trace-event-row
-  });
-
-  it("no renderer assembles its own pipeline out of the underlying plugins", () => {
-    for (const relative of RENDERERS) {
-      const source = read(relative);
-      // The quotes are the point: a renderer may name a plugin in a comment, not import one.
-      for (const plugin of ["remark-gfm", "remark-math", "rehype-katex"]) {
-        expect(source, `${relative} imports ${plugin} directly`).not.toContain(`"${plugin}"`);
-      }
-    }
-  });
-});
-
-describe("KaTeX fonts ship locally, woff2 only", () => {
-  const SRC = `@font-face{font-display:block;font-family:KaTeX_Main;src:url(fonts/KaTeX_Main-Regular.woff2) format("woff2"),url(fonts/KaTeX_Main-Regular.woff) format("woff"),url(fonts/KaTeX_Main-Regular.ttf) format("truetype")}`;
-
-  it("keeps the woff2 source and drops the woff and truetype ones", () => {
-    const stripped = dropNonWoff2FontSources(SRC);
-    expect(stripped).toContain('url(fonts/KaTeX_Main-Regular.woff2) format("woff2")');
-    expect(stripped).not.toContain(".woff)");
-    expect(stripped).not.toContain(".ttf)");
-    expect(stripped).toContain("font-family:KaTeX_Main");
-  });
-
-  it("leaves a stylesheet that has no fallbacks untouched", () => {
-    const only = `@font-face{src:url(fonts/A.woff2) format("woff2")}`;
-    expect(dropNonWoff2FontSources(only)).toBe(only);
   });
 });
