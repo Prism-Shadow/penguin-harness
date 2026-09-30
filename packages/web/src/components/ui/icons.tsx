@@ -166,14 +166,6 @@ export function CloseButton({
 /** Plus: "add one of these" — the dock's add-tab trigger, the terminal page's new shell. */
 export const ADD_ICON = "M12 5v14M5 12h14";
 
-/**
- * "No key" marker for a model row without an API key — the model picker's and the models
- * page's: a key struck through by a prohibition slash (grayscale via currentColor, matching
- * the approval-mode icon style).
- */
-export const NO_KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
-
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
@@ -214,7 +206,10 @@ export const CODE_ICON = "M16 18l6-6-6-6M8 6l-6 6 6 6";
 export const HOME_ICON =
   "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
 
-/** Two links of a chain: a link's address, as the conversation's link menu copies it. */
+/**
+ * Two links of a chain: a link's address, as the conversation's link menu copies it, and a
+ * provider group's Connect on the models page, which links an account to the group.
+ */
 export const LINK_ICON =
   "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71";
 

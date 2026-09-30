@@ -21,7 +21,7 @@ In the sidebar, select **Models**. Models are listed in groups, one per provider
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
 
-Each model sits on one line, as in the model picker in the chat: its provider's logo, its display name and its tags, then on the right its context window, prices, speed-test results and the Tokens it has used so far. On a narrow screen the figures on the right are left out. A model without an API key carries a crossed-out key. Point at a model to see its model ID and key status.
+Each model card shows its provider's logo, the model's display name, tags, context window, prices, key status, and the Tokens the model has used so far.
 
 | Tag | Meaning |
 | --- | --- |
@@ -34,12 +34,12 @@ Each model sits on one line, as in the model picker in the chat: its provider's 
 
 Prices are shown per million Tokens, in the order cache read / cache write / output. The currency is the one chosen under **Currency** in the settings: **USD $** or **CNY ¥**, converted at a fixed rate of 7.
 
-Select a model to open **Model settings**. It links to the provider's model list (**Get model IDs**), to the model's own page (**Model page**) and, like the **Enter key** dialog, to the provider's key console (**Manage keys**).
+Select a card to open **Model settings**. It links to the provider's model list (**Get model IDs**), to the model's own page (**Model page**) and, like the **Enter key** dialog, to the provider's key console (**Manage keys**).
 
-A group's header holds, from left to right:
+A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens. On the right it holds, from left to right:
 
-- the group's balance, for TokenDance and DeepSeek once the group has a key; see [Account balances](#account-balances);
-- **Connect** and whether the group is connected, for TokenDance, Penguin Go and ModelScope; see [Connect an account](#connect-an-account);
+- the group's balance, for TokenDance and DeepSeek once the group has a key, with a pin and a refresh icon before it and a divider after it; see [Account balances](#account-balances);
+- whether the group is connected, and **Connect**, for TokenDance, Penguin Go and ModelScope; see [Connect an account](#connect-an-account);
 - **Enter key**, on every group but **Custom**; see [Set API keys](#set-api-keys);
 - the speed test; see [Measure speed](#measure-speed);
 - **Add model**, on **Custom**, **vLLM** and groups you created; see [Add a model](#add-a-model).
@@ -127,7 +127,7 @@ Every built-in group except **Custom** and **vLLM** carries the models in Pengui
 
 ### Edit or delete a model
 
-Select the model to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model**, **Set as proxy vision model**, or **Delete model**.
+Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model**, **Set as proxy vision model**, or **Delete model**.
 
 Changing **Model ID** or **Group** renames the entry; its credential and its default or proxy vision role move with it. **Delete model** removes the model's configuration and API key.
 
@@ -208,7 +208,7 @@ Each model carries its own API key, or none.
 
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it.
 - **A whole group.** On a group's header, select **Enter key** and enter the key. It is written to every model in the group, replacing the key each one had. **Custom** has no **Enter key**: its models each reach their own endpoint.
-- **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (AgentHub's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. A model's tooltip and its dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
+- **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (AgentHub's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
@@ -249,12 +249,11 @@ Keep in mind:
 
 ### Account balances
 
-TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance, for example `¥110.00`; an account holding several currencies lists each one. The server asks the provider with the stored key, so the key never reaches the browser.
+TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance in the currency chosen under **Currency** in the settings, converted at the same fixed rate of 7 as prices. An account holding several currencies shows their sum: ¥110 and $5 read `¥145`, or `$20.71`. The server asks the provider with the stored key, so the key never reaches the browser.
 
-- The refresh icon beside the balance reads it again; point at the icon to see when the balance was read. The icon shows when you point at the header.
-- A balance that cannot be read shows "—", with the refresh icon beside it; point at the icon for the reason.
-- Answers are kept on the server for a minute; the refresh icon skips that.
-- Select the pin beside a balance to show it next to your name at the bottom of the sidebar, and in the tooltip of your avatar when the sidebar is collapsed. One balance can be pinned at a time: pinning another replaces it. The pin is saved with your account, not in the browser. The pinned balance is read when the app loads and every five minutes after that.
+- Two icons stand before the balance. The refresh icon reads it again; point at it to see the provider's own figures and when they were read. Answers are kept on the server for a minute; the refresh icon skips that.
+- A balance that cannot be read shows "—"; point at the refresh icon for the reason.
+- The pin keeps the balance next to your name at the bottom of the sidebar, in the same currency. One balance can be pinned at a time: pinning another replaces it. The pin is saved with your account, not in the browser. The pinned balance is read when the app loads and every five minutes after that.
 
 The balance is read with `GET /api/projects/:id/models/balance?provider=<group>`, which every member of the Project may call.
 
@@ -262,7 +261,7 @@ The balance is read with `GET /api/projects/:id/models/balance?provider=<group>`
 
 New conversations use the Project's default model unless you pick another one. A new Project's default is `deepseek-flash` (DeepSeek V4.1 Flash), which reads images itself.
 
-1. Select the model to open **Model settings**.
+1. Select the model's card to open **Model settings**.
 2. Select **Set as default model** and confirm.
 
 The first model added to a table without a default becomes the default automatically. Setting the default also saves any unsaved changes in the dialog.
@@ -287,7 +286,7 @@ To compare the models in a group:
 1. On the group's header, select the speed test icon (**Speed test**).
 2. Select **Start**.
 
-PenguinHarness sends one real request to each model in turn, which uses a small amount of your API quota, and shows on each model's line:
+PenguinHarness sends one real request to each model in turn, which uses a small amount of your API quota, and shows on each card:
 
 - the time to first token, in milliseconds: green under 1000, yellow up to 3000, red above;
 - the output rate, in Tokens per second: green at 40 or more, yellow at 15 or more, red below.
@@ -473,7 +472,7 @@ The group's key comes from its header; see [Connect an account](#connect-an-acco
 - Models the Project already has keep their endpoint and everything else you configured. Only their three prices and their client protocol are refreshed, `max_tokens` stays unset so the agent's setting applies, and nothing is ever deleted.
 - The platform's promotions replace the ones stored for this group. As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database; **Sync presets** never sets one, and each authorization or **Sync** replaces them. If that record is lost, usage is priced at the list price until the next one writes it back.
 
-The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their rows and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
+The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
 
 ### The OpenCode Go group
 
@@ -530,8 +529,8 @@ The list is not exhaustive.
   - `deepseek-v4-flash-0731`, `deepseek-v4-pro-0813`, `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
   - the three Doubao Seed rows (`seed-2.1-pro`, `seed-2.1-turbo`, `seed-evolving`) at 50%
 
-  Gemini 3.8 Flash, 3.7 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.7-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model's row shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
-- **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the model: the figure is then yours, not the seller's.
+  Gemini 3.8 Flash, 3.7 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.7-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
+- **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the card: the figure is then yours, not the seller's.
 
 ## The per-Project model table
 

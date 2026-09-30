@@ -1,13 +1,14 @@
 /**
- * A group's balance where it is shown: in its header on the models page — muted, with a
- * refresh and the pin that puts it beside the user name — and there, in the sidebar's user row
- * and the collapsed rail's avatar tooltip. Both read the one store in balance.ts.
+ * A group's balance where it is shown: in its header on the models page — muted, after the pin
+ * that puts it beside the user name and the refresh — and there, in the sidebar's user row.
+ * Both read the one store in balance.ts, and both show the amount in the display currency the
+ * cost center and the model prices use.
  *
- * The amount is plain text, and the refresh beside it is a glyph: the shared tooltip only
+ * The amount is plain text, and the refresh before it is a glyph: the shared tooltip only
  * speaks for an element with no words of its own (tooltip.tsx), so the glyph is what carries
- * the read time — or, when no balance could be read, the reason. A balance that cannot be read
- * is a muted dash with that reason, never red text: it is information about an account, not
- * an error the user made on this page.
+ * the vendor's own figures and the read time — or, when no balance could be read, the reason.
+ * A balance that cannot be read is a muted dash with that reason, never red text: it is
+ * information about an account, not an error the user made on this page.
  */
 import { useEffect } from "react";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -16,11 +17,14 @@ import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { useProject } from "../../state/project";
+import { useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { REFRESH_ICON } from "../../components/ui/icons";
 import { PIN_ICON } from "../../components/ui/session-row-menu";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
+  displayBalance,
   formatBalance,
   isPinned,
   requestBalance,
@@ -34,28 +38,30 @@ import type { BalanceState } from "./balance";
 export const PINNED_BALANCE_REFRESH_MS = 5 * 60 * 1000;
 
 /**
- * What a balance reads as: the text shown, the sentence behind it (the refresh glyph's hint and
- * the accessible name), and whether it is a failure — the dash, whose reason must be reachable
- * without first finding the glyph by hovering.
+ * What a balance reads as: the text shown — the amount in the display currency — and the
+ * sentence behind it (the refresh glyph's hint and the accessible name), which keeps the
+ * vendor's own figures and the time they were read.
  */
 export function balanceView(
   state: BalanceState | undefined,
   label: string,
-): { text: string; title: string; failed: boolean } {
+  currency: Currency,
+): { text: string; title: string } {
   const answer = state?.answer;
   if (answer === undefined) {
-    if (state?.requestError !== undefined) {
-      return { text: "—", title: state.requestError, failed: true };
-    }
+    if (state?.requestError !== undefined) return { text: "—", title: state.requestError };
     // Nothing read yet: a quiet placeholder, not a dash, which would claim a failure.
-    return { text: "…", title: S.models.balanceTitle(label, "…"), failed: false };
+    return { text: "…", title: S.models.balanceTitle(label, "…", "…") };
   }
   if (answer.ok) {
-    const title = S.models.balanceTitle(label, formatDateTime(answer.fetchedAt));
+    const title = S.models.balanceTitle(
+      label,
+      formatBalance(answer),
+      formatDateTime(answer.fetchedAt),
+    );
     return {
-      text: formatBalance(answer),
+      text: displayBalance(answer, currency),
       title: answer.available === false ? `${title} · ${S.models.balanceUnavailable}` : title,
-      failed: false,
     };
   }
   const reason = S.models.balanceErrors[answer.error] ?? answer.message;
@@ -63,14 +69,17 @@ export function balanceView(
     text: "—",
     title:
       answer.status !== undefined ? `${reason}${S.models.balanceStatus(answer.status)}` : reason,
-    failed: true,
   };
 }
 
+/** The two small buttons before a balance share one shape: a wordless glyph in a 28px square. */
+const BALANCE_BUTTON =
+  "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
+
 /**
- * The pin beside a balance: the session list's group pin, glyph and behaviour — revealed on
- * header hover or keyboard focus while off, always visible once on. The accessible name stays
- * static and `aria-pressed` carries the state, as that pin's does.
+ * The pin before a balance, which keeps it beside the user name: the session list's group pin
+ * glyph, drawn filled while on. The accessible name stays static and `aria-pressed` carries
+ * the state, as that pin's does.
  */
 function BalancePin({ pinned, onToggle }: { pinned: boolean; onToggle: () => void }) {
   return (
@@ -80,22 +89,16 @@ function BalancePin({ pinned, onToggle }: { pinned: boolean; onToggle: () => voi
       aria-label={S.models.pinBalance}
       aria-pressed={pinned}
       onClick={onToggle}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200 ${
-        pinned
-          ? "text-gray-500 dark:text-gray-400"
-          : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
-      }`}
+      className={`${BALANCE_BUTTON} ${pinned ? "text-gray-700 dark:text-gray-200" : "text-gray-400 dark:text-gray-500"}`}
     >
-      <GlyphIcon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
+      <GlyphIcon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} filled={pinned} />
     </button>
   );
 }
 
 /**
- * A group's balance in its header: read once when the header mounts, again on every refresh.
- * The refresh glyph is revealed with the header, like the pin, except beside a dash, where it
- * stays in view because its hint is the only place the reason is shown. The pin comes first, so
- * a pinned balance keeps its pin against the amount and the hidden glyph's slot trails.
+ * A group's balance in its header: the pin, the refresh, then the amount. Read once when the
+ * header mounts, again on every refresh click, which skips the server's cache.
  */
 export function GroupBalance({
   projectId,
@@ -106,18 +109,14 @@ export function GroupBalance({
 }) {
   const state = useBalance(projectId, provider.id);
   const pinned = isPinned(usePinnedBalance(), projectId, provider.id);
+  const { currency } = useTheme();
   useEffect(() => {
     void requestBalance(projectId, provider.id);
   }, [projectId, provider.id]);
-  const { text, title, failed } = balanceView(state, provider.label);
+  const { text, title } = balanceView(state, provider.label, currency);
   const hint = `${title} · ${S.models.balanceRefreshHint}`;
   return (
     <span className="flex shrink-0 items-center">
-      <span
-        className={`whitespace-nowrap pl-1 text-xs tabular-nums text-gray-500 dark:text-gray-400${state?.loading === true && state.answer !== undefined ? " opacity-60" : ""}`}
-      >
-        {text}
-      </span>
       <BalancePin
         pinned={pinned}
         onToggle={() => setPinnedBalance(pinned ? null : { projectId, provider: provider.id })}
@@ -126,31 +125,29 @@ export function GroupBalance({
         type="button"
         onClick={() => void requestBalance(projectId, provider.id, true)}
         data-tooltip={hint}
-        aria-label={`${text} · ${hint}`}
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:text-gray-800 dark:text-gray-500 dark:hover:text-gray-200${
-          failed ? "" : " opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100"
-        }`}
+        aria-label={hint}
+        className={`${BALANCE_BUTTON} text-gray-400 dark:text-gray-500`}
       >
         <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.groupHeaderAction} />
       </button>
+      <span
+        className={`whitespace-nowrap pl-1 text-xs tabular-nums text-gray-500 dark:text-gray-400${state?.loading === true && state.answer !== undefined ? " opacity-60" : ""}`}
+      >
+        {text}
+      </span>
     </span>
   );
 }
 
 /**
- * The pinned balance as the sidebar and the rail show it, or null when nothing is pinned or the
- * pinned Project is no longer one this user can open. Reads it when mounted — once per page
- * load — and every five minutes after that; never faster.
+ * The pinned balance as the sidebar shows it, or null when nothing is pinned or the pinned
+ * Project is no longer one this user can open. Reads it when mounted — once per page load —
+ * and every five minutes after that; never faster.
  */
-export function usePinnedBalanceView(): {
-  provider: string;
-  /** The group's display name. */
-  label: string;
-  text: string;
-  title: string;
-} | null {
+export function usePinnedBalanceView(): { provider: string; text: string; title: string } | null {
   const pin = usePinnedBalance();
   const { projects } = useProject();
+  const { currency } = useTheme();
   const reachable = pin !== null && projects.some((p) => p.projectId === pin.projectId);
   const projectId = reachable ? pin.projectId : null;
   const provider = pin?.provider ?? "";
@@ -165,8 +162,7 @@ export function usePinnedBalanceView(): {
     return () => window.clearInterval(timer);
   }, [projectId, provider]);
   if (projectId === null) return null;
-  const label = providerInfo(provider)?.label ?? provider;
-  return { provider, label, ...balanceView(state, label) };
+  return { provider, ...balanceView(state, providerInfo(provider)?.label ?? provider, currency) };
 }
 
 /**

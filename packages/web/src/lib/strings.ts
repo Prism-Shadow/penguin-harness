@@ -1630,10 +1630,12 @@ export const zh = {
     notConnectedStatus: "未连接",
     /**
      * A group's account balance in its header (and pinned beside the user name): the tooltip
-     * names the group and the time of the reading. `time` is already formatted.
+     * names the group, the vendor's own figures and the time of the reading. `amounts` and
+     * `time` are already formatted.
      */
-    balanceTitle: (label: string, time: string): string => `${label} 余额，查询于 ${time}`,
-    balanceRefreshHint: "点击刷新",
+    balanceTitle: (label: string, amounts: string, time: string): string =>
+      `${label} 余额 ${amounts}，查询于 ${time}`,
+    balanceRefreshHint: "点击同步",
     /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
     balanceUnavailable: "账户当前不可用，余额可能不足",
     /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
@@ -1644,9 +1646,9 @@ export const zh = {
     } as Record<string, string | undefined>,
     /** Appended when the vendor answered with an HTTP error. */
     balanceStatus: (status: number): string => `（服务商返回 HTTP ${status}）`,
-    /** Pin toggle beside a balance: shows it beside the user name in the sidebar, one at a time. */
-    pinBalance: "置顶到用户名旁",
-    unpinBalance: "取消置顶",
+    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
+    pinBalance: "常驻到用户名旁",
+    unpinBalance: "取消常驻",
     /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
     tokenDanceBanner: "连接 TokenDance 钱包，无需手动配置模型密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,

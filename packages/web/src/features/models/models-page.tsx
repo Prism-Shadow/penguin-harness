@@ -8,24 +8,25 @@
  * changing either one is a rename, submitted as a paired `renamedFrom` (the server uses it
  * to migrate the credential and pointers).
  *
- * The list is purely for "finding a model", in the chat model picker's shape: grouped by
- * vendor (group header = logo + vendor name + count, collapsible), one line per model within a
- * group — logo, display name and the shared tag pills right after it, with context, price and
- * speed figures on the right and no upstream id or key printed (both are the row's tooltip).
- * Clicking a row opens the config dialog (credentials, context, pricing, vision toggle, plus
- * set as default / set as vision model / delete). The group header's right side holds the
- * group's actions in a fixed order (group-header.ts): its balance, Connect with its status,
- * Enter key, the speed test, and — on the groups that take hand-added models (custom, vLLM,
- * user-defined) — Add model, which reuses the same dialog with that group pre-filled. The
- * protocol follows group semantics: custom / user-defined groups pick or detect it, a group
- * that pins one (vLLM) hands it to every entry. The "get model id / API key" external links
- * sit next to the corresponding input's label in the dialogs, never in the header. A
- * TokenDance banner above the groups offers its connect flow until the group holds a key. The
- * group list ends with an "add group" action (user-defined groups share custom's semantics;
- * the group appears once the first model saves successfully — groups are carried by the model
- * entry's provider field, not persisted separately). The header also holds an owner-only "sync
- * presets" action next to the search box (union-merge with the built-in catalog, see
- * catalog-sync.ts).
+ * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
+ * name + count + the collapse chevron), with one card per model within a group — the card
+ * shows the provider's logo, the display name and the marks the chat model picker uses
+ * (default / vision / fast / free / discount), while context, pricing, and key status are
+ * folded into a single line of small text. Clicking a card opens the config dialog
+ * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
+ * delete). The group header's right side holds the group's actions in a fixed order
+ * (group-header.ts): its balance (pin and refresh before the amount, a divider after it),
+ * Connect with its status, Enter key, the speed test, and — on the groups that take
+ * hand-added models (custom, vLLM, user-defined) — Add model, which reuses the same dialog
+ * with that group pre-filled. The protocol follows group semantics: custom / user-defined
+ * groups pick or detect it, a group that pins one (vLLM) hands it to every entry. The "get
+ * model id / API key" external links sit next to the corresponding input's label in the
+ * dialogs, never in the header. A TokenDance banner above the groups offers its connect flow
+ * until the group holds a key. The group list ends with an "add group" action (user-defined
+ * groups share custom's semantics; the group appears once the first model saves successfully —
+ * groups are carried by the model entry's provider field, not persisted separately). The
+ * header also holds an owner-only "sync presets" action next to the search box (union-merge
+ * with the built-in catalog, see catalog-sync.ts).
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
@@ -73,7 +74,7 @@ import { AiCreateModal, CreateButtons } from "../ai-create";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { EXTERNAL_LINK_ICON, NO_KEY_ICON } from "../../components/ui/icons";
+import { EXTERNAL_LINK_ICON, LINK_ICON } from "../../components/ui/icons";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -147,7 +148,7 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { KeyAuthDialog } from "./key-auth-dialog";
 import type { KeyAuthTexts } from "./key-auth-dialog";
 import { NoticeStrip } from "../../components/ui/notice-strip";
-import { groupHeaderActions, groupKeyStored } from "./group-header";
+import { dividerAfterBalance, groupHeaderActions, groupKeyStored } from "./group-header";
 import type { GroupHeaderAction } from "./group-header";
 import { GroupBalance } from "./group-balance";
 import { isPinned, usePinnedBalance } from "./balance";
@@ -999,7 +1000,7 @@ export function ModelsPage() {
 
   /**
    * Group speed test: one real request per model, strictly sequential (concurrent probes
-   * trip provider rate limits), each result written to the row as it lands. The
+   * trip provider rate limits), each result written to the card as it lands. The
    * confirmation dialog (speedFor) has already warned about quota by the time this runs.
    * A stop takes effect between probes: the one in flight is not abandoned (its request is
    * already billed), its result lands like the others, and no further probe starts.
@@ -1222,7 +1223,7 @@ export function ModelsPage() {
             {isOwner && (
               <Button
                 size="sm"
-                variant="secondary"
+                variant="ghost"
                 className="shrink-0"
                 disabled={busy}
                 aria-label={`${verb} ${provider.label}`}
@@ -1232,11 +1233,7 @@ export function ModelsPage() {
                   setOauthFor(group.provider.id);
                 }}
               >
-                <GlyphIcon
-                  d={SIGN_IN_ICON}
-                  size={ICON_SIZE.groupHeaderAction}
-                  className="@3xl:hidden"
-                />
+                <GlyphIcon d={LINK_ICON} size={ICON_SIZE.groupHeaderAction} />
                 <span className="hidden @3xl:inline">{verb}</span>
               </Button>
             )}
@@ -1266,14 +1263,14 @@ export function ModelsPage() {
         return (
           <Button
             size="sm"
-            variant="secondary"
+            variant="ghost"
             className="shrink-0"
             disabled={busy}
             aria-label={`${S.models.groupApiKey} ${provider.label}`}
             title={S.models.groupApiKey}
             onClick={() => setGroupKeyFor(group.provider.id)}
           >
-            <GlyphIcon d={KEY_ICON} size={ICON_SIZE.groupHeaderAction} className="@3xl:hidden" />
+            <GlyphIcon d={KEY_ICON} size={ICON_SIZE.groupHeaderAction} />
             <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
           </Button>
         );
@@ -1451,11 +1448,11 @@ export function ModelsPage() {
               });
               return (
                 // The drop indicator is drawn against the WHOLE group, so "below" reads as
-                // after this group and its rows rather than between the header and its own
-                // first row. It needs this wrapper to live in: the section clips its children
-                // (overflow-hidden carries the expand/collapse transition). Absolutely
-                // positioned, so it costs no layout width and cannot push the header's
-                // actions out of a narrow page.
+                // after this group and its model cards rather than between the header and
+                // its own first card. It needs this wrapper to live in: the section clips
+                // its children (overflow-hidden carries the expand/collapse transition).
+                // Absolutely positioned, so it costs no layout width and cannot push the
+                // header's actions out of a narrow page.
                 <div key={group.provider.id} className="relative">
                   {drag.dropEdge !== null && (
                     <div
@@ -1466,20 +1463,20 @@ export function ModelsPage() {
                     />
                   )}
                   <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    {/* Group header: collapse button (logo + vendor name + count) + the group's
-                      actions on the right, in group-header.ts's order. Actions are separate
-                      elements because buttons can't nest. The row is a size container: the
-                      sidebar can narrow it while the viewport remains desktop-sized, so labels
-                      respond to this row's actual width rather than viewport breakpoints.
-                      Narrow rows never hide an action — each one keeps its icon (with
-                      aria-label + title) and only sheds its text. When even the icons leave the
-                      name too little room, the actions move to a line of their own below it,
-                      as one block (the name keeps a floor, so it is never squeezed to nothing).
-                      The row is also the drag handle for reordering the group
-                      (groupDragProps), and the hover scope that reveals the balance's pin. */}
+                    {/* Group header: collapse button (logo + vendor name + count + chevron) +
+                      the group's actions on the right, in group-header.ts's order. Actions are
+                      separate elements because buttons can't nest. The row is a size
+                      container: the sidebar can narrow it while the viewport remains
+                      desktop-sized, so labels respond to this row's actual width rather than
+                      viewport breakpoints. Narrow rows never hide an action — each one keeps
+                      its icon (with aria-label + title) and only sheds its text. When even the
+                      icons leave the name too little room, the actions move to a line of their
+                      own below it, as one block (the name keeps a floor, so it is never
+                      squeezed to nothing). The row is also the drag handle for reordering the
+                      group (groupDragProps). */}
                     <div
                       {...drag.header}
-                      className={`group/header @container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
+                      className={`@container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
                     >
                       <button
                         type="button"
@@ -1505,6 +1502,9 @@ export function ModelsPage() {
                           {group.rows.length}
                         </span>
                         <span className="sr-only">{S.models.modelCount(group.rows.length)}</span>
+                        {/* The chevron follows the name and its count rather than the row's far
+                            edge, so it reads as part of the group it folds. */}
+                        <Chevron open={open} className="text-gray-400" />
                         {/* The recommendation rides the collapse bar itself, so it is read with
                             the group's name rather than as a caption floating above the
                             section. `shrink-0` keeps it whole: the vendor name beside it is
@@ -1513,7 +1513,7 @@ export function ModelsPage() {
                           // Not a `Badge`: its `brand` tone is deliberately gray — neutral
                           // emphasis outside the status vocabulary — and an endorsement is
                           // neither a status nor neutral, which is the category tone.ts keeps
-                          // out on purpose. Unfilled, like the row marks below it: an outline
+                          // out on purpose. Unfilled, like the card marks below it: an outline
                           // is enough to make it a pill, and a block of colour on the collapse
                           // bar competes with the vendor name it is endorsing. It gives way on
                           // a narrow row before the name does.
@@ -1530,23 +1530,23 @@ export function ModelsPage() {
                           </span>
                         )}
                       </button>
-                      <div className="ml-auto flex shrink-0 items-center gap-2 py-1.5">
-                        {actions.map((action) => (
-                          <Fragment key={action}>
-                            {renderGroupAction(group, action, keyStored)}
-                          </Fragment>
-                        ))}
-                        {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}
-                        <button
-                          type="button"
-                          aria-expanded={open}
-                          aria-label={group.provider.label}
-                          onClick={() => toggleGroup(group.provider.id)}
-                          className="shrink-0 p-1.5"
-                        >
-                          <Chevron open={open} className="text-gray-400" />
-                        </button>
-                      </div>
+                      {actions.length > 0 && (
+                        <div className="ml-auto flex shrink-0 items-center gap-2 py-1.5">
+                          {actions.map((action) => (
+                            <Fragment key={action}>
+                              {renderGroupAction(group, action, keyStored)}
+                              {/* A rule between the account's figure and the group's status and
+                                  actions, drawn only when something follows the balance. */}
+                              {action === "balance" && dividerAfterBalance(actions) && (
+                                <span
+                                  aria-hidden
+                                  className="h-4 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
+                                />
+                              )}
+                            </Fragment>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Expand/collapse height transition: grid-template-rows tweens between
@@ -1556,21 +1556,19 @@ export function ModelsPage() {
                     <div
                       className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
                     >
-                      {/* inert while collapsed: a row with zero height shouldn't still be Tab-focusable or clickable. */}
+                      {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
                       <div className="overflow-hidden" inert={!open}>
-                        {/* One line per model, the picker's rhythm; a size container so each row
-                            sheds its figures on a narrow page rather than wrapping. */}
-                        <ul
-                          className={`@container border-t border-gray-200 py-1 transition-opacity duration-200 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+                        <div
+                          className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-2.5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
                         >
                           {group.rows.length === 0 ? (
                             // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
-                            <li className="px-4 py-2 text-center text-xs text-gray-400 dark:text-gray-500">
+                            <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
                               {S.models.groupEmptyHint}
-                            </li>
+                            </p>
                           ) : (
                             group.rows.map((row) => (
-                              <ModelRow
+                              <ModelCard
                                 key={`${row.provider}:${row.modelId}`}
                                 row={row}
                                 currency={currency}
@@ -1595,7 +1593,7 @@ export function ModelsPage() {
                               />
                             ))
                           )}
-                        </ul>
+                        </div>
                       </div>
                     </div>
                   </section>
@@ -2197,20 +2195,18 @@ function AddGroupDialog({
 }
 
 // ---------------------------------------------------------------------------
-// Model row
+// Model card
 // ---------------------------------------------------------------------------
 
 /**
- * One model on one line, in the chat model picker's shape and rhythm: the provider's logo, the
- * name, and the shared marks right after it (model-tags.ts); on the right, the context window
- * and the price billed today (dropped on a narrow row), the group speed test's figures, the
- * Tokens spent, and the picker's struck-key glyph on a row with no key. The upstream id and
- * the key are not printed — they are the row's tooltip, and the config dialog is one click
- * away. The line is one click target opening that dialog; a row whose model id its group
- * cannot route adds a warning strip below it, which carries its own action and therefore its
- * own click target.
+ * Card: the provider's logo and the display name + lifetime Token spend + status badges (the
+ * logo and the marks as the chat model picker draws them); context / pricing / key status folded
+ * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
+ * title row's right edge. All three lines are one click target opening the config dialog (the
+ * model homepage link lives in there); a row whose model id its group cannot route adds a
+ * warning strip below them, which carries its own action and therefore its own click target.
  */
-export function ModelRow({
+export function ModelCard({
   row,
   currency,
   isDefault,
@@ -2240,7 +2236,7 @@ export function ModelRow({
   /**
    * A stored entry that sits in a vendor group under an id AgentHub cannot place, and which
    * of the two fixes it needs. Saving one is refused now, so this can only be a row that
-   * predates that rule — it stays in the config untouched, and the row is where its owner
+   * predates that rule — it stays in the config untouched, and the card is where its owner
    * finds out, because every other sign of it arrives as a failed request minutes into a
    * conversation.
    */
@@ -2253,7 +2249,7 @@ export function ModelRow({
    * the catalog's peak price.
    *
    * `hourTick` is in the dependency list for the schedule: a scheduled row's price changes on
-   * the hour with nobody touching the page, and a row left open would otherwise keep printing
+   * the hour with nobody touching the page, and a card left open would otherwise keep printing
    * a rate that stopped applying.
    */
   const discount = useMemo(() => discountedPrice(row), [row, hourTick]);
@@ -2266,7 +2262,14 @@ export function ModelRow({
         output: String(discount.billed.output),
       }
     : { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output };
-  /** Every standing mark this row carries (model-tags.ts, shared with the model picker's rows). */
+  /**
+   * Every standing mark this row carries (model-tags.ts, shared with the model picker's rows),
+   * in one horizontal row of its own.
+   *
+   * They had been sharing the title's line, where each was width the model's NAME had to give
+   * up — a long name truncated to make room for a mark that could have been read anywhere. A
+   * row of their own costs one line and gives the name the whole of the first.
+   */
   const tags = modelTags({
     isDefault,
     vision: row.vision,
@@ -2275,24 +2278,22 @@ export function ModelRow({
     free: isFreeModel(row),
     discount,
   });
-  const label = modelLabelOf(row.displayName, row.modelId);
-  // What the line leaves out, on hover: the upstream id where a display name stands in for it,
-  // and the key status (keyStatusText — the stored mask, a detected env fallback's mask, or
-  // "no key").
-  const title = [label, ...(label === row.modelId ? [] : [row.modelId]), keyStatusText(row)].join(
-    " · ",
-  );
-  // Context and the three prices billed right now (cache read / cache write / output); units
-  // are explained in the config dialog, not repeated on the row. What the row would cost
-  // without a promotion answers no question a reader of this list is asking.
-  const meta = [
+
+  const priceLine = (a: string, b: string, c: string): string =>
+    `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;
+  const meta: ReactNode[] = [
     row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
-    priced
-      ? `${displayPrice(shownPrice.cacheRead, currency)} / ${displayPrice(shownPrice.cacheWrite, currency)} / ${displayPrice(shownPrice.output, currency)}`
-      : null,
-  ]
-    .filter((part) => part !== null)
-    .join(" · ");
+    // Three prices (cache read / cache write / output); units are explained in the config dialog, not repeated on the card.
+    // One price, the one being billed right now. What the row would cost without the promotion
+    // answers no question a reader of this list is asking, and spending the meta line's width
+    // on it pushes out the figures that do.
+    priced ? (
+      <span>{priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}</span>
+    ) : null,
+    // Key status (see keyStatusText): the stored mask, a detected env fallback's mask, a plain
+    // "configured" for a key typed but not yet saved, or "not configured".
+    keyStatusText(row),
+  ].filter((v) => v !== null);
 
   const speedBadges =
     speed === "pending" ? (
@@ -2329,59 +2330,67 @@ export function ModelRow({
       )
     ) : null;
   return (
-    // The row holds the button rather than being one: the routing warning below carries an
-    // action of its own, and buttons cannot nest (the group header solves the same problem the
-    // same way).
-    <li>
+    // The card is a box holding the button rather than being one: the routing warning below
+    // carries an action of its own, and buttons cannot nest (the group header solves the same
+    // problem the same way). overflow-hidden lets the warning strip fill the rounded corners.
+    <div className="flex w-full flex-col overflow-hidden rounded-md border border-gray-200 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40">
       <button
         type="button"
         onClick={onOpen}
-        data-tooltip={title}
-        className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/40"
+        className="flex w-full flex-1 flex-col gap-1 px-3 py-2.5 text-left"
       >
-        <ProviderLogo provider={row.provider} className="h-4 w-4 shrink-0" />
-        {/* The marks follow the name rather than the row's far edge, so each reads as part of
-            the model it describes; a long name truncates before they give way. */}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="min-w-0 truncate text-sm">{label}</span>
+        {/* 1. What the model is called — the provider's logo and the name. The upstream id used
+            to share this row, but it is a detail you go looking for rather than one you scan by,
+            and it is a click away in the config dialog; the width it was taking now belongs to
+            the name. */}
+        <span className="flex w-full min-w-0 items-center gap-2">
+          <ProviderLogo provider={row.provider} className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+            {modelLabelOf(row.displayName, row.modelId)}
+          </span>
+          {/* What this model has spent over its whole life, on the row's right edge. Recessive by
+              design — grey and a size below the meta line: it is context for a name you are
+              scanning past, not a figure the page is about. A model that has never run shows
+              nothing rather than a zero, which would read as a measurement instead of an
+              absence. */}
+          {usedTokens !== undefined && usedTokens > 0 && (
+            <span
+              className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
+              data-tooltip={S.models.usedTokensTitle}
+            >
+              {S.models.usedTokens(humanizeTokens(usedTokens))}
+            </span>
+          )}
+        </span>
+        {/* 2. Every standing mark, on one row of its own (see `tags`). The row is rendered even
+            when empty: most models carry no mark at all, and letting it collapse would leave the
+            grid ragged — cards in the same row of a two-column grid stretch to the tallest, so an
+            absent line shows up as uneven padding rather than as a shorter card. Its height is
+            the tags' own, so a card with marks and a card without are exactly as tall. */}
+        <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
             <span
               key={tag.key}
               data-tooltip={tag.title}
-              className={`${TAG_SHAPE} shrink-0 ${tag.className}`}
+              className={`${TAG_SHAPE} ${tag.className}`}
             >
               {tag.label}
             </span>
           ))}
         </span>
-        {meta !== "" && (
-          <span className="hidden shrink-0 whitespace-nowrap text-xs text-gray-400 @2xl:inline dark:text-gray-500">
-            {meta}
+        {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
+            non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
+        <span className="flex w-full items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
+            {meta.map((part, i) => (
+              <Fragment key={i}>
+                {i > 0 && " · "}
+                {part}
+              </Fragment>
+            ))}
           </span>
-        )}
-        {speedBadges}
-        {/* What this model has spent over its whole life. Recessive by design — grey and a size
-            below the figures beside it: it is context for a name you are scanning past, not a
-            figure the page is about. A model that has never run shows nothing rather than a
-            zero, which would read as a measurement instead of an absence. */}
-        {usedTokens !== undefined && usedTokens > 0 && (
-          <span
-            className="hidden shrink-0 text-[10px] tabular-nums text-gray-400 @lg:inline dark:text-gray-500"
-            data-tooltip={S.models.usedTokensTitle}
-          >
-            {S.models.usedTokens(humanizeTokens(usedTokens))}
-          </span>
-        )}
-        {!hasKey(row) && (
-          <span
-            role="img"
-            data-tooltip={S.models.noKey}
-            aria-label={S.models.noKey}
-            className="shrink-0 text-gray-400 dark:text-gray-500"
-          >
-            <GlyphIcon d={NO_KEY_ICON} size={ICON_SIZE.inlineGlyph} />
-          </span>
-        )}
+          {speedBadges}
+        </span>
       </button>
       {/* The routing warning and its way out, which differ by what the catalog knows (see
           unroutableFix). Both actions run a flow the page already has — the header's preset
@@ -2390,7 +2399,7 @@ export function ModelRow({
       {fix !== null && (
         <NoticeStrip
           tone="attention"
-          className="mx-4 mb-1.5 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-[11px]"
+          className="flex items-center justify-between gap-2 border-t px-3 py-2 text-[11px]"
         >
           <span className="min-w-0">
             {fix === "sync" ? S.models.vendorRowStalePin : S.models.vendorRowUnroutable}
@@ -2407,7 +2416,7 @@ export function ModelRow({
           )}
         </NoticeStrip>
       )}
-    </li>
+    </div>
   );
 }
 

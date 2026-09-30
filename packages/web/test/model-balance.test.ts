@@ -1,11 +1,13 @@
 /**
- * Group balances in the Web App: how an amount reads (balance.ts), what the header and the
- * sidebar show for each state of a reading (group-balance.tsx), how the per-account pin is read
- * back out of the free-form prefs, and the TokenDance banner's per-browser dismissal.
+ * Group balances in the Web App: how an amount reads (balance.ts) — in the vendor's own figures
+ * and in the display currency — what the header and the sidebar show for each state of a
+ * reading (group-balance.tsx), how the per-account pin is read back out of the free-form prefs,
+ * and the TokenDance banner's per-browser dismissal.
  */
 import { describe, expect, it } from "vitest";
 import type { ModelBalanceResponse } from "@prismshadow/penguin-server/api";
 import {
+  displayBalance,
   formatAmount,
   formatBalance,
   isPinned,
@@ -40,19 +42,44 @@ describe("formatting an amount", () => {
   });
 });
 
+describe("a balance in the display currency", () => {
+  const single = (amount: string, currency: string) =>
+    ({ ok: true, provider: "tokendance", amount, currency, fetchedAt: reading.fetchedAt }) as const;
+
+  it("converts at the app's fixed rate, as money is shown elsewhere", () => {
+    expect(displayBalance(single("128.46", "CNY"), "CNY")).toBe("¥128");
+    expect(displayBalance(single("128.46", "CNY"), "USD")).toBe("$18.35");
+    expect(displayBalance(single("12.5", "USD"), "CNY")).toBe("¥87.50");
+    expect(displayBalance(single("0.162811", "CNY"), "CNY")).toBe("¥0.1628");
+  });
+
+  it("sums every currency the account holds into one amount", () => {
+    // ¥110 and $5: $15.71 + $5 in dollars, ¥110 + ¥35 in yuan.
+    expect(reading.ok && displayBalance(reading, "USD")).toBe("$20.71");
+    expect(reading.ok && displayBalance(reading, "CNY")).toBe("¥145");
+  });
+
+  it("keeps the vendor's own figures for a currency the rate does not cover", () => {
+    expect(displayBalance(single("12.5", "EUR"), "CNY")).toBe("EUR 12.50");
+    expect(displayBalance(single("n/a", "CNY"), "USD")).toBe("¥n/a");
+  });
+});
+
 describe("what a balance reads as", () => {
-  it("a reading: the amounts, with the group and the time in the tooltip", () => {
-    const view = balanceView({ loading: false, answer: reading }, "DeepSeek");
-    expect(view.text).toBe("¥110.00 · $5.00");
-    expect(view.failed).toBe(false);
+  it("a reading: the amount in the display currency, the vendor's figures in the tooltip", () => {
+    const view = balanceView({ loading: false, answer: reading }, "DeepSeek", "CNY");
+    expect(view.text).toBe("¥145");
     expect(view.title).toContain("DeepSeek");
+    expect(view.title).toContain("¥110.00 · $5.00");
     expect(view.title).not.toContain(S.models.balanceUnavailable);
+    expect(balanceView({ loading: false, answer: reading }, "DeepSeek", "USD").text).toBe("$20.71");
   });
 
   it("an account the vendor says cannot make requests says so in the tooltip", () => {
     const view = balanceView(
       { loading: false, answer: { ...reading, available: false } },
       "DeepSeek",
+      "CNY",
     );
     expect(view.title).toContain(S.models.balanceUnavailable);
   });
@@ -71,21 +98,19 @@ describe("what a balance reads as", () => {
         },
       },
       "TokenDance",
+      "CNY",
     );
     expect(view.text).toBe("—");
-    expect(view.failed).toBe(true);
     expect(view.title).toContain(S.models.balanceErrors.upstream_failed!);
     expect(view.title).toContain("401");
   });
 
   it("a request that failed outright is a dash too; nothing read yet is not", () => {
-    expect(balanceView({ loading: false, requestError: "Network error" }, "TokenDance")).toEqual({
-      text: "—",
-      title: "Network error",
-      failed: true,
-    });
-    expect(balanceView(undefined, "TokenDance").text).toBe("…");
-    expect(balanceView({ loading: true }, "TokenDance").text).toBe("…");
+    expect(
+      balanceView({ loading: false, requestError: "Network error" }, "TokenDance", "CNY"),
+    ).toEqual({ text: "—", title: "Network error" });
+    expect(balanceView(undefined, "TokenDance", "CNY").text).toBe("…");
+    expect(balanceView({ loading: true }, "TokenDance", "USD").text).toBe("…");
   });
 });
 

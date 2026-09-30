@@ -151,7 +151,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/dock/dock-launcher.tsx": { 13: [1, "W7"], 18: [3, "W7"], 19: [4, "W7"] },
   "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"] },
   "features/models/model-tags.ts": { 13: [1, "W10"] },
-  "features/models/models-page.tsx": { 1: [1, "W4"], 11: [8, "W1b"], 12: [6, "W4"], 13: [6, "W4"] },
+  "features/models/models-page.tsx": { 1: [1, "W4"], 11: [8, "W1b"], 12: [7, "W4"], 13: [8, "W4"] },
   "features/models/protocol-suffix.tsx": { 11: [2, "W1b"] },
   "features/plugins/plugin-detail-page.tsx": { 13: [2, "W4"] },
   "features/plugins/plugin-detail.tsx": { 13: [1, "W4"] },

@@ -7,13 +7,15 @@
  * and the group holds a key; Connect with its status on the three groups with a flow; Enter key
  * everywhere but custom; the speed test everywhere; Add model only where hand-added models are
  * taken (custom, vLLM, user-defined); Delete group only on a user-defined group. A member keeps
- * the two read-only parts and nothing that writes.
+ * the two read-only parts and nothing that writes. A divider follows the balance wherever
+ * something comes after it.
  */
 import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import {
   connectionStatus,
+  dividerAfterBalance,
   groupHeaderActions,
   groupKeyStored,
   hasConnectFlow,
@@ -102,5 +104,23 @@ describe("the connection status beside Connect", () => {
   it("is absent on a group that does not connect", () => {
     expect(connectionStatus(group("deepseek"), keyed)).toBeNull();
     expect(connectionStatus(group("my-own-group"), keyed)).toBeNull();
+  });
+});
+
+describe("the divider after the balance", () => {
+  it("stands between the balance and whatever follows it", () => {
+    expect(dividerAfterBalance(owner("tokendance", true))).toBe(true);
+    expect(dividerAfterBalance(owner("deepseek", true))).toBe(true);
+    // A member of TokenDance: the balance, then the connection status.
+    expect(dividerAfterBalance(member("tokendance", true))).toBe(true);
+  });
+
+  it("is left out where it would separate nothing", () => {
+    // A member of DeepSeek sees the balance alone.
+    expect(dividerAfterBalance(member("deepseek", true))).toBe(false);
+    // No balance to lead: no key stored, or a group without one.
+    expect(dividerAfterBalance(owner("tokendance", false))).toBe(false);
+    expect(dividerAfterBalance(owner("openai", true))).toBe(false);
+    expect(dividerAfterBalance([])).toBe(false);
   });
 });

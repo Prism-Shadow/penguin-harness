@@ -23,6 +23,9 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import { formatMoney } from "../../lib/format";
+import { USD_TO_CNY } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 
 // —— Formatting (pure) ——
 
@@ -36,9 +39,29 @@ export function formatAmount({ amount, currency }: ModelBalanceAmount): string {
   return symbol !== undefined ? `${symbol}${fixed}` : `${currency} ${fixed}`;
 }
 
-/** Every currency a reading holds, the headline first: "¥110.00 · $5.00". */
+/** Every currency a reading holds, the headline first, as the vendor states it: "¥110.00 · $5.00". */
 export function formatBalance(reading: ModelBalanceReading): string {
   return [reading, ...(reading.others ?? [])].map(formatAmount).join(" · ");
+}
+
+/** US dollars per unit of the currencies the display currency switch covers, at the app's one fixed rate. */
+const USD_PER_UNIT: Readonly<Record<string, number>> = { USD: 1, CNY: 1 / USD_TO_CNY };
+
+/**
+ * A reading in the display currency, as money is shown everywhere else in the app (formatMoney):
+ * every amount the account holds is converted at the fixed rate and summed, so "¥110.00 ·
+ * $5.00" reads "¥145" in yuan and "$20.71" in dollars. A currency the rate does not cover
+ * leaves the reading in the vendor's own figures rather than guessing.
+ */
+export function displayBalance(reading: ModelBalanceReading, currency: Currency): string {
+  let usd = 0;
+  for (const part of [reading, ...(reading.others ?? [])]) {
+    const value = Number(part.amount);
+    const rate = USD_PER_UNIT[part.currency];
+    if (rate === undefined || !Number.isFinite(value)) return formatBalance(reading);
+    usd += value * rate;
+  }
+  return formatMoney(usd, currency);
 }
 
 // —— Readings ——

@@ -278,8 +278,8 @@ test("models: group header actions collapse to icons instead of disappearing", a
 
   // Every group-level action, addressed by its accessible name (aria-label = "action vendor",
   // stable across widths). Narrow rows must never hide an action: it keeps its icon (with a
-  // title tooltip) and sheds only the visible text label. OpenRouter carries its presets only,
-  // so its header offers the group key and the speed test — the latter an icon at every width.
+  // tooltip) and sheds only the visible text label. OpenRouter carries its presets only, so its
+  // header offers the group key and the speed test — the latter an icon at every width.
   const actions = [
     { name: "填写密钥 OpenRouter", label: "填写密钥" },
     { name: "测速 OpenRouter", label: null },
@@ -311,21 +311,20 @@ test("models: group header actions collapse to icons instead of disappearing", a
     for (const { name, label } of actions) {
       const action = page.getByRole("button", { name });
       await expect(action, `${name} reachable @${width}`).toBeVisible();
-      await expect(action, `${name} has a tooltip @${width}`).toHaveAttribute("title", /.+/);
+      await expect(action, `${name} has a tooltip @${width}`).toHaveAttribute("data-tooltip", /.+/);
       const icon = action.locator("svg");
       if (label === null) {
         await expect(icon, `${name} icon shown @${width}`).toBeVisible();
         continue;
       }
       if (labels === null) continue;
-      // A labelled action swaps between its glyph and its words.
+      // A labelled action keeps its glyph and adds its words where the row has room.
       const text = action.locator("span", { hasText: label });
+      await expect(icon, `${label} icon shown @${width}`).toBeVisible();
       if (labels) {
         await expect(text, `${label} label shown @${width}`).toBeVisible();
-        await expect(icon, `${label} icon swapped out @${width}`).toBeHidden();
       } else {
         await expect(text, `${label} label hidden @${width}`).toBeHidden();
-        await expect(icon, `${label} icon shown @${width}`).toBeVisible();
       }
     }
     const metrics = await openRouter.locator("xpath=..").evaluate((header) => {

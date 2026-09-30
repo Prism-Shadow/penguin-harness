@@ -1578,9 +1578,11 @@ export const en: Strings = {
     notConnectedStatus: "Not connected",
     /**
      * A group's account balance in its header (and pinned beside the user name): the tooltip
-     * names the group and the time of the reading. `time` is already formatted.
+     * names the group, the vendor's own figures and the time of the reading. `amounts` and
+     * `time` are already formatted.
      */
-    balanceTitle: (label: string, time: string): string => `${label} balance, read at ${time}`,
+    balanceTitle: (label: string, amounts: string, time: string): string =>
+      `${label} balance ${amounts}, read at ${time}`,
     balanceRefreshHint: "Click to refresh",
     /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
     balanceUnavailable: "The account cannot make requests right now; its balance may be too low",
@@ -1592,7 +1594,7 @@ export const en: Strings = {
     } as Record<string, string | undefined>,
     /** Appended when the vendor answered with an HTTP error. */
     balanceStatus: (status: number): string => ` (the provider answered HTTP ${status})`,
-    /** Pin toggle beside a balance: shows it beside the user name in the sidebar, one at a time. */
+    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
     pinBalance: "Pin beside your name",
     unpinBalance: "Unpin",
     /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */

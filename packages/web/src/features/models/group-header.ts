@@ -2,11 +2,11 @@
  * What a provider group's header offers on its right side, decided in one place so the models
  * page renders it and the tests pin it without a DOM.
  *
- * The actions stand in a fixed order: the balance (where the catalog declares one), Connect
- * with its status (groups whose key comes from an authorization flow), Sync (a connected
- * Penguin Go), Enter key, the speed test, Add model (groups that take hand-added models),
- * Delete group (user-defined groups). A member sees what they can read — the balance and the
- * connection status, without its button; every action that writes is the owner's.
+ * The actions stand in a fixed order: the balance (where the catalog declares one), then a
+ * divider, Connect with its status (groups whose key comes from an authorization flow), Sync (a
+ * connected Penguin Go), Enter key, the speed test, Add model (groups that take hand-added
+ * models), Delete group (user-defined groups). A member sees what they can read — the balance
+ * and the connection status, without its button; every action that writes is the owner's.
  */
 import {
   MODEL_PROVIDERS,
@@ -74,4 +74,12 @@ export function groupHeaderActions(
   // A built-in group is catalog identity; a user-defined one exists only through its rows.
   if (!MODEL_PROVIDERS.some((p) => p.id === provider.id)) actions.push("deleteGroup");
   return actions;
+}
+
+/**
+ * Whether a divider follows the balance: it separates the account's figure from the group's
+ * status and actions, so it stands only where the balance leads and something comes after it.
+ */
+export function dividerAfterBalance(actions: readonly GroupHeaderAction[]): boolean {
+  return actions[0] === "balance" && actions.length > 1;
 }

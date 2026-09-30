@@ -7,7 +7,7 @@
  * the fix that row's own shape calls for, since a built-in model whose stored entry lost its
  * protocol pin must not be told to move into a custom group.
  *
- * vitest runs node-only here, so the row is rendered to static markup and the group header's
+ * vitest runs node-only here, so the card is rendered to static markup and the group header's
  * add entry point is checked through the action set group-header.ts decides (the header lives
  * inside the page component and needs a fetch, a Project and localStorage).
  */
@@ -24,7 +24,7 @@ import {
   unroutableVendorModel,
 } from "@prismshadow/penguin-core/model-catalog";
 import { groupHeaderActions } from "../src/features/models/group-header";
-import { ModelRow, unroutableFix } from "../src/features/models/models-page";
+import { ModelCard, unroutableFix } from "../src/features/models/models-page";
 import type { RowState } from "../src/features/models/models-page";
 import { S, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -53,7 +53,7 @@ const row = (patch: Partial<RowState>): RowState => ({
 /** Owner by default: both ways out are offered, so a test asserting one is absent means it. */
 const render = (patch: Partial<RowState>, owner = true) =>
   renderToStaticMarkup(
-    createElement(ModelRow, {
+    createElement(ModelCard, {
       row: row(patch),
       currency: "USD" as const,
       isDefault: false,
@@ -99,7 +99,7 @@ describe("unroutableFix", () => {
   });
 });
 
-describe("a row its vendor group cannot route", () => {
+describe("a card for a row its vendor group cannot route", () => {
   it("tells a built-in model's owner to sync presets, and offers that action", () => {
     const html = render(PRESET_MISSING_PIN);
     expect(html).toContain(S.models.vendorRowStalePin);
