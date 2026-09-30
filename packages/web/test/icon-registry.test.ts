@@ -25,8 +25,7 @@ const WEB = SCAN.files.filter((file) => file.root === "web");
 /** Glyph paths outside the registry, by path under `packages/web/src`: `[count, wave]`. */
 const ALLOWLIST: Readonly<Record<string, readonly [number, string]>> = {
   "components/layout/app-layout.tsx": [3, "W7"],
-  "components/layout/sidebar.tsx": [6, "W7"],
-  "components/ui/info-popover.tsx": [1, "W3"],
+  "components/layout/sidebar.tsx": [4, "W7"],
   "features/agents/memory-tab.tsx": [2, "W1b"],
   "features/agents/skills-tab.tsx": [1, "W1b"],
   "features/benchmark/benchmark-page.tsx": [1, "W1b"],

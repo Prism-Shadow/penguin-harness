@@ -23,13 +23,13 @@ import {
   ICON_SIZE,
   menuRowClass,
   menuRowTone,
+  noAutofill,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FormPicker } from "../../components/ui/form-picker";
-import { noAutofill } from "../../components/ui/input";
 import { toastError } from "../../components/ui/toast";
 import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";

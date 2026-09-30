@@ -2,31 +2,27 @@
  * Model picker pieces, extracted from chat-input.tsx so the Project settings dialog's
  * "new chat defaults" section can offer the same menu the chat composer uses (the panels
  * are mechanical moves; the composer's trigger is unchanged, and a "form" trigger variant
- * is added for dialog hosts — see ModelSelect):
- * - PickerList: the generic candidate panel (search box, scroll cap, keyboard navigation,
- *   current-entry marker) shared with chat-input's `/agent` handoff picker;
+ * is added for dialog hosts — see ModelSelect). Both panels are built on the UI package's
+ * PickerList (search box, scroll cap, keyboard navigation, current-entry marker), which
+ * chat-input's `/agent` handoff picker shares:
  * - ModelMenuList: the model candidate panel (grouped, key-configured-first, "show all"
  *   expander) shared by the draft dropdown and the in-session `/model` switch picker;
  * - ModelSelect: the dropdown trigger (provider logo + name + chevron), pill or form style.
  */
 import { useMemo, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
   Badge,
   ChevronDown,
-  ChoiceCheck,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  PickerList,
   ProviderLogo,
-  menuRowClass,
-  menuRowTone,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FormPicker } from "../../components/ui/form-picker";
-import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import {
   hasConfiguredKey,
   isFreeModel,
@@ -43,112 +39,6 @@ import { useProject } from "../../state/project";
  */
 export function modelLabel(m: ModelInfo): string {
   return m.displayName?.trim() || m.modelId;
-}
-
-/**
- * Candidate panel shared by every picker of this family (the model dropdown / `/model` switch
- * picker and the `/agent` handoff picker): the search box, the internal scroll cap, the row
- * chrome, the keyboard navigation and the "current entry" marker slot all live here, so the
- * two pickers can differ only in what a row *contains* (provider logo vs Agent avatar) and in
- * what they hang below the list (`footer`, e.g. the model list's "show all" expander).
- *
- * Keyboard navigation deliberately starts with **no** row highlighted: the search box is
- * autofocused, and pre-highlighting a row would repaint a panel that has looked the same since
- * before this control existed. ArrowDown/ArrowUp begin the navigation, and Enter/Tab commits —
- * the highlighted row if there is one, otherwise the top match, which is what makes "type a few
- * letters, press Enter" work. Escape is NOT handled here: each host closes its own panel at the
- * window level (an IME-safe handler for the switch pickers, Dropdown's for the model dropdown).
- */
-export function PickerList<T>({
-  items,
-  itemKey,
-  isCurrent,
-  query,
-  onQueryChange,
-  searchPlaceholder,
-  emptyText,
-  onPick,
-  renderRow,
-  footer,
-}: {
-  items: T[];
-  /** Stable React key AND identity for the highlighted row. */
-  itemKey: (item: T) => string;
-  /** Marks the entry already in effect (the session's model / its Agent): renders the ✓ slot and the emphasized row style. */
-  isCurrent?: (item: T) => boolean;
-  query: string;
-  onQueryChange: (query: string) => void;
-  searchPlaceholder: string;
-  /** Shown in place of the list when the query matches nothing. */
-  emptyText: string;
-  onPick: (item: T) => void;
-  /** The row's own content, left of the ✓ slot. */
-  renderRow: (item: T) => ReactNode;
-  /** Pinned below the scroll area (mirroring the search box above it). */
-  footer?: ReactNode;
-}) {
-  // -1 = nothing highlighted yet (see the note above); reset whenever the candidate set changes.
-  const [active, setActive] = useState(-1);
-  const activeKey = active >= 0 && active < items.length ? itemKey(items[active]!) : null;
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (items.length === 0) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActive((i) => (i + 1) % items.length);
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActive((i) => (i <= 0 ? items.length - 1 : i - 1));
-      return;
-    }
-    // Same guard as the composer's own Enter handling: an IME commit must not be read as a pick.
-    if (((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      onPick(items[active >= 0 ? active : 0]!);
-    }
-  };
-  return (
-    <div className="contents" onKeyDown={onKeyDown}>
-      {/* Quick search (autofocused: it also owns the keyboard while the panel is up) */}
-      <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => {
-            onQueryChange(e.target.value);
-            setActive(-1);
-          }}
-          placeholder={searchPlaceholder}
-          aria-label={searchPlaceholder}
-          {...noAutofill}
-          className={`${menuSearchClass} px-1 py-0.5`}
-        />
-      </div>
-      <div className="max-h-56 overflow-y-auto">
-        {items.length === 0 && <p className="px-3 py-1.5 text-xs text-gray-400">{emptyText}</p>}
-        {items.map((item) => {
-          const key = itemKey(item);
-          const current = isCurrent?.(item) ?? false;
-          return (
-            <button
-              key={key}
-              type="button"
-              ref={key === activeKey ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-              onClick={() => onPick(item)}
-              className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(current)}${
-                key === activeKey ? " bg-gray-100 dark:bg-gray-800" : ""
-              }`}
-            >
-              {renderRow(item)}
-              <ChoiceCheck on={current} />
-            </button>
-          );
-        })}
-      </div>
-      {footer}
-    </div>
-  );
 }
 
 /**

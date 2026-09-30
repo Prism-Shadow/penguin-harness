@@ -26,7 +26,9 @@ import {
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
+  Input,
   Skeleton,
+  Textarea,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -35,7 +37,6 @@ import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/form
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import type { TreeToggle } from "../../components/ui/file-tree";
 import { toastError, toastSuccess } from "../../components/ui/toast";

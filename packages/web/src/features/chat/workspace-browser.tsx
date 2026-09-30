@@ -57,7 +57,10 @@ import {
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
+  Input,
+  SearchInput,
   SkeletonList,
+  noAutofill,
   useCopied,
   writeClipboard,
 } from "@prismshadow/penguin-ui";
@@ -115,7 +118,6 @@ import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { Dropdown } from "../../components/ui/dropdown";
-import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { Tooltip } from "../../components/ui/tooltip";
@@ -1748,33 +1750,15 @@ export function WorkspaceBrowser({
           everything names the open file. Esc in a non-empty box clears it rather than reaching
           the dock or a dialog above, which is what that key means here. */}
       <div className="flex shrink-0 items-center gap-1 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
-        <div className="relative min-w-0 flex-1">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Escape" || query === "") return;
-              e.preventDefault();
-              e.stopPropagation();
-              setQuery("");
-            }}
-            placeholder={S.files.searchPlaceholder}
-            aria-label={S.files.searchPlaceholder}
-            {...noAutofill}
-            className={`${panelSearchClass} py-1 pl-2 pr-7`}
-          />
-          {query !== "" && (
-            <button
-              type="button"
-              aria-label={S.files.searchClear}
-              data-tooltip={S.files.searchClear}
-              onClick={() => setQuery("")}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            >
-              <CloseIcon size={12} />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          variant="panel"
+          className="min-w-0 flex-1"
+          value={query}
+          onChange={setQuery}
+          placeholder={S.files.searchPlaceholder}
+          aria-label={S.files.searchPlaceholder}
+          clearLabel={S.files.searchClear}
+        />
         <Tooltip label={S.files.refresh} placement="bottom" className="shrink-0">
           <button
             type="button"

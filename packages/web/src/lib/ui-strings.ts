@@ -17,6 +17,11 @@ export function uiStringsOf(dict: Strings): UiStrings {
     close: dict.common.close,
     copied: dict.common.copied,
     loading: dict.common.loading,
+    showPassword: dict.auth.showPassword,
+    hidePassword: dict.auth.hidePassword,
+    clearSearch: dict.chat.searchClear,
+    moreInfo: dict.common.moreInfo,
+    moreInfoAbout: dict.common.moreInfoAbout,
   };
 }
 

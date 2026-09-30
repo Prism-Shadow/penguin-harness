@@ -36,10 +36,15 @@ import {
   CopyCheckGlyph,
   DownloadIcon,
   GlyphIcon,
+  HelpFold,
   HiddenFileInput,
   ICONS,
   IconButton,
+  InfoPopover,
+  RadioGroup,
   SkeletonList,
+  Textarea,
+  ToggleRow,
   UploadIcon,
   buttonClass,
   useCopied,
@@ -51,12 +56,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { HelpFold } from "../../components/ui/help-fold";
 import { Modal } from "../../components/ui/modal";
-import { Textarea } from "../../components/ui/input";
-import { rowDescClass } from "../../components/ui/option-menu";
-import { Switch } from "../../components/ui/switch";
 import { Drawer } from "../../components/ui/drawer";
 import { Sheet, type SheetSnap } from "../../components/ui/sheet";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
@@ -565,10 +565,13 @@ export function MemoryTab({
       {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
       <HelpFold label={S.agent.tabMemory}>{S.memory.desc}</HelpFold>
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
-        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{S.memory.enable}</p>
-        <Switch checked={enabled} onChange={(v) => void toggleEnabled(v)} disabled={switchBusy} />
-      </div>
+      <ToggleRow
+        variant="card"
+        label={S.memory.enable}
+        checked={enabled}
+        onChange={(v) => void toggleEnabled(v)}
+        disabled={switchBusy}
+      />
 
       {!templateHasMemory && (
         <NoticeStrip
@@ -912,35 +915,29 @@ export function MemoryTab({
             <p className="break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
               {S.memory.importFile(importing.fileName, importing.doc.files.length)}
             </p>
-            <fieldset className="space-y-2">
-              <legend className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
-                {S.memory.importModeLabel}
-              </legend>
-              {(
-                [
-                  ["skip", S.memory.importModeSkip, S.memory.importModeSkipHint],
-                  ["overwrite", S.memory.importModeOverwrite, S.memory.importModeOverwriteHint],
-                  ["replace", S.memory.importModeReplace, S.memory.importModeReplaceHint],
-                ] as [MemoryImportMode, string, string][]
-              ).map(([mode, label, hint]) => (
-                <label key={mode} className="flex cursor-pointer items-start gap-2 text-xs">
-                  <input
-                    type="radio"
-                    name="memory-import-mode"
-                    className="mt-1 shrink-0"
-                    checked={importMode === mode}
-                    onChange={() => setImportMode(mode)}
-                  />
-                  <span className="min-w-0">
-                    <span className="text-gray-800 dark:text-gray-200">{label}</span>
-                    {/* One step below the row title, the same pairing OptionMenu's rows use. */}
-                    <span className={`block ${rowDescClass.sm} text-gray-500 dark:text-gray-400`}>
-                      {hint}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
+            <RadioGroup
+              label={S.memory.importModeLabel}
+              name="memory-import-mode"
+              value={importMode}
+              onChange={setImportMode}
+              options={[
+                {
+                  value: "skip",
+                  label: S.memory.importModeSkip,
+                  hint: S.memory.importModeSkipHint,
+                },
+                {
+                  value: "overwrite",
+                  label: S.memory.importModeOverwrite,
+                  hint: S.memory.importModeOverwriteHint,
+                },
+                {
+                  value: "replace",
+                  label: S.memory.importModeReplace,
+                  hint: S.memory.importModeReplaceHint,
+                },
+              ]}
+            />
             <div className="flex justify-end">
               <Button size="sm" variant="primary" disabled={importBusy} onClick={submitImport}>
                 {S.memory.importAction}

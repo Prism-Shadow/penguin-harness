@@ -38,6 +38,7 @@ import {
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
+  Segmented,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -51,7 +52,6 @@ import { useLocale } from "../../state/locale";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { Segmented } from "../../components/ui/segmented";
 import { toastError } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { orgChannelPath, orgKey, orgPagePath } from "./company-nav";

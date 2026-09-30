@@ -11,7 +11,17 @@
  */
 import { useEffect, useState } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
-import { Button, ICONS } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  ICONS,
+  Input,
+  Segmented,
+  Select,
+  Textarea,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -21,13 +31,9 @@ import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { Segmented } from "../../components/ui/segmented";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { FormPicker } from "../../components/ui/form-picker";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";

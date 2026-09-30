@@ -25,10 +25,14 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  InfoPopover,
+  Input,
   UserAvatar,
   menuPanelClass,
   menuRowClass,
   menuRowTone,
+  noAutofill,
+  usePortalPanel,
 } from "@prismshadow/penguin-ui";
 import type { AvatarStackItem } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -37,10 +41,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { Input, noAutofill } from "../../components/ui/input";
 import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
-import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { ChannelTextDialog } from "./channel-dialogs";

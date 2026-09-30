@@ -12,13 +12,13 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Segmented } from "@prismshadow/penguin-ui";
 import {
   BETA_NOTICE_KEY,
   BetaBadge,
   markBetaNoticeShown,
   shouldShowBetaNotice,
 } from "../src/features/company/beta-badge";
-import { Segmented } from "../src/components/ui/segmented";
 import { zh } from "../src/lib/strings";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
@@ -50,7 +50,7 @@ describe("the beta marks' sources", () => {
     const scan = scanSources();
     expectEveryRootScanned(scan);
     expectSingleHome(scan, "packages/web/src/features/company/beta-badge.tsx");
-    expectSingleHome(scan, "packages/web/src/components/ui/segmented.tsx");
+    expectSingleHome(scan, "packages/ui/src/components/forms/segmented/segmented.tsx");
   });
 });
 

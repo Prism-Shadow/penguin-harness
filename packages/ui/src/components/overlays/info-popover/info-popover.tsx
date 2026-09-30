@@ -14,17 +14,18 @@
  * there is captured and its propagation stopped, which is what lets one Esc dismiss this
  * popover while an enclosing Modal stays open. z-[60] for the same reason OptionMenu uses it:
  * a portaled node sits in the root stacking context and must clear the modal overlay's z-50.
+ *
+ * The trigger's accessible name is the interface's "More info" (`UiStrings.moreInfo`), with the
+ * subject folded in when the caller names one (`UiStrings.moreInfoAbout`).
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { usePortalPanel } from "./use-portal-panel";
-
-/** Circled question mark: the app's 9-radius status circle, with a mark and a dot inside it. */
-const HELP_ICON =
-  "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 0 1 4.9.8c0 1.7-2.5 2.5-2.5 2.5M12 16.8h.01";
+import { ICON_SIZE } from "../../../icon-scale";
+import { useUiStrings } from "../../../strings";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { ICONS } from "../../icons/icons";
+import { usePortalPanel } from "../portal-panel/use-portal-panel";
 
 const PANEL_WIDTH = 288; // w-72, the OptionMenu panel width
 
@@ -46,6 +47,7 @@ export function InfoPopover({
   size?: number;
   className?: string;
 }) {
+  const strings = useUiStrings();
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const { triggerRef, panelRef, position } = usePortalPanel({
@@ -55,7 +57,7 @@ export function InfoPopover({
     estimatedHeight: 160,
     panelWidth: PANEL_WIDTH,
   });
-  const name = label !== undefined ? S.common.moreInfoAbout(label) : S.common.moreInfo;
+  const name = label !== undefined ? strings.moreInfoAbout(label) : strings.moreInfo;
   return (
     <>
       <button
@@ -69,22 +71,9 @@ export function InfoPopover({
         // explanation on focus rather than only announcing that something expanded.
         aria-describedby={open ? panelId : undefined}
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 ${className}`}
+        className={`inline-flex shrink-0 items-center justify-center rounded-full text-fg-subtle transition-colors duration-150 hover:text-fg-muted ${className}`}
       >
-        <svg
-          width={size}
-          height={size}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-          className="block shrink-0"
-        >
-          <path d={HELP_ICON} />
-        </svg>
+        <GlyphIcon d={ICONS.helpCircle} size={size} />
       </button>
       {open &&
         position &&
@@ -99,7 +88,7 @@ export function InfoPopover({
               bottom: position.bottomPx,
               left: position.left,
             }}
-            className="ui-glass anim-pop z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-relaxed text-gray-600 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+            className="ui-glass anim-pop z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-line bg-overlay px-3 py-2 text-xs leading-relaxed text-fg-muted shadow-lg"
           >
             {children}
           </div>,

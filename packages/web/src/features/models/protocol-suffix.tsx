@@ -30,13 +30,18 @@
  * the call site — so no extra row appears in the happy path.
  */
 import { useState } from "react";
-import { ChevronDown, ChoiceCheck, menuRowClass, menuRowTone } from "@prismshadow/penguin-ui";
+import {
+  ChevronDown,
+  ChoiceCheck,
+  menuRowClass,
+  menuRowTone,
+  rowDescClass,
+  sizeTextClass,
+} from "@prismshadow/penguin-ui";
 import { Dropdown } from "../../components/ui/dropdown";
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
 // OptionMenu cannot do), so it takes its row typography from OptionMenu's own records rather
 // than re-spelling them — a change to the family reaches it.
-import { rowDescClass } from "../../components/ui/option-menu";
-import { sizeTextClass } from "../../components/ui/input";
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
 import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";

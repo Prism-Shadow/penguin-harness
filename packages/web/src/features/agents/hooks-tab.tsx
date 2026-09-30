@@ -29,10 +29,12 @@ import {
   CopyCheckGlyph,
   DownloadIcon,
   GlyphIcon,
+  HelpFold,
   HiddenFileInput,
   ICONS,
   SettingsEmpty,
   SkeletonList,
+  Textarea,
   useCopied,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -42,8 +44,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { HelpFold } from "../../components/ui/help-fold";
-import { Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";

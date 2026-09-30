@@ -1,14 +1,24 @@
 /**
- * Segmented control (for 2- to 5-way choices like theme/language/messaging channel): small
- * grayscale style. Shared by the sidebar user menu, the login page and the binding editor.
+ * Segmented control, for 2- to 5-way choices (theme, language, messaging channel): the options sit
+ * in a well, and the chosen one is a raised chip in the surface colour — lighter than the well in
+ * a light theme, the page's own darker surface in a dark one.
  *
  * An option may carry a `badge`: a mini tag pinned at the top-right of its label, for a mark that
- * qualifies the choice itself rather than reporting a state — company mode's 内测版 tag on the
- * work-mode switch. It is positioned out of flow, so neither an option's height nor the control's
- * overall size moves when one appears, and it is hidden from the accessible name; the badge's
- * `name` is what the option's name gains instead, as ` · <name>`.
+ * qualifies the choice itself rather than reporting a state (a beta tag on a work-mode choice). It
+ * is positioned out of flow, so neither an option's height nor the control's overall size moves
+ * when one appears, and it is hidden from the accessible name; the badge's `name` is what the
+ * option's name gains instead, as ` · <name>`.
+ *
+ * The well is a pressable control's shape (`rounded-control`); the chips keep the small radius
+ * inside it.
  */
 import type { ReactNode } from "react";
+
+export interface SegmentedOption<T extends string> {
+  value: T;
+  label: string;
+  badge?: { node: ReactNode; name: string };
+}
 
 export function Segmented<T extends string>({
   options,
@@ -16,11 +26,7 @@ export function Segmented<T extends string>({
   onChange,
   cols = 3,
 }: {
-  options: ReadonlyArray<{
-    value: T;
-    label: string;
-    badge?: { node: ReactNode; name: string };
-  }>;
+  options: ReadonlyArray<SegmentedOption<T>>;
   value: T;
   onChange: (v: T) => void;
   cols?: 2 | 3 | 4 | 5;
@@ -29,7 +35,7 @@ export function Segmented<T extends string>({
     <div
       // Spelled out rather than interpolated: Tailwind scans for whole class names, and a
       // `grid-cols-${n}` built at runtime is never emitted into the stylesheet.
-      className={`grid ${cols === 2 ? "grid-cols-2" : cols === 4 ? "grid-cols-4" : cols === 5 ? "grid-cols-5" : "grid-cols-3"} gap-0.5 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800`}
+      className={`grid ${cols === 2 ? "grid-cols-2" : cols === 4 ? "grid-cols-4" : cols === 5 ? "grid-cols-5" : "grid-cols-3"} gap-1 rounded-control bg-line-muted p-1`}
     >
       {options.map((opt) => (
         <button
@@ -39,10 +45,11 @@ export function Segmented<T extends string>({
           // An aria-label replaces every descendant in the accessible name, so it is only set
           // where there is a badge to fold in — otherwise the label's own text is the name.
           aria-label={opt.badge ? `${opt.label} · ${opt.badge.name}` : undefined}
-          className={`rounded px-1 py-1 text-xs transition-colors duration-150 ${
+          aria-pressed={value === opt.value}
+          className={`rounded-sm px-1 py-1 text-xs transition-colors duration-150 ${
             value === opt.value
-              ? "bg-white font-medium text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100"
-              : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              ? "bg-surface font-medium text-fg shadow-sm"
+              : "text-fg-muted hover:text-fg"
           }`}
         >
           {opt.badge ? (

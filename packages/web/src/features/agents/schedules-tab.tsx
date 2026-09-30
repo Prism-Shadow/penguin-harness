@@ -24,7 +24,7 @@ import type {
   SchedulesResponse,
   ScheduleStatus,
 } from "@prismshadow/penguin-server/api";
-import { Badge, Button, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
+import { Badge, Button, HelpFold, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -38,7 +38,6 @@ import { ScheduleFormModal } from "../schedules/schedule-form-modal";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { HelpFold } from "../../components/ui/help-fold";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {

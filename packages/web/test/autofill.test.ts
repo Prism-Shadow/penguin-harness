@@ -1,11 +1,11 @@
 /**
- * Autofill policy of the shared form controls (autofillProps in components/ui/input.tsx):
+ * Autofill policy of the shared form controls (autofillProps in the UI package's forms/input):
  * fields opt out by default, a declared credential role passes through, and an opted-out
  * password box goes out as "new-password" — plain "off" is ignored by Chrome/Safari there,
  * which is how the account's saved login used to land in an API-key field.
  */
 import { describe, it, expect } from "vitest";
-import { autofillProps } from "../src/components/ui/input";
+import { autofillProps } from "@prismshadow/penguin-ui";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 const IGNORES = {
@@ -19,7 +19,7 @@ describe("autofill sources", () => {
   it("scan every source root, and find the policy in one place", () => {
     const scan = scanSources();
     expectEveryRootScanned(scan);
-    expectSingleHome(scan, "packages/web/src/components/ui/input.tsx");
+    expectSingleHome(scan, "packages/ui/src/components/forms/input/input.tsx");
   });
 });
 

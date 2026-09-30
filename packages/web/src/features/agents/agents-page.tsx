@@ -32,12 +32,17 @@ import {
   Button,
   CloseIcon,
   EmptyState,
+  FieldError,
+  FieldHint,
+  FieldLabel,
   GlyphIcon,
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
+  Input,
   Skeleton,
   SkeletonCard,
+  Textarea,
   UpdatePill,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -52,8 +57,6 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Input, Textarea } from "../../components/ui/input";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { FormPicker } from "../../components/ui/form-picker";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";

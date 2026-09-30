@@ -54,7 +54,10 @@ import {
   ChevronDown,
   ICONS,
   ICON_SIZE,
+  Input,
   ScheduleMark,
+  SearchInput,
+  Segmented,
   SkeletonList,
   UpdateDot,
   UserAvatar,
@@ -170,7 +173,6 @@ import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
-import { Input, noAutofill } from "../ui/input";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
@@ -187,7 +189,6 @@ import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
-import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
 import { BetaBadge } from "../../features/company/beta-badge";
@@ -217,14 +218,8 @@ function EllipsisGlyph({ size = 16 }: { size?: number }) {
   );
 }
 
-/** Magnifier (lucide search), the section header's search toggle. */
-const SEARCH_ICON = "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z";
-
 /** Horizontal sliders (lucide sliders-horizontal), the section header's list-settings menu. */
 const SLIDERS_ICON = "M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3M14 2v6M8 9v6M16 16v6";
-
-/** Close cross (the expanded search field's clear button). */
-const CLOSE_ICON = "M18 6L6 18M6 6l12 12";
 
 /**
  * Private drag payload type of a manual session reorder. Deliberately NOT `text/plain`:
@@ -2085,38 +2080,21 @@ export function Sidebar({
               </span>
               <div className="flex min-w-0 items-center justify-end gap-0.5">
                 {searchOpen ? (
-                  /* Expanded field: leading magnifier glyph + input + clear ×, one bordered
+                  /* Expanded field: the magnifier, the input and the clear ×, one bordered
                  box filling the row (its width rides the column tween). Esc and × both
-                 collapse it and drop the filter. */
-                  <div className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-gray-300 bg-white px-1.5 transition-colors duration-150 focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-500">
-                    <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
-                      <Icon d={SEARCH_ICON} size={12} />
-                    </span>
-                    <input
-                      autoFocus
-                      value={searchQuery}
-                      placeholder={S.chat.searchSessionsPlaceholder}
-                      aria-label={S.chat.searchSessions}
-                      {...noAutofill}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          e.stopPropagation();
-                          closeSearch();
-                        }
-                      }}
-                      className="min-w-0 flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
-                    />
-                    <button
-                      type="button"
-                      data-tooltip={S.chat.searchClear}
-                      aria-label={S.chat.searchClear}
-                      onClick={closeSearch}
-                      className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
-                    >
-                      <Icon d={CLOSE_ICON} size={11} />
-                    </button>
-                  </div>
+                 collapse it and drop the filter, which is why the × stays while it is empty. */
+                  <SearchInput
+                    icon
+                    alwaysClearable
+                    autoFocus
+                    className="min-w-0 flex-1"
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    onClear={closeSearch}
+                    placeholder={S.chat.searchSessionsPlaceholder}
+                    aria-label={S.chat.searchSessions}
+                    clearLabel={S.chat.searchClear}
+                  />
                 ) : (
                   <button
                     type="button"
@@ -2125,7 +2103,7 @@ export function Sidebar({
                     onClick={() => setSearchOpen(true)}
                     className={headerControlClass(false)}
                   >
-                    <Icon d={SEARCH_ICON} size={14} />
+                    <Icon d={ICONS.search} size={14} />
                   </button>
                 )}
                 <Dropdown

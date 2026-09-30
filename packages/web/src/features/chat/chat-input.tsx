@@ -98,10 +98,12 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  PickerList,
   ProviderLogo,
   menuPanelClass,
   menuRowClass,
   menuRowTone,
+  noAutofill,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, humanizeTokens } from "../../lib/format";
@@ -110,7 +112,6 @@ import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { Dropdown } from "../../components/ui/dropdown";
 import { PermissionSelect } from "./permission-select";
-import { noAutofill } from "../../components/ui/input";
 import { toastError, toastInfo } from "../../components/ui/toast";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { SkillPickList } from "../skills/skill-pick-list";
@@ -118,7 +119,7 @@ import { toggleSkillName } from "../skills/skill-selection";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { ModelMenuList, ModelSelect, PickerList, modelLabel } from "./model-select";
+import { ModelMenuList, ModelSelect, modelLabel } from "./model-select";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";

@@ -18,10 +18,15 @@
  */
 import { useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
-import { ChoiceCheck, ICON_SIZE, menuRowClass, menuRowTone } from "@prismshadow/penguin-ui";
+import {
+  ChoiceCheck,
+  ICON_SIZE,
+  SearchInput,
+  menuRowClass,
+  menuRowTone,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { filterSkills, localizedShortText } from "../chat/skill-use";
 import { SkillIcon } from "./skill-icon-view";
 
@@ -63,14 +68,13 @@ export function SkillPickList({
     <>
       {/* Quick search: filters by skill name and localized description */}
       <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
-        <input
+        <SearchInput
+          variant="menu"
           autoFocus
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
           placeholder={searchLabel}
           aria-label={searchLabel}
-          {...noAutofill}
-          className={`${menuSearchClass} px-1 py-0.5`}
         />
       </div>
       {bulk && skills.length > 0 && (
@@ -78,7 +82,7 @@ export function SkillPickList({
           <span className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">
             {S.skills.selectedCount(selected.length)}
           </span>
-          <span className="flex shrink-0 items-center gap-0.5">
+          <span className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               className={bulkActionClass}

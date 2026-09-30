@@ -1,28 +1,19 @@
 /**
- * The inline help fold (src/components/ui/help-fold.tsx): the disclosure a surface uses when it
- * has no title for a circled "?" to anchor to. `test/disclosure-anchor.test.ts` enforces when to
- * reach for it; this covers what it renders.
+ * The inline help fold (src/components/overlays/info-popover/help-fold.tsx): the disclosure a
+ * surface uses when it has no title for a circled "?" to anchor to. The web app's
+ * `disclosure-anchor.test.ts` enforces when to reach for it; this covers what it renders.
  */
-import { describe, expect, it } from "vitest";
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { HelpFold } from "../src/components/ui/help-fold";
-import { S } from "../src/lib/strings";
-import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
+import { describe, expect, it } from "vitest";
+import { HelpFold } from "../src/components/overlays/info-popover/help-fold";
+import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
+import type { UiStrings } from "../src/strings";
+import { renderStatic } from "../src/testing";
 
 const DESC = "The vault stores values that commands can read at run time.";
 
-/** The module rendered below, found by scanning web and the shared UI package (see roots.ts). */
-describe("the fold's source", () => {
-  it("scans every source root, and finds the fold in one place", () => {
-    const scan = scanSources();
-    expectEveryRootScanned(scan);
-    expectSingleHome(scan, "packages/web/src/components/ui/help-fold.tsx");
-  });
-});
-
 describe("HelpFold", () => {
-  const html = renderToStaticMarkup(createElement(HelpFold, { children: DESC }));
+  const html = renderStatic(createElement(HelpFold, { children: DESC }));
 
   it("is a real button that starts collapsed and controls its panel", () => {
     expect(html).toContain("<button");
@@ -42,8 +33,22 @@ describe("HelpFold", () => {
     expect(html).toContain(DESC);
   });
 
-  it("names itself, since it has no title beside it to borrow meaning from", () => {
-    expect(html).toContain(S.common.moreInfo);
+  it("names itself in the interface's words, since it has no title beside it", () => {
+    expect(html).toContain(DEFAULT_UI_STRINGS.moreInfo);
+    const zh: UiStrings = {
+      ...DEFAULT_UI_STRINGS,
+      moreInfo: "说明",
+      moreInfoAbout: (subject) => `说明：${subject}`,
+    };
+    const localized = renderStatic(
+      createElement(
+        UiStringsProvider,
+        { strings: zh },
+        createElement(HelpFold, { label: "Vault", children: DESC }),
+      ),
+    );
+    expect(localized).toContain(">说明</button>");
+    expect(localized).toContain('aria-label="说明：Vault"');
   });
 
   it("rotates the app's one collapse chevron rather than inventing an indicator", () => {
@@ -56,27 +61,27 @@ describe("HelpFold", () => {
     // A block with its own left edge — a code box — has to line up with what sits above it, so
     // the chevron's indent is dropped; a run of prose keeps it.
     expect(html).toContain("pl-4.5");
-    const flush = renderToStaticMarkup(createElement(HelpFold, { flush: true, children: DESC }));
+    const flush = renderStatic(createElement(HelpFold, { flush: true, children: DESC }));
     expect(flush).not.toContain("pl-4.5");
   });
 
   it("folds the subject into the accessible name, keeping the visible text a prefix of it", () => {
     // WCAG "label in name": a voice-control user must be able to say what they can see.
-    const named = renderToStaticMarkup(createElement(HelpFold, { label: "Vault", children: DESC }));
-    const accessible = S.common.moreInfoAbout("Vault");
+    const named = renderStatic(createElement(HelpFold, { label: "Vault", children: DESC }));
+    const accessible = DEFAULT_UI_STRINGS.moreInfoAbout("Vault");
     expect(named).toContain(`aria-label="${accessible}"`);
-    expect(accessible.startsWith(S.common.moreInfo)).toBe(true);
+    expect(accessible.startsWith(DEFAULT_UI_STRINGS.moreInfo)).toBe(true);
   });
 
   it("lets a fold in a stack title itself, and then carries no second name", () => {
     // A column of identical "More info" rows says nothing about which one to open, so an FAQ
     // titles each fold. The visible title IS the accessible name — an aria-label beside it
     // would be a second name for one trigger, which is what breaks "label in name".
-    const titled = renderToStaticMarkup(
+    const titled = renderStatic(
       createElement(HelpFold, { title: "Set up the bot", label: "Vault", children: DESC }),
     );
     expect(titled).toContain("Set up the bot");
-    expect(titled).not.toContain(S.common.moreInfo);
+    expect(titled).not.toContain(DEFAULT_UI_STRINGS.moreInfo);
     expect(titled).not.toContain("aria-label=");
   });
 });

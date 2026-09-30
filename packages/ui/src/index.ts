@@ -46,3 +46,26 @@ export * from "./components/actions/hidden-file-input/hidden-file-input";
 
 // W2-0 — menu panel: the panel, row states and check mark every picker and menu shares.
 export * from "./components/overlays/menu-panel/menu-panel";
+
+// W2-A — forms: the field scaffolding, the text controls and their search box, checkboxes and
+// radios.
+export * from "./components/forms/field/field";
+export * from "./components/forms/input/input";
+export * from "./components/forms/password-input/password-input";
+export * from "./components/forms/search-input/search-input";
+export * from "./components/forms/checkbox/checkbox";
+export * from "./components/forms/radio/radio";
+
+// W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
+// open (moved up from W3).
+export * from "./components/overlays/portal-panel/use-portal-panel";
+export * from "./components/overlays/info-popover/info-popover";
+export * from "./components/overlays/info-popover/help-fold";
+export * from "./components/forms/select/select";
+export * from "./components/forms/select/option-menu";
+export * from "./components/forms/picker-list/picker-list";
+export * from "./components/forms/switch/switch";
+export * from "./components/forms/toggle-row/toggle-row";
+export * from "./components/forms/segmented/segmented";
+export * from "./components/forms/swatch-picker/swatch-picker";
+export * from "./components/forms/pref-row/pref-row";

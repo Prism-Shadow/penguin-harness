@@ -38,16 +38,13 @@ import type {
   ProxyProbeTargetDto,
   ServerSettings,
 } from "@prismshadow/penguin-server/api";
-import { Button } from "@prismshadow/penguin-ui";
+import { Button, Input, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { Input } from "../../components/ui/input";
-import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { SectionShell } from "./section-shell";
 
 /** Brand names: identical in every locale, so they are keyed off the server's provider id rather than doubled into both dictionaries. */
 const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
@@ -185,7 +182,7 @@ export function ProxySection() {
 
   return (
     <>
-      <SectionShell
+      <SettingsSection
         actions={
           <Button
             size="sm"
@@ -197,14 +194,20 @@ export function ProxySection() {
           </Button>
         }
       >
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.proxyForApp}</span>
-          <Switch checked={proxyForApp} onChange={setProxyForApp} disabled={!hydrated} />
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.proxyForAgent}</span>
-          <Switch checked={proxyForAgent} onChange={setProxyForAgent} disabled={!hydrated} />
-        </div>
+        <ToggleRow
+          variant="plain"
+          label={S.settings.proxyForApp}
+          checked={proxyForApp}
+          onChange={setProxyForApp}
+          disabled={!hydrated}
+        />
+        <ToggleRow
+          variant="plain"
+          label={S.settings.proxyForAgent}
+          checked={proxyForAgent}
+          onChange={setProxyForAgent}
+          disabled={!hydrated}
+        />
         <Input
           label={S.settings.proxyAddress}
           size="sm"
@@ -217,7 +220,7 @@ export function ProxySection() {
             if (addressError !== null) setAddressError(null);
           }}
         />
-      </SectionShell>
+      </SettingsSection>
       <section className="mt-6">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 text-sm font-medium">{S.settings.proxyProbe}</div>
@@ -270,7 +273,7 @@ export function ProxySection() {
                     )}
                   </span>
                 </div>
-                <div className="truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                <div className="truncate font-mono text-xs text-gray-400 dark:text-gray-500">
                   {t.url}
                 </div>
               </li>

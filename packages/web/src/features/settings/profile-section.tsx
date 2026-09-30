@@ -31,6 +31,8 @@ import type { UpdateProfileRequest } from "@prismshadow/penguin-server/api";
 import {
   Button,
   HiddenFileInput,
+  Input,
+  PrefRow,
   USER_AVATAR_SIZE,
   UserAvatar,
   buttonClass,
@@ -41,9 +43,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { avatarDataUrlFromFile } from "../../lib/avatar-image";
 import { profileControls } from "../../lib/profile-form";
 import { useAuth } from "../../state/auth";
-import { Input } from "../../components/ui/input";
 import { toastSuccess } from "../../components/ui/toast";
-import { PrefRow } from "./setting-row";
 
 /** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";

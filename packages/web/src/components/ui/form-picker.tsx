@@ -10,11 +10,9 @@
  * (the pickers drive it and close on pick).
  */
 import type { ReactNode } from "react";
-import { ChevronDown } from "@prismshadow/penguin-ui";
+import { ChevronDown, controlBase, sizeClass } from "@prismshadow/penguin-ui";
+import type { ControlSize } from "@prismshadow/penguin-ui";
 import { Dropdown } from "./dropdown";
-import { controlBase } from "./field";
-import { sizeClass } from "./input";
-import type { ControlSize } from "./input";
 
 export function FormPicker({
   open,

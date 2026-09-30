@@ -1,43 +1,41 @@
 /**
- * Option menu (controlled): the trigger button shows a compact current value, and
- * clicking it expands a panel where each row has a title + description text + a
- * selected-state checkmark. Replaces select controls that show only an abbreviation
- * and rely on the native `title` hover tooltip for details (tooltips are poorly
- * discoverable — users have no idea they should hover before they've clicked once).
+ * Option menu (controlled): the trigger button shows a compact current value, and clicking it
+ * expands a panel where each row has a title + description text + a selected-state checkmark.
+ * Replaces select controls that show only an abbreviation and rely on a hover tooltip for the
+ * details (tooltips are poorly discoverable — users have no idea they should hover before they've
+ * clicked once).
  *
- * The trigger button shares the sizeClass size tier with Input/Select, and the panel
- * row styling matches the Select menu (py-1.5, bold selected row + SVG checkmark),
- * keeping visuals consistent when mixed with existing form controls.
+ * The trigger button shares the sizeClass size tier with Input/Select, and the panel row styling
+ * matches the Select menu (py-1.5, the current row filled and checked), keeping visuals
+ * consistent when mixed with existing form controls.
  *
- * The panel is mounted via createPortal to document.body and positioned with
- * `position: fixed` against viewport coordinates — it does not reuse the Dropdown
- * primitive's in-place absolute positioning. Reason: a Dropdown panel is a DOM
- * descendant of its trigger button, so if an ancestor in the chain has a container
- * like overflow-x-auto (e.g. this component used inside a tool table), the CSS spec
- * says that when one axis has non-visible overflow and the other is visible, the
- * visible axis gets forced to `auto` — making that ancestor clip vertically
- * overflowing descendants, and absolute positioning is not exempt. A portaled node
- * is outside that ancestor's DOM subtree, so it is fundamentally unaffected by its
- * overflow, without having to audit every call site's ancestor chain.
- * Positioning and close behavior live in use-portal-panel.ts.
+ * The panel is mounted via createPortal to document.body and positioned with `position: fixed`
+ * against viewport coordinates — it does not reuse a dropdown's in-place absolute positioning.
+ * Reason: an in-place panel is a DOM descendant of its trigger button, so if an ancestor in the
+ * chain has a container like overflow-x-auto (e.g. this component used inside a tool table), the
+ * CSS spec says that when one axis has non-visible overflow and the other is visible, the visible
+ * axis gets forced to `auto` — making that ancestor clip vertically overflowing descendants, and
+ * absolute positioning is not exempt. A portaled node is outside that ancestor's DOM subtree, so
+ * it is fundamentally unaffected by its overflow, without having to audit every call site's
+ * ancestor chain. Positioning and close behaviour live in use-portal-panel.ts.
  *
- * The panel uses z-[60] (above the modal overlay's z-50): a portaled node sits in
- * the root stacking context, and this component may also be used inside a Modal
- * form, where z-40 would get covered by the overlay.
+ * The panel uses z-[60] (above the modal overlay's z-50): a portaled node sits in the root
+ * stacking context, and this component may also be used inside a Modal form, where z-40 would
+ * get covered by the overlay.
  */
 import { useId, useState } from "react";
 import { createPortal } from "react-dom";
+import { ChevronDown } from "../../icons/marks/marks";
 import {
-  ChevronDown,
   ChoiceCheck,
   menuPanelClass,
   menuRowClass,
   menuRowTone,
-} from "@prismshadow/penguin-ui";
-import { errorClass, sizeClass, sizeTextClass } from "./input";
-import type { ControlSize } from "./input";
-import { Field, controlBase } from "./field";
-import { usePortalPanel } from "./use-portal-panel";
+} from "../../overlays/menu-panel/menu-panel";
+import { usePortalPanel } from "../../overlays/portal-panel/use-portal-panel";
+import { Field, controlBase } from "../field/field";
+import { errorClass, sizeClass, sizeTextClass } from "../input/input";
+import type { ControlSize } from "../input/input";
 
 export interface OptionMenuChoice<T extends string> {
   value: T;
@@ -52,12 +50,13 @@ export interface OptionMenuChoice<T extends string> {
 const PANEL_WIDTH = 288; // w-72
 
 /**
- * Descriptions keep one step below the row title at every tier, so the title/description
- * hierarchy survives the sm tier's text-xs titles. The sm value is the one `text-[Npx]` the
- * control family allows: there is no rung below text-xs to step down to. It is a fixed px and
- * so does not scale with the user's font-size setting — do not copy the shape elsewhere.
+ * A row description's font size per tier. Descriptions sit on the small rung: at the base tier
+ * that is a step below the row title; at the sm tier the title is already on the small rung and
+ * there is no rung below it, so the two share a size and the description stands apart by its
+ * muted ink alone (a fixed `text-[Npx]` would ignore the user's font-size setting). Hand-built
+ * menus that mimic this row (the protocol suffix menu) read it from here.
  */
-export const rowDescClass: Record<ControlSize, string> = { base: "text-xs", sm: "text-[11px]" };
+export const rowDescClass: Record<ControlSize, string> = { base: "text-xs", sm: "text-xs" };
 
 export function OptionMenu<T extends string>({
   options,
@@ -82,9 +81,9 @@ export function OptionMenu<T extends string>({
   mono?: boolean;
   /** Field title above the control (same typography as Input); omit to render a bare trigger button (e.g. for table cell usage). */
   label?: string;
-  /** Field-value error: red border + message below, exactly like Input. */
+  /** Field-value error: the error border + message below, exactly like Input. */
   error?: string;
-  /** Renders a red "*" after the label. An optional field passes nothing — no counterpart mark, and no "optional" in the label. */
+  /** Renders the required mark after the label. An optional field passes nothing — no counterpart mark, and no "optional" in the label. */
   required?: boolean;
   /** Stretch the trigger button to fill the container width, as a replacement for native Select in dense form areas. */
   fullWidth?: boolean;
@@ -123,7 +122,7 @@ export function OptionMenu<T extends string>({
         <span className={`min-w-0 truncate ${mono ? "font-mono" : ""}`}>
           {current?.triggerLabel ?? placeholder ?? "—"}
         </span>
-        <ChevronDown className="text-gray-400" />
+        <ChevronDown className="text-fg-subtle" />
       </button>
       {open &&
         position &&
@@ -158,9 +157,7 @@ export function OptionMenu<T extends string>({
                   <span className={sizeTextClass[size]}>{opt.label}</span>
                   <ChoiceCheck on={opt.value === value} />
                 </span>
-                <span
-                  className={`mt-0.5 block ${rowDescClass[size]} text-gray-500 dark:text-gray-400`}
-                >
+                <span className={`mt-0.5 block ${rowDescClass[size]} text-fg-muted`}>
                   {opt.description}
                 </span>
               </button>

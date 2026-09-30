@@ -8,11 +8,11 @@
  * `nextFocusIndex` is the arithmetic and is exercised directly. The wiring around it cannot
  * be: this suite is `environment: "node"` with no jsdom, and Modal renders through
  * `createPortal(…, document.body)`, so it cannot even be handed to `renderToStaticMarkup` the
- * way info-popover.test.ts renders Field. So the wiring is asserted against the source, the
- * way portal-panel-dismiss.test.ts asserts its hook's listeners — thin, but it pins the parts
- * that are silent when they break: an aria attribute that reappears inside the `headerless`
- * branch names only half the dialogs, and a restore target read one commit too late is a
- * dialog that hands focus back to itself.
+ * way the UI package's field.test.ts renders Field. So the wiring is asserted against the
+ * source, the way portal-panel-dismiss.test.ts asserts its hook's listeners — thin, but it pins
+ * the parts that are silent when they break: an aria attribute that reappears inside the
+ * `headerless` branch names only half the dialogs, and a restore target read one commit too late
+ * is a dialog that hands focus back to itself.
  */
 import { describe, expect, it } from "vitest";
 import { nextFocusIndex } from "../src/components/ui/modal";

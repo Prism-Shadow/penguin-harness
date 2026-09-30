@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
-const text = (id: string) => sourceFile(SCAN, `packages/web/src/${id}`).text;
+const text = (id: string) => sourceFile(SCAN, id).text;
 const MENU_PANEL = "packages/ui/src/components/overlays/menu-panel/menu-panel.tsx";
 
 describe("menus and pickers", () => {
@@ -28,9 +28,9 @@ describe("menus and pickers", () => {
 
   it("open Select's panel", () => {
     for (const id of [
-      "components/ui/select.tsx",
-      "components/ui/option-menu.tsx",
-      "components/ui/dropdown.tsx",
+      "packages/ui/src/components/forms/select/select.tsx",
+      "packages/ui/src/components/forms/select/option-menu.tsx",
+      "packages/web/src/components/ui/dropdown.tsx",
     ]) {
       expect(text(id), id).toContain("${menuPanelClass}");
     }
