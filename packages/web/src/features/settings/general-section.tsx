@@ -1,5 +1,5 @@
 /**
- * General page of System settings: per-account preferences that are neither appearance nor
+ * General page of the Settings dialog: per-account preferences that are neither appearance nor
  * credentials. Everything applies the moment it is touched — the stores persist each value
  * (language, currency and task-completion notifications per browser) — so the page carries
  * no Save button and no draft state to lose.

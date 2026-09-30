@@ -1,5 +1,5 @@
 /**
- * Row primitives for the System settings dialog's pages: a labelled preference row —
+ * Row primitives for the Settings dialog's pages: a labelled preference row —
  * title on the left, the control on the right — meant to be stacked inside a `divide-y`
  * container so rows separate with rules rather than boxes. AccentPicker lives here too:
  * the accent swatches moved out of the sidebar user menu together with the rows that used

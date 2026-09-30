@@ -20,13 +20,13 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-plugin-sandbox-mxc",
+    "name": "@prismshadow/penguin-plugin-sandbox-wsl",
     "version": "0.2.2",
-    "description": "Windows sandbox backend for PenguinHarness over Microsoft MXC (Microsoft eXecution Containers): filesystem confinement, network isolation and path masking via the processcontainer backend.",
+    "description": "WSL sandbox backend for PenguinHarness on Windows: commands run in a dedicated WSL2 distro under bubblewrap, with Windows interop switched off.",
     "authors": ["Prism Shadow"],
     "license": "Apache-2.0",
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
-    "keywords": ["windows", "mxc", "network-isolation", "path-masking"],
+    "keywords": ["windows", "wsl", "bubblewrap", "network-isolation", "path-masking"],
     "categories": ["sandbox"]
   },
   {

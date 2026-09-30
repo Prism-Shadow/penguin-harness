@@ -242,6 +242,15 @@ try {
   $Version = & (Join-Path $InstallDir "bin\penguin.cmd") --version
   Assert-True ($Version -eq "fixture-old") "previous Windows installation was not restored"
 
+  # --- A second installation beside the first leaves `penguin` with the first: with
+  #     -NoModifyPath its bin directory is not put on the Path. ---
+  $SecondDir = Join-Path $WorkDir "offline-second"
+  $SecondBin = Join-Path $SecondDir "bin"
+  & $Installer -InstallDir $SecondDir -ArchivePath $GoodArchive -NoModifyPath *>&1 | Out-Null
+  $Version = & (Join-Path $SecondBin "penguin.cmd") --version
+  Assert-True ($Version -eq "fixture-old") "second Windows installation did not produce a working command"
+  Assert-True (($env:Path -split ";") -notcontains $SecondBin) "-NoModifyPath still put the second installation on the Path"
+
   # --- Canonical bundle fixtures: flat outer layer sealing payload.zip + checksum + installers. ---
   $BundleDir = Join-Path $WorkDir "bundle"
   New-Item -ItemType Directory -Path $BundleDir | Out-Null

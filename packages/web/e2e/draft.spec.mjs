@@ -91,10 +91,14 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await page.getByPlaceholder(/搜索模型/).fill("mini");
   await page.getByRole("button", { name: /claude-4-8-mini/ }).click();
 
-  // Switch the approval mode to read-only (the trigger button shows the Chinese description).
-  await page.getByRole("button", { name: "审批模式" }).click();
-  await page.getByRole("button", { name: /放行只读/ }).click();
-  await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
+  // Switch the approval mode to read-only from the permission button's Approval section (the
+  // button is icon-only; its title spells out the three values).
+  await page.getByRole("button", { name: /^权限/ }).click();
+  await page.getByRole("menuitemradio", { name: /放行只读/ }).click();
+  await expect(page.getByRole("button", { name: /^权限/ })).toHaveAttribute(
+    "title",
+    /审批: 放行只读/,
+  );
 
   // Conversation-time thinking level (backed by the Agent settings): the picker shows the
   // seeded default (medium); the menu carries a title bar and the rows 低/中/高/极高/最高
@@ -142,7 +146,10 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     )
     .toBe(true);
   await expect(page.getByRole("button", { name: "选择模型" })).toContainText("claude-4-8-mini");
-  await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
+  await expect(page.getByRole("button", { name: /^权限/ })).toHaveAttribute(
+    "title",
+    /审批: 放行只读/,
+  );
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
   await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高 (high)");
   // Send: the Session is only created now, and the selections land faithfully in its meta.
@@ -203,18 +210,16 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // Regression (review): the route-state prefill applies once per navigation only — after the
   // user picks a different directory and reloads, the restored cached choice must win; the
   // prefill must NOT re-apply (location.state survives a reload inside history.state, so the
-  // consumed marker lives in sessionStorage rather than a ref). Browse one level up and select
-  // it; the path row mirrors the loaded directory, which orders the two clicks deterministically.
+  // consumed marker lives in sessionStorage rather than a ref). The finder opens revealing the
+  // current Workspace, selected, in its parent; climb one level and choose that parent.
   await page.getByRole("button", { name: "Workspace", exact: true }).click();
-  // Match by trailing basename: the server realpaths the browsed directory, so the prefix may differ from the raw mkdtemp path.
-  await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
-    new RegExp(`${wsLabel}$`),
-  );
-  // Regression (workspace picker race): while a /dirs request is in flight the picker's rows
-  // are disabled, so a rapid double-click on "parent dir" must issue exactly ONE request and
-  // ascend exactly one level — previously both clicks fired an un-sequenced load and could
-  // relocate the browsing position. The response is gated on an explicit release (not a
-  // timeout) so the second click deterministically lands inside the loading window.
+  const finder = page.getByRole("dialog", { name: "Workspace" });
+  await expect(finder.getByRole("option", { name: wsLabel, selected: true })).toBeVisible();
+  // Regression (workspace picker race): a relative move waits for the folder on screen to be
+  // the loaded one, so a rapid double "parent" (⌘↑ / Ctrl+↑) must issue exactly ONE request and
+  // climb exactly one level — two un-sequenced loads from the same position used to resend the
+  // same parent. The response is gated on an explicit release (not a timeout) so the second
+  // press deterministically lands inside the loading window.
   let releaseDirs;
   const dirsGate = new Promise((resolve) => {
     releaseDirs = resolve;
@@ -227,22 +232,17 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     await route.continue();
   };
   await page.route(dirsRoute, gateDirs);
-  const upRow = page.getByRole("button", { name: "上级目录" });
-  await upRow.click();
-  // force: the row is disabled while loading, and a plain click would stall on Playwright's
-  // actionability wait instead of exercising the double-click; the disabled button swallows it.
-  await upRow.click({ force: true });
+  await finder.getByRole("listbox").focus();
+  await page.keyboard.press("ControlOrMeta+ArrowUp");
+  await page.keyboard.press("ControlOrMeta+ArrowUp");
   releaseDirs();
+  // Climbing selects the folder it came from, so one level up shows the parent selected.
   const parentLabel = basename(dirname(namedWs));
-  await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
-    new RegExp(`${parentLabel}$`),
-  );
-  await expect(page.getByRole("textbox", { name: "Workspace" })).not.toHaveValue(
-    new RegExp(`${wsLabel}$`),
-  );
-  expect(dirsRequests, "double-click while loading fires a single /dirs request").toBe(1);
+  await expect(finder.getByRole("option", { name: parentLabel, selected: true })).toBeVisible();
+  expect(dirsRequests, "double parent while loading fires a single /dirs request").toBe(1);
   await page.unroute(dirsRoute, gateDirs);
-  await page.getByRole("button", { name: "使用此目录" }).click();
+  await finder.getByRole("button", { name: "选择", exact: true }).click();
+  await expect(finder).toBeHidden();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
   await page.reload();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);

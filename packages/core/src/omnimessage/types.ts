@@ -446,7 +446,9 @@ export type HookDecision = "continue" | "stop" | "allow" | "deny";
 /**
  * Hook result event: one per non-void answer a hook gave at a hook point — `stop`,
  * consulted after every Task of a `run` call (see hooks/stop-hook.ts), or `pre_tool_use`,
- * consulted before each tool call's approval (see hooks/tool-hook.ts). Produced by the
+ * consulted before each tool call's approval (see hooks/tool-hook.ts). The `user_prompt`
+ * point (see hooks/prompt-hook.ts) leaves one only for a hook that failed: what a hook
+ * answered there is the harness-stamped user message itself. Produced by the
  * Session, streamed live and written to the Trace best-effort. `name` is the hook's
  * registered name (`goal`, `continual-learning`, …); `decision` is absent when the hook only
  * left a record; `output` is the hook's own structured record, scalars only — the goal hook
@@ -457,7 +459,7 @@ export type HookDecision = "continue" | "stop" | "allow" | "deny";
 export interface HookPayload {
   type: "hook";
   /** The hook point that fired. */
-  hook: "stop" | "pre_tool_use";
+  hook: "stop" | "pre_tool_use" | "user_prompt";
   name: string;
   decision?: HookDecision;
   /** One line for people, as the hook wrote it. */
@@ -621,8 +623,8 @@ export function isEventMessage(msg: OmniMessage): msg is EventMessage {
 
 /**
  * Whether this is a main-session user text the harness injected (`sender: "harness"`) — a
- * stop hook's `continue` input, a host-composed companion message such as the goal plugin's
- * round protocol, or a background-task completion notice. Hosts key origin display on this
+ * stop hook's `continue` input, a user_prompt hook's expansion context (the goal plugin's
+ * round-1 protocol included), or a background-task completion notice. Hosts key origin display on this
  * stamp; a consumer that means only the loop-driving injections (round boundaries)
  * additionally excludes the notices by their `[background_task_done]` block.
  */
