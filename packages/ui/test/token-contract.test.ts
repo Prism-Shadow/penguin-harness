@@ -311,8 +311,9 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     }
     expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(9);
     // 215, plus the integration round's four (the emphasis ink and the switch's three), plus
-    // the chart round's nine (two more series, the reference line, six geometry names).
-    expect(TOKEN_NAMES.length).toBe(228);
+    // the chart round's nine (two more series, the reference line, six geometry names), plus
+    // the bar outline's three.
+    expect(TOKEN_NAMES.length).toBe(231);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -534,6 +535,9 @@ describe("the chart style tokens (round 7)", () => {
       "--ui-chart-point-radius",
       "--ui-chart-curve",
       "--ui-chart-area-opacity",
+      "--ui-chart-bar-stroke",
+      "--ui-chart-bar-stroke-color",
+      "--ui-chart-bar-opacity",
     ]);
   });
 
@@ -554,6 +558,10 @@ describe("the chart style tokens (round 7)", () => {
     expect(light.get("--ui-chart-point-radius")).toBe("2.5px");
     expect(light.get("--ui-chart-curve")).toBe("linear");
     expect(light.get("--ui-chart-area-opacity")).toBe("0.1");
+    // No outline and a solid fill: the bar as the app has always drawn it.
+    expect(light.get("--ui-chart-bar-stroke")).toBe("0px");
+    expect(light.get("--ui-chart-bar-stroke-color")).toBe("series");
+    expect(light.get("--ui-chart-bar-opacity")).toBe("1");
     const dark = primer.analysis.modes.dark;
     expect(dark.get("--ui-chart-2")).toBe("oklch(66.6% 0.179 58.318)"); // amber-600
     expect(dark.get("--ui-chart-3")).toBe("oklch(58.8% 0.158 241.966)"); // sky-600
@@ -566,7 +574,11 @@ describe("the chart style tokens (round 7)", () => {
         const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
         const at = `${theme.id} ${mode}`;
         expect(values.get("--ui-chart-curve"), at).toMatch(/^(?:linear|smooth|step)$/);
-        for (const name of ["--ui-chart-bar-fill", "--ui-chart-area-opacity"]) {
+        for (const name of [
+          "--ui-chart-bar-fill",
+          "--ui-chart-area-opacity",
+          "--ui-chart-bar-opacity",
+        ]) {
           expect(Number(values.get(name)), `${at} ${name}`).toBeGreaterThanOrEqual(0);
           expect(Number(values.get(name)), `${at} ${name}`).toBeLessThanOrEqual(1);
         }
@@ -574,9 +586,15 @@ describe("the chart style tokens (round 7)", () => {
           "--ui-chart-bar-radius",
           "--ui-chart-line-width",
           "--ui-chart-point-radius",
+          "--ui-chart-bar-stroke",
         ]) {
           expect(values.get(name), `${at} ${name}`).toMatch(/^\d+(?:\.\d+)?px$/);
         }
+        // The outline's colour is the exact keyword for the bar's own series colour, or a
+        // colour the app can use as one.
+        expect(values.get("--ui-chart-bar-stroke-color"), `${at} bar-stroke-color`).toMatch(
+          /^(?:series|#[0-9a-f]{3,8}|(?:rgb|hsl|oklch|color-mix|var)\()/i,
+        );
       }
     }
   });

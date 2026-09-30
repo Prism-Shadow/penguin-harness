@@ -157,21 +157,6 @@ const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
   // A frosted layer's ink on the glass over the worst backdrop it can float over (black in
   // light, white in dark): a menu stays legible whatever scrolls behind it.
   { fg: "--ui-fg", bg: "--ui-glass-bg", min: 4.5 },
-  // Every series colour and the reference line as a mark on the page: a bar, a line or a point
-  // must read against the canvas (WCAG's 3:1 for a graphical object).
-  ...(
-    [
-      "--ui-chart-1",
-      "--ui-chart-2",
-      "--ui-chart-3",
-      "--ui-chart-4",
-      "--ui-chart-5",
-      "--ui-chart-6",
-      "--ui-chart-7",
-      "--ui-chart-8",
-      "--ui-chart-ref",
-    ] as const
-  ).map((fg) => ({ fg, bg: "--ui-canvas" as const, min: 3 })),
   ...(["--ui-canvas", "--ui-surface"] as const).map((bg) => ({
     fg: "--ui-fg-link" as const,
     bg,
@@ -257,6 +242,59 @@ function themeAnalysis(id: ThemeId): ThemeFileAnalysis | null {
 
 const defaultTheme = themeAnalysis(DEFAULT_THEME_ID) ?? analyzeThemeFile("", DEFAULT_THEME_ID);
 
+/** The series colours and the reference line: the marks a chart draws on the page. */
+const SERIES_TOKENS = [
+  "--ui-chart-1",
+  "--ui-chart-2",
+  "--ui-chart-3",
+  "--ui-chart-4",
+  "--ui-chart-5",
+  "--ui-chart-6",
+  "--ui-chart-7",
+  "--ui-chart-8",
+  "--ui-chart-ref",
+] as const;
+
+/**
+ * Whether a series reads on the canvas: a bar, a line or a point must clear WCAG's 3:1 for a
+ * graphical object. A theme may draw its bars pale (`--ui-chart-bar-opacity` under 1) so long
+ * as the full series colour still clears the floor — the bar's outline (`--ui-chart-bar-stroke`
+ * of at least 1px, in the series colour or a colour of the theme's) and every line and point
+ * carry it at full strength, so a mark's edge reads even where its fill is soft. So a series
+ * passes when its colour clears 3:1, or when its outline is at least 1px wide and does. The
+ * result names the ratios so a failure says which of the two fell short.
+ */
+function seriesReads(
+  token: (typeof SERIES_TOKENS)[number],
+  mode: ThemeModeName,
+  theme: ThemeFileAnalysis,
+): { ok: boolean; detail: string } {
+  const resolve: Resolve = (name) => {
+    const value = resolveThemeValue(name, mode, theme, defaultTheme);
+    if (value === null) return `${name} does not resolve to a value`;
+    return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
+  };
+  const series = resolve(token);
+  const canvas = opaqueBackground("--ui-canvas", mode, resolve);
+  if (typeof series === "string") return { ok: false, detail: series };
+  if (typeof canvas === "string") return { ok: false, detail: canvas };
+  const direct = contrastRatio(series, canvas);
+  const strokeWidth = Number.parseFloat(
+    resolveThemeValue("--ui-chart-bar-stroke", mode, theme, defaultTheme) ?? "0",
+  );
+  const strokeSpec = resolveThemeValue("--ui-chart-bar-stroke-color", mode, theme, defaultTheme);
+  const outlineColor =
+    strokeSpec === null || strokeSpec.trim() === "series" ? series : parseColor(strokeSpec);
+  const outline =
+    strokeWidth >= 1 && outlineColor !== null ? contrastRatio(outlineColor, canvas) : null;
+  const colors = `${formatColor(series)} on ${formatColor(canvas)}`;
+  const edge = outline === null ? "no outline" : `outline ${outline.toFixed(2)}:1`;
+  return {
+    ok: direct >= 3 || (outline !== null && outline >= 3),
+    detail: `${token}: ${direct.toFixed(2)}:1 on the canvas (${colors}), ${edge}`,
+  };
+}
+
 describe("theme contrast", () => {
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
@@ -293,12 +331,40 @@ describe("theme contrast", () => {
       it(`${id} ${mode}: carries no exception that has started passing`, () => {
         const stale = EXCEPTIONS.filter((e) => e.theme === id && e.mode === mode).filter((e) => {
           const pair = pairsFor(mode).find((p) => p.fg === e.fg && p.bg === e.bg);
-          if (pair === undefined) return true;
+          if (pair === undefined) {
+            // A series exception is stale once the series reads, itself or by its outline.
+            const series = SERIES_TOKENS.find((token) => token === e.fg);
+            return series === undefined || e.bg !== "--ui-canvas"
+              ? true
+              : seriesReads(series, mode, theme).ok;
+          }
           const result = measure(pair, mode, resolve);
           return typeof result !== "string" && result.ratio >= pair.min;
         });
         const names = stale.map((e) => `${e.fg} on ${e.bg} (${e.until})`);
         expect(names, `remove from EXCEPTIONS:\n${names.join("\n")}\n`).toEqual([]);
+      });
+    }
+  }
+});
+
+describe("chart series marks", () => {
+  for (const id of THEME_IDS) {
+    const theme = themeAnalysis(id);
+    if (theme === null) {
+      it.skip(`src/themes/${id}.css — PENDING, series not checked: no tokens declared yet`, () => {});
+      continue;
+    }
+    for (const mode of THEME_MODES) {
+      it(`${id} ${mode}: every series reads on the canvas, itself or by its bar's outline`, () => {
+        const failures = SERIES_TOKENS.flatMap((token) => {
+          const result = seriesReads(token, mode, theme);
+          const excepted = EXCEPTIONS.some(
+            (e) => e.theme === id && e.mode === mode && e.fg === token && e.bg === "--ui-canvas",
+          );
+          return result.ok || excepted ? [] : [result.detail];
+        });
+        expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
       });
     }
   }

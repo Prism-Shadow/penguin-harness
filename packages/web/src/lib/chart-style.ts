@@ -4,7 +4,9 @@
  * corner radius, a line's width and curve, a point's radius, the fill under a line — and the
  * series palette those marks paint with.
  *
- * Components never ask which theme is active: they draw with this record. It is read once per
+ * Only the chart primitives (components/ui/chart) read it: every chart draws its marks through
+ * them, so a token turns into geometry and colour in one place. Components never ask which
+ * theme is active. It is read once per
  * theme change, not per render: one MutationObserver on <html> (the attributes the theme
  * provider and the boot script write — class for the mode, data-theme, data-accent, and the
  * root font size in `style`) drops the cached record, and every chart subscribed through
@@ -31,6 +33,12 @@ export interface ChartStyle {
   barFill: number;
   /** A bar's top corner radius, px. */
   barRadius: number;
+  /** A bar's outline width, px (0 = no outline). */
+  barStroke: number;
+  /** The outline's colour, or "series" for the bar's own colour. */
+  barStrokeColor: string;
+  /** A bar's fill opacity, 0–1. */
+  barOpacity: number;
   /** A series line's stroke width, px. */
   lineWidth: number;
   /** A data point's radius, px. */
@@ -52,6 +60,9 @@ export const DEFAULT_CHART_STYLE: ChartStyle = {
   output: "#0369a1",
   barFill: 0.6,
   barRadius: 0,
+  barStroke: 0,
+  barStrokeColor: "series",
+  barOpacity: 1,
   lineWidth: 2,
   pointRadius: 2.5,
   curve: "linear",
@@ -85,6 +96,9 @@ export function readChartStyle(read: (name: string) => string): ChartStyle {
     output: colourOf(read("--ui-chart-output"), d.output),
     barFill: Math.min(1, Math.max(0.05, numberOf(read("--ui-chart-bar-fill"), d.barFill))),
     barRadius: Math.max(0, numberOf(read("--ui-chart-bar-radius"), d.barRadius)),
+    barStroke: Math.max(0, numberOf(read("--ui-chart-bar-stroke"), d.barStroke)),
+    barStrokeColor: colourOf(read("--ui-chart-bar-stroke-color"), d.barStrokeColor),
+    barOpacity: Math.min(1, Math.max(0, numberOf(read("--ui-chart-bar-opacity"), d.barOpacity))),
     lineWidth: Math.max(0.5, numberOf(read("--ui-chart-line-width"), d.lineWidth)),
     pointRadius: Math.max(0, numberOf(read("--ui-chart-point-radius"), d.pointRadius)),
     curve: curve === "smooth" || curve === "step" ? curve : "linear",
@@ -97,23 +111,52 @@ export function seriesStroke(style: ChartStyle, i: number): string {
   return style.series[i % style.series.length]!;
 }
 
+/** Whether two records draw the same charts: every value equal, the palette slot by slot. */
+export function sameChartStyle(a: ChartStyle, b: ChartStyle): boolean {
+  for (const key of Object.keys(a) as Array<keyof ChartStyle>) {
+    if (key === "series") continue;
+    if (a[key] !== b[key]) return false;
+  }
+  return a.series.length === b.series.length && a.series.every((c, i) => c === b.series[i]);
+}
+
+/**
+ * The next record to hand out: `previous` itself when nothing a chart draws with changed, so
+ * a subscriber sees the same object and React re-renders nothing. <html> changes for many
+ * reasons that are not the theme (the root font size, a frame writing its height, a class a
+ * library toggles); a new object on each of those would re-render every chart, and a chart
+ * whose render changes <html> again would never settle.
+ */
+export function nextChartStyle(previous: ChartStyle | null, read: ChartStyle): ChartStyle {
+  return previous !== null && sameChartStyle(previous, read) ? previous : read;
+}
+
 let cached: ChartStyle | null = null;
 const listeners = new Set<() => void>();
 let observer: MutationObserver | null = null;
 
+/** Reads the root's tokens. Reading never writes: no state, no attribute, no style. */
+function readRoot(): ChartStyle {
+  const computed = getComputedStyle(document.documentElement);
+  return readChartStyle((name) => computed.getPropertyValue(name));
+}
+
 function snapshot(): ChartStyle {
-  if (cached === null) {
-    const computed = getComputedStyle(document.documentElement);
-    cached = readChartStyle((name) => computed.getPropertyValue(name));
-  }
+  if (cached === null) cached = readRoot();
   return cached;
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   if (observer === null) {
+    // No one watched <html> while there were no charts: catch up once, keeping the same
+    // object when nothing changed in the meantime.
+    if (cached !== null) cached = nextChartStyle(cached, readRoot());
     observer = new MutationObserver(() => {
-      cached = null;
+      const next = nextChartStyle(cached, readRoot());
+      // Only a real change reaches the charts.
+      if (next === cached) return;
+      cached = next;
       for (const l of listeners) l();
     });
     observer.observe(document.documentElement, {

@@ -12,6 +12,7 @@
 import type { HookName, ThemeId, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
+import type { ChartToken } from "./library/chart-tokens";
 import type { TopicGroupId, TopicId } from "./library/topics";
 
 /** What a surface page says: its title, one line on what the frame shows, and how the app reaches it. */
@@ -411,7 +412,7 @@ export const zh = {
       charts: {
         title: "图表",
         description:
-          "应用里的每一种统计图，使用演示数据：环形图、趋势与用量柱、请求与成功率、活动折线、评分折线，以及轨迹时间线。",
+          "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、趋势与用量柱、请求与成功率、活动与评分折线、轨迹时间线。",
       },
       avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸。" },
       files: { title: "文件", description: "文件树与只读文件浏览器。" },
@@ -597,6 +598,66 @@ export const zh = {
       card: "卡片",
     },
     charts: {
+      parts: {
+        primitives: "绘图原语",
+        primitivesHint:
+          "每个图表都只通过这几个原语落笔：它们读取主题的图表令牌，写出 data-part，是令牌变成 SVG 或 HTML 的唯一地方。",
+        tokens: "当前主题的图表令牌",
+        tokensHint: "从这个框的根元素的计算样式读取；换主题、明暗或强调色后重新读取。",
+        charts: "建立在原语上的图表",
+        chartsHint: "应用里的每一种图表，使用演示数据。",
+      },
+      primitives: {
+        bar: "ChartBar · 柱",
+        barHint: "宽度由 bar-fill 决定，顶角圆角、边框与填充不透明度各按令牌。",
+        line: "ChartLine · 折线",
+        lineHint: "同一组点，按三种连线方式各画一次；线宽按令牌。",
+        curves: { linear: "linear · 直连", smooth: "smooth · 平滑", step: "step · 阶梯" },
+        area: "ChartArea · 面积",
+        areaHint: "折线下方的填充，不透明度按令牌。",
+        point: "ChartPoint · 数据点",
+        pointHint: "半径按令牌；主题决定圆点还是方点。",
+        arc: "ChartArc · 弧",
+        arcHint: "环形图的一段：底环是 grid，各段按 Token 种类色或色槽。",
+        grid: "ChartGrid 与 ChartAxis · 网格与坐标轴",
+        gridHint: "网格线与坐标轴的墨色按令牌，主题决定实线或虚线。",
+        timeline: "TimelineBar · 轨迹条",
+        timelineHint: "轨迹时间线的 HTML 条，五种分段各取一个色槽。",
+        kinds: {
+          thinking: "思考",
+          text: "回复",
+          tool_call: "工具调用",
+          approval: "等待审批",
+          tool: "工具执行",
+        },
+      },
+      palette: "调色板",
+      geometry: "几何",
+      tokenMeaning: {
+        "--ui-chart-1": "色槽 1 · 紫",
+        "--ui-chart-2": "色槽 2 · 琥珀",
+        "--ui-chart-3": "色槽 3 · 天蓝",
+        "--ui-chart-4": "色槽 4 · 玫红",
+        "--ui-chart-5": "色槽 5 · 翠绿",
+        "--ui-chart-6": "色槽 6 · 品红",
+        "--ui-chart-7": "色槽 7 · 备用",
+        "--ui-chart-8": "色槽 8 · 备用",
+        "--ui-chart-ref": "参考线",
+        "--ui-chart-cache-read": "缓存读取",
+        "--ui-chart-cache-write": "缓存写入",
+        "--ui-chart-output": "输出",
+        "--ui-chart-grid": "网格线",
+        "--ui-chart-axis": "坐标轴",
+        "--ui-chart-bar-fill": "柱宽占带宽的比例（0–1）",
+        "--ui-chart-bar-radius": "柱顶圆角",
+        "--ui-chart-bar-stroke": "柱边框宽",
+        "--ui-chart-bar-stroke-color": "柱边框色（series 即序列色）",
+        "--ui-chart-bar-opacity": "柱填充不透明度（0–1）",
+        "--ui-chart-line-width": "线宽",
+        "--ui-chart-point-radius": "数据点半径",
+        "--ui-chart-curve": "连线方式（linear / smooth / step）",
+        "--ui-chart-area-opacity": "面积填充不透明度（0–1）",
+      } as Record<ChartToken, string>,
       donut: "Token 环形图",
       donutHint: "缓存读取、缓存写入与输出的构成，环的余量随接近上限变色。",
       trend: "成本趋势",

@@ -34,6 +34,104 @@ html[data-framed] body {
   gap: 0.75rem;
   max-width: 28rem;
 }
+.lib-stack-wide {
+  max-width: none;
+  gap: 1.25rem;
+}
+/* A part of a board that groups several specimens under a heading of its own: the chart
+   foundation's primitives, tokens and charts. */
+.lib-part {
+  display: grid;
+  gap: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ui-line);
+}
+.lib-part:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.lib-part-head h2 {
+  margin: 0;
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+  font-weight: var(--ui-weight-medium);
+  color: var(--ui-fg);
+}
+.lib-part-head p {
+  margin: 0.25rem 0 0;
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  color: var(--ui-fg-muted);
+}
+/* The token table: a swatch, the name, what it is for, the computed value. */
+.lib-tokens {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+}
+.lib-tokens td,
+.lib-tokens th {
+  padding: 0.375rem 0.75rem 0.375rem 0;
+  border-top: 1px solid var(--ui-line);
+  text-align: left;
+  vertical-align: middle;
+  font-weight: var(--ui-weight-body);
+}
+.lib-tokens tr:first-child td,
+.lib-tokens tr:first-child th {
+  border-top: 0;
+}
+.lib-tokens code {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-caption-size);
+}
+.lib-tokens-swatch {
+  width: 1.5rem;
+}
+.lib-tokens-swatch span {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--ui-radius-control);
+  box-shadow: inset 0 0 0 1px var(--ui-line-emphasis);
+}
+.lib-tokens-meaning {
+  color: var(--ui-fg-muted);
+}
+.lib-tokens-value {
+  text-align: right;
+  white-space: nowrap;
+}
+.lib-tokens tr[data-unset] .lib-tokens-value {
+  color: var(--ui-fg-subtle);
+}
+/* A primitive shown on its own: a small SVG stage on the surface. */
+.lib-stage {
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  height: auto;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+}
+.lib-stage-small {
+  width: 8rem;
+}
+/* One lane of the timeline stage: a label and a track the bar sits in. */
+.lib-lane {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+.lib-lane-track {
+  position: relative;
+  height: 1rem;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-muted);
+}
 .lib-cell {
   display: inline-flex;
   flex-direction: column;

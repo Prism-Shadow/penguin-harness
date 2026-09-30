@@ -137,6 +137,11 @@ export function curvePath(
   return points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x},${y}`).join(" ");
 }
 
+/** A series' points in the plot's coordinates: bucket i at its cell's centre, value v at its height. */
+export function seriesPoints(geom: ChartGeom, values: readonly number[]): Array<[number, number]> {
+  return values.map((v, i) => [geom.x(i), geom.y(v)]);
+}
+
 /** A series' line, in the theme's curve (see curvePath); linear is the default. */
 export function linePath(geom: ChartGeom, values: number[], curve: ChartCurve = "linear"): string {
   return curvePath(
@@ -163,6 +168,14 @@ export interface LinePoint {
 }
 
 /** Straight-line path through the given points in order (`M` + `L`s), whatever slots lie between them; a single point yields a bare `M` that strokes nothing, so callers draw its dot instead. */
+/** A sparse series' points in the plot's coordinates, rounded like segmentPath's. */
+export function segmentPoints(
+  geom: ChartGeom,
+  segment: readonly LinePoint[],
+): Array<[number, number]> {
+  return segment.map((p) => [rnd(geom.x(p.index)), rnd(geom.y(p.value))]);
+}
+
 export function segmentPath(geom: ChartGeom, segment: readonly LinePoint[]): string {
   return segment
     .map((p, i) => `${i === 0 ? "M" : "L"}${rnd(geom.x(p.index))},${rnd(geom.y(p.value))}`)

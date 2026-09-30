@@ -21,11 +21,17 @@ import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import { formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
-import { makeGeom, linePath, areaPath } from "./chart-geom";
+import { makeGeom, seriesPoints } from "./chart-geom";
 import { ChartFrame, useChartWidth } from "./chart-svg";
-import { useChartStyle } from "../../lib/chart-style";
+import { ChartArea, ChartLine, ChartPoint, type ChartPaint } from "../../components/ui/chart";
 import { bucketAxisLabel, bucketFullLabel } from "./usage-controls";
 import { Empty } from "./usage-charts";
+
+/**
+ * The cost line's paint: the chart's own ink (the frame's text colour) — one series with no
+ * identity to tell apart, so it takes no palette slot.
+ */
+const COST_PAINT: ChartPaint = { ink: "" };
 
 /** Cell width (CSS pixels) below which per-point dots stop being drawn: 2.5px radius plus breathing room. */
 const MIN_DOT_STEP = 8;
@@ -44,7 +50,6 @@ export function TrendChart({
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [ref, width] = useChartWidth();
-  const chart = useChartStyle();
   // Nothing was recorded anywhere in the range: an empty grid would read as a
   // flat zero cost, so say there is nothing rather than draw nothing.
   if (series.length === 0) return <Empty />;
@@ -57,7 +62,8 @@ export function TrendChart({
   // 2.5px-radius dot needs roughly this much room or the row fuses into a rope
   // (61 minute buckets in a half-width card sit ~7px apart). Below that the
   // line stands alone and only the hovered point gets its dot.
-  const everyDot = geom.step >= MIN_DOT_STEP + 2 * (chart.pointRadius - 2.5);
+  const everyDot = geom.step >= MIN_DOT_STEP;
+  const points = seriesPoints(geom, cost);
 
   return (
     <div ref={ref}>
@@ -82,41 +88,31 @@ export function TrendChart({
         >
           <g>
             {/* Area fill: the line closes down to the baseline, low opacity reinforces the trend's sense of "volume" */}
-            <path
-              data-part="area"
-              d={areaPath(geom, cost, chart.curve)}
-              className="fill-current"
-              stroke="none"
-              // The theme's fill under a line, dimmed while a point is singled out.
-              opacity={hover !== null ? chart.areaOpacity * 0.6 : chart.areaOpacity}
+            <ChartArea
+              points={points}
+              baseY={geom.y(0)}
+              paint={COST_PAINT}
+              // Dimmed while a point is singled out.
+              strength={hover !== null ? 0.6 : 1}
             />
-            <path
-              data-part="series"
-              d={linePath(geom, cost, chart.curve)}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={chart.lineWidth}
-              opacity={hover !== null ? 0.35 : 1}
-            />
+            <ChartLine points={points} paint={COST_PAINT} opacity={hover !== null ? 0.35 : 1} />
             {everyDot &&
               series.map((p, i) => (
-                <circle
+                <ChartPoint
                   key={p.bucket}
-                  data-part="point"
                   cx={geom.x(i)}
                   cy={geom.y(cost[i] ?? 0)}
-                  r={hover === i ? chart.pointRadius + 1.5 : chart.pointRadius}
-                  className="fill-current"
+                  paint={COST_PAINT}
+                  grow={hover === i}
                   opacity={hover !== null && hover !== i ? 0.25 : 1}
                 />
               ))}
             {!everyDot && hover !== null && (
-              <circle
-                data-part="point"
+              <ChartPoint
                 cx={geom.x(hover)}
                 cy={geom.y(cost[hover] ?? 0)}
-                r={chart.pointRadius + 1.5}
-                className="fill-current"
+                paint={COST_PAINT}
+                grow
               />
             )}
           </g>

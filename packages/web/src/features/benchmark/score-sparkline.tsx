@@ -7,8 +7,13 @@
  * in the theme's chart style at a sparkline's scale: three quarters of the line width and four
  * fifths of the point radius, and the theme's curve.
  */
-import { useChartStyle } from "../../lib/chart-style";
-import { curvePath } from "../usage/chart-geom";
+import { ChartLine, ChartPoint, type ChartPaint } from "../../components/ui/chart";
+
+/** The sparkline's paint: its own ink (a single series, no identity to tell apart). */
+const INK: ChartPaint = { ink: "" };
+/** A sparkline's scale of the theme's line width and point radius. */
+const LINE_SCALE = 0.75;
+const POINT_SCALE = 0.8;
 
 const W = 72;
 const H = 22;
@@ -34,7 +39,6 @@ export function ScoreSparkline({
     (v, i) => [PAD + i * step, H - PAD - ((v - low) / span) * (H - 2 * PAD)] as const,
   );
   const last = points[points.length - 1];
-  const chart = useChartStyle();
   return (
     <svg
       width={W}
@@ -46,25 +50,9 @@ export function ScoreSparkline({
       // ui-chart: a theme may redraw the line and the newest point its own way.
       className={`ui-chart text-gray-500 dark:text-gray-400 ${className}`}
     >
-      {points.length > 1 && (
-        <path
-          data-part="series"
-          d={curvePath(points, chart.curve)}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={chart.lineWidth * 0.75}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      )}
+      {points.length > 1 && <ChartLine points={points} paint={INK} scale={LINE_SCALE} round />}
       {last !== undefined && (
-        <circle
-          data-part="point"
-          cx={last[0]}
-          cy={last[1]}
-          r={chart.pointRadius * 0.8}
-          fill="currentColor"
-        />
+        <ChartPoint cx={last[0]} cy={last[1]} paint={INK} scale={POINT_SCALE} />
       )}
     </svg>
   );

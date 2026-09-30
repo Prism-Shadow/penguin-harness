@@ -142,6 +142,9 @@
     --ui-chart-point-radius: 2.5px;
     --ui-chart-curve: linear;
     --ui-chart-area-opacity: 0.1;
+    --ui-chart-bar-stroke: 0px;
+    --ui-chart-bar-stroke-color: series;
+    --ui-chart-bar-opacity: 1;
 
     /* ---- Colour — code ---- */
     --ui-code-bg: var(--color-gray-50);

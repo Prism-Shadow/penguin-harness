@@ -34,7 +34,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -46,6 +45,13 @@ import {
   sparseLabelIdx,
   type ChartGeom,
 } from "./chart-geom";
+import {
+  ChartAxis,
+  ChartAxisBreak,
+  ChartCursor,
+  ChartGrid,
+  ChartHit,
+} from "../../components/ui/chart";
 
 /** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 2px stroke is too thin to aim at. */
 export const LINE_HIT_H = 10;
@@ -56,56 +62,6 @@ export const LINE_HIT_H = 10;
  * important than another just because it was written later. Chrome (grid lines, the hover
  * indicator, axis-break marks) stays at 1 and is deliberately not that width.
  */
-
-/**
- * A bar, or the top segment of a stack, with the theme's top-corner radius
- * (`--ui-chart-bar-radius`, via useChartStyle). A radius of 0 draws the plain rect the charts
- * always drew; otherwise the top two corners round, clamped so a short or thin bar keeps its
- * shape, and the bottom stays square where it meets the next segment or the baseline.
- */
-export function BarShape({
-  x,
-  y,
-  width,
-  height,
-  radius,
-  className,
-  fill,
-  opacity,
-  style,
-  series,
-}: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  radius: number;
-  className?: string;
-  fill?: string;
-  opacity?: number;
-  style?: CSSProperties;
-  /** The series index, for a theme's recipe (`data-series`). */
-  series?: number;
-}) {
-  const r = Math.max(0, Math.min(radius, width / 2, height));
-  const common = {
-    "data-part": "bar",
-    ...(series !== undefined ? { "data-series": series } : {}),
-    className,
-    fill,
-    opacity,
-    style,
-  };
-  if (r === 0) return <rect x={x} y={y} width={width} height={height} {...common} />;
-  const right = x + width;
-  const bottom = y + height;
-  return (
-    <path
-      d={`M${x},${bottom} V${y + r} A${r},${r} 0 0 1 ${x + r},${y} H${right - r} A${r},${r} 0 0 1 ${right},${y + r} V${bottom} Z`}
-      {...common}
-    />
-  );
-}
 
 /** Cell width (CSS px) below which axis-break marks are dropped: any narrower and successive marks sit closer together than they are wide, smearing into a hatched baseline. */
 const AXIS_BREAK_MIN_STEP = 8;
@@ -133,14 +89,13 @@ export function LineHits({
   onLeave?: () => void;
 }) {
   return values.map((v, i) => (
-    <rect
+    <ChartHit
       key={i}
       x={geom.x(i) - geom.step / 2}
       y={geom.y(v) - LINE_HIT_H / 2}
       width={geom.step}
       height={LINE_HIT_H}
-      fill="transparent"
-      className="cursor-pointer"
+      cursor="pointer"
       onMouseEnter={() => onEnter(i)}
       onMouseLeave={onLeave}
     />
@@ -299,53 +254,23 @@ export function ChartFrame({
         {/* Grid lines and y-axis ticks (recessive gray) */}
         {gridLevels.map((v, i) => (
           <g key={i}>
-            <line
-              data-part="grid"
-              x1={PAD_L}
-              x2={w - geom.padR}
-              y1={y(v)}
-              y2={y(v)}
-              className="stroke-gray-200 dark:stroke-gray-800"
-              strokeWidth={1}
-            />
-            <text
-              data-part="axis"
-              x={PAD_L - 6}
-              y={y(v) + 3}
-              textAnchor="end"
-              className="fill-gray-400 dark:fill-gray-500"
-              fontSize={9}
-            >
+            <ChartGrid x1={PAD_L} x2={w - geom.padR} y={y(v)} />
+            <ChartAxis x={PAD_L - 6} y={y(v) + 3} anchor="end">
               {fmtY(v)}
-            </text>
+            </ChartAxis>
           </g>
         ))}
 
         {/* Right-hand axis ticks (an overlay's own scale, e.g. a percentage) */}
         {rightAxis?.ticks.map((v) => (
-          <text
-            key={`r${v}`}
-            data-part="axis"
-            x={w - geom.padR + 6}
-            y={rightAxis.y(v) + 3}
-            textAnchor="start"
-            className="fill-gray-400 dark:fill-gray-500"
-            fontSize={9}
-          >
+          <ChartAxis key={`r${v}`} x={w - geom.padR + 6} y={rightAxis.y(v) + 3} anchor="start">
             {rightAxis.fmt(v)}
-          </text>
+          </ChartAxis>
         ))}
 
         {/* Hover vertical indicator line (line-chart-only: the bar chart's bar itself is the x indicator, see hoverLine) */}
         {hoverLine && hover !== null && dates[hover] && (
-          <line
-            x1={x(hover)}
-            x2={x(hover)}
-            y1={PAD_T}
-            y2={PAD_T + innerH}
-            className="stroke-gray-300 dark:stroke-gray-700"
-            strokeWidth={1}
-          />
+          <ChartCursor x={x(hover)} y1={PAD_T} y2={PAD_T + innerH} />
         )}
 
         {/* Data marks (provided by the caller) */}
@@ -358,25 +283,7 @@ export function ChartFrame({
         {step >= AXIS_BREAK_MIN_STEP &&
           axisBreaks?.map((i) =>
             i + 1 < geom.n ? (
-              <g
-                key={`break-${i}`}
-                data-part="axis"
-                className="pointer-events-none stroke-gray-400 dark:stroke-gray-500"
-                strokeWidth={1}
-              >
-                {[-2, 2].map((dx) => {
-                  const cx = (x(i) + x(i + 1)) / 2 + dx / 2;
-                  return (
-                    <line
-                      key={dx}
-                      x1={cx - 2}
-                      y1={PAD_T + innerH + 3}
-                      x2={cx + 2}
-                      y2={PAD_T + innerH - 3}
-                    />
-                  );
-                })}
-              </g>
+              <ChartAxisBreak key={`break-${i}`} x={(x(i) + x(i + 1)) / 2} y={PAD_T + innerH} />
             ) : null,
           )}
 
@@ -385,31 +292,21 @@ export function ChartFrame({
           const d = dates[i];
           if (!d) return null;
           return (
-            <text
-              key={i}
-              data-part="axis"
-              x={x(i)}
-              y={CHART_H - 6}
-              textAnchor="middle"
-              className="fill-gray-400 dark:fill-gray-500"
-              fontSize={9}
-            >
+            <ChartAxis key={i} x={x(i)} y={CHART_H - 6} anchor="middle">
               {(fmtX ?? ((v: string) => v.slice(5)))(d)}
-            </text>
+            </ChartAxis>
           );
         })}
 
         {/* Hover hit area (larger than the mark itself): whole column by default, the bar chart swaps in hitLayer for per-segment */}
         {hitLayer ??
           dates.map((_, i) => (
-            <rect
+            <ChartHit
               key={`hit-${i}`}
               x={PAD_L + step * i}
               y={PAD_T}
               width={step}
               height={innerH}
-              fill="transparent"
-              className="cursor-crosshair"
               onMouseEnter={() => onHover(i)}
             />
           ))}

@@ -31,7 +31,8 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 
 ## Charts follow the theme
 
-- The cost center's charts, the context donut, the Evaluation Center's score sparkline and the Trace timeline draw with the theme's chart style: its series palette, bar width and corner radius, line width, point size, line curve and the fill under a line. Primer draws them as before, except that the Trace timeline now uses the same palette shades as the other charts — in dark mode its bars are one step deeper, and the approval-wait bar is a slightly deeper rose in both modes.
+- Every chart draws through one shared set of chart parts — bars, lines, the fill under a line, points, grid and axis labels, and the Trace timeline's bars: the cost center's requests, Token and cost charts, the context donut, the Evaluation Center's score chart and sparkline, the agents' activity sparkline and the Trace timeline. The theme decides how each part looks: its palette, bar width, corners, outline and fill, line width and curve, point shape and the fill under a line.
+- Frost draws soft, low-glare pastels with rounded bars, smooth curves and a faint grid; Console draws thin, solid bars with a 1px outline, stepped 1px lines, square points and a dashed grid. Primer draws them as before, except that the Trace timeline now uses the same palette shades as the other charts — in dark mode its bars are one step deeper, and the approval-wait bar is a slightly deeper rose in both modes.
 
 ## Frost and Console, refined
 

@@ -6,8 +6,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { TOKEN_NAMES } from "@prismshadow/penguin-ui";
 import { HOME_SURFACE } from "../src/app/surfaces";
 import { SEEDED_KEYS } from "../src/app/frame";
+import {
+  CHART_GEOMETRY_TOKENS,
+  CHART_PALETTE_TOKENS,
+  readChartTokens,
+} from "../src/library/chart-tokens";
 import { DEMO_TREE, flattenTree } from "../src/library/demo-tree";
 import { LIBRARY_FRAME_PATH, libraryFrameSrc, parseLibraryParams } from "../src/library/frame";
 import {
@@ -147,6 +153,69 @@ describe("the sections", () => {
 });
 
 describe("the charts board", () => {
+  it("documents the foundation in three parts: the primitives, the tokens, then the charts", () => {
+    const board = read("../src/library/boards/charts.tsx");
+    const order = ["t.parts.primitives", "t.parts.tokens", "t.parts.charts"].map((part) =>
+      board.indexOf(`<Part title={${part}}`),
+    );
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(board).toMatch(/<ChartPrimitives \/>/);
+    expect(board).toMatch(/<ChartTokenTable \/>/);
+  });
+
+  it("shows each primitive on its own, from the app's chart module", () => {
+    const stage = read("../src/library/boards/chart-primitives.tsx");
+    expect(stage).toMatch(/from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/components\/ui\/chart"/);
+    for (const primitive of [
+      "ChartBar",
+      "ChartLine",
+      "ChartArea",
+      "ChartPoint",
+      "ChartArc",
+      "ChartGrid",
+      "ChartAxis",
+      "TimelineBar",
+    ]) {
+      expect(stage).toMatch(new RegExp(`<${primitive}[\\s/>]`));
+    }
+    // The line is drawn once per curve the token may take.
+    expect(stage).toMatch(/CURVES: readonly ChartCurve\[\] = \["linear", "smooth", "step"\]/);
+  });
+
+  it("tables the current theme's chart tokens, read from the frame root's computed style", () => {
+    const table = read("../src/library/boards/chart-tokens.tsx");
+    expect(table).toMatch(/getComputedStyle\(document\.documentElement\)/);
+    expect(table).toMatch(/readChartTokens\(\(name\) => computed\.getPropertyValue\(name\)\)/);
+    expect(table).toMatch(/new MutationObserver\(update\)/);
+    const tokens = readChartTokens((name) => (name === "--ui-chart-2" ? " #f59e0b " : ""));
+    expect(tokens.palette[1]).toEqual({ name: "--ui-chart-2", value: "#f59e0b" });
+    expect(tokens.palette.map((row) => row.name)).toEqual([...CHART_PALETTE_TOKENS]);
+    expect(tokens.geometry.map((row) => row.name)).toEqual([...CHART_GEOMETRY_TOKENS]);
+    expect(tokens.geometry.every((row) => row.value === "")).toBe(true);
+    // Both dictionaries say what every token is for.
+    for (const name of [...CHART_PALETTE_TOKENS, ...CHART_GEOMETRY_TOKENS]) {
+      expect(zh.library.charts.tokenMeaning[name].trim()).not.toBe("");
+      expect(en.library.charts.tokenMeaning[name].trim()).not.toBe("");
+    }
+  });
+
+  it("tables exactly the package's chart tokens", () => {
+    const packaged = TOKEN_NAMES.filter((name) => name.startsWith("--ui-chart-")).sort();
+    expect([...CHART_PALETTE_TOKENS, ...CHART_GEOMETRY_TOKENS].sort()).toEqual(packaged);
+  });
+
+  it("hands every chart data that never changes identity between renders", () => {
+    const board = read("../src/library/boards/charts.tsx");
+    expect(board).toMatch(/^const SERIES: UsageSeriesPoint\[\] = daySeries\(\);$/m);
+    expect(board).toMatch(/^const OTHER_SPANS: TraceOtherSpan\[\] = \[\];$/m);
+    expect(board).toMatch(/otherSpans=\{OTHER_SPANS\}/);
+    expect(board).toMatch(/useMemo\(\(\) => agentCounts\(SERIES, t\.agents\), \[t\.agents\]\)/);
+    // No input is rebuilt inside the component.
+    const component = board.slice(board.indexOf("export function ChartsBoard"));
+    expect(component).not.toMatch(/daySeries\(\)|\bat\(/);
+  });
+
   it("mounts every chart kind the app draws, the Trace timeline included", () => {
     const board = read("../src/library/boards/charts.tsx");
     for (const chart of [

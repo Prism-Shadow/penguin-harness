@@ -15,7 +15,7 @@
  * single-value** ring (total only), custom-drawn in context-gauge — it doesn't
  * use this component.
  */
-import { useChartStyle } from "../../lib/chart-style";
+import { ChartArc } from "./chart";
 import { humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -35,7 +35,6 @@ export function TokenDonut({
   /** Outer diameter in pixels. */
   size?: number;
 }) {
-  const chart = useChartStyle();
   const total = cacheRead + cacheWrite + output;
   const strokeWidth = Math.max(2, Math.round(size * 0.16));
   const center = size / 2;
@@ -57,16 +56,16 @@ export function TokenDonut({
     {
       key: "cacheRead",
       value: cacheRead,
-      color: chart.cacheRead,
+      role: "cacheRead" as const,
       label: S.usage.colCacheRead,
     },
     {
       key: "cacheWrite",
       value: cacheWrite,
-      color: chart.cacheWrite,
+      role: "cacheWrite" as const,
       label: S.usage.colCacheWrite,
     },
-    { key: "output", value: output, color: chart.output, label: S.usage.colOutput },
+    { key: "output", value: output, role: "output" as const, label: S.usage.colOutput },
   ];
   const title =
     `${S.chat.contextUsage} ${humanizeTokens(total)}/${humanizeTokens(max)}` +
@@ -83,37 +82,32 @@ export function TokenDonut({
       aria-label={title}
       data-tooltip={title}
     >
-      {/* Base ring (empty ring / remainder) */}
-      <circle
-        data-part="grid"
+      {/* Base ring (empty ring / remainder), in the svg's own ink: the near-limit tone above. */}
+      <ChartArc
         cx={center}
         cy={center}
         r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.35}
-        strokeWidth={strokeWidth}
+        width={strokeWidth}
+        paint={{ ink: "" }}
+        track
+        trackOpacity={0.35}
       />
-      {/* Three arc segments: clockwise, starting at 12 o'clock (rotate -90), positioned via cumulative dashoffset per segment. */}
-      {segs.map((seg, index) => {
+      {/* Three arc segments: clockwise, starting at 12 o'clock, each placed by the cumulative offset. */}
+      {segs.map((seg) => {
         if (seg.value <= 0) return null;
         const len = (seg.value / denom) * c;
         const offset = -(acc / denom) * c;
         acc += seg.value;
         return (
-          <circle
+          <ChartArc
             key={seg.key}
-            data-part="series"
-            data-series={index}
             cx={center}
             cy={center}
             r={r}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={`${len} ${c}`}
-            strokeDashoffset={offset}
-            transform={`rotate(-90 ${center} ${center})`}
+            width={strokeWidth}
+            paint={{ role: seg.role }}
+            length={len}
+            offset={offset}
           />
         );
       })}

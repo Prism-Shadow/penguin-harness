@@ -236,8 +236,10 @@ export const TOKEN_GROUPS = [
     // success-rate curve); the three token-kind blues stay their own. The geometry is what a
     // chart draws with, read once per theme through the app's chart-style hook: the share of
     // its band a bar fills (0–1), a bar's top radius, the series stroke, the point radius, how
-    // a line joins its points (`linear` | `smooth` | `step`) and the fill under a line (0–1).
-    // Lengths are px: the charts draw in SVG user units.
+    // a line joins its points (`linear` | `smooth` | `step`), the fill under a line (0–1), and a
+    // bar's outline — its width, its colour (a colour, or the exact keyword `series` for the
+    // bar's own series colour) — and the bar's fill opacity (0–1): a theme may draw a bar pale
+    // and edge it in the full series colour. Lengths are px: the charts draw in SVG user units.
     names: [
       "--ui-chart-1",
       "--ui-chart-2",
@@ -259,6 +261,9 @@ export const TOKEN_GROUPS = [
       "--ui-chart-point-radius",
       "--ui-chart-curve",
       "--ui-chart-area-opacity",
+      "--ui-chart-bar-stroke",
+      "--ui-chart-bar-stroke-color",
+      "--ui-chart-bar-opacity",
     ],
   },
   {

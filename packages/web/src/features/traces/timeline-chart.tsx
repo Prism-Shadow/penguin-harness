@@ -34,7 +34,7 @@ import { humanizeDuration } from "../../lib/format";
 import { packToolLanes, toolSpanBounds } from "./lane-packing";
 import type { PackedLane } from "./lane-packing";
 import { namedHint } from "../../components/ui/tooltip";
-import { seriesStroke, useChartStyle, type ChartStyle } from "../../lib/chart-style";
+import { ChartSwatch, TimelineBar, type ChartPaint } from "../../components/ui/chart";
 
 /**
  * Linked highlighting: `ts` is the anchor shared by both sides; `key` /
@@ -70,19 +70,11 @@ type BarKind = keyof typeof KIND_SLOT | "other";
  */
 const OTHER_CLASS = "bg-gray-400 dark:bg-gray-500";
 
-const barClass = (kind: BarKind): string => (kind === "other" ? OTHER_CLASS : "");
-
-/** A bar's paint and corners from the theme's chart style (square in the default theme). */
-function barStyle(chart: ChartStyle, kind: BarKind): CSSProperties {
-  return {
-    ...(kind === "other" ? {} : { backgroundColor: seriesStroke(chart, KIND_SLOT[kind]) }),
-    ...(chart.barRadius > 0 ? { borderRadius: chart.barRadius } : {}),
-  };
-}
-
-/** A bar's `data-series` for a theme's recipe: its palette slot, 1-based like the tokens. */
-const barSeries = (kind: BarKind): number | undefined =>
-  kind === "other" ? undefined : KIND_SLOT[kind] + 1;
+/** A bar kind's paint: its palette slot, or the neutral for the auxiliary phases. */
+const kindPaint = (kind: BarKind): ChartPaint =>
+  kind === "other"
+    ? { ink: "text-gray-400 dark:text-gray-500", swatch: OTHER_CLASS }
+    : { series: KIND_SLOT[kind] };
 
 /**
  * Left-side label column: sticky-pinned to the far left during horizontal
@@ -318,10 +310,14 @@ function Ticks({ total }: { total: number }) {
   );
 }
 
+/** The default for a caller with no other spans: one shared array, so the grouping memo (and the
+ * view effect keyed on it) stays put across renders instead of rerunning on a fresh `[]`. */
+const NO_OTHER_SPANS: TraceOtherSpan[] = [];
+
 export function TimelineChart({
   segments,
   toolSpans,
-  otherSpans = [],
+  otherSpans = NO_OTHER_SPANS,
   highlight,
   onHighlight,
   onJump,
@@ -379,7 +375,6 @@ export function TimelineChart({
   }, [groups]);
   // Hovering the legend highlights matching segments; null = none.
   const [legendKey, setLegendKey] = useState<string | null>(null);
-  const chart = useChartStyle();
   // Time-axis zoom multiplier + visible window (derived from scroll).
   const [zoom, setZoom] = useState(1);
   const [view, setView] = useState({ left: 0, width: 1 });
@@ -398,7 +393,10 @@ export function TimelineChart({
     const el = scrollRef.current;
     if (!el) return;
     const sw = el.scrollWidth || 1;
-    setView({ left: el.scrollLeft / sw, width: Math.min(1, el.clientWidth / sw) });
+    const left = el.scrollLeft / sw;
+    const width = Math.min(1, el.clientWidth / sw);
+    // Same window, same state object: a layout effect that measures must not re-render for nothing.
+    setView((v) => (v.left === left && v.width === width ? v : { left, width }));
   }, []);
 
   useLayoutEffect(() => {
@@ -576,7 +574,7 @@ export function TimelineChart({
                     const barKey = `s-${g.taskIndex}-${i}`;
                     const active = isActive(barKey);
                     return (
-                      <span
+                      <TimelineBar
                         key={i}
                         onMouseEnter={() => enter(barKey, s.ts)}
                         onMouseLeave={leave}
@@ -584,13 +582,9 @@ export function TimelineChart({
                         {...namedHint(
                           `${segmentLabel(s.kind)}${s.name ? ` ${s.name}` : ""} · ${humanizeDuration(s.endMs - s.startMs)}`,
                         )}
-                        className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${barClass(segmentKind(s.kind))} ${dimClass(active, legendMatch)}`}
-                        data-part="bar"
-                        data-series={barSeries(segmentKind(s.kind))}
-                        style={{
-                          ...placeExact(s.startMs, s.endMs, g.t0, g.total),
-                          ...barStyle(chart, segmentKind(s.kind)),
-                        }}
+                        className={`cursor-pointer ${dimClass(active, legendMatch)}`}
+                        paint={kindPaint(segmentKind(s.kind))}
+                        place={placeExact(s.startMs, s.endMs, g.t0, g.total)}
                       />
                     );
                   })}
@@ -617,23 +611,19 @@ export function TimelineChart({
                           <Fragment key={s.toolCallId}>
                             {/* Approval-wait segment (positioned exactly, flush against the execution segment) */}
                             {s.approvalMs !== null && s.approvalMs > s.callMs && (
-                              <span
+                              <TimelineBar
                                 onMouseEnter={() => enter(`w-${s.toolCallId}`, approvalTs)}
                                 onMouseLeave={leave}
                                 onClick={() => onJump?.(approvalTs)}
                                 {...namedHint(
                                   `${s.name} · ${S.traces.legendApprovalWait}${s.decision ? ` (${s.decision})` : ""} · ${humanizeDuration(s.approvalMs - s.callMs)}`,
                                 )}
-                                className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${barClass("approvalWait")} ${dimClass(
+                                className={`cursor-pointer ${dimClass(
                                   isActive(`w-${s.toolCallId}`),
                                   legendKey === null || legendKey === "approvalWait",
                                 )}`}
-                                data-part="bar"
-                                data-series={barSeries("approvalWait")}
-                                style={{
-                                  ...placeExact(s.callMs, s.approvalMs, g.t0, g.total),
-                                  ...barStyle(chart, "approvalWait"),
-                                }}
+                                paint={kindPaint("approvalWait")}
+                                place={placeExact(s.callMs, s.approvalMs, g.t0, g.total)}
                               />
                             )}
                             {/* Whole-segment pulse while approval is pending / execution segment */}
@@ -645,22 +635,16 @@ export function TimelineChart({
                                     legendKey === null || legendKey === "approvalWait",
                                   );
                                   return (
-                                    <span
+                                    <TimelineBar
                                       onMouseEnter={() => enter(`p-${s.toolCallId}`, s.callTs)}
                                       onMouseLeave={leave}
                                       onClick={() => onJump?.(s.callTs)}
                                       {...namedHint(
                                         `${s.name} · ${S.traces.legendApprovalWait} · ${S.traces.inProgress}`,
                                       )}
-                                      className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${barClass("approvalWait")} ${
-                                        dim || "animate-pulse"
-                                      }`}
-                                      data-part="bar"
-                                      data-series={barSeries("approvalWait")}
-                                      style={{
-                                        ...placeExact(s.callMs, endMs, g.t0, g.total),
-                                        ...barStyle(chart, "approvalWait"),
-                                      }}
+                                      className={`cursor-pointer ${dim || "animate-pulse"}`}
+                                      paint={kindPaint("approvalWait")}
+                                      place={placeExact(s.callMs, endMs, g.t0, g.total)}
                                     />
                                   );
                                 })()
@@ -672,7 +656,7 @@ export function TimelineChart({
                                   );
                                   const running = open && !dim;
                                   return (
-                                    <span
+                                    <TimelineBar
                                       onMouseEnter={() => enter(`e-${s.toolCallId}`, execTs)}
                                       onMouseLeave={leave}
                                       onClick={() => onJump?.(execTs)}
@@ -683,15 +667,11 @@ export function TimelineChart({
                                             : humanizeDuration(endMs - execStart)
                                         }${s.failed ? ` · ${s.status}` : ""}`,
                                       )}
-                                      className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${barClass("exec")} ${
+                                      className={`cursor-pointer ${
                                         s.failed ? "ring-1 ring-red-500" : ""
                                       } ${running ? "animate-pulse opacity-70" : dim}`}
-                                      data-part="bar"
-                                      data-series={barSeries("exec")}
-                                      style={{
-                                        ...placeExact(execStart, endMs, g.t0, g.total),
-                                        ...barStyle(chart, "exec"),
-                                      }}
+                                      paint={kindPaint("exec")}
+                                      place={placeExact(execStart, endMs, g.t0, g.total)}
                                     />
                                   );
                                 })()}
@@ -718,21 +698,18 @@ export function TimelineChart({
                         <span className={LABEL_TEXT}>{o.name}</span>
                       </span>
                       <Track>
-                        <span
+                        <TimelineBar
                           onMouseEnter={() => enter(`o-${o.key}`, o.ts)}
                           onMouseLeave={leave}
                           onClick={() => onJump?.(o.ts)}
                           {...namedHint(
                             `${o.name} · ${S.traces.legendOther} · ${humanizeDuration(o.endMs - o.startMs)}`,
                           )}
-                          className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${barClass("other")} ${
+                          className={`cursor-pointer ${
                             o.failed ? "ring-1 ring-red-500" : ""
                           } ${dim}`}
-                          data-part="bar"
-                          style={{
-                            ...placeExact(o.startMs, o.endMs, g.t0, g.total),
-                            ...barStyle(chart, "other"),
-                          }}
+                          paint={kindPaint("other")}
+                          place={placeExact(o.startMs, o.endMs, g.t0, g.total)}
                         />
                       </Track>
                     </div>
@@ -759,10 +736,7 @@ export function TimelineChart({
               legendKey !== null && legendKey !== c.key ? "opacity-30" : ""
             }`}
           >
-            <span
-              className={`inline-block h-2 w-3 rounded-sm ${barClass(c.key)}`}
-              style={{ backgroundColor: barStyle(chart, c.key).backgroundColor }}
-            />
+            <ChartSwatch paint={kindPaint(c.key)} shape="chip" />
             {c.label}
           </button>
         ))}

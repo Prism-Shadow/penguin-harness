@@ -117,12 +117,12 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow"],
   // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
   // renders through. The charts: the usage charts' frame (its children — the trend, requests and
-  // token-bar charts — carry parts, not the hook), the token donut and the benchmark sparkline.
+  // token-bar charts — carry parts, not the hook), the token donut and the two sparklines.
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
   // SVG ones.
-  "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline", "TimelineChart"],
+  "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline", "ActivitySparkline", "TimelineChart"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */

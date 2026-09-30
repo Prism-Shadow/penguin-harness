@@ -139,8 +139,9 @@
 
     /* Charts: terminal hues in the roles (indigo, ochre, cobalt, crimson, phosphor, magenta,
        cyan, orange — the presets' own hues, deep enough for paper), the reference curve in the
-       muted ink, the token-kind blues, and a plotter's geometry — wide bars with square tops,
-       1px lines stepped between points, small square points, next to no fill under a line. */
+       muted ink, the token-kind blues, and a plotter's geometry — thin solid bars with square
+       tops outlined 1px in the ink, 1px lines stepped between points, small square points, next
+       to no fill under a line. */
     --ui-chart-1: #5b3fd6;
     --ui-chart-2: #a87d00;
     --ui-chart-3: #2f6bd8;
@@ -155,12 +156,15 @@
     --ui-chart-output: #0030b5;
     --ui-chart-grid: #efeded;
     --ui-chart-axis: #8f8b8b;
-    --ui-chart-bar-fill: 0.8;
+    --ui-chart-bar-fill: 0.38;
     --ui-chart-bar-radius: 0px;
     --ui-chart-line-width: 1px;
     --ui-chart-point-radius: 2px;
     --ui-chart-curve: step;
     --ui-chart-area-opacity: 0.06;
+    --ui-chart-bar-stroke: 1px;
+    --ui-chart-bar-stroke-color: var(--ui-fg);
+    --ui-chart-bar-opacity: 1;
 
     /* Colour — code (E2B light code hues live in the Shiki theme, W5) */
     --ui-code-bg: #f4f2f2;
@@ -797,44 +801,38 @@
   }
 
   /* Charts are drawn like a terminal plot: a dashed grid on crisp pixels, axis labels in the
-     chrome face as tracked capitals, 1px lines with hard joins and ends, points that render as
-     squares (a pixel-aligned circle this small is a square), and bars hatched like a `▓` — a
-     stripe mask over the bar's own colour, the one gradient a chart may paint. The colours stay
-     the host's. */
-  /* The grid and the bars are drawn in SVG by the usage charts and as HTML by the Trace
-     timeline (lane tracks and span bars): each rule carries both spellings — a dashed stroke
-     and a dashed rule under an HTML lane, a stripe mask over either kind of bar — and an
-     engine ignores the one that does not apply to it. */
+     chrome face as tracked capitals, 1px lines with hard joins and ends, square points, and
+     thin solid bars outlined in the ink (the tokens say so; an earlier stripe hatch was
+     decoration and went). The chart primitives write every colour, width, radius and opacity
+     the tokens hold; the recipe owns only what a token cannot: dashes, joins and caps, pixel
+     alignment, the label face. A grid line is SVG in the usage charts and an HTML lane track
+     in the Trace timeline, so its rule carries both spellings — a dashed stroke, and a dashed
+     rule under a lane with no fill — and an engine ignores the one that does not apply. */
   :root[data-theme="geek"] .ui-chart [data-part="grid"] {
-    stroke: var(--ui-line-emphasis);
     stroke-dasharray: 2 3;
-    shape-rendering: crispEdges;
     background-color: transparent;
     border-bottom: var(--ui-border-w) dashed var(--ui-line-emphasis);
   }
-  /* The axis part is both the tick text and the axis-break marks, so lines and text split by
-     element: a stroke on text would outline its glyphs. */
-  :root[data-theme="geek"] .ui-chart :is(line, path, polyline)[data-part="axis"] {
-    stroke: var(--ui-chart-axis);
+  /* Pixel alignment is for straight rules only: the donut's track is a grid part too, and a
+     circle without anti-aliasing is a staircase. */
+  :root[data-theme="geek"] .ui-chart line:is([data-part="grid"], [data-part="axis"]) {
     shape-rendering: crispEdges;
   }
+  /* The axis part is both the tick text and the axis-break marks: the face rules reach the text
+     alone, so a line never picks up a font. */
   :root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"]) {
-    fill: var(--ui-chart-axis);
     font-family: var(--ui-font-ui);
     letter-spacing: var(--ui-tracking-label);
     text-transform: uppercase;
   }
   :root[data-theme="geek"] .ui-chart :is(path, polyline)[data-part="series"] {
-    stroke-width: 1;
     stroke-linejoin: miter;
     stroke-linecap: butt;
   }
+  /* A point is a rect the chart rounds to a circle by its `rx`; squared off here. */
   :root[data-theme="geek"] .ui-chart [data-part="point"] {
+    rx: 0;
     shape-rendering: crispEdges;
-  }
-  :root[data-theme="geek"] .ui-chart [data-part="bar"] {
-    -webkit-mask-image: repeating-linear-gradient(135deg, #000000 0 2px, transparent 2px 4px);
-    mask-image: repeating-linear-gradient(135deg, #000000 0 2px, transparent 2px 4px);
   }
 }
 

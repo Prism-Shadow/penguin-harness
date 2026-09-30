@@ -90,11 +90,12 @@
  * prints a console status line — a bracketed tone tag (`[INFO]`, `[ OK ]`, `[WARN]`, `[FAIL]`,
  * `[NOTE]`) in the tone's ink and the chrome face, the message in the reading face, nothing
  * round it. A chart names its parts;
- * Primer keeps the host's drawing, Frost all but hides the grid, rounds joins, caps and points and
- * fades a line's area, Console dashes the grid on crisp pixels, sets axis labels as tracked mono
- * capitals, hardens lines to 1px with square joins and hatches bars. A series keeps the colour
- * its host gave it in every theme: the recipes change weight, joins, grids and inks, never the
- * data's identity.
+ * Primer keeps the host's drawing, Frost draws soft low-chroma series with pale bars edged in
+ * their own colour, round joins, caps and points and a fading area, Console draws thin solid
+ * bars outlined in the ink, a dashed grid on crisp pixels, axis labels as tracked mono capitals
+ * and 1px stepped lines with square joins. Nearly all of that is tokens the chart primitives
+ * read (`--ui-chart-*`); a recipe adds only what a token cannot say — dashes, joins and caps,
+ * pixel alignment, a fade. A series keeps the colour its host gave it in every theme.
  */
 export const HOOKS = [
   "ui-glass",

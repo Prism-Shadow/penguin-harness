@@ -4,7 +4,12 @@
  * and the default values draw exactly what the charts drew before they read tokens.
  */
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CHART_STYLE, readChartStyle, seriesStroke } from "../src/lib/chart-style";
+import {
+  DEFAULT_CHART_STYLE,
+  nextChartStyle,
+  readChartStyle,
+  seriesStroke,
+} from "../src/lib/chart-style";
 import { curvePath, fitBarWidth, linePath, makeGeom } from "../src/features/usage/chart-geom";
 
 const reader = (tokens: Record<string, string>) => (name: string) => tokens[name] ?? "";
@@ -42,6 +47,38 @@ describe("readChartStyle", () => {
     );
     expect(odd.curve).toBe("linear");
     expect(odd.barFill).toBe(DEFAULT_CHART_STYLE.barFill);
+  });
+
+  it("reads the bar outline and fill opacity, with 'series' meaning the bar's own colour", () => {
+    expect(readChartStyle(reader({}))).toMatchObject({
+      barStroke: 0,
+      barStrokeColor: "series",
+      barOpacity: 1,
+    });
+    expect(
+      readChartStyle(
+        reader({
+          "--ui-chart-bar-stroke": "1px",
+          "--ui-chart-bar-stroke-color": " oklch(40% 0.1 250) ",
+          "--ui-chart-bar-opacity": "0.85",
+        }),
+      ),
+    ).toMatchObject({ barStroke: 1, barStrokeColor: "oklch(40% 0.1 250)", barOpacity: 0.85 });
+  });
+
+  it("hands out the same record while nothing a chart draws with changed", () => {
+    // <html> changes for reasons that are not the theme (a frame writing its height, the root
+    // font size); a new record each time would re-render every chart, and a chart whose render
+    // touches <html> would never settle.
+    const first = readChartStyle(reader({}));
+    const again = readChartStyle(reader({}));
+    expect(again).not.toBe(first);
+    expect(nextChartStyle(first, again)).toBe(first);
+    const changed = readChartStyle(reader({ "--ui-chart-line-width": "1px" }));
+    expect(nextChartStyle(first, changed)).toBe(changed);
+    const recoloured = readChartStyle(reader({ "--ui-chart-3": "#123456" }));
+    expect(nextChartStyle(first, recoloured)).toBe(recoloured);
+    expect(nextChartStyle(null, first)).toBe(first);
   });
 
   it("cycles the palette past its last slot", () => {

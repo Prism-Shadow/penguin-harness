@@ -120,31 +120,35 @@
     --ui-tone-info-emphasis: #2f66c4;
     --ui-tone-info-emphasis-fg: #ffffff;
 
-    /* Charts: a muted, warm palette in the roles (plum, honey, ocean, clay, sage, orchid, teal,
-       apricot — every one clearing 3:1 on the canvas), the reference curve in the subtle ink so
-       it reads as secondary, the token-kind blues, and a soft geometry — slim bars with rounded
-       tops, a heavier line drawn as a smooth curve, larger round points, a fuller wash under a
-       line. */
-    --ui-chart-1: #6d4fa3;
-    --ui-chart-2: #b07a1a;
-    --ui-chart-3: #3b6ea8;
-    --ui-chart-4: #c2456b;
-    --ui-chart-5: #2f8f5b;
-    --ui-chart-6: #a6479a;
-    --ui-chart-7: #2a8a8a;
-    --ui-chart-8: #c96a2b;
+    /* Charts: soft. A low-chroma palette in the roles (heather, ochre, dusk blue, rose, sage,
+       mauve, teal, clay), each just clearing 3:1 on the canvas so a line, a point and a bar's
+       edge read; the bars themselves are pale — the fill at under half opacity, edged 1px in
+       the full series colour — so a chart never glares. The reference curve in the muted ink,
+       the token-kind blues softened, and a soft geometry: bars a little over half their band
+       with rounded tops, a 2px smooth curve, round points, a light wash under a line. */
+    --ui-chart-1: #8b7cc4;
+    --ui-chart-2: #a8863a;
+    --ui-chart-3: #6590c2;
+    --ui-chart-4: #c4718b;
+    --ui-chart-5: #5f9c7a;
+    --ui-chart-6: #b57cb3;
+    --ui-chart-7: #58978f;
+    --ui-chart-8: #bd7d52;
     --ui-chart-ref: var(--ui-fg-muted);
-    --ui-chart-cache-read: #a8c5ec;
-    --ui-chart-cache-write: #5d8ad3;
-    --ui-chart-output: #243f7a;
+    --ui-chart-cache-read: #b9cfe8;
+    --ui-chart-cache-write: #7fa3d2;
+    --ui-chart-output: #4d6f9e;
     --ui-chart-grid: #eef0f1;
     --ui-chart-axis: #979b9f;
-    --ui-chart-bar-fill: 0.5;
+    --ui-chart-bar-fill: 0.55;
     --ui-chart-bar-radius: 3px;
-    --ui-chart-line-width: 2.5px;
+    --ui-chart-line-width: 2px;
     --ui-chart-point-radius: 3px;
     --ui-chart-curve: smooth;
-    --ui-chart-area-opacity: 0.14;
+    --ui-chart-area-opacity: 0.12;
+    --ui-chart-bar-stroke: 1px;
+    --ui-chart-bar-stroke-color: series;
+    --ui-chart-bar-opacity: 0.45;
 
     /* Colour — code */
     --ui-code-bg: #f5f6f7;
@@ -422,17 +426,18 @@
     --ui-tone-info-emphasis: #3a6bc4;
 
     /* Charts: the same roles lifted for the dark page */
-    --ui-chart-1: #a98ed6;
-    --ui-chart-2: #d9ab4a;
-    --ui-chart-3: #7fa9df;
-    --ui-chart-4: #e07a97;
-    --ui-chart-5: #7ed185;
-    --ui-chart-6: #d48ccb;
-    --ui-chart-7: #6fc2bb;
-    --ui-chart-8: #f0a45f;
-    --ui-chart-cache-read: #c5dcf7;
-    --ui-chart-cache-write: #7fb0ee;
-    --ui-chart-output: #4a7fd0;
+    --ui-chart-1: #9f90d4;
+    --ui-chart-2: #c4a45f;
+    --ui-chart-3: #84a8d6;
+    --ui-chart-4: #d494ab;
+    --ui-chart-5: #86b99b;
+    --ui-chart-6: #c99ac5;
+    --ui-chart-7: #82b5b0;
+    --ui-chart-8: #d3a281;
+    --ui-chart-cache-read: #c5d8ee;
+    --ui-chart-cache-write: #8fb1dc;
+    --ui-chart-output: #6a8fc0;
+    --ui-chart-bar-opacity: 0.55;
     --ui-chart-grid: rgb(255 255 255 / 0.06);
     --ui-chart-axis: var(--color-gray-500);
 
@@ -761,30 +766,10 @@
     background-color: var(--_tone-fg);
   }
 
-  /* Charts are soft: the grid all but disappears into the chart-grid ink, lines join and end
-     round and sit a little heavier, a line's area fades to nothing towards the baseline, points
-     are round with a thin ring of the surface, bars have soft ends. The colours stay the host's
-     — a series keeps the ink its data was given; only weight, joins, the grid and the labels are
-     the theme's. The area's fade is a mask, the one gradient a chart may paint. */
-  /* The grid and the bars are drawn in SVG by the usage charts and as HTML by the Trace
-     timeline (lane tracks and span bars): each rule carries both spellings, and an engine
-     ignores the one that does not apply to it. */
-  :root[data-theme="modern"] .ui-chart [data-part="grid"] {
-    stroke: var(--ui-chart-grid);
-    stroke-dasharray: none;
-    background-color: var(--ui-chart-grid);
-  }
-  /* The axis part is both the tick text and the axis-break marks, so lines and text split by
-     element: a stroke on text would outline its glyphs. */
-  :root[data-theme="modern"] .ui-chart :is(line, path, polyline)[data-part="axis"] {
-    stroke: var(--ui-chart-axis);
-  }
-  :root[data-theme="modern"] .ui-chart text:is([data-part="axis"], [data-part="label"]) {
-    fill: var(--ui-chart-axis);
-    font-family: var(--ui-font-sans);
-  }
-  /* The stroke width is the --ui-chart-line-width token, which the chart writes itself; the
-     recipe owns only the joins and caps. */
+  /* Charts: the chart primitives write everything a token can say — colours, widths, radii,
+     opacities, the curve — so the recipe owns only what a token cannot: lines join and end
+     round, a line's area fades to nothing towards the baseline (a mask, the one gradient a
+     chart may paint), and a point wears a thin ring of the surface. */
   :root[data-theme="modern"] .ui-chart :is(path, polyline)[data-part="series"] {
     stroke-linejoin: round;
     stroke-linecap: round;
@@ -796,10 +781,6 @@
   :root[data-theme="modern"] .ui-chart [data-part="point"] {
     stroke: var(--ui-surface);
     stroke-width: 1.5;
-  }
-  :root[data-theme="modern"] .ui-chart [data-part="bar"] {
-    rx: var(--ui-chart-bar-radius);
-    border-radius: var(--ui-chart-bar-radius);
   }
 
   /* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather

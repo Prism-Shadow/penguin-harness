@@ -131,20 +131,16 @@ describe("charts", () => {
       "components/ui/token-donut.tsx",
       "features/benchmark/score-sparkline.tsx",
       "features/traces/timeline-chart.tsx",
+      "features/agents/activity-sparkline.tsx",
     ]) {
       expect(text(id), id).toContain("ui-chart");
     }
-    const parts = [
-      "features/usage/trend-chart.tsx",
-      "features/usage/usage-charts.tsx",
-      "features/usage/chart-svg.tsx",
-      "features/traces/timeline-chart.tsx",
-    ]
+    // The parts are written by the chart primitives, the one place marks are drawn.
+    const parts = ["components/ui/chart/marks.tsx", "components/ui/chart/timeline-bar.tsx"]
       .map(text)
       .join("\n");
-    for (const part of ["series", "area", "bar", "point"]) {
+    for (const part of ["series", "area", "bar", "point", "grid", "axis"]) {
       expect(parts, part).toMatch(new RegExp(`data-part(?:=|": )"${part}"`));
     }
-    expect(text("features/usage/chart-svg.tsx")).toContain('data-part="grid"');
   });
 });
