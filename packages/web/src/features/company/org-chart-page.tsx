@@ -38,9 +38,10 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
-  NoticeStrip,
+  Notice,
   toastError,
   toastSuccess,
+  usePointerDrag,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -50,7 +51,6 @@ import { toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { usePointerDrag } from "../dock/use-pointer-drag";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import { orgKey } from "./company-nav";
 import { liveEmployeeStates } from "./org-sessions";
@@ -448,20 +448,19 @@ export function OrgChartPage() {
     >
       {/* A refresh that failed while a chart is on screen: say so above it, keep the chart. */}
       {error !== null && (
-        <NoticeStrip
+        <Notice
           tone="danger"
-          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs"
+          role="alert"
+          className="mb-3"
+          retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          <span>{S.company.chart.refreshFailed(error)}</span>
-          <Button size="sm" onClick={() => void load()}>
-            {S.common.retry}
-          </Button>
-        </NoticeStrip>
+          {S.company.chart.refreshFailed(error)}
+        </Notice>
       )}
       {layout.detached.length > 0 && (
-        <NoticeStrip tone="attention" className="mb-3 rounded-md border px-3 py-1.5 text-xs">
+        <Notice tone="attention" className="mb-3">
           {S.company.chart.detachedNotice(layout.detached.length)}
-        </NoticeStrip>
+        </Notice>
       )}
       {layout.nodes.length === 0 ? (
         <EmptyState title={S.company.chart.empty} />
@@ -469,7 +468,7 @@ export function OrgChartPage() {
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <ChartLegend />
-            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {S.company.chart.employeeCount(chart.employees.length)}
             </span>
           </div>
@@ -514,7 +513,7 @@ export function OrgChartPage() {
               </svg>
               {layout.detachedTop !== null && (
                 <p
-                  className={`absolute right-0 left-0 text-center text-[11px] font-medium ${toneInk.danger}`}
+                  className={`absolute right-0 left-0 text-center text-xs font-medium ${toneInk.danger}`}
                   style={{ top: layout.detachedTop - CHART_DETACHED_LABEL_H }}
                 >
                   {S.company.chart.detached}

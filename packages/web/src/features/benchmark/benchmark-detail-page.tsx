@@ -12,9 +12,8 @@ import {
   Button,
   CopyButton,
   EmptyState,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
+  PageFrame,
+  PageHeader,
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -145,55 +144,50 @@ export function BenchmarkDetailPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-4xl">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate("/benchmark")}
-          className="-ml-2 mb-3 text-gray-500 dark:text-gray-400"
-        >
-          <GlyphIcon d={ICONS.arrowLeft} size={ICON_SIZE.rowLead} />
-          {S.benchmark.backToList}
-        </Button>
-        {/* The Benchmark's name, the directory its files live in, and the Use entry point. The
-            case counts and the description are the detail's own, one block below. A Benchmark
-            tests whichever Agents its scoreboard names, so no single Agent is named up here. A
-            Benchmark that is not published, reached by its address, keeps the path but drops
-            Use, and shows the building or creation-failed notice in place of the detail. */}
-        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <h1 className="min-w-0 truncate text-xl font-semibold">
+    <PageFrame width="md">
+      {/* The Benchmark's name, the directory its files live in under it, and the Use entry
+          point at the end of the title row. The case counts and the description are the
+          detail's own, one block below. A Benchmark tests whichever Agents its scoreboard
+          names, so no single Agent is named up here. A Benchmark that is not published, reached
+          by its address, keeps the path but drops Use, and shows the building or
+          creation-failed notice in place of the detail. A Benchmark that no longer resolves has
+          no directory to name and nothing to use: the title and the way back are all the header
+          keeps. */}
+      <PageHeader
+        back={{ label: S.benchmark.backToList, onClick: () => navigate("/benchmark") }}
+        title={
+          <span className="min-w-0 truncate">
             {benchmark === null
               ? benchmarkId
               : onlyMachine !== null
                 ? nameOnMachine(benchmark.title, onlyMachine)
                 : benchmark.title}
-          </h1>
-          {/* A Benchmark that no longer resolves has no directory to name and nothing to use:
-              the title and the way back are all this row keeps. */}
-          {benchmark && (
-            <>
-              <span className="flex min-w-0 flex-1 items-center gap-1">
-                <span className="min-w-0 truncate font-mono text-xs text-gray-400 dark:text-gray-500">
-                  {benchmarkPath(benchmark.id)}
-                </span>
-                <CopyButton
-                  text={benchmarkPath(benchmark.id)}
-                  label={S.benchmark.copyPath}
-                  size="sm"
-                  className="shrink-0"
-                />
+          </span>
+        }
+        description={
+          benchmark ? (
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="min-w-0 truncate font-mono text-xs text-gray-400 dark:text-gray-500">
+                {benchmarkPath(benchmark.id)}
               </span>
-              {!masked && (
-                <Button size="sm" variant="primary" onClick={() => setUsing(true)}>
-                  {S.benchmark.use}
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-        {body}
-      </div>
+              <CopyButton
+                text={benchmarkPath(benchmark.id)}
+                label={S.benchmark.copyPath}
+                size="sm"
+                className="shrink-0"
+              />
+            </span>
+          ) : undefined
+        }
+        actions={
+          benchmark && !masked ? (
+            <Button size="sm" variant="primary" onClick={() => setUsing(true)}>
+              {S.benchmark.use}
+            </Button>
+          ) : undefined
+        }
+      />
+      {body}
 
       {using && benchmark !== null && !masked && (
         <UseBenchmarkModal
@@ -207,6 +201,6 @@ export function BenchmarkDetailPage() {
           initialTab="evaluate"
         />
       )}
-    </div>
+    </PageFrame>
   );
 }

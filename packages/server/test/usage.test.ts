@@ -744,6 +744,8 @@ describe("usage-service.queryErrors (error table paging)", () => {
   it("pages newest-first and reports the filtered total, so the caller knows where the end is", () => {
     const first = service.queryErrors("p1", { offset: 0, limit: 20 });
     expect(first.total).toBe(25);
+    // Every record here is a different error, so each is its own row.
+    expect(first.rows).toBe(25);
     expect(first.items).toHaveLength(20);
     expect(first.items[0]!.code).toBe("code_24"); // newest
     const second = service.queryErrors("p1", { offset: 20, limit: 20 });
@@ -762,6 +764,30 @@ describe("usage-service.queryErrors (error table paging)", () => {
     const page = service.queryErrors("p1", { offset: 100, limit: 20 });
     expect(page.items).toEqual([]);
     expect(page.total).toBe(25);
+    expect(page.rows).toBe(25);
+  });
+
+  it("pages through rows, not records, once a day's repeats fold", () => {
+    // Ten more of one error on the same day: one more row, ten more records.
+    for (let i = 0; i < 10; i += 1) {
+      errors.insert({
+        ts: `2026-07-27T01:00:${String(i).padStart(2, "0")}.000Z`,
+        date: "2026-07-27",
+        projectId: "p1",
+        agentId: "a1",
+        sessionId: "s1",
+        source: "messaging",
+        kind: "expected",
+        code: "messaging_connect_failed",
+        status: null,
+        message: "gateway stopped acknowledging heartbeats",
+      });
+    }
+    const first = service.queryErrors("p1", { offset: 0, limit: 20 });
+    expect(first.total).toBe(35);
+    expect(first.rows).toBe(26);
+    expect(first.items[0]).toMatchObject({ code: "messaging_connect_failed", count: 10 });
+    expect(service.queryErrors("p1", { offset: 20, limit: 20 }).items).toHaveLength(6);
   });
 
   it("filters before it offsets, so a later page never slides onto rows the summary excluded", () => {

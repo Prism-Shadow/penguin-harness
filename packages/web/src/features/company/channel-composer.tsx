@@ -43,7 +43,7 @@ import type {
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Button, Dropdown, ICON_GAP, noAutofill } from "@prismshadow/penguin-ui";
+import { Button, Dropdown, ICON_GAP, MenuLabel, noAutofill } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { PrincipalChip } from "./shared";
 import {
@@ -437,11 +437,10 @@ export function ChannelComposer({
           <div id={listId} role="listbox" aria-label={S.company.channels.mentionPanel}>
             {rows.map(({ c, i, head }) => (
               <div key={c.principal}>
-                {head && (
-                  <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                    {kindTitle(c.kind)}
-                  </p>
-                )}
+                {head && <MenuLabel>{kindTitle(c.kind)}</MenuLabel>}
+                {/* An option rather than a MenuItem: the row must not take focus from the box
+                    (mouse-down is swallowed) and the walk is the box's own. Its inset is the menu
+                    rows', so it lines up under the group's label. */}
                 <button
                   type="button"
                   role="option"
@@ -450,14 +449,14 @@ export function ChannelComposer({
                   onMouseDown={(e) => e.preventDefault()}
                   onMouseEnter={() => setHighlight(i)}
                   onClick={() => pick(c)}
-                  className={`flex w-full items-center justify-between gap-3 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 ${
-                    i === highlight ? "bg-gray-100 dark:bg-gray-800" : ""
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-xs transition-colors duration-150 ${
+                    i === highlight ? "bg-line-muted" : ""
                   }`}
                 >
                   <span className="min-w-0 truncate">
                     <PrincipalChip principal={c.principal} names={names} />
                   </span>
-                  <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                  <span className="shrink-0 text-xs text-fg-subtle">
                     {c.kind === "all"
                       ? S.company.channels.mentionAllDesc
                       : c.kind === "employee"

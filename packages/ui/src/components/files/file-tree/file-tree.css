@@ -1,0 +1,46 @@
+/* FileTree: a directory's rows grow out of, and shrink back into, its row. Grid tracks rather
+   than height so the closed state needs no measurement; the inner box clips. Under reduced
+   motion the keyframes are off and each class rests at its own end state — open at 1fr,
+   closing at 0fr — and the tree drops a closed group on a timer. Matches the chevron's 200ms
+   rotation. */
+.tree-group {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.tree-group > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.tree-group-open {
+  animation: tree-group-open 200ms ease-out;
+}
+.tree-group-close {
+  grid-template-rows: 0fr;
+  animation: tree-group-close 200ms ease-in;
+}
+@keyframes tree-group-open {
+  from {
+    grid-template-rows: 0fr;
+  }
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+@keyframes tree-group-close {
+  from {
+    grid-template-rows: 1fr;
+  }
+  to {
+    grid-template-rows: 0fr;
+  }
+}
+
+/* No motion: the gallery's switch on the root, then the user's system preference. */
+:root[data-motion="reduced"] :is(.tree-group-open, .tree-group-close) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.tree-group-open, .tree-group-close) {
+    animation: none;
+  }
+}

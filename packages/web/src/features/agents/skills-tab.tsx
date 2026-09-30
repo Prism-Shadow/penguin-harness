@@ -22,6 +22,7 @@ import type { ChangeEvent } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  Card,
   ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
@@ -258,7 +259,7 @@ export function SkillsTab({
       ) : skills.length === 0 ? (
         <SettingsEmpty>{S.skills.agentTabEmpty}</SettingsEmpty>
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <Card padding="none">
           {skills.map((skill) => (
             <div
               key={skill.name}
@@ -267,7 +268,7 @@ export function SkillsTab({
               <SkillTile icon={skill.icon} name={skill.name} size={36} glyph={20} />
               <div className="min-w-0 flex-1">
                 <span
-                  className="block truncate font-mono text-[13px] font-semibold"
+                  className="block truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
                   data-tooltip={skill.name}
                   data-tooltip-content="code"
                 >
@@ -284,7 +285,7 @@ export function SkillsTab({
               </div>
               {metaLine(skill) !== "" && (
                 <span
-                  className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
+                  className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500"
                   data-tooltip={metaLine(skill)}
                 >
                   {metaLine(skill)}
@@ -312,7 +313,7 @@ export function SkillsTab({
               </IconButton>
             </div>
           ))}
-        </div>
+        </Card>
       )}
 
       {promptSection}
@@ -330,7 +331,7 @@ export function SkillsTab({
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
               {S.skills.importChatWhy}
             </p>
-            <div className="mt-2.5 space-y-2.5">
+            <div className="mt-2.5 space-y-3">
               <Input
                 size="sm"
                 label={S.skills.importSourceLabel}

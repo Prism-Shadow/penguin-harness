@@ -14,6 +14,7 @@ import {
   Button,
   Input,
   Modal,
+  Notice,
   PasswordInput,
   PenguinLogo,
   Segmented,
@@ -148,11 +149,7 @@ export function LoginPage() {
               error={errors.password}
               autoComplete="current-password"
             />
-            {errors.form && (
-              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-                {errors.form}
-              </p>
-            )}
+            {errors.form && <Notice tone="danger">{errors.form}</Notice>}
             <Button
               type="submit"
               variant="primary"

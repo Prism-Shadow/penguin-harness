@@ -64,6 +64,7 @@
     --ui-canvas: #ffffff;
     --ui-surface: #ffffff;
     --ui-surface-muted: var(--color-gray-50);
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: var(--color-gray-50);
     --ui-overlay: #ffffff;
     --ui-overlay-backdrop: oklab(0% 0 0 / 0.45); /* = bg-black/45, alpha exactly .45 */
@@ -421,6 +422,7 @@
     --ui-canvas: var(--color-gray-950);
     --ui-surface: var(--color-gray-900);
     --ui-surface-muted: #202020;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #0e0e0e;
     --ui-overlay: var(--color-gray-900);
 
