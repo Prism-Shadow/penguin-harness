@@ -932,7 +932,10 @@ export function isFatalProviderRejection(error: unknown): boolean {
  * handled by `context_engine`.
  */
 export class GenerativeModel implements LLMInterface {
-  private readonly client: AutoLLMClient;
+  private client: AutoLLMClient;
+  private readonly clientOptions: Omit<ConstructorParameters<typeof AutoLLMClient>[0], "apiKey">;
+  private currentApiKey: string | undefined;
+  private readonly resolveApiKey: (() => Promise<string | undefined>) | undefined;
   private readonly uniConfig: UniConfig;
   /**
    * Construction-time default thinking level. Kept **out of the frozen uniConfig**: the
@@ -984,12 +987,17 @@ export class GenerativeModel implements LLMInterface {
     // at all. The Session's id rides along for the schemes that name the conversation rather
     // than the app.
     const headers = attributionHeaders(config.baseUrl, config.sessionId);
-    this.client = new AutoLLMClient({
+    this.clientOptions = {
       model: config.modelId,
-      ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
       ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
       ...(config.clientType !== undefined ? { clientType: config.clientType } : {}),
       ...(headers ? { defaultHeaders: headers } : {}),
+    };
+    this.currentApiKey = config.apiKey;
+    this.resolveApiKey = config.resolveApiKey;
+    this.client = new AutoLLMClient({
+      ...this.clientOptions,
+      ...(this.currentApiKey !== undefined ? { apiKey: this.currentApiKey } : {}),
     });
 
     this.uniConfig = buildUniConfig(config);
@@ -1002,6 +1010,18 @@ export class GenerativeModel implements LLMInterface {
       approximateTokens(config.systemPrompt ?? "") +
       approximateTokens(JSON.stringify(this.uniConfig.tools ?? []));
     this.lastRequestTotal = this.baseInputTokens;
+  }
+
+  /** Swap a rotated credential into AgentHub without losing its stateful conversation. */
+  private async refreshApiKey(): Promise<void> {
+    if (this.resolveApiKey === undefined) return;
+    const nextApiKey = await this.resolveApiKey();
+    if (nextApiKey === undefined || nextApiKey === this.currentApiKey) return;
+    const history = this.client.getHistory();
+    const next = new AutoLLMClient({ ...this.clientOptions, apiKey: nextApiKey });
+    if (history.length > 0) next.setHistory(history);
+    this.client = next;
+    this.currentApiKey = nextApiKey;
   }
 
   /**
@@ -1169,6 +1189,7 @@ export class GenerativeModel implements LLMInterface {
     // rejections) / aborted (user). null means it ended normally.
     let outcome: LLMOutcome | null = null;
     try {
+      await this.refreshApiKey();
       const it = this.openStream(
         uniMessage,
         ac.signal,

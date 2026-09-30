@@ -34,8 +34,8 @@ const usable = (() => {
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
     policy === null
-      ? argv
-      : provider.confine(argv, { ...policy, workspaceRoot: canonicalPath(opts.workspaceDir) }).argv,
+      ? { argv }
+      : provider.confine(argv, { ...policy, workspaceRoot: canonicalPath(opts.workspaceDir) }),
   workspaceDir: ws,
 });
 

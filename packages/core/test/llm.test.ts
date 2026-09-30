@@ -1621,6 +1621,65 @@ describe("GenerativeModel per-request output cap (window clamp, issue #218)", ()
   });
 });
 
+describe("GenerativeModel rotating credentials", () => {
+  it("resolves before every request and rebuilds the client only when the key changes", async () => {
+    const resolvedKeys = ["new-key", "new-key", "newer-key"];
+    let resolutions = 0;
+    const observed: Array<{ apiKey: string | undefined; client: unknown; historyLength: number }> =
+      [];
+
+    class RotatingKeyModel extends GenerativeModel {
+      protected override openStream(): AsyncIterable<UniEvent> {
+        const internals = this as unknown as {
+          currentApiKey: string | undefined;
+          client: { getHistory(): UniMessage[] };
+        };
+        observed.push({
+          apiKey: internals.currentApiKey,
+          client: internals.client,
+          historyLength: internals.client.getHistory().length,
+        });
+        return (async function* () {
+          yield ev({
+            content_items: [{ type: "text", text: "ok" }],
+            finish_reason: "stop",
+            usage_metadata: {
+              cached_tokens: 0,
+              prompt_tokens: 1,
+              thoughts_tokens: 0,
+              response_tokens: 1,
+            },
+          });
+        })();
+      }
+    }
+
+    const model = new RotatingKeyModel({
+      modelId: "modelscope-model",
+      apiKey: "old-key",
+      clientType: "openai-chat",
+      tools: [],
+      resolveApiKey: async () => resolvedKeys[resolutions++]!,
+    });
+    model.setHistory([userText("prior turn")]);
+
+    const drain = async (): Promise<void> => {
+      const stream = model.streamGenerate({ newMessages: [userText("next")] });
+      let result = await stream.next();
+      while (!result.done) result = await stream.next();
+    };
+    await drain();
+    await drain();
+    await drain();
+
+    expect(resolutions).toBe(3);
+    expect(observed.map((item) => item.apiKey)).toEqual(["new-key", "new-key", "newer-key"]);
+    expect(observed[1]!.client).toBe(observed[0]!.client);
+    expect(observed[2]!.client).not.toBe(observed[1]!.client);
+    expect(observed.map((item) => item.historyLength)).toEqual([1, 1, 1]);
+  });
+});
+
 describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () => {
   // Injects a controlled UniEvent stream through the protected openStream seam to verify the
   // outcome classification of timeout/network-drop/interrupt/error, without needing a real API.

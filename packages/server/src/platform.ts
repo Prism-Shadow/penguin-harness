@@ -47,6 +47,12 @@ import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import {
+  PluginConfig,
+  PluginConfigAdmin,
+  PluginConfigPage,
+  PluginConfigProvider,
+} from "./plugin/config.js";
+import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
   SessionsModule,
@@ -61,6 +67,7 @@ import {
   UpdateCheck,
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
+import { HarnessHistoryStore } from "./services/harness-history.js";
 import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -68,6 +75,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
 import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
+import { ModelProviderAuthTokensRepo } from "./db/repos/model-provider-auth-tokens.js";
 import { MembersRepo } from "./db/repos/members.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
@@ -83,11 +91,13 @@ import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
+import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
+import { ProjectNotifier } from "./services/project-events.js";
 import { ProjectService, ProjectRuns } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
@@ -100,11 +110,13 @@ import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
+import { SandboxSettings, SandboxSettingsStatus } from "./sandbox/settings-store.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
 import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
+import { TerminalRelay } from "./machines/terminal-relay.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -124,11 +136,16 @@ import {
   AgentIndex,
   Members,
   ModelOAuth,
+  ModelProviderAuthTokens,
   ProjectConfigStore,
+  ProjectEvents,
   ProjectLifecycle,
   Projects,
 } from "./mechanisms/projects.js";
 import { Schedules, Scheduling, SessionIndex, SessionOrigins } from "./mechanisms/sessions.js";
+import { Workflows } from "./mechanisms/workflows.js";
+import { WorkflowService } from "./workflows/service.js";
+import { WorkflowRoutes } from "./workflows/routes.js";
 import {
   ErrorLog,
   Errors,
@@ -145,6 +162,7 @@ import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
+import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
@@ -254,13 +272,16 @@ export class IdentityModule {}
   children: [
     ProjectsRepo,
     ModelPromotionsRepo,
+    ModelProviderAuthTokensRepo,
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
+    ProjectNotifier,
     ProjectService,
     ProjectConfigService,
     ModelOAuthService,
     PlatformAuthProvider,
+    ModelScopeAuthProvider,
     ProjectsRoutes,
     ProjectAdminRoutes,
   ],
@@ -271,9 +292,12 @@ export class IdentityModule {}
     Access,
     ProjectLifecycle,
     ProjectConfigStore,
+    ModelProviderAuthTokens,
     ModelOAuth,
     PlatformAuth,
+    ModelScopeAuth,
     InitialProjectProvisioner,
+    ProjectEvents,
   ],
 })
 export class ProjectsModule {}
@@ -314,6 +338,28 @@ export class SessionRuntimeModule {}
   exports: [Settings, UiPrefsStore],
 })
 export class SettingsModule {}
+
+/**
+ * Plugin configuration as a group of its own, beside the settings it is stored in: a plugin
+ * that stands in for the settings group replaces the store, not the schema-and-watch layer
+ * over it, and a plugin's manifest names this module as where `PluginConfig` comes from.
+ */
+@Module({
+  children: [PluginConfigProvider, PluginConfigPage],
+  exports: [PluginConfig, PluginConfigAdmin],
+})
+export class PluginConfigModule {}
+
+/**
+ * Sandbox settings as a group of their own: the sandbox service boots on the capability-free
+ * floor, while its settings group and the node applying it need plugin configuration (and
+ * through it the database), so they sit above it.
+ */
+@Module({
+  children: [SandboxSettings, SandboxSettingsStatus],
+  exports: [],
+})
+export class SandboxSettingsModule {}
 
 @Module({
   children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
@@ -378,6 +424,7 @@ export class CompanyModule {}
     GlobalFetch,
     UpdateCheckService,
     UpdateJobService,
+    HarnessHistoryStore,
     HttpModule,
     WebModule,
     InstallRoutes,
@@ -395,11 +442,18 @@ export class CompanyModule {}
 })
 export class ApiModule {}
 
+@Module({
+  children: [WorkflowService, WorkflowRoutes],
+  exports: [Workflows],
+})
+export class WorkflowsModule {}
+
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
     RuntimeModule,
     SettingsModule,
+    PluginConfigModule,
     IdentityModule,
     ProjectsModule,
     SessionRuntimeModule,
@@ -411,8 +465,12 @@ export class ApiModule {}
     CompanyModule,
     ApiModule,
     SandboxModule,
+    SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
+    TerminalRelay,
+    WorkflowsModule,
+    BuiltinBrowserModule,
     Startup,
   ],
 })

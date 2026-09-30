@@ -4,8 +4,10 @@
  * A module is a manifest ({@link Manifest}) plus one `create`. Boot runs {@link checkTree}
  * over the manifests first — nothing is created while a problem stands — then creates
  * modules in dependency order: a module boots after everything it `requires` and after
- * every module that CONTRIBUTES to one of its slots (the code half of a contribution is
- * the contributor's `bind[id]`, which exists only once the contributor is created).
+ * every module that contributes to one of its slots WITH A CODE HALF (that half is the
+ * contributor's `bind[id]`, which exists only once the contributor is created). A data-only
+ * contribution is manifest data, there before anything is created, so it orders nothing — a
+ * module may declare data on a slot and require the slot's owner.
  *
  * The tree shape is scope, not order: siblings are created in whatever order their
  * edges allow, and a cycle is a boot error naming the modules in it.
@@ -481,7 +483,7 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
   };
 
   // Edges: a module comes after what it requires (resolved through exports to the node
-  // that provides it), after what contributes to it, and after its children.
+  // that provides it), after what contributes code to it, and after its children.
   const after = new Map<string, Set<string>>();
   for (const n of nodes) after.set(n.def.manifest.name, new Set());
   for (const n of nodes) {
@@ -490,8 +492,12 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
       if (byName.has(w.from)) after.get(name)!.add(exportTarget(w.from, w.alias).module);
     }
     for (const slotKey of Object.keys(n.def.manifest.contributes)) {
-      const target = splitSlotKey(slotKey)!.module;
-      if (byName.has(target)) after.get(target)!.add(name);
+      const split = splitSlotKey(slotKey)!;
+      if (!byName.has(split.module)) continue;
+      const slotDecl = Object.values(provides[split.module] ?? {})
+        .map((d) => d.slots[split.slot])
+        .find((s) => s !== undefined);
+      if (slotDecl?.code !== undefined) after.get(split.module)!.add(name);
     }
     for (const child of n.childrenDefs) after.get(name)!.add(child.manifest.name);
   }

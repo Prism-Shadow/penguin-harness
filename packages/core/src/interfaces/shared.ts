@@ -81,6 +81,30 @@ export type PreToolUseFn = (
 ) => Promise<PreToolUseOutcome | null>;
 
 /**
+ * What one pass over the user-prompt hooks produced, handed to `context_engine` by the
+ * Session-wired {@link UserPromptFn}: the records in hook order — one harness-stamped user
+ * text per non-empty `context` a hook answered, one `hook` event per hook that failed. The
+ * engine yields and writes them right behind the Prompt; the user texts join the Task's
+ * first request input.
+ */
+export interface UserPromptOutcome {
+  records: OmniMessage[];
+}
+
+/**
+ * User-prompt hook consult: called by `context_engine` once at the start of a run, after
+ * the Prompt is written and before the first request, with the run's new input. Wired by
+ * the Session from the Agent's installed hook packages (`hooks.json` `user_prompt`
+ * commands); answers null when the input carries no text of the user's own or no hook is
+ * due, and the engine then sends the Prompt as it is.
+ * Docs: /docs/agent-loop § "User-prompt hooks".
+ */
+export type UserPromptFn = (
+  input: OmniMessage[],
+  signal?: AbortSignal,
+) => Promise<UserPromptOutcome | null>;
+
+/**
  * One command-policy deny rule — plain project-editable data: a name (identifies the rule
  * in the settings UI), a regex source tested against the whitespace-normalized command, an
  * optional free-text description, and a per-rule switch.

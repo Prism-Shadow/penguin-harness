@@ -39,7 +39,9 @@ import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { setDockScope } from "../../features/dock/dock-state";
+import { AppPalette } from "../../features/palette/app-palette";
 import { toneStrip } from "../../lib/tone";
 
 /**
@@ -305,7 +307,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         )}
       </nav>
       {/* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
-          first: appearance and System settings, the update row and signing out all stay one
+          first: appearance and Settings, the update row and signing out all stay one
           click away while collapsed. Same component as the pinned sidebar's (user-menu.tsx). */}
       <UserMenu
         className="mt-auto shrink-0"
@@ -519,6 +521,11 @@ export function AppLayout() {
             views live in this pool and are adopted into dock tab bodies by DOM handoff,
             so navigating between pages never reconnects a terminal. */}
         <TerminalDockRuntime />
+        {/* The built-in browser's pages (desktop app only): they live here, outside every page,
+            and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
+            reloads, so navigating the app must never re-parent one. */}
+        <BuiltinBrowserLayer />
+        <AppPalette />
       </div>
 
       {/* The software-update modal, opened from the sidebar's update row and the draft

@@ -25,6 +25,11 @@ import type {
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
+/** What GET serves beside the block: the sandbox policy a new Session starts with (read-only). */
+const SERVED = {
+  sandbox: { mode: "danger-full-access", network: "open", localNetworkSupported: false },
+};
+
 describe("project chat defaults", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
@@ -58,7 +63,7 @@ describe("project chat defaults", () => {
   it("any member reads; an absent block is an empty object; a non-member gets 404", async () => {
     const res = await member.get(url);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({});
+    expect(await res.json()).toEqual(SERVED);
     expect((await outsider.get(url)).status).toBe(404);
   });
 
@@ -72,7 +77,7 @@ describe("project chat defaults", () => {
     const put = await owner.put(url, body);
     expect(put.status).toBe(200);
     expect(await put.json()).toEqual(body);
-    expect(await (await member.get(url)).json()).toEqual(body);
+    expect(await (await member.get(url)).json()).toEqual({ ...body, ...SERVED });
 
     const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     expect(toml).toContain("[default_chat]");
@@ -87,7 +92,7 @@ describe("project chat defaults", () => {
     // Replace with a different subset: the previous keys must be gone.
     const second = await owner.put(url, { thinkingLevel: "low" });
     expect(await second.json()).toEqual({ thinkingLevel: "low" });
-    expect(await (await owner.get(url)).json()).toEqual({ thinkingLevel: "low" });
+    expect(await (await owner.get(url)).json()).toEqual({ ...{ thinkingLevel: "low" }, ...SERVED });
     // Empty body: the block disappears from the toml entirely.
     expect(await (await owner.put(url, {})).json()).toEqual({});
     const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
@@ -97,7 +102,7 @@ describe("project chat defaults", () => {
   it("owner only: a member PUT gets 403, a non-member 404 (existence is not leaked)", async () => {
     expect((await member.put(url, { thinkingLevel: "low" })).status).toBe(403);
     expect((await outsider.put(url, { thinkingLevel: "low" })).status).toBe(404);
-    expect(await (await owner.get(url)).json()).toEqual({});
+    expect(await (await owner.get(url)).json()).toEqual({ ...{}, ...SERVED });
   });
 
   it("agentId must reference an existing Agent of the Project (400 unknown_agent)", async () => {
@@ -106,7 +111,7 @@ describe("project chat defaults", () => {
     expect(((await res.json()) as ErrorBody).error.code).toBe("unknown_agent");
     // An id that is not even shaped like one gets the same 400 before any path is built.
     expect((await owner.put(url, { agentId: "../escape" })).status).toBe(400);
-    expect(await (await owner.get(url)).json()).toEqual({});
+    expect(await (await owner.get(url)).json()).toEqual({ ...{}, ...SERVED });
   });
 
   it("rejects invalid enum values with 400 — including thinkingLevel 'none'", async () => {
@@ -114,7 +119,7 @@ describe("project chat defaults", () => {
     // "none" is a valid per-turn wire value but never a project default.
     expect((await owner.put(url, { thinkingLevel: "none" })).status).toBe(400);
     expect((await owner.put(url, { thinkingLevel: 3 })).status).toBe(400);
-    expect(await (await owner.get(url)).json()).toEqual({});
+    expect(await (await owner.get(url)).json()).toEqual({ ...{}, ...SERVED });
   });
 
   it("keeps models, credentials and the name — the write is read-modify-write", async () => {
@@ -146,7 +151,10 @@ describe("project chat defaults", () => {
     // the [default_chat] table must end up below the re-appended scalar keys.
     expect((await owner.put(url, { workspace: "/srv/data" })).status).toBe(200);
     expect((await owner.patch(`/api/projects/${projectId}`, { name: "Renamed" })).status).toBe(200);
-    expect(await (await owner.get(url)).json()).toEqual({ workspace: "/srv/data" });
+    expect(await (await owner.get(url)).json()).toEqual({
+      ...{ workspace: "/srv/data" },
+      ...SERVED,
+    });
     const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     expect(toml).toContain('name = "Renamed"');
   });

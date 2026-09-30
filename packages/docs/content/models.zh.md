@@ -102,7 +102,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - **厂商分组**（DeepSeek、Google Gemini、OpenAI、Anthropic、Z.AI、Moonshot、MiniMax）只支持厂商自己的 API。如果模型 id 无法按这种方式路由，弹窗会警告你，并提供**转为自定义模型**。OpenAI 兼容的端点请放进 **Custom** 分组。
 - **OpenRouter** 总是使用 `openai-responses`，**vLLM** 总是使用 `openai-chat-vllm-adapter`。
-- **其他网关分组**使用 OpenAI Chat Completions。
+- **OpenAI 兼容网关分组**使用 OpenAI Chat Completions，但聚合分组的预置条目可以逐条固定模型专属协议。
 - **Custom** 和你创建的分组：在 base URL 字段里选择协议，或者检测协议。见[检测自定义模型的协议](#检测自定义模型的协议)。
 
 ### 编辑或删除模型
@@ -194,7 +194,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 ### 授权获取新 API key
 
-支持自动授权取 key 的供应商，会在分组标题栏上加上**自动获取密钥**。内置分组里有两个提供了这个流程：TokenDance 和 Penguin Go。取得的 key 会写入分组里的每个模型，替换它们现在使用的 key。
+支持自动授权取 key 的供应商，会在分组标题栏上加上**自动获取密钥**。内置分组里有三个提供了这个流程：TokenDance、Penguin Go 和 ModelScope。取得的 key 会写入分组里的每个模型，替换它们现在使用的 key。
 
 1. 在分组的标题栏上，点击**自动获取密钥**。
 2. 点击**打开授权页**。供应商的授权页会在新标签页中打开。
@@ -212,12 +212,18 @@ Penguin Go 有四处不同：
 - 平台报告 key 失效或被吊销时，**模型库**页面会重新打开授权。
 - 取到的 key 写入本地失败时，服务端会把这一次交付短暂保留，可以直接重试写入，不必再次授权。
 
+ModelScope 有三处不同：
+
+- 授权不经过魔搭自己的页面，而是经过一台**授权中转层**。中转层持有魔搭的 client secret，代 PenguinHarness 走完 OAuth，再把一把可直接调用 api-inference 的 access token 交回来。中转层的地址来自服务端环境变量 `MODELSCOPE_BRIDGE_URL`，见[环境变量](/configuration#环境变量)。
+- 授权页的地址由中转层给出，PenguinHarness 原样打开，不像 Penguin Go 那样自己拼。同样没有手动填写授权码的方式。
+- 拿到的 access token 是**会过期**的；PenguinHarness 会在服务端保存刷新凭据，并在模型请求前静默续期。刷新凭据失效或缺失时，才需要重新点一次**自动获取密钥**。
+
 注意事项：
 
 - 只有 Project owner 能发起授权。TokenDance 还要求由他本人已登录的会话完成授权，实际上就是打开着弹窗的那个标签页。重定向本身不要求会话就能接收，因为供应商带回的浏览器未必是你发起授权时用的那个；但它只交回授权码：在弹窗来取结果之前，不会发生任何换取，也不会保存任何 key。
-- 整个换取过程都在服务端完成。TokenDance 的 PKCE verifier 和 Penguin Go 的设备密钥都不会进入浏览器；新 key 直接写入模型表，同样不经过浏览器。
-- 一次授权只交付一把 key，有效期取供应商给出的截止时间，且不超过十分钟。
-- TokenDance 只交付一次新 key。如果保存失败，请重新授权，并到供应商的控制台删除没用上的那把 key。
+- 整个换取过程都在服务端完成。TokenDance 的 PKCE verifier、Penguin Go 的设备密钥、以及 ModelScope 的授权码和设备密钥都不会进入浏览器；新 key 直接写入模型表，同样不经过浏览器。ModelScope 的 client secret 从头到尾都不在 PenguinHarness 里，只有中转层持有。
+- 一次授权流程最多等待十分钟。ModelScope 交付的是一组 access token / refresh token：access token 写入模型表，refresh token 只保存在服务端 DB，不返回给前端，也不写入 Project 配置。
+- 交付回来的 key 只交一次。Penguin Go 和 ModelScope 都会在本地保存失败时短暂保留这一次交付，因此可以直接重试写入，不必再次授权。ModelScope 下无需去魔搭控制台清理——它交回的是你自己账号的 token，不是新造的 key。
 - TokenDance 的 key 携带[应用归因](#应用归因)表中 PenguinHarness 的应用 URL，所以即使用其他工具发起调用，用量也仍会归到 PenguinHarness 名下。
 
 ## 设置默认模型
@@ -409,14 +415,16 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | minimax | `MINIMAX_API_KEY` | 直连 MiniMax M3 的 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3`，上下文窗口 1,000,000 Token，支持视觉；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan 订阅密钥或按量付费 API key |
 | qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen 按量付费（DashScope 的 OpenAI 兼容端点），预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售的第三方模型保留供应商前缀 id（如 `kimi/kimi-k3`） |
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；价格取自各模型页面的官方牌价（预览模型只有配额倍率优惠，没有牌价） |
+| modelscope | `OPENAI_API_KEY` | 魔搭的 OpenAI 兼容 api-inference 网关，预置 base URL `https://api-inference.modelscope.cn/v1`；id 就是上游仓库名（如 `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）；分组标题栏可以经授权中转层为你自动授权一把 token，也可以手动设置。见 [ModelScope 分组](#modelscope-分组) |
 | vllm | `OPENAI_API_KEY` | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，条目没有凭据时使用 `ANTHROPIC_API_KEY`，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，凭据留空时读取 `OPENAI_API_KEY`，而不是某个网关专属的变量。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，凭据留空时读取 `OPENAI_API_KEY`，而不是某个网关专属的变量。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，但它的预置条目可以逐条固定模型专属协议。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
-- 两种客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
+- ModelScope 像 Penguin Go 一样是聚合网关：Qwen 预置使用 `openai-chat-vllm-adapter`，在 Chat Completions 上按 Qwen 模板传递思考参数；DeepSeek 预置固定为 `deepseek-v4`，运行时走 AgentHub Responses client。
+- 这些网关客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
 
 直连 MiniMax M3 的客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型使用 `https://api.minimax.io/v1`。只有条目没有自己的 `base_url` 时，才会读取 `MINIMAX_BASE_URL`。
 
@@ -432,6 +440,14 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。
 
+### ModelScope 分组
+
+`modelscope` 是聚合网关分组：同一个魔搭 api-inference 端点，预置 base URL `https://api-inference.modelscope.cn/v1`，每条预置各自写明 AgentHub 应该为这个上游模型使用的协议。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。Qwen 条目使用 `openai-chat-vllm-adapter`，在线路仍为 Chat Completions 的同时正确控制 Qwen 模板的思考参数；DeepSeek 条目固定为 `deepseek-v4`，与直连 DeepSeek 和 Penguin Go 的 DeepSeek V4 条目保持一致。新建的 Project 立即带上这些预置；更早创建的 Project 用**同步预置**补上。
+
+分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权走一台授权中转层，由中转层持有魔搭的 client secret 并交回一组 api-inference access token / refresh token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；access token 和其他分组的 key 一样写进 `.project_config.toml`，refresh token 只保存在服务端 DB。access token 会过期，PenguinHarness 会在模型请求前静默续期；refresh token 缺失或失效时，才需要从标题栏重新授权一次。
+
+预置条目不带价格。魔搭的 api-inference 是计费的，但它的模型页面读不到费率，所以这些条目按未定价处理：模型页在它们上面不显示价格徽标，成本中心把它们的用量报为未计价。这是目录记录「没人查过这个价格」的方式，见[价格与促销](#价格与促销)。
+
 ### 预置模型
 
 预置模型目录包含以下模型：
@@ -446,6 +462,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
 - `dots-3-note-preview`（TokenDance 上免费，512K 上下文）
+- `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`、`Qwen/Qwen3.8-Flash-Next`（ModelScope 的 api-inference，没有价格的预置条目）
 
 列表并未穷尽所有模型。
 
@@ -458,6 +475,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 ### 价格与促销
 
 - **三类价格。** 每个模型都记录 `cache_read`、`cache_write` 和 `output` 三项价格，单位是每百万 Token 多少美元。成本中心按这些价格结算用量。
+- **没有价格的条目。** 价格字段可以整体缺席，含义是「没人查过这家的价格」，而不是免费：这类条目在**模型库**页面不显示价格徽标，成本中心把它的用量报为未计价。目录里目前只有 ModelScope 的预置条目是这样——魔搭的 api-inference 是计费的，但它的模型页面是客户端渲染的，读不到费率。写成三个 0 反而更糟：那会被当作免费档，给一个计费网关打上「Free」徽标。
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）和 Gemini 3.1 Pro（200K 以上）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
   - 四条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、OpenRouter 的 `deepseek/deepseek-v4.1-flash`，以及 Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`。

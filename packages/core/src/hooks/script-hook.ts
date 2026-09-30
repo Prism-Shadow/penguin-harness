@@ -8,22 +8,30 @@
  * stdin:  `{ "hook": "stop", "session_id": "…", "trace_path": "/abs/…_001.jsonl" }` for a
  *         stop hook (`trace_path` absent for a Trace-less Session); a pre_tool_use hook
  *         additionally gets `tool_name`, `tool_call_id` and `arguments` (the raw argument
- *         JSON string); a user_prompt hook gets `scratchpad_dir`, `prompt` and the host's
- *         flow extras instead of `trace_path`.
+ *         JSON string); a user_prompt hook additionally gets `scratchpad_dir` and `prompt`,
+ *         plus the host's flow extras when the host started it by name.
  * stdout: empty = no opinion; otherwise the point's result as JSON — a StopHookResult
- *         (`decision` continue/stop, `input`, `reason`, `output`, `subagent`) or a
- *         PreToolUseHookResult (`decision` allow/deny, `reason`, `output`).
+ *         (`decision` continue/stop, `input`, `reason`, `output`, `subagent`), a
+ *         PreToolUseHookResult (`decision` allow/deny, `reason`, `output`) or a
+ *         UserPromptHookResult (`context`).
  * exit:   non-zero = failure (stderr's tail becomes the reason).
  *
- * Hooks run in core and nowhere else — hosts trigger them through Session APIs (the goal
- * start goes through `Session.runUserPromptHook`), never by spawning scripts themselves.
+ * Hooks run in core and nowhere else — the Session consults them at their points, and a
+ * host reaches a flow of its own through a Session API (the goal start goes through
+ * `Session.runUserPromptHook`), never by spawning scripts itself.
  * `runHookScript` is the generic runner behind the adapters (`scriptStopHook` /
  * `scriptPreToolUseHook` / `scriptUserPromptHook`), each turning one installed command into
  * the point's in-process interface.
+ *
+ * A script is spawned under the Session's sandbox exactly as a command is: the argv goes
+ * through the same confiner (see `RunHookScriptOptions.confine`), and a confiner that
+ * cannot enforce its policy fails the hook rather than running it unconfined.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { prependPathEnv } from "../environment/tools/command/path-prepend.js";
+import type { ConfinedSpawn, SpawnConfiner } from "../interfaces/index.js";
+import type { UserPromptTrigger } from "../plugins/index.js";
 import type { StopHook, StopHookInput, StopHookResult } from "./stop-hook.js";
 import type { PreToolUseHook, PreToolUseHookInput, PreToolUseHookResult } from "./tool-hook.js";
 import type { UserPromptHook, UserPromptHookInput, UserPromptHookResult } from "./prompt-hook.js";
@@ -46,6 +54,13 @@ export interface RunHookScriptOptions {
    * `node <script>`, with no shell to re-order PATH afterwards.
    */
   pathPrepend?: readonly string[];
+  /**
+   * The Session's sandbox: rewrites the argv about to be spawned (`[node, script]`) into
+   * the one to spawn instead, the way a command's is rewritten (see
+   * {@link SpawnConfiner}). A throw is the hook's failure — the script never runs
+   * unconfined. Absent = unconfined (SDK/CLI standalone use).
+   */
+  confine?: (argv: readonly string[]) => ConfinedSpawn;
 }
 
 /**
@@ -59,14 +74,30 @@ export async function runHookScript(
   opts: RunHookScriptOptions = {},
 ): Promise<unknown> {
   const timeoutMs = (opts.timeoutS ?? DEFAULT_HOOK_TIMEOUT_S) * 1000;
+  // Confined before anything is spawned, so a policy nothing can enforce is the hook's
+  // failure and not a script running outside the sandbox.
+  const argv = [process.execPath, script];
+  let confined: ConfinedSpawn;
+  try {
+    confined = opts.confine ? opts.confine(argv) : { argv };
+  } catch (err) {
+    throw new Error(`sandbox: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const [program, ...args] = confined.argv;
+  if (program === undefined) throw new Error("sandbox: the confiner returned an empty argv");
   return new Promise<unknown>((resolve, reject) => {
-    const child = spawn(process.execPath, [script], {
+    // In the desktop app process.execPath is the Electron binary: without this flag the
+    // spawn boots a whole Electron app (GPU process and all) instead of running the
+    // script, and dies on machines where that fails. A plain Node execPath ignores it.
+    // A runner's own entries (ConfinedSpawn.env) lie over that environment.
+    const env = prependPathEnv(
+      { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      opts.pathPrepend ?? [],
+    );
+    const child = spawn(program, args, {
       cwd: opts.cwd ?? path.dirname(script),
       stdio: ["pipe", "pipe", "pipe"],
-      // In the desktop app process.execPath is the Electron binary: without this flag the
-      // spawn boots a whole Electron app (GPU process and all) instead of running the
-      // script, and dies on machines where that fails. A plain Node execPath ignores it.
-      env: prependPathEnv({ ...process.env, ELECTRON_RUN_AS_NODE: "1" }, opts.pathPrepend ?? []),
+      env: confined.env === undefined ? env : { ...env, ...confined.env },
     });
     let stdout = "";
     let stderr = "";
@@ -178,6 +209,21 @@ export function parseUserPromptResult(value: unknown): UserPromptHookResult | un
   return typeof v.context === "string" ? { context: v.context } : {};
 }
 
+/** How one installed command is run: the manifest's timeout, and the Session's host policies, each re-read per call. */
+export interface ScriptHookOptions {
+  timeoutS?: number;
+  /** See {@link RunHookScriptOptions.pathPrepend}; a getter, re-read per call. */
+  pathPrepend?: () => string[];
+  /**
+   * The Session's confiner (see {@link SpawnConfiner}), re-read per call like
+   * `pathPrepend`; null = unconfined. Called with the package directory as `cwd` and the
+   * `scope` below.
+   */
+  confineSpawn?: () => SpawnConfiner | null;
+  /** The Session's Workspace and scratchpad, the confiner's scope; absent = the package directory stands in for the Workspace. */
+  scope?: { workspaceDir: string; scratchpadDir?: string };
+}
+
 /**
  * One installed command as a runner: `command` relative to `dir` (the hook package's
  * directory, which is also the script's cwd), the manifest's timeout, and per call the
@@ -187,38 +233,53 @@ export function parseUserPromptResult(value: unknown): UserPromptHookResult | un
 function scriptRunner(
   dir: string,
   command: string,
-  timeoutS: number | undefined,
-  pathPrepend: (() => string[]) | undefined,
+  opts: ScriptHookOptions,
 ): (input: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<unknown> {
   const script = path.resolve(dir, command);
-  return (input, signal) =>
-    runHookScript(script, input, {
+  return (input, signal) => {
+    // Re-read per call, like the command-spawn side: the host may point PATH somewhere
+    // else, or change the Session's policy, without the Session being rebuilt.
+    const confiner = opts.confineSpawn?.() ?? null;
+    return runHookScript(script, input, {
       cwd: dir,
-      ...(timeoutS !== undefined ? { timeoutS } : {}),
+      ...(opts.timeoutS !== undefined ? { timeoutS: opts.timeoutS } : {}),
       ...(signal ? { signal } : {}),
-      // Re-read per call, like the command-spawn side: the host may point it somewhere else
-      // without the Session being rebuilt.
-      ...(pathPrepend ? { pathPrepend: pathPrepend() } : {}),
+      ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend() } : {}),
+      ...(confiner !== null
+        ? {
+            confine: (argv: readonly string[]) =>
+              confiner(argv, {
+                cwd: dir,
+                workspaceDir: opts.scope?.workspaceDir ?? dir,
+                ...(opts.scope?.scratchpadDir !== undefined
+                  ? { scratchpadDir: opts.scope.scratchpadDir }
+                  : {}),
+              }),
+          }
+        : {}),
     });
+  };
 }
 
-/** One installed user-prompt command as a UserPromptHook. */
+/** One installed user-prompt command as a UserPromptHook; `trigger` is the command's resolved one (see plugins' userPromptTrigger). */
 export function scriptUserPromptHook(
   name: string,
   dir: string,
   command: string,
-  timeoutS?: number,
-  pathPrepend?: () => string[],
+  opts: ScriptHookOptions & { trigger?: UserPromptTrigger } = {},
 ): UserPromptHook {
-  const run = scriptRunner(dir, command, timeoutS, pathPrepend);
+  const run = scriptRunner(dir, command, opts);
+  const { trigger } = opts;
   return {
     name,
+    ...(trigger !== undefined ? { trigger } : {}),
     async run(input: UserPromptHookInput): Promise<UserPromptHookResult | undefined> {
       return parseUserPromptResult(
         await run(
           {
             hook: "user_prompt",
             session_id: input.sessionId,
+            trace_path: input.tracePath,
             scratchpad_dir: input.scratchpadDir,
             prompt: input.prompt,
             ...input.extras,
@@ -235,10 +296,9 @@ export function scriptPreToolUseHook(
   name: string,
   dir: string,
   command: string,
-  timeoutS?: number,
-  pathPrepend?: () => string[],
+  opts: ScriptHookOptions = {},
 ): PreToolUseHook {
-  const run = scriptRunner(dir, command, timeoutS, pathPrepend);
+  const run = scriptRunner(dir, command, opts);
   return {
     name,
     async run(input: PreToolUseHookInput): Promise<PreToolUseHookResult | undefined> {
@@ -264,10 +324,9 @@ export function scriptStopHook(
   name: string,
   dir: string,
   command: string,
-  timeoutS?: number,
-  pathPrepend?: () => string[],
+  opts: ScriptHookOptions = {},
 ): StopHook {
-  const run = scriptRunner(dir, command, timeoutS, pathPrepend);
+  const run = scriptRunner(dir, command, opts);
   return {
     name,
     async run(input: StopHookInput): Promise<StopHookResult | undefined> {

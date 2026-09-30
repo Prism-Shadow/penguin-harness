@@ -521,7 +521,9 @@ describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
       seen = { argv, cwd: opts.cwd, workspaceDir: opts.workspaceDir };
       // Stand-in runner: replaces the invocation wholesale and prints a marker, proving
       // the child that actually ran is the rewritten argv, not the original shell.
-      return [process.execPath, "-e", "console.log('CONFINED wrapped=' + process.argv.length)"];
+      return {
+        argv: [process.execPath, "-e", "console.log('CONFINED wrapped=' + process.argv.length)"],
+      };
     };
     const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
     expect(res.output).toContain("CONFINED wrapped=");
@@ -532,6 +534,32 @@ describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
     expect(seen!.argv.length).toBeGreaterThanOrEqual(2);
     expect(seen!.cwd).toBe(tmp);
     expect(seen!.workspaceDir).toBe(tmp);
+  });
+
+  it("the Session's scratchpad rides beside the Workspace in the confiner's opts; without one there is no such key", async () => {
+    const scratchpadDir = path.join(tmp, "scratchpad", "session-1");
+    const seen: Array<{ cwd: string; workspaceDir: string; scratchpadDir?: string }> = [];
+    confiner = (_argv, opts) => {
+      seen.push({ ...opts });
+      return { argv: [process.execPath, "-e", "console.log('CONFINED')"] };
+    };
+    const withScratchpad = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      sessionScratchpadDir: scratchpadDir,
+      confineSpawn: () => confiner,
+    });
+    try {
+      const res = await runTool(withScratchpad, "exec_command", { cmd: "echo original" });
+      expect(res.output).toContain("CONFINED");
+    } finally {
+      withScratchpad.dispose();
+    }
+    await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(seen).toStrictEqual([
+      { cwd: tmp, workspaceDir: tmp, scratchpadDir },
+      { cwd: tmp, workspaceDir: tmp },
+    ]);
   });
 
   it("a throwing confiner fails the spawn closed: reported as spawn error, nothing runs", async () => {
@@ -550,10 +578,27 @@ describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
   it("the getter is re-read at every spawn, so a hot-swapped confiner needs no new Environment", async () => {
     const first = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
     expect(first.output).toContain("unconfined-run");
-    confiner = () => [process.execPath, "-e", "console.log('CONFINED')"];
+    confiner = () => ({ argv: [process.execPath, "-e", "console.log('CONFINED')"] });
     const second = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
     expect(second.output).toContain("CONFINED");
     expect(second.output).not.toContain("unconfined-run");
+  });
+
+  it("the entries a confiner asks for reach the runner, on top of the assembled environment", async () => {
+    // A runner that is a script must be able to tell its interpreter how to behave (the
+    // desktop app's binary runs a script only under ELECTRON_RUN_AS_NODE); the argv alone
+    // cannot say so. The rest of the environment is still the manager's.
+    confiner = () => ({
+      argv: [
+        process.execPath,
+        "-e",
+        "console.log('RUNNER=' + process.env.PENGUIN_RUNNER_MARK + ' PATH=' + (process.env.PATH ?? '').length)",
+      ],
+      env: { PENGUIN_RUNNER_MARK: "set-by-confiner" },
+    });
+    const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(res.output).toContain("RUNNER=set-by-confiner");
+    expect(res.output).not.toMatch(/PATH=0\b/);
   });
 });
 

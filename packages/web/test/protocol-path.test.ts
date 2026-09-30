@@ -29,6 +29,13 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("myproxy", "deepseek-v4")).toBe("/responses");
   });
 
+  it("ModelScope aggregate presets display the path for their pinned protocol", () => {
+    expect(protocolPathForModel("modelscope", "deepseek-v4")).toBe("/responses");
+    expect(protocolPathForModel("modelscope", "openai-chat-vllm-adapter")).toBe(
+      "/chat/completions",
+    );
+  });
+
   it("the remaining direct vendors speak chat completions", () => {
     expect(protocolPathForModel("zhipu", "")).toBe("/chat/completions");
     expect(protocolPathForModel("moonshot", "")).toBe("/chat/completions");

@@ -6,8 +6,9 @@
  * SiliconFlow / TokenDance / Qwen Token Plan / Qwen Pay-As-You-Go / Fireworks AI /
  * MiniMax use each vendor's brand mark (for recognition purposes, not under trademark license;
  * Qwen's official gradient wordmark is flattened to currentColor monochrome).
- * Z.AI uses a simplified geometric approximation of its branded glyph (not an
- * exact reproduction of the trademark); vLLM uses its official mark from the
+ * Z.AI uses a simplified geometric approximation of its branded glyph (not an exact reproduction
+ * of the trademark); ModelScope uses its official pixel mark flattened to currentColor; vLLM uses
+ * its official mark from the
  * project's media kit, its two brand colours flattened to currentColor like
  * Qwen's gradient; custom models use a generic cube. All are pure paths, no
  * external image assets.
@@ -137,6 +138,14 @@ const GLYPHS: Record<string, Glyph> = {
   },
   "qwen-token-plan": QWEN_GLYPH,
   "qwen-pay-as-you-go": QWEN_GLYPH,
+  modelscope: {
+    // ModelScope's official favicon/social mark, with the purple tile dropped and the white
+    // pixel glyph flattened to currentColor so it matches the provider-logo family.
+    viewBox: "0 0 16 16",
+    path: (
+      <path d="M2 4h4v1H2zM10 4h4v1h-4zM1 5h5v1H1zM10 5h5v1h-5zM2 6h2v1H2zM12 6h3v1h-3zM1 7h2v1H1zM5 7h2v1H5zM9 7h2v1H9zM13 7h2v1h-2zM1 8h3v1H1zM5 8h6v1H5zM12 8h3v1h-3zM2 9h2v1H2zM7 9h2v1H7zM12 9h2v1h-2zM2 10h4v1H2zM7 10h2v1H7zM10 10h4v1h-4zM2 11h4v1H2zM10 11h4v1h-4z" />
+    ),
+  },
   minimax: {
     // The official MiniMax stream-lines mark (evenodd fill preserved from the brand SVG).
     path: (

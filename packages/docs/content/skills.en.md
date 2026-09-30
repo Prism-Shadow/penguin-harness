@@ -37,7 +37,7 @@ The buttons on the right of a card:
 1. On the **Plugins** page, select **Manage installs** on the plugin's card. The dialog lists every agent in the current Project.
 2. Next to the agent, select **Install**.
 
-The whole plugin is installed: all of its Skills and its hook package. New conversations pick it up right away; running ones pick it up after their next compaction.
+The whole plugin is installed: all of its Skills and its hook package. New conversations pick it up right away. In a conversation already open, the hook package applies from the next turn and the Skills after the next compaction.
 
 To uninstall a plugin, point at **Installed** next to the agent, select **Uninstall**, and confirm. Uninstalling deletes the installed Skill and hook files, including any local edits.
 
@@ -114,11 +114,15 @@ A zip file can be up to 14 MB, with at most 200 files, 5 MB per file and 20 MB i
 
 ## Hook packages
 
-A hook package runs scripts at the agent loop's [hook points](/agent-loop#stop-hooks): when you send a message, before a tool call, and when a Task ends. For example, the `goal` plugin's hook package drives [goal mode](/goal-mode). Hook packages usually come with a plugin from the library.
+A hook package runs scripts at the agent loop's [hook points](/agent-loop#hooks): every time you send a message, before a tool call, and when a Task ends. For example, the `goal` plugin's hook package drives [goal mode](/goal-mode).
+
+Hook packages usually come with a plugin from the library, but any directory under the agent's `agent_state/hooks/<name>/` that carries a `hooks.json` is one: installed from the library, imported from a zip, or written by hand, by you or by the agent itself. The directory name is the package name, and a hand-written manifest is read tolerantly; see [Hook package manifest](#hook-package-manifest).
+
+A conversation reads the installed packages each time it opens a model context: when it starts, after each compaction, and when it resumes. A package written into the directory therefore runs in new conversations at once, and in a conversation already open from its next compaction. An install, zip import or uninstall through the Web App or the API reaches open conversations sooner, from their next turn, because the server rebuilds the agent's runtimes once they are idle.
 
 To manage one agent's hook packages, open **Agents**, select the agent, and open the **Hooks** tab.
 
-- **Enable hooks** turns hooks on or off for the whole agent, not one package at a time. With it on, every Session the agent starts runs all installed hook packages. With it off, new Sessions run no hooks, and the packages stay installed. The change takes effect from the next turn; a Task that is already running keeps the setting it started with. Only the Project owner can change this switch.
+- **Enable hooks** turns hooks on or off for the whole agent, not one package at a time. With it on, every Session the agent starts runs all installed hook packages. With it off, no Session runs hooks, and the packages stay installed. The change takes effect from the next turn, in open conversations too; a Task that is already running keeps its hooks unless a compaction opens a new context before the Task ends. Only the Project owner can change this switch.
 - Each row shows a package's name, the hook points it runs at, its description and version, with **Export** and **Uninstall**.
 
 ### Import a hook package
@@ -137,7 +141,7 @@ To upload a zip file:
 3. If a package with the same name is already installed, confirm with **Overwrite**.
 
 > [!WARNING]
-> An imported hook package takes effect at once. While the agent has hooks on, its scripts run on this machine at every hook point, so import only packages you trust.
+> An imported hook package takes effect at once. While the agent has hooks on, its scripts run on this machine at every hook point, so import only packages you trust. They run under the conversation's [sandbox](/settings#sandbox), the same policy as the agent's commands; with the sandbox off, they have the harness's own permissions.
 
 ## Server plugins
 
@@ -193,6 +197,7 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 | --- | --- | --- |
 | Office Productivity | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
 | | `use-firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
+| | `browser-automation` | Drive the desktop app's [Built-in Browser](/builtin-browser) with `penguin browser`: read pages as simplified HTML or text, act with JavaScript and trusted clicks and typing, and extract data such as Amazon orders, signed in with accounts imported from the system browser |
 | | `use-bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
 | | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
 | | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the Session working toward an objective until it is complete, blocked, or out of Token budget (preinstalled) |
@@ -230,7 +235,7 @@ plugins/<plugin>/
 | `version` | `YYYY.MM.DD.N`: the date plus a sequence number for that day |
 | `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-company`; a missing or unknown category lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set, so it is installed only manually from the library |
-| `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
+| `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds. A `user_prompt` command may add `"trigger"`: `"prompt"` (the default) runs it on every prompt the user submits, `"host"` only when a host starts the package's flow by name |
 
 ### Plugin naming and versioning
 
@@ -264,16 +269,26 @@ An installed hook package is the plugin's `hooks/` directory, installed as `agen
   "name": "goal",
   "description": "Goal mode: …",
   "description_zh": "目标模式：…",
-  "version": "2026.09.01.1",
+  "version": "2026.09.29.1",
   "stop": [{ "command": "stop.mjs", "timeout": 60 }],
   "pre_tool_use": [],
-  "user_prompt": [{ "command": "start.mjs", "timeout": 60 }]
+  "user_prompt": [{ "command": "start.mjs", "timeout": 60, "trigger": "host" }]
 }
 ```
 
 The scripts are plain Node that uses only built-in modules, so they run wherever the harness runs. Each runs as a subprocess that reads JSON on stdin and writes a JSON answer to stdout; [The Agent Loop](/agent-loop#stop-hooks) describes the contract. Every top-level Session of the agent consults the installed hook packages at the loop's hook points. The `hooks.enabled` key in the agent's `system_config.yaml` holds the **Enable hooks** switch; when the key is absent, hooks are on.
 
-A hook package's other scripts are for the host to call by convention. For example, the `goal` plugin's `start.mjs` is what the server runs when a user starts a goal; see [Goal Mode](/goal-mode).
+A `user_prompt` command runs on every prompt the user submits unless it carries `"trigger": "host"`. A host-triggered command runs only when a host starts the package's own flow by name, through `Session.runUserPromptHook`. The `goal` plugin's `start.mjs` is one: the server runs it when a user starts a goal. See [User-prompt hooks](/agent-loop#user-prompt-hooks) and [Goal Mode](/goal-mode).
+
+A package is not only what an installer writes, so a manifest is read tolerantly:
+
+- A hook point the manifest leaves out has no commands, the same as `[]`.
+- An entry without a string `command`, or whose command resolves outside the package directory, is dropped. A `timeout` that is not a positive number falls back to the default, and so does a `trigger` other than `"prompt"` or `"host"`.
+- Display fields that are not strings read as empty, and the directory name is the package name whatever `name` says.
+- A directory whose `hooks.json` is missing or is not a JSON object is not a hook package.
+
+> [!NOTE]
+> A manifest whose `version` is a plugin version older than `2026.09.29.1` predates `user_prompt` commands running on every prompt, so its `user_prompt` commands that name no `trigger` are read as `"host"`. This keeps a `goal` package installed before then from starting a goal on every message; [updating the plugin](#update-installed-plugins) replaces it. When you edit such a package by hand, give each `user_prompt` command an explicit `trigger`, or raise the `version` when the commands should run on every prompt. This reading is kept until 0.3.0.
 
 ### Progressive loading
 
@@ -291,5 +306,5 @@ Installed Skills live under `agent_state/skills/<name>/`, and hook packages unde
 - Installing a hook package writes `hooks.json`, the plugin's `icon.svg`, and every file under the plugin's `hooks/`.
 - Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships. Reinstalling is how an installed copy is updated.
 - Uninstalling deletes the whole `skills/<name>/` or `hooks/<name>/` directory.
-- A running Session keeps the hook packages it was built with. After a hook package is installed or removed, or the **Enable hooks** switch changes, the server rebuilds the agent's cached runtimes the next time they are idle.
+- A running Session keeps the hook packages its current model context opened with; the next context, after a compaction or on resume, reads them again. After a hook package is installed, imported or removed through the Web App or the API, or the **Enable hooks** switch changes, the server rebuilds the agent's cached runtimes the next time they are idle, so open conversations pick up the change from their next turn.
 - Besides the Web App, plugins can be installed through the SDK.

@@ -56,6 +56,7 @@ describe("model-catalog", () => {
       "minimax",
       "qwen-pay-as-you-go",
       "qwen-token-plan",
+      "modelscope",
       "vllm",
       "custom",
     ]);
@@ -121,6 +122,24 @@ describe("model-catalog", () => {
     expect(oauth.exchangeUrl).toBe("https://tokendance.space/portal/api/v1/auth/keys");
     // The key's name is also the app name the authorization page shows.
     expect(oauth.keyName).toBe("PenguinHarness");
+  });
+
+  it("exactly the bridged groups publish an authorization flow, and each names its own", () => {
+    // The descriptor is what puts the "authorize a key" action on a group in the Web App, so
+    // it has to name the App-side flow rather than the vendor: the Web App picks the service
+    // from this value, and the group's id is not a contract.
+    const withBridgeAuth = MODEL_PROVIDERS.filter((p) => p.bridgeAuth !== undefined).map((p) => [
+      p.id,
+      p.bridgeAuth!.flow,
+    ]);
+    expect(withBridgeAuth).toEqual([
+      ["penguin-go", "penguin-go"],
+      ["modelscope", "modelscope"],
+    ]);
+    // No group publishes both flows: a credential comes from one place.
+    for (const p of MODEL_PROVIDERS) {
+      expect(p.oauth === undefined || p.bridgeAuth === undefined).toBe(true);
+    }
   });
 
   it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {
@@ -189,9 +208,22 @@ describe("model-catalog", () => {
     });
   });
 
-  it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
+  it("every entry is priced or deliberately unpriced; context_window is a positive integer", () => {
+    // An absent `pricing` is a supported state — the model card leaves the row unbadged and the
+    // cost center reports the usage as uncosted, which is what "nobody has read this vendor's
+    // price" should look like. This list is what keeps it deliberate: a row belongs here only
+    // when the vendor publishes no read-able rate, never as a way to skip looking.
+    const UNPRICED = new Set([
+      // ModelScope bills for api-inference but its model pages are client-rendered and carry
+      // no rate. Recording $0 instead would have isFreeModel badge a billed gateway "Free".
+      "deepseek-ai/DeepSeek-V4.1-Flash",
+      "Qwen/Qwen3.8-27B",
+      "Qwen/Qwen3.8-Flash-Next",
+    ]);
     for (const m of MODEL_CATALOG) {
-      if (
+      if (m.pricing === undefined) {
+        expect(UNPRICED.has(m.modelId), m.modelId).toBe(true);
+      } else if (
         m.provider === "vllm" ||
         m.modelId.endsWith(":free") ||
         m.modelId === "openrouter/free" ||
@@ -426,7 +458,7 @@ describe("model-catalog", () => {
     expect(promotions.filter((p) => p.provider === "penguin-go")).toEqual([]);
   });
 
-  it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): OpenRouter pins Responses and the rest Chat Completions, all on a preset base URL; env fallback is OPENAI_API_KEY", () => {
+  it("gateway models pin explicit protocols and preset base URLs; env fallback stays OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
     // Dictionary order, newer versions of a series first (gpt-6-* before gpt-5.6-*,
     // gpt-5.6-* before gpt-5.5, opus-4.8 before 4.7) — precomputed in the catalog, no
@@ -706,6 +738,38 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     }
+    const ms = MODEL_CATALOG.filter((m) => m.provider === "modelscope");
+    // Preset rows keep ModelScope's upstream ids. Like Penguin Go, this group is an aggregate:
+    // the row's client type tracks the upstream model family for display/request semantics, while
+    // the group credential remains ModelScope's api-inference token. Pricing is deliberately
+    // absent (see UNPRICED above); the windows and vision flags repeat what other rows of the
+    // same models record.
+    expect(
+      ms.map((m) => [m.modelId, m.contextWindow, m.supportsVision, m.clientType, m.baseUrl]),
+    ).toEqual([
+      [
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+        1000000,
+        true,
+        "deepseek-v4",
+        "https://api-inference.modelscope.cn/v1",
+      ],
+      [
+        "Qwen/Qwen3.8-27B",
+        262144,
+        true,
+        "openai-chat-vllm-adapter",
+        "https://api-inference.modelscope.cn/v1",
+      ],
+      [
+        "Qwen/Qwen3.8-Flash-Next",
+        262144,
+        true,
+        "openai-chat-vllm-adapter",
+        "https://api-inference.modelscope.cn/v1",
+      ],
+    ]);
+    expect(ms.every((m) => m.pricing === undefined)).toBe(true);
     const minimax = MODEL_CATALOG.filter((m) => m.provider === "minimax");
     expect(
       minimax.map((m) => [
@@ -737,6 +801,7 @@ describe("model-catalog", () => {
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
+      "modelscope",
       "vllm",
       "custom",
     ]) {
@@ -754,6 +819,9 @@ describe("model-catalog", () => {
     );
     expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
     expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
+    expect(providerInfo("modelscope")!.gatewayBaseUrl).toBe(
+      "https://api-inference.modelscope.cn/v1",
+    );
     const GATEWAYS = [
       "openrouter",
       "fireworks",
@@ -761,13 +829,14 @@ describe("model-catalog", () => {
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
+      "modelscope",
     ];
     for (const p of MODEL_PROVIDERS) {
       if (!GATEWAYS.includes(p.id)) {
         expect(p.gatewayBaseUrl, p.id).toBeUndefined();
       }
     }
-    const gateway = [...or, ...fw, ...sf, ...td, ...qtp, ...qpayg];
+    const gateway = [...or, ...fw, ...sf, ...td, ...qtp, ...qpayg, ...ms];
     // Pricing (USD, per the 2026-08-03 models-API re-read): MiMo v2.5 and Hy3 publish a real
     // cache-hit price and no per-token write premium, so cache_write carries the input price.
     const mimo = MODEL_CATALOG.find((m) => m.modelId === "xiaomi/mimo-v2.5")!.pricing!;
@@ -1216,6 +1285,10 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveProviderModelEnv("penguin-go", "deepseek-flash", "openai-chat")?.envKey).toBe(
       "PENGUIN_GO_API_KEY",
     );
+    expect(
+      resolveProviderModelEnv("modelscope", "deepseek-ai/DeepSeek-V4.1-Flash", "deepseek-v4")
+        ?.envKey,
+    ).toBe("OPENAI_API_KEY");
     expect(resolveProviderModelEnv("deepseek", "deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveProviderModelEnv("openrouter", "any-model", "openai-chat")?.envKey).toBe(
       "OPENAI_API_KEY",
@@ -1309,10 +1382,13 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       const env = resolveModelEnv(m.modelId, m.clientType);
       const provider = providerInfo(m.provider)!;
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();
-      if (m.provider === "penguin-go") {
-        // Penguin Go mixes routed clients behind one relay, so its provider-scoped
-        // environment name intentionally differs from each client's vendor variable.
-        expect(provider.envKey).toBe("PENGUIN_GO_API_KEY");
+      if (m.provider === "penguin-go" || m.provider === "modelscope") {
+        // Aggregate groups mix routed clients behind one group credential, so their
+        // provider-scoped environment name intentionally differs from some client variables.
+        expect(resolveProviderModelEnv(m.provider, m.modelId, m.clientType)).toEqual({
+          envKey: provider.envKey,
+          envBaseUrlKey: provider.envBaseUrlKey,
+        });
         continue;
       }
       if (m.provider === "custom") {
