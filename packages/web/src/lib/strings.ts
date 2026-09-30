@@ -2206,21 +2206,42 @@ export const zh = {
       choose: "选择",
       back: "后退",
       forward: "前进",
-      /** Toolbar button and the inline path field that ⌘⇧G / Ctrl+Shift+G opens. */
-      goTo: "前往文件夹",
-      goToPlaceholder: "输入绝对路径，或以 ~ 开头",
-      goToSubmit: "前往",
+      /** Toolbar: the parent folder. */
+      up: "上一级",
+      refresh: "刷新",
+      /** The address bar turned into a text field: its accessible name and placeholder. */
+      address: "路径",
+      addressPlaceholder: "输入绝对路径，或以 ~ 开头",
+      /** What clicking the address bar does (also ⌘⇧G / Ctrl+Shift+G). */
+      editPath: "编辑路径",
       filter: "筛选",
       showSidebar: "显示侧边栏",
       hideSidebar: "隐藏侧边栏",
-      favourites: "个人收藏",
+      quickAccess: "常用",
+      /** Windows only: the section listing the drives. */
+      thisPc: "此电脑",
       recent: "最近使用",
       machines: "机器",
       places: {
         desktop: "桌面",
-        documents: "文稿",
+        documents: "文档",
         downloads: "下载",
+        pictures: "图片",
       },
+      /** Finder's own name for Documents, used when the browsed machine is a Mac. */
+      documentsMac: "文稿",
+      addToQuickAccess: "添加到常用",
+      removeFromQuickAccess: "从常用中移除",
+      /** The + beside the Quick access heading. */
+      addCurrentToQuickAccess: "将当前文件夹添加到常用",
+      /** Accessible name of a Quick access row's remove button. */
+      removeNamed: (name: string): string => `从常用中移除「${name}」`,
+      open: "打开",
+      /** Accessible name of the enter button at the end of a folder row. */
+      openFolder: (name: string): string => `打开「${name}」`,
+      chooseThis: "选择此文件夹",
+      chooseCurrent: "选择当前文件夹",
+      copyPath: "复制路径",
       /** Accessible name of the breadcrumb trail. */
       path: "当前路径",
       columnName: "名称",

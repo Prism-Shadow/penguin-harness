@@ -2,9 +2,11 @@
  * The Workspace finder (src/features/chat/workspace-finder*.tsx): the modal every Workspace
  * picker opens. Its decisions live in workspace-finder-model.ts and are exercised directly —
  * breadcrumbs for both path families, back/forward history, type-to-select, the keyboard map,
- * Favourites per platform and Recent. The suite has no DOM, so the few JSX facts that fail
- * silently are pinned against the source: the finder is a Modal (no second overlay system),
- * and a permission refusal renders its own copy instead of an empty folder.
+ * Quick access per platform with the user's own edits, the context menu's rows, and Recent.
+ * The suite has no DOM, so the few JSX facts that fail silently are pinned against the source:
+ * the finder is a Modal (no second overlay system), a permission refusal renders its own copy
+ * instead of an empty folder, the address bar is the one place a path is typed, and a folder
+ * row carries its own way in.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -12,20 +14,30 @@ import { describe, expect, it } from "vitest";
 import type { DirEntryInfo, DirListResponse } from "@prismshadow/penguin-server/api";
 import {
   EMPTY_HISTORY,
+  NO_EDITS,
+  addToQuickAccess,
   canGoBack,
   canGoForward,
-  favouritePlaces,
+  defaultPlaces,
+  drivePlaces,
   finderKeyAction,
+  finderMenuItems,
   historyStep,
   historyVisit,
+  loadQuickAccess,
   parentOf,
+  quickAccessKey,
+  quickAccessPlaces,
   recentWorkspaces,
+  removeFromQuickAccess,
   resolveGoTo,
+  saveQuickAccess,
   splitBreadcrumbs,
   stepSelection,
   typeSelectIndex,
   visibleEntries,
 } from "../src/features/chat/workspace-finder-model";
+import type { QuickAccessStorage } from "../src/features/chat/workspace-finder-model";
 
 const dir = (name: string, kind: "dir" | "file" = "dir"): DirEntryInfo => ({
   name,
@@ -126,45 +138,148 @@ describe("keyboard map", () => {
   });
 });
 
-describe("favourites", () => {
+describe("quick access", () => {
+  const folders = (base: string, names: string[], sep = "/"): DirEntryInfo[] =>
+    names.map((name) => ({ name, path: `${base}${sep}${name}`, kind: "dir" }));
   const home = (over: Partial<DirListResponse>): DirListResponse => ({
-    path: "/Users/me",
-    parent: "/Users",
+    path: "/home/me",
+    parent: "/home",
     entries: [],
     ...over,
   });
+  const std = ["Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"];
 
-  it("offers home and the standard folders that exist there", () => {
-    const places = favouritePlaces(
-      home({
-        platform: "darwin",
-        entries: [
-          { name: "Downloads", path: "/Users/me/Downloads", kind: "dir" },
-          { name: "Desktop", path: "/Users/me/Desktop", kind: "dir" },
-          { name: "Documents", path: "/Users/me/Documents", kind: "file" },
-        ],
-      }),
-    );
-    expect(places.map((p) => [p.key, p.path])).toEqual([
-      ["home", "/Users/me"],
-      ["desktop", "/Users/me/Desktop"],
-      ["downloads", "/Users/me/Downloads"],
+  it("offers each platform's own standard folders, in its file manager's order", () => {
+    const keys = (h: DirListResponse) => defaultPlaces(h).map((p) => p.key);
+    // Explorer: Desktop, Downloads, Documents, Pictures.
+    expect(
+      keys(
+        home({
+          path: "C:\\Users\\me",
+          platform: "win32",
+          entries: folders("C:\\Users\\me", std, "\\"),
+        }),
+      ),
+    ).toEqual(["home", "desktop", "downloads", "documents", "pictures"]);
+    // Finder: Desktop, Documents, Downloads — no Pictures.
+    expect(
+      keys(home({ path: "/Users/me", platform: "darwin", entries: folders("/Users/me", std) })),
+    ).toEqual(["home", "desktop", "documents", "downloads"]);
+    // A Linux desktop's XDG folders; a machine over ssh reports no platform and reads the same.
+    expect(keys(home({ platform: "linux", entries: folders("/home/me", std) }))).toEqual([
+      "home",
+      "desktop",
+      "documents",
+      "downloads",
+      "pictures",
+    ]);
+    expect(keys(home({ entries: folders("/home/me", std) }))).toEqual([
+      "home",
+      "desktop",
+      "documents",
+      "downloads",
+      "pictures",
     ]);
   });
 
-  it("matches Windows folder names ignoring case and adds the drive roots", () => {
-    const places = favouritePlaces({
+  it("lists only folders that exist there, and matches Windows names ignoring case", () => {
+    const linux = defaultPlaces(
+      home({
+        platform: "linux",
+        entries: [
+          { name: "Downloads", path: "/home/me/Downloads", kind: "dir" },
+          { name: "Documents", path: "/home/me/Documents", kind: "file" },
+        ],
+      }),
+    );
+    expect(linux.map((p) => [p.key, p.path])).toEqual([
+      ["home", "/home/me"],
+      ["downloads", "/home/me/Downloads"],
+    ]);
+    const win = defaultPlaces({
       path: "C:\\Users\\me",
       parent: "C:\\Users",
       platform: "win32",
       roots: ["C:\\", "D:\\"],
       entries: [{ name: "documents", path: "C:\\Users\\me\\documents", kind: "dir" }],
     });
-    expect(places.map((p) => [p.key, p.label])).toEqual([
+    expect(win.map((p) => [p.key, p.label])).toEqual([
       ["home", "me"],
       ["documents", "documents"],
-      ["drive", "C:"],
-      ["drive", "D:"],
+    ]);
+  });
+
+  it("keeps Windows' drives for This PC, apart from Quick access", () => {
+    const listing = home({ platform: "win32", roots: ["C:\\", "D:\\"] });
+    expect(drivePlaces(listing).map((p) => [p.key, p.label, p.path])).toEqual([
+      ["drive", "C:", "C:\\"],
+      ["drive", "D:", "D:\\"],
+    ]);
+    expect(defaultPlaces(listing).some((p) => p.key === "drive")).toBe(false);
+    expect(drivePlaces(home({ platform: "linux" }))).toEqual([]);
+  });
+
+  it("adds any folder at the end, and removes any entry — a default included", () => {
+    const defaults = defaultPlaces(home({ platform: "linux", entries: folders("/home/me", std) }));
+    const paths = (e: typeof NO_EDITS) => quickAccessPlaces(defaults, e).map((p) => p.path);
+    let edits = addToQuickAccess(NO_EDITS, defaults, "/srv/work");
+    expect(paths(edits).at(-1)).toBe("/srv/work");
+    expect(quickAccessPlaces(defaults, edits).at(-1)).toMatchObject({
+      key: "folder",
+      label: "work",
+    });
+    // Adding what is already there changes nothing.
+    expect(addToQuickAccess(edits, defaults, "/srv/work")).toBe(edits);
+    expect(addToQuickAccess(edits, defaults, "/home/me/Desktop")).toBe(edits);
+    // A removed default is remembered as removed, and adding it back restores it in place.
+    edits = removeFromQuickAccess(edits, defaults, "/home/me/Desktop");
+    expect(paths(edits)).not.toContain("/home/me/Desktop");
+    edits = addToQuickAccess(edits, defaults, "/home/me/Desktop");
+    expect(paths(edits).indexOf("/home/me/Desktop")).toBe(1);
+    // An added folder is simply forgotten.
+    edits = removeFromQuickAccess(edits, defaults, "/srv/work");
+    expect(edits).toEqual(NO_EDITS);
+  });
+
+  it("stores the edits per machine, and reads anything unreadable as none", () => {
+    const store = new Map<string, string>();
+    const storage: QuickAccessStorage = {
+      getItem: (k) => store.get(k) ?? null,
+      setItem: (k, v) => void store.set(k, v),
+    };
+    const edits = { added: ["/srv/work"], removed: ["/home/me/Desktop"] };
+    saveQuickAccess(null, edits, storage);
+    saveQuickAccess("m-1", NO_EDITS, storage);
+    expect(loadQuickAccess(null, storage)).toEqual(edits);
+    expect(loadQuickAccess("m-1", storage)).toEqual(NO_EDITS);
+    expect(quickAccessKey(null)).toBe("penguin.finderQuickAccess.local");
+    expect(quickAccessKey("m-1")).toBe("penguin.finderQuickAccess.m-1");
+    store.set(quickAccessKey("m-2"), "{not json");
+    expect(loadQuickAccess("m-2", storage)).toEqual(NO_EDITS);
+    store.set(quickAccessKey("m-3"), JSON.stringify({ added: ["/a", 3, ""], removed: "x" }));
+    expect(loadQuickAccess("m-3", storage)).toEqual({ added: ["/a"], removed: [] });
+  });
+});
+
+describe("the context menu", () => {
+  it("offers a folder open, choose, Quick access and copy; a file only copy", () => {
+    const folder = { kind: "folder" as const, path: "/p/a", machine: null };
+    expect(finderMenuItems(folder, false)).toEqual([
+      "open",
+      "choose",
+      "addToQuickAccess",
+      "copyPath",
+    ]);
+    expect(finderMenuItems(folder, true)).toContain("removeFromQuickAccess");
+    expect(finderMenuItems({ ...folder, kind: "file" }, false)).toEqual(["copyPath"]);
+  });
+
+  it("acts on the open folder from the list's empty space, with Refresh", () => {
+    expect(finderMenuItems({ kind: "here", path: "/p", machine: null }, false)).toEqual([
+      "choose",
+      "addToQuickAccess",
+      "copyPath",
+      "refresh",
     ]);
   });
 });
@@ -216,5 +331,16 @@ describe("the modal (source contract)", () => {
   it("says a refused folder is refused, and names the macOS setting only on darwin", () => {
     expect(finder).toContain('code === "dir_permission_denied"');
     expect(finder).toMatch(/platform === "darwin"\s*\?\s*f\.deniedMac/);
+  });
+
+  it("types a path in the address bar itself — no separate Go to row or button", () => {
+    expect(finder).toContain("onClick={editAddress}");
+    expect(finder).not.toMatch(/goToSubmit|gotoRow/);
+  });
+
+  it("gives a folder row an enter button, and one context menu covers the finder", () => {
+    expect(finder).toContain("aria-label={f.openFolder(entry.name)}");
+    expect(finder).toContain("useRowContextMenu()");
+    expect(finder).toContain("anchorRect={menu.anchor}");
   });
 });

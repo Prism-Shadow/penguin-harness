@@ -1,7 +1,8 @@
 /**
  * The Workspace finder's decisions, kept apart from the modal so they are testable without a
  * DOM: path breadcrumbs, back/forward history, what the list shows and in which order,
- * type-to-select, the sidebar's places, and the keyboard map.
+ * type-to-select, the sidebar's places (Quick access, with the user's own additions and
+ * removals), the context menu's items, and the keyboard map.
  *
  * Paths come from whichever machine is being browsed, so nothing here asks the browser's own
  * platform about a path — a Windows server's `C:\Users\me` and a Linux one's `/home/me` both
@@ -148,42 +149,215 @@ export function stepSelection(
   return from;
 }
 
-/** A sidebar place. `key` picks its label and icon; `path` is what clicking it opens. */
+/** A standard folder that a platform's own file manager lists in its sidebar. */
+export type StandardFolder = "desktop" | "documents" | "downloads" | "pictures";
+
+/** A sidebar place. `key` picks its icon (and a standard folder's label); `path` is what clicking it opens. */
 export interface Place {
-  key: "home" | "desktop" | "documents" | "downloads" | "drive";
+  key: "home" | StandardFolder | "drive" | "folder";
   path: string;
-  /** The label for places named by their path (home by its folder name, a drive by its letter). */
+  /** The label for places named by their path: home by its folder name, a drive by its letter, an added folder by its name. */
   label: string;
 }
 
-/** The standard folders offered under Favourites, in the order Finder lists them. */
-const STANDARD_FOLDERS = [
-  ["desktop", "Desktop"],
-  ["documents", "Documents"],
-  ["downloads", "Downloads"],
-] as const;
+/** The three families of Quick access defaults. */
+export type QuickAccessPlatform = "win32" | "darwin" | "linux";
 
 /**
- * Favourites for one machine, from that machine's own home listing: home itself, the standard
- * folders that actually exist there, and — on Windows — the drive roots. The home listing is
- * the source rather than a guessed path because only that machine knows whether the folder is
- * there (a Linux server without a desktop has none of them). Windows keeps the same folder
- * names under the profile directory, but matches them ignoring case as its filesystem does.
+ * Anything other than Windows and macOS reads as Linux — including a machine browsed over ssh,
+ * which reports no platform at all and is nearly always a Linux server.
  */
-export function favouritePlaces(home: DirListResponse | null): Place[] {
+export function quickAccessPlatform(platform: string | undefined): QuickAccessPlatform {
+  return platform === "win32" || platform === "darwin" ? platform : "linux";
+}
+
+/**
+ * Each platform's standard folders, in the order its own file manager lists them: Explorer's
+ * Quick access pins Desktop, Downloads, Documents and Pictures; Finder's Favourites list
+ * Desktop, Documents and Downloads; a Linux desktop's Files shows the XDG folders Desktop,
+ * Documents, Downloads and Pictures. Media-only folders (Music, Videos) and Applications are
+ * left out — none of them is somewhere a Workspace lives.
+ */
+const STANDARD_FOLDERS: Record<
+  QuickAccessPlatform,
+  ReadonlyArray<readonly [StandardFolder, string]>
+> = {
+  win32: [
+    ["desktop", "Desktop"],
+    ["downloads", "Downloads"],
+    ["documents", "Documents"],
+    ["pictures", "Pictures"],
+  ],
+  darwin: [
+    ["desktop", "Desktop"],
+    ["documents", "Documents"],
+    ["downloads", "Downloads"],
+  ],
+  linux: [
+    ["desktop", "Desktop"],
+    ["documents", "Documents"],
+    ["downloads", "Downloads"],
+    ["pictures", "Pictures"],
+  ],
+};
+
+/**
+ * Quick access as the machine offers it before the user changes anything, from that machine's
+ * own home listing: home itself, then the platform's standard folders that exist there. The
+ * home listing is the source rather than a guessed path because only that machine knows
+ * whether the folder is there (a Linux server without a desktop has none of them). Windows
+ * matches the names ignoring case, as its filesystem does.
+ */
+export function defaultPlaces(home: DirListResponse | null): Place[] {
   if (home === null) return [];
-  const win = home.platform === "win32";
+  const platform = quickAccessPlatform(home.platform);
   const places: Place[] = [{ key: "home", path: home.path, label: baseName(home.path) }];
-  for (const [key, name] of STANDARD_FOLDERS) {
+  for (const [key, name] of STANDARD_FOLDERS[platform]) {
     const found = home.entries.find(
-      (e) => isFolder(e) && (win ? e.name.toLowerCase() === name.toLowerCase() : e.name === name),
+      (e) =>
+        isFolder(e) &&
+        (platform === "win32" ? e.name.toLowerCase() === name.toLowerCase() : e.name === name),
     );
     if (found !== undefined) places.push({ key, path: found.path, label: found.name });
   }
-  for (const root of home.roots ?? []) {
-    places.push({ key: "drive", path: root, label: root.replace(/\\$/, "") });
-  }
   return places;
+}
+
+/** Windows' drive roots, for the This PC section; nothing on other platforms. */
+export function drivePlaces(home: DirListResponse | null): Place[] {
+  return (home?.roots ?? []).map((root) => ({
+    key: "drive",
+    path: root,
+    label: root.replace(/\\$/, ""),
+  }));
+}
+
+/** What the user changed in one machine's Quick access. */
+export interface QuickAccessEdits {
+  /** Folders the user added, oldest first. */
+  added: string[];
+  /** Default places the user removed. */
+  removed: string[];
+}
+
+export const NO_EDITS: QuickAccessEdits = { added: [], removed: [] };
+
+/**
+ * Quick access as shown: the defaults the user kept, in their own order, then the folders the
+ * user added. Kept as edits against the defaults rather than as a stored list, so a standard
+ * folder that appears on the machine later still turns up unless it was removed.
+ */
+export function quickAccessPlaces(defaults: readonly Place[], edits: QuickAccessEdits): Place[] {
+  const shown = defaults.filter((p) => !edits.removed.includes(p.path));
+  for (const path of edits.added) {
+    if (!shown.some((p) => p.path === path))
+      shown.push({ key: "folder", path, label: baseName(path) });
+  }
+  return shown;
+}
+
+/** Adds a folder: a removed default comes back in its own place; anything else joins the end. */
+export function addToQuickAccess(
+  edits: QuickAccessEdits,
+  defaults: readonly Place[],
+  path: string,
+): QuickAccessEdits {
+  if (defaults.some((p) => p.path === path)) {
+    return edits.removed.includes(path)
+      ? { ...edits, removed: edits.removed.filter((p) => p !== path) }
+      : edits;
+  }
+  return edits.added.includes(path) ? edits : { ...edits, added: [...edits.added, path] };
+}
+
+/** Removes a folder: an added one is forgotten, a default one is remembered as removed. */
+export function removeFromQuickAccess(
+  edits: QuickAccessEdits,
+  defaults: readonly Place[],
+  path: string,
+): QuickAccessEdits {
+  const added = edits.added.filter((p) => p !== path);
+  const hide = defaults.some((p) => p.path === path) && !edits.removed.includes(path);
+  if (added.length === edits.added.length && !hide) return edits;
+  return { added, removed: hide ? [...edits.removed, path] : edits.removed };
+}
+
+/** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory one. */
+export interface QuickAccessStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/**
+ * Storage key of one machine's Quick access edits. Per machine because a path means something
+ * only on the machine it is on; `local` is the server serving this page, whose paths no other
+ * machine shares.
+ */
+export const quickAccessKey = (machineId: string | null): string =>
+  `penguin.finderQuickAccess.${machineId ?? "local"}`;
+
+/** One machine's edits; nothing stored, or anything unreadable, is no edits at all. */
+export function loadQuickAccess(
+  machineId: string | null,
+  storage?: QuickAccessStorage,
+): QuickAccessEdits {
+  try {
+    // Resolved inside the try: touching localStorage throws when site data is blocked.
+    const raw: unknown = JSON.parse(
+      (storage ?? localStorage).getItem(quickAccessKey(machineId)) ?? "null",
+    );
+    if (typeof raw !== "object" || raw === null) return NO_EDITS;
+    const paths = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x !== "") : [];
+    const record = raw as Record<string, unknown>;
+    return { added: paths(record.added), removed: paths(record.removed) };
+  } catch {
+    return NO_EDITS;
+  }
+}
+
+/** Writes one machine's edits (best-effort: quota limits and blocked storage fail silently). */
+export function saveQuickAccess(
+  machineId: string | null,
+  edits: QuickAccessEdits,
+  storage?: QuickAccessStorage,
+): void {
+  try {
+    (storage ?? localStorage).setItem(quickAccessKey(machineId), JSON.stringify(edits));
+  } catch {
+    /* best-effort persistence */
+  }
+}
+
+/**
+ * What a secondary click landed on: a folder (a list row or a sidebar place), a file row, or
+ * the list's empty space, which stands for the folder on screen.
+ */
+export interface FinderMenuTarget {
+  kind: "folder" | "file" | "here";
+  path: string;
+  /** The machine the path is on (null: this server) — a Recent entry may be on another one. */
+  machine: string | null;
+}
+
+export type FinderMenuItem =
+  "open" | "choose" | "addToQuickAccess" | "removeFromQuickAccess" | "copyPath" | "refresh";
+
+/**
+ * The context menu's rows, the way Explorer orders them: what opening the thing does first,
+ * then choosing it, then Quick access, then copying its path. A file row only copies (files
+ * are listed for context and cannot be picked); the empty space acts on the open folder, and
+ * adds Refresh as Explorer's background menu does.
+ */
+export function finderMenuItems(
+  target: FinderMenuTarget,
+  inQuickAccess: boolean,
+): FinderMenuItem[] {
+  if (target.kind === "file") return ["copyPath"];
+  const quick = inQuickAccess ? "removeFromQuickAccess" : "addToQuickAccess";
+  return target.kind === "here"
+    ? ["choose", quick, "copyPath", "refresh"]
+    : ["open", "choose", quick, "copyPath"];
 }
 
 /** A Workspace recently used in this Project, and the machine it is on (null: this server). */
@@ -245,9 +419,9 @@ export type FinderKey = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "alt
 
 /**
  * The finder's keyboard map. The modifier is ⌘ on a Mac and Ctrl elsewhere, so the Finder
- * chords (⌘↑ parent, ⌘↓ open, ⌘[ / ⌘] back and forward, ⌘⇧G go to folder) read the same
- * on every platform; Alt+arrows are accepted too off the Mac, where Explorer and the
- * browsers taught them. Plain arrows, Home/End and Enter are list keys — `inList` is false
+ * chords (⌘↑ parent, ⌘↓ open, ⌘[ / ⌘] back and forward, ⌘⇧G type a path into the address
+ * bar) read the same on every platform; Alt+arrows are accepted too off the Mac, where
+ * Explorer and the browsers taught them. Plain arrows, Home/End and Enter are list keys — `inList` is false
  * for a text field, where they belong to the field (Up/Down excepted: the filter box steers
  * the list the way a combobox does).
  */
