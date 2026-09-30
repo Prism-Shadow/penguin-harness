@@ -7,7 +7,13 @@
  * ships in the same slice.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assistantText, requestBegin, requestEnd, sessionMeta, userText } from "@prismshadow/penguin-core";
+import {
+  assistantText,
+  requestBegin,
+  requestEnd,
+  sessionMeta,
+  userText,
+} from "@prismshadow/penguin-core";
 import type {
   ServerSettingsResponse,
   TelemetryResponse,
@@ -17,13 +23,7 @@ import type {
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { Reassembly } from "../src/hmr/capabilities.js";
 import { REDACTED } from "../src/services/redact.js";
-import {
-  apiClient,
-  createTestApp,
-  loginAdmin,
-  provisionUser,
-  writeTraceFile,
-} from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const P = "default_project";
@@ -90,7 +90,9 @@ describe("telemetry", () => {
   };
 
   it("is off by default: nothing is recorded, no request id is minted", async () => {
-    const settings = (await (await admin.get("/api/admin/settings")).json()) as ServerSettingsResponse;
+    const settings = (await (
+      await admin.get("/api/admin/settings")
+    ).json()) as ServerSettingsResponse;
     expect(settings.settings.telemetry).toBe(false);
     const res = await openSession();
     expect(res.headers.get("x-penguin-request-id")).toBeNull();
@@ -162,12 +164,15 @@ describe("telemetry", () => {
       expect.arrayContaining(["TelemetryService", "HttpModule", "Startup"]),
     );
     for (const probe of ["boot.migrate", "boot.plugins", "boot.modules", "boot.create"]) {
-      expect(boot.find((s) => s.probe === probe), probe).toBeDefined();
+      expect(
+        boot.find((s) => s.probe === probe),
+        probe,
+      ).toBeDefined();
     }
     // The test App's first create was generation 1; the re-assembly is the second.
-    expect(new Set(boot.filter((s) => s.probe.startsWith("boot.")).map((s) => s.keys.generation))).toEqual(
-      new Set([2]),
-    );
+    expect(
+      new Set(boot.filter((s) => s.probe.startsWith("boot.")).map((s) => s.keys.generation)),
+    ).toEqual(new Set([2]));
     let quiet: TelemetrySample | undefined;
     for (let i = 0; i < 100 && quiet === undefined; i++) {
       quiet = ((await read("?view=samples&probe=boot.quiet")).samples ?? [])[0];

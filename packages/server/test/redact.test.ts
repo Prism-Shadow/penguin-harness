@@ -26,7 +26,14 @@ describe("isCredentialName", () => {
   });
 
   it("leaves counters and other look-alikes alone", () => {
-    for (const name of ["input_tokens", "max_tokens", "tokenCount", "token_usage", "keys", "passwordIsInitial"]) {
+    for (const name of [
+      "input_tokens",
+      "max_tokens",
+      "tokenCount",
+      "token_usage",
+      "keys",
+      "passwordIsInitial",
+    ]) {
       expect(isCredentialName(name), name).toBe(false);
     }
   });
@@ -35,7 +42,9 @@ describe("isCredentialName", () => {
 describe("redactText", () => {
   it("redacts provider key formats and bearer values", () => {
     expect(redactText("key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123")).toBe(`key ${REDACTED}`);
-    expect(redactText("gh token ghp_abcdefghijklmnopqrstuvwxyz0123456789")).toBe(`gh token ${REDACTED}`);
+    expect(redactText("gh token ghp_abcdefghijklmnopqrstuvwxyz0123456789")).toBe(
+      `gh token ${REDACTED}`,
+    );
     expect(redactText("Authorization: Bearer abc.def.ghi-jkl_mno")).toContain(`Bearer ${REDACTED}`);
     expect(redactText("AKIAABCDEFGHIJKLMNOP")).toBe(REDACTED);
   });
@@ -56,7 +65,8 @@ describe("redactText", () => {
   });
 
   it("redacts PEM private key blocks and ssh private key paths, not public keys", () => {
-    const pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----";
+    const pem =
+      "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----";
     expect(redactText(`key:\n${pem}\nend`)).toBe(`key:\n${REDACTED}\nend`);
     expect(redactText("ssh -i ~/.ssh/id_ed25519 host")).toBe(`ssh -i ${REDACTED} host`);
     expect(redactText("  IdentityFile /home/k/.ssh/id_rsa")).toBe(`  IdentityFile ${REDACTED}`);
@@ -68,7 +78,13 @@ describe("redactValue", () => {
   it("walks objects and arrays, redacting credential fields and credential-shaped strings", () => {
     const events = {
       events: [
-        { type: "tool_call", payload: { name: "bash", arguments: `{"command":"echo sk-proj-abcdefghijklmnopqrstuvwx"}` } },
+        {
+          type: "tool_call",
+          payload: {
+            name: "bash",
+            arguments: `{"command":"echo sk-proj-abcdefghijklmnopqrstuvwx"}`,
+          },
+        },
         { type: "session_meta", payload: { apiKey: "plain-value", provider: "deepseek" } },
         { type: "token_usage", payload: { input_tokens: 10, output_tokens: 2 } },
       ],

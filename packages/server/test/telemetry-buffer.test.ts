@@ -16,7 +16,13 @@ import {
 import { TELEMETRY_ENABLED_KEY, TelemetryService } from "../src/telemetry/service.js";
 
 const sample = (probe: string, durMs?: number, extra: Partial<TelemetrySample> = {}) =>
-  ({ ts: 0, probe, ...(durMs !== undefined ? { durMs } : {}), keys: {}, ...extra }) as TelemetrySample;
+  ({
+    ts: 0,
+    probe,
+    ...(durMs !== undefined ? { durMs } : {}),
+    keys: {},
+    ...extra,
+  }) as TelemetrySample;
 
 describe("SampleRing", () => {
   it("keeps at most maxSamples, dropping the oldest", () => {
@@ -58,7 +64,14 @@ describe("summaries", () => {
 
   it("per probe: count, nearest-rank p50/p95, max and summed bytes", () => {
     const http = summarizeProbes(samples).find((p) => p.probe === "http.request")!;
-    expect(http).toEqual({ probe: "http.request", count: 3, p50Ms: 20, p95Ms: 30, maxMs: 30, bytes: 150 });
+    expect(http).toEqual({
+      probe: "http.request",
+      count: 3,
+      p50Ms: 20,
+      p95Ms: 30,
+      maxMs: 30,
+      bytes: 150,
+    });
     expect(summarizeProbes(samples).find((p) => p.probe === "boot.module")!.bytes).toBeNull();
   });
 
@@ -72,9 +85,9 @@ describe("summaries", () => {
   });
 
   it("selects by probe and session, limit keeping the newest", () => {
-    expect(selectSamples(samples, { probe: "http.request", limit: 2 }).map((s) => s.durMs)).toEqual([
-      30, 20,
-    ]);
+    expect(selectSamples(samples, { probe: "http.request", limit: 2 }).map((s) => s.durMs)).toEqual(
+      [30, 20],
+    );
     expect(selectSamples(samples, { session: "s1" })).toHaveLength(2);
   });
 });
@@ -83,7 +96,11 @@ describe("TelemetryService switch", () => {
   const settingsStub = (initial: string | null) => {
     const store = new Map<string, string>();
     if (initial !== null) store.set(TELEMETRY_ENABLED_KEY, initial);
-    return { get: (k: string) => store.get(k) ?? null, set: (k: string, v: string) => store.set(k, v), store };
+    return {
+      get: (k: string) => store.get(k) ?? null,
+      set: (k: string, v: string) => store.set(k, v),
+      store,
+    };
   };
   const make = (initial: string | null) => {
     const settings = settingsStub(initial);
@@ -107,7 +124,9 @@ describe("TelemetryService switch", () => {
     await svc.within({ request: "r1" }, async () => {
       svc.record({ probe: "trace.read", durMs: 2, keys: { session: "s" } });
     });
-    expect(svc.samples({})).toMatchObject([{ probe: "trace.read", keys: { request: "r1", session: "s" } }]);
+    expect(svc.samples({})).toMatchObject([
+      { probe: "trace.read", keys: { request: "r1", session: "s" } },
+    ]);
     svc.setEnabled(false);
     expect(settings.store.get(TELEMETRY_ENABLED_KEY)).toBe("false");
     expect(svc.samples({})).toEqual([]);
