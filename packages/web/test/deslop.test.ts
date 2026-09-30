@@ -107,7 +107,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/chat/drop-zone.tsx": { 18: [1, "W7"] },
   "features/chat/live-duration.tsx": { 6: [1, "W4"] },
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
-  "features/chat/message-item.tsx": { 4: [2, "W6"], 6: [1, "W6"], 13: [3, "W6"] },
+  "features/chat/message-item.tsx": { 4: [2, "W6"], 13: [3, "W6"] },
   "features/chat/message-stream.tsx": { 11: [2, "W1b"] },
   "features/chat/model-picker-modal.tsx": { 12: [1, "W10"] },
   "features/chat/shortcuts-folder.tsx": { 12: [1, "W7"] },

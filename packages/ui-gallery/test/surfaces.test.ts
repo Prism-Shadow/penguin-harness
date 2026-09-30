@@ -29,6 +29,7 @@ describe("the surfaces", () => {
   it("cover the surfaces the owner named, and the home page frames one of them", () => {
     for (const id of [
       "chat",
+      "chat-streaming",
       "agents",
       "plugins",
       "models",
@@ -96,6 +97,7 @@ describe("the surfaces", () => {
     expect(surfaceById("chat")?.route).toBe(`/chat/${IDS.sessions.done}`);
     expect(surfaceById("chat-running")?.route).toBe(`/chat/${IDS.sessions.runningTool}`);
     expect(surfaceById("chat-thinking")?.route).toBe(`/chat/${IDS.sessions.thinking}`);
+    expect(surfaceById("chat-streaming")?.route).toBe(`/chat/${IDS.sessions.streaming}`);
     expect(surfaceById("chat-approval")?.route).toBe(`/chat/${IDS.sessions.approval}`);
     expect(surfaceById("settings")?.route).toBe(`/chat/${IDS.sessions.done}`);
     expect(surfaceById("agent-settings")?.route).toBe(`/agents/${IDS.agents.docs}`);
