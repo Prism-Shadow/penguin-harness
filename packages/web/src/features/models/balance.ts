@@ -58,6 +58,10 @@ const readingsStore = createStore<{ readings: Readonly<Record<string, BalanceSta
 
 const inflight = new Map<string, Promise<void>>();
 
+/** The newest request per key: an older one that lands after it (a refresh click overtook it) is dropped. */
+const latest = new Map<string, number>();
+let requestSeq = 0;
+
 function readingKey(projectId: string, provider: string): string {
   return `${projectId}\u0000${provider}`;
 }
@@ -77,16 +81,21 @@ export function requestBalance(projectId: string, provider: string, force = fals
   const pending = inflight.get(key);
   if (pending !== undefined && !force) return pending;
   setReading(key, (prev) => ({ ...prev, loading: true }));
+  const mine = ++requestSeq;
+  latest.set(key, mine);
   const call = api
     .getModelBalance(projectId, provider, force)
-    .then((answer) => setReading(key, () => ({ loading: false, answer })))
-    .catch((error: unknown) =>
+    .then((answer) => {
+      if (latest.get(key) === mine) setReading(key, () => ({ loading: false, answer }));
+    })
+    .catch((error: unknown) => {
+      if (latest.get(key) !== mine) return;
       setReading(key, (prev) => ({
         loading: false,
         ...(prev?.answer !== undefined ? { answer: prev.answer } : {}),
         requestError: apiErrorText(error),
-      })),
-    )
+      }));
+    })
     .finally(() => {
       if (inflight.get(key) === call) inflight.delete(key);
     });
