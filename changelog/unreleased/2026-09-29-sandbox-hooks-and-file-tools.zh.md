@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `core`, `server`, `plugins`, `docs`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#893](https://github.com/Prism-Shadow/penguin-harness/pull/893)
 - **Breaking:** yes — 封禁模式下，文件工具与钩子脚本和命令一样受约束，不能写记忆与 Agent State；`scriptStopHook` / `scriptPreToolUseHook` / `scriptUserPromptHook` 改为接受选项对象
 
 [English](2026-09-29-sandbox-hooks-and-file-tools.md)

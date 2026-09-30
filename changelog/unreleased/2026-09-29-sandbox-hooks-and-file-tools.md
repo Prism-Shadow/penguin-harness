@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `core`, `server`, `plugins`, `docs`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#893](https://github.com/Prism-Shadow/penguin-harness/pull/893)
 - **Breaking:** yes — in a confining sandbox mode the file tools and hook scripts are confined like commands and cannot write memory or Agent State; `scriptStopHook` / `scriptPreToolUseHook` / `scriptUserPromptHook` take an options object
 
 [中文版](2026-09-29-sandbox-hooks-and-file-tools.zh.md)
