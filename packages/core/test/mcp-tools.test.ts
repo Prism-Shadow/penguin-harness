@@ -292,9 +292,13 @@ describe("MCP over stdio — under the Session's sandbox", () => {
       const final = finalPayload(await runTool(env, "mcp__fx__probe", {}));
       // The runner's entry lies over the entry's own, and the runner saw it first.
       expect(final.output).toMatch(/^via-runner:from-runner\|/);
-      expect(scopes).toEqual([
-        { cwd: tmp, workspaceDir: tmp, scratchpadDir: path.join(tmp, "scratchpad", "s1") },
-      ]);
+      // The first spawn the confiner saw is the server's (the file tools' helper is asked
+      // about at every tool call, after the server connected).
+      expect(scopes[0]).toEqual({
+        cwd: tmp,
+        workspaceDir: tmp,
+        scratchpadDir: path.join(tmp, "scratchpad", "s1"),
+      });
     } finally {
       env.dispose();
     }

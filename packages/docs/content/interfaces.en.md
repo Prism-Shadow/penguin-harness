@@ -256,10 +256,9 @@ interface EnvironmentConfig {
   controlEnv?: () => Record<string, string>; // host control variables (API address, token, Session coordinates); re-read per
                                             // spawn; override vault entries, never the hardened ones
   pathPrepend?: () => string[];             // directories put at the front of PATH for command subprocesses; re-read per spawn
-  confineSpawn?: () => SpawnConfiner | null; // sandbox confinement for command subprocesses; re-read per spawn,
-                                            // absent or null = commands spawn unconfined
-  sandboxPolicy?: () => SandboxSettings | null; // the Session's sandbox policy, which the file tools apply
-                                            // themselves on the real path; re-read per call, absent or null = unconfined
+  confineSpawn?: () => SpawnConfiner | null; // sandbox confinement for everything spawned for the Session: command
+                                            // subprocesses, stdio MCP Servers and the file tools' helper; re-read per
+                                            // spawn, absent or null = everything spawns unconfined
 }
 
 // "strip" removes HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept); "inject" forces the explicit
@@ -329,8 +328,9 @@ interface BuiltinTool {
   detachable?: boolean;              // has a background form a running call can be moved to
   execute(
     args: Record<string, unknown>,
-    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fileAccess? };
-                                     // fileAccess = the Session's sandbox, for a tool that touches files in-process
+    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fs? };
+                                     // fs = the file-system port a file tool works through (the sandboxed helper
+                                     // when the Session is confined, this process otherwise; fs.sandboxed says which)
   ): AsyncGenerator<OmniMessage, ToolResult | void>;
 }
 
@@ -403,7 +403,7 @@ interface VisionDescriberService {
 | --- | --- |
 | Swap or customize model access | Implement `LLMInterface` (or just set `client_type` for OpenAI-compatible endpoints) |
 | Swap the execution sandbox | Implement `EnvironmentInterface` |
-| Confine what an agent runs and writes | Supply `confineSpawn` with a `SpawnConfiner` for commands and hook scripts, and `sandboxPolicy` with the same policy for the file tools |
+| Confine what an agent runs and writes | Supply `confineSpawn` with a `SpawnConfiner`: it wraps commands, hook scripts, stdio MCP Servers and the file tools' helper alike |
 | Add a tool | Implement `BuiltinTool`, register a factory, and list the tool under `tools.builtin` in `system_config.yaml` (entries without a registered factory are skipped); or connect an MCP server under `tools.mcpServers` |
 | Customize approval policy | Inject an `ApproveFn` (the CLI and Web approval modes are wrappers over it) |
 | Change an agent's behavior | Edit its Agent State (`system_config.yaml`, `AGENTS.md`, Skills); see the [Configuration Reference](/configuration) |

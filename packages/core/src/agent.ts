@@ -62,7 +62,6 @@ import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./ho
 import type { ScriptHookOptions } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
 import { predatesEveryPromptHooks, userPromptTrigger } from "./plugins/index.js";
-import type { SandboxSettings } from "./plugin/sandbox.js";
 import type { SessionConfig, SessionOpenedContext } from "./session.js";
 import {
   createTempWorkspace,
@@ -152,14 +151,6 @@ export interface CreateAgentOptions {
    * keep a policy per Session. Absent = commands spawn unconfined.
    */
   confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
-  /**
-   * The Session's sandbox policy for the file tools, which run in this process and apply
-   * it themselves (see {@link EnvironmentConfig.sandboxPolicy}). Host policy exactly like
-   * `confineSpawn`: the same policy the commands are confined under, evaluated with the
-   * Session's coordinates, re-read at every call, inherited by subagents' Sessions.
-   * Absent = the file tools are unconfined.
-   */
-  sandboxPolicy?: (ctx: ControlEnvContext) => SandboxSettings | null;
   /**
    * What a host adds to every Session this Agent assembles — see {@link AgentAssembly}.
    * Host policy like
@@ -400,7 +391,6 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
     opts.pathPrepend,
     opts.confineSpawn,
     opts.assembly,
-    opts.sandboxPolicy,
   );
 }
 
@@ -418,8 +408,6 @@ export class Agent {
     private readonly confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null,
     /** See {@link CreateAgentOptions.assembly}; read at every Session creation. */
     private readonly assembly?: AgentAssembly,
-    /** See {@link CreateAgentOptions.sandboxPolicy}; evaluated per Session with that Session's coordinates. */
-    private readonly sandboxPolicy?: (ctx: ControlEnvContext) => SandboxSettings | null,
   ) {}
 
   /**
@@ -1003,7 +991,6 @@ export class Agent {
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
                 ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
-                ...(parentAgent.sandboxPolicy ? { sandboxPolicy: parentAgent.sandboxPolicy } : {}),
                 ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               })
             : parentAgent;
@@ -1054,7 +1041,6 @@ export class Agent {
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
                 ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
-                ...(parentAgent.sandboxPolicy ? { sandboxPolicy: parentAgent.sandboxPolicy } : {}),
                 ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
@@ -1233,17 +1219,6 @@ export class Agent {
         ? {
             confineSpawn: () =>
               this.confineSpawn!({
-                projectId: this.state.projectId,
-                agentId: this.state.agentId,
-                sessionId,
-              }),
-          }
-        : {}),
-      // The same policy, for the file tools that apply it in this process.
-      ...(this.sandboxPolicy
-        ? {
-            sandboxPolicy: () =>
-              this.sandboxPolicy!({
                 projectId: this.state.projectId,
                 agentId: this.state.agentId,
                 sessionId,

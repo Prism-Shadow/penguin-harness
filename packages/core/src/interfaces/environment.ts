@@ -18,7 +18,6 @@ import type { ApproveFn, RunCutoff, ThinkingLevelName } from "./shared.js";
 import type { LLMInterface } from "./llm.js";
 // Concrete classes, used only for EnvironmentServices type annotations (type-only import; no runtime dependency, no circular reference).
 import type { CommandSessionManager } from "../environment/tools/command/session-manager.js";
-import type { SandboxSettings } from "../plugin/sandbox.js";
 import type { SubagentSessionManager } from "../environment/tools/subagent/session-manager.js";
 
 // ---------------------------------------------------------------------------
@@ -326,24 +325,16 @@ export interface EnvironmentConfig {
    */
   pathPrepend?: () => string[];
   /**
-   * Sandbox-confinement seam for exec_command / input_command subprocesses (see
-   * {@link SpawnConfiner}). Like {@link EnvironmentConfig.proxyEnv} it is a getter
-   * re-read at every spawn, so the hosting server can change the active confiner at
-   * runtime (e.g. via a platform hot push) and reach Sessions that are already
-   * running. Absent, or a getter returning null = commands spawn unconfined (the
-   * default for SDK/CLI standalone use).
+   * Sandbox-confinement seam for everything the Environment spawns for the Session: the
+   * exec_command / input_command subprocesses, the stdio MCP Servers, and the helper the
+   * file tools work through when the Session is confined (see {@link SpawnConfiner} and
+   * tools/fs-worker.ts). Like {@link EnvironmentConfig.proxyEnv} it is a getter re-read
+   * at every spawn, so the hosting server can change the active confiner at runtime
+   * (e.g. via a platform hot push) and reach Sessions that are already running. Absent,
+   * or a getter returning null = everything spawns unconfined (the default for SDK/CLI
+   * standalone use).
    */
   confineSpawn?: () => SpawnConfiner | null;
-  /**
-   * The Session's sandbox policy, for the file tools (see
-   * {@link SandboxSettings}). read_file / edit_file / write_file run inside this process,
-   * so no runner can wrap them: the tools apply the policy themselves before each
-   * operation, on the real path they are about to touch (see tools/file-access.ts).
-   * A getter re-read at every call, like {@link EnvironmentConfig.confineSpawn}, so a
-   * policy the host changes reaches the next call. Absent, or a getter returning null =
-   * the tools are unconfined (the default for SDK/CLI standalone use).
-   */
-  sandboxPolicy?: () => SandboxSettings | null;
 }
 
 /**

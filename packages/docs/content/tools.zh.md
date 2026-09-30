@@ -188,17 +188,15 @@ exec_command(cmd)
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 在 harness 进程内以用户的权限运行，受 Session 的沙盒约束。相对路径以 Workspace 为基准解析，也允许绝对路径。符号链接会解析到它指向的文件：读取、编辑和写入都作用于目标文件，链接本身仍是链接。`read_file` 拒绝读取机密存储 `.vault.toml` 和 `.project_config.toml`：无论文件位于哪个目录、路径是否经过符号链接，都按文件名匹配。
+`read_file` / `edit_file` / `write_file` 是 harness 自己的代码，但它们的每一次文件系统效果——stat、读取、原子写入、列目录、解析符号链接，以及 `read_file` 下载图片 URL——都经一个文件系统端口执行。相对路径以 Workspace 为基准解析，也允许绝对路径。符号链接会解析到它指向的文件：读取、编辑和写入都作用于目标文件，链接本身仍是链接。`read_file` 拒绝读取机密存储 `.vault.toml` 和 `.project_config.toml`：无论文件位于哪个目录、路径是否经过符号链接，都按文件名匹配。
 
-Session 的[沙盒](/settings#沙盒)让文件工具与它的命令遵守同一份策略；但在 harness 进程内运行的工具无法由沙盒运行器包裹，因此由 harness 在每次操作前自行判定，判定依据是真实路径。符号链接解析到它的目标，尚不存在的路径沿最深的已存在祖先解析，因此 Workspace 内的链接无法把写入带到 Workspace 之外。写入必须落在模式允许写的目录之下：仅工作区可写时是 Workspace、Session 的 scratchpad 和临时目录，只读时只有临时目录。只有屏蔽路径之下的读取会被拒绝，屏蔽路径同样不可写；图片 URL 只在网络档位允许的范围内读取：无网络时一律拒绝，本地网络时只允许回环地址。被拒绝的调用以 `fatal` 收尾，给模型一句以 `Denied by the sandbox:` 开头、说明拒绝了什么的话，让它换一条路再试：
+在被[沙盒](/settings#沙盒)封禁的 Session 里，这个端口是一个助手进程，由包裹命令的同一个 confiner 包裹：harness 以内联程序启动一个 Node 进程（`node -e …`，只用内置模块，因此无需随 bundle 分发任何文件），策略与范围（Workspace 与 Session 的 scratchpad）与命令相同，工具的各项操作以 JSON 行经它的 stdin / stdout 往返。文件工具能做的于是与命令完全一致：约束 Session 命令的后端同样约束它们，屏蔽路径也不例外，下载遵守网络档位。每个 Session 一个助手：在第一次受封禁的文件操作时启动、此后复用，Session 的策略改变或助手崩溃后重新启动，调用被中止时被杀掉（沙盒可能正卡住这次操作），随 Session 一起结束。被拒绝的写入以内核的权限错误返回，工具点明是沙盒所为，让模型换一条路再试：
 
 ```text
-Denied by the sandbox: "/etc/hosts" is outside the directories this session may write to (mode workspace-write; writable: <workspace>, <scratchpad>, /tmp).
+Failed to write "/etc/hosts": EROFS: read-only file system, open '/etc/hosts' — refused by this session's sandbox, which does not allow that here.
 ```
 
-判定与操作之间隔着一步，其间有命令把目录换成链接时无法察觉。没有沙盒策略时（SDK 或 CLI 独立运行，或沙盒关闭），什么都不会被拒绝，文件工具与 shell 工具一样以用户的完整权限运行。
-
-文件工具返回单个最终输出，而不是流式输出；唯一的例外是：对纯文本模型，`read_file` 会流式返回视觉模型对图片的描述。这些工具从不抛出异常。失败时以解释性文字返回，并带有 `stop_reason: fatal`。
+WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进发行版：Windows 盘符路径在进入时映射为 `/mnt/<盘符>` 的写法，返回时还原。在 `nodejs` 加入软件包列表之前初始化的发行版需要重新初始化。没有沙盒时（SDK 或 CLI 独立运行，或沙盒关闭），端口就是 harness 进程本身，文件工具与 shell 工具一样以用户的完整权限运行。
 
 `edit_file` 和 `write_file` 在服务器进程内按文件串行执行，串行键取文件的真实路径，因此符号链接与其目标算作同一个文件。并行编辑同一文件时，会依次应用各次修改；如果前一次编辑已经移除了某个 `old_string`，后续编辑将匹配失败，而不是覆盖前面的修改。其他进程的写入不受这把锁约束。
 
