@@ -89,6 +89,7 @@ import {
 import { useAuth } from "./auth";
 import { useOrgPages } from "../features/company/use-org-pages";
 import { useProject } from "./project";
+import { useSessions } from "./sessions";
 
 /**
  * The machine the open organization runs on, or null for this server (and while the list has
@@ -374,12 +375,31 @@ export async function heldMachines(projectId: string): Promise<HeldMachine[]> {
 }
 
 /**
+ * A proposals read that failed is tried again after this, doubling up to the ceiling — the
+ * sessions list's reload shape (state/sessions.tsx). The index behind every roadmap row's pill
+ * and every `proposal:<n>` capsule is otherwise read once per organization entry, and the
+ * event that would read it again is the one a dropped machine link stops delivering.
+ */
+export const PROPOSALS_RETRY_MIN_MS = 2_000;
+export const PROPOSALS_RETRY_MAX_MS = 30_000;
+
+/**
  * Builds one Provider's store. Exported as a test seam: the package's vitest runs in Node
  * with no DOM, so the event routing below is exercised against the store directly.
  * `serverEnabled` seeds the server's master switch (the Provider passes the auth context's), so
  * the first render already knows whether company mode may be entered.
  */
 export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
+  /** The pending retry of a failed proposals read, and the organization it is for. */
+  let proposalsRetry: { key: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** Failed reads in a row for `proposalsRetryKey`: the exponent of the next wait. */
+  let proposalsFailures = 0;
+  let proposalsRetryKey: string | null = null;
+  const cancelProposalsRetry = () => {
+    if (proposalsRetry === null) return;
+    clearTimeout(proposalsRetry.timer);
+    proposalsRetry = null;
+  };
   return createStore<CompanyStoreState>((set, get) => ({
     serverEnabled: options.serverEnabled ?? false,
     personalEnabled: true,
@@ -715,15 +735,43 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
      * Re-reads the open organization's proposals. A response for an organization the shell
      * has since left is dropped, and a failure leaves whatever the index already holds — a
      * capsule that names a proposal off a stale title beats one that names it by number alone.
+     *
+     * A failure is also read again on its own, backing off (`PROPOSALS_RETRY_*`) until one
+     * answers, the organization is left, or the plugin goes: nothing else is sure to ask again
+     * — the plugin's event that would is carried by the very machine link that may be down.
+     * Any read that starts, for whatever reason, replaces a retry still waiting.
      */
     reloadProposals: async (projectId, orgId) => {
       const key = orgKey(projectId, orgId);
+      cancelProposalsRetry();
+      if (key !== proposalsRetryKey) {
+        proposalsRetryKey = key;
+        proposalsFailures = 0;
+      }
       if (!get().proposalsEnabled) return;
       try {
         const res = await api.listOrgProposals(projectId, orgId);
-        if (get().currentOrgKey === key) set({ proposals: res.proposals, proposalsError: null });
+        if (get().currentOrgKey !== key) return;
+        proposalsFailures = 0;
+        set({ proposals: res.proposals, proposalsError: null });
       } catch (e) {
-        if (get().currentOrgKey === key) set({ proposalsError: apiErrorText(e) });
+        if (get().currentOrgKey !== key) return;
+        set({ proposalsError: apiErrorText(e) });
+        // A newer read of the same organization may have started (and scheduled) meanwhile.
+        if (proposalsRetry !== null || proposalsRetryKey !== key) return;
+        const delay = Math.min(
+          PROPOSALS_RETRY_MAX_MS,
+          PROPOSALS_RETRY_MIN_MS * 2 ** proposalsFailures,
+        );
+        proposalsFailures += 1;
+        const timer = setTimeout(() => {
+          if (proposalsRetry?.timer !== timer) return;
+          proposalsRetry = null;
+          const state = get();
+          if (state.currentOrgKey !== key || !state.proposalsEnabled) return;
+          void state.reloadProposals(projectId, orgId);
+        }, delay);
+        proposalsRetry = { key, timer };
       }
     },
 
@@ -799,11 +847,19 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
     /**
      * Events were lost (see publishCompanyResync): re-read the snapshots that carry run state
      * through the versions that already drive them — `runs` the sessions route, `orgs` the
-     * organization list and the open chart — so the surfaces stand on current state again.
+     * organization list and the open chart — so the surfaces stand on current state again. A
+     * lost proposal event is a stale index the same way, so `proposals` moves with them.
      */
     resync: () => {
       const versions = get().versions;
-      set({ versions: { ...versions, runs: versions.runs + 1, orgs: versions.orgs + 1 } });
+      set({
+        versions: {
+          ...versions,
+          runs: versions.runs + 1,
+          orgs: versions.orgs + 1,
+          proposals: versions.proposals + 1,
+        },
+      });
     },
   }));
 }
@@ -1008,6 +1064,16 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     store.getState().setProposalsEnabled(proposalsEnabled);
   }, [store, proposalsEnabled]);
   const proposalsVersion = versions.proposals;
+  // The open organization's machine did not answer and now does: the proposals event that
+  // link carries was lost meanwhile, so the index is read again (as on a resync).
+  const { offlineMachineIds } = useSessions();
+  const openMachineOffline = openMachine !== null && offlineMachineIds.includes(openMachine);
+  const wasOffline = useRef(openMachineOffline);
+  useEffect(() => {
+    const back = wasOffline.current && !openMachineOffline;
+    wasOffline.current = openMachineOffline;
+    if (back) store.getState().proposalsChanged();
+  }, [store, openMachineOffline]);
   useEffect(() => {
     const open = parseOrgKey(currentOrgKey);
     if (!serverEnabled || !proposalsEnabled || open === null || !orgsLoaded) return;
