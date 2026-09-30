@@ -7,6 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
+import { nagsAboutInitialPassword } from "../../lib/account-menu";
 import { S } from "../../lib/strings";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
@@ -39,7 +40,9 @@ import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
+import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { setDockScope } from "../../features/dock/dock-state";
+import { AppPalette } from "../../features/palette/app-palette";
 import { toneStrip } from "../../lib/tone";
 
 /**
@@ -305,7 +308,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         )}
       </nav>
       {/* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
-          first: appearance and System settings, the update row and signing out all stay one
+          first: appearance and Settings, the update row and signing out all stay one
           click away while collapsed. Same component as the pinned sidebar's (user-menu.tsx). */}
       <UserMenu
         className="mt-auto shrink-0"
@@ -352,7 +355,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 }
 
 export function AppLayout() {
-  const { user, desktopMode } = useAuth();
+  const { user, desktopMode, sessionVia } = useAuth();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
   // a parked draft id) is a scope of its own, handed to the Session the first send
@@ -384,7 +387,8 @@ export function AppLayout() {
   // dismissed banner never flashes before disappearing. Hydration only runs when the banner
   // would show at all; unreachable prefs fail open (treated as not dismissed, banner shows).
   const [passwordBannerDismissed, setPasswordBannerDismissed] = useState<boolean | null>(null);
-  const passwordBannerRelevant = Boolean(user?.passwordIsInitial) && !desktopMode;
+  const passwordBannerRelevant =
+    Boolean(user?.passwordIsInitial) && nagsAboutInitialPassword({ desktopMode, sessionVia });
   useEffect(() => {
     if (!passwordBannerRelevant) return;
     let cancelled = false;
@@ -520,6 +524,11 @@ export function AppLayout() {
         <TerminalDockRuntime />
         {/* Reconciles the shortcut mirror with the account's prefs and carries edits back. */}
         <ShortcutRuntime />
+        {/* The built-in browser's pages (desktop app only): they live here, outside every page,
+            and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
+            reloads, so navigating the app must never re-parent one. */}
+        <BuiltinBrowserLayer />
+        <AppPalette />
       </div>
 
       {/* The software-update modal, opened from the sidebar's update row and the draft

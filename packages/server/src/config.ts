@@ -42,6 +42,14 @@ export interface ServerConfig {
   /** Trusted Penguin Go origin; never supplied by a browser request. */
   penguinGoOrigin: string;
   /**
+   * Base URL of the ModelScope authorization bridge (MODELSCOPE_BRIDGE_URL), without a
+   * trailing slash — e.g. `https://go.penguin.ooo/modelscope`. The harness sends the
+   * start/poll exchange here and never to ModelScope itself: the bridge holds the OAuth
+   * client secret. Unlike `penguinGoOrigin` this value carries a path prefix in production,
+   * because the bridge is mounted under one and strips it from the incoming request.
+   */
+  modelscopeBridgeUrl: string;
+  /**
    * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
    * used by automated tests and e2e. Null is the norm: the seed then generates a random
    * password that is hashed and discarded unseen, and the account is claimed through the
@@ -68,6 +76,10 @@ export interface ServerConfig {
    * Whether `penguin server|web` supervises this process (PENGUIN_SUPERVISED=1) and relaunches
    * it when it exits with core's SERVER_RESTART_EXIT_CODE — what makes the web UI's "restart
    * to update" possible. False under a direct server start, a dev run, or the desktop shell.
+   *
+   * Required, unlike cliEntry below: the hot-update seam names it in the
+   * config interface it claims (hmr/capabilities.ts's HMR_INTERFACES), and a runtime that
+   * publishes a lifecycle capability publishes this field with it — the two arrived together.
    */
   supervised: boolean;
   /**
@@ -99,8 +111,11 @@ export interface ServerConfig {
    * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
    * `penguin update`: a checkout has no release to update to, but its CLI is exactly the
    * one an Agent working on that checkout should be running.
+   *
+   * OPTIONAL for the same reason: absent — a runtime older than this field — reads as null,
+   * no CLI to offer and no shim written.
    */
-  cliEntry: string | null;
+  cliEntry?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -176,7 +191,37 @@ export function normalizePenguinGoOrigin(raw: string | undefined): string {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
+/**
+ * Validates MODELSCOPE_BRIDGE_URL into a base URL with no trailing slash, or throws.
+ *
+ * Deliberately looser than normalizePenguinGoOrigin in exactly one place: a PATH PREFIX is
+ * allowed, because the bridge is mounted under one in production
+ * (`https://go.penguin.ooo/modelscope`) and strips it from the request itself — so the
+ * prefix is part of the address the client must call. Credentials, query, fragment and
+ * plaintext HTTP stay rejected.
+ */
+export function normalizeModelScopeBridgeUrl(raw: string | undefined): string {
+  const value = raw?.trim() || "https://go.penguin.ooo/modelscope";
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Invalid MODELSCOPE_BRIDGE_URL=${value} (expected an absolute HTTP(S) URL)`);
+  }
+  if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
+    throw new Error(
+      `Invalid MODELSCOPE_BRIDGE_URL=${value} (credentials, query and fragment are not allowed)`,
+    );
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`Invalid MODELSCOPE_BRIDGE_URL=${value} (HTTPS required)`);
+  }
+  // A bare origin parses as pathname "/", which must become "" rather than stay a slash, or
+  // every appended route would read `//oauth/start`.
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -200,6 +245,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
     previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
     penguinGoOrigin: normalizePenguinGoOrigin(env.PENGUIN_GO_ORIGIN),
+    modelscopeBridgeUrl: normalizeModelScopeBridgeUrl(env.MODELSCOPE_BRIDGE_URL),
     // An empty/whitespace value is treated as unset, which leaves the seed to generate one.
     seedAdminPassword: env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() || null,
     authSessionTtlMs: 30 * DAY_MS,

@@ -203,14 +203,15 @@ export interface ProjectConfig {
    *   "@scope/other" = "1.2.3"             # a version requirement
    *   "@scope/third" = { version = "1.2" } # the table form, where later fields go
    *
-   * A table rather than a list so an entry can grow fields without a format change.
+   * A table rather than a list so an entry can grow fields without a format change. A
+   * `[plugins.<machineId>]` sub-table lists what that one machine runs besides (PluginTables).
    *
    * Project-scoped because machines are lent to Projects, so this is what says which
    * machines a plugin has to reach. LOADING is per process, though — there is one module
    * tree — so a deployment runs the CLOSURE: the union over its Projects. A plugin any
    * Project asks for is in the tree, and what it contributes is visible to all of them.
    */
-  plugins?: PluginTable;
+  plugins?: PluginTables;
   models: ModelEntry[];
 }
 
@@ -334,23 +335,64 @@ export interface PluginRequirement {
   version?: string;
 }
 
-/** The `[plugins]` table: package name → what is asked of it, in the file's order. */
+/** A plugin table: package name → what is asked of it, in the file's order. */
 export type PluginTable = Record<string, PluginRequirement>;
 
 /**
- * Leniently parses the `[plugins]` table. An entry's value is a version requirement string
+ * The whole `[plugins]` key: the table every machine runs, and each machine's own table.
+ *
+ *   [plugins]
+ *   "@scope/everywhere" = "*"
+ *
+ *   [plugins.Xk3v9Qa_bT2mLp0z]
+ *   "@scope/only-there" = "*"
+ *   "@scope/everywhere" = "1.2.3"   # this machine's entry wins over the shared one
+ *
+ * A machine table is keyed by the machine's OWN id — the 16 characters its server mints on
+ * first boot — never by an ssh alias, which a rename or a repointed host would silently move.
+ * What a machine runs is `effectivePluginTable(tables, itsId)`: the shared table, plus its own
+ * table, its own entry winning for a name both carry. A plugin listed only in a machine table
+ * runs, and is installed, on that machine alone.
+ */
+export interface PluginTables {
+  all: PluginTable;
+  machines: Record<string, PluginTable>;
+}
+
+/** A machine's own id: 12 random bytes as base64url (the machines repo mints it). */
+export const PLUGIN_MACHINE_ID = /^[A-Za-z0-9_-]{16}$/;
+
+/**
+ * Whether a `[plugins]` member is a machine's table rather than a plugin's requirement: a
+ * key shaped like a machine id whose value is a table without `version`. The writer below
+ * spells every requirement without fields as `"*"`, so a table of that shape is never one of
+ * its requirements.
+ */
+function isMachineTable(key: string, value: unknown): boolean {
+  return (
+    PLUGIN_MACHINE_ID.test(key) &&
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !("version" in value)
+  );
+}
+
+/**
+ * Leniently parses one plugin table. An entry's value is a version requirement string
  * (`"*"` for any) or a table with an optional `version`; an entry of any other shape is
  * dropped rather than failing the load — a config whose plugin table is malformed still has
- * to open, or a typo there would take the Project's models with it. A value that is not a
- * table at all (the list form this key had before it was a table) reads as undefined:
- * such a Project asks for no plugins until it is written again.
+ * to open, or a typo there would take the Project's models with it. Machine tables inside
+ * `[plugins]` are not entries of the shared table and are skipped (parsePluginTables reads
+ * them). A value that is not a table at all (the list form this key had before it was a
+ * table) reads as undefined: such a Project asks for no plugins until it is written again.
  */
 export function parsePluginTable(value: unknown): PluginTable | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const out: PluginTable = {};
   for (const [rawName, spec] of Object.entries(value as Record<string, unknown>)) {
     const name = rawName.trim();
-    if (name === "") continue;
+    if (name === "" || isMachineTable(name, spec)) continue;
     if (typeof spec === "string") {
       const version = spec.trim();
       out[name] = version === "" || version === "*" ? {} : { version };
@@ -367,11 +409,45 @@ export function parsePluginTable(value: unknown): PluginTable | undefined {
   return out;
 }
 
-/** The `[plugins]` table as it is written: the string form wherever only a version is asked. */
+/** Parses the whole `[plugins]` key, the shared table and every machine's; undefined when it is not a table. */
+export function parsePluginTables(value: unknown): PluginTables | undefined {
+  const all = parsePluginTable(value);
+  if (all === undefined) return undefined;
+  const machines: Record<string, PluginTable> = {};
+  for (const [key, spec] of Object.entries(value as Record<string, unknown>)) {
+    if (isMachineTable(key, spec)) machines[key] = parsePluginTable(spec) ?? {};
+  }
+  return { all, machines };
+}
+
+/**
+ * What one machine runs: the shared table, then that machine's own entries — its requirement
+ * replacing the shared one for a name both list. `machineId` null means a machine whose id is
+ * not known (a machine no server has started on yet): the shared table alone.
+ */
+export function effectivePluginTable(tables: PluginTables, machineId: string | null): PluginTable {
+  const own = machineId === null ? undefined : tables.machines[machineId];
+  return own === undefined ? { ...tables.all } : { ...tables.all, ...own };
+}
+
+/** A plugin table as it is written: the string form wherever only a version is asked. */
 export function pluginTableToToml(
   table: PluginTable,
 ): Record<string, string | { version?: string }> {
   return Object.fromEntries(Object.entries(table).map(([name, req]) => [name, req.version ?? "*"]));
+}
+
+/**
+ * The whole `[plugins]` key as it is written: the shared entries, then one sub-table per
+ * machine. A machine table left empty is dropped — "this machine adds nothing" is what its
+ * absence already says.
+ */
+export function pluginTablesToToml(tables: PluginTables): Record<string, unknown> {
+  const out: Record<string, unknown> = pluginTableToToml(tables.all);
+  for (const [machineId, table] of Object.entries(tables.machines)) {
+    if (Object.keys(table).length > 0) out[machineId] = pluginTableToToml(table);
+  }
+  return out;
 }
 
 export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefined {
@@ -418,7 +494,7 @@ export function projectConfigFromTable(
   const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
-  const plugins = parsePluginTable(parsed.plugins);
+  const plugins = parsePluginTables(parsed.plugins);
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
@@ -509,7 +585,9 @@ export async function saveProjectConfig(
 ): Promise<void> {
   const file = projectConfigPath(root, projectId);
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await atomicWriteFile(file, renderProjectConfigToml({ ...cfg }), {
+  const { plugins, ...rest } = cfg;
+  const table = plugins === undefined ? rest : { ...rest, plugins: pluginTablesToToml(plugins) };
+  await atomicWriteFile(file, renderProjectConfigToml(table), {
     mode: 0o600,
     followSymlinks: true,
   });

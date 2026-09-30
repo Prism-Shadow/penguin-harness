@@ -60,6 +60,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -142,6 +145,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -221,6 +227,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -435,6 +444,9 @@ importers:
       tar:
         specifier: ^7.5.21
         version: 7.5.22
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
       undici:
         specifier: ^7.29.0
         version: 7.29.0
@@ -466,9 +478,6 @@ importers:
       tsx:
         specifier: ^4.20.0
         version: 4.22.4
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
@@ -570,6 +579,8 @@ importers:
 
   plugins/agent-tuning: {}
 
+  plugins/browser-automation: {}
+
   plugins/continual-learning: {}
 
   plugins/data-analysis: {}
@@ -597,28 +608,19 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
         version: 4.0.1
-      '@deepseek-ai/dsh-sandbox':
-        specifier: 0.1.0-rc.7
-        version: 0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-llm@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))))(@deepseek-ai/dsh-session@0.1.0-rc.8(fbdb1d988541b64ff002d18c4ded7293))
       '@deepseek-ai/dsh-sandbox-local':
         specifier: 0.1.0-rc.7
         version: 0.1.0-rc.7(aee23af2fa86328531d8fa647b06b497)
+      '@deepseek-ai/node-addon-landlock-run':
+        specifier: ^0.1.1
+        version: 0.1.1
+      koffi:
+        specifier: ^3.1.0
+        version: 3.1.6
     devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
-
-  plugins/sandbox-mxc:
-    devDependencies:
-      '@microsoft/mxc-sdk':
-        specifier: 0.7.0
-        version: 0.7.0
+      '@deepseek-ai/dsh-sandbox':
+        specifier: 0.1.0-rc.7
+        version: 0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-llm@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))))(@deepseek-ai/dsh-session@0.1.0-rc.8(fbdb1d988541b64ff002d18c4ded7293))
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -630,6 +632,18 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
 
   plugins/sandbox-seatbelt:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
+  plugins/sandbox-wsl:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1319,10 +1333,6 @@ packages:
     resolution: {integrity: sha512-9QOtNffcOF/c1seMCDnjckb3R9WHcG34tky+FHpNKKCW0wc/scYLwMtO+ptyGUfMW0/b/n4qRiALlaFHc9Oj7Q==}
     engines: {node: '>= 10.0.0'}
 
-  '@microsoft/mxc-sdk@0.7.0':
-    resolution: {integrity: sha512-EWhz2pKkcPluZHAOI1yneV+JK0NO/3hdh7nABBb0x4PjyUWMeSWPTBAjtIu+BhtMYOqlaijSPZMZ0Hs/J4ZL4A==}
-    engines: {node: '>=18.0.0'}
-
   '@modelcontextprotocol/client@2.0.0':
     resolution: {integrity: sha512-8f1OghQ2rjzIOfqgUCP+8GiUWqRs89njoWLNqAe8kWmDePv3s1fZXseej+QXemssEuuOvLLmLO/kqM3IQHtISw==}
     engines: {node: '>=20'}
@@ -1500,6 +1510,9 @@ packages:
 
   '@penguinharness/agent-tuning@file:plugins/agent-tuning':
     resolution: {directory: plugins/agent-tuning, type: directory}
+
+  '@penguinharness/browser-automation@file:plugins/browser-automation':
+    resolution: {directory: plugins/browser-automation, type: directory}
 
   '@penguinharness/continual-learning@file:plugins/continual-learning':
     resolution: {directory: plugins/continual-learning, type: directory}
@@ -3530,9 +3543,6 @@ packages:
   node-pty@1.1.0:
     resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
 
-  node-pty@1.2.0-beta.15:
-    resolution: {integrity: sha512-vORSzHXi4Ofl7HemVWpuudLqCPdaQb4LfpRCUpE5HPxhp4JYscl8zZwxh11p26v2wvW24WMwnMfLjhRLixrfxA==}
-
   node-releases@2.0.50:
     resolution: {integrity: sha512-J6l92tKHX6w8Jy5nO1Vuc01NoIiRGi/d6qBKVxh+IQ8Cr3b6HbVNfKiF8ZpFKufTwpwxMmce2W3iQZ861ZRyTg==}
     engines: {node: '>=18'}
@@ -5297,11 +5307,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@microsoft/mxc-sdk@0.7.0':
-    dependencies:
-      node-pty: 1.2.0-beta.15
-      semver: 7.8.5
-
   '@modelcontextprotocol/client@2.0.0':
     dependencies:
       '@modelcontextprotocol/core': 2.0.0
@@ -5419,6 +5424,8 @@ snapshots:
 
   '@penguinharness/agent-tuning@file:plugins/agent-tuning': {}
 
+  '@penguinharness/browser-automation@file:plugins/browser-automation': {}
+
   '@penguinharness/continual-learning@file:plugins/continual-learning': {}
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
@@ -5479,6 +5486,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5511,6 +5519,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5539,6 +5548,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5586,6 +5596,7 @@ snapshots:
       remark-parse: 11.0.0(supports-color@10.2.2)
       smol-toml: 1.6.1
       tar: 7.5.22
+      typescript: 5.9.3
       undici: 7.29.0
       unified: 11.0.5
       ws: 8.21.0
@@ -5612,6 +5623,7 @@ snapshots:
       remark-parse: 11.0.0(supports-color@10.2.2)
       smol-toml: 1.6.1
       tar: 7.5.22
+      typescript: 5.9.3
       undici: 7.29.0
       unified: 11.0.5
       ws: 8.21.0
@@ -8016,10 +8028,6 @@ snapshots:
   node-int64@0.4.0: {}
 
   node-pty@1.1.0:
-    dependencies:
-      node-addon-api: 7.1.1
-
-  node-pty@1.2.0-beta.15:
     dependencies:
       node-addon-api: 7.1.1
 

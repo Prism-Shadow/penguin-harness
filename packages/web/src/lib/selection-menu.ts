@@ -1,9 +1,9 @@
 /**
- * Pure rules of the conversation's selection menu (features/chat/stream-selection-menu.tsx):
- * when a secondary click in the message stream opens the app's own menu instead of the
- * browser's, which rows that menu offers, where it hangs when the keyboard asked for it, and
- * what an excerpt becomes once it is added to the conversation. Kept free of the DOM so they
- * can be tested in this package's node-only vitest environment.
+ * Pure rules of the conversation's own context menu (features/chat/stream-selection-menu.tsx):
+ * when a secondary click in the message stream opens the app's menu instead of the browser's,
+ * which rows it offers — a web link's, the selection's, or both — where it hangs when the
+ * keyboard asked for it, and what an excerpt becomes once it is added to the conversation.
+ * Kept free of the DOM so they can be tested in this package's node-only vitest environment.
  */
 import { isLongPressPointer } from "./context-menu";
 import type { AnchorRect } from "./context-menu";
@@ -105,4 +105,84 @@ export function excerptBlockquote(excerpt: string): string {
 export function excerptReference(selectedText: string): ExcerptReference {
   const excerpt = normalizeExcerpt(selectedText);
   return { kind: "excerpt", excerpt, text: excerptBlockquote(excerpt) };
+}
+
+// ------------------------------------------------------------------------------------- links
+
+/**
+ * The web address a link in the stream offers the link rows for: an absolute http(s) URL,
+ * normalized by the URL parser, else null. Every other link keeps its own behaviour and gets
+ * no link rows: a Workspace file (a relative href, which opens the Files panel), an in-page
+ * `#anchor`, a `mailto:` link, an href the renderer emptied.
+ *
+ * It takes the `href` attribute as written, not the element's resolved `href` property: a
+ * relative href resolves against the App's own origin into an http address, and that is a
+ * route of the App, never a page to open elsewhere.
+ */
+export function menuLinkHref(rawHref: string | null): string | null {
+  if (rawHref === null) return null;
+  let url: URL;
+  try {
+    // Without a base a relative href does not parse, which is what keeps it out.
+    url = new URL(rawHref.trim());
+  } catch {
+    return null;
+  }
+  return (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== ""
+    ? url.href
+    : null;
+}
+
+/** One row of the menu for a web link. */
+export type LinkMenuItem = "openInBuiltinBrowser" | "openExternal" | "copyLink";
+
+/**
+ * A web link's rows, in order: open it in the built-in browser, open it outside the app, copy
+ * its address. The first only where the built-in browser can run — the desktop app's window,
+ * with the browser available — because nowhere else could it open the page.
+ */
+export function linkMenuItems(builtinBrowser: boolean): readonly LinkMenuItem[] {
+  return builtinBrowser
+    ? ["openInBuiltinBrowser", "openExternal", "copyLink"]
+    : ["openExternal", "copyLink"];
+}
+
+/** A gesture as the whole menu takes it: the selection rules' request, and the link it landed on. */
+export interface StreamMenuRequest extends SelectionMenuRequest {
+  /**
+   * The web address of the link the gesture landed on — under the pointer, or holding focus
+   * when the keyboard asked — as menuLinkHref reads it; null when there is none.
+   */
+  linkHref: string | null;
+}
+
+/** What one gesture's menu holds: a web link's rows, the selection's, or both, the link's first. */
+export interface StreamMenuContent {
+  linkHref: string | null;
+  selection: boolean;
+}
+
+/**
+ * Whether the app's menu takes this gesture, and with which rows. A web link brings its rows,
+ * unless the gesture is a touch or pen press-and-hold (the OS link menu owns that one) or lands
+ * in a field; a selection the rules above take brings Copy and Add to conversation, after the
+ * link's rows when both apply. With neither, null: the browser keeps the gesture and its own
+ * menu, exactly as for a secondary click with nothing selected.
+ */
+export function streamMenuContent(request: StreamMenuRequest): StreamMenuContent | null {
+  const linkHref =
+    request.linkHref !== null && !isLongPressPointer(request.pointerType) && !request.onEditable
+      ? request.linkHref
+      : null;
+  const selection = opensSelectionMenu(request);
+  return linkHref === null && !selection ? null : { linkHref, selection };
+}
+
+/**
+ * Where a keyboard-opened menu for a link hangs: from the link's first line box, as a menu
+ * dropped from the link itself. `lineBoxes` are the link's client rects in document order, and
+ * `bounds` its bounding rect, for a link that reports no line boxes.
+ */
+export function linkAnchor(lineBoxes: readonly AnchorRect[], bounds: AnchorRect): AnchorRect {
+  return lineBoxes[0] ?? bounds;
 }

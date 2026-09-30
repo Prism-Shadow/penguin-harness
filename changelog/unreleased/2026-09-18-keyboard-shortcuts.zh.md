@@ -13,6 +13,7 @@ Web App 的快捷键改为出自一张注册表（`lib/shortcuts/`），取代�
 
 - 注册表：`palette.toggle`（⌥⌘P / Ctrl+Alt+P，为命令面板预留）、`terminal.toggle`（`` Ctrl+` ``）、`terminal.close`（`` Ctrl+Alt+` ``，Mac 上同样是 Control 键）、`editor.save`（⌘S / Ctrl+S）。每条命令有作用域（全局、终端、编辑器）；同一组合下焦点作用域优先于全局，其次按注册顺序。
 - 缺省组合避开浏览器自身的快捷键：⌘P / Ctrl+P 是打印，⌘W / Ctrl+W 关闭浏览器标签页，因此改用 Mod+Alt 与反引号键。保存仍是 ⌘S / Ctrl+S，编辑器有焦点时接管浏览器的「另存网页」。Mac 上 Chrome 把 ⌥⌘P 用作「页面设置」，命令面板会接管它。
+- 命令面板（[#768](https://github.com/Prism-Shadow/penguin-harness/pull/768)）只由 `palette.toggle` 打开：它自带的 Ctrl+P / Ctrl+Shift+P 监听已移除，面板脚注与 workflow 页面「占满应用」的提示写的是当前绑定；在 workflow 页面里按下的键仍能到达命令面板（frame 连同键位 code 一起重新抛出）。
 - 覆盖项读自浏览器镜像 `penguin.keybindings`（带版本号、按平台分节、只存与缺省不同的行），改动即刻同步到已打开的全部标签页。写入它的设置页与按账号保存的服务端副本在后续改动中跟上。
 - 所有显示快捷键的位置——终端标签 × 的提示、面板选单的 kbd、保存按钮的标题、手册编辑器的提示——都从注册表按平台写法格式化（`⌥⌘P`、`` ⌃` ``；`Ctrl+Alt+P`），并随绑定变化更新。浏览器标签页里不显示浏览器自身保留的组合（绑在 ⌘W / Ctrl+W 上时，那里关闭的是浏览器标签页），提示不会许诺一个效果相反的按键。
 - 按住组合会连续触发：每次重复都不交给浏览器自己的动作（另存网页、打印），命令只执行一次。
