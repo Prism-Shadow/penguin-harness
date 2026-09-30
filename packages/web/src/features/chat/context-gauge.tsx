@@ -1,5 +1,7 @@
 /**
- * Context usage gauge in the composer toolbar, and the composition panel behind it.
+ * Context usage gauge in the composer toolbar, and the composition panel behind it. The ring is
+ * the UI package's `ContextRing`; this module decides what it fills against, names it, and opens
+ * the panel from it.
  *
  * The resting state is the ring alone: a **single-colour** indicator of total occupancy (no
  * bucketing), turning amber past 80% and red past 95%. The exact `used/basis` figures are not
@@ -68,7 +70,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, Input, Legend, Ring, usePortalPanel } from "@prismshadow/penguin-ui";
+import { ConfirmModal, ContextRing, Input, Legend, usePortalPanel } from "@prismshadow/penguin-ui";
 import { getSessionContext } from "../../api/endpoints";
 import {
   MIN_COMPACTION_THRESHOLD,
@@ -82,7 +84,6 @@ import {
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { contextComposition } from "./context-parts";
 import type { ContextPartKey } from "./context-parts";
@@ -215,55 +216,26 @@ export function ContextGauge({
     }
   };
 
-  const color =
-    unknown || pct <= 0.8
-      ? "text-gray-400 dark:text-gray-500"
-      : pct > 0.95
-        ? toneInk.danger
-        : toneInk.attention;
   // The ring draws no numbers, so its accessible name carries them: the ratio AND the figures it
   // was computed from, which is all the subagent composer's panel-less ring can offer.
   const usageText = unknown
     ? S.chat.contextUnknown
     : `${S.chat.contextUsage} ${Math.round(pct * 100)}% · ${humanizeTokens(now)}/${humanizeTokens(basis)}`;
-  // A 5px radius under a 2px stroke, in the shell's ink: the track is that ink faded, so the
-  // warning ladder above recolours the whole ring. Decorative — the shell carries the name.
-  const gauge = (
-    <Ring
-      segments={pct > 0 ? [{ value: pct }] : []}
-      max={1}
-      size={12}
-      width={2}
-      trackOpacity={0.25}
-    />
-  );
-  // Same box as every other icon control on this toolbar (h-8 w-8, matching the model selector
-  // and the send button): a 14px ring in a 23px hit area sat visibly short of its neighbours.
-  const shell = `flex h-8 w-8 shrink-0 items-center justify-center ${color}`;
 
   if (sessionId === undefined) {
-    return (
-      <span data-tooltip={usageText} aria-label={usageText} role="img" className={shell}>
-        {gauge}
-      </span>
-    );
+    return <ContextRing ratio={pct} unknown={unknown} label={usageText} />;
   }
   return (
     <>
-      {/* Hover paints only a background, not the ink its neighbours also change: the ring's colour
-          is the warning ladder, and a hover tone would overwrite the very thing it reports. */}
-      <button
+      <ContextRing
         ref={triggerRef}
-        type="button"
-        data-tooltip={usageText}
-        aria-label={usageText}
-        aria-expanded={open}
-        aria-controls={panelId}
+        ratio={pct}
+        unknown={unknown}
+        label={usageText}
+        expanded={open}
+        controls={panelId}
         onClick={() => (open ? closePanel() : setOpen(true))}
-        className={`${shell} rounded-md transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-      >
-        {gauge}
-      </button>
+      />
       {open &&
         position &&
         createPortal(

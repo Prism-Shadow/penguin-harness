@@ -23,7 +23,7 @@
  * under the same deadlines. At the live edge, while the stream is open and its last arrival is
  * younger than the deadline, a partial word or a syntax-only line waits for the next delta.
  */
-import type { StreamRevealMode } from "../../lib/stream-style";
+import type { StreamReveal } from "../../../tokens";
 
 /** The most the reveal may trail the stream: text that arrived this long ago is on screen. */
 export const REVEAL_MAX_LAG_MS = 1500;
@@ -158,7 +158,7 @@ function isWordBoundary(text: string, p: number): boolean {
  * Where to cut the text for a cursor at `n`: the mode's granularity, then the Markdown guards
  * (see the header). Never past the text; may pass `n` only to finish a run of marks.
  */
-export function revealCut(text: string, n: number, mode: StreamRevealMode): number {
+export function revealCut(text: string, n: number, mode: StreamReveal): number {
   const length = text.length;
   let p = Math.max(0, Math.min(length, Math.floor(n)));
   if (mode === "fade") {
@@ -192,7 +192,7 @@ export function revealCut(text: string, n: number, mode: StreamRevealMode): numb
  */
 export function visibleLength(
   state: RevealState,
-  mode: StreamRevealMode,
+  mode: StreamReveal,
   streaming: boolean,
   now: number,
 ): number {

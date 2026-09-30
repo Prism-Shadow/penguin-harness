@@ -156,3 +156,34 @@ export * from "./components/charts/legend/legend";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
+
+// W6-A1 — the transcript's messages: what the person sent and the run's notice lines, the
+// assistant reply with its caret and the theme-paced reveal behind it, and the changes card.
+// The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
+export * from "./components/chat/message-bubble/message-bubble";
+export * from "./components/chat/assistant-text/assistant-text";
+export * from "./components/chat/assistant-text/streaming-caret";
+export * from "./components/chat/assistant-text/use-stream-reveal";
+export * from "./components/chat/assistant-text/stream-style";
+export * from "./components/chat/changes-card/changes-card";
+
+// W6-A2 — the transcript's work: the work group and its rows (the thinking row, the tool call and
+// the approval block it holds), the process banner and the subagent row.
+export * from "./components/chat/work-group/work-group";
+export * from "./components/chat/thinking-block/thinking-block";
+export * from "./components/chat/tool-call-card/tool-call-card";
+export * from "./components/chat/approval-block/approval-block";
+export * from "./components/chat/step-banner/step-banner";
+export * from "./components/chat/subagent-chip/subagent-chip";
+
+// W6-B — the composer: its card, chip row, toolbar triggers, action button and slash list, the
+// toolbar select, the context ring, the model picker, and the chips with remove buttons.
+export * from "./components/chat/composer/composer";
+export * from "./components/chat/composer/toolbar-trigger";
+export * from "./components/chat/menu-select/menu-select";
+export * from "./components/chat/context-ring/context-ring";
+export * from "./components/chat/model-select/model-select";
+export * from "./components/forms/tag-input/tag-input";
+
+// W6-C — the company channel: a sender's run of messages and its bubbles.
+export * from "./components/chat/channel-bubble/channel-bubble";

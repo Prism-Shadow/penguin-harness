@@ -58,6 +58,7 @@
     --ui-canvas: #fafafa;
     --ui-surface: #ffffff;
     --ui-surface-muted: #f3f4f5;
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: #f5f6f7;
     --ui-overlay: #ffffff;
     --ui-overlay-backdrop: rgb(24 25 27 / 0.4);
@@ -389,6 +390,7 @@
     --ui-canvas: #1b1c1e;
     --ui-surface: #232426;
     --ui-surface-muted: #2a2b2e;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #161718;
     --ui-overlay: #262729;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.55);

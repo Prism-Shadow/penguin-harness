@@ -70,20 +70,22 @@ const APPENDIX_A = [
  * gallery frames as they are (the package itself renders none). A component is listed only while
  * it exists: the last test below fails on a host no scanned file declares.
  *
- * Glass is for the layers that float over the page (the composer card, dialogs, menus, popovers,
- * tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
- * marks for the spinner, a pulsing state dot and the machines page's working marks; frames for
- * the transcript's cards, the code block, the page's cards and a table that is its own box; the
- * shell for the app layout; a decorative icon for the rows and headers whose label already says
- * what the icon says (sidebar rows and group headers, a nav row's glyph in a rail, a menu row's
- * glyph, a tab, an empty state) — a session row is not a host, its avatar and marks carry
- * information; a tree for a file tree and a work group's steps; a field for a settings row;
- * activity for the transcript's work in progress (the work group's header, a tool call, the
- * thinking row).
+ * Glass is for the layers that float over the page (the composer card and its slash list, dialogs,
+ * menus, popovers, tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
+ * marks for the spinner, a pulsing state dot, the machines page's working marks and the caret of
+ * a reply still streaming in; frames for the transcript's cards, the code block, the page's cards
+ * and a table that is its own box; the shell for the app layout; a decorative icon for the rows
+ * and headers whose label already says what the icon says (sidebar rows and group headers, a nav
+ * row's glyph in a rail, a menu row's glyph, a tab, an empty state) — a session row is not a host,
+ * its avatar and marks carry information; a tree for a file tree and a work group's steps; a field
+ * for a settings row; activity for the transcript's work in progress (the work group's header, a
+ * tool call, the thinking row).
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
+  // The composer's card and the slash list that opens over it (W6) float with the menus.
   "ui-glass": [
-    "ChatInput",
+    "ComposerCard",
+    "SlashMenu",
     "Modal",
     "Dropdown",
     "Select",
@@ -98,10 +100,10 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The page titles are `PageHeader`'s; the usage page and the draft view's hero still write
   // their own until their waves (W8, W6).
   "ui-display": ["Heading", "PageHeader", "EmptyState", "UsagePage", "DraftView"],
-  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar"],
-  // The transcript's cards and the code block, and the page-level boxes (W4): the card and a
-  // table that is its own box.
-  "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock", "Card", "Table"],
+  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar", "StreamingCaret"],
+  // The transcript's cards (the tool call, the work group, the changes card at a Task's foot) and
+  // the code block, and the page-level boxes (W4): the card and a table that is its own box.
+  "ui-frame": ["ToolCallCard", "WorkGroup", "ChangesCard", "CodeBlock", "Card", "Table"],
   "ui-underline-nav": ["Tabs"],
   "ui-shell": ["AppLayout"],
   "ui-icon-decor": [
@@ -131,7 +133,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
   // An assistant reply as it arrives (2026-09-30): the reply body the transcript renders and the
   // gallery frames on its own.
-  "ui-stream": ["AssistantReplyBody"],
+  "ui-stream": ["AssistantText"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -501,7 +503,7 @@ describe("the hook checks, on known shapes", () => {
       file(
         "d.tsx",
         [
-          "export function AssistantReplyBody({ revealing }: { revealing: boolean }) {",
+          "export function AssistantText({ revealing }: { revealing: boolean }) {",
           "  return (",
           '    <div className="ui-stream" data-state={revealing ? "streaming" : "done"}>',
           "      <p>text</p>",

@@ -16,13 +16,15 @@
  * | ------------------ | -------------------------------------------------------- | ----------------------------------------------------- |
  * | `ui-glass`         | a transient layer over content: menus, popovers, the     | —                                                     |
  * |                    | modal card, the floating composer, a sticky page header  |                                                       |
+ * |                    | hosts: `ComposerCard` and its `SlashMenu`, `Modal`,      |                                                       |
+ * |                    | `Dropdown`, the selects, popovers and tooltips           |                                                       |
  * | `ui-eyebrow`       | a group label naming the items below it (never directly  | —                                                     |
  * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |
  * |                    | the sidebar's and group headers' labels                  |                                                       |
  * | `ui-display`       | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
  * |                    | hosts: `Heading level={1} display`, `PageHeader`'s title |                                                       |
  * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`   |
- * |                    | hosts: the Spinner, a pulsing Dot                        |                                                       |
+ * |                    | hosts: the Spinner, a pulsing Dot, the streaming caret   |                                                       |
  * | `ui-frame`         | a ruled box with a head, a body, a foot and panes        | children carry `data-slot="head" \| "body" \| "foot" \| "pane"` |
  * |                    | hosts: the transcript's cards, the code block, `Card`,   |                                                       |
  * |                    | a framed `Table`                                         |                                                       |
@@ -113,20 +115,20 @@
  * backdrop filter never reaches the element's own descendants, so a panel inside the scrim stays
  * sharp. It moves only with the host's fade, so reduced motion needs nothing from it.
  *
- * `ui-stream` (2026-09-30) is how a theme shows a reply arriving. The host is the reply's body:
- * it stays `data-state="streaming"` until its paced reveal (`--ui-stream-reveal` /
- * `--ui-stream-rate`, tokens.ts) has caught up with the stream, and until then renders the
- * stream's edge — the caret slot — as a direct child right after the markdown blocks; whatever
- * else it holds (a stop reason, a files card) comes after the caret, and the Web App's host holds
- * those back until `done`. Primer changes nothing: the
- * host's own pulsing caret glyph stays. Frost hides the caret and lets the trailing lines surface
- * through a soft veil — a gradient from nothing to the page's colour over the last three lines,
- * with a faint glow in the accent's wash behind them — drawn only while the caret is the host's
- * last child, so the veil covers the text and never what the host appends after it; on `done`
- * the veil eases away over the reveal duration instead of snapping off. Console draws the caret
- * as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and runs a last
- * paragraph in so the cursor follows its last character; nothing else moves. Under reduced
- * motion the caret holds still and Frost draws no veil.
+ * `ui-stream` (2026-09-30) is how a theme shows a reply arriving. The host is the reply's body
+ * (`AssistantText`): it stays `data-state="streaming"` until its paced reveal
+ * (`--ui-stream-reveal` / `--ui-stream-rate`, tokens.ts) has caught up with the stream, and until
+ * then renders the stream's edge — the caret slot, `StreamingCaret`, itself a `ui-live` caret —
+ * as a direct child right after the markdown blocks; whatever else it holds (a stop reason, a
+ * files card) comes after the caret, and the host holds those back until `done`. Primer changes
+ * nothing: the host's own pulsing caret glyph stays. Frost hides the caret and lets the trailing
+ * lines surface through a soft veil — a gradient from nothing to the page's colour over the last
+ * three lines, with a faint glow in the accent's wash behind them — drawn only while the caret is
+ * the host's last child, so the veil covers the text and never what the host appends after it;
+ * on `done` the veil eases away over the reveal duration instead of snapping off. Console draws
+ * the caret as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and
+ * runs a last paragraph in so the cursor follows its last character; nothing else moves. Under
+ * reduced motion the caret holds still and Frost draws no veil.
  */
 export const HOOKS = [
   "ui-glass",

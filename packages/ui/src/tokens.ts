@@ -174,6 +174,9 @@ export const TOKEN_GROUPS = [
       "--ui-canvas",
       "--ui-surface",
       "--ui-surface-muted",
+      // The filled neutral surface a message bubble or a chip sits on: a surface, not a tone —
+      // Console empties its tone fills, and a bubble must keep its fill there.
+      "--ui-fill-neutral",
       "--ui-inset",
       "--ui-overlay",
       "--ui-overlay-backdrop",
@@ -516,7 +519,7 @@ export const TOKEN_GROUPS = [
   {
     id: "stream",
     title: "Streaming — how a reply is revealed",
-    // What the app's stream-reveal hook reads, once per theme, to pace an assistant reply that
+    // What AssistantText's reveal hook reads, once per theme, to pace an assistant reply that
     // is still arriving: the reveal (`instant` shows the text as it lands, `fade` reveals it word
     // by word, `typewriter` character by character — the exact keywords) and its rate, a plain
     // number of characters per second (0 where the reveal is `instant` and no rate applies).

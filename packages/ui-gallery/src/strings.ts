@@ -834,11 +834,12 @@ export const zh = {
       },
       ring: "环形仪表",
       ringHint:
-        "一段弧对照预算，按预算状态着色（未超、将超、已超）；未设预算只剩底环；输入框的 12 px 上下文圆环沿用所在处的墨色；多段弧表示各部分占比。",
+        "一段弧对照预算，按预算状态着色（未超、将超、已超）；未设预算只剩底环；多段弧表示各部分占比。输入框的上下文圆环（ContextRing）在 80% 以内取次要墨色，超过 80% 转为提醒色，超过 95% 转为危险色。",
       ringSpend: (percent: number) => `支出占预算 ${percent}%`,
       ringNoBudget: "未设预算",
       ringShares: "各部分占比",
       ringContext: "上下文圆环",
+      ringContextAt: (percent: number) => `上下文已用 ${percent}%`,
       legend: "图例",
       legendHint:
         "图表下方的一行图例：指向某项时其余各项淡出；说明线形的一项不参与高亮。列表图例在标签后列出数值，点击可固定一行。",

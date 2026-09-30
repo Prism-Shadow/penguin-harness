@@ -8,19 +8,20 @@
  * - `--ui-stream-rate`: characters per second of a paced reveal (`fade` paces its words at this
  *   rate too). Missing, zero or not a number → no pacing.
  *
- * Read the way lib/chart-style.ts reads the chart tokens: one MutationObserver on <html> drops
- * the cached record when the theme, mode or accent changes, a subscriber gets the same object
- * while nothing it reads changed, and nothing here ever writes. The record also carries the
- * gallery's reduced-motion switch (`data-motion="reduced"` on <html>), the second of the two
- * signals the theme CSS honours beside the media query.
+ * Read the way chart-style.ts reads the chart tokens: one MutationObserver on <html> drops the
+ * cached record when anything there changes, a subscriber gets the same object while nothing it
+ * reads changed, and nothing here ever writes. The observer watches every attribute rather than
+ * naming the theme's — reading the tokens is what tells a real change from any other write, and
+ * a component never asks which theme is active. The record also carries the root's
+ * reduced-motion switch (`data-motion="reduced"` on <html>, the gallery's), the second of the
+ * two signals the theme CSS honours beside the media query.
  */
 import { useSyncExternalStore } from "react";
-
-export type StreamRevealMode = "instant" | "fade" | "typewriter";
+import type { StreamReveal } from "../../../tokens";
 
 export interface StreamStyle {
   /** How new text comes in. */
-  reveal: StreamRevealMode;
+  reveal: StreamReveal;
   /** Characters per second of a paced reveal; 0 when the theme sets none. */
   rate: number;
   /** The root asks for reduced motion (`data-motion="reduced"`). */
@@ -61,10 +62,7 @@ export function readStreamStyle(
  * rate) or the reader asked for less motion by either signal — the root's switch in the record,
  * or the operating system's preference, which the caller passes.
  */
-export function effectiveReveal(
-  style: StreamStyle,
-  prefersReducedMotion: boolean,
-): StreamRevealMode {
+export function effectiveReveal(style: StreamStyle, prefersReducedMotion: boolean): StreamReveal {
   if (style.rate <= 0 || style.reducedMotion || prefersReducedMotion) return "instant";
   return style.reveal;
 }
@@ -114,10 +112,7 @@ function subscribe(listener: () => void): () => void {
       cached = next;
       for (const l of listeners) l();
     });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "data-theme", "data-accent", "data-motion", "style"],
-    });
+    observer.observe(document.documentElement, { attributes: true });
   }
   return () => {
     listeners.delete(listener);

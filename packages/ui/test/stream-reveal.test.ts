@@ -1,23 +1,25 @@
 /**
- * The streaming reveal: the theme's stream tokens (lib/stream-style.ts), the pacing
- * (features/chat/stream-reveal.ts) and the reply body that applies them.
+ * The streaming reveal behind AssistantText (components/chat/assistant-text/): the theme's stream
+ * tokens (stream-style.ts), the pacing (stream-reveal.ts) and the hook that drives it
+ * (use-stream-reveal.ts).
  *
  * The pacing is a pure function of an explicit clock, so these tests drive the clock
  * themselves, frame by frame, the way use-stream-reveal.ts does from requestAnimationFrame:
  * typewriter by character, fade by word, the 1.5 s backlog cap, finishing at the rate after the
  * stream ends, and `instant` (Primer, no tokens, reduced motion) showing the text whole. The
- * suite renders no React, so the body's markup is pinned against its source at the bottom.
+ * suite runs no frame loop, so the hook's use of one is pinned against its source at the bottom;
+ * the body's markup is assistant-text.test.ts.
  */
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_STREAM_STYLE,
   effectiveReveal,
   nextStreamStyle,
   readStreamStyle,
-} from "../src/lib/stream-style";
-import type { StreamRevealMode } from "../src/lib/stream-style";
+} from "../src/components/chat/assistant-text/stream-style";
+import type { StreamReveal } from "../src/tokens";
 import {
   REVEAL_MAX_LAG_MS,
   receiveText,
@@ -26,8 +28,9 @@ import {
   startReveal,
   stepReveal,
   visibleLength,
-} from "../src/features/chat/stream-reveal";
-import type { RevealState } from "../src/features/chat/stream-reveal";
+} from "../src/components/chat/assistant-text/stream-reveal";
+import type { RevealState } from "../src/components/chat/assistant-text/stream-reveal";
+import { SRC_DIR } from "./helpers/paths";
 
 const FRAME = 16;
 
@@ -43,7 +46,7 @@ function showAt(
   state: RevealState,
   t: number,
   rate: number,
-  mode: StreamRevealMode,
+  mode: StreamReveal,
   streaming = true,
 ): { state: RevealState; shown: string } {
   let s = state;
@@ -66,7 +69,7 @@ function play(opts: {
   closeAt: number;
   until: number;
   rate: number;
-  mode: StreamRevealMode;
+  mode: StreamReveal;
 }): { t: number; shown: number; received: number }[] {
   let state = startReveal("", 0, { streaming: true, rate: opts.rate });
   let received = "";
@@ -301,43 +304,15 @@ describe("revealCut (half-typed Markdown)", () => {
 });
 
 /**
- * Source of the reply body, its caret and the item that renders it. The suite renders no React,
- * so the markup the theme recipes select on is pinned against the text that writes it.
+ * Source of the hook. The suite runs no frame loop, so the loop it drives is pinned against the
+ * text that writes it.
  */
-const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
-const body = read("../src/features/chat/assistant-reply-body.tsx");
-const caret = read("../src/features/chat/streaming-caret.tsx");
-const item = read("../src/features/chat/message-item.tsx");
-const hook = read("../src/features/chat/use-stream-reveal.ts");
+const hook = readFileSync(
+  join(SRC_DIR, "components/chat/assistant-text/use-stream-reveal.ts"),
+  "utf8",
+);
 
-describe("the reply body (source contract)", () => {
-  it("is the ui-stream host, streaming until the reveal has caught up and done after", () => {
-    expect(body).toMatch(/className="ui-stream md-body /);
-    expect(body).toContain('data-state={live ? "streaming" : "done"}');
-    expect(body).toContain("const revealed = useStreamReveal(text, streaming);");
-    expect(body).toContain("const live = streaming || revealed.length < text.length;");
-  });
-
-  it("renders the revealed prefix, in Markdown's streaming mode while live", () => {
-    expect(body).toContain("<Md text={revealed} streaming={live} />");
-  });
-
-  it("shows the caret slot while live, and the item's extras only once the reply is whole", () => {
-    expect(body).toContain("{live && <StreamingCaret />}");
-    expect(body).toContain("{!live && children}");
-    expect(caret).toContain('data-slot="caret"');
-    expect(caret).toContain('aria-hidden="true"');
-    // Primer's caret as it always was: a soft pulsing bar in the muted ink.
-    expect(caret).toContain('className="animate-pulse text-gray-400"');
-    expect(caret).toContain("▌");
-  });
-
-  it("is how the transcript renders every assistant reply", () => {
-    expect(item).toContain("<AssistantReplyBody text={item.text} streaming={item.streaming}>");
-    expect(item).not.toContain("▌");
-    expect(item).not.toMatch(/<Md\b/);
-  });
-
+describe("the reveal hook (source contract)", () => {
   it("drives the pacing from animation frames and cancels them on cleanup", () => {
     expect(hook).toContain("requestAnimationFrame(tick)");
     expect(hook).toContain("cancelAnimationFrame(frame)");

@@ -470,16 +470,6 @@
    (`.code-*`), Shiki's dark palette and the KaTeX fixes live in the shared UI package, beside the
    components that draw them: packages/ui/src/components/content/prose/prose.css. */
 
-/* ---------- Channel message bubble (features/company/channel-view.tsx) ---------- */
-
-/* A bubble's own surface is the grey the shared Markdown rules give inline code and table
-   rules, so inside a bubble those marks are printed on their own colour and disappear. One
-   step deeper puts them back, and reads on both bubble tints in both themes. Fenced blocks
-   need nothing: `.md-body pre` carries a border and its own lighter/darker fill, and the code
-   inside it is transparent. The `:not(pre) >` shape is what keeps this off them. */
-.channel-bubble :not(pre) > code {
-  @apply bg-gray-200 dark:bg-gray-700;
-}
-.channel-bubble :is(th, td) {
-  @apply border-gray-300 dark:border-gray-700;
-}
+/* The company channel's bubble (`.channel-bubble`: the deeper inline-code chip and table rules
+   inside it) lives in the shared UI package too, beside its component:
+   packages/ui/src/components/chat/channel-bubble/channel-bubble.css. */

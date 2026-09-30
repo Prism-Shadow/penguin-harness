@@ -290,15 +290,14 @@ describe("the content board", () => {
 });
 
 describe("the streaming board", () => {
-  it("plays the streaming Session's answer through the app's reply body, on one seed, with a replay", () => {
+  it("plays the streaming Session's answer through the package's reply body, on one seed, with a replay", () => {
     const board = read("../src/library/boards/streaming.tsx");
-    expect(board).toMatch(
-      /import \{ AssistantReplyBody \} from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/features\/chat\/assistant-reply-body";/,
-    );
+    expect(board).toMatch(/import \{ AssistantText, [^}]*\} from "@prismshadow\/penguin-ui";/);
+    expect(board).not.toMatch(/web\/src\/features\/chat/);
     expect(board).toMatch(/streamScript\(text, BOARD_SEED\)/);
     expect(board).toMatch(/const answer = streamingAnswer\(state\.lang\);/);
     expect(board).toMatch(
-      /<AssistantReplyBody key=\{run\} text=\{stream\.text\} streaming=\{stream\.streaming\} \/>/,
+      /<AssistantText key=\{run\} text=\{stream\.text\} streaming=\{stream\.streaming\} \/>/,
     );
     expect(board).toMatch(/<ReplayButton onClick=\{\(\) => setRun\(\(n\) => n \+ 1\)\} \/>/);
   });

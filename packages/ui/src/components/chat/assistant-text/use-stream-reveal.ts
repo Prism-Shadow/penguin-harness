@@ -1,6 +1,6 @@
 /**
  * `useStreamReveal(text, streaming)`: the part of a streaming reply's text to show right now,
- * paced by the active theme's `--ui-stream-reveal` and `--ui-stream-rate` (lib/stream-style.ts).
+ * paced by the active theme's `--ui-stream-reveal` and `--ui-stream-rate` (stream-style.ts).
  *
  * Under `instant` — Primer, a theme without the tokens, or reduced motion by either signal — it
  * returns `text` itself and runs nothing: the reply renders exactly as it always has. Under
@@ -17,8 +17,8 @@
  * paced theme paces only what arrives next.
  */
 import { useEffect, useRef, useState } from "react";
-import { usePrefersReducedMotion } from "@prismshadow/penguin-ui";
-import { effectiveReveal, useStreamStyle } from "../../lib/stream-style";
+import { usePrefersReducedMotion } from "../../../motion/use-reduced-motion";
+import { effectiveReveal, useStreamStyle } from "./stream-style";
 import {
   receiveText,
   revealFrameMs,

@@ -869,11 +869,12 @@ export const en: GalleryStrings = {
       },
       ring: "Ring gauge",
       ringHint:
-        "One arc against a budget in the budget's tone (under, near, over); without a budget the track stands alone; the composer's 12 px context ring takes the ink around it; several arcs split a whole into shares.",
+        "One arc against a budget in the budget's tone (under, near, over); without a budget the track stands alone; several arcs split a whole into shares. The composer's context ring (ContextRing) stays in the muted ink to 80 %, turns to attention past it and to danger past 95 %.",
       ringSpend: (percent) => `Spend at ${percent}% of the budget`,
       ringNoBudget: "No budget set",
       ringShares: "Shares of a whole",
       ringContext: "Context ring",
+      ringContextAt: (percent) => `Context ${percent}% full`,
       legend: "Legend",
       legendHint:
         "A row under a chart: pointing at one item fades the others, and an item that explains a line's shape stays out of it. A list legend prints each item's figures after its label and pins a row on click.",

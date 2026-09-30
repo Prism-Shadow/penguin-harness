@@ -959,7 +959,7 @@ export function DraftView({
                 />
 
                 {open && (
-                  <ul className="mt-0.5 space-y-0.5 pl-4">
+                  <ul className="mt-0.5 space-y-1 pl-4">
                     {folder.tasks.map((task) => {
                       const copy = S.chat.exampleTasks[task.id];
                       return (
@@ -1005,7 +1005,7 @@ export function DraftView({
  * new version.
  */
 const versionBadgeClass =
-  "ml-1.5 inline-block align-super text-[10px] leading-4 text-gray-400 dark:text-gray-500";
+  "ml-1.5 inline-block align-super text-xs leading-4 text-gray-400 dark:text-gray-500";
 
 /**
  * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`

@@ -108,7 +108,7 @@ export function TaskStatsLine({
   // The copy button sits outside the scrollable span, so it stays pinned at the row's end
   // instead of scrolling out of reach.
   return (
-    <div className="-mt-2 flex h-5 items-center justify-start gap-x-2 overflow-hidden whitespace-nowrap text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:gap-x-3 sm:opacity-0 dark:text-gray-500">
+    <div className="-mt-2 flex h-5 items-center justify-start gap-x-2 overflow-hidden whitespace-nowrap text-xs text-fg-subtle transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:gap-x-3 sm:opacity-0">
       <span className="no-scrollbar flex min-w-0 items-center gap-x-2 overflow-x-auto sm:gap-x-3">
         {/* Timestamp leads: it's this reply's identity (when it was said), the stat numbers are an
             annotation. When this turn has no token_usage (reply was aborted), only the timestamp

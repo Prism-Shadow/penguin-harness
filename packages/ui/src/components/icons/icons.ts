@@ -45,6 +45,8 @@ export const ICONS = {
    */
   robotPair:
     "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01",
+  /** A person: head and shoulders (lucide user). The person at the keyboard, beside the agent. */
+  user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
   /**
    * The cerebrum from the side: the lobed outline, then the gyri inside it. The drawing was
    * authored with the whole figure shifted a little down the box; the shift is baked into the
@@ -221,6 +223,19 @@ export const ICONS = {
   plus: "M12 5v14M5 12h14",
   /** A magnifier: a lens and its handle. The search box's leading mark and the toggle that opens one. */
   search: "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z",
+  /**
+   * An arrow that turns back on itself: the head at the left, the shaft looping round beneath it.
+   * Bring it back — the undo reading, not the bin's: what it takes back is returned, not thrown
+   * away.
+   */
+  undo: "M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",
+  /** A picture: the rounded frame, and a mountain line across its lower half. */
+  image:
+    "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3zM3 15l5-5 4 4 3-3 6 6",
+  /** Three sliders set at different heights (feather sliders): how something behaves, adjustable. */
+  sliders: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6",
+  /** A four-pointed spark: effort and thought, the dial a model thinks harder on. */
+  sparkle: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z",
 
   // --- Direction ----------------------------------------------------------------------------
 
