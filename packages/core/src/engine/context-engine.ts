@@ -383,8 +383,8 @@ export interface ContextEngineDeps {
    * text lines appended to the input's user text. Absent = the model takes images directly. A
    * context `openNextContext` opens may bring its own (a model switch can move to or from a
    * model without vision). `run`'s Prompt is folded by the caller before it reaches the
-   * engine; this hook exists for the inputs the engine assembles itself — steering (see
-   * `steeringMessages`), and the carry-over a model switch hands to another model.
+   * engine; this hook exists for the one input the engine assembles itself — steering (see
+   * `steeringMessages`).
    *
    * Expected to settle rather than reject: it runs mid-Task, and Session's binding already
    * degrades a failure into text saying the images were dropped.
@@ -1162,7 +1162,9 @@ export class ContextEngine {
     if (this.sessionTurns === 0) return;
     await this.writeOwedBootstrapRecords();
     if (this.compaction.mode === "discard") {
-      this.dropCarriedToolOutputs();
+      this.pendingCarryOver = this.pendingCarryOver.filter(
+        (m) => (m.payload as { type?: string }).type !== "tool_call_output",
+      );
       yield* this.discardContext("manual");
       return;
     }
@@ -1198,13 +1200,6 @@ export class ContextEngine {
     return result.status;
   }
 
-  /** Drops the carried tool outputs: they pair with tool calls only the context being discarded holds. */
-  private dropCarriedToolOutputs(): void {
-    this.pendingCarryOver = this.pendingCarryOver.filter(
-      (m) => (m.payload as { type?: string }).type !== "tool_call_output",
-    );
-  }
-
   /**
    * Switches the model the Session runs on: closes the running context on the model it ran
    * on, then opens the next one on `target.ref`. The engine's half of `Session.switchModel`,
@@ -1217,10 +1212,10 @@ export class ContextEngine {
    *   turn — so it extends the prefix the provider has cached, and nothing about the target
    *   reaches it. Short of `completed`, the context and the model stay as they were;
    * - no completed turn, but a Trace file of its own (its first request never finished, or a
-   *   switch opened it and nothing was sent since) — a `manual` **discard** pair. Its text
-   *   carry-over rides to the new context in memory, never persisted (it may hold synthetic
-   *   messages); the summary it opened with, the one record of the conversation before it, is
-   *   written again at the head of the next file;
+   *   switch opened it and nothing was sent since) — a `manual` **discard** pair. The text of
+   *   its carry-over rides to the new context in memory, never persisted (it may hold
+   *   synthetic messages); the summary it opened with, the one record of the conversation
+   *   before it, is written again at the head of the next file;
    * - already closed by a completed compaction, its rotation still pending — nothing: the
    *   closing pair is on the closed file, and the pending rotation simply lands on the target.
    *
@@ -1264,10 +1259,15 @@ export class ContextEngine {
         this.pendingBootstrapRecords = null;
       } else {
         await this.writeOwedBootstrapRecords();
-        this.dropCarriedToolOutputs();
         yield* this.discardContext("manual", target.ref);
       }
     }
+    // A switch carries text alone. Besides the summary, what rides to the new context is the
+    // text still pending (in memory): tool outputs pair with tool calls only the context left
+    // behind holds, and images stay behind with them.
+    this.pendingCarryOver = this.pendingCarryOver.filter(
+      (m) => (m.payload as { type?: string }).type === "text",
+    );
     // The new context's file, now: its session_meta and records, then the summary as its first
     // input — the state a resume of this file rebuilds; the next run sends the summary without
     // writing it again (see `writeContextSummary`). On the stream the meta follows the opener's
@@ -1276,16 +1276,7 @@ export class ContextEngine {
     await this.rotateIfPending();
     if (summary) await this.writeContextSummary(summary);
     if (this.contextMeta) yield this.contextMeta;
-    // The carry-over was held for the model that was running; one without vision takes it with
-    // its images folded, like a Prompt. Last, so a fold that fails leaves a finished switch.
-    this.pendingCarryOver = await this.foldForContext(this.pendingCarryOver);
     return "completed";
-  }
-
-  /** `messages` as the running context's model takes them: images folded into path lines when it has no vision (see ContextEngineDeps.foldInputImages), unchanged otherwise. */
-  private async foldForContext(messages: OmniMessage[]): Promise<OmniMessage[]> {
-    const fold = this.foldInputImages;
-    return fold && messages.some(isImageMessage) ? fold(messages) : messages;
   }
 
   /**

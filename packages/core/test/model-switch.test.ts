@@ -935,18 +935,14 @@ describe("in-session model switch", () => {
     expect(h.session.modelId).toBe(MODEL_C.model_id);
   });
 
-  it("a Prompt with an image, stopped before its bootstrap on a vision model, reaches a text-only model folded into a path line", async () => {
+  it("a switch carries text alone: a Prompt stopped before its bootstrap rides on without its image", async () => {
     const llmA = new ScriptedLLM([], "A");
     const llmB = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 20)] }], "B");
-    const h = harness(traces, {
-      llmA,
-      llms: { [MODEL_B.model_id]: [llmB] },
-      vision: { [MODEL_B.model_id]: false },
-    });
+    // Both models take images: what is left behind is left behind by the switch, not by a fold.
+    const h = harness(traces, { llmA, llms: { [MODEL_B.model_id]: [llmB] } });
     sessions.push(h.session);
 
-    // Stopped during the first connect: the Session itself holds the input, as sent, for a
-    // model that viewed images.
+    // Stopped during the first connect: the Session itself holds the input, as sent.
     const controller = new AbortController();
     controller.abort();
     await collect(
@@ -958,14 +954,13 @@ describe("in-session model switch", () => {
     expect(h.session.modelId).toBe(MODEL_B.model_id);
 
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
-    const first = llmB.calls[0]!;
-    expect(payloadTypeList(first)).toEqual(["text", "text"]);
-    expect(textOf(first[0]!)).toContain("look");
-    expect(textOf(first[0]!)).toContain("[attached image: https://images.invalid/pic.png]");
-    expect(textOf(first[1]!)).toBe("task two");
+    expect(llmB.calls[0]!.map((m) => [payloadTypeList([m])[0], textOf(m)])).toEqual([
+      ["text", "look"],
+      ["text", "task two"],
+    ]);
   });
 
-  it("a Prompt with an image the engine held as-is (stopped before its request) reaches a text-only model folded as well", async () => {
+  it("a switch carries text alone: input the engine held as-is (stopped before its request) rides on without its image", async () => {
     // A's first request fails, so the context is open with no completed turn and the engine
     // exists; the next run is stopped before its request goes out and its input — image
     // included — is held unchanged as the engine's carry-over.
@@ -974,11 +969,7 @@ describe("in-session model switch", () => {
       "A",
     );
     const llmB = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 20)] }], "B");
-    const h = harness(traces, {
-      llmA,
-      llms: { [MODEL_B.model_id]: [llmB] },
-      vision: { [MODEL_B.model_id]: false },
-    });
+    const h = harness(traces, { llmA, llms: { [MODEL_B.model_id]: [llmB] } });
     sessions.push(h.session);
 
     await collect(h.session.run([userText("task one")], { approve: allowAll }));
@@ -997,52 +988,13 @@ describe("in-session model switch", () => {
 
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
     const first = llmB.calls[0]!;
-    expect(payloadTypeList(first)).not.toContain("image_url");
+    // The pending text reached the target — the failed task's and the stopped one's — and
+    // nothing but text did.
+    expect(new Set(payloadTypeList(first))).toEqual(new Set(["text"]));
     const texts = first.map(textOf);
-    expect(texts.some((t) => t.includes("[attached image: https://images.invalid/pic.png]"))).toBe(
-      true,
-    );
+    expect(texts.some((t) => t.includes("task one"))).toBe(true);
+    expect(texts).toContain("look");
     expect(texts.at(-1)).toBe("task two");
-  });
-
-  it("a fold that fails comes after the switch is recorded: the new file is open on the target and its meta was streamed", async () => {
-    // As above: a context with no completed turn, holding an image as carry-over.
-    const llmA = new ScriptedLLM(
-      [{ messages: [], outcome: { status: "fatal", errorMessage: "A is down" } }],
-      "A",
-    );
-    const h = harness(traces, {
-      llmA,
-      llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] },
-      vision: { [MODEL_B.model_id]: false },
-    });
-    sessions.push(h.session);
-    await collect(h.session.run([userText("task one")], { approve: allowAll }));
-    const controller = new AbortController();
-    controller.abort();
-    await collect(
-      h.session.run([userText("look"), imageUrlMessage("https://images.invalid/pic.png")], {
-        signal: controller.signal,
-      }),
-    );
-    // The fold writes image files into the scratchpad; this one cannot.
-    (h.session as unknown as { foldImages: () => Promise<never> }).foldImages = async () => {
-      throw new Error("scratchpad is read-only");
-    };
-
-    const streamed: OmniMessage[] = [];
-    const failure = await (async () => {
-      for await (const msg of switchTo(h.session, MODEL_B)) streamed.push(msg);
-    })().catch((e: unknown) => e);
-
-    expect((failure as Error).message).toBe("scratchpad is read-only");
-    // Everything a host follows the switch by came first: the Session is on the target in
-    // memory, on the stream and on disk alike.
-    expectEndsWithMetaOn(streamed, MODEL_B);
-    expect(h.session.modelId).toBe(MODEL_B.model_id);
-    const opened = await readTrace(h.trace.currentPath());
-    expect(opened[0]!.type).toBe("session_meta");
-    expect(modelOf(opened[0]!)).toEqual(MODEL_B);
   });
 
   it("a Session that never ran is re-assembled on the target: no events, nothing written, and its first run opens on it", async () => {

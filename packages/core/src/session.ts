@@ -974,13 +974,12 @@ export class Session {
       { ref: target, ...(room ? { summaryRoom: room } : {}) },
       opts.signal,
     );
-    // Input an aborted bootstrap left with the Session was folded for the model that was
-    // running then; a context opened on a model without vision takes it folded, like the
-    // engine folds its own carry-over. (The folded form is a record the old file does not
-    // hold, so the next run writes it into the new context's file; unfolded, it rides in
-    // memory like the engine's carry-over, and the original stays where the abort wrote it.)
-    if (status === "completed" && !this.modelHasVision && this.carryOverInput.length > 0) {
-      this.carryOverInput = await this.foldImages(this.carryOverInput);
+    // Input an aborted bootstrap left with the Session rides on like the engine's carry-over:
+    // its text alone, in memory (the original stays where the abort wrote it).
+    if (status === "completed") {
+      this.carryOverInput = this.carryOverInput.filter(
+        (m) => (m.payload as { type?: string }).type === "text",
+      );
     }
     return status;
   }
