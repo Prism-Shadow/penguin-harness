@@ -2429,12 +2429,14 @@ export const zh = {
     sortManual: "手动排序",
     sortRecent: "最近更新",
     newWorkspaceEntity: "新建工作区",
-    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
     workspaceMenu: "工作区选项",
     renameWorkspace: "重命名工作区",
     renameWorkspaceLabel: "名称",
     renameWorkspaceHint: "留空则使用目录名",
     deleteWorkspace: "删除工作区",
+    /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
+    browseWorkspaceFiles: "打开文件浏览",
     deleteWorkspaceConfirm: (name: string) =>
       `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
@@ -3503,6 +3505,8 @@ Benchmark：
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
+    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
+    stopEditing: "退出编辑",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
@@ -3513,7 +3517,8 @@ Benchmark：
     renameLabel: "新的路径",
     renameHint: "相对 Workspace 根目录；路径中不存在的目录会自动创建",
     renameConfirm: "移动",
-    renameTargetExists: (path: string): string => `${path} 已存在，未做改动。`,
+    /** A move or a New landed on a name that is taken: nothing was written. */
+    targetExists: (path: string): string => `${path} 已存在，未做改动。`,
     renamed: (name: string): string => `已移动到 ${name}`,
     deleteTitle: "删除文件",
     deleteBody: (name: string): string => `删除 ${name}？该文件不会进入回收站。`,
@@ -3528,6 +3533,18 @@ Benchmark：
     conflictBody: (name: string): string =>
       `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
     overwriteAnyway: "仍然覆盖",
+    /** The tree header's New menu, a folder's menu and the blank space under the tree. */
+    newMenu: "新建",
+    newTextFile: "新建文本文件",
+    newFolder: "新建文件夹",
+    newFileName: "文件名",
+    newFolderName: "文件夹名",
+    /** Formatting, kept on screen while typing: where the entry goes, and what a `/` does. */
+    createHint: (dir: string): string => `建在 ${dir} 下；名称里的 / 会同时建出中间的文件夹`,
+    createConfirm: "创建",
+    created: (name: string): string => `已创建 ${name}`,
+    /** The new-chat draft's Files panel and its toggle, while the Workspace is a temporary one. */
+    draftTemporary: "临时工作区在发送第一条消息时才创建。选一个文件夹，即可浏览其中的文件。",
   },
 
   usage: {

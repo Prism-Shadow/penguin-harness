@@ -244,9 +244,11 @@ describe("workspace-files-service", () => {
       expect.objectContaining({ status: 409, code: "file_changed" }),
     );
 
-    // A directory is refused outright: it carries no single version marker, so no
-    // precondition could protect the tree under it.
-    await expect(svc.move(ws, "sub", "sub2")).rejects.toMatchObject({ status: 400 });
+    // A directory carries no single version marker, so a marker sent for one is refused
+    // rather than taken as a check that never ran.
+    await expect(svc.move(ws, "sub", "sub2", fresh.version)).rejects.toMatchObject({
+      status: 400,
+    });
     expect((await fs.stat(path.join(ws, "sub"))).isDirectory()).toBe(true);
     expect(await fs.stat(path.join(ws, "sub2")).catch(() => null)).toBeNull();
   });
@@ -637,7 +639,7 @@ describe("files/move, files/search and the files/content delete", () => {
     await t.cleanup();
   });
 
-  it("files/move: 204 and the file is where it was sent; an occupied destination is 409 target_exists; a directory is a 400", async () => {
+  it("files/move: 204 and the file is where it was sent; an occupied destination is 409 target_exists", async () => {
     const url = `/api/sessions/${sessionId}/files/move`;
     const moved = await owner.post(url, { from: "a.txt", to: "archive/notes/a.txt" });
     expect(moved.status).toBe(204);
@@ -657,8 +659,6 @@ describe("files/move, files/search and the files/content delete", () => {
       "path_not_found",
     );
 
-    // A directory carries no version marker, so no precondition could protect the move.
-    expect((await owner.post(url, { from: "sub", to: "sub2" })).status).toBe(400);
     // A missing or non-string field is a 400 before anything touches the filesystem.
     expect((await owner.post(url, { from: "a.txt" })).status).toBe(400);
     expect((await owner.post(url, { from: "a.txt", to: "b.txt", ifVersion: 7 })).status).toBe(400);

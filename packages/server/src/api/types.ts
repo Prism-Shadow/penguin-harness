@@ -2893,7 +2893,11 @@ export interface WorkspaceFilesResponse {
   entries: WorkspaceFileEntry[];
 }
 
-/** Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). */
+/**
+ * Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). A
+ * write answers 204 with the written file's version in `ETag` — the marker the next conditional
+ * write of the same file carries, so an editor can keep editing after a save.
+ */
 export interface FilesWriteRequest {
   /** The entire file, base64-encoded (≤14MB decoded). */
   dataBase64: string;
@@ -2909,7 +2913,7 @@ export interface FilesWriteRequest {
   ifVersion?: string;
 }
 
-/** Move or rename one Workspace file (the Files panel's context menu). */
+/** Move or rename one Workspace file or folder (the Files panel's context menu). */
 export interface FilesMoveRequest {
   /** Source path, relative to the Workspace root. */
   from: string;
@@ -2922,11 +2926,23 @@ export interface FilesMoveRequest {
    * has none, because the caller never read it, which is why an occupied destination is
    * refused with 409 `target_exists` rather than overwritten.
    *
-   * A directory `from` is a 400 whatever this field says: a directory carries no single
-   * version marker, so the precondition that protects this operation cannot be expressed for
-   * one, and silently moving a tree without that protection is worse than refusing to move it.
+   * A directory `from` takes none, and one sent with it is a 400: a directory carries no
+   * single version marker, so no precondition can be stated for it. A folder moves whole and
+   * unconditionally — nothing is lost that way, since whatever the Agent wrote into it meanwhile
+   * moves with it — and is refused only when the destination is occupied or lies inside it.
    */
   ifVersion?: string;
+}
+
+/**
+ * Create one empty text file or one folder in a Workspace (the Files panel's New menu). Missing
+ * parent directories are created as a write creates them. Anything already at `path` — a file,
+ * a folder or a link — is refused with 409 `target_exists` and nothing is written.
+ */
+export interface FilesCreateRequest {
+  /** The new entry's path, relative to the Workspace root. */
+  path: string;
+  kind: "file" | "dir";
 }
 
 /**

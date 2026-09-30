@@ -24,7 +24,8 @@ export abstract class WorkspaceFiles extends Interface<{
     rel: string,
     data: Buffer<ArrayBufferLike>,
     ifVersion?: string,
-  ): Promise<void>;
+  ): Promise<string>;
+  create(workspace: string, rel: string, kind: "file" | "dir"): Promise<void>;
   move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void>;
   remove(workspace: string, rel: string, ifVersion?: string): Promise<void>;
   search(workspace: string, q: string): Promise<WorkspaceSearchResponse>;

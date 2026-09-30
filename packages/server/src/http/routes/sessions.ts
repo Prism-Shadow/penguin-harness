@@ -98,7 +98,6 @@ export interface SessionsRouteDeps {
   /** Re-validates the session behind an open stream, once per heartbeat. */
   auth: Auth;
 }
-import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
 import {
   assertAttachmentBudget,
   attachFilesToInput,
@@ -129,6 +128,7 @@ import { modelScopeAuthRoutes } from "./modelscope-auth.js";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
+import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-files.js";
 import { PreviewTokens } from "./preview.js";
 import type {
   Access,
@@ -1362,101 +1362,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   });
 
   // —— Workspace file browsing (Files tab) ——
-
-  app.get("/:sessionId/files", async (c) => {
-    const row = resolveSession(c);
-    const rel = c.req.query("path") ?? "";
-    return c.json(await deps.workspaceFiles.list(row.workspace, rel));
-  });
-
-  app.get("/:sessionId/files/content", async (c) => {
-    const row = resolveSession(c);
-    const rel = c.req.query("path") ?? "";
-    const download = c.req.query("download") === "1";
-    // Sandboxed top-level preview ("open in a new tab" for html): the document keeps its REAL
-    // content type but carries a CSP sandbox WITHOUT allow-same-origin — it renders and runs
-    // fully in an opaque origin, so agent-generated markup cannot reach this origin's cookies
-    // or API. The request itself still authenticates (top-level GET sends the Lax cookie).
-    const preview = !download && c.req.query("preview") === "1";
-    const { data, fileName, contentType, scriptable, version } = await deps.workspaceFiles.read(
-      row.workspace,
-      rel,
-    );
-    const disposition = download ? "attachment" : "inline";
-    // Same-origin XSS defense: an inline HTML preview is always returned as plain text
-    // (Workspace files may be Agent-generated and untrusted); downloads (attachment) keep
-    // the real content type, and sandboxed previews keep it under the CSP above. Paired
-    // with nosniff to prevent MIME sniffing from undoing this.
-    // An SVG is a document AND an image. Downgrading it to text/plain made every <img> in a
-    // Markdown preview (and every .svg preview) a broken image, so it keeps its real type —
-    // an image never runs the SVG's scripts. What the type does re-open is a DIRECT
-    // navigation to this URL, where the browser would render it as a same-origin document:
-    // the sandbox CSP closes that (no allow-scripts, no allow-same-origin — opaque origin,
-    // no script execution), and CSP sandbox is ignored for a subresource, so the <img> path
-    // is unaffected.
-    const inertSvg = !download && !preview && scriptable === "svg";
-    const effectiveType =
-      !download && scriptable === "html" && !preview ? "text/plain; charset=utf-8" : contentType;
-    return new Response(new Uint8Array(data), {
-      status: 200,
-      headers: {
-        "Content-Type": effectiveType,
-        "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        "X-Content-Type-Options": "nosniff",
-        // A Workspace file is whatever the Agent last wrote to that path. Letting a browser
-        // cache it by URL is how a re-read after a settled turn paints the previous version.
-        "Cache-Control": "no-store",
-        // Not a cache validator — no-store above means nothing ever revalidates. It is the
-        // version of the bytes in this response, which the Files panel's editor hands back
-        // as `ifVersion` on save so the write can refuse to overwrite a newer file.
-        ETag: version,
-        ...(preview && scriptable
-          ? {
-              "Content-Security-Policy":
-                "sandbox allow-scripts allow-popups allow-modals allow-forms",
-            }
-          : {}),
-        ...(inertSvg ? { "Content-Security-Policy": "sandbox" } : {}),
-      },
-    });
-  });
-
-  /**
-   * Shows a Workspace file in the machine's own file manager.
-   *
-   * Gated on the same two fields the desktop routes use, and for the same reason: outside
-   * desktop mode there is no window on this machine to open anything beside, and inside it a
-   * browser session is refused because the server cannot tell one signed in from this machine
-   * from one signed in from another — a folder springing open on the server's machine means
-   * nothing to a user who is somewhere else.
-   *
-   * The path is resolved the way a read resolves it (`..` and symlink escapes refused, a
-   * missing path a 404) before it is handed to the OS, and the answer comes back as soon as
-   * the file manager has started: nothing here waits for the window to be closed.
-   */
-  app.post("/:sessionId/files/reveal", async (c) => {
-    const row = resolveSession(c);
-    const rel = c.req.query("path") ?? "";
-    if (!deps.desktopMode) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
-    if (c.var.sessionVia !== "desktop") {
-      throw new HttpError(
-        403,
-        "desktop_shell_only",
-        "Showing a file in its folder is available from the desktop app's own window.",
-      );
-    }
-    const file = await deps.workspaceFiles.resolvePath(row.workspace, rel);
-    try {
-      await deps.fileReveal.reveal(file);
-    } catch (err) {
-      throw new HttpError(
-        502,
-        "reveal_failed",
-        err instanceof Error ? err.message : "The file manager could not be opened.",
-      );
-    }
-    return c.body(null, 204);
-  });
+  // The operations a directory-addressed panel shares (http/routes/workspace-files.ts), here on
+  // the Session's own Workspace; the preview redirect and the batch existence check below are
+  // the Session's alone.
+  registerWorkspaceFileRoutes(app, "/:sessionId/files", deps, (c) => resolveSession(c).workspace);
 
   // "Open in a new tab" for Workspace HTML: mints a token and redirects to the separate
   // preview origin.
@@ -1527,62 +1436,6 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const existing = await deps.workspaceFiles.statExisting(row.workspace, paths as string[]);
     return c.json({ existing } satisfies FilesStatResponse);
-  });
-
-  app.put("/:sessionId/files/content", async (c) => {
-    const row = resolveSession(c);
-    const rel = c.req.query("path") ?? "";
-    const body = await readJson(c);
-    if (typeof body.dataBase64 !== "string") {
-      throw badRequest("dataBase64 must be a base64 string.");
-    }
-    const data = Buffer.from(body.dataBase64, "base64");
-    if (data.length > MAX_UPLOAD_BYTES) {
-      throw new HttpError(413, "file_too_large", "Uploaded file exceeds the 14MB limit.");
-    }
-    // The editor's write precondition (see FilesWriteRequest); absent on an upload, which
-    // read no version and so writes unconditionally.
-    await deps.workspaceFiles.write(row.workspace, rel, data, optionalString(body, "ifVersion"));
-    return c.body(null, 204);
-  });
-
-  /**
-   * Move or rename one Workspace file (the Files panel's context menu). Files only — see
-   * FilesMoveRequest for why a directory has no precondition that could protect it — and an
-   * occupied destination is refused with 409 `target_exists` rather than overwritten.
-   */
-  app.post("/:sessionId/files/move", async (c) => {
-    const row = resolveSession(c);
-    const body = await readJson(c);
-    await deps.workspaceFiles.move(
-      row.workspace,
-      requireString(body, "from"),
-      requireString(body, "to"),
-      optionalString(body, "ifVersion"),
-    );
-    return c.body(null, 204);
-  });
-
-  /**
-   * Delete one Workspace file. `ifVersion` is the same write precondition the PUT carries,
-   * here as a query parameter: absent, the delete is unconditional; present and stale, it is
-   * 409 `file_changed` with the file left alone.
-   */
-  app.delete("/:sessionId/files/content", async (c) => {
-    const row = resolveSession(c);
-    const rel = c.req.query("path") ?? "";
-    await deps.workspaceFiles.remove(row.workspace, rel, c.req.query("ifVersion"));
-    return c.body(null, 204);
-  });
-
-  /**
-   * Search the whole Workspace by entry name. Breadth-first from the root, so a capped result
-   * is the shallowest matches rather than an arbitrary prefix of the walk; `truncated` says a
-   * cap was reached.
-   */
-  app.get("/:sessionId/files/search", async (c) => {
-    const row = resolveSession(c);
-    return c.json(await deps.workspaceFiles.search(row.workspace, c.req.query("q") ?? ""));
   });
 
   /**
@@ -1719,6 +1572,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 260,
       },
       {
+        id: "session-api.workspace-files",
+        prefix: "/api/projects/:projectId/workspace-files",
+        auth: "user",
+        order: 265,
+      },
+      {
         id: "session-api.sessions",
         prefix: "/api/sessions",
         auth: "user",
@@ -1768,6 +1627,7 @@ export class SessionApiRoutes {
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
+  @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
   setup() {
     const manager = this.manager as SessionManager;
@@ -1848,6 +1708,12 @@ export class SessionApiRoutes {
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
+    this.workspaceFilesRoutes = workspaceFilesRoutes({
+      access,
+      workspaceFiles: this.workspaceFiles,
+      desktopMode: sessionsDeps.desktopMode,
+      fileReveal: this.fileReveal,
+    });
     this.sessionsRoutes = sessionsRoutes(sessionsDeps);
   }
 }

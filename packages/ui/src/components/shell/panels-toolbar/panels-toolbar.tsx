@@ -3,6 +3,10 @@
  * putting it away. A toggle is `aria-expanded` while its dock is on screen, and may carry an
  * attention dot for something waiting inside that dock. Everything a dock holds — its tabs, its
  * add menu, its picker — lives on the dock itself, so this stays a row of toggles.
+ *
+ * A toggle with nothing to open yet (`unavailable`) stays in its place, muted, and its tooltip
+ * says why; it is `aria-disabled` rather than `disabled`, since a disabled button hears no
+ * pointer and could never show that reason.
  */
 import type { HTMLAttributes } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
@@ -22,6 +26,8 @@ export interface PanelsToolbarToggle {
   active: boolean;
   /** An attention dot beside the glyph (a pending approval inside that dock). */
   badge?: boolean;
+  /** Nothing to open yet: the toggle does nothing, and `tooltip` should say why. */
+  unavailable?: boolean;
   onToggle: () => void;
 }
 
@@ -41,14 +47,17 @@ export function PanelsToolbar({ toggles, className = "", ...rest }: PanelsToolba
           key={toggle.key}
           type="button"
           aria-expanded={toggle.active}
-          onClick={toggle.onToggle}
+          aria-disabled={toggle.unavailable === true ? true : undefined}
+          onClick={toggle.unavailable === true ? undefined : toggle.onToggle}
           data-tooltip={toggle.tooltip ?? toggle.label}
           aria-label={toggle.label}
           data-testid={`dock-toggle-${toggle.key}`}
           className={`relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
-            toggle.active
-              ? "bg-line-muted text-fg"
-              : "text-fg-muted hover:bg-line-muted hover:text-fg"
+            toggle.unavailable === true
+              ? "cursor-not-allowed text-fg-subtle opacity-60"
+              : toggle.active
+                ? "bg-line-muted text-fg"
+                : "text-fg-muted hover:bg-line-muted hover:text-fg"
           }`}
         >
           <GlyphIcon d={toggle.glyph} size={ICON_SIZE.iconButton} />

@@ -618,6 +618,11 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/dirs?path=` | Workspace 选择器背后的服务器端目录浏览器 |
 | POST | `/dirs/access` | 桌面端：请 shell 以应用自身的身份读一次 macOS 拒绝的目录，让 macOS 询问用户：`{path}` → `{granted, packaged}` |
 | GET | `/dir-skills?path=` | 目录所带的 Skill，用于导入到新 Agent |
+| GET | `/workspace-files?workspace=&path=` | 还没有 Session 可寻址时，**文件浏览**面板对一个目录的浏览（见下） |
+| GET / PUT / DELETE | `/workspace-files/content?workspace=&path=` | 读取、写入或删除该目录里的文件 |
+| POST | `/workspace-files/create?workspace=` / `/workspace-files/move?workspace=` | 新建文件或文件夹 / 移动 |
+| GET | `/workspace-files/search?workspace=&q=` | 按条目名搜索该目录 |
+| POST | `/workspace-files/reveal?workspace=&path=` | 在机器自带的文件管理器中显示文件 |
 
 - Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
@@ -628,6 +633,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，请求主目录时另带 `roots`，即实际存在的各盘符根目录。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
 - `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
+- `/workspace-files` 对 `workspace` 里以绝对路径指定的目录执行 [Workspace 文件](#workspace-文件)中的那组操作，供还没有 Session 的页面使用：新建对话页选定的文件夹，以及侧栏 Workspace 分组的**打开文件浏览**。响应与 Session 路由完全相同。调用方需要有该 Project 的访问权——也就是能在该目录下创建 Session 的同一种权限；`workspace` 必须是已存在的目录，校验口径与在该目录创建 Session 时相同（否则返回 400 `workspace_not_found`）。每个 `path` 都像对 Session 一样被限制在该目录内。这里没有预览跳转，因为预览令牌绑定 Session：目录里的 HTML 以 `preview=1` 在同源沙箱中预览。其他机器上的目录经该机器的 `/server/<machineId>` 代理访问。
 
 ## 用量与 Trace（Agent 级别）
 
@@ -795,15 +801,18 @@ Web App 的 `/model` 切换没有专用端点。和 `/agent` 交接一样，它�
 | GET | `/files/content?path=&download=&preview=` | 读取一个 Workspace 文件（见 [Workspace 文件响应](#workspace-文件响应)） |
 | GET | `/files/preview-redirect?path=` | 在独立的预览源上打开 HTML 文件：签发签名 token 并以 302 重定向 |
 | POST | `/files/stat` | 检查文件是否存在：`{paths}` |
-| PUT | `/files/content?path=` | 上传文件：`{dataBase64}`，最大 14MB |
-| POST | `/files/move` | 移动或重命名一个文件：`{from, to, ifVersion?}` → 204 |
+| PUT | `/files/content?path=` | 整体写入文件：`{dataBase64, ifVersion?}`，最大 14MB → 204，`ETag` 带回写入后的版本 |
+| POST | `/files/create` | 新建空文本文件或文件夹：`{path, kind}`（`file` 或 `dir`）→ 204 |
+| POST | `/files/move` | 移动或重命名一个文件或文件夹：`{from, to, ifVersion?}` → 204 |
 | DELETE | `/files/content?path=&ifVersion=` | 删除一个文件 → 204 |
 | POST | `/files/reveal?path=` | 在机器自带的文件管理器中显示文件 → 204 |
 | GET | `/files/search?q=` | 按条目名搜索整个 Workspace |
 | GET | `/scratchpad/:fileName` | 读取 Session 的一个暂存文件，例如输入图片或文件附件 |
 
 - `GET /files/preview-redirect` 支撑**新页面打开**和**文件浏览**面板里的 HTML 渲染视图；见[独立源上的预览](#独立源上的预览)。
-- `POST /files/move` 只对文件生效：目录没有单一的版本标记，保护移动的前置条件无法对目录表达，所以对目录返回 400。`to` 缺失的父目录会自动创建。`from` 不存在时返回 404 `path_not_found`；`ifVersion` 不再匹配时返回 409 `file_changed`（带着标记时源文件却已消失，也算作已变化）。`to` 位置已有内容时返回 409 `target_exists`——目标从未读取过，所以选择拒绝而不是覆盖；移动到文件自身路径返回 400。
+- `PUT /files/content` 在 `ETag` 里带回写入后的版本：同一文件下一次带条件的写入就用这个标记，所以**文件浏览**面板的编辑器保存后可以继续编辑。
+- `POST /files/create` 新建一个空文本文件或一个文件夹，缺失的父目录与写入时一样自动创建。`path` 上已有任何条目（包括符号链接，不会跟随）时返回 409 `target_exists`，一个字节都不写。
+- `POST /files/move` 移动文件或文件夹。`to` 缺失的父目录会自动创建。`from` 不存在时返回 404 `path_not_found`；对文件，`ifVersion` 不再匹配时返回 409 `file_changed`（带着标记时源文件却已消失，也算作已变化）。文件夹没有单一的版本标记，因此整棵移动、不带前置条件：对文件夹带 `ifVersion` 返回 400，把文件夹移入它自身之下也返回 400。`to` 位置已有内容时返回 409 `target_exists`——目标从未读取过，所以选择拒绝而不是覆盖；移动到条目自身路径返回 400。
 - `DELETE /files/content` 同样只对文件生效（对目录返回 400）。文件已不存在时返回 404 `path_not_found`；`ifVersion` 不再匹配时返回 409 `file_changed`。这个标记是可选的，不带标记时删除是无条件的，但**文件浏览**面板总是发送它读取时拿到的标记。
 - `POST /files/reveal` 在 macOS 和 Windows 上选中文件，在 Linux 桌面上打开文件所在目录。只有桌面 shell 自己的窗口可以调用它。服务器不是由桌面 shell 启动时返回 404 `not_found`；浏览器会话访问桌面模式服务器时返回 403 `desktop_shell_only`：这种会话无法与远程会话区分，而在服务器所在的机器上打开文件夹，对那头的用户毫无用处。路径的限制与读取相同（越界 400，不存在 404 `path_not_found`）；502 `reveal_failed` 表示文件管理器未能启动。
 - `GET /files/search` 只匹配条目名（不区分大小写的子串；不匹配路径），响应为 `{hits: [{path, kind, sizeBytes, mtime}], truncated}`，每条命中都带有目录列表条目的全部字段。搜索从根目录开始广度优先遍历，所以浅层结果先出现；结果达到上限时，保留的是最相关的命中，而不是最先遍历到的那个目录里的内容。`truncated` 表示遍历因达到上限而停止：命中 200 条，或访问了 20000 个目录条目。`q` 为空或超过 100 个字符时返回 400。

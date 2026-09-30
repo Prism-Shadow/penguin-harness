@@ -2386,12 +2386,14 @@ export const en: Strings = {
     sortManual: "Manual order",
     sortRecent: "Most recent",
     newWorkspaceEntity: "New workspace",
-    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
     workspaceMenu: "Workspace options",
     renameWorkspace: "Rename workspace",
     renameWorkspaceLabel: "Name",
     renameWorkspaceHint: "Leave empty to use the folder name",
     deleteWorkspace: "Remove workspace",
+    /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
+    browseWorkspaceFiles: "Browse files",
     deleteWorkspaceConfirm: (name: string) =>
       `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
@@ -3465,6 +3467,8 @@ Scenarios:
     discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
     discard: "Discard",
     unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
+    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
+    stopEditing: "Stop editing",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "Changed on disk",
     changedOnDiskHint:
@@ -3477,7 +3481,8 @@ Scenarios:
     renameHint:
       "Relative to the Workspace root; a directory in the path that does not exist is created",
     renameConfirm: "Move",
-    renameTargetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
+    /** A move or a New landed on a name that is taken: nothing was written. */
+    targetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
     renamed: (name: string): string => `Moved to ${name}`,
     deleteTitle: "Delete file",
     deleteBody: (name: string): string => `Delete ${name}? It does not go to a trash folder.`,
@@ -3493,6 +3498,20 @@ Scenarios:
     conflictBody: (name: string): string =>
       `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
     overwriteAnyway: "Overwrite",
+    /** The tree header's New menu, a folder's menu and the blank space under the tree. */
+    newMenu: "New",
+    newTextFile: "New text file",
+    newFolder: "New folder",
+    newFileName: "File name",
+    newFolderName: "Folder name",
+    /** Formatting, kept on screen while typing: where the entry goes, and what a `/` does. */
+    createHint: (dir: string): string =>
+      `Created in ${dir}. A / in the name also creates the folders in between.`,
+    createConfirm: "Create",
+    created: (name: string): string => `Created ${name}`,
+    /** The new-chat draft's Files panel and its toggle, while the Workspace is a temporary one. */
+    draftTemporary:
+      "A temporary workspace is created with the first message. Choose a folder to browse its files.",
   },
 
   usage: {

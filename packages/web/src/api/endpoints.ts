@@ -47,6 +47,7 @@ import type {
   FeishuBindingResponse,
   FeishuTestRequest,
   FeishuTestResponse,
+  FilesCreateRequest,
   FilesMoveRequest,
   FilesStatRequest,
   FilesStatResponse,
@@ -1303,26 +1304,36 @@ export const revealWorkspaceFile = (sessionId: string, path: string) =>
  * `ETag`: pass it and the write is refused with 409 `file_changed` unless the file is still
  * the one that was read (the editor's save); leave it out and the write creates or replaces
  * unconditionally (uploads, which read no version).
+ *
+ * Resolves to the version the write produced — the marker the next save of the same file
+ * carries — or null from a server that does not say.
  */
 export const uploadWorkspaceFile = (
   sessionId: string,
   path: string,
   dataBase64: string,
   ifVersion?: string,
-) =>
-  apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
+): Promise<string | null> =>
+  apiFetchWithMeta<void>(`/api/sessions/${sessionId}/files/content`, {
     method: "PUT",
     body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
     query: { path },
-  });
+  }).then((res) => res.etag);
 
 /**
- * Moves or renames a Workspace file. `ifVersion` (see {@link uploadWorkspaceFile}) guards the
- * SOURCE: pass it and the move is refused with 409 `file_changed` unless the file is still the
- * one that was read. The destination has no such marker — nothing read it — so an occupied
- * destination is 409 `target_exists` rather than an overwrite. Files only: a directory is a
- * 400, since nothing could express a precondition over a whole tree. `to`'s parent directory
- * is created when it is missing.
+ * Creates one empty text file or one folder. Missing parent directories are made; anything
+ * already at the path is refused with 409 `target_exists` and nothing is written.
+ */
+export const createWorkspaceEntry = (sessionId: string, body: FilesCreateRequest) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/create`, { method: "POST", body });
+
+/**
+ * Moves or renames a Workspace file or folder. `ifVersion` (see {@link uploadWorkspaceFile})
+ * guards a file SOURCE: pass it and the move is refused with 409 `file_changed` unless the file
+ * is still the one that was read. A folder moves whole and takes none. The destination has no
+ * such marker — nothing read it — so an occupied destination is 409 `target_exists` rather than
+ * an overwrite, and a folder cannot move into itself. `to`'s parent directory is created when it
+ * is missing.
  */
 export const moveWorkspaceFile = (sessionId: string, body: FilesMoveRequest) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/move`, { method: "POST", body });
