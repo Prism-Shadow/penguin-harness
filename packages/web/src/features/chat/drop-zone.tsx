@@ -38,10 +38,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal, DropRegionAction } from "../../lib/file-drop";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 
 /** The chat area's DOM node, or null when the composer is mounted outside a region. */

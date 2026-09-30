@@ -5,10 +5,9 @@
  * one inside the first. The wand button always carries the accent and the hand button never
  * does, so the pair reads the same on every page.
  */
+import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Button } from "../../components/ui/button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { HAND_ICON, MAGIC_WAND_ICON } from "../../components/ui/icons";
 
 export interface CreateButtonsProps {
   onAi: () => void;
@@ -42,7 +41,7 @@ export function CreateButtons({
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}>
       <Button size={size} variant="primary" disabled={disabled} onClick={onAi}>
-        <GlyphIcon d={MAGIC_WAND_ICON} />
+        <GlyphIcon d={ICONS.wand} />
         {aiLabel ?? S.aiCreate.withAi}
       </Button>
       {onManual !== undefined && (
@@ -52,7 +51,7 @@ export function CreateButtons({
           disabled={disabled === true || manualDisabled === true}
           onClick={onManual}
         >
-          <GlyphIcon d={HAND_ICON} />
+          <GlyphIcon d={ICONS.hand} />
           {manualLabel ?? S.aiCreate.manual}
         </Button>
       )}

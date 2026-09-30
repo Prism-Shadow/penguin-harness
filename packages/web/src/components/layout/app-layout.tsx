@@ -6,6 +6,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
+import { CloseIcon, GlyphIcon, ICONS, UserAvatar } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
@@ -16,11 +17,9 @@ import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { useTrayLocale } from "../../state/use-tray-locale";
 import { Drawer } from "../ui/drawer";
-import { GlyphIcon } from "../ui/glyph-icon";
 import { Tooltip } from "../ui/tooltip";
 import { UpdateDot } from "../ui/update-dot";
-import { UserAvatar } from "../ui/user-avatar";
-import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows } from "../../features/company/channel-sidebar";
@@ -209,7 +208,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             onClick={toggleMode}
             className={railItemClass(inCompany)}
           >
-            <GlyphIcon d={COMPANY_MODE_ICON} size={18} />
+            <GlyphIcon d={ICONS.building} size={18} />
           </button>
         </Tooltip>
       )}

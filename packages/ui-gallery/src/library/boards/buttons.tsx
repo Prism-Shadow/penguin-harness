@@ -1,6 +1,6 @@
 /** 按钮: the app's Button in its four variants, two sizes and the icon form, disabled and busy. */
+import { PlusIcon } from "@prismshadow/penguin-ui";
 import { Button } from "../../../../web/src/components/ui/button";
-import { PlusIcon } from "../../../../web/src/components/ui/icons";
 import { StatusIcon } from "../../../../web/src/components/ui/status-icon";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";

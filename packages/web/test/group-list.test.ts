@@ -14,13 +14,9 @@
  * wearing one icon in the toggle and another in the menu.
  */
 import { describe, expect, it } from "vitest";
+import { ICONS } from "@prismshadow/penguin-ui";
 import {
-  AGENT_GROUP_ICON,
-  CALENDAR_ICON,
-  CLOCK_ICON,
-  FOLDER_ICON,
   GROUP_MODE_ICONS,
-  REORDER_ICON,
   SORT_MODE_ICONS,
   newEntityForGroupMode,
 } from "../src/components/ui/group-list";
@@ -54,14 +50,14 @@ describe("list-options glyphs", () => {
   it("names each grouping mode by what the list is grouped into", () => {
     // The same glyphs the header's grouping toggle shows, so the two surfaces agree.
     expect(GROUP_MODE_ICONS).toEqual({
-      workspace: FOLDER_ICON,
-      agent: AGENT_GROUP_ICON,
-      time: CALENDAR_ICON,
+      workspace: ICONS.folder,
+      agent: ICONS.robot,
+      time: ICONS.calendar,
     });
   });
 
   it("names each sort mode by what decides the order: a clock, and the reorder arrows", () => {
-    expect(SORT_MODE_ICONS).toEqual({ recent: CLOCK_ICON, manual: REORDER_ICON });
+    expect(SORT_MODE_ICONS).toEqual({ recent: ICONS.clock, manual: ICONS.arrowUpDown });
   });
 
   it("is what the list-options menu actually renders", () => {

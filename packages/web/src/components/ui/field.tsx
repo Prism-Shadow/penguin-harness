@@ -6,8 +6,8 @@
  * near-identical copies that used to live in each control and call site.
  */
 import type { ReactNode } from "react";
+import { CheckIcon } from "@prismshadow/penguin-ui";
 import { InfoPopover } from "./info-popover";
-import { CheckIcon } from "./icons";
 
 /**
  * The control "look" shared by Input, Select and OptionMenu: rounded box, gray

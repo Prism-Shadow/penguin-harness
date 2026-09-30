@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CloseIcon } from "../../components/ui/icons";
+import { CloseIcon } from "@prismshadow/penguin-ui";
 import { useDialogLayer } from "../../components/ui/modal";
 import type {
   HarnessHistoryEntry,

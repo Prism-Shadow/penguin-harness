@@ -48,6 +48,7 @@ import type {
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -61,13 +62,9 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { GEAR_ICON, NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { Modal } from "../../components/ui/modal";
-import { TRASH_ICON } from "../../components/ui/session-row-menu";
 import { StatusIcon } from "../../components/ui/status-icon";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { UpdateDot } from "../../components/ui/update-dot";
@@ -83,7 +80,6 @@ import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { Input } from "../../components/ui/input";
 import { NoticeStrip } from "../../components/ui/notice-strip";
@@ -629,7 +625,7 @@ export function PluginsPage() {
                 title={S.plugins.openSettings}
                 onClick={() => setSettingsOpen(true)}
               >
-                <GlyphIcon d={GEAR_ICON} size={ICON_SIZE.iconButton} />
+                <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
               </Button>
             </div>
           )}
@@ -1313,7 +1309,7 @@ function PluginCard({
           <SkillTile
             icon={plugin.icon}
             name={plugin.name}
-            fallback={PLUGIN_ICON}
+            fallback={ICONS.puzzle}
             size={36}
             glyph={20}
           />
@@ -1626,7 +1622,7 @@ function ModuleRow({
   const body = (
     <>
       <div className="flex items-center gap-3">
-        <SkillTile name={specifier} fallback={PLUGIN_ICON} size={36} glyph={20} />
+        <SkillTile name={specifier} fallback={ICONS.puzzle} size={36} glyph={20} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span
@@ -1732,7 +1728,7 @@ function ModuleRow({
                 {busy ? (
                   <StatusIcon state="running" size={ICON_SIZE.iconButton} />
                 ) : (
-                  <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
+                  <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
                 )}
               </Button>
             )}

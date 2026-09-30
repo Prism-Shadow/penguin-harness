@@ -28,11 +28,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router";
 import type { OrgChartResponse, OrgEmployeeItem } from "@prismshadow/penguin-server/api";
+import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLiveSessionStatuses } from "../../state/sessions";
@@ -40,7 +40,6 @@ import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   overflowMenuDangerClass,

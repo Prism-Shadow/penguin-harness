@@ -10,8 +10,8 @@
  * (the pickers drive it and close on pick).
  */
 import type { ReactNode } from "react";
+import { ChevronDown } from "@prismshadow/penguin-ui";
 import { Dropdown } from "./dropdown";
-import { ChevronDown } from "./icons";
 import { controlBase } from "./field";
 import { sizeClass } from "./input";
 import type { ControlSize } from "./input";

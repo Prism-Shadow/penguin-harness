@@ -26,6 +26,7 @@ import type {
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -48,19 +49,9 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
-import {
-  CloseIcon,
-  GEAR_ICON,
-  HOOK_ICON,
-  MEMORY_ICON,
-  PLUGIN_ICON,
-  SCHEDULE_ICON,
-} from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
@@ -76,7 +67,6 @@ import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { mergeAgents } from "../../lib/benchmark-merge";
 import type { AgentSource } from "../../lib/benchmark-merge";
@@ -97,14 +87,14 @@ const CARD_ICONS = {
   /** Vault key count (key: bow + teeth) */
   vaultKeys: "M15.5 7.5l3 3L22 7l-3-3M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z",
   /** Schedule count: the alarm clock every scheduled-task surface wears. */
-  schedules: SCHEDULE_ICON,
+  schedules: ICONS.alarmClock,
   /** Installed skill count (open book, same family as the plugin library) */
   skills:
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   /** Memory count: the brain every Memory surface wears; opens the settings tab. */
-  memory: MEMORY_ICON,
+  memory: ICONS.brain,
 } as const;
 
 /**
@@ -121,7 +111,7 @@ const STAT_LINK_CLASS =
  * puzzle piece rather than the book.
  */
 function pluginPickItems(plugins: readonly PluginItem[]): PickableItem[] {
-  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: PLUGIN_ICON }));
+  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
 }
 
 export function AgentsPage() {
@@ -654,7 +644,7 @@ export function AgentsPage() {
                         aria-label={S.hooks.hookCount(a.hookCount)}
                         onClick={() => openSettingsTab(a.agentId, "hooks")}
                       >
-                        <GlyphIcon d={HOOK_ICON} size={ICON_SIZE.inlineGlyph} />
+                        <GlyphIcon d={ICONS.fishHook} size={ICON_SIZE.inlineGlyph} />
                         {a.hookCount}
                       </button>
                       <button
@@ -726,7 +716,7 @@ export function AgentsPage() {
                         navigate(`/agents/${a.agentId}`);
                       }}
                     >
-                      <GlyphIcon d={GEAR_ICON} />
+                      <GlyphIcon d={ICONS.gear} />
                       {S.common.settings}
                     </Button>
                     <Button

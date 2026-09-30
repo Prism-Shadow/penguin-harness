@@ -9,13 +9,13 @@
  * on hand at once and nothing here is fetched per directory.
  */
 import { useEffect, useState } from "react";
+import { ICONS } from "@prismshadow/penguin-ui";
 import { Modal } from "../../components/ui/modal";
 import { Badge } from "../../components/ui/badge";
 import { FileBrowser } from "../../components/ui/file-browser";
 import type { FileBrowserPreview } from "../../components/ui/file-browser";
 import type { TreeToggle } from "../../components/ui/file-tree";
 import type { FileTreeRow } from "../../lib/file-tree";
-import { PLUGIN_ICON } from "../../components/ui/icons";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { baseName } from "../../lib/workspace-tree";
@@ -212,7 +212,7 @@ export function PluginDetailModal({
         <SkillTile
           icon={plugin.icon}
           name={plugin.name}
-          fallback={PLUGIN_ICON}
+          fallback={ICONS.puzzle}
           size={40}
           glyph={22}
         />

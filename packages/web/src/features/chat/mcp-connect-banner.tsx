@@ -11,9 +11,9 @@
  * warn-and-skip stance).
  */
 import { useState } from "react";
+import { Chevron } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { Chevron } from "../../components/ui/chevron";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/omni/stream-model";
 import { StepBanner } from "./step-banner";

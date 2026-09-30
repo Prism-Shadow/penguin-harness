@@ -7,9 +7,9 @@
  * Each child node shows its wall-clock elapsed time (ticking while it runs, frozen at its last
  * activity when done — never a sum of its items); the root carries no stamps and shows none.
  */
+import { AgentAvatar } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { StatusIcon } from "../../components/ui/status-icon";
 import { LiveDuration } from "./live-duration";
 import { layoutTopology, NODE_H, NODE_W } from "./agent-topology";

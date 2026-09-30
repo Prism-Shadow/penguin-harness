@@ -21,10 +21,10 @@ import type {
   ScheduleItem,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
+import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -32,15 +32,10 @@ import { Badge } from "../../components/ui/badge";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SettingsEmpty } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Icon } from "../../components/ui/group-list";
-import { INFO_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";
 import {
-  ELLIPSIS_ICON,
-  PENCIL_ICON,
-  TRASH_ICON,
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
@@ -84,7 +79,7 @@ function StateGlyph({ item }: { item: ScheduleItem }) {
         ? PAUSE_ICON
         : glyph === "check"
           ? CHECK_ICON
-          : INFO_ICON;
+          : ICONS.info;
   return (
     <span className={`shrink-0 ${tone}`} data-tooltip={item.invalidReason ?? name}>
       <GlyphIcon d={d} size={ICON_SIZE.rowLead} filled={glyph === "play"} />
@@ -116,18 +111,18 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
           onClick={() => setOpen(!open)}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.rowLead} filled />
+          <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} filled />
         </button>
       }
     >
       <button type="button" className={overflowMenuRowClass} onClick={item(onEdit)}>
-        {overflowMenuGlyph(PENCIL_ICON)}
+        {overflowMenuGlyph(ICONS.pencil)}
         {S.common.edit}
       </button>
       <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
         {/* The glyph inherits the row's red. */}
         <span className="shrink-0">
-          <Icon d={TRASH_ICON} size={13} />
+          <Icon d={ICONS.trash} size={13} />
         </span>
         {S.common.delete}
       </button>

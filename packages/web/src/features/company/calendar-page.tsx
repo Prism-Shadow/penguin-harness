@@ -26,13 +26,13 @@ import type {
   OrgCalendarOutcome,
   OrgChartResponse,
 } from "@prismshadow/penguin-server/api";
+import { CloseIcon, GlyphIcon, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
@@ -44,8 +44,6 @@ import { Switch } from "../../components/ui/switch";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
 import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { toastAttention, toastError, toastSuccess } from "../../components/ui/toast";

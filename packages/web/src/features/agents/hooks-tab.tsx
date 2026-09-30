@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { HookItem } from "@prismshadow/penguin-server/api";
+import { DownloadIcon, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -33,10 +34,8 @@ import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { SettingsEmpty } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HelpFold } from "../../components/ui/help-fold";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { DownloadIcon, HOOK_ICON } from "../../components/ui/icons";
 import { Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
@@ -259,7 +258,7 @@ export function HooksTab({
                 <SkillTile
                   icon={hook.icon}
                   name={hook.name}
-                  fallback={HOOK_ICON}
+                  fallback={ICONS.fishHook}
                   size={36}
                   glyph={20}
                 />

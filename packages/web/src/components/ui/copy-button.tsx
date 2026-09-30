@@ -13,9 +13,9 @@
  *     region beside itself — that is the screen-reader half of the same feedback.
  */
 import { useEffect, useRef, useState } from "react";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { GlyphIcon } from "./glyph-icon";
 
 /** How long the copied state (the check icon) stays after a click. */
 const COPIED_MS = 1500;

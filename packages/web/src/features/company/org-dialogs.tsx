@@ -38,6 +38,7 @@ import type {
   OrganizationPatchRequest,
   OrganizationSettings,
 } from "@prismshadow/penguin-server/api";
+import { ICON_GAP } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -54,7 +55,6 @@ import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { Modal } from "../../components/ui/modal";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { ModelSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";

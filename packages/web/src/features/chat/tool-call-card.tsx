@@ -16,13 +16,13 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
+import { Chevron } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
-import { Chevron } from "../../components/ui/chevron";
 import {
   ActivityProgress,
   DISCLOSURE_OUTPUT_PRE_CLASS,

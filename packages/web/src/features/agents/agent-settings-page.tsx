@@ -22,6 +22,7 @@ import type {
   AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
 import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
+import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -38,7 +39,6 @@ import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { Skeleton } from "../../components/ui/skeleton";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdateDot } from "../../components/ui/update-dot";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";
@@ -50,7 +50,6 @@ import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { ICON_SIZE } from "../../lib/icon-scale";
 
 type TabKey =
   | "overview"

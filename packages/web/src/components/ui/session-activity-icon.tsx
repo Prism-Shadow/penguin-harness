@@ -1,9 +1,7 @@
+import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { SessionActivity } from "../../lib/session-activity";
-import { GlyphIcon } from "./glyph-icon";
-import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "./icons";
 
 type Activity = Exclude<SessionActivity, null>;
 
@@ -90,7 +88,7 @@ export function BackgroundTasksMark({ label, size }: { label: string; size: numb
       data-tooltip={label}
       className={`flex shrink-0 items-center ${toneInk.busy}`}
     >
-      <GlyphIcon d={BACKGROUND_TASKS_ICON} size={size} />
+      <GlyphIcon d={ICONS.pulse} size={size} />
     </span>
   );
 }
@@ -119,7 +117,7 @@ export function ScheduleMark({ size }: { size: number }) {
       data-tooltip={label}
       className={`flex shrink-0 items-center ${toneInk.muted}`}
     >
-      <GlyphIcon d={SCHEDULE_ICON} size={size} />
+      <GlyphIcon d={ICONS.alarmClock} size={size} />
     </span>
   );
 }

@@ -29,6 +29,7 @@ import type {
   MemoryScopeExport,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
+import { Chevron, DownloadIcon, GlyphIcon, UploadIcon } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -38,15 +39,12 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Button, labelButtonClass } from "../../components/ui/button";
 import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { HelpFold } from "../../components/ui/help-fold";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
 import { rowDescClass } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
-import { Chevron } from "../../components/ui/chevron";
-import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Drawer } from "../../components/ui/drawer";
 import { Sheet, type SheetSnap } from "../../components/ui/sheet";

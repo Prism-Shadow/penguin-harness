@@ -47,6 +47,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -109,25 +110,13 @@ import {
 } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_OPEN_ICON } from "../../components/ui/group-list";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import {
-  CloseIcon,
-  DOWNLOAD_ICON,
-  EXTERNAL_LINK_ICON,
-  FILE_EDIT_ICON,
-  REFRESH_ICON,
-  UPLOAD_ICON,
-  WRAP_TEXT_ICON,
-} from "../../components/ui/icons";
 import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
@@ -1792,7 +1781,7 @@ export function WorkspaceBrowser({
             onClick={refreshAll}
             className={iconActionClass}
           >
-            <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
           </button>
         </Tooltip>
         {/* The picker's own input carries the name: a label with no text names nothing, and the
@@ -1811,7 +1800,7 @@ export function WorkspaceBrowser({
             {uploading !== null ? (
               <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
             ) : (
-              <GlyphIcon d={UPLOAD_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
             )}
           </label>
         </Tooltip>
@@ -1937,7 +1926,7 @@ export function WorkspaceBrowser({
         onClick={() => setWrap(!wrapLines)}
         className={iconToggleClass(wrapLines)}
       >
-        <GlyphIcon d={WRAP_TEXT_ICON} size={ICON_SIZE.iconButton} />
+        <GlyphIcon d={ICONS.wrapText} size={ICON_SIZE.iconButton} />
       </button>
     </Tooltip>
   );
@@ -2010,7 +1999,7 @@ export function WorkspaceBrowser({
               onClick={() => void startEdit()}
               className={iconActionClass}
             >
-              <GlyphIcon d={FILE_EDIT_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}
@@ -2031,7 +2020,7 @@ export function WorkspaceBrowser({
               aria-label={openInNewTabLabel}
               className={`${iconActionClass} ${previewIsolated ? "" : toneInk.attention}`}
             >
-              <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.iconButton} />
             </a>
           </Tooltip>
         )}
@@ -2382,7 +2371,7 @@ export function WorkspaceBrowser({
             aria-label={S.files.download}
             className={iconActionClass}
           >
-            <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.download} size={ICON_SIZE.iconButton} />
           </a>
         </Tooltip>
         {isShellWindow && (
@@ -2393,7 +2382,7 @@ export function WorkspaceBrowser({
               onClick={() => void revealInFolder(preview.path)}
               className={iconActionClass}
             >
-              <GlyphIcon d={FOLDER_OPEN_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.folderOpen} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}

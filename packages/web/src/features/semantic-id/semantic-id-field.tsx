@@ -27,16 +27,15 @@
 import { useId, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
+import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
 import type { IdSuggestNotice } from "./id-suggest-notice";
 

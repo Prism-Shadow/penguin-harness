@@ -14,18 +14,16 @@ import type {
   OrgTicketPriority,
   OrgTicketStatus,
 } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, GlyphIcon, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Badge } from "../../components/ui/badge";
 import type { BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input } from "../../components/ui/input";
 import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";

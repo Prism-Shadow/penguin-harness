@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import ReactMarkdown from "react-markdown";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -20,8 +21,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { Button } from "../../components/ui/button";
 import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toneInk } from "../../lib/tone";
 

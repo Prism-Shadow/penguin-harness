@@ -24,6 +24,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
+import { ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { contextMenuAnchor, isContextMenuKey } from "../../lib/context-menu";
@@ -38,7 +39,6 @@ import type { ComposerReference } from "../../lib/workspace-tree";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
-import { ADD_TO_CHAT_ICON } from "../../components/ui/icons";
 import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { toastSuccess } from "../../components/ui/toast";
@@ -99,7 +99,7 @@ export function SelectionMenuRows({
               onDone(selection);
             }}
           >
-            {overflowMenuGlyph(ADD_TO_CHAT_ICON)}
+            {overflowMenuGlyph(ICONS.messagePlus)}
             {S.files.addToChat}
           </button>
         ),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { sessionActivity, sessionBackgroundTasks } from "../src/lib/session-activity";
 import type { SessionActivity } from "../src/lib/session-activity";
 import {
@@ -10,8 +11,6 @@ import {
   SessionActivityIcon,
   sessionActivityLabel,
 } from "../src/components/ui/session-activity-icon";
-import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "../src/components/ui/icons";
-import { ICON_SIZE } from "../src/lib/icon-scale";
 import { S } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
@@ -96,7 +95,7 @@ describe("BackgroundTasksMark", () => {
     expect(render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark)).toMatch(/width="12"/);
     expect(render(S.chat.backgroundTasks(1), ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
     const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
-    expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
+    expect(markup).toContain(`d="${ICONS.pulse}"`);
     // Work still running, only outside the turn: the mark takes the live tone rather than
     // receding with the pin and the relay glyph.
     expect(markup).toContain(toneInk.busy);
@@ -122,7 +121,7 @@ describe("ScheduleMark", () => {
     // Muted is the one tone allowed under 3:1, and only where the meaning is already in text.
     expect(markup()).toContain(`aria-label="${S.chat.sessionScheduled}"`);
     expect(markup()).toContain(`data-tooltip="${S.chat.sessionScheduled}"`);
-    expect(markup()).toContain(`d="${SCHEDULE_ICON}"`);
+    expect(markup()).toContain(`d="${ICONS.alarmClock}"`);
   });
 });
 

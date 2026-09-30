@@ -1,11 +1,10 @@
 /**
  * Icon sizes and icon-to-text gaps, named by the role the mark plays rather than by a number.
  *
- * Every line icon in the app is drawn on a 24x24 grid and rendered through
- * `components/ui/glyph-icon.tsx` at the theme's stroke weight (`--ui-icon-stroke`, 1.7 in the
- * default theme), so the only thing a call site chooses is how big the box is —
- * and structurally equivalent places must choose the same. Picking a rung by role is what keeps
- * two list rows, or two menu rows, from drifting a pixel apart.
+ * Every line icon is drawn on a 24x24 grid and rendered through `GlyphIcon` at the theme's stroke
+ * weight (`--ui-icon-stroke`, 1.7 in the default theme), so the only thing a call site chooses is
+ * how big the box is — and structurally equivalent places must choose the same. Picking a rung by
+ * role is what keeps two list rows, or two menu rows, from drifting a pixel apart.
  *
  * The two exceptions to the 24x24 grid are deliberate and stay: `ChevronDown` is drawn on a
  * 12x12 grid at 1.5, and the close cross on 14x14 at 1.5 — both are two-stroke marks whose
@@ -41,9 +40,9 @@ export const ICON_SIZE = {
   /** A mark that anchors a whole block rather than a line: the mobile top bar, a confirm dialog's tinted disc. */
   sectionMark: 18,
   /**
-   * The floating launcher's ball face (features/dock/dock-launcher.tsx): a control that
-   * floats over the conversation on its own, with nothing beside it to size against, so it
-   * sits above every in-flow rung. Its entries take the rung below.
+   * The floating launcher's ball face: a control that floats over the conversation on its own,
+   * with nothing beside it to size against, so it sits above every in-flow rung. Its entries
+   * take the rung below.
    */
   launcherBall: 22,
   /** A fan entry of the floating launcher: a glyph alone in a round button one rung under the ball. */

@@ -8,7 +8,7 @@
  */
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Chevron } from "../../components/ui/chevron";
+import { Chevron } from "@prismshadow/penguin-ui";
 import type { RunState } from "../../components/ui/status-icon";
 
 /**

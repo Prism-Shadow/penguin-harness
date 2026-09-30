@@ -33,11 +33,18 @@ import type {
   OrgEmployeeState,
   OrgFinanceResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Chevron,
+  CloseIcon,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatPercent } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
@@ -45,13 +52,10 @@ import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
 import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon, NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { noAutofill } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";

@@ -275,8 +275,8 @@ export function FeatherIcon(props: IconProps) {
 }
 
 /**
- * Agent glyph, byte-identical to the Web App's AGENT_GROUP_ICON
- * (packages/web/src/components/ui/group-list.tsx): the product and the page that sells it must
+ * Agent glyph, byte-identical to the Web App's `ICONS.robot`
+ * (packages/ui/src/components/icons/icons.ts): the product and the page that sells it must
  * not draw the same thing two ways. Kept as ONE path rather than this file's usual element mix
  * so the two are literally the same string — test/agent-glyph-sync.test.ts fails when they drift.
  */

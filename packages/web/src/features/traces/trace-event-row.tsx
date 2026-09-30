@@ -12,7 +12,7 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
-import { HOOK_ICON } from "../../components/ui/icons";
+import { ICONS } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
@@ -46,7 +46,7 @@ const TYPE_ICON: Record<string, string> = {
   abort: "M6 6h12v12H6z",
   subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
   // A hook's answer: the hook glyph the settings tab and the harness card use.
-  hook: HOOK_ICON,
+  hook: ICONS.fishHook,
   // MCP connect pair: a plug shape; tool_list_ready reuses the wrench (a toolset record).
   mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
   mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",

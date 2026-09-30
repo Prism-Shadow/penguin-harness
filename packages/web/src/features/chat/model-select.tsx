@@ -12,15 +12,12 @@
 import { useMemo, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
+import { ChevronDown, GlyphIcon, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Badge } from "../../components/ui/badge";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FormPicker } from "../../components/ui/form-picker";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ChevronDown } from "../../components/ui/icons";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { menuSearchClass, noAutofill } from "../../components/ui/input";
-import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
   hasConfiguredKey,
   isFreeModel,

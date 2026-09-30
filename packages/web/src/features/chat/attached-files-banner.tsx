@@ -6,9 +6,9 @@
  * rendered as usual by the caller. It keeps the same visual language as message-level notices;
  * the caller owns its user-side alignment and timestamp footer.
  */
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { attachmentFileName } from "../../lib/attachments";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 
 /** Paperclip glyph (24×24 line path), shared with the composer's file-attachment entry. */
 export const PAPERCLIP_ICON =

@@ -1,4 +1,5 @@
 /** 徽标与状态: Badge in every tone, StatusIcon in every run state, the session activity marks, and the update dot and pill. */
+import { ICON_SIZE } from "@prismshadow/penguin-ui";
 import { Badge } from "../../../../web/src/components/ui/badge";
 import type { BadgeTone } from "../../../../web/src/components/ui/badge";
 import {
@@ -9,7 +10,6 @@ import {
 import { StatusIcon } from "../../../../web/src/components/ui/status-icon";
 import type { RunState } from "../../../../web/src/components/ui/status-icon";
 import { UpdateDot, UpdatePill } from "../../../../web/src/components/ui/update-dot";
-import { ICON_SIZE } from "../../../../web/src/lib/icon-scale";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 

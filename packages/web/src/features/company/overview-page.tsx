@@ -30,12 +30,12 @@ import type {
   OrgTicketStatus,
   OrganizationDetail,
 } from "@prismshadow/penguin-server/api";
+import { Chevron, GlyphIcon, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatRelativeShort } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
@@ -44,10 +44,8 @@ import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
-import { Chevron } from "../../components/ui/chevron";
 import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";

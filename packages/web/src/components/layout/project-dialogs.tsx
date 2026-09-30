@@ -13,6 +13,7 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import { ICONS } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -36,7 +37,6 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { GEAR_ICON } from "../ui/icons";
 import { FieldError, FieldHint, FieldLabel } from "../ui/field";
 import { toastError, toastSuccess } from "../ui/toast";
 import { Modal } from "../ui/modal";
@@ -161,7 +161,7 @@ export function CreateProjectDialog({
 
 /** Path data for the settings tabs' small icons (24px viewBox, stroked like NAV_ICONS). */
 const TAB_ICON_PATHS = {
-  general: GEAR_ICON,
+  general: ICONS.gear,
   /** Two people (lucide users). Project members are humans — the Agent glyph used to stand in here. */
   members:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",

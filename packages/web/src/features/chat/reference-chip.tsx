@@ -3,13 +3,11 @@
  * directory, a quoted range of a file, or an excerpt of the conversation — never the text the
  * message will carry. The composer draws one per staged reference, above its text body.
  */
+import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { excerptLabel } from "../../lib/selection-menu";
 import { lineSuffix } from "../../lib/workspace-tree";
 import type { ComposerReference } from "../../lib/workspace-tree";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
-import { FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
 
 /**
  * A staged reference, split for display: its name, and the quoted lines as a `:from-to` suffix.
@@ -42,10 +40,10 @@ function referenceTitle(reference: ComposerReference): string {
  * than from a file.
  */
 const REFERENCE_ICON: Record<ComposerReference["kind"], string> = {
-  dir: FOLDER_ICON,
-  file: FILE_ICON,
-  quote: QUOTE_ICON,
-  excerpt: QUOTE_ICON,
+  dir: ICONS.folder,
+  file: ICONS.file,
+  quote: ICONS.quote,
+  excerpt: ICONS.quote,
 };
 
 export function ReferenceChip({

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { NAV_PAGE_KEYS, PAGES, mergePages, navPagesFor } from "../src/lib/pages";
 import { NAV_GROUP_KEYS } from "../src/lib/nav-group-collapse";
 import { zh } from "../src/lib/strings";
-import { NAV_ICONS } from "../src/components/ui/icons";
+import { NAV_ICONS } from "../src/lib/nav-icons";
 
 describe("the page manifest", () => {
   it("names only keys the nav strings and icons are typed for", () => {

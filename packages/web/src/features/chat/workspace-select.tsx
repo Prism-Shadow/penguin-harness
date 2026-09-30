@@ -16,17 +16,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { DirListResponse } from "@prismshadow/penguin-server/api";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { Chevron } from "../../components/ui/chevron";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FormPicker } from "../../components/ui/form-picker";
 import { noAutofill } from "../../components/ui/input";
 import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 import { menuRowClass, menuRowTone } from "../../components/ui/field";
@@ -276,7 +273,11 @@ export function WorkspaceSelect({
 
   /** Folder glyph shared by both triggers. */
   const folderIcon = (extraClass: string) => (
-    <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.rowLead} className={`text-gray-400 ${extraClass}`} />
+    <GlyphIcon
+      d={ICONS.folder}
+      size={ICON_SIZE.rowLead}
+      className={`text-gray-400 ${extraClass}`}
+    />
   );
   const menu = (
     <div className="space-y-1.5 px-2.5 pb-2.5 pt-2">
@@ -396,7 +397,7 @@ export function WorkspaceSelect({
                 onClick={() => loadDir(entry.path)}
                 className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
               >
-                <GlyphIcon d={FOLDER_ICON} className="text-gray-400" />
+                <GlyphIcon d={ICONS.folder} className="text-gray-400" />
                 <span
                   className="min-w-0 flex-1 truncate"
                   data-tooltip={entry.name}

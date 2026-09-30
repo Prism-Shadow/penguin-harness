@@ -429,7 +429,10 @@ export const en: GalleryStrings = {
         description:
           "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, cost trend and token bars, requests and success rate, the activity and score sparklines, the Trace timeline.",
       },
-      avatars: { title: "Avatars", description: "The user and agent avatars at their sizes." },
+      avatars: {
+        title: "Avatars",
+        description: "The user and agent avatars at their sizes, and a stack of them.",
+      },
       files: { title: "Files", description: "The file tree and the read-only file browser." },
       colour: {
         title: "Colour",
@@ -717,6 +720,8 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
+      stack: "Avatar stack",
+      stackShown: (shown, total) => `${shown} of ${total} shown`,
       userNames: ["admin", "Demo admin"],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },

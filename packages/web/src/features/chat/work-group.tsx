@@ -19,9 +19,9 @@
  * group away from the end, or the Task has actually finished.
  */
 import { useEffect, useRef, useState } from "react";
+import { Chevron } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { Chevron } from "../../components/ui/chevron";
 import {
   ActivityProgress,
   DISCLOSURE_CARD_CLASS,

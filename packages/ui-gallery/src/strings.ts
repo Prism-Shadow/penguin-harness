@@ -415,7 +415,7 @@ export const zh = {
         description:
           "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、趋势与用量柱、请求与成功率、活动与评分折线、轨迹时间线。",
       },
-      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸。" },
+      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
       files: { title: "文件", description: "文件树与只读文件浏览器。" },
       colour: {
         title: "颜色",
@@ -679,6 +679,8 @@ export const zh = {
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
+      stack: "头像组",
+      stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
       userNames: ["admin", "演示管理员"] as readonly string[],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },

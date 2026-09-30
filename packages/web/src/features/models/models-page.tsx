@@ -49,11 +49,11 @@ import type {
   ModelUpdateEntry,
   ModelVisionDetectRequest,
 } from "@prismshadow/penguin-server/api";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
@@ -70,10 +70,6 @@ import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { EXTERNAL_LINK_ICON } from "../../components/ui/icons";
-import { ProviderLogo } from "../../components/ui/provider-logo";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
@@ -1422,7 +1418,7 @@ export function ModelsPage() {
                           data-tooltip={S.models.getApiKey}
                           className="inline-flex shrink-0 items-center whitespace-nowrap p-1 text-xs text-brand-600 underline-offset-2 hover:underline @4xl:p-0 dark:text-brand-300"
                         >
-                          <GlyphIcon d={EXTERNAL_LINK_ICON} size={13} className="@4xl:hidden" />
+                          <GlyphIcon d={ICONS.externalLink} size={13} className="@4xl:hidden" />
                           <span className="hidden @4xl:inline">{S.models.getApiKey} ↗</span>
                         </a>
                       )}
@@ -3154,7 +3150,7 @@ function ModelDialog({
               >
                 {S.models.homepage}
                 {/* External-link glyph (opens in a new tab) */}
-                <GlyphIcon d={EXTERNAL_LINK_ICON} />
+                <GlyphIcon d={ICONS.externalLink} />
               </a>
             )}
           </div>

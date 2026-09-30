@@ -19,7 +19,7 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
-import { CloseButton } from "./icons";
+import { CloseButton } from "@prismshadow/penguin-ui";
 
 export interface ModalProps {
   open: boolean;

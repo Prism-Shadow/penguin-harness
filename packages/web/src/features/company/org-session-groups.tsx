@@ -25,21 +25,19 @@
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { AgentAvatar, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FolderSection, Icon } from "../../components/ui/group-list";
-import { MESSAGING_RELAY_ICON } from "../../components/ui/icons";
 import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import {
   DESK_ROW_ACTIONS,
@@ -206,7 +204,7 @@ function DeskRow({
               data-tooltip={S.messaging.enabledIndicator[messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
+              <Icon d={ICONS.paperPlane} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[messagingChannel]}</span>
             </span>
           )}

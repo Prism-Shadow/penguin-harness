@@ -28,6 +28,7 @@
 import { useState } from "react";
 import type { ChangeEvent } from "react";
 import type { UpdateProfileRequest } from "@prismshadow/penguin-server/api";
+import { USER_AVATAR_SIZE, UserAvatar } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -37,7 +38,6 @@ import { useAuth } from "../../state/auth";
 import { Button, labelButtonClass } from "../../components/ui/button";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input } from "../../components/ui/input";
-import { UserAvatar, USER_AVATAR_SIZE } from "../../components/ui/user-avatar";
 import { toastSuccess } from "../../components/ui/toast";
 import { PrefRow } from "./setting-row";
 

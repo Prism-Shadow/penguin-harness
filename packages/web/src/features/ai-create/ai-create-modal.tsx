@@ -6,10 +6,9 @@
  * dialog starts from `initialValue` again.
  */
 import { useState } from "react";
+import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Button } from "../../components/ui/button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { useAiBridge } from "./ai-bridge";
 import { AiCreatePanel } from "./ai-create-panel";
@@ -90,7 +89,7 @@ function AiCreateDialog({
             the next screen. Disabled until there is a prompt and an agent to take it.
           */}
           <Button size="sm" variant="primary" disabled={!ready} onClick={go}>
-            <GlyphIcon d={MAGIC_WAND_ICON} />
+            <GlyphIcon d={ICONS.wand} />
             {S.aiCreate.editInChat}
           </Button>
         </>

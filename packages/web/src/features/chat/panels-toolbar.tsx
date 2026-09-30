@@ -10,10 +10,8 @@
  * nested approval discoverable while the panel is off screen.
  */
 import { useSyncExternalStore } from "react";
+import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { PANEL_BOTTOM_ICON, PANEL_RIGHT_ICON } from "../../components/ui/icons";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot } from "../../lib/tone";
 import {
   dockVersion,
@@ -43,8 +41,8 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
   const pendingDock: DockPosition = panelDock("agents") ?? "right";
 
   const toggles: Array<{ position: DockPosition; label: string; icon: string }> = [
-    { position: "bottom", label: S.dock.bottomDock, icon: PANEL_BOTTOM_ICON },
-    { position: "right", label: S.dock.rightDock, icon: PANEL_RIGHT_ICON },
+    { position: "bottom", label: S.dock.bottomDock, icon: ICONS.panelBottom },
+    { position: "right", label: S.dock.rightDock, icon: ICONS.panelRight },
   ];
 
   return (

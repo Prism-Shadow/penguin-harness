@@ -17,12 +17,12 @@ import type {
   BenchmarkSummary,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, AvatarStack, GlyphIcon, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -30,11 +30,9 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
@@ -125,25 +123,16 @@ function TestedAgents({
   nameOf: (agentId: string) => string;
 }) {
   if (agentIds.length === 0) return null;
-  const shown = agentIds.slice(0, AVATARS_SHOWN);
-  const rest = agentIds.length - shown.length;
   return (
     <div
-      className="hidden shrink-0 items-center gap-1 sm:flex"
+      className="hidden shrink-0 sm:flex"
       data-tooltip={`${S.benchmark.testedAgents}: ${agentIds.map(nameOf).join(", ")}`}
     >
-      {shown.map((agentId) => (
-        <AgentAvatar
-          key={agentId}
-          id={agentId}
-          name={nameOf(agentId)}
-          size={ICON_SIZE.rowLead}
-          className="shrink-0 rounded"
-        />
-      ))}
-      {rest > 0 && (
-        <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">+{rest}</span>
-      )}
+      <AvatarStack
+        items={agentIds.map((agentId) => ({ id: agentId, name: nameOf(agentId) }))}
+        max={AVATARS_SHOWN}
+        size={ICON_SIZE.rowLead}
+      />
     </div>
   );
 }

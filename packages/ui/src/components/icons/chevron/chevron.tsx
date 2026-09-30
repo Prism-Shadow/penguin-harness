@@ -1,7 +1,11 @@
 /**
- * Collapse/expand indicator icon: a `>` shaped chevron that rotates 90 degrees to point down when expanded.
- * Shared by every collapsible element site-wide (thinking blocks, tool cards, sub-session cards,
- * reasoning groups, sidebar groups, trace tree, trace groups) — no more solid triangle characters.
+ * The collapse indicator: a `>` chevron that rotates 90 degrees to point down when its section is
+ * open. Every collapsible draws this one — thinking blocks, tool cards, sub-session cards, sidebar
+ * groups, trace trees — rather than a solid triangle character, so an open section looks the same
+ * wherever it is.
+ *
+ * It is a component rather than a registry entry because the rotation is part of the mark, and
+ * this file is where the de-slop rules let a transform transition live.
  */
 export function Chevron({
   open,

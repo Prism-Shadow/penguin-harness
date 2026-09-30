@@ -36,18 +36,11 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
+import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import {
-  COLLAPSE_ICON,
-  EXPAND_ICON,
-  HIDDEN_ICON,
-  NAV_ICONS,
-  WORKBENCH_ICON,
-} from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { toastInfo } from "../../components/ui/toast";
 import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { scrollMovesAnchor } from "../../lib/context-menu";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
@@ -458,7 +451,7 @@ function LauncherBall({
     label: S.dock.launcherHide,
     // The struck-through eye, in the muted ink so it reads as a lesser thing than the panels
     // above it — and keeps reading that way when the ball mirrors it.
-    glyphAt: (size) => <GlyphIcon d={HIDDEN_ICON} size={size} className={toneInk.muted} />,
+    glyphAt: (size) => <GlyphIcon d={ICONS.eyeOff} size={size} className={toneInk.muted} />,
     badge: false,
     testId: "dock-launcher-hide",
     // Writing the preference unmounts the launcher under its own click, so the toast is
@@ -481,7 +474,7 @@ function LauncherBall({
     hovered.glyphAt(ICON_SIZE.launcherBall)
   ) : (
     <GlyphIcon
-      d={ballActive ? (fanOpen ? COLLAPSE_ICON : EXPAND_ICON) : WORKBENCH_ICON}
+      d={ballActive ? (fanOpen ? ICONS.cornersIn : ICONS.cornersOut) : ICONS.tiles}
       size={ICON_SIZE.launcherBall}
     />
   );

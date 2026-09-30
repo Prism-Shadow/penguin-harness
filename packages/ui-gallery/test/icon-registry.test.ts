@@ -43,27 +43,24 @@ describe("extractIconPaths", () => {
     expect(icons.map((icon) => icon.names)).toEqual([["D"]]);
   });
 
-  it("finds the Web App's icons in the modules the gallery reads", () => {
+  it("finds the shared registry's icons in the files the gallery reads", () => {
     const read = (path: string) =>
-      readFileSync(fileURLToPath(new URL(`../../web/src/${path}`, import.meta.url)), "utf8");
-    const icons = extractIconPaths({
-      icons: read("components/ui/icons.tsx"),
-      groupList: read("components/ui/group-list.tsx"),
-      rowMenu: read("components/ui/session-row-menu.tsx"),
-      stat: read("lib/stat-icons.ts"),
-    });
+      readFileSync(fileURLToPath(new URL(`../../ui/src/${path}`, import.meta.url)), "utf8");
+    const icons = extractIconPaths({ icons: read("components/icons/icons.ts") });
     const names = icons.flatMap((icon) => icon.names);
     expect(icons.length).toBeGreaterThan(30);
     for (const name of [
-      "TRASH_ICON",
-      "GEAR_ICON",
-      "FOLDER_ICON",
-      "STAT_ICONS.copy",
-      "NAV_ICONS.models",
+      "ICONS.trash",
+      "ICONS.gear",
+      "ICONS.folder",
+      "ICONS.copy",
+      "ICONS.eyeOff",
     ]) {
       expect(names).toContain(name);
     }
-    const sizes = extractIconSizes(read("lib/icon-scale.ts"));
+    // The registry draws each glyph once: no path goes by two names in it.
+    expect(icons.filter((icon) => icon.names.length > 1)).toEqual([]);
+    const sizes = extractIconSizes(read("icon-scale.ts"));
     expect(sizes.find((rung) => rung.name === "inlineGlyph")?.px).toBe(13);
   });
 });

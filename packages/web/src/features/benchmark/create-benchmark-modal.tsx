@@ -8,20 +8,17 @@
  */
 import { useRef, useState } from "react";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
+import { GlyphIcon, ICONS, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { PlusIcon } from "../../components/ui/icons";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { TRASH_ICON } from "../../components/ui/session-row-menu";
 import { toastSuccess } from "../../components/ui/toast";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { ID_PATTERN, caseId, isValidRuns } from "./benchmark-prompts";
@@ -229,7 +226,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
                         aria-label={S.benchmark.removeCase}
                         onClick={() => setCases((prev) => prev.filter((x) => x.key !== c.key))}
                       >
-                        <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
+                        <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
                       </Button>
                     )}
                   </div>

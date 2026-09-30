@@ -32,17 +32,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
+import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import {
-  CloseIcon,
-  NAV_ICONS,
-  PANEL_BOTTOM_ICON,
-  PANEL_RIGHT_ICON,
-} from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot } from "../../lib/tone";
 import { useTerminalChrome } from "../terminal/terminal-appearance";
 import {
@@ -767,7 +761,7 @@ export function DockPanel({
             onClick={() => moveDock(position, other)}
           >
             <GlyphIcon
-              d={position === "right" ? PANEL_BOTTOM_ICON : PANEL_RIGHT_ICON}
+              d={position === "right" ? ICONS.panelBottom : ICONS.panelRight}
               size={ICON_SIZE.rowLead}
             />
           </DockButton>

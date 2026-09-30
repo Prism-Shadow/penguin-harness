@@ -31,12 +31,12 @@ import type {
   OrgTicketStatus,
   OrgTicketsResponse,
 } from "@prismshadow/penguin-server/api";
+import { CloseIcon, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { Button } from "../../components/ui/button";
@@ -46,8 +46,6 @@ import { Modal } from "../../components/ui/modal";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";

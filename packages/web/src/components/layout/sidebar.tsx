@@ -44,6 +44,14 @@ import type {
   SessionCategoryCounts,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  CheckIcon,
+  ChevronDown,
+  ICONS,
+  ICON_SIZE,
+  UserAvatar,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
@@ -124,23 +132,16 @@ import { Dropdown, menuItemClass } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
   HOVER_ROW_ACTIONS,
-  PENCIL_ICON,
-  PIN_ICON,
   SessionRowHoverActions,
   SessionRowMenuRows,
-  TRASH_ICON,
   contextMenuActions,
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
-import { AgentAvatar } from "../ui/agent-avatar";
-import { UserAvatar } from "../ui/user-avatar";
-import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import {
-  FOLDER_ICON,
-  FOLDER_OPEN_ICON,
   GROUP_MODE_ICONS,
   SORT_MODE_ICONS,
   FolderSection,
@@ -184,7 +185,6 @@ import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
@@ -2251,7 +2251,7 @@ export function Sidebar({
                         onClick={toggle}
                         className={headerControlClass(open)}
                       >
-                        <AddBadgeIcon base={FOLDER_ICON} />
+                        <AddBadgeIcon base={ICONS.folder} />
                       </button>
                     )}
                   />
@@ -2364,7 +2364,7 @@ export function Sidebar({
                               onClick={() => go(`/agents/${agent.agentId}`)}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                             >
-                              <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
+                              <Icon d={ICONS.gear} size={ICON_SIZE.groupHeaderAction} />
                             </button>
                           </>
                         }
@@ -2447,7 +2447,7 @@ export function Sidebar({
                           data-role="group"
                         >
                           <Icon
-                            d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                            d={collapsed ? ICONS.folder : ICONS.folderOpen}
                             size={ICON_SIZE.groupHeaderGlyph}
                           />
                         </span>
@@ -2912,7 +2912,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
       }`}
     >
-      <Icon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
+      <Icon d={ICONS.pin} size={ICON_SIZE.groupHeaderAction} />
     </button>
   );
 }
@@ -3106,7 +3106,7 @@ function SessionRow({
           {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
             <span data-tooltip={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
-              <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
+              <Icon d={ICONS.pin} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
@@ -3118,7 +3118,7 @@ function SessionRow({
               data-tooltip={S.messaging.enabledIndicator[s.messagingChannel]}
               className={`shrink-0 ${toneInk.muted}`}
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
+              <Icon d={ICONS.paperPlane} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}
@@ -3257,12 +3257,12 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
       }
     >
       <button type="button" className={overflowMenuRowClass} onClick={item(onRename)}>
-        {overflowMenuGlyph(PENCIL_ICON)}
+        {overflowMenuGlyph(ICONS.pencil)}
         {S.chat.renameWorkspace}
       </button>
       <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
         <span className="shrink-0">
-          <Icon d={TRASH_ICON} size={13} />
+          <Icon d={ICONS.trash} size={13} />
         </span>
         {S.chat.deleteWorkspace}
       </button>

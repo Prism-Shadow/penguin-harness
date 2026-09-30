@@ -28,6 +28,7 @@
  */
 import { useState } from "react";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -39,7 +40,6 @@ import {
 } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { CopyButton } from "../../components/ui/copy-button";
 import { useTheme } from "../../state/theme";

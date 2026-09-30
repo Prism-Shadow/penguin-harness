@@ -32,9 +32,12 @@ import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 const SCAN = scanSources();
 const WEB = SCAN.files.filter((file) => file.root === "web");
 
-/** The homes §3 names, as the web app spells them today. It has no Spinner of its own: W1 adds it. */
+/**
+ * The homes §3 names, as the web app spells them today. It has no Spinner of its own (the
+ * package's is the one), and the chevron's rotation left with the chevron.
+ */
 const POLICY: DeslopPolicy = {
-  transformMotion: ["chevron.tsx", "sheet.tsx", "drawer.tsx", "dock-launcher.tsx"],
+  transformMotion: ["sheet.tsx", "drawer.tsx", "dock-launcher.tsx"],
   entranceMotion: [],
   pulseHomes: ["dot.tsx", "skeleton.tsx", "streaming-caret.tsx"],
   spinnerHomes: [],
@@ -90,7 +93,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/ai-create/ai-create-panel.tsx": { 13: [1, "W4"] },
   "features/benchmark/benchmark-case-browser.tsx": { 13: [2, "W4"] },
   "features/benchmark/benchmark-detail.tsx": { 13: [2, "W4"] },
-  "features/benchmark/benchmark-page.tsx": { 13: [2, "W4"], 18: [1, "W4"] },
+  "features/benchmark/benchmark-page.tsx": { 13: [1, "W4"], 18: [1, "W4"] },
   "features/benchmark/create-benchmark-modal.tsx": { 13: [1, "W3"] },
   "features/benchmark/evaluation-detail-modal.tsx": { 13: [2, "W3"] },
   "features/chat/agent-topology-view.tsx": { 12: [1, "W6"], 13: [3, "W6"] },

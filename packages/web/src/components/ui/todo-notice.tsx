@@ -39,9 +39,9 @@
  * want the same gap under their title. A page whose container spaces its children (the cost
  * center's `space-y-4`) overrides it, which is the right answer there too.
  */
+import { ICON_GAP } from "@prismshadow/penguin-ui";
 import { Button } from "./button";
 import { UPDATE_DOT_INLINE } from "./update-dot";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { NoticeStrip } from "./notice-strip";
 
 export function TodoNotice({

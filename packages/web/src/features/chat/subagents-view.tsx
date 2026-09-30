@@ -33,6 +33,7 @@ import type {
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
 import { toastError } from "../../components/ui/toast";
@@ -41,11 +42,8 @@ import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { StatusIcon } from "../../components/ui/status-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";

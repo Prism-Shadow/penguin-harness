@@ -8,10 +8,10 @@
  * subtree, so a nested approval stays discoverable with the panel closed. Clicking opens the
  * panel focused on this child via ctx.onOpenSubagent.
  */
+import { AgentAvatar } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { hasPendingWithinOrigin } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { resolveAgentLabel, shortSessionId } from "./agent-topology";

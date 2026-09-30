@@ -25,6 +25,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import { ChevronDown, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
@@ -33,14 +34,12 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
   anyJobPending,
@@ -843,7 +842,7 @@ function MachineCard({
           <Verb
             label={S.machines.host.configureVerb}
             title={S.machines.host.configure}
-            d={GEAR_ICON}
+            d={ICONS.gear}
             disabled={busy}
             onClick={onConfigure}
           />
