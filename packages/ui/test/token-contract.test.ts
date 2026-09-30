@@ -440,16 +440,19 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     }
   });
 
-  it("keeps Primer's light ink, faces and switch as today's, and moves only its dark", () => {
+  it("keeps Primer's light ink and switch as today's, and moves only its dark", () => {
     const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     const light = primer.analysis.modes.light;
     expect(light.get("--ui-fg")).toBe("var(--color-gray-900)");
     expect(light.get("--ui-switch-track")).toBe("var(--color-gray-200)");
     expect(light.get("--ui-switch-knob")).toBe("#ffffff");
-    // The sans stack reads the CJK face where it named the two system faces: the same list.
+    // The faces are GitHub Primer's (2026-09-30): the sans stack reads the CJK face where it
+    // named the two system CJK faces, and those two stay behind Noto as its fallback.
     expect(light.get("--ui-font-sans")).toContain("var(--ui-font-cjk)");
-    expect(light.get("--ui-font-cjk")).toBe('"PingFang SC", "Microsoft YaHei"');
+    expect(light.get("--ui-font-cjk")).toBe(
+      '"Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei"',
+    );
     // Dark lifts off pure black and calms the body ink: the ramp, not the app's #000.
     const dark = primer.analysis.modes.dark;
     expect(dark.get("--color-gray-950")).not.toBe("#000000");

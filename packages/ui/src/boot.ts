@@ -164,7 +164,7 @@ export interface ThemeFonts {
  * first (`System` = a stack that names no bundled family).
  */
 export const THEME_FONTS: Readonly<Record<ThemeId, ThemeFonts>> = {
-  github: { latin: SYSTEM_FONT, cjk: SYSTEM_FONT, mono: SYSTEM_FONT },
+  github: { latin: "Mona Sans", cjk: "Noto Sans SC", mono: "JetBrains Mono" },
   modern: { latin: "MiSans", cjk: "MiSans", mono: "JetBrains Mono" },
   geek: { latin: "IBM Plex Sans", cjk: "Noto Sans SC", mono: "Commit Mono" },
 };

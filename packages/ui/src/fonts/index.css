@@ -3,9 +3,9 @@
  *
  * A browser fetches a font FILE only when some element's `font-family` names its family and the
  * text falls inside the face's `unicode-range`. Each theme file under `themes/` names only its own
- * families, so a session downloads the active theme's faces and nothing else: Frost's MiSans
- * slices and JetBrains Mono, or Console's Latin faces and the Noto Sans SC slices its CJK text
- * touches; Primer names no bundled family in W0 and downloads none. The DECLARATIONS are another
+ * families, so a session downloads the active theme's faces and nothing else: Primer's Mona Sans
+ * and JetBrains Mono or Console's Latin faces, each with the Noto Sans SC slices its CJK text
+ * touches, or Frost's MiSans slices and JetBrains Mono. The DECLARATIONS are another
  * matter: every theme's faces are declared unconditionally here, so these rules sit in the app's
  * main stylesheet and every session downloads them (about 94 KB gzipped, most of it MiSans's and
  * Noto's `unicode-range` lists). That cost was accepted on 2026-09-18 over loading each theme's
@@ -16,7 +16,7 @@
  *
  * | theme           | sans (reading)                     | ui (chrome)            | mono                          | CJK                          |
  * | --------------- | ---------------------------------- | ---------------------- | ----------------------------- | ---------------------------- |
- * | Primer `github` | Mona Sans Variable (W1a)           | = sans                 | JetBrains Mono Variable (W1a) | Noto Sans SC Variable (W1a)  |
+ * | Primer `github` | Mona Sans Variable                 | = sans                 | JetBrains Mono Variable       | Noto Sans SC Variable        |
  * | Frost `modern`  | MiSans 400 / 500                   | = sans                 | JetBrains Mono Variable       | MiSans (the same family)     |
  * | Console `geek`  | IBM Plex Sans Variable             | Commit Mono 400 / 700  | Commit Mono 400 / 700         | Noto Sans SC Variable        |
  *

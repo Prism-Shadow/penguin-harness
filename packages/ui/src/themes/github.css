@@ -1,12 +1,14 @@
 /**
  * Primer (`github`) — the default theme. Reference: github.com and primer.style.
  *
- * W0 status: every LIGHT value is the app's CURRENT computed value, so adopting the token layer
- * moves no pixel there — system font stacks, stock Tailwind gray, emerald / amber / red status
- * tones, the 6px control radius, Tailwind's stock shadow recipes and the 3px gray focus ring.
- * Values the app had no equivalent for (the `done` and `info` tones, diff surfaces, glass, the
- * type and density roles) are proposals in the same palette, consumed by nothing yet. The Primer
- * unification — Mona Sans + Noto, one border grey, Primer's tone hues — lands as W1a.
+ * W0 status: every LIGHT value but the typefaces is the app's CURRENT computed value, so
+ * adopting the token layer moves no pixel there — stock Tailwind gray, emerald / amber / red
+ * status tones, the 6px control radius, Tailwind's stock shadow recipes and the 3px gray focus
+ * ring. Values the app had no equivalent for (the `done` and `info` tones, diff surfaces, glass,
+ * the type and density roles) are proposals in the same palette, consumed by nothing yet. The
+ * typefaces are GitHub Primer's own since 2026-09-30 — Mona Sans, JetBrains Mono and Noto Sans
+ * SC in place of the system stacks — and only the typefaces: the grays and tone hues stay the
+ * app's until moving them toward Primer's is decided on its own.
  *
  * Dark is no longer the app's white-on-pure-black inversion (user decision, 2026-09-29): the
  * canvas lifts to #121212, the body ink sits at about 12:1 with the muted ink at 6:1 and the
@@ -215,17 +217,21 @@
     --ui-switch-knob-on: var(--ui-accent-fg);
     --ui-switch-knob-line: var(--color-gray-500);
 
-    /* ---- Typography — families: the system stacks the app ships today; chrome and reading text
-       share the one face. The sans stack reads the CJK face where the app's stack names the two
-       system CJK faces, so the computed list is the same and a chosen CJK face reaches it. ---- */
+    /* ---- Typography — families: GitHub Primer's faces (Mona Sans, JetBrains Mono for code,
+       Noto Sans SC for Han), each in front of the system stack the app shipped before, which
+       stays behind it as the fallback; chrome and reading text share the one face. Latin first,
+       then the CJK face, then the system stack — the order every theme keeps — so Han text
+       renders in Noto Sans SC (or the chosen CJK face, through `--ui-font-cjk`) on every
+       platform rather than in whichever system face carries CJK glyphs. ---- */
     --ui-font-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, var(--ui-font-cjk), sans-serif;
+      "Mona Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+      Roboto, sans-serif;
     --ui-font-ui: var(--ui-font-sans);
     --ui-font-mono:
-      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-      monospace;
+      "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
     --ui-font-display: var(--ui-font-sans);
-    --ui-font-cjk: "PingFang SC", "Microsoft YaHei";
+    --ui-font-cjk: "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
 
     /* ---- Typography — scale and roles: Tailwind's stock text-sm / text-xs rungs, which is what
        the app's classes render today (theme.css bridges `text-sm` and `text-xs` to these). The two

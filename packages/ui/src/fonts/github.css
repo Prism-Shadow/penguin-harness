@@ -3,10 +3,9 @@
  * latin-ext slices only, from @fontsource-variable/mona-sans and
  * @fontsource-variable/jetbrains-mono (OFL-1.1).
  *
- * Declared ahead of use: Primer stays on the system font stack until the W1a polish names these
- * families in `themes/github.css`. A declared face that no `font-family` names is never
- * downloaded, so until then they cost bundle bytes only. The `url()`s are relative to this file on
- * purpose — see `index.css`.
+ * `themes/github.css` puts them first in its sans and mono stacks (Primer's CJK face, Noto Sans
+ * SC, is `cjk.css`); Frost names the same JetBrains Mono faces, declared once here. The `url()`s
+ * are relative to this file on purpose — see `index.css`.
  */
 
 @font-face {
