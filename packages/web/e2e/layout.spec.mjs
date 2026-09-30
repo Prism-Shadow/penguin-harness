@@ -462,8 +462,9 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
       { timeout: 1000 },
     );
   }).toPass({ timeout: 15_000 });
-  // Active fill = the *unprefixed* bg-gray-200/70 token (the resting state carries hover:bg-gray-200/70, which a bare substring match would also hit).
-  const ACTIVE_FILL = /(^|\s)bg-gray-200\/70(\s|$)/;
+  // Active fill = the *unprefixed* bg-fg/7 token, the navigation column's selected wash (the
+  // resting state carries hover:bg-fg/7, which a bare substring match would also hit).
+  const ACTIVE_FILL = /(^|\s)bg-fg\/7(\s|$)/;
   // On a conversation, the entry lights as "you are here" (any non-draft /chat/:id).
   await expect(rail.getByRole("button", { name: "Last conversation" })).toHaveClass(ACTIVE_FILL);
 

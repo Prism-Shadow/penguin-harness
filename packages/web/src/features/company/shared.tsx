@@ -25,6 +25,7 @@ import {
   Input,
   Notice,
   ProgressBar,
+  Ring,
 } from "@prismshadow/penguin-ui";
 import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -188,10 +189,10 @@ export function ErrorLine({
 }
 
 /**
- * Spend against a budget as a ring: the used share drawn clockwise from the top in the
- * budget's tone (attention from 80%, danger from 100%, the ring full when over), the percent
- * inside; a muted, empty ring with a dash when there is no budget. The exact amounts ride in
- * the accessible name and tooltip.
+ * Spend against a budget as a ring (the package's `Ring`): the used share drawn clockwise from
+ * the top in the budget's tone (attention from 80%, danger from 100%, the ring full when over)
+ * over a track of that tone faded, the percent inside; a muted, empty ring with a dash when there
+ * is no budget. The exact amounts ride in the accessible name and tooltip.
  */
 export function SpendRing({
   cost,
@@ -207,60 +208,34 @@ export function SpendRing({
   size?: number;
 }) {
   const tone = budgetTone(ratio);
-  const strokeWidth = Math.max(3, Math.round(size * 0.1));
-  const center = size / 2;
-  const r = (size - strokeWidth) / 2;
-  const c = 2 * Math.PI * r;
   const share = ratio === undefined ? 0 : Math.min(1, Math.max(0, ratio));
   const label =
     budget === undefined
       ? `${formatMoney(cost, currency)} · ${S.company.noBudget}`
       : `${S.company.spendOfBudget(formatMoney(cost, currency), formatMoney(budget, currency))} · ${formatPercent(ratio)}`;
-  const ink = tone === "muted" ? "text-gray-300 dark:text-gray-700" : toneInk[tone];
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label={label}
-      data-tooltip={label}
-      className={`block shrink-0 ${ink}`}
-    >
-      <circle
-        cx={center}
-        cy={center}
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.25}
-        strokeWidth={strokeWidth}
+    // Without a budget the ring has no tone and takes this span's line ink, track only.
+    <span className={`relative block shrink-0 ${tone === "muted" ? "text-line-emphasis" : ""}`}>
+      <Ring
+        segments={share > 0 ? [{ value: share }] : []}
+        max={1}
+        size={size}
+        width={Math.max(3, Math.round(size * 0.1))}
+        {...(tone !== "muted" ? { tone } : {})}
+        trackOpacity={0.25}
+        label={label}
       />
-      {share > 0 && (
-        <circle
-          cx={center}
-          cy={center}
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={`${share * c} ${c}`}
-          transform={`rotate(-90 ${center} ${center})`}
-        />
-      )}
-      <text
-        x={center}
-        y={center}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={Math.round(size * 0.22)}
-        fontWeight="600"
-        className="fill-gray-700 dark:fill-gray-200"
+      {/* Sized to the ring rather than to a text rung: at the overview's 40px it must fit
+          "100%" inside the stroke. The ring carries the name, so the figure is hidden from
+          assistive technology and lets the pointer through to the ring's tooltip. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 flex items-center justify-center leading-none font-semibold text-gray-700 dark:text-gray-200"
+        style={{ fontSize: Math.round(size * 0.22) }}
       >
         {budget === undefined ? "—" : formatPercent(ratio)}
-      </text>
-    </svg>
+      </span>
+    </span>
   );
 }
 

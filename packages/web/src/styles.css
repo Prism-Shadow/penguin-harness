@@ -254,43 +254,6 @@
   animation: msg-in 180ms ease-out both;
 }
 
-/* Files panel: a directory's rows grow out of, and shrink back into, its row. Grid tracks
-   rather than height so the closed state needs no measurement; the inner box clips. Under
-   reduced motion the keyframes are off and each class rests at its own end state — open
-   at 1fr, closing at 0fr — and the view drops a closed group on a timer. Matches the
-   chevron's 200ms rotation. */
-.tree-group {
-  display: grid;
-  grid-template-rows: 1fr;
-}
-.tree-group > div {
-  min-height: 0;
-  overflow: hidden;
-}
-.tree-group-open {
-  animation: tree-group-open 200ms ease-out;
-}
-.tree-group-close {
-  grid-template-rows: 0fr;
-  animation: tree-group-close 200ms ease-in;
-}
-@keyframes tree-group-open {
-  from {
-    grid-template-rows: 0fr;
-  }
-  to {
-    grid-template-rows: 1fr;
-  }
-}
-@keyframes tree-group-close {
-  from {
-    grid-template-rows: 1fr;
-  }
-  to {
-    grid-template-rows: 0fr;
-  }
-}
-
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by
    conversation-outline.tsx to the [data-outline-anchor] wrapper via classList — deliberately
    outside React's managed props, so stream re-renders don't strip it mid-flash. */
@@ -524,16 +487,6 @@
    (`.code-*`), Shiki's dark palette and the KaTeX fixes live in the shared UI package, beside the
    components that draw them: packages/ui/src/components/content/prose/prose.css. */
 
-/* ---------- Channel message bubble (features/company/channel-view.tsx) ---------- */
-
-/* A bubble's own surface is the grey the shared Markdown rules give inline code and table
-   rules, so inside a bubble those marks are printed on their own colour and disappear. One
-   step deeper puts them back, and reads on both bubble tints in both themes. Fenced blocks
-   need nothing: `.md-body pre` carries a border and its own lighter/darker fill, and the code
-   inside it is transparent. The `:not(pre) >` shape is what keeps this off them. */
-.channel-bubble :not(pre) > code {
-  @apply bg-gray-200 dark:bg-gray-700;
-}
-.channel-bubble :is(th, td) {
-  @apply border-gray-300 dark:border-gray-700;
-}
+/* The company channel's bubble (`.channel-bubble`: the deeper inline-code chip and table rules
+   inside it) lives in the shared UI package too, beside its component:
+   packages/ui/src/components/chat/channel-bubble/channel-bubble.css. */

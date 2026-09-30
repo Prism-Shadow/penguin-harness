@@ -17,7 +17,8 @@ import type {
   CaseMaterial,
   WorkspaceFileEntry,
 } from "@prismshadow/penguin-server/api";
-import { Badge } from "@prismshadow/penguin-ui";
+import { Badge, FileBrowser } from "@prismshadow/penguin-ui";
+import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
@@ -29,13 +30,10 @@ import {
   baseName,
   expandTo,
   parentDir,
+  previewKindOf,
   withExpanded,
 } from "../../lib/workspace-tree";
 import type { Listings } from "../../lib/workspace-tree";
-import type { FileTreeRow } from "../../lib/file-tree";
-import { FileBrowser, previewKindOf } from "../../components/ui/file-browser";
-import type { FileBrowserPreview } from "../../components/ui/file-browser";
-import type { TreeToggle } from "../../components/ui/file-tree";
 
 /** One row of the case tree: a shared tree row, which material it came from, and a file's size. */
 export interface CaseTreeRow extends FileTreeRow {
@@ -366,6 +364,10 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
       headerPath={headerPath()}
       preview={preview}
       emptyPreview={S.benchmark.caseFileUnavailable}
+      emptyDirLabel={S.files.empty}
+      truncatedLabel={S.files.previewTruncated}
+      unsupportedLabel={S.files.previewUnsupported}
+      downloadLabel={S.files.download}
       resolveRef={resolveRef}
       treeWidth={locale === "en" ? 380 : 270}
       treeMaxHeight={53}

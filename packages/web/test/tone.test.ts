@@ -21,18 +21,32 @@ const STATUS_FILES = [
   "packages/ui/src/components/icons/status-icon/status-icon.tsx",
   "packages/ui/src/components/icons/activity-icon/activity-icon.tsx",
   "packages/ui/src/components/feedback/badge/badge.tsx",
-  "packages/web/src/features/chat/step-banner.tsx",
+  "packages/ui/src/components/chat/step-banner/step-banner.tsx",
   "packages/web/src/features/chat/goal-banner.tsx",
+  "packages/ui/src/components/chat/subagent-chip/subagent-chip.tsx",
   "packages/web/src/features/chat/subagent-chip.tsx",
   "packages/web/src/features/builtin-browser/browser-layer.tsx",
   "packages/web/src/features/builtin-browser/browser-tab-strip.tsx",
   "packages/web/src/features/builtin-browser/browser-toolbar.tsx",
 ];
 
+/**
+ * Status files that share their name with another root's file by design: a lifted component,
+ * drawn by the package and bound to the app by a web container that kept the old path. Each is
+ * found by its id instead of by a name no other root holds.
+ */
+const LIFTED: ReadonlySet<string> = new Set([
+  "packages/ui/src/components/chat/subagent-chip/subagent-chip.tsx",
+  "packages/web/src/features/chat/subagent-chip.tsx",
+]);
+
 describe("tone tokens", () => {
   it("scans every source root, and finds the tone module and each status file in one place", () => {
     expectEveryRootScanned(SCAN);
-    for (const id of ["packages/web/src/lib/tone.ts", ...STATUS_FILES]) expectSingleHome(SCAN, id);
+    for (const id of ["packages/web/src/lib/tone.ts", ...STATUS_FILES]) {
+      if (LIFTED.has(id)) sourceFile(SCAN, id);
+      else expectSingleHome(SCAN, id);
+    }
   });
 
   it("covers every tone in every map", () => {

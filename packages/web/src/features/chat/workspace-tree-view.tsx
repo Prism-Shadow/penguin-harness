@@ -1,15 +1,15 @@
 /**
- * The Files panel's directory tree: the shared `FileTree` over the rows lib/workspace-tree.ts
- * flattens out of the lazily fetched listings. What this file adds is what only the Workspace
- * has — the size and modified time in a row's tooltip and after its name, the directory
- * uploads land in standing in for a selection while no file is open, and the three things an
- * empty row list can mean.
+ * The Files panel's directory tree: the UI package's `FileTree` over the rows
+ * lib/workspace-tree.ts flattens out of the lazily fetched listings. What this file adds is what
+ * only the Workspace has — the size and modified time in a row's tooltip and after its name, the
+ * directory uploads land in standing in for a selection while no file is open, and the three
+ * things an empty row list can mean.
  */
+import { FileTree } from "@prismshadow/penguin-ui";
+import type { TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import type { TreeRow } from "../../lib/workspace-tree";
-import { FileTree } from "../../components/ui/file-tree";
-import type { TreeToggle } from "../../components/ui/file-tree";
 
 export function WorkspaceTreeView({
   rows,
@@ -61,7 +61,7 @@ export function WorkspaceTreeView({
       }
       rowTrailing={(row) =>
         row.kind === "file" && (
-          <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+          <span className="shrink-0 font-mono text-xs text-fg-subtle">
             {formatBytes(row.sizeBytes)}
           </span>
         )
@@ -72,9 +72,9 @@ export function WorkspaceTreeView({
       onOpenFile={onOpenFile}
     >
       {filtering ? (
-        <p className="px-3 py-2 text-sm text-gray-400">{S.files.searchNoMatch}</p>
+        <p className="px-3 py-2 text-sm text-fg-subtle">{S.files.searchNoMatch}</p>
       ) : rootEmpty ? (
-        <p className="px-3 py-2 text-sm text-gray-400">{S.files.empty}</p>
+        <p className="px-3 py-2 text-sm text-fg-subtle">{S.files.empty}</p>
       ) : null}
     </FileTree>
   );

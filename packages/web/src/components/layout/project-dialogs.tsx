@@ -46,7 +46,7 @@ import {
   dispatchChatDefaultsChanged,
   type ChatDefaultsChangedDetail,
 } from "../../features/chat/chat-defaults-event";
-import { ModelSelect, modelLabel } from "../../features/chat/model-select";
+import { ModelCatalogSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
@@ -498,7 +498,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
  * delete zone): the `[default_chat]` block (Agent / Workspace / approval mode / thinking
  * level) plus the Project's default model, laid out as a compact responsive two-column
  * grid. Workspace and model reuse the chat draft's own pickers — WorkspaceSelect (the
- * folder finder, a modal stacked on this one) and ModelSelect (the composer's model
+ * folder finder, a modal stacked on this one) and ModelCatalogSelect (the composer's model
  * picker, a dialog too) — with their `form` trigger variant, so the controls line up with
  * the dialog's Input/Select while what they open stays exactly the composer's.
  * The model default is SINGLE-SOURCED with the models page — the picker renders and writes
@@ -700,7 +700,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 <>
                   {/* The composer's model picker (provider logo + name, opening the model-picker
                       dialog); the default row carries the S.models.default marker. */}
-                  <ModelSelect
+                  <ModelCatalogSelect
                     models={models.models}
                     value={modelRef}
                     defaultModel={models.defaultModel}

@@ -82,6 +82,7 @@
     --ui-canvas: #fbfafa;
     --ui-surface: var(--ui-canvas);
     --ui-surface-muted: #f4f2f2;
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: #f0eeee;
     --ui-overlay: var(--ui-canvas);
     --ui-overlay-backdrop: rgb(19 16 16 / 0.28);
@@ -411,6 +412,7 @@
        steps up, an inset steps down */
     --ui-canvas: #131010;
     --ui-surface-muted: #221f1f;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #0d0b0b;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.6);
 
