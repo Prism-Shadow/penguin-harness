@@ -60,6 +60,7 @@ import {
   waitFor,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
 
 /** Every route is under a Project; the seeded one every server has. */
 const PROJECT = "default_project";
@@ -119,21 +120,6 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     },
     ...over,
   };
-}
-
-/**
- * The App's machines node, standing in for whichever service the case built: every call is
- * forwarded to it, so one App serves every case while each case keeps a service, a store
- * and a data root of its own.
- */
-function forwardingTo(current: () => MachinesService): MachinesService {
-  return new Proxy({} as MachinesService, {
-    get: (_node, key) => {
-      const service = current();
-      const value: unknown = Reflect.get(service, key, service);
-      return typeof value === "function" ? value.bind(service) : value;
-    },
-  });
 }
 
 describe("machines API", () => {
