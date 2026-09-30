@@ -1342,8 +1342,15 @@ export class FakeServer {
         : this.json(org.proposalGraph);
     }
     if (b === "servers") {
-      const self = { name: "this", url: null, self: true, installId: "self-id", registeredAt: null, by: null };
-      const registry = (org.proposalServers ??= [self]);
+      const self: Json = {
+        name: "this",
+        url: null,
+        self: true,
+        installId: "self-id",
+        registeredAt: null,
+        by: null,
+      };
+      const registry: Json[] = (org.proposalServers ??= [self]);
       if (method === "POST") {
         if (!isNonEmptyString(body?.name) || !isNonEmptyString(body?.url)) {
           return this.badRequest("name and url are required.");
