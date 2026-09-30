@@ -3,13 +3,26 @@
  * — success below 80%, attention from 80%, danger from 100% — and both leave the amounts to
  * the text beside them, carrying the full statement in the accessible name and the tooltip.
  *
- * `FinanceGauge` is the KPI row's ring: one arc from 12 o'clock, filled to the ratio and
- * capped at a full circle when spend is over the budget; without a budget the track stands
- * alone. `SpendMeter` is the spend tree's bar, which carries its own percent.
+ * `FinanceGauge` is the KPI row's ring (the package's `Ring`): one arc from 12 o'clock, filled to
+ * the ratio and capped at a full circle when spend is over the budget; without a budget the track
+ * stands alone. `SpendMeter` is the spend tree's bar, which carries its own percent.
  */
+import { Ring } from "@prismshadow/penguin-ui";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import { formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
 import { budgetTone } from "./finance-tree";
+
+/** The budget tones in the ring's words (a gauge without a budget draws no arc to ink). */
+const RING_TONE: Record<Tone, ToneName> = {
+  busy: "success",
+  success: "success",
+  attention: "attention",
+  danger: "danger",
+  link: "info",
+  muted: "neutral",
+};
 
 export function FinanceGauge({
   ratio,
@@ -22,54 +35,26 @@ export function FinanceGauge({
   label: string;
   size?: number;
 }) {
-  const tone = budgetTone(ratio);
-  const strokeWidth = Math.max(3, Math.round(size * 0.11));
-  const center = size / 2;
-  const r = (size - strokeWidth) / 2;
-  const c = 2 * Math.PI * r;
   const fraction = ratio === undefined ? 0 : Math.min(1, Math.max(0, ratio));
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label={label}
-      data-tooltip={label}
-      className={`block shrink-0 ${toneInk[tone]}`}
-    >
-      <circle
-        cx={center}
-        cy={center}
-        r={r}
-        fill="none"
-        strokeWidth={strokeWidth}
-        className="stroke-gray-200 dark:stroke-gray-800"
-      />
-      {fraction > 0 && (
-        <circle
-          cx={center}
-          cy={center}
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          strokeLinecap={fraction < 1 ? "round" : "butt"}
-          strokeDasharray={`${fraction * c} ${c}`}
-          transform={`rotate(-90 ${center} ${center})`}
-        />
-      )}
-    </svg>
+    <Ring
+      segments={fraction > 0 ? [{ value: fraction }] : []}
+      max={1}
+      size={size}
+      width={Math.max(3, Math.round(size * 0.11))}
+      tone={RING_TONE[budgetTone(ratio)]}
+      label={label}
+    />
   );
 }
 
 /**
  * The share of the track a fill needs before the percent can sit inside it. The widest label,
- * "100%" at 10px with its padding, is about 30px, and the bar is 80px wide in the one column
- * that draws it — so 45% of the track holds the label, and below that there is room for it to
- * stand past the fill's end without leaving the track.
+ * "100%" at the small text rung with its padding, is about 38px, and the bar is 80px wide in the
+ * one column that draws it — so half the track holds the label, and below that there is room for
+ * it to stand past the fill's end without leaving the track.
  */
-const PERCENT_INSIDE_MIN = 45;
+const PERCENT_INSIDE_MIN = 50;
 
 /**
  * Spend against a budget as a bar with its percent drawn on it: the percent rides inside the
@@ -111,7 +96,7 @@ export function SpendMeter({
       {ratio !== undefined && (
         <span
           aria-hidden
-          className={`absolute inset-y-0 flex items-center text-[10px] font-medium tabular-nums ${
+          className={`absolute inset-y-0 flex items-center text-xs font-medium tabular-nums ${
             inside ? "pr-1.5 text-gray-900" : `pl-1.5 ${toneInk[tone]}`
           }`}
           style={inside ? { right: `${100 - width}%` } : { left: `${width}%` }}

@@ -8,7 +8,7 @@
  * Send stays the user's move. A Benchmark can score several agents, so which one is under test
  * is a choice here; the baseline and the default target follow that choice. The model of the
  * conversation that carries the work out is picked with the Project settings' own model picker
- * (ModelSelect in its form variant, the one the new-chat defaults and the schedule form use),
+ * (ModelCatalogSelect in its form variant, the one the new-chat defaults and the schedule form use),
  * preset to the Project's default model. The new conversation opens with the Skills its tab
  * rests on preselected — the evaluator on both tabs, the optimizer on its own — so the
  * `[use_skills]` block names them on send and the model reads them before it acts; a model
@@ -42,7 +42,7 @@ import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
-import { ModelSelect } from "../chat/model-select";
+import { ModelCatalogSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams } from "./benchmark-prompts";
@@ -205,7 +205,7 @@ export function UseBenchmarkModal({
       {models !== null && models.models.length === 0 ? (
         <p className="text-xs text-gray-400">{S.models.empty}</p>
       ) : (
-        <ModelSelect
+        <ModelCatalogSelect
           models={models?.models ?? []}
           value={modelRef}
           {...(defaultModel !== undefined ? { defaultModel } : {})}

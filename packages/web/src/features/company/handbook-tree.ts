@@ -8,7 +8,7 @@
  * relative link inside one document resolves to another document of the handbook.
  */
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
-import type { FileTreeRow } from "../../lib/file-tree";
+import type { FileTreeRow } from "@prismshadow/penguin-ui";
 
 /** The index, `handbook/README.md`: pinned first in the list, and the one file that cannot be deleted. */
 export const HANDBOOK_INDEX = "README.md";

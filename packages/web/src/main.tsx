@@ -27,11 +27,9 @@ import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
 // The global shortcut dispatcher installs itself at module evaluation (a React effect would
 // leave a post-paint window where a chord is dead); the import is what evaluates it.
 import { setShortcutBlocker } from "./lib/shortcuts/dispatcher";
-// KaTeX's stylesheet and its woff2 faces, resolved out of node_modules so Vite emits them as local
-// assets: the desktop app has to render math with no network, and a CDN <link> would leave every
-// formula as unstyled markup offline. Imported before styles.css so the app's own `.katex` rules
-// (CJK fallback, error state, wide-formula scrolling) come later in the cascade and win.
-import "katex/dist/katex.min.css";
+// KaTeX's stylesheet comes with the shared UI package's Markdown (content/prose/prose.tsx imports
+// it), resolved out of node_modules so Vite emits it and its woff2 faces as local assets: the
+// desktop app has to render math with no network.
 import "./styles.css";
 
 // No global command runs behind an open dialog or menu: they all join the UI package's Escape
