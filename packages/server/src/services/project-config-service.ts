@@ -53,6 +53,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import {
+  VENDOR_ENDPOINTS,
   providerInfo,
   unaddableModel,
   unroutableVendorModel,
@@ -1593,6 +1594,50 @@ export class ProjectConfigService implements ProjectConfigStore {
       if (model.provider !== provider) continue;
       const apiKey = optStr(model.api_key);
       if (apiKey !== undefined) return apiKey;
+    }
+    return undefined;
+  }
+
+  /**
+   * The key a group's account balance is read with (the catalog's `balance` descriptor names
+   * the endpoint). The stored group key comes first. Without one, the environment key a
+   * Session on one of the group's rows would use: core's modelEnvFallback decides, the rule
+   * resolveModelCredential applies, and its variable is read from this process's env as the
+   * routed client itself would read it. One more condition, because the balance request is
+   * the server's own rather than the routed client's: the variable's official endpoint must
+   * be the balance endpoint's host, so a vendor key never reaches another vendor. A DeepSeek
+   * row keyed by DEEPSEEK_API_KEY qualifies; a gateway's rows (TokenDance) get no fallback at
+   * all. Never returned to the browser.
+   */
+  async getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined> {
+    const stored = await this.getGroupApiKey(projectId, provider);
+    if (stored !== undefined) return stored;
+    const balanceUrl = providerInfo(provider)?.balance?.url;
+    if (balanceUrl === undefined) return undefined;
+    const origin = (url: string): string | undefined => {
+      try {
+        return new URL(url).origin;
+      } catch {
+        return undefined;
+      }
+    };
+    const balanceOrigin = origin(balanceUrl);
+    const raw = await this.readRaw(projectId);
+    for (const model of asArray(raw.models)) {
+      if (model.provider !== provider) continue;
+      const modelId = optStr(model.model_id);
+      if (modelId === undefined) continue;
+      const fallback = modelEnvFallback({
+        provider,
+        modelId,
+        clientType: canonicalClientType(optStr(model.client_type)),
+        baseUrl: optStr(model.base_url),
+      });
+      if (fallback === undefined) continue;
+      const endpoints = VENDOR_ENDPOINTS[fallback.envKey] ?? [];
+      if (!endpoints.some((own) => origin(own) === balanceOrigin)) continue;
+      const value = process.env[fallback.envKey]?.trim();
+      if (value) return value;
     }
     return undefined;
   }

@@ -157,6 +157,12 @@ export abstract class ProjectConfigStore extends Interface<{
     options?: { expectedRefreshToken?: string },
   ): Promise<number>;
   getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
+  /**
+   * The key a group's account balance is read with: the stored group key, or else the
+   * environment key a Session on one of the group's rows would use, when that variable's
+   * official endpoint is the balance endpoint's own host. Server-side only.
+   */
+  getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined>;
   setModelApiKeyResolver(
     resolver: (context: ModelRequestContext) => Promise<string | undefined>,
   ): void;

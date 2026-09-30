@@ -2,8 +2,10 @@
  * Group balances in the Web App: how an amount reads (balance.ts) — in the vendor's own figures
  * and in the display currency — what the header and the sidebar show for each state of a
  * reading (group-balance.tsx), how the per-account pin is read back out of the free-form prefs,
- * and the TokenDance banner's per-browser dismissal.
+ * and the TokenDance banner: its per-browser dismissal, and a sweep that rides the brand name.
  */
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ModelBalanceResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -16,9 +18,12 @@ import {
 import { balanceView } from "../src/features/models/group-balance";
 import {
   TOKENDANCE_BANNER_DISMISSED_KEY,
+  TokenDanceBanner,
   bannerDismissed,
+  splitBrand,
 } from "../src/features/models/tokendance-banner";
-import { S } from "../src/lib/strings";
+import { S, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 
 const reading: ModelBalanceResponse = {
   ok: true,
@@ -162,5 +167,23 @@ describe("the TokenDance banner's dismissal", () => {
       setItem: () => undefined,
     };
     expect(bannerDismissed(broken)).toBe(false);
+  });
+});
+
+describe("the TokenDance banner's sweep", () => {
+  it("rides the brand name alone, in both languages", () => {
+    for (const text of [zh.models.tokenDanceBanner, en.models.tokenDanceBanner]) {
+      const parts = splitBrand(text, "TokenDance");
+      expect(parts, text).not.toBeNull();
+      expect(`${parts![0]}TokenDance${parts![1]}`).toBe(text);
+    }
+    const html = renderToStaticMarkup(createElement(TokenDanceBanner, { onConnect: () => {} }));
+    expect(html.match(/banner-shimmer/g)).toHaveLength(1);
+    expect(html).toContain('<span class="banner-shimmer">TokenDance</span>');
+  });
+
+  it("leaves a wording without the name plain", () => {
+    expect(splitBrand("Connect your wallet", "TokenDance")).toBeNull();
+    expect(splitBrand("TokenDance", "")).toBeNull();
   });
 });

@@ -10,9 +10,8 @@
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
  * name + count + the collapse chevron), with one card per model within a group — the card
- * shows the provider's logo, the display name and the marks the chat model picker uses
- * (default / vision / fast / free / discount), while context, pricing, and key status are
- * folded into a single line of small text. Clicking a card opens the config dialog
+ * shows only the display name + status badges (default / vision / fast / free / discount), while
+ * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
  * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
  * delete). The group header's right side holds the group's actions in a fixed order
  * (group-header.ts): its balance (pin and refresh before the amount, a divider after it),
@@ -152,7 +151,16 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { KeyAuthDialog } from "./key-auth-dialog";
 import type { KeyAuthTexts } from "./key-auth-dialog";
 import { NoticeStrip } from "../../components/ui/notice-strip";
-import { dividerAfterBalance, groupHeaderActions, groupKeyStored } from "./group-header";
+import {
+  HEADER_BUTTON,
+  HEADER_LABEL,
+  HEADER_SQUARE,
+  HEADER_TEXT,
+  dividerAfterBalance,
+  groupHeaderActions,
+  groupKeyFromEnv,
+  groupKeyStored,
+} from "./group-header";
 import type { GroupHeaderAction } from "./group-header";
 import { GroupBalance } from "./group-balance";
 import { isPinned, usePinnedBalance } from "./balance";
@@ -1211,7 +1219,7 @@ export function ModelsPage() {
           <span className="flex shrink-0 items-center gap-2">
             <span
               data-tooltip={status}
-              className="flex items-center gap-1.5 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
+              className={`${HEADER_TEXT} gap-1 whitespace-nowrap text-gray-500 dark:text-gray-400`}
             >
               <span
                 aria-hidden
@@ -1222,9 +1230,9 @@ export function ModelsPage() {
             </span>
             {isOwner && (
               <Button
-                size="sm"
+                size="icon"
                 variant="ghost"
-                className="shrink-0"
+                className={HEADER_BUTTON}
                 disabled={busy}
                 aria-label={`${verb} ${provider.label}`}
                 title={verb}
@@ -1234,7 +1242,7 @@ export function ModelsPage() {
                 }}
               >
                 <GlyphIcon d={ICONS.chainLink} size={ICON_SIZE.groupHeaderAction} />
-                <span className="hidden @3xl:inline">{verb}</span>
+                <span className={HEADER_LABEL}>{verb}</span>
               </Button>
             )}
           </span>
@@ -1245,16 +1253,16 @@ export function ModelsPage() {
         // action so the owner can replace the key with another account's.
         return (
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
-            className="shrink-0"
+            className={HEADER_BUTTON}
             disabled={busy}
             aria-label={`${S.models.platformSync} ${provider.label}`}
             title={S.models.platformSync}
             onClick={() => void syncPlatformModels()}
           >
             <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.groupHeaderAction} />
-            <span className="hidden @3xl:inline">{S.models.platformSync}</span>
+            <span className={HEADER_LABEL}>{S.models.platformSync}</span>
           </Button>
         );
       case "groupKey":
@@ -1262,16 +1270,16 @@ export function ModelsPage() {
         // model still takes its own in the model dialog.
         return (
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
-            className="shrink-0"
+            className={HEADER_BUTTON}
             disabled={busy}
             aria-label={`${S.models.groupApiKey} ${provider.label}`}
             title={S.models.groupApiKey}
             onClick={() => setGroupKeyFor(group.provider.id)}
           >
             <GlyphIcon d={ICONS.key} size={ICON_SIZE.groupHeaderAction} />
-            <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
+            <span className={HEADER_LABEL}>{S.models.groupApiKey}</span>
           </Button>
         );
       case "speedTest": {
@@ -1282,9 +1290,9 @@ export function ModelsPage() {
         const verb = running ? S.models.speedTestStop : S.models.speedTest;
         return (
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
-            className="shrink-0"
+            className={HEADER_SQUARE}
             disabled={busy || (running ? speedStopping : speedRunning !== null)}
             aria-label={`${verb} ${provider.label}`}
             title={verb}
@@ -1302,16 +1310,16 @@ export function ModelsPage() {
         // rest carry the catalog's presets, which the server enforces too (model_not_addable).
         return (
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
-            className="shrink-0"
+            className={HEADER_BUTTON}
             disabled={busy}
             aria-label={`${S.models.addToGroup} ${provider.label}`}
             title={S.models.addToGroup}
             onClick={() => setAddingTo(group.provider.id)}
           >
             <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
-            <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
+            <span className={HEADER_LABEL}>{S.models.addToGroup}</span>
           </Button>
         );
       case "deleteGroup":
@@ -1319,16 +1327,16 @@ export function ModelsPage() {
         // (its rows delete one by one), a user-defined group exists solely through its rows.
         return (
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
-            className="shrink-0"
+            className={HEADER_BUTTON}
             disabled={busy}
             aria-label={`${S.models.deleteGroup} ${provider.label}`}
             title={S.models.deleteGroup}
             onClick={() => setDeleteGroupFor(group.provider.id)}
           >
             <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.groupHeaderAction} />
-            <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
+            <span className={HEADER_LABEL}>{S.models.deleteGroup}</span>
           </Button>
         );
     }
@@ -1444,6 +1452,7 @@ export function ModelsPage() {
               const actions = groupHeaderActions(group.provider, {
                 isOwner,
                 keyStored,
+                keyFromEnv: groupKeyFromEnv(group.rows),
                 balancePinned: isPinned(pinnedBalance, projectId, group.provider.id),
               });
               return (
@@ -1476,13 +1485,13 @@ export function ModelsPage() {
                       group (groupDragProps). */}
                     <div
                       {...drag.header}
-                      className={`@container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
+                      className={`@container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-1.5 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
                     >
                       <button
                         type="button"
                         aria-expanded={open}
                         onClick={() => toggleGroup(group.provider.id)}
-                        className="flex min-w-[10rem] flex-1 items-center gap-2.5 px-3 py-2.5 text-left"
+                        className="flex min-w-[10rem] flex-1 items-center gap-2 px-3 py-2 text-left"
                       >
                         <ProviderLogo
                           provider={group.provider.id}
@@ -1530,7 +1539,7 @@ export function ModelsPage() {
                         )}
                       </button>
                       {actions.length > 0 && (
-                        <div className="ml-auto flex shrink-0 items-center gap-2 py-1.5">
+                        <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
                           {actions.map((action) => (
                             <Fragment key={action}>
                               {renderGroupAction(group, action, keyStored)}
@@ -1539,7 +1548,7 @@ export function ModelsPage() {
                               {action === "balance" && dividerAfterBalance(actions) && (
                                 <span
                                   aria-hidden
-                                  className="h-4 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
+                                  className="h-7 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
                                 />
                               )}
                             </Fragment>
@@ -2201,8 +2210,7 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card: the provider's logo and the display name + lifetime Token spend + status badges (the
- * logo and the marks as the chat model picker draws them); context / pricing / key status folded
+ * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
  * title row's right edge. All three lines are one click target opening the config dialog (the
  * model homepage link lives in there); a row whose model id its group cannot route adds a
@@ -2341,12 +2349,10 @@ export function ModelCard({
         onClick={onOpen}
         className="flex w-full flex-1 flex-col gap-1 px-3 py-2.5 text-left"
       >
-        {/* 1. What the model is called — the provider's logo and the name. The upstream id used
-            to share this row, but it is a detail you go looking for rather than one you scan by,
-            and it is a click away in the config dialog; the width it was taking now belongs to
-            the name. */}
-        <span className="flex w-full min-w-0 items-center gap-2">
-          <ProviderLogo provider={row.provider} className="h-4 w-4 shrink-0" />
+        {/* 1. What the model is called — the name alone. The upstream id used to share this row,
+            but it is a detail you go looking for rather than one you scan by, and it is a click
+            away in the config dialog; the width it was taking now belongs to the name. */}
+        <span className="flex w-full min-w-0 items-baseline gap-2">
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>

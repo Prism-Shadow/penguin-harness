@@ -17,6 +17,7 @@ import {
   connectionStatus,
   dividerAfterBalance,
   groupHeaderActions,
+  groupKeyFromEnv,
   groupKeyStored,
   hasConnectFlow,
 } from "../src/features/models/group-header";
@@ -83,6 +84,28 @@ describe("the group header's actions, in order, by group kind", () => {
     expect(owner("deepseek", false, true)).toEqual(["balance", "groupKey", "speedTest"]);
     // Only where the catalog declares a balance at all.
     expect(owner("openrouter", false, true)).toEqual(["groupKey", "speedTest"]);
+  });
+});
+
+describe("a key lent by the server's environment", () => {
+  it("shows DeepSeek's balance, as a stored key does", () => {
+    const facts = { isOwner: true, keyStored: false, keyFromEnv: true, balancePinned: false };
+    expect(groupHeaderActions(group("deepseek"), facts)).toEqual([
+      "balance",
+      "groupKey",
+      "speedTest",
+    ]);
+    expect(groupHeaderActions(group("deepseek"), { ...facts, isOwner: false })).toEqual([
+      "balance",
+    ]);
+  });
+
+  it("is read off the rows' masked preview, and does not make a group connected", () => {
+    const envRows = [{ envKeyMasked: "sk-d…0003" }, {}];
+    expect(groupKeyFromEnv(envRows)).toBe(true);
+    expect(groupKeyFromEnv(keyed)).toBe(false);
+    expect(groupKeyFromEnv([])).toBe(false);
+    expect(connectionStatus(group("tokendance"), envRows)).toBe("notConnected");
   });
 });
 

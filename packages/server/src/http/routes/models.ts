@@ -210,7 +210,7 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   /** The balance reader and its 60 s cache, one per route group. */
   const balances = new ModelBalances({
     groupKey: (projectId, provider) =>
-      deps.projectConfigService.getGroupApiKey(projectId, provider),
+      deps.projectConfigService.getGroupBalanceKey(projectId, provider),
   });
 
   app.get("/", async (c) => {

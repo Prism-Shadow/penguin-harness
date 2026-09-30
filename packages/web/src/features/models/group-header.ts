@@ -15,12 +15,26 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 
+/**
+ * One box for everything on the header's right side, so its items share one height, one inset
+ * and one centre line: Button's `icon` size insets its glyph by 1.5 on every side, the plain
+ * items (the balance, the connection status) take the same inset, and the header's single gap-2
+ * spaces them all. A label rides inside its button at its neighbours' text rung and gives way
+ * on a narrow header.
+ */
+export const HEADER_BUTTON = "h-7 shrink-0";
+export const HEADER_SQUARE = "h-7 w-7 shrink-0";
+export const HEADER_TEXT = "flex h-7 shrink-0 items-center px-1.5 text-xs";
+export const HEADER_LABEL = "hidden text-xs @3xl:inline";
+
 export type GroupHeaderAction =
   "balance" | "connect" | "platformSync" | "groupKey" | "speedTest" | "addModel" | "deleteGroup";
 
-/** A row as far as the connection is concerned: whether it holds a stored (masked) key. */
+/** A row as far as its key is concerned: a stored (masked) key, or one lent by the server's environment. */
 export interface KeyedRowLike {
   credential?: { apiKeyMasked?: string } | undefined;
+  /** The masked environment key the row falls back to (GET /models' preview); absent when none applies. */
+  envKeyMasked?: string | undefined;
 }
 
 /** The group obtains its key through an authorization flow: TokenDance's own, or a bridged one. */
@@ -36,6 +50,15 @@ export function groupKeyStored(rows: readonly KeyedRowLike[]): boolean {
   return rows.some((row) => Boolean(row.credential?.apiKeyMasked));
 }
 
+/**
+ * Whether a row's key comes from the server's environment — DeepSeek's DEEPSEEK_API_KEY, say,
+ * which the credential rule lends only on the vendor's own endpoint. It does not make a group
+ * "connected"; it does let the balance be read.
+ */
+export function groupKeyFromEnv(rows: readonly KeyedRowLike[]): boolean {
+  return rows.some((row) => Boolean(row.envKeyMasked));
+}
+
 /** The status beside Connect, or null for a group that has no connect flow. */
 export function connectionStatus(
   provider: ModelProviderInfo,
@@ -49,6 +72,8 @@ export interface GroupHeaderFacts {
   isOwner: boolean;
   /** The group holds a stored key (groupKeyStored). */
   keyStored: boolean;
+  /** A row's key comes from the server's environment instead (groupKeyFromEnv). */
+  keyFromEnv?: boolean;
   /**
    * This group's balance is the one pinned beside the user name. It keeps the balance in the
    * header even after the key is gone, so the pin can still be taken off where it was put on.
@@ -59,11 +84,13 @@ export interface GroupHeaderFacts {
 /** The header's actions, in the order they stand. */
 export function groupHeaderActions(
   provider: ModelProviderInfo,
-  { isOwner, keyStored, balancePinned }: GroupHeaderFacts,
+  { isOwner, keyStored, keyFromEnv = false, balancePinned }: GroupHeaderFacts,
 ): GroupHeaderAction[] {
   const actions: GroupHeaderAction[] = [];
-  // Without a stored key there is nothing to ask the vendor with, so no balance is shown.
-  if (provider.balance !== undefined && (keyStored || balancePinned)) actions.push("balance");
+  // Without a key, stored or from the environment, there is nothing to ask the vendor with.
+  if (provider.balance !== undefined && (keyStored || keyFromEnv || balancePinned)) {
+    actions.push("balance");
+  }
   if (hasConnectFlow(provider)) actions.push("connect");
   if (!isOwner) return actions;
   if (provider.id === PENGUIN_GO_PROVIDER_ID && keyStored) actions.push("platformSync");

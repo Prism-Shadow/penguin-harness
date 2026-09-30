@@ -834,7 +834,8 @@ export interface ModelBalanceAmount {
 /**
  * Why a group's balance could not be read:
  * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
- * - `no_key`: the group stores no API key to ask with;
+ * - `no_key`: the group has no API key to ask with — none stored, and no environment variable
+ *   the credential rule lends its rows for the balance endpoint's host;
  * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
  *   without a readable balance.
  */
@@ -842,9 +843,10 @@ export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed"
 
 /**
  * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
- * balance behind the group's stored API key, read server-side from the endpoint the catalog's
- * `balance` descriptor names — the key never reaches the browser, and neither does the
- * vendor's own text. Like the connectivity test, a balance that cannot be read is an answer
+ * balance behind the group's API key — the stored one, or else the environment key its rows
+ * fall back to under the credential rule (DeepSeek's DEEPSEEK_API_KEY) — read server-side from
+ * the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
+ * neither does the vendor's own text. Like the connectivity test, a balance that cannot be read is an answer
  * (`ok: false` with a code), not a failed request. Readings and vendor failures are cached for
  * 60 s per Project and group, for as long as the group's key is the same; `force=1` skips the
  * cache and refreshes it.

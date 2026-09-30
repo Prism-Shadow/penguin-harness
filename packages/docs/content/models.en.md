@@ -21,7 +21,7 @@ In the sidebar, select **Models**. Models are listed in groups, one per provider
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
 
-Each model card shows its provider's logo, the model's display name, tags, context window, prices, key status, and the Tokens the model has used so far.
+Each model card shows the model's display name, tags, context window, prices, key status, and the Tokens the model has used so far.
 
 | Tag | Meaning |
 | --- | --- |
@@ -249,7 +249,7 @@ Keep in mind:
 
 ### Account balances
 
-TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance in the currency chosen under **Currency** in the settings, converted at the same fixed rate of 7 as prices. An account holding several currencies shows their sum: ¥110 and $5 read `¥145`, or `$20.71`. The server asks the provider with the stored key, so the key never reaches the browser.
+TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance in the currency chosen under **Currency** in the settings, converted at the same fixed rate of 7 as prices. For DeepSeek the key may also be the server's `DEEPSEEK_API_KEY`, which its models already fall back to (see [Set API keys](#set-api-keys)); TokenDance is a gateway, so its key must be stored on the group. An account holding several currencies shows their sum: ¥110 and $5 read `¥145`, or `$20.71`. The server asks the provider with the stored key, so the key never reaches the browser.
 
 - Two icons stand before the balance. The refresh icon reads it again; point at it to see the provider's own figures and when they were read. Answers are kept on the server for a minute; the refresh icon skips that.
 - A balance that cannot be read shows "—"; point at the refresh icon for the reason.

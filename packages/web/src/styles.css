@@ -386,35 +386,40 @@
   animation: browser-agent-ring 1.6s ease-in-out infinite;
 }
 
-/* The models page's TokenDance banner (features/models/tokendance-banner.tsx): one slow, faint
-   diagonal highlight crossing it every 6 s — the page's single decoration, asked for by name.
-   The streak rests beyond the banner's left edge, the banner clips it, and only `transform`
-   moves it, so the global `animation: none` below leaves it out of sight and the banner plain.
-   It takes no pointer events. Light mode draws it over the banner's gray-100, where white
-   shows; dark mode's is far fainter because the ground is near black. */
+/* The models page's TokenDance banner (features/models/tokendance-banner.tsx): a slow highlight
+   sweeps across the brand name alone every 6 s — the page's single decoration, asked for by
+   name; the rest of the banner stands still. The word is painted by a gradient clipped to its
+   glyphs: its own ink on both sides of a narrow bright band, three times the word's width. The
+   band sweeps from before the word to past its end, and the word's own resting position shows
+   ink only, so under the global `animation: none` below it is plain text. */
 @keyframes banner-shimmer {
   0% {
-    transform: translateX(-150%) skewX(-20deg);
+    background-position: 100% 0;
   }
   30%,
   100% {
-    transform: translateX(450%) skewX(-20deg);
+    background-position: 0% 0;
   }
 }
-.banner-shimmer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 25%;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.85), transparent);
-  transform: translateX(-150%) skewX(-20deg);
+.banner-shimmer {
+  --banner-ink: var(--color-gray-700);
+  --banner-glow: var(--color-gray-300);
+  background-image: linear-gradient(
+    100deg,
+    var(--banner-ink) 42%,
+    var(--banner-glow) 50%,
+    var(--banner-ink) 58%
+  );
+  background-size: 300% 100%;
+  background-position: 0% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   animation: banner-shimmer 6s ease-in-out infinite;
 }
-.dark .banner-shimmer::after {
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
+.dark .banner-shimmer {
+  --banner-ink: var(--color-gray-300);
+  --banner-glow: var(--color-white);
 }
 
 /* Login page circuit traces (login-circuit.tsx): pathLength=1 normalization, draw-in -> hold -> fade-out

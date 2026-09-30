@@ -1588,7 +1588,7 @@ export const en: Strings = {
     balanceUnavailable: "The account cannot make requests right now; its balance may be too low",
     /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
     balanceErrors: {
-      no_key: "No API key is stored for this group, so its balance cannot be read",
+      no_key: "This group has no API key to read its balance with",
       upstream_failed: "The provider returned no balance; click to try again",
       unsupported: "This group has no balance to read",
     } as Record<string, string | undefined>,

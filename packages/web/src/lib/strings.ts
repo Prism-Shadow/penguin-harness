@@ -1640,7 +1640,7 @@ export const zh = {
     balanceUnavailable: "账户当前不可用，余额可能不足",
     /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
     balanceErrors: {
-      no_key: "该分组没有保存 API key，无法查询余额",
+      no_key: "该分组没有可用的 API key，无法查询余额",
       upstream_failed: "服务商没有返回余额，可点击重试",
       unsupported: "该分组不支持查询余额",
     } as Record<string, string | undefined>,

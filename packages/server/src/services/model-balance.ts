@@ -155,7 +155,11 @@ export class ModelBalances {
     }
     const key = await this.deps.groupKey(projectId, provider);
     if (key === undefined) {
-      return this.failure(provider, "no_key", `The ${info.label} group stores no API key.`);
+      return this.failure(
+        provider,
+        "no_key",
+        `The ${info.label} group has no API key to ask with.`,
+      );
     }
     const slot = `${projectId}\u0000${provider}`;
     const keyDigest = createHash("sha256").update(key).digest("hex");

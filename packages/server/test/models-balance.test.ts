@@ -1,12 +1,15 @@
 /**
  * Group balances (GET /api/projects/:p/models/balance): the server asks the vendor endpoint
- * the catalog's `balance` descriptor names, with the group's stored key, and answers with a
- * small reading or a typed failure — never the key, never the vendor's own text.
+ * the catalog's `balance` descriptor names, with the group's stored key — or, without one, the
+ * environment key a Session on the group's rows would use on that vendor's own host — and
+ * answers with a small reading or a typed failure — never the key, never the vendor's own text.
  *
  * The vendors are stood in for at the wire: `fetch` is stubbed globally, which is the call the
  * reader really makes (the server routes it through the proxy dispatcher in production), so
  * the URL, the Bearer header and each vendor's documented reply shape are all exercised.
  */
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MODEL_CATALOG } from "@prismshadow/penguin-core";
 import type { ModelBalanceResponse, ProjectCreateResponse } from "../src/api/types.js";
@@ -111,6 +114,7 @@ describe("GET /api/projects/:p/models/balance", () => {
   });
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     await t.cleanup();
   });
 
@@ -152,6 +156,54 @@ describe("GET /api/projects/:p/models/balance", () => {
     const res = await balance("tokendance");
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: false, provider: "tokendance", error: "no_key" });
+    expect(calls).toEqual([]);
+  });
+
+  it("DeepSeek with no stored key asks with DEEPSEEK_API_KEY, the key a Session on its rows would use", async () => {
+    vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
+    await storeKeys({});
+    const calls = stubVendors(() => json(200, DEEPSEEK_REPLY));
+    const res = await balance("deepseek");
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain("sk-ds-env-0003");
+    expect(JSON.parse(text)).toMatchObject({ ok: true, provider: "deepseek", amount: "110.00" });
+    expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-env-0003" }]);
+  });
+
+  it("TokenDance is a gateway: the environment lends its rows nothing, so no stored key is no_key", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-openai-env-0004");
+    vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
+    await storeKeys({});
+    const calls = stubVendors(() => json(200, TOKENDANCE_REPLY));
+    expect(await (await balance("tokendance")).json()).toMatchObject({
+      ok: false,
+      provider: "tokendance",
+      error: "no_key",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("lends only a variable the group's rows use on this vendor's own host", async () => {
+    // A DeepSeek-group row on the OpenAI protocol with no base URL talks to api.openai.com, so
+    // a Session there reads OPENAI_API_KEY. That key must not reach DeepSeek's balance endpoint,
+    // and DEEPSEEK_API_KEY, which none of the group's rows would read, is not read either.
+    vi.stubEnv("OPENAI_API_KEY", "sk-openai-env-0004");
+    vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
+    const toml = [
+      "[[models]]",
+      'provider = "deepseek"',
+      'model_id = "deepseek-v4-pro"',
+      'client_type = "openai-chat"',
+      "",
+    ];
+    await writeFile(path.join(t.root, projectId, ".project_config.toml"), toml.join("\n"), "utf8");
+    const calls = stubVendors(() => json(200, DEEPSEEK_REPLY));
+    expect(await (await balance("deepseek")).json()).toMatchObject({
+      ok: false,
+      provider: "deepseek",
+      error: "no_key",
+    });
     expect(calls).toEqual([]);
   });
 

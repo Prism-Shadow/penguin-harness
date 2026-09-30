@@ -13,7 +13,7 @@
 import { useEffect } from "react";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { GlyphIcon, ICONS, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ICONS, ICON_SIZE, IconButton, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
@@ -29,6 +29,7 @@ import {
   usePinnedBalance,
 } from "./balance";
 import type { BalanceState } from "./balance";
+import { HEADER_SQUARE, HEADER_TEXT } from "./group-header";
 
 /** How often the pinned balance is read again while the app is open (plus once per page load). */
 export const PINNED_BALANCE_REFRESH_MS = 5 * 60 * 1000;
@@ -68,10 +69,6 @@ export function balanceView(
   };
 }
 
-/** The two small buttons before a balance share one shape: a wordless glyph in a 28px square. */
-const BALANCE_BUTTON =
-  "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
-
 /**
  * The pin before a balance, which keeps it beside the user name: the session list's group pin
  * glyph, drawn filled while on. The accessible name stays static and `aria-pressed` carries
@@ -79,22 +76,23 @@ const BALANCE_BUTTON =
  */
 function BalancePin({ pinned, onToggle }: { pinned: boolean; onToggle: () => void }) {
   return (
-    <button
-      type="button"
-      data-tooltip={pinned ? S.models.unpinBalance : S.models.pinBalance}
-      aria-label={S.models.pinBalance}
+    <IconButton
+      variant="ghost"
+      className={HEADER_SQUARE}
+      label={S.models.pinBalance}
+      title={pinned ? S.models.unpinBalance : S.models.pinBalance}
       aria-pressed={pinned}
       onClick={onToggle}
-      className={`${BALANCE_BUTTON} ${pinned ? "text-gray-700 dark:text-gray-200" : "text-gray-400 dark:text-gray-500"}`}
     >
       <GlyphIcon d={ICONS.pin} size={ICON_SIZE.groupHeaderAction} filled={pinned} />
-    </button>
+    </IconButton>
   );
 }
 
 /**
- * A group's balance in its header: the pin, the refresh, then the amount. Read once when the
- * header mounts, again on every refresh click, which skips the server's cache.
+ * A group's balance in its header: the pin, the refresh, then the amount, in the header's one
+ * box and gap (group-header.ts). Read once when the header mounts, again on every refresh
+ * click, which skips the server's cache.
  */
 export function GroupBalance({
   projectId,
@@ -112,22 +110,21 @@ export function GroupBalance({
   const { text, title } = balanceView(state, provider.label, currency);
   const hint = `${title} · ${S.models.balanceRefreshHint}`;
   return (
-    <span className="flex shrink-0 items-center">
+    <span className="flex shrink-0 items-center gap-2">
       <BalancePin
         pinned={pinned}
         onToggle={() => setPinnedBalance(pinned ? null : { projectId, provider: provider.id })}
       />
-      <button
-        type="button"
+      <IconButton
+        variant="ghost"
+        className={HEADER_SQUARE}
+        label={hint}
         onClick={() => void requestBalance(projectId, provider.id, true)}
-        data-tooltip={hint}
-        aria-label={hint}
-        className={`${BALANCE_BUTTON} text-gray-400 dark:text-gray-500`}
       >
         <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.groupHeaderAction} />
-      </button>
+      </IconButton>
       <span
-        className={`whitespace-nowrap pl-1 text-xs tabular-nums text-gray-500 dark:text-gray-400${state?.loading === true && state.answer !== undefined ? " opacity-60" : ""}`}
+        className={`${HEADER_TEXT} whitespace-nowrap tabular-nums text-gray-500 dark:text-gray-400${state?.loading === true && state.answer !== undefined ? " opacity-60" : ""}`}
       >
         {text}
       </span>
