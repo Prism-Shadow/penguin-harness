@@ -3035,6 +3035,9 @@ Scenarios:
     dropFilesDesc: "Images and files are added to the message draft",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string =>
+      `The pasted text was long, so it was attached as ${name}.`,
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",

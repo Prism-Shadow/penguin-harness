@@ -58,6 +58,7 @@ Press Enter to send, and Shift+Enter for a new line. In an empty composer, the u
 ### Attach images and files
 
 - Paste an image into the composer. Pasting accepts images only.
+- Paste a very long text (more than 20,000 characters or 400 lines, such as a whole log) and it is attached as a text file named `pasted-<date>-<time>.txt` instead of filling the text box, so typing stays responsive; the model still reads all of it. In goal mode, which takes no file attachments, it is pasted as text.
 - In the + menu (**More input options**), select **Upload image** or **Upload file**.
 
 An attachment can be any type. Selected files show as removable chips above the text, in the order you picked them, and a message with attachments and no text can be sent.

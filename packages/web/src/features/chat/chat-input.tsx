@@ -139,6 +139,7 @@ import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { splitDroppedFiles } from "../../lib/file-drop";
+import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { splitBySize } from "../../lib/upload-limits";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
@@ -1977,6 +1978,17 @@ export function ChatInput({
     if (files.length > 0) {
       e.preventDefault();
       addFiles(files);
+      return;
+    }
+    // A paste too long for the text box (a whole log) is attached as a text file instead:
+    // inserted, it makes every later keystroke re-render the whole text and the tab hangs.
+    // Goal mode takes no file attachments, so there the text goes in as it always did.
+    const text = e.clipboardData.getData("text/plain");
+    if (!goalOn && isLongPaste(text)) {
+      e.preventDefault();
+      const name = longPasteFileName(new Date());
+      addAttachments([new File([text], name, { type: "text/plain" })]);
+      toastInfo(S.chat.longPasteAttached(name));
     }
   };
 
