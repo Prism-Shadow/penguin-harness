@@ -135,7 +135,7 @@ export function TerminalPage() {
   }, []);
 
   /**
-   * The terminal.close shortcut (⌘W / Ctrl+W by default) inside the terminal takes the dock
+   * The terminal.close shortcut (⌃⌥` / Ctrl+Alt+` by default) inside the terminal takes the dock
    * tab's × path — confirm, then end the shell —
    * and then closes this window, which exists only to host that shell. A window the browser
    * will not let a script close (one opened by address rather than by the dock's detach)

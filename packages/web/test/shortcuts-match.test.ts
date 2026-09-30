@@ -20,19 +20,25 @@ function key(overrides: Partial<KeyLike> & { code: string }): KeyLike {
 const ALL = ["global", "terminal", "editor"] as const;
 
 describe("the default table per platform", () => {
-  it("closes the terminal on ⌘W on a Mac and Ctrl+W elsewhere", () => {
-    expect(matchShortcut(key({ code: "KeyW", metaKey: true }), defaults("mac"), ALL, "mac")).toBe(
-      "terminal.close",
-    );
+  it("closes the terminal on Ctrl+Alt+` on every platform, and leaves ⌘W and Ctrl+W unbound", () => {
+    const close = { code: "Backquote", ctrlKey: true, altKey: true };
+    for (const platform of ["mac", "windows", "linux"] as const) {
+      expect(matchShortcut(key(close), defaults(platform), ALL, platform)).toBe("terminal.close");
+      expect(
+        matchShortcut(key({ code: "KeyW", ctrlKey: true }), defaults(platform), ALL, platform),
+      ).toBeNull();
+    }
     expect(
-      matchShortcut(key({ code: "KeyW", ctrlKey: true }), defaults("mac"), ALL, "mac"),
+      matchShortcut(
+        key({ code: "Backquote", metaKey: true, altKey: true }),
+        defaults("mac"),
+        ALL,
+        "mac",
+      ),
     ).toBeNull();
     expect(
-      matchShortcut(key({ code: "KeyW", ctrlKey: true }), defaults("windows"), ALL, "windows"),
-    ).toBe("terminal.close");
-    expect(
-      matchShortcut(key({ code: "KeyW", ctrlKey: true }), defaults("linux"), ALL, "linux"),
-    ).toBe("terminal.close");
+      matchShortcut(key({ code: "KeyW", metaKey: true }), defaults("mac"), ALL, "mac"),
+    ).toBeNull();
   });
 
   it("toggles the terminal on Ctrl+` on every platform, and not on ⌘`", () => {
@@ -46,19 +52,35 @@ describe("the default table per platform", () => {
     ).toBeNull();
   });
 
-  it("saves on ⌘S / Ctrl+S and opens the palette on ⌘P / Ctrl+P", () => {
+  it("saves on ⌘S / Ctrl+S and opens the palette on ⌥⌘P / Ctrl+Alt+P, not on ⌘P / Ctrl+P", () => {
     expect(matchShortcut(key({ code: "KeyS", metaKey: true }), defaults("mac"), ALL, "mac")).toBe(
       "editor.save",
     );
     expect(
       matchShortcut(key({ code: "KeyS", ctrlKey: true }), defaults("linux"), ALL, "linux"),
     ).toBe("editor.save");
-    expect(matchShortcut(key({ code: "KeyP", metaKey: true }), defaults("mac"), ALL, "mac")).toBe(
-      "palette.toggle",
-    );
+    expect(
+      matchShortcut(
+        key({ code: "KeyP", metaKey: true, altKey: true }),
+        defaults("mac"),
+        ALL,
+        "mac",
+      ),
+    ).toBe("palette.toggle");
+    expect(
+      matchShortcut(
+        key({ code: "KeyP", ctrlKey: true, altKey: true }),
+        defaults("windows"),
+        ALL,
+        "windows",
+      ),
+    ).toBe("palette.toggle");
+    expect(
+      matchShortcut(key({ code: "KeyP", metaKey: true }), defaults("mac"), ALL, "mac"),
+    ).toBeNull();
     expect(
       matchShortcut(key({ code: "KeyP", ctrlKey: true }), defaults("windows"), ALL, "windows"),
-    ).toBe("palette.toggle");
+    ).toBeNull();
   });
 
   it("matches only the scopes that hold focus", () => {

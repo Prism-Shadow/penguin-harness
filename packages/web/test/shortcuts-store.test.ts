@@ -52,7 +52,7 @@ const stored = (): unknown => JSON.parse(storage.map.get(KEYBINDINGS_KEY) ?? "nu
 
 describe("resolution", () => {
   it("starts from the registry defaults for the platform", () => {
-    expect(bindingOf("terminal.close")).toEqual(parseChord("Mod+KeyW"));
+    expect(bindingOf("terminal.close")).toEqual(parseChord("Mod+Alt+Backquote"));
     expect(bindingOf("terminal.toggle")).toEqual({
       ...parseChord("Ctrl+Backquote")!,
       mod: true,
@@ -88,7 +88,7 @@ describe("resolution", () => {
       JSON.stringify({ v: 1, linux: { "future.command": "Mod+KeyZ", "terminal.close": "Cmd-W" } }),
     );
     configureKeybindingsStoreForTests({});
-    expect(bindingOf("terminal.close")).toEqual(parseChord("Mod+KeyW"));
+    expect(bindingOf("terminal.close")).toEqual(parseChord("Mod+Alt+Backquote"));
     expect(keymap().has("future.command" as never)).toBe(false);
   });
 
@@ -102,7 +102,7 @@ describe("resolution", () => {
     ]) {
       storage.map.set(KEYBINDINGS_KEY, raw);
       configureKeybindingsStoreForTests({});
-      expect(bindingOf("terminal.close"), raw).toEqual(parseChord("Mod+KeyW"));
+      expect(bindingOf("terminal.close"), raw).toEqual(parseChord("Mod+Alt+Backquote"));
       expect(readStored(storage), raw).toEqual({ v: 1 });
     }
   });
@@ -141,7 +141,7 @@ describe("writes", () => {
 
   it("removes a row set back to its default, and drops an emptied section", () => {
     setBinding("terminal.close", parseChord("Mod+Alt+KeyW"));
-    setBinding("terminal.close", parseChord("Mod+KeyW"));
+    setBinding("terminal.close", parseChord("Ctrl+Alt+Backquote"));
     expect(isOverridden("terminal.close")).toBe(false);
     expect(stored()).toEqual({ v: 1 });
   });
@@ -202,18 +202,19 @@ describe("external changes and the keyboard layout", () => {
   });
 
   it("relocates defaults to the layout's keys and treats the relocated chord as the default", () => {
-    const azerty = new Map([
-      ["KeyW", "z"],
-      ["KeyZ", "w"],
+    // US-Dvorak types p on the physical R key and r on the P key.
+    const dvorak = new Map([
+      ["KeyP", "r"],
+      ["KeyR", "p"],
     ]);
-    configureKeybindingsStoreForTests({ layout: azerty });
-    expect(bindingOf("terminal.close")?.code).toBe("KeyZ");
-    // The user records the key labelled W (physically KeyZ): that is the default, not an override.
-    setBinding("terminal.close", parseChord("Mod+KeyZ"));
-    expect(isOverridden("terminal.close")).toBe(false);
+    configureKeybindingsStoreForTests({ layout: dvorak });
+    expect(bindingOf("palette.toggle")?.code).toBe("KeyR");
+    // The user records the key labelled P (physically KeyR): that is the default, not an override.
+    setBinding("palette.toggle", parseChord("Mod+Alt+KeyR"));
+    expect(isOverridden("palette.toggle")).toBe(false);
     // A stored user chord is physical and does not move.
-    setBinding("terminal.close", parseChord("Mod+KeyW"));
-    expect(bindingOf("terminal.close")?.code).toBe("KeyW");
-    expect(stored()).toEqual({ v: 1, linux: { "terminal.close": "Mod+KeyW" } });
+    setBinding("palette.toggle", parseChord("Mod+Alt+KeyP"));
+    expect(bindingOf("palette.toggle")?.code).toBe("KeyP");
+    expect(stored()).toEqual({ v: 1, linux: { "palette.toggle": "Mod+Alt+KeyP" } });
   });
 });

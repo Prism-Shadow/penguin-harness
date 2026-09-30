@@ -39,7 +39,7 @@ const IDLE_STATE: TerminalViewState = { status: "connecting", info: null };
 
 /**
  * Listeners for a shown terminal asking to be closed (the terminal.close shortcut inside it,
- * ⌘W / Ctrl+W by default). A view knows only
+ * ⌃⌥` / Ctrl+Alt+` by default). A view knows only
  * its own id, while the dock holding the tab owns the close path — the confirm-then-kill
  * its × runs — so the request is relayed by id to whichever dock has that tab.
  */

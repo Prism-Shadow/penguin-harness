@@ -1,12 +1,17 @@
 /**
  * Conflicts between bindings (src/lib/shortcuts/conflicts.ts) and the chords the host keeps for
- * itself (src/lib/shortcuts/reserved.ts).
+ * itself or also uses (src/lib/shortcuts/reserved.ts).
  */
 import { describe, expect, it } from "vitest";
 import { parseChord } from "../src/lib/shortcuts/chord";
 import { conflictsOf, findConflicts } from "../src/lib/shortcuts/conflicts";
 import { SHORTCUT_COMMANDS } from "../src/lib/shortcuts/registry";
-import { browserReserved, desktopReserved, shownOnHost } from "../src/lib/shortcuts/reserved";
+import {
+  browserCommon,
+  browserReserved,
+  desktopReserved,
+  shownOnHost,
+} from "../src/lib/shortcuts/reserved";
 import type { Chord, CommandId, Platform } from "../src/lib/shortcuts/types";
 
 const chord = (text: string, platform: Platform = "linux"): Chord => {
@@ -90,12 +95,57 @@ describe("browserReserved", () => {
     expect(browserReserved(chord("Mod+KeyQ"), "linux")).toBe(false);
   });
 
-  it("leaves the registry's other defaults and ordinary chords alone", () => {
+  it("leaves the registry's defaults and ordinary chords alone", () => {
     expect(browserReserved(chord("Ctrl+Backquote"), "linux")).toBe(false);
     expect(browserReserved(chord("Ctrl+Backquote", "mac"), "mac")).toBe(false);
+    expect(browserReserved(chord("Ctrl+Alt+Backquote"), "linux")).toBe(false);
+    expect(browserReserved(chord("Ctrl+Alt+Backquote", "mac"), "mac")).toBe(false);
     expect(browserReserved(chord("Mod+KeyS"), "linux")).toBe(false);
+    expect(browserReserved(chord("Mod+Alt+KeyP", "mac"), "mac")).toBe(false);
     expect(browserReserved(chord("Mod+KeyP", "mac"), "mac")).toBe(false);
     expect(browserReserved(chord("Mod+Alt+KeyW"), "linux")).toBe(false);
+  });
+});
+
+describe("browserCommon", () => {
+  it("names the browser functions a page can take over on every platform", () => {
+    for (const platform of ["mac", "windows", "linux"] as const) {
+      for (const text of [
+        "Mod+KeyP", // print
+        "Mod+KeyS", // save page
+        "Mod+KeyF", // find
+        "Mod+KeyL", // address bar
+        "Mod+KeyJ", // downloads
+        "Mod+Shift+KeyO", // bookmark manager
+        "Mod+KeyR", // reload
+        "Mod+KeyU", // view source
+        "F12", // developer tools
+      ]) {
+        expect(browserCommon(chord(text, platform), platform), `${text} on ${platform}`).toBe(true);
+      }
+    }
+  });
+
+  it("adds each platform's own spelling", () => {
+    expect(browserCommon(chord("Mod+KeyH"), "windows")).toBe(true); // history
+    expect(browserCommon(chord("Alt+ArrowLeft"), "linux")).toBe(true); // back
+    expect(browserCommon(chord("Mod+Shift+KeyY"), "linux")).toBe(true); // Firefox's downloads
+    expect(browserCommon(chord("Mod+Shift+KeyY"), "windows")).toBe(false);
+    expect(browserCommon(chord("Mod+KeyY", "mac"), "mac")).toBe(true); // history
+    expect(browserCommon(chord("Mod+Alt+KeyI", "mac"), "mac")).toBe(true); // developer tools
+    expect(browserCommon(chord("Mod+Alt+KeyP", "mac"), "mac")).toBe(true); // Chrome's page setup
+    expect(browserCommon(chord("Mod+Alt+KeyP"), "linux")).toBe(false);
+    expect(browserCommon(chord("Alt+ArrowLeft", "mac"), "mac")).toBe(false);
+  });
+
+  it("leaves the reserved chords to browserReserved, and the free ones alone", () => {
+    expect(browserCommon(chord("Mod+KeyW"), "linux")).toBe(false);
+    expect(browserCommon(chord("Mod+KeyH", "mac"), "mac")).toBe(false); // hide, reserved on macOS
+    expect(browserCommon(chord("Ctrl+Alt+Backquote"), "linux")).toBe(false);
+    expect(browserCommon(chord("Ctrl+Alt+Backquote", "mac"), "mac")).toBe(false);
+    expect(browserCommon(chord("Ctrl+Backquote"), "windows")).toBe(false);
+    expect(browserCommon(chord("Mod+Alt+KeyS"), "windows")).toBe(false);
+    expect(browserCommon(chord("Mod+Alt+Digit1", "mac"), "mac")).toBe(false);
   });
 });
 

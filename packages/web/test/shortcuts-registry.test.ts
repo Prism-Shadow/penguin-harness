@@ -1,8 +1,9 @@
 /**
  * The registry (src/lib/shortcuts/registry.ts) holds the line on what a default may be: it
  * parses, it carries a modifier or is an F key, no two same-scope defaults collide on any
- * platform, a literal Ctrl token is used only where macOS must not follow ⌘, only the
- * terminal close sits on a browser-reserved chord, and every id passes the server's grammar.
+ * platform, a literal Ctrl token is used only where macOS must not follow ⌘, no default sits on
+ * a browser-reserved chord, the defaults on a chord a browser also uses are named one by one, and
+ * every id passes the server's grammar.
  */
 import { describe, expect, it } from "vitest";
 import { hasModifierOrFKey, parseChord } from "../src/lib/shortcuts/chord";
@@ -13,7 +14,7 @@ import {
   commandById,
   defaultChord,
 } from "../src/lib/shortcuts/registry";
-import { browserReserved } from "../src/lib/shortcuts/reserved";
+import { browserCommon, browserReserved } from "../src/lib/shortcuts/reserved";
 import { S } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import type { Chord, CommandId, Platform } from "../src/lib/shortcuts/types";
@@ -60,16 +61,32 @@ describe("registry defaults", () => {
         (text) => typeof text === "string" && text.includes("Ctrl+"),
       ),
     ).map((cmd) => cmd.id);
-    expect(literalCtrl).toEqual(["terminal.toggle"]);
+    expect(literalCtrl).toEqual(["terminal.toggle", "terminal.close"]);
   });
 
-  it("puts only the terminal close on a browser-reserved chord", () => {
+  it("puts no default on a browser-reserved chord", () => {
     for (const platform of PLATFORMS) {
       const reserved = SHORTCUT_COMMANDS.filter((cmd) => {
         const chord = defaultChord(cmd, platform);
         return chord !== null && browserReserved(chord, platform);
       }).map((cmd) => cmd.id);
-      expect(reserved, platform).toEqual(["terminal.close"]);
+      expect(reserved, platform).toEqual([]);
+    }
+  });
+
+  it("names every default that shares a chord with a browser function", () => {
+    // Save takes the browser's Save Page on purpose; on macOS Chrome binds ⌥⌘P to Page Setup.
+    const expected: Record<Platform, CommandId[]> = {
+      mac: ["palette.toggle", "editor.save"],
+      windows: ["editor.save"],
+      linux: ["editor.save"],
+    };
+    for (const platform of PLATFORMS) {
+      const common = SHORTCUT_COMMANDS.filter((cmd) => {
+        const chord = defaultChord(cmd, platform);
+        return chord !== null && browserCommon(chord, platform);
+      }).map((cmd) => cmd.id);
+      expect(common, platform).toEqual(expected[platform]);
     }
   });
 
