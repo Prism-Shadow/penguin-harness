@@ -508,7 +508,9 @@ export const zh = {
     title: "命令面板",
     placeholder: "输入以筛选命令…",
     noResults: "没有匹配的命令",
-    hint: "Ctrl+P / Ctrl+Shift+P（⌘P）切换 · ↑↓ 选择 · Enter 执行",
+    /** Footer of the palette; `toggle` is the formatted palette.toggle chord, null while unbound. */
+    hint: (toggle: string | null): string =>
+      toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
   },
   modelPicker: {
@@ -539,9 +541,14 @@ export const zh = {
     restore: "恢复",
     remove: "移除",
     fillApp: "占满应用",
-    fillAppHint: "让这个页面占满整个应用；Ctrl+P / Ctrl+Shift+P 打开命令面板可退出",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    fillAppHint: (palette: string | null): string =>
+      palette === null
+        ? "让这个页面占满整个应用；打开命令面板可退出"
+        : `让这个页面占满整个应用；${palette} 打开命令面板可退出`,
     exitFullPage: "退出全页模式（回到聊天）",
-    exitHint: "按 Ctrl+P 或 Ctrl+Shift+P 打开命令面板可回到聊天。",
+    exitHint: (palette: string | null): string =>
+      palette === null ? "打开命令面板可回到聊天。" : `按 ${palette} 打开命令面板可回到聊天。`,
     noSuchPage: "这个 workflow 不存在或没有页面。",
     removeConfirm: "删除这个工作流及其全部已记录版本？",
     removeYes: "确认移除",

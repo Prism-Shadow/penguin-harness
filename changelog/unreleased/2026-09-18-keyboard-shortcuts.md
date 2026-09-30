@@ -28,6 +28,10 @@ their letter on a non-US layout where the browser exposes one.
   browser tab, hence Mod+Alt and the backquote key. Save keeps ⌘S / Ctrl+S and takes the browser's
   Save Page while an editor has focus. On a Mac, Chrome binds ⌥⌘P to Page Setup, which the palette
   takes over.
+- The command palette ([#768](https://github.com/Prism-Shadow/penguin-harness/pull/768)) opens
+  on `palette.toggle` and nothing else: its own Ctrl+P / Ctrl+Shift+P listener is gone, its footer
+  and the workflow page's "fill the app" hints name the current binding, and a key pressed inside a
+  workflow page still reaches the palette (the frame re-raises it with the key's code).
 - Overrides are read from the browser mirror `penguin.keybindings` (versioned, per-platform
   sections, only rows that differ from the default), and every open tab follows a change live.
   The settings page that writes them, and the per-account server copy, follow in a later change.

@@ -452,7 +452,11 @@ export const en: Strings = {
     title: "Command Palette",
     placeholder: "Type to filter commands…",
     noResults: "No matching commands",
-    hint: "Ctrl+P / Ctrl+Shift+P (⌘P) to toggle · ↑↓ to select · Enter to run",
+    /** Footer of the palette; `toggle` is the formatted palette.toggle chord, null while unbound. */
+    hint: (toggle: string | null): string =>
+      toggle === null
+        ? "↑↓ to select · Enter to run"
+        : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
   },
   modelPicker: {
@@ -476,10 +480,16 @@ export const en: Strings = {
     restore: "Restore",
     remove: "Remove",
     fillApp: "Fill the app",
-    fillAppHint:
-      "Show this page as the whole app; Ctrl+P / Ctrl+Shift+P opens the command palette to leave",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    fillAppHint: (palette: string | null): string =>
+      palette === null
+        ? "Show this page as the whole app; the command palette is the way to leave"
+        : `Show this page as the whole app; ${palette} opens the command palette to leave`,
     exitFullPage: "Exit full page (back to chat)",
-    exitHint: "Press Ctrl+P or Ctrl+Shift+P for the command palette to get back to the chat.",
+    exitHint: (palette: string | null): string =>
+      palette === null
+        ? "Open the command palette to get back to the chat."
+        : `Press ${palette} for the command palette to get back to the chat.`,
     noSuchPage: "This workflow does not exist or has no page.",
     removeConfirm: "Delete this workflow and all its recorded versions?",
     removeYes: "Remove",
