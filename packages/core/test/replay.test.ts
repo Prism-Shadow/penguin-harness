@@ -297,43 +297,6 @@ describe("resumeTrace", () => {
     expect(result.pendingSummary).toBeUndefined();
   });
 
-  it("closed context (discard) that completed no turn: the summary it opened with stays pending", () => {
-    // A model switch closes a context whose first request never finished with a discard pair.
-    // When the switch then dies before it opens the next file, this file is what a resume
-    // reads: the summary at its head was never answered, and is still the only record of the
-    // conversation before it.
-    const summary = "[context_summary]\nthe gist\n[/context_summary]";
-    const result = resumeTrace([
-      meta(),
-      userText(summary),
-      userText("and now?"),
-      requestBegin(),
-      requestEnd("aborted"),
-      compactionBegin({ reason: "manual", mode: "discard", context: 0, turns: 0 }),
-      compactionEnd({ reason: "manual", mode: "discard", status: "completed" }),
-    ]);
-    expect(result.contextClosed).toBe(true);
-    expect(result.history).toEqual([]);
-    expect(result.carryOver).toEqual([]);
-    expect(textsOf([result.pendingSummary!])).toEqual([summary]);
-  });
-
-  it("closed context (discard) after a completed turn: the summary at the file's head is history, not pending", () => {
-    const result = resumeTrace([
-      meta(),
-      userText("[context_summary]\nthe gist\n[/context_summary]"),
-      userText("hello"),
-      requestBegin(),
-      assistantText("hi"),
-      requestEnd("completed"),
-      tokenUsage(usage(10), usage(10)),
-      compactionBegin({ reason: "manual", mode: "discard", context: 10, turns: 1 }),
-      compactionEnd({ reason: "manual", mode: "discard", status: "completed" }),
-    ]);
-    expect(result.contextClosed).toBe(true);
-    expect(result.pendingSummary).toBeUndefined();
-  });
-
   it("an open context names the summary it opened with until a turn completes on it", () => {
     const summary = "[context_summary]\nthe gist\n[/context_summary]";
     const unanswered = resumeTrace([

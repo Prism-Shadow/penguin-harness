@@ -1122,10 +1122,9 @@ export class ContextEngine {
    *   on the running LLM object — the same model, prompt, toolset and parameters, one appended
    *   user turn — so it extends the prefix the provider has cached. Short of `completed`, the
    *   context stays as it was.
-   * - A context with none has nothing to summarize. One that has a Trace file of its own (its
-   *   first request never finished) is closed by a `manual` **discard** pair; one a compaction
-   *   has just opened has no file yet and is simply replaced. Its pending text rides on in
-   *   memory.
+   * - A context with none has nothing to summarize and is simply replaced: no request and no
+   *   event pair. Its pending text rides on in memory. Nothing is written until the next
+   *   context is open, so an opener that throws leaves the Trace as it was.
    *
    * The next context's Trace file is then opened at once rather than at its first message:
    * its `session_meta` is the durable record of the switch — a resume reads the model from
@@ -1137,8 +1136,7 @@ export class ContextEngine {
       const status = yield* this.compact({ signal, mode: "summarize" });
       if (status !== "completed") return status ?? "fatal";
     } else {
-      if (this.pendingTraceRotation) yield* this.startNewContext();
-      else yield* this.discardContext("manual");
+      yield* this.startNewContext();
       // A switch carries text alone: tool outputs pair with tool calls only the context left
       // behind holds, and images stay behind with them.
       this.pendingCarryOver = this.pendingCarryOver.filter(
@@ -2233,10 +2231,9 @@ export class ContextEngine {
    * after a compaction, and directly by `switchContext`, which opens the file at once.
    */
   private async rotateIfPending(): Promise<void> {
-    if (!this.pendingTraceRotation) return;
-    this.pendingTraceRotation = false;
     const trace = this.deps.trace;
-    if (!trace) return;
+    if (!trace || !this.pendingTraceRotation) return;
+    this.pendingTraceRotation = false;
     try {
       if (trace.rotate) await trace.rotate();
       if (this.contextMeta) await trace.write(this.contextMeta);

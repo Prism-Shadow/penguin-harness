@@ -43,11 +43,16 @@ describe("switchContextShape", () => {
     expect(switchContextShape([done, user])).toBe("compact");
   });
 
-  it("continues from the held summary when the transcript ends in a completed compaction — a failed retry or a model-change marker after it changes nothing", () => {
+  it("continues from what the context opened with when the transcript ends in a completed compaction or a model switch — a failed retry after it changes nothing", () => {
     expect(switchContextShape([user, done])).toBe("compacted");
     expect(switchContextShape([user, done, failed])).toBe("compacted");
     expect(switchContextShape([user, done, marker])).toBe("compacted");
     expect(switchContextShape([done, marker])).toBe("compacted");
+    // A switch away from a context that had not answered ran no compaction: the marker alone.
+    expect(switchContextShape([user, marker])).toBe("compacted");
+    expect(switchContextShape([user, marker, connect])).toBe("compacted");
+    // Conversation since the switch is there to compact again.
+    expect(switchContextShape([user, marker, user])).toBe("compact");
     // Neither does what the opened context connected behind the compaction…
     expect(switchContextShape([user, done, connect])).toBe("compacted");
     expect(switchContextShape([user, done, connect, marker])).toBe("compacted");

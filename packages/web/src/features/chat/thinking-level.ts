@@ -147,11 +147,12 @@ export interface ThinkingSwitchItem {
 
 /**
  * Reads the end of a transcript: the trailing run of housekeeping rows — compaction banners,
- * and what a context opens with behind them (the model-change marker of a model switch, the
- * MCP connect row of a server that had to be connected again). `compacted` says a compaction
- * in that run completed: the context in effect is what it left, and a failed retry after it
- * changed nothing; one that failed or is still running leaves the old context in effect.
- * `before` counts the items ahead of the run.
+ * the model-change marker of a model switch, and the MCP connect row of a context whose
+ * servers had to be connected again. `compacted` says the context in effect is a new one with
+ * nothing said on it yet: a compaction in that run completed (a failed retry after it changed
+ * nothing), or a model switch opened it — a switch away from a context that had not answered
+ * runs no compaction and leaves the marker alone. A compaction that failed or is still running
+ * leaves the old context in effect. `before` counts the items ahead of the run.
  */
 export function trailingCompaction(items: ReadonlyArray<ThinkingSwitchItem>): {
   compacted: boolean;
@@ -161,6 +162,7 @@ export function trailingCompaction(items: ReadonlyArray<ThinkingSwitchItem>): {
   let compacted = false;
   while (last >= 0 && ["compaction", "model_change", "mcp_connect"].includes(items[last]!.kind)) {
     const c = items[last]!;
+    if (c.kind === "model_change") compacted = true;
     if (c.kind === "compaction" && !c.running && c.status === "completed") compacted = true;
     last--;
   }
@@ -179,7 +181,8 @@ export function trailingCompaction(items: ReadonlyArray<ThinkingSwitchItem>): {
  *   has a non-empty tail, and the trailing-compaction check below only looks at the tail.
  * - A transcript that ENDS in a settled successful compaction is also free to switch: the
  *   provider context was just rewritten to a short summary, so the user who followed the
- *   "compact first, then switch" advice is not warned a second time (see
+ *   "compact first, then switch" advice is not warned a second time. So is one that ends in a
+ *   model switch: the context that switch opened has not been sent yet (see
  *   `trailingCompaction` for what counts).
  */
 export function prefixCacheAtRisk(items: ReadonlyArray<ThinkingSwitchItem>): boolean {

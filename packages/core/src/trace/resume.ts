@@ -68,12 +68,7 @@ export interface ResumeResult {
   carryOver: OmniMessage[];
   /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
   contextClosed: boolean;
-  /**
-   * The `[context_summary]` the next run's input is prepended with. A summarize closure: the
-   * summary reconstructed from the compaction's output. A discard closure of a context that
-   * completed no turn (a model switch away from it): the summary that context opened with —
-   * never answered, so still the only record of the conversation before it.
-   */
+  /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
   pendingSummary?: OmniMessage;
   /**
    * The `[context_summary]` this file's context opened with, while no turn has completed on
@@ -320,16 +315,7 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         renderMessages: [],
         meta,
       };
-      if (p.mode !== "summarize") {
-        // A discard closure leaves nothing pending, with one exception: a model switch closes
-        // a context that completed no turn this way, and the summary such a context opened
-        // with stays pending — the switch that died before it opened the next file is lost,
-        // the summary is not.
-        const answered = messages.some((m) => isRequestEnd(m) && m.payload.status === "completed");
-        const opening = answered ? undefined : messages.find(isContextSummary);
-        if (opening) result.pendingSummary = opening;
-        return result;
-      }
+      if (p.mode !== "summarize") return result;
       // Reconstruct the summary from the compaction request's output (the assistant text of
       // the last completed Request). Always rebuilt in the current [context_summary] form —
       // extractSummary itself still accepts the old <summary> tags an old Trace may contain.
