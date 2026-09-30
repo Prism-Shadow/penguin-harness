@@ -17,7 +17,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
-import { BETA_NOTICE_KEY } from "../src/features/company/beta-badge";
+import { BETA_NOTICE_KEY } from "../src/features/company/company-beta";
 import { WORK_MODE_KEY } from "../src/lib/work-mode";
 import { companyModeAvailable, createCompanyStore, effectiveWorkMode } from "../src/state/company";
 import { json, stubFetch } from "./helpers/fetch";

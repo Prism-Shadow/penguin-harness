@@ -46,6 +46,7 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
+import { MessagingChannelError } from "./connector.js";
 import { imageMimeOfName } from "./media.js";
 import { telegramHtmlOf } from "./telegram-html.js";
 import type {
@@ -525,6 +526,8 @@ export class TelegramConnector implements MessagingChannelConnector {
     /** This bot's own account, from the `getMe` the loop already makes; only its own mention needs it. */
     let me: TelegramBotUser | null = null;
     let failures = 0;
+    /** What this outage has already reported (see qq-api's GatewaySession.reported). */
+    let reported: "none" | "routine" | "defect" = "none";
     let offset: number | undefined;
     while (!isClosed()) {
       try {
@@ -562,6 +565,7 @@ export class TelegramConnector implements MessagingChannelConnector {
         });
         if (isClosed()) return;
         failures = 0;
+        reported = "none";
         if (!ready) {
           ready = true;
           handlers.onReady?.();
@@ -578,8 +582,14 @@ export class TelegramConnector implements MessagingChannelConnector {
         // one error record; the retries stay quiet until recovery re-fires onReady. The
         // counter survives the recovery attempt above precisely so a failure that only
         // ever hits `getUpdates` — a 409 conflict — still walks the backoff up to its
-        // ceiling instead of re-polling every second forever.
-        if (failures === 1) handlers.onError?.(err);
+        // ceiling instead of re-polling every second forever. A failure that recovers on
+        // its own is filed `expected`, so it does not get to be the whole story: the first
+        // one after it that does not recover is reported too.
+        const routine = err instanceof MessagingChannelError && err.recovers;
+        if (reported === "none" || (reported === "routine" && !routine)) {
+          reported = routine ? "routine" : "defect";
+          handlers.onError?.(err);
+        }
         ready = false;
         await sleep(this.retryDelayMs(failures), signal);
       }

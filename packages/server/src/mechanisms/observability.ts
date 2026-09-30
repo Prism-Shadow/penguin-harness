@@ -66,7 +66,14 @@ export abstract class ErrorLog extends Interface<{
   insert(r: ErrorRecordInsert): void;
   summary(projectId: string, f?: ErrorFilter): ErrorSummary;
   topCode(projectId: string, f?: ErrorFilter): ErrorCodeCount | null;
-  recent(projectId: string, f?: ErrorFilter, limit?: number, offset?: number): ErrorItem[];
+  recent(
+    projectId: string,
+    f?: ErrorFilter,
+    limit?: number,
+    offset?: number,
+    utcOffsetMinutes?: number,
+  ): ErrorItem[];
+  rowCount(projectId: string, f?: ErrorFilter, utcOffsetMinutes?: number): number;
   deleteFiltered(projectId: string, f?: Omit<ErrorFilter, "includeGlobal">): number;
   deleteByAgent(projectId: string, agentId: string): void;
   deleteByProject(projectId: string): void;

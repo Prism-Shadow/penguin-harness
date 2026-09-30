@@ -92,10 +92,10 @@ describe("errors-repo", () => {
     const admin = { includeGlobal: true };
     expect(repo.summary("p1", admin)).toEqual({ total: 3, unexpected: 2 });
     expect(repo.topCode("p1", admin)).toMatchObject({ code: "uncaught_exception", count: 2 });
-    expect(repo.recent("p1", admin).map((r) => r.code)).toEqual([
-      "not_found",
-      "uncaught_exception",
-      "uncaught_exception",
+    // The two unattributed records are the same error on the same day, so they share a row.
+    expect(repo.recent("p1", admin).map((r) => [r.code, r.count])).toEqual([
+      ["not_found", 1],
+      ["uncaught_exception", 2],
     ]);
 
     // A member of another Project likewise only sees their own row: unattributed errors never land in any regular member's view.
@@ -155,6 +155,91 @@ describe("errors-repo", () => {
     // millisecond outside it.
     expect(repo.deleteFiltered("p1", window)).toBe(3);
     expect(repo.recent("p1").map((r) => r.message)).toEqual(["just after", "just before"]);
+  });
+
+  it("recent folds a day's repeats into one row, with how many and the first and last time", () => {
+    // A connection that drops and recovers all afternoon files the same record again and again;
+    // the table reads it as one line saying how often. Anything that differs keeps its own row:
+    // another message, another day, another kind (a record filed before a reclassification).
+    const heartbeat = {
+      source: "messaging",
+      code: "messaging_connect_failed",
+      kind: "expected",
+      message: "gateway stopped acknowledging heartbeats",
+    };
+    const at = (ts: string, o: Partial<ErrorRecordInsert> = {}) =>
+      repo.insert(row(ts.slice(0, 10), { ...heartbeat, ts, ...o }));
+    at("2026-07-06T09:00:00.000Z");
+    at("2026-07-06T12:30:00.000Z");
+    at("2026-07-06T13:00:00.000Z", { message: "gateway connection closed (code 4009)" });
+    at("2026-07-06T17:45:00.000Z");
+    at("2026-07-06T18:00:00.000Z", { kind: "unexpected" });
+    at("2026-07-07T08:00:00.000Z");
+
+    const rows = repo
+      .recent("p1")
+      .map(({ ts, firstTs, count, kind, message }) => ({ ts, firstTs, count, kind, message }));
+    expect(rows).toEqual([
+      {
+        ts: "2026-07-07T08:00:00.000Z",
+        firstTs: "2026-07-07T08:00:00.000Z",
+        count: 1,
+        kind: "expected",
+        message: heartbeat.message,
+      },
+      {
+        ts: "2026-07-06T18:00:00.000Z",
+        firstTs: "2026-07-06T18:00:00.000Z",
+        count: 1,
+        kind: "unexpected",
+        message: heartbeat.message,
+      },
+      // Newest first by the row's latest record, so the fold sits where its last one happened.
+      {
+        ts: "2026-07-06T17:45:00.000Z",
+        firstTs: "2026-07-06T09:00:00.000Z",
+        count: 3,
+        kind: "expected",
+        message: heartbeat.message,
+      },
+      {
+        ts: "2026-07-06T13:00:00.000Z",
+        firstTs: "2026-07-06T13:00:00.000Z",
+        count: 1,
+        kind: "expected",
+        message: "gateway connection closed (code 4009)",
+      },
+    ]);
+    // A page is rows, and the pager counts rows; the summary still counts the records.
+    expect(repo.recent("p1", {}, 2, 2).map((r) => r.ts)).toEqual([
+      "2026-07-06T17:45:00.000Z",
+      "2026-07-06T13:00:00.000Z",
+    ]);
+    expect(repo.rowCount("p1")).toBe(4);
+    expect(repo.summary("p1")).toEqual({ total: 6, unexpected: 1 });
+    expect(repo.topCode("p1")).toMatchObject({ code: "messaging_connect_failed", count: 5 });
+    // Filters narrow the records before they fold.
+    expect(repo.rowCount("p1", { kind: "unexpected" })).toBe(1);
+    expect(repo.recent("p1", { from: "2026-07-06", to: "2026-07-06" })).toHaveLength(3);
+  });
+
+  it("the day a row folds by is the viewer's, from the offset the read carries", () => {
+    // Two records an hour apart, either side of UTC midnight. The `date` column is the server's
+    // day, which is what a read without an offset folds by.
+    const late = { ts: "2026-07-06T23:30:00.000Z", message: "socket hang up" };
+    const early = { ts: "2026-07-07T00:30:00.000Z", message: "socket hang up" };
+    repo.insert(row("2026-07-06", late));
+    repo.insert(row("2026-07-07", early));
+
+    expect(repo.recent("p1").map((r) => r.count)).toEqual([1, 1]);
+    expect(repo.rowCount("p1")).toBe(2);
+    // UTC+8 and UTC-5: both land on one local day, so one row says twice.
+    for (const offset of [480, -300]) {
+      expect(repo.recent("p1", {}, 20, 0, offset).map((r) => r.count)).toEqual([2]);
+      expect(repo.rowCount("p1", {}, offset)).toBe(1);
+    }
+    // UTC itself splits them again.
+    expect(repo.rowCount("p1", {}, 0)).toBe(2);
   });
 
   it("recent errors: newest first, top limit rows", () => {
@@ -1269,6 +1354,69 @@ describe("HTTP onError persistence (integration)", () => {
       await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=20`)
     ).json()) as UsageErrorsPage;
     expect(all.total).toBe(4);
+  });
+
+  it("the paged error route and the dashboard fold a day's repeats by the viewer's day", async () => {
+    // Three of the same send failure: two on the evening of the 27th in UTC and one just after
+    // UTC midnight — the same evening for a reader five hours behind.
+    const repo = wire(ErrorsRepo, { db: t.deps.db });
+    for (const ts of [
+      "2026-07-27T20:00:00.000Z",
+      "2026-07-27T22:00:00.000Z",
+      "2026-07-28T01:00:00.000Z",
+    ]) {
+      repo.insert({
+        ts,
+        date: ts.slice(0, 10),
+        projectId,
+        agentId: "a1",
+        sessionId: "s1",
+        source: "messaging",
+        kind: "expected",
+        code: "messaging_send_failed",
+        status: null,
+        message: "wechat send failed: prepare failed",
+      });
+    }
+    const pageFor = async (query: string) =>
+      (await (
+        await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=20${query}`)
+      ).json()) as UsageErrorsPage;
+
+    const eastern = await pageFor("&utcOffsetMinutes=-300");
+    expect(eastern.items).toHaveLength(1);
+    expect(eastern.items[0]).toMatchObject({
+      count: 3,
+      ts: "2026-07-28T01:00:00.000Z",
+      firstTs: "2026-07-27T20:00:00.000Z",
+    });
+    // Rows are what a pager pages through; the records behind them are still the total.
+    expect(eastern.rows).toBe(1);
+    expect(eastern.total).toBe(3);
+
+    // Without an offset the day is the server's, the `date` column: two days, two rows.
+    const server = await pageFor("");
+    expect(server.items.map((e) => e.count)).toEqual([1, 2]);
+    expect(server.rows).toBe(2);
+
+    // The dashboard's first page folds the same way, and its summary keeps counting records.
+    const dashboard = (await (
+      await api.get(`/api/projects/${projectId}/usage?utcOffsetMinutes=-300`)
+    ).json()) as UsageResponse;
+    expect(dashboard.errors.recent.map((e) => e.count)).toEqual([3]);
+    expect(dashboard.errors.rows).toBe(1);
+    expect(dashboard.errors.total).toBe(3);
+
+    // An offset no clock uses, or one that is not a whole number, is a 400 rather than a
+    // quietly different day.
+    for (const bad of ["900", "-841", "1.5", "east", "+60"]) {
+      expect(
+        (await api.get(`/api/projects/${projectId}/usage/errors?utcOffsetMinutes=${bad}`)).status,
+      ).toBe(400);
+    }
+    expect((await api.get(`/api/projects/${projectId}/usage?utcOffsetMinutes=900`)).status).toBe(
+      400,
+    );
   });
 
   /** Seeds one row straight into the table, so a batch's dates and Agents are exact. */

@@ -12,6 +12,7 @@
  * CSP that forbids it, a construction that throws — the work falls back to this thread, which is
  * exactly the old behaviour and still correct, only blocking.
  */
+import type { HighlightOptions } from "@prismshadow/penguin-ui";
 import type { HighlightRequest, HighlightResponse } from "./highlighter.worker";
 
 /** undefined: not tried yet. null: unavailable here, use the main thread. */
@@ -54,24 +55,24 @@ function getWorker(): Worker | null {
 /**
  * Highlights `code` as `language`, returning Shiki's dual-theme HTML, or undefined when the
  * language isn't one this bundle carries. Rejects only on an unexpected failure (chunk fetch,
- * grammar error); callers fall back to unhighlighted text either way.
+ * grammar error); callers fall back to unhighlighted text either way. The shape is the shared UI
+ * package's `CodeHighlighter`, which is what the app hands its code surfaces (code-highlight.ts).
  */
 export async function highlightToHtml(
   code: string,
   language: string,
-  options?: { blockLines?: boolean },
+  options: HighlightOptions = {},
 ): Promise<string | undefined> {
-  const blockLines = options?.blockLines === true;
   const w = getWorker();
   if (w === null) {
     // Imported here and not at the top: the engine is already in the worker's bundle, and a
     // static import would put a second copy of it on the main thread for every reader whose
     // worker works — which is all of them.
-    const { highlight } = await import("./highlighter-core");
-    return highlight(code, language, blockLines);
+    const { highlight } = await import("@prismshadow/penguin-ui/highlighter");
+    return highlight(code, language, options);
   }
   const id = (nextId += 1);
-  const request: HighlightRequest = { id, code, language, blockLines };
+  const request: HighlightRequest = { id, code, language, options };
   const answer = await new Promise<HighlightResponse>((resolve) => {
     pending.set(id, resolve);
     w.postMessage(request);

@@ -33,7 +33,11 @@ import type { Dispatcher } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { FeishuApiError, createLarkSdk } from "../src/runtime/messaging/feishu-sdk.js";
 import { feishuCardOf } from "../src/runtime/messaging/feishu-card.js";
-import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+import {
+  TelegramApiError,
+  createTelegramTransport,
+} from "../src/runtime/messaging/telegram-api.js";
 import type {
   TelegramTransport,
   TelegramTransportOpts,
@@ -639,6 +643,64 @@ describe("telegram adapter against the fetch boundary", () => {
     expect(photoBody).toContain('name="photo"');
     expect(photoBody).toContain('filename="chart.png"');
     expect(photoBody).toContain(PHOTO.toString("latin1"));
+  });
+
+  it("gives a failure the verdict the error table files it by", async () => {
+    // error-kind.ts reads `recovers` at the connection and at a text send, and this adapter is
+    // where it is decided: off Telegram's own code, its copy of the HTTP status, or off the
+    // status itself when a proxy answered instead of Telegram.
+    const refusal = (code: number, description: string): Response =>
+      new Response(JSON.stringify({ ok: false, error_code: code, description }), {
+        status: code,
+        headers: { "content-type": "application/json" },
+      });
+    const sendFailure = (answer: (url: string) => Response): Promise<unknown> =>
+      stubFetch(answer)
+        .transport.createClient({ botToken: TOKEN })
+        .sendMessage({ chatId: "1", text: "hi" })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+    const sendKind = async (answer: (url: string) => Response) =>
+      messagingErrorKind(await sendFailure(answer), "messaging_send_failed");
+    const tlsReset = (): Response => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: new Error(
+          "Client network socket disconnected before secure TLS connection was established",
+        ),
+      });
+    };
+
+    // The reported row: a poll that never completed is no refusal of Telegram's, and the
+    // loop's next poll is the whole of the fix.
+    const poll = await stubFetch(tlsReset)
+      .transport.createClient({ botToken: TOKEN })
+      .getUpdates({ timeoutSec: 0, signal: new AbortController().signal })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(poll).not.toBeInstanceOf(TelegramApiError);
+    expect(String((poll as Error).message)).toBe(
+      "getUpdates failed: Client network socket disconnected before secure TLS connection was established",
+    );
+    expect(messagingErrorKind(poll, "messaging_connect_failed")).toBe("expected");
+    // A send that never completed, a flood wait and Telegram's own outage clear by themselves,
+    // and so does a proxy's error page, which carries no code but a status.
+    expect(await sendKind(tlsReset)).toBe("expected");
+    expect(await sendKind(() => refusal(429, "Too Many Requests: retry after 5"))).toBe("expected");
+    expect(await sendKind(() => refusal(502, "Bad Gateway"))).toBe("expected");
+    expect(
+      await sendKind(() => new Response("<html>gateway timeout</html>", { status: 504 })),
+    ).toBe("expected");
+    // A revoked token, a chat that blocked the bot and a chat that is gone meet the same no on
+    // every later send.
+    expect(await sendKind(() => refusal(401, "Unauthorized"))).toBe("unexpected");
+    expect(await sendKind(() => refusal(403, "Forbidden: bot was blocked by the user"))).toBe(
+      "unexpected",
+    );
+    expect(await sendKind(() => refusal(400, "Bad Request: chat not found"))).toBe("unexpected");
   });
 
   it("surfaces a Bot API refusal of an upload with its description", async () => {

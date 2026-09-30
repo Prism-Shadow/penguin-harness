@@ -2,8 +2,8 @@
  * The Workspace finder's decisions, kept apart from the modal so they are testable without a
  * DOM: path breadcrumbs, back/forward history, what the list shows and in which order,
  * type-to-select, the sidebar's places (Quick access, with the user's own additions and
- * removals), the context menu's items, the keyboard map, and what the box for a folder the
- * server may not read offers.
+ * removals), the context menu's items, the keyboard map, what the box for a folder the
+ * server may not read offers, and the footer's no-folder button.
  *
  * Paths come from whichever machine is being browsed, so nothing here asks the browser's own
  * platform about a path — a Windows server's `C:\Users\me` and a Linux one's `/home/me` both
@@ -77,6 +77,11 @@ export function parentOf(path: string): string | null {
 export function baseName(path: string): string {
   const crumbs = splitBreadcrumbs(path);
   return crumbs[crumbs.length - 1]?.label ?? path;
+}
+
+/** The separator a path's own family uses: a drive path or a UNC share splits on `\`. */
+function separatorOf(path: string): string {
+  return /^[A-Za-z]:|^\\\\/.test(path) ? "\\" : "/";
 }
 
 /** Back/forward history: the visited folders and where in them the finder stands. */
@@ -526,4 +531,44 @@ export function deniedBox(input: {
     settings: null,
     retry: false,
   };
+}
+
+/**
+ * The folder a temporary Workspace would get. Core creates `<agent dir>/workspaces/tmp-<8hex>`
+ * for a Session started without one, and the Agent's config names `<agent dir>/agent_state`,
+ * which locates that Agent directory. The random part is drawn only with the Session, so it
+ * stays `tmp-…`. Null for a directory not shaped like an Agent State one: no path beats a
+ * wrong one.
+ */
+export function tempWorkspacePath(stateDir: string): string | null {
+  const agentDir = parentOf(stateDir);
+  if (agentDir === null || baseName(stateDir) !== "agent_state") return null;
+  const sep = separatorOf(agentDir);
+  return `${agentDir}${agentDir.endsWith(sep) ? "" : sep}workspaces${sep}tmp-…`;
+}
+
+/** The footer's "no folder" button (see clearButton). */
+export interface ClearButton {
+  /** The folder a temporary Workspace would get, for the tooltip; null when not known here. */
+  fullPath: string | null;
+}
+
+/**
+ * The footer's "no folder" button: there whenever the host offers going back to no folder,
+ * whatever is chosen now. Its tooltip names the folder a temporary Workspace would get once the
+ * Agent's `agent_state` directory is known, and only while this server is browsed: that
+ * directory is this server's, and another machine lays out its own.
+ */
+export function clearButton(input: {
+  /** The host offers no folder: a temporary Workspace, or its own empty value. */
+  offered: boolean;
+  /** The Agent's `agent_state` directory on this server; null when unknown. */
+  stateDir: string | null;
+  /** The machine being browsed (null: this server). */
+  machine: string | null;
+}): ClearButton | null {
+  if (!input.offered) return null;
+  const full =
+    input.stateDir !== null && input.machine === null ? tempWorkspacePath(input.stateDir) : null;
+  return { fullPath: full };
 }

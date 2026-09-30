@@ -1,5 +1,5 @@
 /**
- * Company mode's once-only beta notice (features/company/beta-badge.tsx): the first switch
+ * Company mode's once-only beta notice (features/company/company-beta.tsx): the first switch
  * into the mode in a browser raises it, later ones do not.
  *
  * - The notice is owed in a browser that has never shown it, and no longer once it is marked.
@@ -12,7 +12,7 @@ import {
   BETA_NOTICE_KEY,
   markBetaNoticeShown,
   shouldShowBetaNotice,
-} from "../src/features/company/beta-badge";
+} from "../src/features/company/company-beta";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 describe("shouldShowBetaNotice", () => {

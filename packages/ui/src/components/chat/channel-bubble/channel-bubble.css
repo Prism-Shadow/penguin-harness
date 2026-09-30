@@ -1,0 +1,18 @@
+/*
+ * Inside a channel bubble (channel-bubble.tsx). The Markdown typography prints inline code and
+ * table rules in the neutral tint (prose.css), and somebody else's bubble is that same tint, so
+ * inside it those marks would disappear into their own colour. One step deeper puts them back,
+ * on both bubble surfaces. Fenced blocks need nothing: `.md-body pre` carries a border and its
+ * own fill, and the code inside it is transparent — the `:not(pre) >` shape keeps this off it.
+ *
+ * Plain CSS on tokens, unlayered, like prose.css: the rules it adjusts are unlayered, which a
+ * utility in a cascade layer could never override. Each selector here out-weighs the one it
+ * adjusts (`.md-body code`, `.md-body :where(th, td)`), so the order the two stylesheets are
+ * emitted in does not matter.
+ */
+.channel-bubble :not(pre) > code {
+  background-color: var(--ui-line-emphasis);
+}
+.channel-bubble :is(th, td) {
+  border-color: var(--ui-line-emphasis);
+}

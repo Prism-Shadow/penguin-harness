@@ -11,6 +11,7 @@
  * reshape payloads, so a test fake constructs exactly what the real API returns.
  */
 import { FormData, fetch as undiciFetch } from "undici";
+import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** Telegram Bot API host. Deliberately not configurable: bindings carry only the token. */
@@ -302,17 +303,23 @@ interface TelegramEnvelope<T> {
  *
  * The code is the only part of the envelope a caller may branch on: `description` is prose
  * Telegram rewords without notice, so a retry keyed on its wording breaks silently. A
- * transport failure — a timeout, a reset, an unparseable body — has no code and stays a
- * plain Error, which keeps "the request never completed" distinguishable from "Telegram
- * refused it"; nothing may retry the former, because the message may well have been
- * delivered.
+ * transport failure — a timeout, a reset — has no code and stays out of this class (a
+ * MessagingChannelError that recovers), which keeps "the request never completed"
+ * distinguishable from "Telegram refused it"; nothing may retry the former, because the
+ * message may well have been delivered.
+ *
+ * `recovers` follows the code, which is Telegram's copy of the HTTP status (see
+ * httpStatusRecovers): a 429 flood wait or a 5xx clears by itself, while a revoked token
+ * (401), a conflicting poller (409) or a chat that blocked the bot (403) repeats until someone
+ * acts. A body with no code at all is judged by the status it arrived with.
  */
-export class TelegramApiError extends Error {
+export class TelegramApiError extends MessagingChannelError {
   constructor(
     message: string,
     readonly errorCode: number | undefined,
+    recovers = httpStatusRecovers(errorCode),
   ) {
-    super(message);
+    super(message, recovers);
     this.name = "TelegramApiError";
   }
 }
@@ -392,7 +399,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
             signal,
           });
         } catch (err) {
-          throw new Error(`${method} failed: ${fetchErrorText(err)}`);
+          throw new MessagingChannelError(`${method} failed: ${fetchErrorText(err)}`, true);
         }
         const parsed = (await res.json().catch(() => null)) as TelegramEnvelope<T> | null;
         if (parsed === null || parsed.ok !== true) {
@@ -402,7 +409,11 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
             described ??
             `HTTP ${res.status}`;
           const code = parsed?.error_code !== undefined ? ` (code ${parsed.error_code})` : "";
-          throw new TelegramApiError(`${method} failed: ${detail}${code}`, parsed?.error_code);
+          throw new TelegramApiError(
+            `${method} failed: ${detail}${code}`,
+            parsed?.error_code,
+            httpStatusRecovers(parsed?.error_code ?? res.status),
+          );
         }
         return parsed.result as T;
       };

@@ -30,6 +30,7 @@ import {
   MESSAGING_TEST_MESSAGE,
   MESSAGING_UNSUPPORTED_NOTICE,
 } from "../src/runtime/messaging/bridge.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { MessagingMediaTooLargeError } from "../src/runtime/messaging/media.js";
 import type {
   WeChatBotClient,
@@ -41,7 +42,7 @@ import type {
   WeChatTransport,
   WeChatUpdates,
 } from "../src/runtime/messaging/wechat-api.js";
-import { WECHAT_API_BASE } from "../src/runtime/messaging/wechat-api.js";
+import { WECHAT_API_BASE, WeChatApiError } from "../src/runtime/messaging/wechat-api.js";
 import {
   WeChatConnector,
   chatOfWeChatReplyRef,
@@ -119,6 +120,8 @@ class FakeWeChatClient implements WeChatBotClient {
     this.polls += 1;
     this.cursors.push(cursor);
     this.drains.push(drain);
+    const failure = this.t.failPollWith.shift();
+    if (failure !== undefined) throw failure;
     if (this.t.failPoll !== null) throw new Error(this.t.failPoll);
     const queued = this.queue.shift();
     if (queued !== undefined) {
@@ -174,6 +177,8 @@ class FakeWeChatTransport implements WeChatTransport {
   failAuth: string | null = null;
   failSend: string | null = null;
   failPoll: string | null = null;
+  /** Failures the next polls throw, one each and in order, ahead of `failPoll`. */
+  readonly failPollWith: Error[] = [];
   /** Every poll parks, the drain included — an idle bot, which is the readiness case. */
   stallPolls = false;
   oversizedMedia = false;
@@ -710,6 +715,35 @@ describe("wechat binding routes and the long poll", () => {
       expect(delays.slice(0, 4)).toEqual([1, 2, 3, 4]);
       // …so the outage is one error record rather than one per attempt.
       expect(errors).toHaveLength(1);
+    } finally {
+      conn.close();
+    }
+  });
+
+  it("a failure that recovers on its own does not silence the refusal behind it", async () => {
+    // A dropped request is filed as routine, so if it kept the outage's one report, a token
+    // refused on every retry after it would never be filed at all: the binding stays down and
+    // the dashboard reads zero defects. The transport's verdicts are asserted where they are
+    // made (messaging-wechat-transport.test.ts); these stand in for them.
+    const errors: unknown[] = [];
+    fake.failPollWith.push(
+      new WeChatApiError(undefined, "wechat getUpdates failed: fetch failed", { recovers: true }),
+      new WeChatApiError(undefined, "wechat getUpdates failed: HTTP 401 invalid bot token"),
+      new WeChatApiError(undefined, "wechat getUpdates failed: HTTP 401 invalid bot token"),
+    );
+    const connector = new WeChatConnector(fake, { retryDelayMs: () => 1 });
+    const conn = await connector.connect(SCANNED_CONFIG, {
+      onMessage: async () => {},
+      onError: (err) => errors.push(err),
+    });
+    try {
+      await waitFor(() => fake.failPollWith.length === 0 && errors.length === 2);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      // The blip, then the refusal behind it — and nothing more: the repeat stays quiet.
+      expect(errors.map((err) => messagingErrorKind(err, "messaging_connect_failed"))).toEqual([
+        "expected",
+        "unexpected",
+      ]);
     } finally {
       conn.close();
     }

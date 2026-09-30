@@ -16,8 +16,8 @@ import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
-import { WorkspaceLinksProvider } from "./md";
-import { WorkGroup, isWorkItem } from "./work-group";
+import { WorkspaceLinksProvider } from "./workspace-links";
+import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
@@ -103,7 +103,7 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
-      <WorkGroup
+      <SessionWorkGroup
         key={`wg-${seg.items[0]!.id}`}
         items={seg.items}
         ctx={ctx}
@@ -480,7 +480,7 @@ export function MessageStream({
             <EmptyState title={S.chat.emptyStream} />
           ) : (
             // Links in replies, reasoning and compaction summaries name files of this Session's
-            // Workspace: they open in its Files panel rather than a new tab (see md.tsx).
+            // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
               <MessageItems items={items} ctx={ctx} />
             </WorkspaceLinksProvider>

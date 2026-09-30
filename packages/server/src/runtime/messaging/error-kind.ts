@@ -26,13 +26,14 @@
  * it surfaces.
  *
  * The rule is deliberately a small allowlist of TYPED failures at NAMED capture points rather
- * than a message match, plus one typed failure that arrives carrying its own verdict — a
- * connection the platform closed, where whether anything stayed broken is protocol state only
- * the connector holds. Anything the connectors have not classified stays `unexpected`, which
- * is the safe direction: a real fault miscounted as routine is invisible, while routine noise
- * miscounted as a fault is merely loud.
+ * than a message match, plus failures that arrive carrying their own verdict — a connection
+ * the connector retries, and a text send — where whether anything stayed broken is protocol
+ * state only the connector holds. Anything the connectors have not classified stays
+ * `unexpected`, which is the safe direction: a real fault miscounted as routine is invisible,
+ * while routine noise miscounted as a fault is merely loud.
  */
 import type { ErrorKind } from "../error-recorder.js";
+import { MessagingChannelError } from "./connector.js";
 import {
   MessagingMediaTooLargeError,
   MessagingOutboundCapError,
@@ -61,6 +62,29 @@ import { MessagingConnectionClosedError } from "./qq-api.js";
 const CODES_EXPLAINED_IN_CHAT = new Set([
   "messaging_image_fetch_failed",
   "messaging_file_fetch_failed",
+]);
+
+/**
+ * The capture points where the connector's own verdict decides (see MessagingChannelError):
+ * a connection its retry loop reported, and a text send.
+ *
+ * Nobody in the chat is told about either — a connection that will not come up has no chat to
+ * speak in, and the message that would carry the explanation is the message that did not go
+ * out — so the question is only whether anybody has to act. A connection the connector's
+ * backoff brings back on its own, and a send the next message gets past, leave nobody anything
+ * to do; the platform refusing the credential, a permission or a setting leaves the binding
+ * broken until someone does. The transports read that off the status and the platform's code
+ * where they meet the failure, so it arrives typed; a failure that arrives untyped stays
+ * `unexpected`.
+ *
+ * The file capture points are not here even though the same transports throw there: a reply's
+ * file that did not go out is said in its error record and nowhere else, and whether that
+ * record is routine is answered by type and code below, not by whether the upload might work
+ * next time.
+ */
+const CODES_JUDGED_BY_THE_CONNECTOR = new Set([
+  "messaging_connect_failed",
+  "messaging_send_failed",
 ]);
 
 /** A typed refusal's class, as `instanceof` takes it. */
@@ -114,23 +138,28 @@ const ROUTINE_OUTBOUND_FILE_REFUSALS: ReadonlyMap<string, RefusalType> = new Map
  * ROUTINE_OUTBOUND_FILE_REFUSALS gives: the structural refusal and the bridge's own caps, and
  * never a missing permission.
  *
- * Everything else — a network failure, a 5xx from the platform, a bug here — is `unexpected`
- * and keeps its place on the dashboard, and so is any understood type caught anywhere not named
- * above: a refusal nobody was told about, and that somebody could still fix, is a refusal
- * somebody has to notice.
+ * Everything else at those capture points — a network failure, a 5xx from the platform, a bug
+ * here — is `unexpected` and keeps its place on the dashboard, and so is any understood type
+ * caught anywhere not named above: a refusal nobody was told about, and that somebody could
+ * still fix, is a refusal somebody has to notice.
  *
- * {@link MessagingConnectionClosedError} is classified wherever it is caught, and answers the
- * criterion from its own verdict rather than a capture point: nobody needs telling, because
- * nothing stayed broken. A platform that expires a long-lived socket, or hits its own internal
- * error, is answered by the connector's next handshake within the backoff, and the only trace
- * is a record nobody can act on. It is `expected` only when the connector says the close is one
- * of those — `recovers` is decided where the reconnect is, and a close that leaves the binding
- * down until a credential or a console setting changes reports `recovers: false` and stays a
- * defect.
+ * A connection failure and a text send answer the criterion from their own verdict instead
+ * (see CODES_JUDGED_BY_THE_CONNECTOR): nobody needs telling, because nothing stayed broken. A
+ * dropped socket, a reset TLS handshake, a deadline, a 5xx or a rate limit is answered by the
+ * connector's next attempt within the backoff, or by the next message, and the only trace is a
+ * record nobody can act on. It is `expected` only when the connector says the failure is one of
+ * those, and a failure that leaves the binding down until a credential or a console setting
+ * changes reports `recovers: false` and stays a defect.
+ *
+ * {@link MessagingConnectionClosedError} is classified by that verdict wherever it is caught:
+ * the gateway is the only place that raises it, and it raises it about the connection.
  */
 export function messagingErrorKind(err: unknown, code: string): ErrorKind {
   if (err instanceof MessagingConnectionClosedError) {
     return err.recovers ? "expected" : "unexpected";
+  }
+  if (CODES_JUDGED_BY_THE_CONNECTOR.has(code)) {
+    return err instanceof MessagingChannelError && err.recovers ? "expected" : "unexpected";
   }
   if (CODES_EXPLAINED_IN_CHAT.has(code)) {
     return err instanceof MessagingPermissionError ||

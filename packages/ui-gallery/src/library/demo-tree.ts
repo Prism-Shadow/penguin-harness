@@ -3,7 +3,7 @@
  * from it: every visible entry in order, with its depth, its position in its directory and, for
  * a directory, whether it is open — pure, so the flattening is unit-tested.
  */
-import type { FileTreeRow } from "../../../web/src/lib/file-tree";
+import type { FileTreeRow } from "@prismshadow/penguin-ui";
 
 export interface DemoEntry {
   name: string;
