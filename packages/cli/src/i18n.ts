@@ -1897,7 +1897,7 @@ const en: Messages = {
     proposalMaterialAddDesc:
       "Attach material as <kind>=<url> (pr, issue, branch, doc, ticket, url)",
     proposalImplDesc:
-      "Register the proposal's impl PR — one per proposal, replacing the one before (--adopt: a person's one-time adoption from the pr materials)",
+      "Register the proposal's impl PR — one per proposal, replacing the one before (--adopt: the one-time adoption from the pr materials)",
     proposalImplAdopt:
       "Give every proposal without an impl PR its latest pr material on the delivery repository",
     proposalGraphDesc:
@@ -3130,7 +3130,7 @@ const zh: Messages = {
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
     proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
     proposalImplDesc:
-      "登记提案的 impl PR——每份提案一条，再登记即替换（--adopt：由人一次性从 pr 材料里认领）",
+      "登记提案的 impl PR——每份提案一条，再登记即替换（--adopt：一次性从 pr 材料里认领）",
     proposalImplAdopt: "为每份还没有 impl PR 的提案取它在交付仓库上最新的一条 pr 材料",
     proposalGraphDesc:
       "把交付仓库的 open PR 排成提交关系图，标出每张 PR 的提案和各 origin 在同名分支上的 PR",

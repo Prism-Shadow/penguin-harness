@@ -1261,7 +1261,8 @@ export class ProposalService {
   }
 
   /**
-   * Registers the proposal's impl PR (the author, the implementer or a person): one per
+   * Registers the proposal's impl PR — anybody in the organization, a person or an employee,
+   * since the PR is a fact GitHub can confirm and the line records who (`by`): one per
    * proposal, replacing the one before; a PR that is already another proposal's is refused.
    */
   async setImpl(
@@ -1273,12 +1274,6 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(ledger, number);
-    if (!this.isPerson(caller) && caller.agentId !== p.author && caller.agentId !== p.implementer) {
-      throw forbidden(
-        "not_author",
-        `Only the author (${p.author}), the implementer or a person can set the impl PR.`,
-      );
-    }
     const trimmed = url.trim();
     const ref = parsePullUrl(trimmed);
     const key = pullKey(trimmed);
@@ -1310,8 +1305,9 @@ export class ProposalService {
   }
 
   /**
-   * A person's one-time adoption for a ledger written before impl PRs: each proposal without
-   * one (and not rejected) takes its latest `pr` material on the delivery repository.
+   * The one-time adoption for a ledger written before impl PRs — anybody in the organization,
+   * each line recording who (`by`): each proposal without one (and not rejected) takes its
+   * latest `pr` material on the delivery repository.
    * Backward compatibility (changelog/unreleased/2026-09-30-backward-compatibility.md).
    */
   async adoptImpl(
@@ -1320,7 +1316,6 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalAdoptImplResponse> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    this.requirePerson(caller, "adopt impl PRs");
     const { repo } = await this.deliveryRepo(org, ledger, []);
     if (repo === null) throw graphOff();
     const prefix = `${repo.toLowerCase()}#`;

@@ -7,9 +7,9 @@
  *   POST   /                         start one: { author?, brief, title? } (author defaults to the calling employee)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
  *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts)
- *   POST   /adopt-impl               a person: proposals without an impl PR take their latest delivery-repo `pr` material
+ *   POST   /adopt-impl               anybody in the organization: proposals without an impl PR take their latest delivery-repo `pr` material
  *   GET    /:number                  the proposal
- *   PUT    /:number/impl             { url } the impl PR (the author, the implementer or a person; one per proposal)
+ *   PUT    /:number/impl             { url } the impl PR (anybody in the organization; one per proposal)
  *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
  *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)

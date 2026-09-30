@@ -300,7 +300,20 @@ describe("ProposalService", () => {
     const taken = await call("PUT", `/${second}/impl`, { url, agentId: "acme_dev" });
     expect(taken.status).toBe(409);
     expect(((await taken.json()) as { error: { code: string } }).error.code).toBe("impl_pr_taken");
-    expect((await call("PUT", `/${second}/impl`, { url, agentId: "acme_qa" })).status).toBe(403);
+    // Any employee registers one, not only the author or the implementer; the line says who.
+    expect(
+      (await call("PUT", `/${second}/impl`, { url, agentId: "acme_qa" })).status,
+      "a taken PR stays taken whoever asks",
+    ).toBe(409);
+    const third = await delegated();
+    const byQa = await call("PUT", `/${third}/impl`, {
+      url: "https://github.com/acme/site/pull/12",
+      agentId: "acme_qa",
+    });
+    expect(byQa.status).toBe(200);
+    expect(((await byQa.json()) as { implPr: unknown }).implPr).toMatchObject({
+      by: "agent:acme_qa",
+    });
     expect(
       (await call("PUT", `/${second}/impl`, { url: "https://example.com/x", agentId: "acme_dev" }))
         .status,
@@ -347,7 +360,8 @@ describe("ProposalService", () => {
     expect(graph.nodes.map((n) => [n.number, n.proposal?.number])).toEqual([[11, first]]);
     expect(graph.top).toBe(11);
 
-    // The one-time adoption: the latest pr material on the delivery repository, a person only.
+    // The one-time adoption: the latest pr material on the delivery repository, by anybody in the
+    // organization — here an employee, recorded as it.
     for (const u of [
       "https://github.com/acme/site/pull/20",
       "https://github.com/up/site/pull/900",
@@ -355,8 +369,9 @@ describe("ProposalService", () => {
     ]) {
       await service.addMaterial(PROJECT, ORG, second, { kind: "pr", url: u }, author);
     }
-    expect((await call("POST", "/adopt-impl", { agentId: "acme_dev" })).status).toBe(403);
-    const adopted = await service.adoptImpl(PROJECT, ORG, BOSS);
+    const adoptedByAgent = await call("POST", "/adopt-impl", { agentId: "acme_dev" });
+    expect(adoptedByAgent.status).toBe(200);
+    const adopted = (await adoptedByAgent.json()) as Awaited<ReturnType<typeof service.adoptImpl>>;
     expect(adopted.adopted).toEqual([
       { number: second, url: "https://github.com/acme/site/pull/21" },
     ]);
@@ -367,7 +382,10 @@ describe("ProposalService", () => {
       },
     ]);
     expect(adopted.skipped).toEqual([]);
-    expect((await service.get(PROJECT, ORG, second, BOSS)).implPr?.label).toBe("acme/site#21");
+    expect((await service.get(PROJECT, ORG, second, BOSS)).implPr).toMatchObject({
+      label: "acme/site#21",
+      by: "agent:acme_dev",
+    });
     // Run again, nothing is left to adopt.
     expect((await service.adoptImpl(PROJECT, ORG, BOSS)).adopted).toEqual([]);
   });

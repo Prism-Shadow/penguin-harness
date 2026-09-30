@@ -6860,7 +6860,7 @@ export interface ProposalImplRequest {
 }
 
 /**
- * `POST …/proposals/adopt-impl` (a person): every proposal without an impl PR takes the
+ * `POST …/proposals/adopt-impl` (anybody in the organization): every proposal without an impl PR takes the
  * latest `pr` material on the delivery repository as one. A one-time migration for ledgers
  * written before impl PRs; see changelog/unreleased/2026-09-30-backward-compatibility.md.
  */

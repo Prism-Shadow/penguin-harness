@@ -7,7 +7,7 @@
 
 [English](2026-09-30-proposal-pr-graph.md)
 
-提案现在有一条 impl PR：`penguin org proposal impl <n> <url>` 登记它（作者、实施者或人均可），再登记即替换；已是另一份提案 impl PR 的 PR 会被拒绝（409 `impl_pr_taken`）。`show` 单列一行显示它，提案数据里是 `implPr` 字段。`pr` 材料不变，也不会被拿来推断 impl PR。
+提案现在有一条 impl PR：`penguin org proposal impl <n> <url>` 登记它（组织内任何人均可，见 [2026-09-30-proposal-impl-anyone.zh.md](2026-09-30-proposal-impl-anyone.zh.md)），再登记即替换；已是另一份提案 impl PR 的 PR 会被拒绝（409 `impl_pr_taken`）。`show` 单列一行显示它，提案数据里是 `implPr` 字段。`pr` 材料不变，也不会被拿来推断 impl PR。
 
 `penguin org proposal graph`（`GET …/proposals/graph`）把交付仓库的 open PR 排成提交关系图。每张 PR 的边指向它声明的 base 的 head，并用 GitHub 的 compare 核对：领先于那个 head 的算叠在栈上，其余的列为链外。图会标出分叉，只有链上只剩一个叶子时才标出栈顶。每张 PR 标出以它为 impl PR 的提案，以及每个已配置的 origin 在同名分支上的 PR 和它的 head 关系（相同、领先、落后、分叉）。impl PR 不在图上的提案列在图下。所有数据都经本机的 `gh` 读取，服务器不 fetch、不写任何 git ref。
 
