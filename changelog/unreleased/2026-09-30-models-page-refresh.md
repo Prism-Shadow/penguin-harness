@@ -41,3 +41,4 @@ The models page's group headers were reworked: a group's key is managed from its
 ## Docs
 
 - The models, quickstart (desktop), configuration and CLI pages describe the new header, **Connect**, **Enter key**, the speed-test toggle, account balances and the built-in-models-only rule, in both languages.
+- The `penguin-config` skill (plugin `agent-development` `2026.09.30.2`) states which groups take hand-added models, so an agent does not send `penguin config model add` into the refusal.
