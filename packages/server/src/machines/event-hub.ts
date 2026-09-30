@@ -34,7 +34,6 @@ import { randomUUID } from "node:crypto";
 import type { ServerEvent } from "../api/types.js";
 import { HEARTBEAT_MS } from "../http/sse.js";
 import type { EventFrame } from "../socket/frames.js";
-import { formatSseEvent } from "../socket/sse-text.js";
 import type {
   MachineSocket,
   MachineSocketTarget,
@@ -184,14 +183,6 @@ export interface MachineEventHubOptions {
   openTimeoutMs?: number;
   reissueMinMs?: number;
   reissueMaxMs?: number;
-}
-
-/** A machine whose events the aggregate stream carries. */
-export interface MachineEventSource {
-  machineId: string;
-  target: MachineSocketTarget;
-  /** Re-reads the machine's connection when the hub dials again after a failure (see Hold). */
-  retarget?: () => Promise<MachineSocketTarget | null>;
 }
 
 /** One tab's end of the aggregate: the machines it watches, and where its frames go. */
@@ -647,143 +638,4 @@ export class MachineEventHub {
 /** A server event as a frame of the machine's own stream. `id` is the caller's and unused here. */
 function serverEventFrame(event: ServerEvent): EventFrame {
   return { id: 0, event: "server_event", eventId: null, data: JSON.stringify(event) };
-}
-
-export interface AggregateOptions {
-  /** The hub's own beat on a tab's stream, so a tab can tell a live aggregate from a stalled one. */
-  heartbeatMs?: number;
-  /**
-   * How many bytes a tab may fall behind on its own stream before it is ended and left to
-   * re-issue. Injectable so a test does not have to fill a 4 MB socket.
-   */
-  highWaterBytes?: number;
-}
-
-/**
- * The aggregate stream (`GET /api/projects/:projectId/machines/events`): one response per tab,
- * carrying every watched machine's own events, each tagged with the machine it came from, out of
- * the hub's one subscription per machine. `last-event-id` is answered from the hub's aggregate
- * buffer, which outlives the stream it was written on — a tab that reconnects is replayed the
- * events it missed, or told to resync when the buffer has moved past its id.
- *
- * `watched` is the machine ids this tab watches, which decides what it hears and what its replay
- * reaches; `sources` is the same set as hub subscriptions, resolved as their targets come in, so
- * a tab's stream opens at once whatever the machines behind it are doing.
- */
-export function machineEventsStream(
-  hub: MachineEventHub,
-  watched: readonly string[],
-  sources: readonly MachineEventSource[] | Promise<readonly MachineEventSource[]>,
-  lastEventId: string | null,
-  log: (line: string) => void = () => undefined,
-  options: AggregateOptions = {},
-): Response {
-  const encoder = new TextEncoder();
-  const watching = new Set(watched);
-  const highWater = options.highWaterBytes ?? SUBSCRIBER_HIGH_WATER_BYTES;
-  let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
-  let ended = false;
-  let beat: ReturnType<typeof setInterval> | null = null;
-  let detach: () => void = () => undefined;
-
-  const stop = (): void => {
-    if (ended) return;
-    ended = true;
-    if (beat !== null) clearInterval(beat);
-    beat = null;
-    detach();
-    try {
-      controller?.close();
-    } catch {
-      // Already closed by the consumer.
-    }
-  };
-
-  /** Writes one frame. The aggregate's buffer already holds what is replay material, so nothing is buffered here. */
-  const write = (event: string, data: string, id: string | null): void => {
-    if (ended || controller === null) return;
-    controller.enqueue(encoder.encode(formatSseEvent({ id, event, data })));
-    if (controller.desiredSize !== null && controller.desiredSize <= 0) {
-      // This tab has stopped consuming: it is ended and re-issues with its last event id rather
-      // than being buffered without bound (the socket's own `lagging` rule, one level down).
-      log(
-        `[machines] an aggregate event stream is over ${highWater} bytes behind; ending it so the tab re-issues with its last event id`,
-      );
-      stop();
-    }
-  };
-
-  const response = new Response(
-    new ReadableStream<Uint8Array>(
-      {
-        start: (c) => {
-          controller = c;
-        },
-        cancel: () => stop(),
-      },
-      // The tab's own queue, in bytes: a tab that stops reading leaves it full, which is how a
-      // stalled reader is found instead of being buffered for without bound.
-      new ByteLengthQueuingStrategy({ highWaterMark: highWater }),
-    ),
-    {
-      status: 200,
-      headers: {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-        "x-accel-buffering": "no",
-      },
-    },
-  );
-
-  const detachAggregate = hub.aggregate.subscribe(watching, (id, event, data) =>
-    write(event, data, id),
-  );
-  // The sources attach as their targets resolve: a machine that answers late joins late.
-  let detachSources: () => void = () => undefined;
-  void Promise.resolve(sources).then((resolved) => {
-    const unsubscribe = resolved.map((source) =>
-      hub.subscribe(
-        source.machineId,
-        source.target,
-        null,
-        {
-          onStart: () => undefined, // the aggregate starts at once; a machine's own open is not the tab's
-          onEvent: () => undefined, // the hub feeds the aggregate itself, on the way past
-          onEnd: () => undefined, // the hub re-subscribes; the tab's stream is not the machine's
-          onResponse: () => undefined, // likewise: a failed dial is the hub's to retry, not the tab's
-        },
-        // The tab never re-issues for one machine, so it holds it: a failed dial is dialled again.
-        { retarget: source.retarget ?? (() => Promise.resolve(source.target)) },
-      ),
-    );
-    detachSources = () => {
-      for (const stop of unsubscribe) stop();
-    };
-    if (ended) detachSources();
-  });
-  detach = () => {
-    detachAggregate();
-    detachSources();
-  };
-
-  if (lastEventId === null) {
-    // As on /api/events: a fresh subscriber is handed the handshake, not the history.
-    write("server_event", JSON.stringify({ type: "hello" }), null);
-  } else {
-    const replay = hub.aggregate.replay(lastEventId, watching);
-    if (!replay.hit) {
-      write("server_event", JSON.stringify({ type: "resync_required" }), null);
-    } else {
-      for (const entry of replay.entries) write(entry.event, entry.data, entry.id);
-    }
-  }
-  // The hub's own beat: what lets a tab tell a live aggregate from a stalled one, whatever the
-  // machines behind it are doing.
-  beat = setInterval(
-    () => write("heartbeat", "{}", null),
-    options.heartbeatMs ?? STREAM_HEARTBEAT_MS,
-  );
-  beat.unref?.();
-
-  return response;
 }
