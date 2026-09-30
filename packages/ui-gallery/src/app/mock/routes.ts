@@ -956,6 +956,18 @@ router
     if (!store.session(sessionId)) notFound("Session");
     return json({ sessionId } satisfies TaskCreateResponse, 202);
   })
+  // In-session model switch. The demo answers the way the server does for a Session that
+  // never ran: the row moves inside the request (200 with the Session), so the picker works
+  // without a compaction to stream.
+  .post("/api/sessions/:sessionId/switch-model", ({ store, params, body }): SessionResponse => {
+    const to = record(body);
+    const session = store.patchSession(params.sessionId!, {
+      ...(typeof to.provider === "string" ? { provider: to.provider } : {}),
+      ...(typeof to.modelId === "string" ? { modelId: to.modelId } : {}),
+    });
+    if (!session) notFound("Session");
+    return { session };
+  })
   .get("/api/sessions/:sessionId/context", ({ store }): SessionContextResponse => store.f.context);
 
 // ---------------------------------------------------------------------------------------------
