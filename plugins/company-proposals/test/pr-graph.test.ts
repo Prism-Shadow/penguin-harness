@@ -273,7 +273,7 @@ describe("PrGraphReader", () => {
       ["dark", null, null, null, "/api/install answered 401"],
     ]);
     // A commit that is a layer's head is not compared at all.
-    expect(calls.some((c) => c.includes(`...${A1.slice(0, 9)}`))).toBe(false);
+    expect(calls.some((c) => c.endsWith(`...${A1.slice(0, 9)}`))).toBe(false);
     // The commit GitHub does not have: one line, not one per layer.
     const lines = g.errors.filter((e) => e.startsWith("server "));
     expect(lines).toHaveLength(1);

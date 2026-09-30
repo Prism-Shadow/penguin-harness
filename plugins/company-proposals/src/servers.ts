@@ -100,17 +100,19 @@ export function normalizeServerUrl(raw: string): string {
 
 /**
  * Throws `server_registered` when the candidate repeats the answering server or a registered
- * one — by name, by address, or by the install id the address answered with.
+ * one — by name, by address, or by the install id the address answered with. With no id yet
+ * (`installId: null`, before the address is read) only name and address are checked.
  */
 export function requireUnregistered(
   registered: RegisteredServer[],
   self: { installId: string | null },
-  candidate: { name: string; url: string; installId: string },
+  candidate: { name: string; url: string; installId: string | null },
 ): void {
   const taken = (message: string): never => {
     throw new ServerRegistryError(409, "server_registered", message);
   };
-  if (self.installId !== null && self.installId === candidate.installId) {
+  const id = candidate.installId;
+  if (id !== null && self.installId !== null && self.installId === id) {
     taken(
       `${candidate.url} is the server answering this request ("${SELF_NAME}"); it is registered already.`,
     );
@@ -120,7 +122,7 @@ export function requireUnregistered(
       taken(`The name ${s.name} is registered already, for ${s.url}.`);
     }
     if (s.url === candidate.url) taken(`${s.url} is registered already, as ${s.name}.`);
-    if (s.installId === candidate.installId) {
+    if (id !== null && s.installId === id) {
       taken(
         `${candidate.url} is the same server as ${s.name} (${s.url}); it is registered already.`,
       );

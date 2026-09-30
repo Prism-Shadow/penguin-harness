@@ -1825,7 +1825,11 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     const post = server.requests.find(
       (r) => r.method === "POST" && r.path.endsWith("/proposals/servers"),
     );
-    expect(post?.body).toMatchObject({ name: "desk", url: "http://localhost:53531" });
+    expect(post?.body).toMatchObject({
+      name: "desk",
+      url: "http://localhost:53531",
+      agentId: "dev1",
+    });
     stdout.length = 0;
     expect(await cli(["org", "proposal", "server", "add", "desk", "http://127.0.0.1:53531"])).toBe(
       1,
@@ -1834,7 +1838,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "server", "ls"])).toBe(0);
     expect(out().split("\n").slice(0, 2)).toEqual([
       "this  -  self-id",
-      "desk  http://localhost:53531  desk-id  user:admin  2026-09-02T10:00:00.000Z",
+      "desk  http://localhost:53531  desk-id  agent:dev1  2026-09-02T10:00:00.000Z",
     ]);
   });
 
