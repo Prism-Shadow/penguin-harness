@@ -201,6 +201,8 @@ export class MachineSockets {
   readonly #sockets = new Map<string, CachedSocket>();
   readonly #refusedUntil = new Map<string, { until: number; status: number }>();
   readonly #facts = new Map<string, MachineSocketFact>();
+  /** The failure each machine's dials have been repeating since its last good one. */
+  readonly #failing = new Map<string, string>();
   readonly #dialTimeoutMs: number;
 
   constructor(
@@ -260,6 +262,7 @@ export class MachineSockets {
       entry.pending.then(
         (socket) => {
           this.#refusedUntil.delete(machineId);
+          this.#failing.delete(machineId);
           this.#state(machineId, "connected");
           socket.onClose(() => {
             if (this.#sockets.get(machineId) === entry) this.#sockets.delete(machineId);
@@ -276,6 +279,7 @@ export class MachineSockets {
           // turned this server away): asking again on every stream would only repeat it. A
           // dial that failed says nothing about the build; the next stream tries again.
           if (err instanceof HandshakeRefused) {
+            this.#failing.delete(machineId);
             this.#refusedUntil.set(machineId, {
               until: Date.now() + REFUSED_FOR_MS,
               status: err.status,
@@ -285,10 +289,14 @@ export class MachineSockets {
               `[machines] no socket on ${machineId} (${err.message}); its streams are refused until it is updated`,
             );
           } else {
-            this.#state(machineId, "failed", err instanceof Error ? err.message : String(err));
-            this.log(
-              `[machines] socket to ${machineId} failed: ${err instanceof Error ? err.message : err}`,
-            );
+            const detail = err instanceof Error ? err.message : String(err);
+            this.#state(machineId, "failed", detail);
+            // A machine that stays down is dialled again and again (the event hub keeps dialling
+            // for a tab that holds it): the same failure is logged and filed once per run, and
+            // the fact's `since` says when the latest attempt gave up.
+            if (this.#failing.get(machineId) === detail) return;
+            this.#failing.set(machineId, detail);
+            this.log(`[machines] socket to ${machineId} failed: ${detail}`);
           }
         },
       );

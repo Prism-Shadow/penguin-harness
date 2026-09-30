@@ -22,6 +22,13 @@
  * machine gave it, and the browser does the same with its own end of the stream (web
  * api/socket.ts). The upstream's own failure modes are the relay's: a dial that cannot be had
  * is answered with its reason, a stream that never opens takes the socket down with it.
+ *
+ * A reader that cannot re-issue on its own — a tab's aggregate, which stays open on the hub's own
+ * beat whatever its machines do — HOLDS its machine instead: a dial that fails, or a stream that
+ * never opens, answers the other readers as above but keeps the subscription, and the hub dials
+ * again on the browser's backoff, re-reading the machine's connection each time, for as long as
+ * a holder is attached. Without that, one failed dial left the tab watching a machine nothing
+ * would ever dial again.
  */
 import { randomUUID } from "node:crypto";
 import type { ServerEvent } from "../api/types.js";
@@ -126,9 +133,20 @@ class EventRing {
   }
 }
 
+/**
+ * What a reader that cannot re-issue on its own gives the hub instead: a way to re-read the
+ * machine's connection, since the ssh session a failed dial rode may have been replaced (or be
+ * gone, answered null) by the time the hub dials again.
+ */
+export interface Hold {
+  retarget: () => Promise<MachineSocketTarget | null>;
+}
+
 /** One reader of a subscription: a stream the hub feeds events into. */
 interface Reader {
   sink: Sink;
+  /** Set for a reader the hub keeps dialling for, rather than answering it a failure. */
+  hold?: Hold;
   /** What this reader brought back as its `last-event-id` (null on a fresh subscribe). */
   join: string | null;
   started: boolean;
@@ -148,6 +166,8 @@ interface Subscription {
   openTimer: ReturnType<typeof setTimeout> | null;
   silenceTimer: ReturnType<typeof setTimeout> | null;
   reissueTimer: ReturnType<typeof setTimeout> | null;
+  /** A dial is under way (awaiting the socket, or a holder's retarget): no second one starts. */
+  dialling: boolean;
   /** Re-issues in a row that did not open; reset once one does. */
   failures: number;
   /** The machine's newest event id, which a re-subscription resumes from. */
@@ -170,6 +190,8 @@ export interface MachineEventHubOptions {
 export interface MachineEventSource {
   machineId: string;
   target: MachineSocketTarget;
+  /** Re-reads the machine's connection when the hub dials again after a failure (see Hold). */
+  retarget?: () => Promise<MachineSocketTarget | null>;
 }
 
 /** One tab's end of the aggregate: the machines it watches, and where its frames go. */
@@ -280,9 +302,16 @@ export class MachineEventHub {
     target: MachineSocketTarget,
     lastEventId: string | null,
     sink: Sink,
+    hold?: Hold,
   ): () => void {
     const subscription = this.#subscriptionFor(machineId, target);
-    const reader: Reader = { sink, join: lastEventId, started: false, detached: false };
+    const reader: Reader = {
+      sink,
+      join: lastEventId,
+      started: false,
+      detached: false,
+      ...(hold !== undefined ? { hold } : {}),
+    };
     subscription.readers.add(reader);
     if (subscription.opened) this.#start(subscription, reader);
     else this.#ensure(subscription);
@@ -316,6 +345,7 @@ export class MachineEventHub {
         openTimer: null,
         silenceTimer: null,
         reissueTimer: null,
+        dialling: false,
         failures: 0,
         resumeFrom: null,
         gone: false,
@@ -327,15 +357,42 @@ export class MachineEventHub {
 
   /** Dials the machine and issues the one call this subscription lives on. */
   #ensure(subscription: Subscription): void {
-    if (subscription.gone || subscription.socket !== null || subscription.reissueTimer !== null) {
+    if (
+      subscription.gone ||
+      subscription.dialling ||
+      subscription.socket !== null ||
+      subscription.reissueTimer !== null
+    ) {
       return;
     }
-    void this.#dial(subscription);
+    subscription.dialling = true;
+    void this.#dial(subscription).finally(() => {
+      subscription.dialling = false;
+    });
   }
 
   async #dial(subscription: Subscription): Promise<void> {
     const machineId = subscription.machineId;
-    const got = await this.sockets.socketFor(machineId, subscription.target);
+    const hold = [...subscription.readers].find((reader) => reader.hold !== undefined)?.hold;
+    if (hold !== undefined && subscription.failures > 0) {
+      // Dialling again for a holder: the session the last target rode may be gone.
+      const target = await hold.retarget().catch(() => null);
+      if (subscription.gone) return;
+      if (target === null) {
+        this.#fail(subscription, 502, {
+          error: {
+            code: "server_unreachable",
+            message: `This server holds no connection to ${machineId} right now.`,
+          },
+        });
+        return;
+      }
+      subscription.target = target;
+    }
+    const target = subscription.target;
+    const got = await this.sockets.socketFor(machineId, target);
+    // The session moved while this dial was out (#restart): dial again over the new one.
+    if (!subscription.gone && subscription.target !== target) return this.#dial(subscription);
     if ("answer" in got) {
       if (subscription.gone) return;
       const body = await got.answer
@@ -470,6 +527,11 @@ export class MachineEventHub {
 
   /** The endpoint answered without streaming (a `403`, a `404`): pass it on, as the proxy does. */
   #answered(subscription: Subscription, status: number, body: unknown): void {
+    if ([...subscription.readers].some((reader) => reader.hold !== undefined)) {
+      // A holder has nobody to pass the answer on to: asked again on the backoff, like a failure.
+      this.#fail(subscription, status, body);
+      return;
+    }
     this.#clearTimers(subscription);
     subscription.socket = null;
     subscription.callId = -1;
@@ -481,12 +543,24 @@ export class MachineEventHub {
    * The subscription could not be had at all: readers already streaming are ended (they re-issue
    * and hear the reason), readers still waiting are answered with it. Nothing is remembered here
    * — the socket cache remembers a refusal, and a failed dial is retried by the next reader.
+   * Holders are the exception: they cannot re-issue, so the subscription stays for them and the
+   * hub dials again on its backoff.
    */
   #fail(subscription: Subscription, status: number, body: unknown): void {
     this.#clearTimers(subscription);
     subscription.socket = null;
     subscription.callId = -1;
     subscription.opened = false;
+    if ([...subscription.readers].some((reader) => reader.hold !== undefined)) {
+      for (const reader of [...subscription.readers]) {
+        if (reader.hold !== undefined) continue;
+        subscription.readers.delete(reader);
+        if (reader.started) reader.sink.onEnd();
+        else reader.sink.onResponse(status, body);
+      }
+      this.#reissue(subscription);
+      return;
+    }
     const readers = this.#takeReaders(subscription);
     for (const reader of readers) {
       if (reader.started) reader.sink.onEnd();
@@ -668,12 +742,19 @@ export function machineEventsStream(
   let detachSources: () => void = () => undefined;
   void Promise.resolve(sources).then((resolved) => {
     const unsubscribe = resolved.map((source) =>
-      hub.subscribe(source.machineId, source.target, null, {
-        onStart: () => undefined, // the aggregate starts at once; a machine's own open is not the tab's
-        onEvent: () => undefined, // the hub feeds the aggregate itself, on the way past
-        onEnd: () => undefined, // the hub re-subscribes; the tab's stream is not the machine's
-        onResponse: () => undefined,
-      }),
+      hub.subscribe(
+        source.machineId,
+        source.target,
+        null,
+        {
+          onStart: () => undefined, // the aggregate starts at once; a machine's own open is not the tab's
+          onEvent: () => undefined, // the hub feeds the aggregate itself, on the way past
+          onEnd: () => undefined, // the hub re-subscribes; the tab's stream is not the machine's
+          onResponse: () => undefined, // likewise: a failed dial is the hub's to retry, not the tab's
+        },
+        // The tab never re-issues for one machine, so it holds it: a failed dial is dialled again.
+        { retarget: source.retarget ?? (() => Promise.resolve(source.target)) },
+      ),
     );
     detachSources = () => {
       for (const stop of unsubscribe) stop();
