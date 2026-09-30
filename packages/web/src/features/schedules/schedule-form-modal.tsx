@@ -29,7 +29,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Modal } from "../../components/ui/modal";
 import { FormPicker } from "../../components/ui/form-picker";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
+import { FieldError, FieldLabel } from "../../components/ui/field";
 import { toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ModelSelect, PickerList } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
@@ -460,9 +460,9 @@ function ScheduleFormDialog({
                       projectId={projectId}
                       workspace={form.workspace}
                       onChange={(workspace) => set({ workspace })}
+                      agentId={agentId}
                       variant="form"
                     />
-                    <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
                   </div>
                 </>
               )}

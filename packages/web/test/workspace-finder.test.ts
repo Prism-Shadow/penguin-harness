@@ -2,11 +2,12 @@
  * The Workspace finder (src/features/chat/workspace-finder*.tsx): the modal every Workspace
  * picker opens. Its decisions live in workspace-finder-model.ts and are exercised directly —
  * breadcrumbs for both path families, back/forward history, type-to-select, the keyboard map,
- * Quick access per platform with the user's own edits, the context menu's rows, Recent, and
- * what the box for a refused folder offers. The suite has no DOM, so the few JSX facts that
- * fail silently are pinned against the source: the finder is a Modal (no second overlay
- * system), a permission refusal renders its own box instead of an empty folder, the address
- * bar is the one place a path is typed, and a folder row carries its own way in.
+ * Quick access per platform with the user's own edits, the context menu's rows, Recent, what
+ * the box for a refused folder offers, and the footer's no-folder button. The suite has no DOM,
+ * so the few JSX facts that fail silently are pinned against the source: the finder is a Modal
+ * (no second overlay system), a permission refusal renders its own box instead of an empty
+ * folder, the address bar is the one place a path is typed, a folder row carries its own way
+ * in, and no folder is a footer button rather than a sentence.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,7 @@ import {
   addToQuickAccess,
   canGoBack,
   canGoForward,
+  clearButton,
   defaultPlaces,
   deniedBox,
   drivePlaces,
@@ -27,6 +29,7 @@ import {
   historyVisit,
   loadQuickAccess,
   parentOf,
+  pathTail,
   quickAccessKey,
   quickAccessPlaces,
   recentWorkspaces,
@@ -35,6 +38,7 @@ import {
   saveQuickAccess,
   splitBreadcrumbs,
   stepSelection,
+  tempWorkspacePath,
   typeSelectIndex,
   visibleEntries,
 } from "../src/features/chat/workspace-finder-model";
@@ -385,6 +389,49 @@ describe("a folder the server may not read", () => {
   });
 });
 
+describe("the footer's no-folder button", () => {
+  const stateDir = "/home/me/.penguin/data/default_project/agents/writer/agent_state";
+  const base = { offered: true, workspace: "", stateDir: null, machine: null };
+
+  it("is there whenever the host offers no folder, pressed only while nothing is chosen", () => {
+    expect(clearButton({ ...base, offered: false })).toBeNull();
+    expect(clearButton(base)?.pressed).toBe(true);
+    expect(clearButton({ ...base, workspace: "  " })?.pressed).toBe(true);
+    expect(clearButton({ ...base, workspace: "/srv/app" })?.pressed).toBe(false);
+  });
+
+  it("names the folder a temporary Workspace would get, cut to its tail on the button", () => {
+    expect(clearButton({ ...base, workspace: "/srv/app", stateDir })).toEqual({
+      pressed: false,
+      path: "…/agents/writer/workspaces/tmp-…",
+      fullPath: "/home/me/.penguin/data/default_project/agents/writer/workspaces/tmp-…",
+    });
+  });
+
+  it("names none without the Agent's directory, or while another machine is browsed", () => {
+    expect(clearButton(base)).toEqual({ pressed: true, path: null, fullPath: null });
+    expect(clearButton({ ...base, stateDir, machine: "far" })).toEqual({
+      pressed: true,
+      path: null,
+      fullPath: null,
+    });
+  });
+
+  it("keeps a Windows path's separator, and names nothing for an unknown layout", () => {
+    expect(tempWorkspacePath("C:\\Users\\me\\.penguin\\data\\p\\agents\\a\\agent_state")).toBe(
+      "C:\\Users\\me\\.penguin\\data\\p\\agents\\a\\workspaces\\tmp-…",
+    );
+    expect(tempWorkspacePath("/srv/agents/a/state")).toBeNull();
+    expect(tempWorkspacePath("/")).toBeNull();
+  });
+
+  it("cuts a path to its last segments, and leaves a short one whole", () => {
+    expect(pathTail("/a/b/c/d/e", 2)).toBe("…/d/e");
+    expect(pathTail("C:\\a\\b\\c", 2)).toBe("…\\b\\c");
+    expect(pathTail("/a/b", 2)).toBe("/a/b");
+  });
+});
+
 describe("the modal (source contract)", () => {
   const read = (rel: string) =>
     readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), "utf8");
@@ -417,5 +464,13 @@ describe("the modal (source contract)", () => {
     expect(finder).toContain("aria-label={f.openFolder(entry.name)}");
     expect(finder).toContain("useRowContextMenu()");
     expect(finder).toContain("anchorRect={menu.anchor}");
+  });
+
+  it("offers no folder as a footer button, with no rule spelled out beside it", () => {
+    expect(finder).toContain("aria-pressed={clear.pressed}");
+    expect(finder).toMatch(/api\s*\.getAgentConfig\(projectId, agentId\)/);
+    expect(finder).not.toMatch(/hint/i);
+    // The sidebar's new-workspace button adds a folder: it has no empty value to go back to.
+    expect(select).toMatch(/onClear=\{\s*clearable/);
   });
 });

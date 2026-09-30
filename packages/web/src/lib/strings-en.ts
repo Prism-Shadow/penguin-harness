@@ -998,7 +998,7 @@ export const en: Strings = {
     createDirSkillsEmpty: "This directory carries no installable Skills",
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
-    createDirSkillsClear: "Clear the selected directory",
+    createDirSkillsClear: "Don't import from a directory",
     createSnapshot: "Initialize from a snapshot",
     createSnapshotPick: "Choose a snapshot package",
     createSnapshotHint:
@@ -2239,7 +2239,9 @@ export const en: Strings = {
       "no-identity": "not identified",
     },
     workspaceAuto: "Temporary workspace",
-    workspaceClear: "Use a temporary workspace instead",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "Start in a temporary workspace",
+    workspaceTempRule: "A new empty folder inside the agent's workspaces/ folder",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
     finder: {
@@ -2532,10 +2534,6 @@ Scenarios:
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint:
-      "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -3986,11 +3984,8 @@ Scenarios:
     workspaceField: "Company workspace",
     workspaceInfo:
       "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",
-    workspaceHint:
-      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory on the server",
     workspaceEmpty: "The organization's own workspace/ directory",
-    workspaceMenuHint: "Pick an existing directory as the company workspace",
-    workspaceClear: "Back to the organization's own directory",
+    workspaceClear: "Use the organization's own directory",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO budget",
     ceoBudgetHint: "A monthly cap; the CEO's budget is the whole company's",

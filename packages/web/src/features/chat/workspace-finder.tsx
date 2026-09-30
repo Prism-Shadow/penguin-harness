@@ -66,6 +66,7 @@ import {
   baseName,
   canGoBack,
   canGoForward,
+  clearButton,
   defaultPlaces,
   deniedBox,
   drivePlaces,
@@ -163,9 +164,10 @@ export function WorkspaceFinder({
   workspace,
   machineId,
   chooseMachine,
+  agentId,
   title,
-  hint,
   clearLabel,
+  clearTitle,
 }: {
   open: boolean;
   onClose: () => void;
@@ -180,9 +182,13 @@ export function WorkspaceFinder({
   machineId?: string | null;
   /** Offer the Machines section. */
   chooseMachine?: boolean;
+  /** The Agent a temporary Workspace would belong to: the footer button then shows the folder it would get. */
+  agentId?: string;
   title: string;
-  hint: string;
+  /** The footer button that takes `onClear`. */
   clearLabel: string;
+  /** That button's tooltip while the folder it stands for is not known here. */
+  clearTitle?: string;
 }) {
   const f = S.chat.finder;
   const isMac = useMemo(isMacPlatform, []);
@@ -354,6 +360,27 @@ export function WorkspaceFinder({
       cancelled = true;
     };
   }, [open, chooseMachine, projectId]);
+
+  /**
+   * The `agent_state` directory of the Agent a temporary Workspace would belong to, from that
+   * Agent's config on this server: the footer button's path is built from it. Kept per Agent,
+   * the way the home listing is kept per machine.
+   */
+  const [agentState, setAgentState] = useState<{ agentId: string; dir: string } | null>(null);
+  useEffect(() => {
+    if (!open || agentId === undefined || agentState?.agentId === agentId) return;
+    let cancelled = false;
+    void api
+      .getAgentConfig(projectId, agentId)
+      .then((res) => {
+        if (!cancelled) setAgentState({ agentId, dir: res.stateDir });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // Not keyed on `agentState`, which is what this fills in.
+  }, [open, agentId, projectId]);
 
   const { workspaceLatestByAgent } = useSessions();
   const recents = useMemo(
@@ -1290,21 +1317,44 @@ export function WorkspaceFinder({
     });
   }
 
+  const clear = clearButton({
+    offered: onClear !== undefined,
+    workspace,
+    stateDir: agentState !== null && agentState.agentId === agentId ? agentState.dir : null,
+    machine,
+  });
+
   const footer = (
     <>
-      <div className="mr-auto flex min-w-0 flex-col justify-center gap-0.5 self-center">
-        {onClear !== undefined && workspace.trim() !== "" && (
-          <button
-            type="button"
-            onClick={() => onClear(machine)}
-            className="self-start text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-          >
+      {/* The host's "no folder" choice: a button whatever is chosen now, checked while nothing
+          is. Label and path share one truncating line, so a narrow footer cuts the path first
+          and the label after it. */}
+      {clear !== null && (
+        <Button
+          size="sm"
+          aria-pressed={clear.pressed}
+          title={clear.fullPath ?? clearTitle}
+          className="mr-auto min-w-0 self-center"
+          onClick={() => onClear?.(machine)}
+        >
+          {clear.pressed && (
+            <GlyphIcon
+              d={CHECK_ICON}
+              size={ICON_SIZE.inlineGlyph}
+              className="shrink-0 text-gray-500 dark:text-gray-400"
+            />
+          )}
+          <span className="min-w-0 truncate">
             {clearLabel}
-          </button>
-        )}
-        <p className="line-clamp-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{hint}</p>
-      </div>
-      {/* The buttons keep their width; on a phone the hint beside them wraps instead. */}
+            {clear.path !== null && (
+              <span className="ml-1.5 font-normal text-gray-400 dark:text-gray-500">
+                {clear.path}
+              </span>
+            )}
+          </span>
+        </Button>
+      )}
+      {/* The buttons keep their width; on a phone the button beside them truncates instead. */}
       <Button size="sm" className="shrink-0 self-center whitespace-nowrap" onClick={onClose}>
         {S.common.cancel}
       </Button>

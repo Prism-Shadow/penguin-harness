@@ -1036,7 +1036,7 @@ export const zh = {
     createDirSkillsHint: "选择一个项目目录，读取其 .agents/skills 与 .claude/skills 下的技能",
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
-    createDirSkillsClear: "清除已选目录",
+    createDirSkillsClear: "不从目录导入",
     /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
     createSnapshot: "从快照初始化",
     createSnapshotPick: "选择快照包",
@@ -2267,7 +2267,9 @@ export const zh = {
       "no-identity": "待识别",
     },
     workspaceAuto: "临时工作区",
-    workspaceClear: "改用临时工作区",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "从临时工作区开始",
+    workspaceTempRule: "在 Agent 目录的 workspaces/ 下新建一个空目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
     finder: {
@@ -2571,9 +2573,6 @@ Benchmark：
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -4004,10 +4003,8 @@ Benchmark：
     workspaceField: "公司工作区",
     workspaceInfo:
       "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。",
-    workspaceHint: "留空则使用组织自己的 workspace/ 目录；指定时必须是服务器上已存在的目录",
     workspaceEmpty: "组织自己的 workspace/ 目录",
-    workspaceMenuHint: "选一个已存在的目录作为公司工作区",
-    workspaceClear: "改回组织自己的目录",
+    workspaceClear: "使用组织自己的目录",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO 预算",
     ceoBudgetHint: "每月上限；CEO 的预算就是整家公司的预算",

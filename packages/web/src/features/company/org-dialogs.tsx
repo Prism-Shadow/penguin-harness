@@ -218,10 +218,8 @@ function WorkspaceField({
         variant="form"
         fieldLabel={S.company.workspaceField}
         emptyLabel={S.company.workspaceEmpty}
-        menuHint={S.company.workspaceMenuHint}
         clearLabel={S.company.workspaceClear}
       />
-      <FieldHint>{S.company.workspaceHint}</FieldHint>
     </div>
   );
 }
