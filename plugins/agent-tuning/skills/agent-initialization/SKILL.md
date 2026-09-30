@@ -1,11 +1,11 @@
 ---
 name: agent-initialization
-description: Initialize an Agent's settings from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills.
+description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task).
 ---
 
 # Agent Initialization
 
-This skill initializes an agent's settings from a user requirement — plain files in the target agent's directory.
+This skill initializes an agent's settings from a user requirement — plain files in the target agent's directory. It is also the reference for giving an agent, yourself included, a new Skill or a new hook: both are directories you write, and the harness picks them up from disk.
 
 ## Before you start
 
@@ -30,7 +30,9 @@ ls "$APP_DATA_DIR/agents"         # existing agents (each is a folder here)
 TARGET="$APP_DATA_DIR/agents/<agent_id>"   # the agent to configure
 ```
 
-An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `skills/`, `memory/`, `tools/`) plus `scratchpad/` — and `traces/`, which appears once the agent has run at least once.
+An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `skills/`, `hooks/`, `memory/`, `tools/`) plus `scratchpad/` — and `traces/`, which appears once the agent has run at least once. `hooks/` exists once a hook package is installed; create it when you need it.
+
+To extend the agent you are running as, the target is your own directory: `<app_data_dir>/agents/<agent_id>` with the Agent ID from your Environment section.
 
 ## Write AGENTS.md
 
@@ -41,34 +43,100 @@ An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `
 
 Be concise: AGENTS.md is prompt context, not documentation. For a domain expert that answers from a knowledge base, a good AGENTS.md is a few lines: the role sentence, "answer strictly from the provided context blocks", citation rules ("cite blocks inline as [1][2]"), a refusal rule for questions the context cannot answer, and "answer in the language of the question".
 
-## Install skills
+## Skills
 
-A skill is a directory `agent_state/skills/<skill_name>/` containing a `SKILL.md`:
+A Skill is a directory `agent_state/skills/<skill_name>/` containing a `SKILL.md`. The directory name is the Skill's name (letters, digits, `_`, `-`); nothing else registers it.
 
 ```md
 ---
 name: <skill_name>
-description: <skill_description>
-version: <natural number — bump it on every content change>
-updated: <ISO 8601 timestamp — move it together with version>
+description: <one line: what it does and when to use it>
+version: <YYYY.MM.DD.N, e.g. 2026.09.29.1 - today's date, N counts that day's changes>
 ---
 
 <skill_instructions>
 ```
 
-The frontmatter may also carry optional `short_description` and `short_description_zh` lines (a short UI blurb and its Chinese variant) — the UI prefers them for display, while prompt injection always uses the English `description`.
+The `description` line is what the target agent sees in its system prompt, so it has to say when the Skill applies; the body is read only once the agent decides to use it. Optional `short_description` and `short_description_zh` lines give the UI a short blurb. Files the body refers to go beside it (`reference/<topic>.md`, scripts), linked by relative path.
 
-Installing is all it takes: the frontmatter metadata of every `SKILL.md` under `skills/` is injected into the target agent's system prompt automatically — do not register skills in AGENTS.md.
+There are three ways to get one in place:
 
-Write skills yourself, or fetch existing ones from the internet with shell commands (`curl`, `git clone`) and place them under `skills/`. Anything fetched from the internet must be read in full and reviewed before installing — a skill becomes durable instructions the target agent will follow in every future session; never install one you have not read, and tell the user what it does.
+- **Create.** Write the directory yourself. Keep the body to what a capable agent would not already know: the steps, the commands, the traps.
+- **Install from the library.** Copy the whole `skills/<skill_name>/` directory from an agent that has it — `default_agent` ships the whole library. The user can also install from the Web App's Plugins page.
+- **Import.** Fetch a Skill from a URL, a repository or a local path (`curl`, `git clone`, `unzip`), then place it under `skills/`. A Skill written for another tool usually needs only the frontmatter above. Read everything you fetched in full before installing, and tell the user what it does: a Skill becomes instructions the agent follows in every future session.
 
-Library skills can be copied from any agent that already has them (e.g. `default_agent`, which ships the whole library) — copy the entire `skills/<skill_name>/` directory. Common bundles, so you don't under-equip the target:
+Do not register Skills in AGENTS.md; the frontmatter is injected automatically.
+
+Common library bundles, so you don't under-equip the target:
 
 - **App builder** (builds apps or web frontends): `penguin-sdk`, `web-design`, `agenthub-models`.
 - **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
 - **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 
 When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks.
+
+## Hook packages
+
+A hook is a script the harness itself runs at a fixed point of the agent loop. Use one when something must happen every time, whether or not the model remembers: adding context to every prompt, vetting a tool call, deciding that a finished task should continue. A rule the model can simply follow belongs in AGENTS.md or a Skill instead.
+
+A hook package is a directory `agent_state/hooks/<package_name>/` holding a `hooks.json` and the scripts it names:
+
+```json
+{
+  "name": "append-time",
+  "description": "Adds the current local time to every prompt.",
+  "description_zh": "为每条 Prompt 附上当前本地时间。",
+  "version": "2026.09.29.1",
+  "user_prompt": [{ "command": "time.mjs", "timeout": 10 }]
+}
+```
+
+```js
+// time.mjs - answers every prompt with the current local time.
+const now = new Date();
+const pad = (n) => String(n).padStart(2, "0");
+const offset = -now.getTimezoneOffset();
+const stamp =
+  `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+  `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+const utc = `UTC${offset < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`;
+const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+process.stdout.write(`${JSON.stringify({ context: `Current time: ${stamp} ${zone} (${utc})` })}\n`);
+```
+
+The three hook points, one command list each in `hooks.json` (leave out the ones you do not use):
+
+| Key | Runs | The script answers |
+| --- | --- | --- |
+| `user_prompt` | Every time the user submits a prompt | `{ "context": "<text>" }` — sent to the model right behind the user's message |
+| `pre_tool_use` | Before each tool call is approved | `{ "decision": "allow" \| "deny", "reason": "<one line>" }` |
+| `stop` | After every task ends | `{ "decision": "continue", "input": "<next user message>" }` to keep going, or `{ "decision": "stop" }` |
+
+Every script is plain Node (`.mjs`, builtin modules only), run as `node <script>` with the package directory as its working directory. It receives one JSON object on stdin and prints one JSON object on stdout; printing nothing means no opinion. A non-zero exit, output that is not JSON, or running past `timeout` seconds (default 60) counts as a failure: it is recorded and ignored, and never stops the run. The full contract — every stdin field, the remaining answer fields, `trigger`, and how to convert another tool's hooks — is in [`reference/hooks.md`](reference/hooks.md); read it before writing a `pre_tool_use` or `stop` hook.
+
+The same three ways apply:
+
+- **Create.** Write the directory. Give `user_prompt` and `pre_tool_use` commands a small `timeout`: they run on the hot path.
+- **Install from the library.** Copy the whole `hooks/<package_name>/` directory from an agent that has it, or have the user install the plugin from the Web App's Plugins page.
+- **Import.** Fetch the source, read every script in full and review it for anything that exfiltrates data, touches files outside its purpose or runs unknown commands, then convert it to the layout above. Another tool's hook configuration (the `hooks` block of a Claude Code `settings.json`, for instance) maps point by point; `reference/hooks.md` has the table.
+
+Test a script by hand before you rely on it — feed it the input it will get and check the exit code and the output:
+
+```bash
+cd "$TARGET/agent_state/hooks/append-time"
+echo '{"hook":"user_prompt","session_id":"test","scratchpad_dir":"/tmp","prompt":"hello"}' | node time.mjs; echo "exit $?"
+```
+
+A hook runs on the user's machine, on every prompt, tool call or task, under the Session's sandbox: the same policy as the agent's commands, which with the sandbox off means the harness's own permissions. Tell the user what each hook you install does and at which point it fires. One switch turns all of an agent's hooks off without uninstalling them: `hooks.enabled: false` in `system_config.yaml`.
+
+## When a change takes effect
+
+The harness reads an agent's configuration from disk each time a model context opens — AGENTS.md, `system_config.yaml`, Skills and hook packages alike:
+
+- a **new conversation** starts with everything you wrote;
+- a **conversation already running** — the one you are in, if you are changing yourself — picks the change up when its context is next compacted. The user can force that with `/compact`.
+
+Nothing changes in the middle of a context, so a hook you just wrote will not fire on the next message of this conversation, and a Skill you just wrote is not in your own system prompt yet. You can still read a new SKILL.md directly and follow it now. Say which of the two cases applies when you report.
 
 ## Set name and description
 
@@ -81,11 +149,11 @@ Prefer configuring an agent the user already created. If the user requires a new
 After confirming that the target is absent, pick a short id using letters, digits, `_`, or `-`, copy the default Agent's `system_config.yaml` as the base, and create the layout described above:
 
 ```bash
-mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
+mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/hooks" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
 cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State.
+Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills and hook packages required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State.
 
 ## Validate and report
 
@@ -94,9 +162,10 @@ Before finishing:
 - parse `agent_state/system_config.yaml` and confirm `name`, `description`, a positive integer `version`, and the expected `model.thinking_level`;
 - confirm `agent_state/AGENTS.md` exists and is non-empty;
 - confirm every installed Skill has a parseable `SKILL.md`, and its `name` matches its directory;
+- confirm every installed hook package has a `hooks.json` that parses, that each command it lists is a file inside the package, and that each script ran by hand exits 0 and prints JSON or nothing;
 - confirm no Agent outside `TARGET` was changed.
 
-Report the target path, whether an existing Agent was configured or a new Agent was created, assumptions, installed Skills, the resolved runtime and whether each value was user-specified or inherited, and validation results.
+Report the target path, whether an existing Agent was configured or a new Agent was created, assumptions, installed Skills and hook packages (for each hook: what it does and at which point it fires), when the change takes effect, the resolved runtime and whether each value was user-specified or inherited, and validation results.
 
 ## The embedded agent of an SDK app
 

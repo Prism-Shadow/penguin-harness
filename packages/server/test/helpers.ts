@@ -3,6 +3,7 @@
  * requests via app.request() + building Trace files.
  * None of these tests listen on a port or make real LLM requests.
  */
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -79,9 +80,38 @@ import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/servi
 import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import type { Access } from "../src/mechanisms/projects.js";
+import { ProcessShellPort } from "../src/builtin-browser/module.js";
+import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
+}
+
+let symlinkCapability: boolean | undefined;
+
+/**
+ * Whether this process can create symbolic links at all. Windows denies symlink creation
+ * without a privilege or Developer Mode (EPERM), so tests that need a real symlink skip when
+ * the probe fails — and still run wherever the capability exists (Linux/macOS, elevated or
+ * Developer-Mode Windows) instead of vanishing on every Windows machine. The probe tries once
+ * in a temp directory and caches the answer.
+ */
+export function canCreateSymlink(): boolean {
+  if (symlinkCapability === undefined) {
+    const probeDir = mkdtempSync(path.join(os.tmpdir(), "penguin-symlink-probe-"));
+    try {
+      // A directory link, the variant the guarded cases create; the privilege gate is the
+      // same for file links.
+      symlinkSync(probeDir, path.join(probeDir, "probe"), "dir");
+      symlinkCapability = true;
+    } catch {
+      symlinkCapability = false;
+    } finally {
+      // maxRetries for the same ci-windows cascade reason createTestApp's cleanup documents.
+      rmSync(probeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  }
+  return symlinkCapability;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -108,6 +138,9 @@ export function testConfig(root: string): ServerConfig {
     dbPath: ":memory:",
     previewOrigin: null,
     penguinGoOrigin: "https://token.penguin.ooo",
+    // The production bridge address, path prefix included. Nothing reaches it in tests: the
+    // ModelScope cases construct the service themselves with a stubbed fetch.
+    modelscopeBridgeUrl: "https://go.penguin.ooo/modelscope",
     // Points to a nonexistent directory: static hosting is disabled in tests.
     webDist: path.join(root, "__no_web_dist__"),
     // Fixed seed password so loginAdmin needs no seed-time capture.
@@ -268,6 +301,8 @@ export interface TestAppOptions {
   orgService?: OrganizationService;
   /** Test double: the desktop reveal, so a test never opens a file manager. */
   reveal?: (filePath: string) => Promise<void>;
+  /** Test double: the desktop shell's port as the built-in browser reaches it (a fake shell). */
+  browserShellPort?: BrowserShellPort;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
   log?: (line: string) => void;
@@ -307,6 +342,10 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   }
   if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
   if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
+  if (o.browserShellPort) {
+    const port = o.browserShellPort;
+    out.push([ProcessShellPort, { current: () => port }]);
+  }
   if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
   if (o.telegramTransport)
     out.push([
