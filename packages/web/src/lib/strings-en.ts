@@ -2283,10 +2283,28 @@ export const en: Strings = {
       empty: "This folder is empty",
       noMatch: (q: string): string => `Nothing here has "${q}" in its name`,
       deniedTitle: "Can't read this folder",
-      /** The server runs on macOS and privacy protection refused the folder. */
-      deniedMac:
-        "macOS is blocking access to this folder. Allow it in System Settings → Privacy & Security → Files and Folders, then retry.",
       denied: "The account running the server is not allowed to read this folder.",
+      /**
+       * macOS privacy protection refused the folder and this page cannot ask for it (a browser
+       * tab, or another machine's listing): the process that reads it has to be allowed.
+       */
+      deniedMacServer:
+        "macOS is blocking access to this folder. The process running the server has to be allowed: a server started from a terminal belongs to that terminal, so allow the terminal in System Settings → Privacy & Security → Files and Folders (or give it Full Disk Access), then retry.",
+      /** The desktop app can ask: before it has (see allowAccess). */
+      deniedMacAsk:
+        "macOS is blocking access to this folder. Use “Allow access” to ask macOS for it, and allow it when macOS asks.",
+      /** Asked, and the folder is still refused: a packaged app. */
+      deniedMacRefused:
+        "macOS did not allow it. If PenguinHarness is not listed under Files and Folders, add it under Full Disk Access with +, then retry.",
+      /** Asked, and the folder is still refused: a development instance, whose reads macOS charges to its terminal. */
+      deniedMacRefusedDev:
+        "This is an unpackaged development instance: macOS counts its file access against the terminal that started it. Allow that terminal under Files and Folders (or give it Full Disk Access), then retry.",
+      /** Has the desktop app read the folder in its own name, which is what makes macOS ask. */
+      allowAccess: "Allow access",
+      /** The same button while the app's read waits for the user to answer macOS. */
+      allowAccessWaiting: "Waiting for macOS…",
+      /** Opens System Settings at the Privacy & Security pane the box names. */
+      openSystemSettings: "Open System Settings",
       loadFailed: "Can't open this folder",
     },
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
@@ -4778,6 +4796,8 @@ Scenarios:
       browser_unavailable:
         "The built-in browser is unavailable: it needs the PenguinHarness desktop app to be open.",
       source_not_found: "That browser profile was not found.",
+      shell_unreachable: "The desktop app could not be reached.",
+      timeout: "That took too long. Try again.",
     },
   },
 };

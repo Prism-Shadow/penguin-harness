@@ -60,6 +60,10 @@ For an official provider's model with no stored key, the **Models** page shows t
 
 Tool calls appear inline as cards; open one to inspect its arguments and output. With the **Ask every time** (`always-ask`) approval mode, every file write waits for you to click **Allow**. [Tools & Approval](/tools) describes the four approval modes.
 
+> [!INFO]- On macOS, the directory browser can't read Desktop, Documents or Downloads
+>
+> macOS protects these folders. Click **Allow access** in the directory browser: the app asks macOS for the folder in its own name, and once you allow it, your agents can read the folder too. If macOS doesn't allow it, **Open System Settings** takes you to Privacy & Security; if PenguinHarness is not listed under **Files and Folders**, add it under **Full Disk Access**. A development build started from a terminal counts as that terminal to macOS, so allow the terminal there instead.
+
 ## The `penguin` command
 
 The app installs the `penguin` command itself, at every launch, from the CLI bundled inside it. The app and the command always come from the same build, so updating the app updates the command too. No system Node.js is involved: the launcher runs the bundled CLI on the app's own runtime.

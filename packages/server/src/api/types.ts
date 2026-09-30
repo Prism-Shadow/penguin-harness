@@ -3945,6 +3945,62 @@ export interface DesktopTrayCommandMessage {
   locale?: DesktopTrayLocale;
 }
 
+// Desktop folder access (desktop mode, macOS)
+//
+// macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
+// volumes. It asks the user only on behalf of an app it holds responsible for a read, and lists
+// under Files and Folders only the apps it has asked about; any other read gets a silent EPERM.
+// The Workspace picker's "Allow access" therefore goes to the shell, over the same
+// utilityProcess message channel as the updater and tray above: its main process reads the
+// folder once in the app's own name and says whether it could, and once the app is allowed its
+// children (this server, the agents' shells) read too. The page can also have the shell open
+// the Privacy & Security pane to change it. What either outcome means for the user is the
+// page's to say; the shell only reports.
+
+/** What the shell's read of one folder came to. */
+export interface DesktopFolderAccessResult {
+  /** The folder could be read. Always true off macOS, where the shell reads nothing. */
+  granted: boolean;
+  /** The failed read's errno code (`EPERM`, `EACCES`, `ENOENT`, …); `EINVAL` for a path that is not absolute. */
+  code?: string;
+  /**
+   * Whether the app is a packaged build (Electron's `app.isPackaged`). An unpackaged one is a
+   * development instance started from a terminal, and macOS holds that terminal responsible
+   * for its reads rather than the app.
+   */
+  packaged: boolean;
+}
+
+/** Server → shell request over the utilityProcess message channel (relayed from POST /api/projects/:projectId/dirs/access). */
+export interface DesktopFolderAccessMessage {
+  type: "desktop-folder-access";
+  /** Pairs the reply with its request. */
+  id: string;
+  /** The folder to read, as an absolute path. */
+  path: string;
+}
+
+/** Shell → server reply to one {@link DesktopFolderAccessMessage}, carrying its `id`. */
+export interface DesktopFolderAccessResultMessage extends DesktopFolderAccessResult {
+  type: "desktop-folder-access-result";
+  id: string;
+}
+
+/** POST /api/projects/:projectId/dirs/access: the shell's answer, for the picker to act on. */
+export interface DirAccessResponse {
+  granted: boolean;
+  packaged: boolean;
+}
+
+/** The Privacy & Security panes the page may open: Files and Folders, and Full Disk Access. */
+export type DesktopPrivacyPane = "files" | "fullDisk";
+
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/privacy-settings). No reply. */
+export interface DesktopOpenPrivacySettingsMessage {
+  type: "desktop-open-privacy-settings";
+  pane: DesktopPrivacyPane;
+}
+
 /**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via

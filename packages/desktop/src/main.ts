@@ -38,6 +38,12 @@
  * tab registry, the page scripts, scan / exec / click, import and history are the server
  * platform's, delivered by push like any other product behavior.
  *
+ * Folder access (macOS): on the Workspace picker's request, relayed over the same port, the
+ * main process reads a protected folder once and opens System Settings at a privacy pane (see
+ * folder-access.ts). It lives here because it has to: macOS asks about Desktop, Documents and
+ * Downloads only on behalf of the app it holds responsible, and the app is this process. What
+ * to tell the user about the outcome is the Web App's.
+ *
  * Dev isolation: the dev profile — an unpackaged run, or any build launched with `--dev`
  * — takes a dev-suffixed identity (own userData, and with it the single-instance lock and
  * sticky port) and defaults to the ~/.penguin/dev-data root, so it runs beside an
@@ -72,6 +78,8 @@ import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
+import { handleFolderAccessFrame } from "./folder-access.js";
+import type { FolderAccessFrameDeps } from "./folder-access.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
@@ -140,6 +148,15 @@ const builtinBrowser = createBuiltinBrowserShell({
   locale: () => trayLocale,
   log: (line) => logLine(`[shell] ${line}`),
 });
+/** The Workspace picker's macOS folder access (see the header); replies go to whichever child is live. */
+const folderAccess: FolderAccessFrameDeps = {
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  readdir: (dir) => fs.promises.readdir(dir),
+  openExternal: (url) => shell.openExternal(url),
+  post: (reply) => relayChild?.postMessage(reply),
+  log: (line) => logLine(`[shell] ${line}`),
+};
 /** App origin (embedded or attached); null until boot resolves. */
 let appOrigin: string | null = null;
 let quitting = false;
@@ -522,15 +539,17 @@ function setTrayLocale(next: TrayLocale): void {
 
 /**
  * Shell relay over the utilityProcess port: forward the account-menu row's check/install
- * frames to the updater, the Appearance switch's frames to the tray and the built-in browser's
- * commands to its guests, push every updater status fold back, and push both current states
- * now — the fresh child, restarts included, must not start blind. The subscription dies with
- * the child; the next start wires the next one.
+ * frames to the updater, the Appearance switch's frames to the tray, the built-in browser's
+ * commands to its guests and the Workspace picker's folder-access requests to folder-access.ts,
+ * push every updater status fold back, and push both current states now — the fresh child,
+ * restarts included, must not start blind. The subscription dies with the child; the next
+ * start wires the next one.
  */
 function wireShellRelay(child: EmbeddedServer["child"]): void {
   relayChild = child;
   child.on("message", (message: unknown) => {
     if (builtinBrowser.handle(message)) return;
+    if (handleFolderAccessFrame(message, folderAccess)) return;
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);

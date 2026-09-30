@@ -431,6 +431,10 @@ export type DesktopApi = Pick<
   | "setTrayStatus"
   | "onTrayCommand"
   | "requestTrayCommand"
+  | "onFolderAccessRequest"
+  | "requestFolderAccess"
+  | "onPrivacySettingsCommand"
+  | "requestPrivacySettings"
 >;
 
 /** The desktop shell's service, or null when this server is not the shell's child. */

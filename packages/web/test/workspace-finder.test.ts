@@ -2,11 +2,11 @@
  * The Workspace finder (src/features/chat/workspace-finder*.tsx): the modal every Workspace
  * picker opens. Its decisions live in workspace-finder-model.ts and are exercised directly —
  * breadcrumbs for both path families, back/forward history, type-to-select, the keyboard map,
- * Quick access per platform with the user's own edits, the context menu's rows, and Recent.
- * The suite has no DOM, so the few JSX facts that fail silently are pinned against the source:
- * the finder is a Modal (no second overlay system), a permission refusal renders its own copy
- * instead of an empty folder, the address bar is the one place a path is typed, and a folder
- * row carries its own way in.
+ * Quick access per platform with the user's own edits, the context menu's rows, Recent, and
+ * what the box for a refused folder offers. The suite has no DOM, so the few JSX facts that
+ * fail silently are pinned against the source: the finder is a Modal (no second overlay
+ * system), a permission refusal renders its own box instead of an empty folder, the address
+ * bar is the one place a path is typed, and a folder row carries its own way in.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,7 @@ import {
   canGoBack,
   canGoForward,
   defaultPlaces,
+  deniedBox,
   drivePlaces,
   finderKeyAction,
   finderMenuItems,
@@ -37,7 +38,11 @@ import {
   typeSelectIndex,
   visibleEntries,
 } from "../src/features/chat/workspace-finder-model";
-import type { QuickAccessStorage } from "../src/features/chat/workspace-finder-model";
+import type {
+  AccessAsk,
+  DeniedBox,
+  QuickAccessStorage,
+} from "../src/features/chat/workspace-finder-model";
 
 const dir = (name: string, kind: "dir" | "file" = "dir"): DirEntryInfo => ({
   name,
@@ -315,6 +320,71 @@ describe("recent and go to folder", () => {
   });
 });
 
+describe("a folder the server may not read", () => {
+  const idle: AccessAsk = { phase: "idle" };
+  const asking: AccessAsk = { phase: "asking" };
+  const refusedApp: AccessAsk = { phase: "asked", packaged: true };
+  const refusedDev: AccessAsk = { phase: "asked", packaged: false };
+  const plain: DeniedBox = { text: "denied", allow: "none", settings: null, retry: true };
+  const server: DeniedBox = { text: "deniedMacServer", allow: "none", settings: null, retry: true };
+
+  it("offers the desktop app's own request only on a Mac, in the shell, browsing its own server", () => {
+    const table: Array<[string, string | undefined, boolean, string | null, AccessAsk, DeniedBox]> =
+      [
+        // Off macOS nothing asks for a folder: the account simply lacks the permission.
+        ["a Linux server, in the shell", "linux", true, null, idle, plain],
+        ["a Windows server, after an ask", "win32", true, null, refusedApp, plain],
+        ["no listing yet to name the platform", undefined, true, null, idle, plain],
+        // A browser tab has no shell to ask; a machine's listing comes from another computer.
+        ["a browser tab", "darwin", false, null, idle, server],
+        ["a browser tab, whatever is on record", "darwin", false, null, refusedApp, server],
+        ["a Mac machine, from the shell", "darwin", true, "m1", idle, server],
+        [
+          "the shell, before asking: Allow access and nothing else",
+          "darwin",
+          true,
+          null,
+          idle,
+          { text: "deniedMacAsk", allow: "ready", settings: null, retry: false },
+        ],
+        [
+          "the shell, while macOS waits for the user",
+          "darwin",
+          true,
+          null,
+          asking,
+          { text: "deniedMacAsk", allow: "waiting", settings: null, retry: false },
+        ],
+        [
+          "the shell, still refused, packaged: Full Disk Access",
+          "darwin",
+          true,
+          null,
+          refusedApp,
+          { text: "deniedMacRefused", allow: "none", settings: "fullDisk", retry: true },
+        ],
+        [
+          "the shell, still refused, a development instance: its terminal",
+          "darwin",
+          true,
+          null,
+          refusedDev,
+          { text: "deniedMacRefusedDev", allow: "none", settings: "files", retry: true },
+        ],
+      ];
+    for (const [label, platform, desktopShell, machine, ask, expected] of table) {
+      expect(deniedBox({ platform, desktopShell, machine, ask }), label).toEqual(expected);
+    }
+  });
+
+  it("never offers Retry alone where there is something better to do", () => {
+    for (const ask of [idle, asking, refusedApp, refusedDev]) {
+      const box = deniedBox({ platform: "darwin", desktopShell: true, machine: null, ask });
+      expect(box.allow !== "none" || box.settings !== null, ask.phase).toBe(true);
+    }
+  });
+});
+
 describe("the modal (source contract)", () => {
   const read = (rel: string) =>
     readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), "utf8");
@@ -328,9 +398,14 @@ describe("the modal (source contract)", () => {
     expect(select).not.toContain("Dropdown");
   });
 
-  it("says a refused folder is refused, and names the macOS setting only on darwin", () => {
+  it("says a refused folder is refused, in the box deniedBox decides", () => {
     expect(finder).toContain('code === "dir_permission_denied"');
-    expect(finder).toMatch(/platform === "darwin"\s*\?\s*f\.deniedMac/);
+    expect(finder).toContain("f[denied.text]");
+    // The one renderer marker (lib/desktop-renderer.ts), not a check of the finder's own.
+    expect(finder).toContain("isElectronRenderer(navigator.userAgent)");
+    expect(finder).toMatch(/api\s*\.requestDirAccess\(projectId, target\)/);
+    // A server with no shell behind it gets the browser tab's explanation, not an error loop.
+    expect(finder).toContain('err.code === "shell_unreachable"');
   });
 
   it("types a path in the address bar itself — no separate Go to row or button", () => {

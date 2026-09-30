@@ -15,23 +15,29 @@
  * (Desktop, Documents, Downloads) looks exactly like that, and an empty list sent people
  * looking for files that were there all along.
  *
+ * POST /api/projects/:p/dirs/access is the picker's way out of that refusal in the desktop
+ * app: see the route.
+ *
  * `projectId` remains the authorization anchor: the caller must have access to that Project.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import type { DirEntryInfo, DirListResponse } from "../../api/types.js";
+import type { DirAccessResponse, DirEntryInfo, DirListResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { directorySkillsRoutes } from "./directory-skills.js";
+import type { Desktop, DesktopApi } from "../../hmr/capabilities.js";
 import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface DirsRouteDeps {
   access: Access;
+  /** The desktop shell's service; null when this server was not started by the desktop shell. */
+  desktop: Pick<DesktopApi, "requestFolderAccess"> | null;
 }
 
 export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
@@ -67,6 +73,37 @@ export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
       // its sidebar, and probing 26 letters on every folder change would be waste.
       ...(home && process.platform === "win32" ? { roots: await driveRoots() } : {}),
     } satisfies DirListResponse);
+  });
+
+  /**
+   * The picker's "Allow access" for a folder macOS refused: the desktop shell's main process
+   * reads it once in the app's own name, which is what makes macOS ask the user — a read from
+   * this server, the shell's child, has been seen to fail silently instead. Once the app is
+   * allowed, this server reads the folder too. Only this server's own shell can be asked, so
+   * the route has no machine form. Without a shell there is nothing to ask (503
+   * `shell_unreachable`); a shell that has not answered within FOLDER_ACCESS_TIMEOUT_MS is a
+   * 504 `timeout`. The member is optional: a layer older than the picker's box has none.
+   */
+  app.post("/access", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown } | null;
+    const target = typeof body?.path === "string" ? body.path.trim() : "";
+    if (!path.isAbsolute(target)) {
+      throw new HttpError(400, "dir_not_absolute", "Directory must be an absolute path.");
+    }
+    const asked = deps.desktop?.requestFolderAccess?.(target) ?? null;
+    if (asked === null) {
+      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
+    }
+    const result = await asked;
+    if (result === null) {
+      throw new HttpError(504, "timeout", "The desktop shell did not answer in time.");
+    }
+    return c.json({
+      granted: result.granted,
+      packaged: result.packaged,
+    } satisfies DirAccessResponse);
   });
 
   return app;
@@ -189,10 +226,11 @@ async function driveRoots(): Promise<string[]> {
 })
 export class ProjectsRoutes {
   @Use() private readonly access!: Access;
+  @Use() private readonly desktop!: Desktop;
   @Bind("projects.dirs") dirsRoutes!: Hono<AppEnv>;
   @Bind("projects.dir-skills") dirSkillsRoutes!: Hono<AppEnv>;
   setup() {
-    this.dirsRoutes = dirsRoutes({ access: this.access });
+    this.dirsRoutes = dirsRoutes({ access: this.access, desktop: this.desktop.current() });
     this.dirSkillsRoutes = directorySkillsRoutes({ access: this.access });
   }
 }

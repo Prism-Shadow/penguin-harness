@@ -616,6 +616,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/agents/:agentId/sessions` | Lists the agent's Sessions with their run state, whichever client created them, unless `excludeOrg=1` asks for the user's own rows only |
 | POST | `/agents/:agentId/sessions` | Creates a Session: `{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201 `{session}` |
 | GET | `/dirs?path=` | Server-side directory browser behind the Workspace picker |
+| POST | `/dirs/access` | Desktop app: has the shell read a folder macOS refused, in the app's own name, so that macOS asks the user: `{path}` → `{granted, packaged}` |
 | GET | `/dir-skills?path=` | The Skills a directory carries, for importing them into a new agent |
 
 - The Session list accepts optional query parameters. `limit` and `offset` page the list (`offset` requires `limit`). `category` (`active`, `subagent`, `schedule`, `benchmark` or `archived`) filters it before paging, and `workspaceGroup` filters it to one Workspace. `counts=1` adds `counts` (totals per category over the whole list), `workspaceCounts` (the same totals per Workspace path) and `workspaceLatest` (each Workspace's newest Session). Without paging parameters, the full list is returned.
@@ -625,6 +626,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 - `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions, and a client cannot send that value. Only `excludeOrg` reads it as a filter, and only to drop those rows.
 - `source` accepts only `"benchmark"`, for a Session created by a Benchmark evaluation or optimization. The server sets `subagent` and `schedule` itself.
 - `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries, platform}`: every entry carries its `kind` (`dir` or `file`) and `mtime`, and on Windows the home request adds `roots`, the drive roots that exist. A directory the server may not read answers `403 dir_permission_denied` rather than an empty list — on macOS that is usually a Files and Folders permission the user has not granted.
+- `POST /dirs/access` is the Workspace picker's **Allow access** in the desktop app. macOS asks about Desktop, Documents and Downloads only on behalf of the app it holds responsible for the read, so the desktop shell's main process reads the absolute `path` once, and the answer waits for the user. `granted` says whether the read succeeded (always `true` off macOS, where nothing is read). `packaged` is `false` for a development instance started from a terminal, whose reads macOS charges to that terminal. The route returns `400` `dir_not_absolute` for a path that is not absolute, `503` `shell_unreachable` when the server has no desktop shell to ask, and `504` `timeout` when the shell has not answered within 120 seconds.
 - `GET /dir-skills` reads only `<path>/.agents/skills` and `<path>/.claude/skills` of an absolute `path`, and answers `{path, skills}`. A directory without Skills answers with an empty list. See `POST /agents` under [Agents](#agents).
 
 ## Usage and Traces (Agent Level)
@@ -1029,6 +1031,7 @@ Routes that serve the desktop shell, hot updates and the Web App's own module sy
 | GET | `/api/desktop/update` | The desktop app updater's status: `{status}` |
 | POST | `/api/desktop/update/check`, `/api/desktop/update/download`, `/api/desktop/update/install` | Relays the command to the desktop shell; 202 |
 | GET / PUT | `/api/desktop/tray` | Reads the tray-icon preference: `{status}` / relays a change: `{showTrayIcon?, locale?}` → 202 |
+| POST | `/api/desktop/privacy-settings` | Has the shell open a macOS Privacy & Security pane: `{pane}` (`files` or `fullDisk`) → 202 |
 | POST | `/api/hmr/assets/probe` | Hot update: reports which blobs the store lacks |
 | PUT | `/api/hmr/blobs/:sha` | Hot update: uploads one blob under its sha256 |
 | POST | `/api/hmr/upgrade` | Hot update: moves the platform, CLI and web bundles to a new version together |
@@ -1036,7 +1039,8 @@ Routes that serve the desktop shell, hot updates and the Web App's own module sy
 
 - Outside desktop mode, the desktop routes return `404` `not_found`.
 - `POST /api/desktop/shutdown` does not use the cookie session. It authenticates with the desktop shell's own Bearer token (`401` `unauthorized` otherwise), answers first, and starts the graceful shutdown right after.
-- The update and tray routes answer only the desktop shell's own window: any other session gets `403` `desktop_shell_only`. When the shell is not listening, they return `503` `shell_unreachable`. `PUT /api/desktop/tray` returns `400` `invalid_show_tray_icon` for a non-boolean `showTrayIcon`, `400` `invalid_locale` for a `locale` other than `zh` or `en`, and `400` `empty_tray_patch` when neither field is given. The PUT only acknowledges the change; read the result back with GET.
+- The update, tray and privacy-settings routes answer only the desktop shell's own window: any other session gets `403` `desktop_shell_only`. When the shell is not listening, they return `503` `shell_unreachable`. `PUT /api/desktop/tray` returns `400` `invalid_show_tray_icon` for a non-boolean `showTrayIcon`, `400` `invalid_locale` for a `locale` other than `zh` or `en`, and `400` `empty_tray_patch` when neither field is given. The PUT only acknowledges the change; read the result back with GET.
+- `POST /api/desktop/privacy-settings` returns `400` `invalid_privacy_pane` for a `pane` other than `files` (Files and Folders) or `fullDisk` (Full Disk Access). The shell opens the pane on macOS only.
 - The `/api/hmr` routes are admin only (`403` `forbidden`). On a non-loopback bind they also require HTTPS and otherwise return `403` `hmr_disabled`. `X-Forwarded-Proto` counts only when `PENGUIN_TRUST_PROXY=1`. A completed upgrade sends `web_updated` to every connected client, so they reload.
 
 ## Streaming (SSE)

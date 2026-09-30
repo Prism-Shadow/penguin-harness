@@ -2319,10 +2319,28 @@ export const zh = {
       empty: "此文件夹为空",
       noMatch: (q: string): string => `没有名称包含「${q}」的项目`,
       deniedTitle: "无法读取此文件夹",
-      /** The server runs on macOS and privacy protection refused the folder. */
-      deniedMac:
-        "macOS 阻止了对此文件夹的访问。请在「系统设置 → 隐私与安全性 → 文件与文件夹」中允许访问后重试。",
       denied: "运行服务的账户没有读取此文件夹的权限。",
+      /**
+       * macOS privacy protection refused the folder and this page cannot ask for it (a browser
+       * tab, or another machine's listing): the process that reads it has to be allowed.
+       */
+      deniedMacServer:
+        "macOS 阻止了对此文件夹的访问。运行服务的进程需要被放行：从终端启动的服务归该终端所有，请在「系统设置 → 隐私与安全性 → 文件与文件夹」里放行该终端（或给它完全磁盘访问权限）后重试。",
+      /** The desktop app can ask: before it has (see allowAccess). */
+      deniedMacAsk:
+        "macOS 阻止了对此文件夹的访问。点「允许访问」向 macOS 申请，macOS 询问时选择允许。",
+      /** Asked, and the folder is still refused: a packaged app. */
+      deniedMacRefused:
+        "系统没有放行。若「文件与文件夹」里没有 PenguinHarness，请在「完全磁盘访问权限」里用 + 添加它，然后再试。",
+      /** Asked, and the folder is still refused: a development instance, whose reads macOS charges to its terminal. */
+      deniedMacRefusedDev:
+        "这是未打包的开发实例：macOS 把它的文件访问算在启动它的终端名下。请在「文件与文件夹」里放行该终端（或给它完全磁盘访问权限），再试。",
+      /** Has the desktop app read the folder in its own name, which is what makes macOS ask. */
+      allowAccess: "允许访问",
+      /** The same button while the app's read waits for the user to answer macOS. */
+      allowAccessWaiting: "等待 macOS 询问…",
+      /** Opens System Settings at the Privacy & Security pane the box names. */
+      openSystemSettings: "打开系统设置",
       loadFailed: "无法打开此文件夹",
     },
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
@@ -4772,6 +4790,8 @@ Benchmark：
       handbook_index_required: "手册索引（README.md）不能删除。",
       browser_unavailable: "内置浏览器不可用：它需要 PenguinHarness 桌面应用处于打开状态。",
       source_not_found: "找不到这个浏览器配置文件。",
+      shell_unreachable: "无法联系桌面应用。",
+      timeout: "操作超时，请重试。",
     },
   },
 };
