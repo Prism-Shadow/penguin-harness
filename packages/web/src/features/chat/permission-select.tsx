@@ -134,9 +134,10 @@ export function PermissionSelect({
             data-level={level}
             disabled={disabled}
             onClick={() => setOpen((v) => !v)}
-            // Icon only, the + button's square: the level is in the icon's shape and colour, and
-            // spelled out in the accessible name and the title.
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            // Icon only, the + button's square and its look (the package's ToolbarTrigger, which
+            // this cannot be: that one dims while disabled): the level is in the icon's shape and
+            // colour, and spelled out in the accessible name and the title.
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-surface-muted hover:text-fg"
           >
             {/* Keyed by level: a new level mounts a new icon, which swaps in. */}
             <span key={level} className={animate ? "anim-icon-swap" : undefined}>

@@ -70,6 +70,7 @@
   --color-canvas: var(--ui-canvas);
   --color-surface: var(--ui-surface);
   --color-surface-muted: var(--ui-surface-muted);
+  --color-fill-neutral: var(--ui-fill-neutral);
   --color-surface-inset: var(--ui-inset);
   --color-overlay: var(--ui-overlay);
 
@@ -415,6 +416,17 @@
 :root[data-motion="reduced"] :is(.ui-activity, .ui-activity *)::after {
   animation: none;
 }
+/* The `ui-stream` recipes animate the stream's caret (Console's stepped blink; Primer's is the
+   host's own pulse) and ease a layer drawn on the host itself (Frost's veil leaving on `done`),
+   so both are named: the caret holds still and a layer goes at once. The reveal's pace is the
+   app's, which shows the whole text under either signal; Frost also draws no veil then. */
+:root[data-motion="reduced"] .ui-stream [data-slot="caret"],
+:root[data-motion="reduced"] .ui-stream::before,
+:root[data-motion="reduced"] .ui-stream::after,
+:root[data-motion="reduced"] .ui-stream li::after {
+  animation: none;
+  transition: none;
+}
 @media (prefers-reduced-motion: reduce) {
   :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
     animation: none;
@@ -429,6 +441,13 @@
   :is(.ui-activity, .ui-activity *)::before,
   :is(.ui-activity, .ui-activity *)::after {
     animation: none;
+  }
+  .ui-stream [data-slot="caret"],
+  .ui-stream::before,
+  .ui-stream::after,
+  .ui-stream li::after {
+    animation: none;
+    transition: none;
   }
 }
 

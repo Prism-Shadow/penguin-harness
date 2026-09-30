@@ -11,13 +11,14 @@ W8 of the UI-package migration moves the chart foundation and the command palett
 ## What moved
 
 - **Chart primitives:** the marks (`ChartBar`, `ChartLine`, `ChartArea`, `ChartPoint`, `ChartArc`, grid and axis, `TimelineBar`) with their geometry, `useChartStyle`, `ChartFrame` with its hover helpers, and `TokenDonut` (its words now come in a `labels` prop).
-- **New:** `Sparkline` (the agent activity and benchmark score curves, kept in the Web App as thin wrappers until their pages move), `Ring` (a gauge of arcs against a budget, now drawing the finance gauge and the context ring), and `Legend` (inline or as a list, with hover, pin and toggle).
+- **New:** `Sparkline` (the agent activity and benchmark score curves), `Ring` (a gauge of arcs against a budget, now drawing the finance gauge, the spend ring and the context ring), and `Legend` (inline or as a list, with hover, pin and toggle).
 - **Command palette:** `CommandPalette` is the presentation; the Web App keeps the actions and the Ctrl/Cmd+P shortcut in `AppPalette`.
 
 ## Details
 
 - The Web App's own charts (cost, token and request charts, the score trend, the Trace timeline, the finance card) now use `Legend` and the text rungs.
 - The Trace timeline's open bars hold still and end in a pulsing live dot, instead of pulsing the whole bar.
+- The Costs & usage page and the benchmark detail page take the shared page header; on the benchmark detail page the Benchmark's path moves to its own line under the title.
 - The gallery's charts board shows `Ring` and `Legend`; the dialogs board opens the command palette.
 
 ## Visible changes in the default theme (Primer)

@@ -78,6 +78,7 @@
     --ui-canvas: #fbfafa;
     --ui-surface: var(--ui-canvas);
     --ui-surface-muted: #f4f2f2;
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: #f0eeee;
     --ui-overlay: var(--ui-canvas);
     --ui-overlay-backdrop: rgb(19 16 16 / 0.28);
@@ -339,8 +340,9 @@
     /* Motion: colour changes stay quick and smooth (E2B's 100ms held to the 120ms floor every
        theme's state changes share); everything that appears, leaves or resizes jumps. A layer
        enters in three frames over 120ms and leaves in two over 60ms, with no slide, no scale and
-       no blur; a streamed chunk is simply there (a zero reveal); the sidebar's width jumps
-       through four steps; the live signals tick. */
+       no blur; an appended chunk or row is simply there (a zero reveal — a streaming reply is
+       paced by the typewriter below instead); the sidebar's width jumps through four steps;
+       the live signals tick. */
     --ui-dur-fast: 120ms;
     --ui-dur-base: 150ms;
     --ui-dur-slow: 260ms;
@@ -361,6 +363,12 @@
     --ui-reveal-blur: 0px;
     --ui-dur-layout: 160ms;
     --ui-ease-layout: steps(4, end);
+
+    /* Streaming: a reply is typed out a character at a time, 90 a second — about one and a
+       half characters a frame, so the line visibly runs on behind the block cursor the
+       `ui-stream` recipe draws, the way a terminal prints. */
+    --ui-stream-reveal: typewriter;
+    --ui-stream-rate: 90;
 
     /* Icons */
     --ui-icon-stroke: 1.4;
@@ -401,6 +409,7 @@
        steps up, an inset steps down */
     --ui-canvas: #131010;
     --ui-surface-muted: #221f1f;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #0d0b0b;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.6);
 
@@ -489,8 +498,8 @@
    * `animate-spin` and `.ui-frame` redraw a card's box.
    *
    * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
-   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart. `.ui-glass` and
-   * `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens, and the page
+   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream. `.ui-glass`
+   * and `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens, and the page
    * behind a dialog is dimmed, not blurred.
    */
 
@@ -761,6 +770,49 @@
     to {
       clip-path: inset(0 0 0 0);
     }
+  }
+
+  /* A reply still arriving is typed out behind a block cursor, the way a terminal prints (the
+     reveal paces it a character at a time): the stream's caret is a solid cell in the body
+     ink, one character of the chrome's mono face wide, with the host's own glyph painted out.
+     While the text so far ends in a paragraph, that paragraph runs in — it lays out inline
+     with the caret after it — so the cursor sits right after its last character; after a list
+     the last item draws the cell itself (below); after a table or a code block it waits at the
+     start of the next line, like a prompt. The cursor
+     blinks in the theme's stepped live signal, and nothing else moves: no veil, no fade. Under
+     reduced motion it holds still (theme.css). */
+  :root[data-theme="geek"] .ui-stream[data-state="streaming"] > p:has(+ [data-slot="caret"]) {
+    display: inline;
+  }
+  /* After a list the cursor belongs at the end of its last item, not on a line of its own: the
+     item draws the block cell itself, and the host's caret slot steps aside. */
+  :root[data-theme="geek"]
+    .ui-stream[data-state="streaming"]
+    > :is(ul, ol):has(+ [data-slot="caret"])
+    > li:last-child::after {
+    content: "";
+    display: inline-block;
+    inline-size: 1ch;
+    block-size: 1.2em;
+    margin-inline-start: 1px;
+    vertical-align: text-bottom;
+    background-color: var(--ui-fg);
+    animation: ui-geek-signal 1s var(--ui-live-timing) infinite;
+  }
+  :root[data-theme="geek"] .ui-stream[data-state="streaming"] > :is(ul, ol) + [data-slot="caret"] {
+    display: none;
+  }
+  :root[data-theme="geek"] .ui-stream > [data-slot="caret"] {
+    display: inline-block;
+    inline-size: 1ch;
+    block-size: 1.2em;
+    vertical-align: text-bottom;
+    overflow: hidden;
+    font-family: var(--ui-font-ui);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    background-color: var(--ui-fg);
+    animation: ui-geek-signal 1s var(--ui-live-timing) infinite;
   }
 
   /* A notice is a status line, the way a console prints one: a bracketed tone tag in the tone's

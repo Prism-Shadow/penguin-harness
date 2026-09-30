@@ -809,6 +809,118 @@
         }
       ]
     },
+    "W6": {
+      "packages/web/src/features/chat/work-group": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/work-group",
+          "dest": "packages/web/src/features/chat/work-group.tsx",
+          "names": ["WorkGroup→SessionWorkGroup"]
+        }
+      ],
+      "packages/web/src/features/chat/thinking-block": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/thinking-block",
+          "dest": "packages/web/src/features/chat/thinking-block.tsx",
+          "names": ["ThinkingBlock→SessionThinking"]
+        }
+      ],
+      "packages/web/src/features/chat/tool-call-card": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/tool-call-card",
+          "dest": "packages/web/src/features/chat/tool-call-card.tsx",
+          "names": ["ToolCallCard→SessionToolCall"]
+        }
+      ],
+      "packages/web/src/features/chat/subagent-chip": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/subagent-chip",
+          "dest": "packages/web/src/features/chat/subagent-chip.tsx",
+          "names": ["SubagentChip→SessionSubagentChip"]
+        }
+      ],
+      "packages/web/src/features/chat/step-banner": [
+        {
+          "owner": "W6-A2",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/step-banner/step-banner.tsx",
+          "names": ["StepBanner"]
+        }
+      ],
+      "packages/web/src/features/chat/approval-buttons": [
+        {
+          "owner": "W6-A2",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/approval-block/approval-block.tsx",
+          "names": ["ApprovalButtons"]
+        }
+      ],
+      "packages/web/src/features/chat/assistant-reply-body": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/assistant-text.tsx",
+          "names": ["AssistantReplyBody→AssistantText"]
+        }
+      ],
+      "packages/web/src/features/chat/streaming-caret": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/streaming-caret.tsx",
+          "names": ["StreamingCaret"]
+        }
+      ],
+      "packages/web/src/features/chat/use-stream-reveal": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/use-stream-reveal.ts",
+          "names": ["useStreamReveal"]
+        }
+      ],
+      "packages/web/src/lib/stream-style": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/stream-style.ts",
+          "names": [
+            "StreamStyle",
+            "DEFAULT_STREAM_STYLE",
+            "readStreamStyle",
+            "effectiveReveal",
+            "sameStreamStyle",
+            "nextStreamStyle",
+            "useStreamStyle"
+          ]
+        },
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/tokens.ts",
+          "names": ["StreamRevealMode→StreamReveal"]
+        }
+      ],
+      "packages/web/src/features/chat/message-files-card": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/changes-card/changes-card.tsx",
+          "names": ["PathLabel"]
+        }
+      ],
+      "packages/web/src/features/chat/model-select": [
+        {
+          "owner": "W6-B",
+          "target": "packages/web/src/features/chat/model-select",
+          "dest": "packages/web/src/features/chat/model-select.tsx",
+          "names": ["ModelSelect→ModelCatalogSelect", "ModelMenuList→ModelCatalogMenu"]
+        }
+      ]
+    },
     "W8": {
       "packages/web/src/features/palette/command-palette": [
         {

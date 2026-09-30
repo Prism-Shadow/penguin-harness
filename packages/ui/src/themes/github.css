@@ -57,6 +57,7 @@
     --ui-canvas: #ffffff;
     --ui-surface: #ffffff;
     --ui-surface-muted: var(--color-gray-50);
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: var(--color-gray-50);
     --ui-overlay: #ffffff;
     --ui-overlay-backdrop: oklab(0% 0 0 / 0.45); /* = bg-black/45, alpha exactly .45 */
@@ -352,6 +353,11 @@
     --ui-dur-layout: 200ms;
     --ui-ease-layout: var(--ui-ease-in-out);
 
+    /* ---- Streaming: today's reply — the text shows as it lands, under the host's own pulsing
+       caret; no pace, so no rate. ---- */
+    --ui-stream-reveal: instant;
+    --ui-stream-rate: 0;
+
     /* ---- Icons ---- */
     --ui-icon-stroke: 1.7;
     --ui-icon-cap: round;
@@ -404,6 +410,7 @@
     --ui-canvas: var(--color-gray-950);
     --ui-surface: var(--color-gray-900);
     --ui-surface-muted: #202020;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #0e0e0e;
     --ui-overlay: var(--color-gray-900);
 
@@ -486,7 +493,8 @@
    * card with a muted head, the accent bar under a tab, the sidebar's muted fill beside the
    * canvas, monochrome icons, a bordered tree box with the host's own indent, a form's label
    * above its control and a settings row's label beside it, a plain row for a step of the
-   * agent's work, a plain dim behind a dialog — so no recipe is written for those, and none may
+   * agent's work, a plain dim behind a dialog, a streaming reply under the host's own pulsing
+   * caret glyph — so no recipe is written for those, and none may
    * be until a Primer polish wave changes that look on purpose (the 2026-09-30 lift of the light
    * chart steps and the knob's hairline was such a change, made in tokens, not recipes). The
    * two rules every theme shares (the eyebrow on the h6 rung,

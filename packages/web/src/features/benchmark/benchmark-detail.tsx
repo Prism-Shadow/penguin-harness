@@ -18,11 +18,11 @@ import {
   ChartFrame,
   ChartLine,
   ChartPoint,
-  ChartSwatch,
   EmptyState,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Legend,
   Modal,
   Table,
   TableBody,
@@ -164,17 +164,16 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
         {S.benchmark.trendTitle(S.benchmark.colScore)}
       </p>
       {series.length >= 2 && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {series.map((s, i) => (
-            <span
-              key={s.unlabeled ? "unlabeled" : s.key}
-              className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-            >
-              <ChartSwatch paint={scoreSeriesPaint(s, i)} shape="block" />
-              <span className="font-mono">{labelOf(s)}</span>
-            </span>
-          ))}
-        </div>
+        <Legend
+          items={series.map((s, i) => ({
+            key: s.unlabeled ? "unlabeled" : s.key,
+            label: labelOf(s),
+            paint: scoreSeriesPaint(s, i),
+            shape: "block" as const,
+          }))}
+          mono
+          className="mb-1.5"
+        />
       )}
       <ScoreTrendChart evaluations={evaluations} series={series} />
     </div>

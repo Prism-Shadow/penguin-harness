@@ -9,7 +9,13 @@
  * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
  * each covers every id.
  */
-import type { HookName, TextVariant, ThemeId, ToneName } from "@prismshadow/penguin-ui";
+import type {
+  HookName,
+  StreamReveal,
+  TextVariant,
+  ThemeId,
+  ToneName,
+} from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
@@ -71,6 +77,12 @@ export const zh = {
     "chat-thinking": {
       title: "对话 · 思考中",
       description: "任务进行中：模型正在思考，思考行显示运行状态，文字仍在增长。",
+      how: "侧栏 › 带运行标记的会话行。",
+    },
+    "chat-streaming": {
+      title: "对话 · 流式输出",
+      description:
+        "任务进行中：回答正在流式到达，按当前主题的方式显现；答完停留片刻后重新开始，循环播放。",
       how: "侧栏 › 带运行标记的会话行。",
     },
     "chat-approval": {
@@ -333,6 +345,7 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
+      "ui-stream": "正在流式输出的回答：各主题决定新文字如何出现",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -423,6 +436,11 @@ export const zh = {
       },
       empty: { title: "空状态", description: "列表或详情为空时的占位文字，可带操作。" },
       loading: { title: "加载", description: "转圈、骨架屏与进度条。" },
+      streaming: {
+        title: "流式输出",
+        description:
+          "助手回答随流到达时怎样显现：通用即时显示，白领按词淡入、带一层微光，极客逐字打出。",
+      },
       charts: {
         title: "图表",
         description:
@@ -736,6 +754,19 @@ export const zh = {
       progressOver: "超出上限",
       progressIndeterminate: "不定进度",
     },
+    streaming: {
+      reply: "助手回答",
+      receiving: "正在接收…",
+      received: "已全部到达",
+      modes: {
+        instant: "即时：文字一到就显示，不加动效",
+        fade: "淡入：按词显现，末尾几行从带强调色微光的渐变里浮现",
+        typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
+      } as Record<StreamReveal, string>,
+      unset: "按即时处理",
+      rate: (perSecond: number) => `每秒约 ${Math.round(perSecond)} 字`,
+      reduced: "已开启减少动态效果，回答到达即显示",
+    },
     charts: {
       parts: {
         primitives: "绘图原语",
@@ -807,11 +838,12 @@ export const zh = {
       },
       ring: "环形仪表",
       ringHint:
-        "一段弧对照预算，按预算状态着色（未超、将超、已超）；未设预算只剩底环；输入框的 12 px 上下文圆环沿用所在处的墨色；多段弧表示各部分占比。",
+        "一段弧对照预算，按预算状态着色（未超、将超、已超）；未设预算只剩底环；多段弧表示各部分占比。输入框的上下文圆环（ContextRing）在 80% 以内取次要墨色，超过 80% 转为提醒色，超过 95% 转为危险色。",
       ringSpend: (percent: number) => `支出占预算 ${percent}%`,
       ringNoBudget: "未设预算",
       ringShares: "各部分占比",
       ringContext: "上下文圆环",
+      ringContextAt: (percent: number) => `上下文已用 ${percent}%`,
       legend: "图例",
       legendHint:
         "图表下方的一行图例：指向某项时其余各项淡出；说明线形的一项不参与高亮。列表图例在标签后列出数值，点击可固定一行。",

@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   GlyphIcon,
+  ICONS,
   ICON_SIZE,
   Md,
   SkeletonList,
@@ -30,8 +31,7 @@ import { useLocale } from "../../state/locale";
 import { buildMemoryList, memoryNavBack, memoryNavForRequest } from "./memory-nav";
 import type { MemoryNavMode, ScopeFiles } from "./memory-nav";
 
-/** Person (User scope), folder (Workspace scope), boxed arrow (open the settings tab), left arrow (back to the list). */
-const USER_ICON = "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z";
+/** Folder (Workspace scope; the User scope is ICONS.user), boxed arrow (open the settings tab), left arrow (back). */
 const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
 const OPEN_SETTINGS_ICON =
   "M14 4h6v6M20 4 10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3";
@@ -40,7 +40,7 @@ const BACK_ICON = "M19 12H5m6-6-6 6 6 6";
 /** The scope glyph + tooltip pair, shared with the memory-changes card's rows. */
 export function scopeGlyph(scope: "user" | "workspace", scopeKey?: string) {
   return {
-    d: scope === "user" ? USER_ICON : FOLDER_ICON,
+    d: scope === "user" ? ICONS.user : FOLDER_ICON,
     title: scope === "user" ? S.memory.userScope : S.chat.memoryScopeWorkspace(scopeKey ?? ""),
   };
 }
@@ -149,7 +149,7 @@ export function ChatMemoryView({
             <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
             <span className="sr-only">{glyph.title}</span>
           </span>
-          <p className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold">
+          <p className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">
             {listedRow?.title ?? target.file}
           </p>
           {listedRow &&
@@ -221,7 +221,7 @@ export function ChatMemoryView({
               <div className="flex items-center gap-2 px-3.5 py-1.5">
                 <span className="shrink-0 text-gray-400">
                   <GlyphIcon
-                    d={group.scope === "user" ? USER_ICON : FOLDER_ICON}
+                    d={group.scope === "user" ? ICONS.user : FOLDER_ICON}
                     size={ICON_SIZE.inlineGlyph}
                   />
                 </span>
@@ -245,7 +245,7 @@ export function ChatMemoryView({
                       className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="flex items-center gap-1.5 truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
+                        <p className="flex items-center gap-1.5 truncate font-mono text-sm font-medium text-gray-800 dark:text-gray-200">
                           {row.changed !== undefined && (
                             <span
                               data-tooltip={S.chat.memoryChangedMark}

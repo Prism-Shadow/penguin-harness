@@ -48,6 +48,7 @@ import {
   PageHeader,
   Skeleton,
   SkeletonCard,
+  Sparkline,
   Textarea,
   TodoNotice,
   UpdatePill,
@@ -70,7 +71,6 @@ import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
-import { ActivitySparkline } from "./activity-sparkline";
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,
@@ -700,10 +700,17 @@ export function AgentsPage() {
                   </div>
                 </div>
 
-                {/* Session activity sparkline (hidden on narrow screens first, giving the horizontal space back to content and buttons) */}
-                <ActivitySparkline
-                  data={a.sessionActivity}
+                {/* Session activity sparkline, GitHub Pulse style: daily active Session counts
+                    against zero with a faint fill, in the success ink (an agent in use is a
+                    healthy one). Hidden on narrow screens first, giving the horizontal space back
+                    to content and buttons. */}
+                <Sparkline
+                  values={a.sessionActivity}
                   label={S.agent.activity(a.sessionActivity.length || 30)}
+                  area
+                  tone="success"
+                  width={100}
+                  height={30}
                   className="hidden shrink-0 md:block"
                 />
 

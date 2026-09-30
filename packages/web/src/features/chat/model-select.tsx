@@ -1,27 +1,26 @@
 /**
- * Model picker pieces, extracted from chat-input.tsx so the Project settings dialog's
- * "new chat defaults" section can offer the same menu the chat composer uses (the panels
- * are mechanical moves; the composer's trigger is unchanged, and a "form" trigger variant
- * is added for dialog hosts — see ModelSelect). Both panels are built on the UI package's
- * PickerList (search box, scroll cap, keyboard navigation, current-entry marker), which
- * chat-input's `/agent` handoff picker shares:
- * - ModelMenuList: the model candidate panel (grouped, key-configured-first, "show all"
- *   expander) shared by the draft dropdown and the in-session `/model` switch picker;
- * - ModelSelect: the dropdown trigger (provider logo + name + chevron), pill or form style.
+ * The model picker bound to the Project's model catalog: the UI package's `ModelSelect` and
+ * `ModelMenuList` draw it (trigger, search, rows, badges, the "show all" row); this module decides
+ * which models they list and in what order, and speaks the app's words. The chat composer, the
+ * Project settings' new-chat defaults, the schedule form, the organization dialogs and the
+ * benchmark dialog all pick a model through it.
+ *
+ * - ModelCatalogMenu: the candidate panel, shared by the draft composer's dropdown and the
+ *   in-session `/model` switch picker;
+ * - ModelCatalogSelect: the trigger with the panel behind it, as the composer's pill or a dialog's
+ *   form field.
+ *
+ * The list mirrors the model library page (visibleChatModels): the page's dragged group order,
+ * a search over id / display name / provider name, and by default only the models with an API
+ * key (hasConfiguredKey — a stored masked key or a masked env fallback, the model page's own
+ * standard; `envKey` is merely the NAME of a fallback env var and doesn't count on its own), with
+ * the selected and the default model always listed even without one. The panel's bottom row
+ * reveals the rest in place; when no model has a key at all, everything is listed directly.
  */
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
-import {
-  Badge,
-  ChevronDown,
-  Dropdown,
-  FormPicker,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  PickerList,
-  ProviderLogo,
-} from "@prismshadow/penguin-ui";
+import { ModelMenuList, ModelSelect } from "@prismshadow/penguin-ui";
+import type { ModelMenuLabels, ModelMenuQuery, ModelOption } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   hasConfiguredKey,
@@ -41,24 +40,74 @@ export function modelLabel(m: ModelInfo): string {
   return m.displayName?.trim() || m.modelId;
 }
 
+/** The key a model goes by in the panel: its (provider, model id) pair. */
+function modelKey(ref: ModelRefDto): string {
+  return `${ref.provider}:${ref.modelId}`;
+}
+
+/** A catalog model as the panel draws it, carrying the model it stands for. */
+interface ModelRow extends ModelOption {
+  model: ModelInfo;
+}
+
+/** The panel's words, read at render time: `S` is a live binding swapped on locale change. */
+function menuLabels(): ModelMenuLabels {
+  return {
+    search: S.models.searchPlaceholder,
+    empty: S.models.noSearchResults,
+    free: S.models.freeBadge,
+    noKey: S.models.noKey,
+    isDefault: S.models.default,
+    showHidden: S.models.showModelsWithoutKey,
+  };
+}
+
 /**
- * Model candidate panel (search box + grouped list + "show all" expander) shared by the
- * draft-state ModelSelect dropdown and the in-session `/model` switch picker. Search and
- * expanded state are internal and reset by remount (both hosts only render the panel while
- * open); the list is capped by an internal scroll (max-h-56) so it never overflows the
- * viewport no matter how many models there are.
- * Dropdown order mirrors the model library page (visibleChatModels): a top quick-search box
- * (the model page's rule — filters by id / display name / provider name); by default only
- * models with an API key are listed (hasConfiguredKey — a stored masked key or a masked env
- * fallback, the same standard as the model page's key status; `envKey` is merely the NAME of a
- * fallback env var and doesn't count on its own), with the selected and the default model
- * always visible even without a key; a muted bottom row reveals the remaining key-less models
- * (marked by a struck-through key icon, with the "no key" text in its title) without closing
- * the menu or changing the selection — when no model has a key at all, everything is listed
- * directly. Rows carry the provider logo, the "Free" badge for zero-cost models, the
- * project-default marker, and the selected checkmark.
+ * The panel's answer for a search and a reveal state: the models to list, in the library's
+ * order, and how many the configured-key filter holds back under that search.
+ *
+ * The model page's dragged group order is read here rather than threaded through every call
+ * site, once per mount (every host renders the panel only while it is open, so opening it
+ * remounts this) — an order changed on that page, in this tab or another, is picked up on the
+ * next open without a reload. Not on every render: the search box re-renders the panel on each
+ * keystroke, and the Project context does so for reasons of its own.
  */
-export function ModelMenuList({
+function useModelMenuQuery(
+  models: ModelInfo[],
+  value: ModelRefDto | null,
+  defaultModel: ModelRefDto | undefined,
+): ModelMenuQuery<ModelRow> {
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+  const groupOrder = useMemo(() => loadModelGroupOrder(projectId), [projectId]);
+  return ({ query, showAll }) => {
+    const pick = { query, selected: value, defaultModel, groupOrder };
+    const visible = visibleChatModels(models, { ...pick, showAll });
+    // Held back = what the full list has under this search that the key filter left out.
+    const all = showAll
+      ? visible.length
+      : visibleChatModels(models, { ...pick, showAll: true }).length;
+    return {
+      options: visible.map((m) => ({
+        key: modelKey(m),
+        provider: m.provider,
+        label: modelLabel(m),
+        free: isFreeModel(m.pricing),
+        noKey: !hasConfiguredKey(m),
+        isDefault: sameModelRef(m, defaultModel),
+        model: m,
+      })),
+      hidden: all - visible.length,
+    };
+  };
+}
+
+/**
+ * The model candidate panel (search box + grouped list + "show all" row), shared by the draft
+ * composer's dropdown and the in-session `/model` switch picker. Search and the reveal reset by
+ * remount: both hosts render it only while open.
+ */
+export function ModelCatalogMenu({
   models,
   value,
   defaultModel,
@@ -70,115 +119,28 @@ export function ModelMenuList({
   defaultModel?: ModelRefDto;
   onPick: (m: ModelInfo) => void;
 }) {
-  const [query, setQuery] = useState("");
-  // Expanded "show all" state: collapses back to key-configured models on each open (remount).
-  const [showAll, setShowAll] = useState(false);
-  // The model page's dragged group order, so "mirrors the model library page" keeps holding
-  // once a user has arranged their groups. Read here rather than threaded through every call
-  // site, once per open (both hosts render the panel only while open, so opening it remounts
-  // this) — an order changed on that page, in this tab or another, is picked up on the next
-  // open without a reload. Not on every render: the search box below re-renders this panel
-  // on each keystroke, and the Project context does so for reasons of its own.
-  const { currentProject } = useProject();
-  const projectId = currentProject?.projectId ?? null;
-  const groupOrder = useMemo(() => loadModelGroupOrder(projectId), [projectId]);
-  const visible = visibleChatModels(models, {
-    showAll,
-    query,
-    selected: value,
-    defaultModel,
-    groupOrder,
-  });
-  // How many models the key filter hides under the current query (0 when expanded): drives the bottom "show all" row.
-  const hiddenCount = showAll
-    ? 0
-    : visibleChatModels(models, {
-        showAll: true,
-        query,
-        selected: value,
-        defaultModel,
-        groupOrder,
-      }).length - visible.length;
+  const view = useModelMenuQuery(models, value, defaultModel);
   return (
-    <PickerList
-      items={visible}
-      itemKey={(m) => `${m.provider}:${m.modelId}`}
-      isCurrent={(m) => sameModelRef(m, value)}
-      query={query}
-      onQueryChange={setQuery}
-      // Quick search: supports model id / display name / provider name
-      searchPlaceholder={S.models.searchPlaceholder}
-      emptyText={S.models.noSearchResults}
-      onPick={onPick}
-      renderRow={(m) => (
-        <>
-          <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
-          {/* Zero-cost rows (all three price buckets 0): a "Free" badge, so free models stand
-              out while picking — in the info tone: a price is a fact, not a warning. */}
-          {isFreeModel(m.pricing) && (
-            <span className="shrink-0">
-              <Badge tone="info">{S.models.freeBadge}</Badge>
-            </span>
-          )}
-          {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
-              struck-through key icon (the "no key" text lives in the title/aria-label). */}
-          {!hasConfiguredKey(m) && (
-            <span
-              role="img"
-              data-tooltip={S.models.noKey}
-              aria-label={S.models.noKey}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
-            >
-              <GlyphIcon d={ICONS.keyOff} size={13} />
-            </span>
-          )}
-          {sameModelRef(m, defaultModel) && (
-            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-              {S.models.default}
-            </span>
-          )}
-        </>
-      )}
-      // Bottom expander row (pinned below the scroll area, mirroring the search box on top):
-      // reveals the models hidden by the configured-key filter in place — the menu stays open
-      // and the selection is untouched.
-      {...(hiddenCount > 0
-        ? {
-            footer: (
-              <div className="border-t border-gray-100 dark:border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => setShowAll(true)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-                >
-                  {S.models.showModelsWithoutKey(hiddenCount)}
-                </button>
-              </div>
-            ),
-          }
-        : {})}
+    <ModelMenuList
+      view={view}
+      currentKey={value ? modelKey(value) : null}
+      labels={menuLabels()}
+      onPick={(row) => onPick(row.model)}
     />
   );
 }
 
 /**
- * Model selector (the chat composer's bottom-toolbar dropdown, also hosted by the Project
- * settings' new-chat-defaults section): the button shows the provider logo + name, and the
- * menu opens **downward** — the draft card is vertically centered with room below. The
- * candidate list itself is the shared ModelMenuList panel (search, key-configured-first
- * grouping, Free badge, "show all" expander — documented there).
- *
- * Two trigger variants, one menu:
- * - "pill" (default): the composer's compact toolbar button — collapses to the logo alone
- *   under the card's own `@container` query, menu right-aligned;
- * - "form": the shared FormPicker (full-width Input/Select-styled trigger, menu left-aligned
- *   under the control), used by every dialog host.
+ * Model selector: the composer's toolbar pill (the draft card has room below, so it opens
+ * downward, docked to the pill's right edge) or a dialog's form field.
  *
  * `emptyLabel` is for the one kind of host where an unpicked model is a decision and not a
- * gap — the organization dialogs' "Project default"; see the prop.
+ * gap — the organization dialogs, where an empty model means "follow the Project's default".
+ * The menu still offers models only, so such a host carries its own way back to the empty
+ * value; here the label is grayed as a placeholder and the provider logo is dropped, since no
+ * provider is being named.
  */
-export function ModelSelect({
+export function ModelCatalogSelect({
   models,
   value,
   defaultModel,
@@ -193,84 +155,37 @@ export function ModelSelect({
   defaultModel?: ModelRefDto;
   onChange: (ref: ModelRefDto) => void;
   disabled: boolean;
-  /** Trigger style: the composer's toolbar pill (default), or a dialog form control (see the header comment). */
+  /** Trigger style: the composer's toolbar pill (default), or a dialog form control. */
   variant?: "pill" | "form";
-  /**
-   * What the trigger reads while nothing is picked, for a host where "nothing" is itself a
-   * choice rather than an unfinished one — the organization dialogs, where an empty model
-   * means "follow the Project's default". The menu still offers models only, so such a host
-   * carries its own way back to the empty value; here the label is grayed as a placeholder
-   * and the provider logo is dropped, since no provider is being named.
-   */
+  /** What the trigger reads while nothing is picked, where "nothing" is itself a choice. */
   emptyLabel?: string;
 }) {
-  const [open, setOpen] = useState(false);
   const current = models.find((m) => sameModelRef(m, value));
   const unset = value === null && emptyLabel !== undefined;
-  // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
+  // Display rule matches the model page's card: display name, or falls back to the upstream id
+  // (grouping is already conveyed by the provider logo).
   const label = current ? modelLabel(current) : (value?.modelId ?? emptyLabel ?? "…");
-  const logo = unset ? null : (
-    <ProviderLogo
-      provider={current?.provider ?? value?.provider ?? "custom"}
-      className="h-4 w-4 shrink-0"
-    />
-  );
-  const menu = (
-    <ModelMenuList
-      models={models}
-      value={value}
-      {...(defaultModel !== undefined ? { defaultModel } : {})}
-      onPick={(m) => {
-        onChange({ provider: m.provider, modelId: m.modelId });
-        setOpen(false);
-      }}
-    />
-  );
-  // Form: the shared full-width trigger (same look as Input/Select), used by every dialog picker.
-  if (variant === "form") {
-    return (
-      <FormPicker
-        size="sm"
-        open={open}
-        setOpen={setOpen}
-        leading={logo}
-        label={label}
-        muted={unset}
-        title={`${S.chat.chooseModel}：${label}`}
-        ariaLabel={S.chat.chooseModel}
-        ariaHaspopup="listbox"
-        disabled={disabled || models.length === 0}
-        menuClass="w-max min-w-56 origin-top-left"
-      >
-        {menu}
-      </FormPicker>
-    );
-  }
-  // Pill: the composer's compact toolbar button — the panel's right edge docks to it; portal
-  // placement then clamps both edges inside the viewport.
   return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      menuClass="w-max min-w-56 origin-top-right"
-      portal={{ direction: "down", align: "right" }}
-      button={
-        <button
-          type="button"
-          data-tooltip={`${S.chat.chooseModel}：${label}`}
-          aria-label={S.chat.chooseModel}
-          disabled={disabled || models.length === 0}
-          onClick={() => setOpen(!open)}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          {logo}
-          {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">{label}</span>
-          <ChevronDown size={ICON_SIZE.caretDense} />
-        </button>
-      }
+    <ModelSelect
+      label={label}
+      provider={unset ? null : (current?.provider ?? value?.provider ?? "custom")}
+      muted={unset}
+      ariaLabel={S.chat.chooseModel}
+      tooltip={`${S.chat.chooseModel}：${label}`}
+      disabled={disabled || models.length === 0}
+      variant={variant}
     >
-      {menu}
-    </Dropdown>
+      {(close) => (
+        <ModelCatalogMenu
+          models={models}
+          value={value}
+          {...(defaultModel !== undefined ? { defaultModel } : {})}
+          onPick={(m) => {
+            onChange({ provider: m.provider, modelId: m.modelId });
+            close();
+          }}
+        />
+      )}
+    </ModelSelect>
   );
 }

@@ -13,11 +13,10 @@ describe("every chart", () => {
   const CHARTS = [
     "features/usage/usage-charts.tsx",
     "features/usage/trend-chart.tsx",
-    "features/benchmark/score-sparkline.tsx",
-    "features/agents/activity-sparkline.tsx",
     "features/traces/timeline-chart.tsx",
     "features/benchmark/benchmark-detail.tsx",
     "features/company/finance-gauge.tsx",
+    "features/company/shared.tsx",
     "features/chat/context-gauge.tsx",
   ];
 
