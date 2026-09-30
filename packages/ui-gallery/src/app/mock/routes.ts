@@ -55,6 +55,7 @@ import type {
   MeResponse,
   MessagesResponse,
   MessagingBindingsResponse,
+  ModelBalanceResponse,
   ModelProtocolDetectResponse,
   ModelsResponse,
   ModelTestResponse,
@@ -110,6 +111,8 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
+// The catalog decides which groups publish a balance, as it does on the server.
+import { providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { dayKey } from "./fixtures";
 import type { UsageDay } from "./fixtures";
@@ -354,6 +357,23 @@ router
       m.isDefault = m.provider === ref.provider && m.modelId === ref.modelId;
     }
     return { defaultModel: ref };
+  })
+  .get("/api/projects/:projectId/models/balance", ({ store, query }): ModelBalanceResponse => {
+    const provider = query.get("provider") ?? "";
+    const fetchedAt = new Date().toISOString();
+    const info = providerInfo(provider);
+    if (info?.balance === undefined) {
+      const message = `The ${provider} group publishes no balance.`;
+      return { ok: false, provider, error: "unsupported", message, fetchedAt };
+    }
+    const keyed = store.f.models.models.some(
+      (m) => m.provider === provider && m.credential?.apiKeyMasked,
+    );
+    if (!keyed) {
+      const message = `The ${info.label} group stores no API key.`;
+      return { ok: false, provider, error: "no_key", message, fetchedAt };
+    }
+    return { ok: true, provider, amount: "110.00", currency: "CNY", fetchedAt };
   })
   .post("/api/projects/:projectId/models/test", (): ModelTestResponse => ({
     ok: true,
