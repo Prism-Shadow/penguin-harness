@@ -1,13 +1,39 @@
 /**
- * Unit tests for the Workspace files service: directory-listing order, read/write,
- * move / delete / search, path confinement (`..` traversal and symlink escape), size-limit
- * protection, batch existence checks (files/stat); the desktop-only files/reveal route; and
- * the Agent delete route (default_agent cannot be deleted, owner-only, directory and index
- * cleanup).
+ * A Session's Workspace files: the service and the routes over it.
+ *
+ * The service:
+ * - Listings put directories first, sorted by name, and drill into subdirectories (a Workspace
+ *   at the filesystem root included); reads carry content and type; writes overwrite and create
+ *   missing parents; `..`, absolute paths and symlink escapes are refused, as are files past the
+ *   size limit.
+ * - A write, move or delete holds to the version marker a read returned: a stale one changes
+ *   nothing, no marker only creates a file that was never there, and a directory has none.
+ * - A move renames, crosses directories and creates the destination parent, refusing an
+ *   occupied destination, a missing source and its own path; a delete refuses a directory and a
+ *   missing file.
+ * - A search finds a file no listing reached, reported as a tree row, by name rather than path,
+ *   shallow matches and directories first, capped and saying so; an empty or oversize query is
+ *   refused.
+ *
+ * The routes:
+ * - files/content serves HTML as text/plain inline, as text/html under a CSP sandbox for a
+ *   preview and with its real type for a download; SVG inline under a sandbox CSP; never cached;
+ *   the read's version is demanded back, so a save over an Agent's rewrite is a 409.
+ * - files/stat answers existing paths in order, deduplicated, counting missing, directory and
+ *   out-of-bounds paths as absent, always 200; malformed bodies are 400.
+ * - files/move, files/search and the files/content delete behave as the service does (409
+ *   target_exists, 409 file_changed); outsiders get 404 everywhere, with no Workspace touched.
+ * - Deleting an Agent removes its directory and list entry; default_agent is a 409; outsiders
+ *   get 404.
+ * - files/reveal opens the canonical path for the desktop shell's own window only (a browser
+ *   session is desktop_shell_only; outside desktop mode the route does not exist), resolves the
+ *   path as a read does, and reports an opener that cannot start as 502 reveal_failed.
+ *
+ * The route describes share one app each; every case works in a Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   SEARCH_MAX_HITS,
   SEARCH_MAX_QUERY_LEN,
@@ -442,14 +468,23 @@ describe("files/stat route (batch existence check)", () => {
   let sessionId: string;
   let workspace: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
     const b = await provisionUser(t.app, "outsider");
     owner = apiClient(t.app, a.cookie);
     outsider = apiClient(t.app, b.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner-stat", name: "project" })
+      await owner.post("/api/projects", { projectId: `owner-stat_${projects}`, name: "project" })
     ).json()) as ProjectCreateResponse;
     const projectId = created.project.projectId;
     await owner.put(`/api/projects/${projectId}/models`, {
@@ -464,9 +499,6 @@ describe("files/stat route (batch existence check)", () => {
     await fs.mkdir(path.join(sess.session.workspace, "sub"));
     await fs.writeFile(path.join(sess.session.workspace, "a.txt"), "A");
     await fs.writeFile(path.join(sess.session.workspace, "sub", "b.md"), "B");
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("files/content on html: inline stays text/plain; preview=1 keeps text/html under a CSP sandbox; download keeps the real type with no CSP", async () => {
@@ -610,14 +642,23 @@ describe("files/move, files/search and the files/content delete", () => {
   let sessionId: string;
   let workspace: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
     const b = await provisionUser(t.app, "outsider");
     owner = apiClient(t.app, a.cookie);
     outsider = apiClient(t.app, b.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner-ops", name: "project" })
+      await owner.post("/api/projects", { projectId: `owner-ops_${projects}`, name: "project" })
     ).json()) as ProjectCreateResponse;
     const projectId = created.project.projectId;
     await owner.put(`/api/projects/${projectId}/models`, {
@@ -632,9 +673,6 @@ describe("files/move, files/search and the files/content delete", () => {
     await fs.mkdir(path.join(workspace, "sub"));
     await fs.writeFile(path.join(workspace, "a.txt"), "A");
     await fs.writeFile(path.join(workspace, "sub", "b.md"), "B");
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("files/move: 204 and the file is where it was sent; an occupied destination is 409 target_exists; a directory is a 400", async () => {
@@ -735,19 +773,25 @@ describe("agent delete route", () => {
   let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
     const b = await provisionUser(t.app, "outsider");
     owner = apiClient(t.app, a.cookie);
     outsider = apiClient(t.app, b.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner-ws", name: "project" })
+      await owner.post("/api/projects", { projectId: `owner-ws_${projects}`, name: "project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("owner deletes an Agent: 204, the directory and list entry disappear; default_agent 409; outsiders 404", async () => {
