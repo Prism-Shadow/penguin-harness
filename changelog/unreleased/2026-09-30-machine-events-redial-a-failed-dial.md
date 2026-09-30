@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [Myriad-Dreamin/penguin-harness#129](https://github.com/Myriad-Dreamin/penguin-harness/pull/129)
 
 [中文版](2026-09-30-machine-events-redial-a-failed-dial.zh.md)
 
