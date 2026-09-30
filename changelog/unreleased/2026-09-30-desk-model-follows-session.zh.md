@@ -3,7 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `server`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#915](https://github.com/Prism-Shadow/penguin-harness/pull/915)
 
 [English](2026-09-30-desk-model-follows-session.md)
 
