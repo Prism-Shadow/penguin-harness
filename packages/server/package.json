@@ -46,6 +46,10 @@
       "types": "./dist/auth-token.d.ts",
       "import": "./dist/auth-token.js"
     },
+    "./session-scope": {
+      "types": "./dist/auth/session-scope.d.ts",
+      "import": "./dist/auth/session-scope.js"
+    },
     "./secret-file": {
       "types": "./dist/secret-file.d.ts",
       "import": "./dist/secret-file.js"

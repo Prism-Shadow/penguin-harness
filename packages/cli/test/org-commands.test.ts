@@ -9,6 +9,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  carriedClaims,
+  checkClaims,
+  sessionScope,
+} from "@prismshadow/penguin-server/session-scope";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
 import { FakeServer } from "./fake-server.js";
@@ -460,6 +465,7 @@ describe("penguin org calendar", () => {
     const body = lastRequest("POST", "/calendar")?.body as { startAt: string };
     expect(body).toMatchObject({
       agentId: "dev1",
+      callerAgentId: "dev1",
       name: "standup",
       enabled: true,
       prompt: "check the board",
@@ -558,6 +564,7 @@ describe("penguin org calendar", () => {
       prompt: "original",
       startAt: "2026-09-08T09:00:00.000Z",
       period: "12h",
+      agentId: "dev1",
     });
     expect(await cli(["org", "calendar", "update", "standup", "--enable", "--disable"])).toBe(1);
 
@@ -902,6 +909,76 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     });
     expect(await cli(["org", "ticket", "show", "2026-09-02-nope"])).toBe(1);
     expect(err()).toContain("ticket_not_found");
+  });
+});
+
+describe("penguin org writes under a session's own credential", () => {
+  // What the server's session gate (auth/session-scope.ts) does with each request: the route
+  // table's verdict, then — where the row checks claims — the identity the request carries.
+  const credential = {
+    projectId: "default_project",
+    agentId: "dev1",
+    sessionId: DESK_SESSION,
+    orgId: "acme",
+  };
+  const lookups = {
+    sessionOf: (id: string) =>
+      id === DESK_SESSION ? { projectId: "default_project", agentId: "dev1" } : null,
+    createdBy: () => undefined,
+  };
+  const refusal = (r: { method: string; path: string; search: string; body?: unknown }) => {
+    const q = new URLSearchParams(r.search);
+    const decision = sessionScope(r.method, r.path, q, credential, lookups);
+    if (decision.kind === "deny") return decision.message;
+    if (decision.claims === undefined) return null;
+    return checkClaims(
+      carriedClaims(decision.claims, q, r.body ?? null),
+      credential,
+      lookups,
+      true,
+    );
+  };
+
+  it("every write carries a caller identity the gate accepts", async () => {
+    server.agents.push({
+      agentId: "ops1",
+      name: "Ops",
+      description: "",
+      sessionCount: 0,
+      activeSessionCount: 0,
+      sessionActivity: [],
+    });
+    server.addEmployee("acme", { agentId: "dev1", title: "Developer" });
+    server.addSession({ sessionId: DESK_SESSION, agentId: "dev1" });
+    server.addTicket("acme", { ticketId: "2026-09-02-site", title: "Site", owner: "agent:dev1" });
+    process.env.PENGUIN_SESSION_ID = DESK_SESSION;
+    process.env.PENGUIN_AGENT_ID = "dev1";
+
+    const commands = [
+      ["hire", "--agent-id", "ops1", "--title", "Ops", "--reports-to", "dev1"],
+      ["employee", "set", "ops1", "--title", "Operations"],
+      ["desk", "renew", "dev1"],
+      ["calendar", "add", "standup", "--agent-id", "ops1", "--prompt", "p", "--start-at", "now"],
+      ["calendar", "update", "standup", "--agent-id", "ops1", "--period", "12h"],
+      ["calendar", "rm", "standup", "--agent-id", "ops1"],
+      ["handbook", "write", "conventions.md", "-m", "# Conventions"],
+      ["handbook", "rm", "conventions.md"],
+      ["leave", "ops1"],
+      ["ticket", "move", "2026-09-02-site", "--to", "in_progress"],
+      ["ticket", "progress", "2026-09-02-site", "-m", "half done"],
+    ];
+    for (const command of commands) {
+      expect(await cli(["org", ...command]), `${command.join(" ")}: ${err()}`).toBe(0);
+    }
+
+    const writes = server.requests.filter((r) => r.method !== "GET");
+    expect(writes).toHaveLength(commands.length);
+    for (const r of writes) {
+      expect(refusal(r), `${r.method} ${r.path}${r.search}`).toBeNull();
+    }
+    // The gate still refuses the same write without an identity: the check above is not vacuous.
+    const bare = writes.find((w) => w.method === "PUT" && w.path.endsWith("/conventions.md"))!;
+    expect(refusal({ ...bare, body: { content: "# Conventions" } })).toMatch(/must carry/);
   });
 });
 

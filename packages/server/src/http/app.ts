@@ -14,23 +14,14 @@ import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
-import { agentKey, checkClaims, reachesSession, sessionScope } from "../auth/session-scope.js";
-import type { CarriedClaims, ScopeLookups } from "../auth/session-scope.js";
-
-/** The identity claims in a query or a JSON body: `sessionId`, and the Agent under `field`. */
-function claimOf(
-  source: URLSearchParams | Record<string, unknown>,
-  field: "agentId" | "callerAgentId",
-): CarriedClaims {
-  const get = (k: string): unknown =>
-    source instanceof URLSearchParams ? source.get(k) : source[k];
-  const out: CarriedClaims = {};
-  const sessionId = get("sessionId");
-  const agentId = get(field);
-  if (typeof sessionId === "string" && sessionId !== "") out.sessionId = sessionId;
-  if (typeof agentId === "string" && agentId !== "") out.agentId = agentId;
-  return out;
-}
+import {
+  agentKey,
+  carriedClaims,
+  checkClaims,
+  reachesSession,
+  sessionScope,
+} from "../auth/session-scope.js";
+import type { ScopeLookups } from "../auth/session-scope.js";
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.
@@ -242,15 +233,12 @@ export class HttpModule {
       if (decision.kind === "deny") throw new HttpError(403, "session_scope", decision.message);
       if (decision.claims !== undefined) {
         const write = method !== "GET" && method !== "HEAD";
-        const field = decision.claims === "caller" ? "agentId" : "callerAgentId";
-        const carried: CarriedClaims = claimOf(url.searchParams, field);
+        let body: unknown = null;
         if (write && c.req.header("content-type")?.toLowerCase().startsWith("application/json")) {
           // Hono caches the parsed body, so the handler reads the same value again.
-          const body: unknown = await c.req.json().catch(() => null);
-          if (body !== null && typeof body === "object") {
-            Object.assign(carried, claimOf(body as Record<string, unknown>, field));
-          }
+          body = await c.req.json().catch(() => null);
         }
+        const carried = carriedClaims(decision.claims, url.searchParams, body);
         const refused = checkClaims(carried, claims, lookups, write);
         if (refused !== null) throw new HttpError(403, "session_scope", refused);
       }

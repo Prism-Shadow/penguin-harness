@@ -225,6 +225,39 @@ export function sessionScope(
   return deny(`This session's credential does not reach ${method} ${path}.`);
 }
 
+/** The identity claims in a query or a JSON body: `sessionId`, and the Agent under `field`. */
+function claimOf(
+  source: URLSearchParams | Record<string, unknown>,
+  field: "agentId" | "callerAgentId",
+): CarriedClaims {
+  const get = (k: string): unknown =>
+    source instanceof URLSearchParams ? source.get(k) : source[k];
+  const out: CarriedClaims = {};
+  const sessionId = get("sessionId");
+  const agentId = get(field);
+  if (typeof sessionId === "string" && sessionId !== "") out.sessionId = sessionId;
+  if (typeof agentId === "string" && agentId !== "") out.agentId = agentId;
+  return out;
+}
+
+/**
+ * The identity a request carries under a row's `claims` mode: the query's, then the JSON
+ * body's on top (pass `null` when there is none). Exported so the CLI's tests can hold each
+ * of its writes to the same reading.
+ */
+export function carriedClaims(
+  mode: "caller" | "caller-session",
+  query: URLSearchParams,
+  body: unknown,
+): CarriedClaims {
+  const field = mode === "caller" ? "agentId" : "callerAgentId";
+  const carried = claimOf(query, field);
+  if (body !== null && typeof body === "object") {
+    Object.assign(carried, claimOf(body as Record<string, unknown>, field));
+  }
+  return carried;
+}
+
 /**
  * The identity a request claims must be the credential's own: the claimed Agent is the
  * credential's Agent and the claimed session one of its sessions. A write that claims neither

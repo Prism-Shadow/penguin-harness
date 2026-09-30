@@ -30,6 +30,9 @@ export default defineConfig({
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
     "auth-token": "src/auth-token.ts",
+    // "./session-scope": the session credential's pure route table and claim checks, which the
+    // CLI's tests hold every `penguin org` write to.
+    "auth/session-scope": "src/auth/session-scope.ts",
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
     "version-report": "src/version-report.ts",
