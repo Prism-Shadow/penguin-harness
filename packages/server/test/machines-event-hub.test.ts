@@ -6,6 +6,7 @@
  * gives one tab ONE stream whatever the machine count, every event tagged with its machine.
  */
 import http from "node:http";
+import type { Duplex } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
@@ -26,11 +27,23 @@ interface ScriptedCall {
 
 /**
  * A machine's socket endpoint, scripted: it opens every call it is given, records it, and pushes
- * whatever the test says — an event with an id, or the beat its `/api/events` writes itself.
+ * whatever the test says — an event with an id, or the beat its `/api/events` writes itself. It
+ * can also go dark: its sockets drop, and a dial reaches it but never gets the handshake answered.
  */
 async function machine(options: { beatMs?: number } = {}) {
   const server = http.createServer();
-  const wss = new WebSocketServer({ server });
+  const wss = new WebSocketServer({ noServer: true });
+  let dark = false;
+  let upgrades = 0;
+  const unanswered: Duplex[] = [];
+  server.on("upgrade", (req, socket, head) => {
+    upgrades += 1;
+    if (dark) {
+      unanswered.push(socket);
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  });
   const connections: WebSocket[] = [];
   const calls: ScriptedCall[] = [];
   const timers = new Map<WebSocket, ReturnType<typeof setInterval>>();
@@ -63,6 +76,22 @@ async function machine(options: { beatMs?: number } = {}) {
     port,
     connections,
     eventCalls,
+    /** How many socket dials reached this machine, answered or not. */
+    get upgrades() {
+      return upgrades;
+    },
+    /**
+     * Goes dark (the link to it is down, the way `no socket handshake in … ms` reads): every
+     * socket it holds drops, and a dial reaches it without its handshake ever being answered.
+     */
+    goDark() {
+      dark = true;
+      for (const ws of connections) ws.terminate();
+    },
+    /** Comes back: dials from now on are answered (one already waiting runs out its deadline). */
+    comeBack() {
+      dark = false;
+    },
     /** Waits until this machine is carrying `count` `/api/events` streams (the hub dials as it attaches). */
     async waitForCalls(count: number, ms = 3_000): Promise<void> {
       const until = Date.now() + ms;
@@ -90,6 +119,7 @@ async function machine(options: { beatMs?: number } = {}) {
     },
     close: () =>
       new Promise<void>((resolve) => {
+        for (const socket of unanswered.splice(0)) socket.destroy();
         for (const timer of timers.values()) clearInterval(timer);
         for (const ws of connections) ws.terminate();
         wss.close(() => server.close(() => resolve()));
@@ -168,6 +198,14 @@ function setup() {
   });
   const relay = new MachineSocketRelay(log, { sockets, events: hub });
   return { lines, log, sockets, hub, relay };
+}
+
+/** Polls until the condition holds or the time is up; the assertion after it says which. */
+async function waitUntil(condition: () => boolean, ms = 3_000): Promise<void> {
+  const until = Date.now() + ms;
+  while (!condition() && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 const targetOf = (port: number) => ({
@@ -376,6 +414,88 @@ describe("the machine event hub", () => {
     const staleTap = new Tap(stale.body!);
     expect((await staleTap.waitFor(1))[0]?.data).toBe('{"type":"resync_required"}');
   });
+
+  it("keeps dialling a machine a tab holds after a dial fails, and resumes it from its last event id", async () => {
+    const m = await machine();
+    stops.push(m.close);
+    const { hub, sockets, relay, lines } = setup();
+    const failures = () => lines.filter((line) => line.includes("socket to mA failed"));
+    const sources: MachineEventSource[] = [{ machineId: "mA", target: targetOf(m.port) }];
+    const tab = machineEventsStream(hub, ["mA"], sources, null, undefined, { heartbeatMs: 40 });
+    const tap = new Tap(tab.body!);
+    stops.push(() => tap.close());
+    await m.waitForCalls(1);
+    m.emit("1-1", { type: "credentials_updated" });
+    await waitUntil(() => tap.frames("machine_event").length === 1);
+
+    // The link goes down: the socket drops, and every dial after it times out unanswered.
+    m.goDark();
+    await waitUntil(() => failures().length > 0);
+    // A reader that re-issues on its own (one machine's stream) is still answered at once...
+    const own = await relay.stream("mA", targetOf(m.port), {
+      path: "/api/events",
+      lastEventId: null,
+    });
+    expect(own.status).toBe(502);
+    // ...while the tab's hold keeps the hub dialling: well past one dial deadline, more dials
+    // arrive, and the same failure is logged once for the whole run, not once per dial.
+    const dialsWhileDark = m.upgrades;
+    await waitUntil(() => m.upgrades >= dialsWhileDark + 3, 5_000);
+    expect(m.upgrades).toBeGreaterThanOrEqual(dialsWhileDark + 3);
+    expect(failures()).toHaveLength(1);
+    expect(hub.subscriptions).toBe(1);
+    expect(tap.closed).toBe(false);
+
+    // The link comes back: the next dial connects on its own, and the stream resumes from the
+    // machine's last event id, so the tab hears what the machine says next.
+    m.comeBack();
+    await m.waitForCalls(2, 5_000);
+    expect(m.eventCalls()).toHaveLength(2);
+    expect(m.eventCalls()[1]?.headers["last-event-id"]).toBe("1-1");
+    expect(sockets.fact("mA")).toMatchObject({ state: "connected" });
+    m.emit("1-2", { type: "session_created", projectId: "p", agentId: "a", sessionId: "s" });
+    await waitUntil(() => tap.frames("machine_event").length === 2);
+    expect(JSON.parse(tap.frames("machine_event")[1]!.data)).toEqual({
+      machineId: "mA",
+      event: { type: "session_created", projectId: "p", agentId: "a", sessionId: "s" },
+    });
+    expect(failures()).toHaveLength(1);
+
+    // The tab goes away: nobody holds the machine, and the hub stops dialling it.
+    await tap.close();
+    await waitUntil(() => hub.subscriptions === 0);
+    expect(hub.subscriptions).toBe(0);
+  }, 15_000);
+
+  it("re-reads the machine's connection before dialling it again for a tab", async () => {
+    const old = await machine();
+    const replaced = await machine();
+    stops.push(old.close, replaced.close);
+    const { hub } = setup();
+    // The ssh session the first dial rode is replaced: this server holds no connection for a
+    // while, then a new one (another session, here another port).
+    let asked = 0;
+    const retarget = async () => {
+      asked += 1;
+      return asked < 3 ? null : { ...targetOf(replaced.port), session: 2 };
+    };
+    const sources: MachineEventSource[] = [
+      { machineId: "mA", target: targetOf(old.port), retarget },
+    ];
+    const tab = machineEventsStream(hub, ["mA"], sources, null, undefined, { heartbeatMs: 40 });
+    const tap = new Tap(tab.body!);
+    stops.push(() => tap.close());
+    await old.waitForCalls(1);
+    old.emit("1-1", { type: "credentials_updated" });
+    await waitUntil(() => tap.frames("machine_event").length === 1);
+
+    old.goDark();
+    await replaced.waitForCalls(1, 5_000);
+    expect(asked).toBe(3);
+    expect(replaced.eventCalls()[0]?.headers["last-event-id"]).toBe("1-1");
+    // No dial went to the old session after the one that found it dark.
+    expect(old.upgrades).toBe(1);
+  }, 15_000);
 
   it("reports what each machine's socket is doing, for the Machines page", async () => {
     const m = await machine();

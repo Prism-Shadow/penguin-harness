@@ -108,11 +108,10 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       const machineId = machine.machineId;
       if (machine.local || machineId === null || machine.connection === null) continue;
       watched.push(machineId);
+      // Also what the hub re-reads when it dials this machine again after a failed dial.
+      const retarget = () => deps.machines.proxyTarget(machineId).catch(() => null);
       targets.push(
-        deps.machines
-          .proxyTarget(machineId)
-          .then((target) => (target === null ? null : { machineId, target }))
-          .catch(() => null),
+        retarget().then((target) => (target === null ? null : { machineId, target, retarget })),
       );
     }
     const sources = Promise.all(targets).then((resolved) =>
