@@ -503,10 +503,10 @@ export class WorkspaceFilesService implements WorkspaceFiles {
    * missing file is a change like any other (ENOENT → the same 409), and a refused write
    * must not leave an empty file behind.
    *
-   * Resolves to the version the write produced, read off the same handle once the bytes are
-   * down: the marker the caller's next conditional write of this file carries. Reading it back
-   * with a second request instead would adopt a rewrite landing between the two as the
-   * caller's own, and the next save would silently overwrite it.
+   * Resolves to the version the write produced, read as soon as the bytes are down: the marker
+   * the caller's next conditional write of this file carries. Reading it back with a second
+   * request instead would adopt a rewrite landing between the two as the caller's own, and the
+   * next save would silently overwrite it.
    */
   async write(workspace: string, rel: string, data: Buffer, ifVersion?: string): Promise<string> {
     if (rel === "" || rel.endsWith("/")) throw badRequest("path must be a file path.");
@@ -533,6 +533,7 @@ export class WorkspaceFilesService implements WorkspaceFiles {
       if (code === "EISDIR") throw badRequest("path is a directory.");
       throw err;
     }
+    let written: Stats;
     try {
       if (conditional) {
         if (fileVersion(await handle.stat()) !== ifVersion) throw fileChanged();
@@ -541,10 +542,15 @@ export class WorkspaceFilesService implements WorkspaceFiles {
         await handle.truncate(0);
       }
       await handle.writeFile(data);
-      return fileVersion(await handle.stat());
+      written = await handle.stat();
     } finally {
       await handle.close();
     }
+    // Windows may stamp a write's time when its handle closes rather than at the write, so there
+    // the version is read back once the handle is closed — the one a later read reports. lstat:
+    // the path is not followed anywhere. Elsewhere the open handle's own stat is exact, with no
+    // room for another writer between the bytes and the read.
+    return fileVersion(process.platform === "win32" ? await fs.lstat(file) : written);
   }
 
   /**
