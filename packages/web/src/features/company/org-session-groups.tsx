@@ -34,7 +34,9 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  NAV_FILL,
   SkeletonList,
+  railItemClass,
   toastError,
   toastSuccess,
   useRowContextMenu,
@@ -68,7 +70,7 @@ import type { OrgDeskRow } from "./org-sessions";
  */
 const rowSurface = (active: boolean) =>
   `group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
-    active ? "bg-gray-200/70 dark:bg-gray-800" : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
+    active ? NAV_FILL.selected : NAV_FILL.hover
   }`;
 
 /** The row's own button, at the channel rows' density so the whole sidebar reads as one list. */
@@ -364,7 +366,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             aria-label={name}
             disabled={opening === d.agentId}
             onClick={() => void openDesk(d.agentId, d.sessionId)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 disabled:opacity-60 dark:hover:bg-gray-800"
+            className={`${railItemClass()} disabled:opacity-60`}
           >
             <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
             {running && (

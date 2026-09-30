@@ -49,6 +49,7 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
+  ResizeHandle,
   usePointerDrag,
 } from "@prismshadow/penguin-ui";
 import type { DockPickerChoice, DockTabItem } from "@prismshadow/penguin-ui";
@@ -323,32 +324,25 @@ export function DockPanel({
   // dock — the ref is how both handles reach the box they resize.
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const resizerDragProps = usePointerDrag<object>({
-    threshold: 0,
-    begin: (event) => {
-      event.preventDefault(); // no text selection while dragging the boundary
-      setResizing(true);
-      return {};
-    },
-    onMove: (event) => {
-      const pane = rootRef.current?.getBoundingClientRect();
-      if (!pane) return;
-      if (horizontal) {
-        // The ratio's basis is the chat page column ([data-dock-host]), the same box the
-        // rendered height is computed from below.
-        const host = document.querySelector("[data-dock-host]")?.getBoundingClientRect();
-        if (!host || host.height === 0) return;
-        setBottomRatio((pane.bottom - event.clientY) / host.height);
-      } else {
-        setPanelWidth(pane.right - event.clientX);
-      }
-    },
-    onEnd: () => {
-      setResizing(false);
-      if (!horizontal) persistPanelWidth(); // once per drag, not per frame
-    },
-    onCancel: () => setResizing(false),
-  });
+  /** One move of a boundary drag: the pointer's position, as the dock's new size. */
+  const resizeTo = (event: PointerEvent): void => {
+    const pane = rootRef.current?.getBoundingClientRect();
+    if (!pane) return;
+    if (horizontal) {
+      // The ratio's basis is the chat page column ([data-dock-host]), the same box the
+      // rendered height is computed from below.
+      const host = document.querySelector("[data-dock-host]")?.getBoundingClientRect();
+      if (!host || host.height === 0) return;
+      setBottomRatio((pane.bottom - event.clientY) / host.height);
+    } else {
+      setPanelWidth(pane.right - event.clientX);
+    }
+  };
+  const resizeEnd = (committed: boolean): void => {
+    setResizing(false);
+    // Once per drag, not per frame; an abandoned drag stores nothing.
+    if (committed && !horizontal) persistPanelWidth();
+  };
 
   // The bottom dock's height in PIXELS: ratio × the measured chat column, with the same
   // clamps the drag applies. Pixels rather than a CSS percentage so the expand/collapse
@@ -618,34 +612,19 @@ export function DockPanel({
     </ConfirmModal>
   );
 
-  // The boundary handle, drawn here until the package's ResizeHandle replaces it: on the
-  // bottom dock an overlay straddling the top edge (it costs no height), on the right dock a
-  // layout sibling (it must cost real width).
-  const handle = horizontal ? (
-    <div
+  // The boundary handle: on the bottom dock an overlay straddling the top edge (it costs no
+  // height), on the right dock a layout sibling (it must cost real width). The store clamps
+  // the size a drag asks for.
+  const handle = (
+    <ResizeHandle
       data-testid="dock-resizer"
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label={S.dock.resize}
-      data-tooltip={S.dock.resize}
-      {...resizerDragProps}
-      onDoubleClick={onResizerDoubleClick}
-      className={`absolute -top-[3px] left-0 right-0 z-20 h-1.5 cursor-ns-resize transition-colors duration-150 ${
-        resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
-      }`}
-    />
-  ) : (
-    <div
-      data-testid="dock-resizer"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={S.dock.resize}
-      data-tooltip={S.dock.resize}
-      {...resizerDragProps}
-      onDoubleClick={onResizerDoubleClick}
-      className={`w-1.5 shrink-0 cursor-col-resize transition-colors duration-150 ${
-        resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
-      }`}
+      axis={horizontal ? "y" : "x"}
+      edge={horizontal ? "start" : undefined}
+      label={S.dock.resize}
+      onResizeStart={() => setResizing(true)}
+      onResize={resizeTo}
+      onResizeEnd={resizeEnd}
+      onReset={onResizerDoubleClick}
     />
   );
 
