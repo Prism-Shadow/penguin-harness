@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { HotResources } from "@prismshadow/penguin-hmr";
 import { PLUGINS_RESOURCE_ID, PluginHost, pluginHostFrom } from "../src/plugin/host.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 import type { ClassPackage } from "./plugin-fixtures.js";
 import { loadPluginHost } from "../src/plugin/loader.js";
 import type { LoadedPlugin } from "../src/plugin/host.js";
@@ -30,7 +30,7 @@ async function rootAsking(specifiers: string[]): Promise<string> {
   return root;
 }
 
-/** A package in an assets directory's `plugins/` prefix, named in its manifest — what a push ships. */
+/** A package in an assets directory's `plugins/` prefix, listed in its index — what a push ships. */
 async function writeShipped(assets: string, pkg: ClassPackage): Promise<void> {
   const prefix = path.join(assets, "plugins");
   await writeClassPackage(path.join(prefix, "node_modules", ...pkg.name.split("/")), pkg);
@@ -38,6 +38,7 @@ async function writeShipped(assets: string, pkg: ClassPackage): Promise<void> {
     path.join(prefix, "package.json"),
     JSON.stringify({ name: "prefix", private: true, dependencies: { [pkg.name]: "1.0.0" } }),
   );
+  await writeShippedIndex(prefix);
 }
 
 /** An entry as an earlier App would have left it: one module, already imported. */

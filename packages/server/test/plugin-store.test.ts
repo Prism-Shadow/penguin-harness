@@ -9,10 +9,10 @@ import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   fetchIntoStore,
-  importPrefix,
   PluginIntegrityMismatch,
   pluginStoreDir,
   readStore,
+  storePackage,
 } from "../src/plugin/store.js";
 import { archiveIntegrity, packageIntegrity } from "../../../scripts/plugin-entry.mjs";
 
@@ -38,7 +38,8 @@ async function write(base: string, files: Record<string, string>, mode = 0o644):
 
 /**
  * An npm prefix the way build-plugins.mjs leaves one: its own manifest naming what it ships,
- * the plugin under node_modules, and the plugin's dependency hoisted beside it.
+ * the plugin under node_modules, and the plugin's dependency hoisted beside it. Answers the
+ * plugin's directory.
  */
 async function prefix(
   at: string,
@@ -65,7 +66,12 @@ async function prefix(
     },
     mode,
   );
-  return at;
+  return path.join(at, "node_modules", "@acme", "sandbox-x");
+}
+
+/** Stores the plugin of a prefix made by `prefix`. */
+async function store(at: string, options?: Parameters<typeof prefix>[1]) {
+  return storePackage(root, await prefix(at, options), at);
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -105,8 +111,7 @@ describe("plugin store", () => {
   });
 
   it("stores a package as one entry keyed by its content, its dependencies inside it", async () => {
-    const { stored } = await importPrefix(root, await prefix(path.join(dir, "a")), "builtin");
-    const entry = stored[0]!;
+    const entry = await store(path.join(dir, "a"));
     expect(entry.dir).toBe(
       path.join(pluginStoreDir(root), "@acme", "sandbox-x", "1.0.0", entry.integrity.slice(7, 23)),
     );
@@ -119,25 +124,20 @@ describe("plugin store", () => {
 
     // The same content from another source, with other file modes, is the same entry; other
     // content under the same version, or another version, is another.
-    const again = await importPrefix(
-      root,
-      await prefix(path.join(dir, "b"), { mode: 0o664 }),
-      "push",
-    );
-    expect(again.stored[0]!.integrity).toBe(entry.integrity);
-    await importPrefix(root, await prefix(path.join(dir, "c"), { body: "x" }), "push");
-    await importPrefix(root, await prefix(path.join(dir, "d"), { version: "1.1.0" }), "push");
+    const again = await store(path.join(dir, "b"), { mode: 0o664 });
+    expect(again.integrity).toBe(entry.integrity);
+    await store(path.join(dir, "c"), { body: "x" });
+    await store(path.join(dir, "d"), { version: "1.1.0" });
     expect((await readStore(root)).map((r) => r.version)).toEqual(["1.0.0", "1.0.0", "1.1.0"]);
   });
 
   it("an entry without its completion marker does not exist, and the next write replaces it", async () => {
-    const { stored } = await importPrefix(root, await prefix(path.join(dir, "a")), "builtin");
-    const entry = stored[0]!;
+    const entry = await store(path.join(dir, "a"));
     await fs.rm(path.join(entry.dir, ".stored"));
     await fs.writeFile(path.join(entry.dir, "package", "dist", "index.js"), "half written");
     expect(await readStore(root)).toEqual([]);
 
-    await importPrefix(root, await prefix(path.join(dir, "b")), "push");
+    await store(path.join(dir, "b"));
     expect(await fs.readFile(path.join(entry.dir, "package", "dist", "index.js"), "utf8")).toBe(
       "export default {};",
     );

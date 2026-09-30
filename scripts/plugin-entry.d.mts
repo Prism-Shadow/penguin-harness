@@ -4,7 +4,6 @@
  * and hash it one way.
  */
 export declare const MANIFEST_FILE: string;
-export declare const LOCK_FILE: string;
 export declare const PACKAGE_DIR: string;
 export declare const INDEX_FILE: string;
 export declare const INTEGRITY: RegExp;
@@ -60,7 +59,6 @@ export declare function layOutEntry(
   prefixDir: string,
   options: {
     stringifyToml: (value: Record<string, unknown>) => string;
-    lock?: string;
     check?: (entry: { name: string; version: string; integrity: string }) => void;
   },
 ): Promise<{ name: string; version: string; integrity: string; manifest: EntryManifest }>;

@@ -364,7 +364,7 @@ export class NpmPluginPackages implements PluginPackages {
 
   /** Library content stays in its prefix; server modules load only from an activated store entry. */
   private async store(root: string, name: string, expected?: string): Promise<void> {
-    const { storePackage, rebuildStoreIndex } = await import("./store.js");
+    const { storePackage } = await import("./store.js");
     const prefix = pluginsPrefix(root);
     const lock = await fs
       .readFile(path.join(prefix, "package-lock.json"), "utf8")
@@ -373,7 +373,6 @@ export class NpmPluginPackages implements PluginPackages {
       lock,
       expected,
     });
-    await rebuildStoreIndex(root);
   }
 
   remove(root: string, name: string): Promise<void> {

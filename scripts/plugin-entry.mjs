@@ -4,8 +4,10 @@
  *
  *   <npm name>/<version>/<first 16 hex digits of its integrity>/
  *     manifest.toml      the index manifest, `integrity` required
- *     package-lock.json  the lock of the package's nested dependencies
  *     package/           the package, every dependency it needs inside its own node_modules
+ *
+ * The index repository's entries also carry a `package-lock.json`; nothing on a machine reads
+ * one, so neither the build nor the store writes it.
  *
  * Plain JavaScript because scripts/build-plugins.mjs runs it directly and the server bundles
  * it (packages/server/src/plugin/store.ts); the types are in plugin-entry.d.mts. One copy, so
@@ -34,7 +36,6 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 export const MANIFEST_FILE = "manifest.toml";
-export const LOCK_FILE = "package-lock.json";
 export const PACKAGE_DIR = "package";
 /** The flat listing rebuilt from a tree, beside it. */
 export const INDEX_FILE = "index.json";
@@ -259,47 +260,6 @@ async function hoistedDependencies(pkgDir, prefixDir) {
   return out;
 }
 
-/** An `npm install --install-strategy=nested` lock of the package under `entry/package`. */
-async function lockOf(entry, name, version) {
-  const packages = {
-    "": { name: "plugin-store-entry", version: "0.0.0", dependencies: { [name]: version } },
-  };
-  const pkgRoot = path.join(entry, PACKAGE_DIR);
-  for (const rel of await walkFiles(pkgRoot)) {
-    if (rel !== "package.json" && !rel.endsWith("/package.json")) continue;
-    const dir = path.posix.dirname(rel);
-    // Only a package's own manifest: `node_modules/<name>/package.json`, not a fixture inside it.
-    const parent = path.posix.dirname(dir);
-    const isPackage =
-      dir === "." ||
-      path.posix.basename(parent) === "node_modules" ||
-      (path.posix.basename(parent).startsWith("@") &&
-        path.posix.basename(path.posix.dirname(parent)) === "node_modules");
-    if (!isPackage) continue;
-    const manifest = await readPackageJson(path.join(pkgRoot, dir));
-    if (manifest === null) continue;
-    const key = dir === "." ? `node_modules/${name}` : `node_modules/${name}/${dir}`;
-    const row = { version: typeof manifest.version === "string" ? manifest.version : "0.0.0" };
-    if (typeof manifest.license === "string") row.license = manifest.license;
-    for (const field of ["dependencies", "optionalDependencies"]) {
-      if (names(manifest[field]).length > 0) row[field] = manifest[field];
-    }
-    packages[key] = row;
-  }
-  const sorted = Object.fromEntries(Object.entries(packages).sort(([a], [b]) => byCodeUnit(a, b)));
-  return `${JSON.stringify(
-    {
-      name: "plugin-store-entry",
-      version: "0.0.0",
-      lockfileVersion: 3,
-      requires: true,
-      packages: sorted,
-    },
-    null,
-    2,
-  )}\n`;
-}
-
 /** An author as the index repository writes one: a display name, optionally `<contact>`. */
 function authorOf(value) {
   if (typeof value === "string") return value.trim() === "" ? null : value.trim();
@@ -364,12 +324,11 @@ export function manifestOf(pkg, name, version, integrity) {
 /**
  * Lays out the package at `pkgDir` — installed into the npm prefix `prefixDir` — as an entry
  * in the directory `stage`: `package/` (the package, its hoisted dependencies copied into its
- * own `node_modules`, modes normalized), then `manifest.toml` and `package-lock.json` (npm's
- * own lock when given). `stringifyToml` writes the manifest. `check`, when given, sees the
- * name, version and integrity before anything else is written, and may throw. Answers the
- * entry's name, version, integrity and manifest.
+ * own `node_modules`, modes normalized), then `manifest.toml`, written by `stringifyToml`.
+ * `check`, when given, sees the name, version and integrity before the manifest is written,
+ * and may throw. Answers the entry's name, version, integrity and manifest.
  */
-export async function layOutEntry(stage, pkgDir, prefixDir, { stringifyToml, lock, check } = {}) {
+export async function layOutEntry(stage, pkgDir, prefixDir, { stringifyToml, check } = {}) {
   const pkg = await readPackageJson(pkgDir);
   const name = typeof pkg?.name === "string" ? pkg.name : null;
   const version = typeof pkg?.version === "string" ? pkg.version : null;
@@ -384,7 +343,6 @@ export async function layOutEntry(stage, pkgDir, prefixDir, { stringifyToml, loc
   check?.({ name, version, integrity });
   const manifest = manifestOf(pkg, name, version, integrity);
   await fsp.writeFile(path.join(stage, MANIFEST_FILE), stringifyToml(manifest));
-  await fsp.writeFile(path.join(stage, LOCK_FILE), lock ?? (await lockOf(stage, name, version)));
   return { name, version, integrity, manifest };
 }
 

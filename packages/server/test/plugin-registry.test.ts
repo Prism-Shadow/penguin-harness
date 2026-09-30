@@ -41,7 +41,7 @@ import {
   storePluginRegistry,
 } from "../src/plugin/registry.js";
 import type { PluginRegistry } from "../src/plugin/registry.js";
-import { importPrefix } from "../src/plugin/store.js";
+import { storePackage } from "../src/plugin/store.js";
 import { resolveServerConfig } from "../src/config.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
 import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
@@ -153,7 +153,9 @@ describe("storePluginRegistry", () => {
       path.join(prefix, "node_modules", "@acme", "x", "package.json"),
       JSON.stringify({ name: "@acme/x", version: "1.0.0", description: "X", license: "MIT" }),
     );
-    const { stored } = await importPrefix(root, prefix, "builtin");
+    const stored = [
+      await storePackage(root, path.join(prefix, "node_modules", "@acme", "x"), prefix),
+    ];
     expect(await storePluginRegistry(root).index()).toEqual([
       expect.objectContaining({
         name: "@acme/x",

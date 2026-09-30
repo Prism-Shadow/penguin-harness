@@ -1,13 +1,11 @@
 /**
- * The plugin sweep (src/plugin/gc.ts): the store keeps what a generation, a kept push or a pin
- * needs and what is less than a day old; the activation directory keeps the current and the
- * previous generation; `.staging/` keeps live processes'.
+ * The plugin sweep (src/plugin/gc.ts): the store keeps what a kept generation or a pin needs and
+ * what is less than a day old; the activation directory keeps the generations it is told to;
+ * `.staging/` keeps what is less than a day old.
  */
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { stringify as stringifyToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { activatePlugins } from "../src/plugin/activation.js";
 import type { PluginAsk } from "../src/plugin/activation.js";
@@ -48,76 +46,72 @@ async function stored(name: string, module: string): Promise<StoredEntry> {
   await fs.writeFile(path.join(prefix, "package.json"), "{}");
   const pkg = path.join(prefix, "node_modules", ...name.split("/"));
   await writeClassPackage(pkg, { name, module, version: "1.0.0" });
-  return storePackage(root, pkg, prefix, "registry");
+  return storePackage(root, pkg, prefix);
 }
 
-/** Rewrites an entry's `.stored` as if it were stored at `at`. */
+/** Dates an entry's `.stored`, and so the entry, at `at`. */
 async function storedAt(entry: StoredEntry, at: number): Promise<void> {
-  await fs.writeFile(
-    path.join(entry.dir, ".stored"),
-    stringifyToml({ storedAt: new Date(at).toISOString(), source: "registry" }),
-  );
+  const when = new Date(at);
+  await fs.utimes(path.join(entry.dir, ".stored"), when, when);
 }
 
 describe("the store", () => {
-  it("keeps what a generation, a kept push, a pin or the last day needs, and removes the rest", async () => {
+  it("keeps what a kept generation, a pin or the last day needs, and removes the rest", async () => {
     const inCurrent = await stored("@acme/current", "Current");
     const inPrevious = await stored("@acme/previous", "Previous");
-    const pushed = await stored("@acme/pushed", "Pushed");
     const pinned = await stored("@acme/pinned", "Pinned");
     const recent = await stored("@acme/recent", "Recent");
     const stale = await stored("@acme/stale", "Stale");
-    await activatePlugins(root, asks(["@acme/previous"]), null);
-    await activatePlugins(root, asks(["@acme/current"]), null);
-    const set = path.join(root, "hmr", "store", "assets", "0a1b", "plugins");
-    await fs.mkdir(set, { recursive: true });
-    const { name, version, integrity } = pushed;
-    await fs.writeFile(
-      path.join(set, "index.json"),
-      JSON.stringify([{ name, version, integrity }]),
-    );
+    const previous = await activatePlugins(root, asks(["@acme/previous"]), null);
+    const current = await activatePlugins(root, asks(["@acme/current"]), null);
     const now = later();
     await storedAt(recent, now - DAY + 60_000);
 
-    await sweepPlugins(root, {
+    const report = await sweepPlugins(root, {
+      keep: [current.current, previous.current],
       pins: [{ name: pinned.name, integrity: pinned.integrity }],
       now,
       log: () => {},
     });
-    for (const e of [inCurrent, inPrevious, pushed, pinned, recent]) {
+    for (const e of [inCurrent, inPrevious, pinned, recent]) {
       expect(await exists(e.dir), e.name).toBe(true);
     }
+    expect(report.entries).toBe(1);
+    // The name's directory goes with its last entry.
     expect(await exists(path.join(pluginStoreDir(root), "@acme", "stale"))).toBe(false);
     expect(await exists(stale.dir)).toBe(false);
   });
 
-  it("removes no entry when what must be kept cannot be read", async () => {
+  it("removes no entry when a kept generation cannot be read", async () => {
     const stale = await stored("@acme/stale", "Stale");
-    await activatePlugins(root, asks([]), null);
-    const set = path.join(root, "hmr", "store", "assets", "bad", "plugins");
-    await fs.mkdir(set, { recursive: true });
-    await fs.writeFile(path.join(set, "index.json"), "{ not json");
-    const report = await sweepPlugins(root, { now: later(), log: () => {} });
+    const report = await sweepPlugins(root, {
+      keep: ["0123456789abcdef"],
+      now: later(),
+      log: () => {},
+    });
     expect(await exists(stale.dir)).toBe(true);
-    expect(report.entries).toEqual([]);
+    expect(report.entries).toBe(0);
   });
 });
 
 describe("the activation directory and .staging", () => {
-  it("keep the current and the previous generation, and live processes' staging", async () => {
+  it("keep the generations they are told to, and staging less than a day old", async () => {
     await stored("@acme/a", "A");
     await stored("@acme/b", "B");
     const a = await activatePlugins(root, asks(["@acme/a"]), null);
     await activatePlugins(root, asks(["@acme/b"]), null);
-    await activatePlugins(root, asks(["@acme/a", "@acme/b"]), null);
+    const both = await activatePlugins(root, asks(["@acme/a", "@acme/b"]), null);
     const staging = path.join(pluginStoreDir(root), ".staging");
-    const gone = spawnSync(process.execPath, ["-e", ""]).pid;
-    for (const d of [String(process.pid), String(gone)]) {
-      await fs.mkdir(path.join(staging, d), { recursive: true });
-    }
-    const report = await sweepPlugins(root, { log: () => {} });
-    expect(report.generations).toEqual([a.current]);
-    expect(await fs.readdir(staging)).toEqual([String(process.pid)]);
+    await fs.mkdir(path.join(staging, "w-new"), { recursive: true });
+    const old = new Date(Date.now() - 2 * DAY);
+    await fs.mkdir(path.join(staging, "w-old"));
+    await fs.utimes(path.join(staging, "w-old"), old, old);
+    const report = await sweepPlugins(root, { keep: [both.current, a.current], log: () => {} });
+    expect(report.generations).toBe(1);
+    expect((await fs.readdir(path.join(root, "plugins"))).sort()).toEqual(
+      ["current", a.current, both.current].sort(),
+    );
+    expect(await fs.readdir(staging)).toEqual(["w-new"]);
   });
 });
 

@@ -14,8 +14,8 @@
  * the same directory. Writing one is atomic for a reader: it is built in `plugins/.tmp-<pid>/`,
  * marked complete, renamed to `plugins/<gen>/`, and only then is `current` flipped — by writing a
  * temporary file and renaming it over the pointer. A reader sees the whole old generation or the
- * whole new one, never a half. `plugins/previous` names the generation `current` named before
- * its last flip — the one a failed boot points back at, and the other one the sweep keeps.
+ * whole new one, never a half. The generation current before a flip is the one a failed boot
+ * points back at (hmr/platform.ts), and the other one the sweep keeps.
  *
  * A generation is RESOLVED from the closure (every Project's table for this machine): for each
  * name, the entry a Project pinned (`integrity`), or else the store entries whose version
@@ -27,8 +27,8 @@
  * Activation runs at every App boot — the first, a hot push's, and every re-assembly, which
  * the platform serializes on its one queue (hmr/platform.ts), so two admins' edits never
  * interleave. A boot that fails after activating flips the pointer back to the generation
- * before it. After the flip the loader sweeps (plugin/gc.ts): generations other than the
- * current and the previous one go. What is in `<root>/plugins/` besides generations (the npm
+ * before it. After the flip the loader sweeps (plugin/gc.ts): generations other than these
+ * two go. What is in `<root>/plugins/` besides generations (the npm
  * prefix older builds installed into) is retained; its installed modules are adopted
  * into the store before resolution, so upgrading never drops an installed module.
  *
@@ -41,24 +41,13 @@ import fsp from "node:fs/promises";
 import nodeModule from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { parse as parseToml } from "smol-toml";
-import {
-  PACKAGE_DIR,
-  pluginStoreDir,
-  readStore,
-  shippedEntries,
-  STORED_FILE,
-  storeEntryDir,
-  storeSources,
-} from "./store.js";
-import type { StoreIndexEntry, StoreSource } from "./store.js";
+import { PACKAGE_DIR, pluginStoreDir, readStore, storeEntryDir, syncPluginStore } from "./store.js";
+import type { StoreIndexEntry } from "./store.js";
 
 /** `<root>/plugins`: the activation directory. */
 export const PLUGINS_DIR = "plugins";
 /** The pointer file naming the current generation. */
 export const CURRENT_FILE = "current";
-/** The pointer file naming the generation `current` named before its last flip. */
-export const PREVIOUS_FILE = "previous";
 /** A generation's completion marker, written before it is renamed into place. */
 export const COMPLETE_FILE = ".complete";
 
@@ -84,32 +73,16 @@ export interface GenerationEntry {
   integrity: string;
 }
 
-/** The generation a pointer file names, whether or not a generation stands behind it. */
-function readPointer(root: string, file: string): string | null {
+/** The generation `current` names, when the pointer and a complete generation behind it exist. */
+export function currentGeneration(root: string): string | null {
   let gen: string;
   try {
-    gen = fs.readFileSync(path.join(pluginsDir(root), file), "utf8").trim();
+    gen = fs.readFileSync(path.join(pluginsDir(root), CURRENT_FILE), "utf8").trim();
   } catch {
     return null;
   }
-  return GENERATION.test(gen) ? gen : null;
-}
-
-/** The generation a pointer names, when a complete generation stands behind it. */
-function completeAt(root: string, file: string): string | null {
-  const gen = readPointer(root, file);
-  if (gen === null) return null;
+  if (!GENERATION.test(gen)) return null;
   return fs.existsSync(path.join(pluginsDir(root), gen, COMPLETE_FILE)) ? gen : null;
-}
-
-/** The generation `current` names, when the pointer and a complete generation behind it exist. */
-export function currentGeneration(root: string): string | null {
-  return completeAt(root, CURRENT_FILE);
-}
-
-/** The generation `current` named before its last flip, when it is still complete; else null. */
-export function previousGeneration(root: string): string | null {
-  return completeAt(root, PREVIOUS_FILE);
 }
 
 /** The directory of the current generation, or null. */
@@ -203,27 +176,17 @@ export async function writeGeneration(
   }
 }
 
-/** Writes a pointer file: a temporary file renamed over it. */
-async function writePointer(root: string, name: string, gen: string): Promise<void> {
-  const file = path.join(pluginsDir(root), name);
+/** Points `current` at `gen` — a temporary file renamed over the pointer — or removes it (null). */
+export async function pointCurrent(root: string, gen: string | null): Promise<void> {
+  const file = path.join(pluginsDir(root), CURRENT_FILE);
+  if (gen === null) {
+    await fsp.rm(file, { force: true });
+    return;
+  }
   await fsp.mkdir(pluginsDir(root), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   await fsp.writeFile(tmp, `${gen}\n`);
   await fsp.rename(tmp, file);
-}
-
-/**
- * Points `current` at `gen` (null removes the pointer), after recording the generation it
- * named until now in `previous` — so a flip back is a flip like any other.
- */
-export async function pointCurrent(root: string, gen: string | null): Promise<void> {
-  if (gen === null) {
-    await fsp.rm(path.join(pluginsDir(root), CURRENT_FILE), { force: true });
-    return;
-  }
-  const before = readPointer(root, CURRENT_FILE);
-  if (before !== null && before !== gen) await writePointer(root, PREVIOUS_FILE, before);
-  await writePointer(root, CURRENT_FILE, gen);
 }
 
 /** `1.2.3-rc.1` as numbers and a prerelease tag; null when it is not a version. */
@@ -355,9 +318,7 @@ export async function activatePlugins(
   asks: ReadonlyMap<string, readonly PluginAsk[]>,
   assetsDir: string | null,
 ): Promise<Activation> {
-  const shipped = new Set(
-    (await shippedEntries(root, storeSources(assetsDir))).map((e) => e.integrity),
-  );
+  const shipped = await syncPluginStore(root, assetsDir);
   const stored = await readStore(root);
   const chosen: GenerationEntry[] = [];
   const missing = new Map<string, string>();
@@ -448,27 +409,4 @@ export function lendHostPackages(root: string): void {
       }
     },
   });
-}
-
-/**
- * Where a name in the current generation came from (the store entry's `.stored`), or null when
- * the generation does not hold it.
- */
-export async function generationSource(root: string, name: string): Promise<StoreSource | null> {
-  const gen = currentGeneration(root);
-  if (gen === null) return null;
-  const entry = (await readGeneration(root, gen))?.find((e) => e.name === name);
-  if (entry === undefined) return null;
-  try {
-    const stored = parseToml(
-      await fsp.readFile(
-        path.join(storeEntryDir(root, entry.name, entry.version, entry.integrity), STORED_FILE),
-        "utf8",
-      ),
-    );
-    const source = stored.source;
-    return source === "push" || source === "builtin" || source === "registry" ? source : null;
-  } catch {
-    return null;
-  }
 }

@@ -2,14 +2,13 @@
  * The plugin store: one place under the data root where every packed plugin a machine has
  * received is kept, keyed by its content.
  *
- * `<root>/plugin-store/` has the shape of the `plugins/` subtree of the index repository
- * (penguin-plugins) and of the tree the build lays out (scripts/build-plugins.mjs): one entry
- * per `<npm name>/<version>/<first 16 hex digits of integrity>/`, holding
+ * `<root>/plugin-store/` has the shape of the tree the build lays out (scripts/build-plugins.mjs)
+ * and of the index repository's (penguin-plugins): one entry per
+ * `<npm name>/<version>/<first 16 hex digits of integrity>/`, holding
  *
  *   manifest.toml      the index manifest (the repository's fields, `integrity` required)
- *   package-lock.json  the lock of the package's nested dependencies
  *   package/           the unpacked package, its dependencies inside its own `node_modules`
- *   .stored            when, from where — and that the entry is complete; written LAST
+ *   .stored            the completion marker, written LAST; its mtime is when it was stored
  *
  * An entry without `.stored` does not exist: it is a write that did not finish, and the next
  * write of the same content replaces it.
@@ -18,28 +17,22 @@
  * deterministic ustar archiver of scripts/plugin-entry.mjs — the index repository's algorithm,
  * so the integrity an index entry names is the one this store computes over the package it
  * fetched. Two versions of one name, or two contents of one version, are two entries; one
- * content is stored once. How an entry is laid out is that module's too: the build and the
- * store run one copy.
+ * content is stored once.
  *
- * THREE SOURCES, ONE WAY IN. Everything reaches the store through `storePackage`:
+ * TWO WAYS IN, both through `storePackage`:
  *
- *   - push      the builtin plugins a hot push carried (its `archives/plugins.*.tgz`, unpacked
- *               by the platform); the push's own prefix manifest stays with the push as that
- *               build's activation list and is not an entry;
- *   - builtin   the prefix the installation ships beside the program, checked entry by entry
- *               at every boot and copied when missing — idempotent;
- *   - registry  a package fetched by npm into `.staging/<pid>/`, packed, hashed, compared with
- *               the integrity its index entry names, stored, and the staging directory removed.
+ *   - shipped   the plugins the running build carries (a hot push's `plugins/` prefix, else
+ *               the installation's), each listed with its integrity in the prefix's `index.json`
+ *               the build wrote; an entry already stored is not copied again (`syncPluginStore`);
+ *   - registry  a package fetched by npm into `.staging/`, packed, hashed, compared with the
+ *               integrity its index entry names, and stored (`fetchIntoStore`).
  *
  * Every write and the sweep take turns on one queue (`onStoreQueue`): a fetch never lands an
- * entry in a directory the sweep is emptying, and the sweep never removes a content a write
- * has just found already stored. What the sweep keeps and removes is plugin/gc.ts.
+ * entry in a directory the sweep is emptying. What the sweep keeps and removes is plugin/gc.ts.
  *
  * The store is not a lookup location. Nothing resolves a module from it by name: the process
  * loads from the current generation under `<root>/plugins/`, whose `node_modules/<name>` links
- * to an entry's `package/` (plugin/activation.ts). Its own `index.json` is rebuilt
- * from the tree after every write, in the index repository's shape — the machine's local
- * source for the merged plugin index.
+ * to an entry's `package/` (plugin/activation.ts).
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -54,7 +47,6 @@ import {
   entryDir,
   entryKey,
   INDEX_FILE,
-  LOCK_FILE,
   layOutEntry,
   MANIFEST_FILE,
   PACKAGE_DIR,
@@ -63,19 +55,16 @@ import {
 } from "../../../../scripts/plugin-entry.mjs";
 import type { EntryManifest } from "../../../../scripts/plugin-entry.mjs";
 
-export { INDEX_FILE, LOCK_FILE, MANIFEST_FILE, PACKAGE_DIR };
+export { PACKAGE_DIR };
 
 const execFileAsync = promisify(execFile);
 
 /** `<root>/plugin-store`, relative to the data root. */
 export const PLUGIN_STORE_DIR = "plugin-store";
-/** Where work in progress lives, one directory per process: `.staging/<pid>/`. */
+/** Where work in progress lives: one fresh directory per write. */
 export const STAGING_DIR = ".staging";
 /** The completion marker, written last. */
 export const STORED_FILE = ".stored";
-
-/** Where a package came from — recorded in `.stored`, never part of the key. */
-export type StoreSource = "push" | "builtin" | "registry";
 
 /** One complete entry of the store. */
 export interface StoredEntry {
@@ -87,7 +76,7 @@ export interface StoredEntry {
   dir: string;
 }
 
-/** One row of the store's `index.json`: the index repository's entry, `integrity` included. */
+/** One entry as an index lists it: the index repository's manifest, `integrity` included. */
 export type StoreIndexEntry = EntryManifest;
 
 export class PluginStoreError extends Error {}
@@ -123,37 +112,16 @@ export function storeEntryDir(
   return entryDir(pluginStoreDir(root), name, version, integrity);
 }
 
-const names = (table: unknown): string[] =>
-  table !== null && typeof table === "object" ? Object.keys(table) : [];
-
 /** Is `dir` a complete entry? */
-function isStored(dir: string): boolean {
+export function isStored(dir: string): boolean {
   return fs.existsSync(path.join(dir, STORED_FILE));
 }
 
-let stagingSeq = 0;
-/** A fresh directory under `.staging/<pid>/`. */
-export async function stagingDir(root: string, label: string): Promise<string> {
-  stagingSeq += 1;
-  const dir = path.join(
-    pluginStoreDir(root),
-    STAGING_DIR,
-    String(process.pid),
-    `${label}-${stagingSeq}`,
-  );
-  await fsp.rm(dir, { recursive: true, force: true });
-  await fsp.mkdir(dir, { recursive: true });
-  return dir;
-}
-
-/** Removes `.staging/<pid>/` once nothing of this process is left in it. */
-export async function tidyStaging(root: string): Promise<void> {
-  const mine = path.join(pluginStoreDir(root), STAGING_DIR, String(process.pid));
-  try {
-    await fsp.rmdir(mine);
-  } catch {
-    // Not empty (another write of this process is in flight) or already gone.
-  }
+/** A fresh directory under `.staging/`; the caller removes it. */
+async function stagingDir(root: string): Promise<string> {
+  const staging = path.join(pluginStoreDir(root), STAGING_DIR);
+  await fsp.mkdir(staging, { recursive: true });
+  return fsp.mkdtemp(path.join(staging, "w-"));
 }
 
 /**
@@ -166,8 +134,7 @@ export async function storePackage(
   root: string,
   pkgDir: string,
   prefixDir: string,
-  source: StoreSource,
-  { expected, lock }: { expected?: string; lock?: string } = {},
+  expected?: string,
 ): Promise<StoredEntry> {
   const pkg = await readPackageJson(pkgDir);
   const name = typeof pkg?.name === "string" ? pkg.name : null;
@@ -178,11 +145,10 @@ export async function storePackage(
   if (version.includes("/") || version.includes("\\") || version.startsWith(".")) {
     throw new PluginStoreError(`${name}: '${version}' cannot name a directory`);
   }
-  const stage = await stagingDir(root, "entry");
+  const stage = await stagingDir(root);
   try {
     const laid = await layOutEntry(stage, pkgDir, prefixDir, {
       stringifyToml: (value) => stringifyToml(value),
-      lock,
       check: ({ integrity }) => {
         if (expected !== undefined && expected !== integrity) {
           throw new PluginIntegrityMismatch(name, version, expected, integrity);
@@ -196,38 +162,11 @@ export async function storePackage(
     await fsp.rm(dest, { recursive: true, force: true });
     await fsp.mkdir(path.dirname(dest), { recursive: true });
     await fsp.rename(stage, dest);
-    await fsp.writeFile(
-      path.join(dest, STORED_FILE),
-      stringifyToml({ storedAt: new Date().toISOString(), source }),
-    );
+    await fsp.writeFile(path.join(dest, STORED_FILE), "");
     return entry;
   } finally {
     await fsp.rm(stage, { recursive: true, force: true });
-    await tidyStaging(root);
   }
-}
-
-/**
- * Stores every package an npm prefix SHIPS — the ones its own package.json names, not what npm
- * installed beside them — and answers what was stored and what could not be, by name.
- */
-export async function importPrefix(
-  root: string,
-  prefixDir: string,
-  source: StoreSource,
-): Promise<{ stored: StoredEntry[]; failed: Map<string, string> }> {
-  const stored: StoredEntry[] = [];
-  const failed = new Map<string, string>();
-  const manifest = await readPackageJson(prefixDir);
-  for (const name of names(manifest?.dependencies)) {
-    try {
-      const pkgDir = path.join(prefixDir, "node_modules", ...name.split("/"));
-      stored.push(await storePackage(root, pkgDir, prefixDir, source));
-    } catch (err) {
-      failed.set(name, err instanceof Error ? err.message : String(err));
-    }
-  }
-  return { stored, failed };
 }
 
 /** How a registry fetch installs `specifier` into the npm prefix `cwd`; injectable for tests. */
@@ -267,132 +206,130 @@ function nameOf(specifier: string): string {
 }
 
 /**
- * Fetches `specifier` from the registry into the store: npm installs it into
- * `.staging/<pid>/`, the package is packed and hashed, compared with `expected` (the integrity
- * its index entry names) when there is one, and stored; the staging directory is removed
- * whatever happened. npm's own lock of the install is the entry's lock.
+ * Fetches `specifier` from the registry into the store: npm installs it into a staging prefix,
+ * the package is packed and hashed, compared with `expected` (the integrity its index entry
+ * names) when there is one, and stored; the staging directory is removed whatever happened.
  */
 export function fetchIntoStore(
   root: string,
   specifier: string,
   { expected, install = npmInstall }: { expected?: string; install?: RegistryInstall } = {},
 ): Promise<StoredEntry> {
-  return onStoreQueue(() => fetchNow(root, specifier, expected, install));
+  return onStoreQueue(async () => {
+    const prefix = await stagingDir(root);
+    try {
+      // A prefix of its own, or npm walks up and installs into whatever package.json is above.
+      await fsp.writeFile(
+        path.join(prefix, "package.json"),
+        `${JSON.stringify({ name: "plugin-store-entry", private: true, version: "0.0.0" }, null, 2)}\n`,
+      );
+      await install(specifier, prefix);
+      const pkgDir = path.join(prefix, "node_modules", ...nameOf(specifier).split("/"));
+      return await storePackage(root, pkgDir, prefix, expected);
+    } finally {
+      await fsp.rm(prefix, { recursive: true, force: true });
+    }
+  });
 }
 
-async function fetchNow(
-  root: string,
-  specifier: string,
-  expected: string | undefined,
-  install: RegistryInstall,
-): Promise<StoredEntry> {
-  const prefix = await stagingDir(root, "fetch");
+/** The directories of `dir` whose names do not start with a dot; empty when it cannot be read. */
+async function subdirs(dir: string): Promise<string[]> {
   try {
-    // A prefix of its own, or npm walks up and installs into whatever package.json is above.
-    await fsp.writeFile(
-      path.join(prefix, "package.json"),
-      `${JSON.stringify({ name: "plugin-store-entry", private: true, version: "0.0.0" }, null, 2)}\n`,
-    );
-    await install(specifier, prefix);
-    const pkgDir = path.join(prefix, "node_modules", ...nameOf(specifier).split("/"));
-    let lock: string | undefined;
-    try {
-      lock = await fsp.readFile(path.join(prefix, LOCK_FILE), "utf8");
-    } catch {
-      lock = undefined;
-    }
-    const entry = await storePackage(root, pkgDir, prefix, "registry", { expected, lock });
-    await rebuildStoreIndex(root);
-    return entry;
-  } finally {
-    await fsp.rm(prefix, { recursive: true, force: true });
-    await tidyStaging(root);
+    return (await fsp.readdir(dir, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
   }
 }
 
-/** Every complete entry in the store, by name, version and integrity. */
-export async function readStore(root: string): Promise<StoreIndexEntry[]> {
+/** Every entry directory of the store, complete or not, with the name, version and key it sits under. */
+export async function storeEntryDirs(
+  root: string,
+): Promise<Array<{ name: string; version: string; key: string; dir: string }>> {
   const store = pluginStoreDir(root);
-  const out: StoreIndexEntry[] = [];
-  const dirs = async (dir: string) => {
-    try {
-      return (await fsp.readdir(dir, { withFileTypes: true }))
-        .filter((e) => e.isDirectory() && !e.name.startsWith("."))
-        .map((e) => e.name);
-    } catch {
-      return [];
-    }
-  };
+  const names: string[] = [];
   // `<name>` is one directory, or two for a scoped one (`@scope/name`).
-  const packageNames: string[] = [];
-  for (const top of await dirs(store)) {
+  for (const top of await subdirs(store)) {
     if (top.startsWith("@")) {
-      for (const sub of await dirs(path.join(store, top))) packageNames.push(`${top}/${sub}`);
-    } else packageNames.push(top);
+      for (const sub of await subdirs(path.join(store, top))) names.push(`${top}/${sub}`);
+    } else names.push(top);
   }
-  for (const name of packageNames) {
+  const out: Array<{ name: string; version: string; key: string; dir: string }> = [];
+  for (const name of names) {
     const nameDir = path.join(store, ...name.split("/"));
-    for (const version of await dirs(nameDir)) {
-      for (const key of await dirs(path.join(nameDir, version))) {
-        const dir = path.join(nameDir, version, key);
-        if (!isStored(dir)) continue;
-        let manifest: Record<string, unknown>;
-        try {
-          manifest = parseToml(await fsp.readFile(path.join(dir, MANIFEST_FILE), "utf8"));
-        } catch {
-          continue;
-        }
-        // The path spells the entry: a manifest that disagrees with where it sits is skipped.
-        const integrity = manifest.integrity;
-        if (
-          manifest.name !== name ||
-          manifest.version !== version ||
-          typeof integrity !== "string" ||
-          entryKey(integrity) !== key
-        ) {
-          continue;
-        }
-        out.push(manifest as unknown as StoreIndexEntry);
+    for (const version of await subdirs(nameDir)) {
+      for (const key of await subdirs(path.join(nameDir, version))) {
+        out.push({ name, version, key, dir: path.join(nameDir, version, key) });
       }
     }
+  }
+  return out;
+}
+
+/** Every complete entry in the store, as its manifest. */
+export async function readStore(root: string): Promise<StoreIndexEntry[]> {
+  const out: StoreIndexEntry[] = [];
+  for (const { name, version, key, dir } of await storeEntryDirs(root)) {
+    if (!isStored(dir)) continue;
+    let manifest: Record<string, unknown>;
+    try {
+      manifest = parseToml(await fsp.readFile(path.join(dir, MANIFEST_FILE), "utf8"));
+    } catch {
+      continue;
+    }
+    // The path spells the entry: a manifest that disagrees with where it sits is skipped.
+    const integrity = manifest.integrity;
+    if (
+      manifest.name !== name ||
+      manifest.version !== version ||
+      typeof integrity !== "string" ||
+      entryKey(integrity) !== key
+    ) {
+      continue;
+    }
+    out.push(manifest as unknown as StoreIndexEntry);
   }
   return sortIndex(out);
 }
 
-/**
- * Rebuilds `<store>/index.json` from the tree — a flat array of index entries, the shape of the
- * index repository's and of the builtin index — written beside and renamed in.
- */
-export async function rebuildStoreIndex(root: string): Promise<StoreIndexEntry[]> {
-  const entries = await readStore(root);
-  const file = path.join(pluginStoreDir(root), INDEX_FILE);
-  await fsp.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fsp.writeFile(tmp, `${JSON.stringify(entries, null, 2)}\n`);
-  await fsp.rename(tmp, file);
-  return entries;
-}
-
-/** The prefixes a process imports at boot: what the push carried, what the installation ships. */
+/** The prefixes a build may carry, the running one first: the push's, then the installation's. */
 export function storeSources(
   assetsDir: string | null,
   entry: string | undefined = process.argv[1],
-): Array<{ dir: string; source: StoreSource }> {
-  const out: Array<{ dir: string; source: StoreSource }> = [];
-  if (assetsDir !== null) {
-    out.push({ dir: path.join(unpackedAssetsDir(assetsDir), "plugins"), source: "push" });
-  }
+): string[] {
+  const out: string[] = [];
+  if (assetsDir !== null) out.push(path.join(unpackedAssetsDir(assetsDir), "plugins"));
   if (typeof entry === "string" && entry.length > 0) {
-    out.push({ dir: path.join(path.dirname(entry), "..", "plugins"), source: "builtin" });
+    out.push(path.join(path.dirname(entry), "..", "plugins"));
   }
   return out;
 }
 
 /**
- * Prefixes this process already imported, with the entries each yielded: a push's assets never
- * change, nor does the installation.
+ * The plugins the running build carries: the prefix of the first of `storeSources` that has an
+ * `index.json` (scripts/build-plugins.mjs writes it), with its rows. Null when none does — a
+ * server run from source ships no prefix. The rows are as written; the registry validates them.
  */
-const imported = new Map<string, StoredEntry[]>();
+export async function readShippedIndex(
+  assetsDir: string | null,
+): Promise<{ prefix: string; entries: unknown[] } | null> {
+  for (const prefix of storeSources(assetsDir)) {
+    let text: string;
+    try {
+      text = await fsp.readFile(path.join(prefix, INDEX_FILE), "utf8");
+    } catch {
+      continue;
+    }
+    const entries = JSON.parse(text) as unknown;
+    if (!Array.isArray(entries))
+      throw new PluginStoreError(`${prefix}/${INDEX_FILE}: not an array`);
+    return { prefix, entries };
+  }
+  return null;
+}
+
 let chain: Promise<unknown> = Promise.resolve();
 
 /**
@@ -409,60 +346,60 @@ export function onStoreQueue<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-const importKey = (root: string, dir: string) => `${root}\0${path.resolve(dir)}`;
+/**
+ * What a listed integrity was stored as, when that differs: a filesystem without execute bits
+ * (Windows) hashes a package built elsewhere to another content. Per process, so such a
+ * package is copied once, not at every activation.
+ */
+const storedAs = new Map<string, StoredEntry>();
 
 /**
- * Brings the store up to date with the prefixes of this boot (`storeSources`), each once per
- * process — and again once the sweep has removed an entry one of them yielded — then rebuilds
- * its index. On the store's queue, best effort: a failure is logged and never fails the boot —
- * a package that did not reach the store is reported by the activation that cannot find it
- * (plugin/activation.ts).
+ * Stores every plugin the running build carries that is not stored yet, and answers the
+ * integrities its `index.json` lists together with what each was stored as. On the store's
+ * queue, best effort: a failure is logged and never fails the boot — a package that did not
+ * reach the store is reported by the activation that cannot find it (plugin/activation.ts).
  */
-export function syncPluginStore(
+export async function syncPluginStore(
   root: string,
-  sources: ReadonlyArray<{ dir: string; source: StoreSource }>,
+  assetsDir: string | null,
   log: (message: string) => void = (m) => console.warn(m),
-): Promise<void> {
-  const run = async () => {
-    let wrote = false;
-    for (const { dir, source } of sources) {
-      const key = importKey(root, dir);
-      // A shipped package no generation holds is swept like any other entry (plugin/gc.ts);
-      // the prefix still ships it, so it is stored again the next time it is asked for.
-      const held = imported.get(key);
-      if (held !== undefined && held.every((e) => isStored(e.dir))) continue;
-      if (!fs.existsSync(path.join(dir, "package.json"))) continue;
-      const { stored, failed } = await importPrefix(root, dir, source);
-      imported.set(key, stored);
-      wrote ||= stored.length > 0;
-      for (const [name, why] of failed) log(`[plugin-store] ${source} ${name}: ${why}`);
+): Promise<Set<string>> {
+  const shipped = new Set<string>();
+  await onStoreQueue(async () => {
+    const index = await readShippedIndex(assetsDir);
+    for (const row of index?.entries ?? []) {
+      const { name, version, integrity } = row as Partial<Record<string, unknown>>;
+      if (typeof name !== "string" || typeof version !== "string") continue;
+      if (typeof integrity !== "string" || entryKey(integrity) === null) continue;
+      shipped.add(integrity);
+      if (isStored(storeEntryDir(root, name, version, integrity))) continue;
+      const memo = `${root}\0${integrity}`;
+      const known = storedAs.get(memo);
+      if (known !== undefined && isStored(known.dir)) {
+        shipped.add(known.integrity);
+        continue;
+      }
+      try {
+        const pkgDir = path.join(index!.prefix, "node_modules", ...name.split("/"));
+        const entry = await storePackage(root, pkgDir, index!.prefix);
+        storedAs.set(memo, entry);
+        shipped.add(entry.integrity);
+      } catch (err) {
+        log(`[plugin-store] ${name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
-    if (wrote) await rebuildStoreIndex(root);
-  };
-  return onStoreQueue(run).catch((err: unknown) => {
+  }).catch((err: unknown) => {
     log(`[plugin-store] ${err instanceof Error ? err.message : String(err)}`);
   });
+  return shipped;
 }
 
-/**
- * The entries this boot's sources put in the store — what the running build carries — once
- * `syncPluginStore` has imported them.
- */
-export async function shippedEntries(
-  root: string,
-  sources: ReadonlyArray<{ dir: string; source: StoreSource }>,
-): Promise<StoredEntry[]> {
-  await syncPluginStore(root, sources);
-  return sources.flatMap(({ dir }) => imported.get(importKey(root, dir)) ?? []);
-}
-
-/** The names the prefixes of `sources` ship: each prefix's own package.json `dependencies`. */
-export async function shippedNames(
-  sources: ReadonlyArray<{ dir: string; source: StoreSource }>,
-): Promise<string[]> {
-  const out = new Set<string>();
-  for (const { dir } of sources) {
-    for (const name of names((await readPackageJson(dir))?.dependencies)) out.add(name);
-  }
-  return [...out].sort();
+/** The names the running build ships. */
+export async function shippedNames(assetsDir: string | null): Promise<string[]> {
+  const index = await readShippedIndex(assetsDir).catch(() => null);
+  const names = (index?.entries ?? []).flatMap((row) => {
+    const name = (row as { name?: unknown }).name;
+    return typeof name === "string" ? [name] : [];
+  });
+  return [...new Set(names)].sort();
 }

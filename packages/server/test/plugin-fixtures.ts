@@ -5,9 +5,12 @@
  * and lowered the way its build would lower it, so the fixture exercises the same
  * decorators the host reads.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { stringify as stringifyToml } from "smol-toml";
 import ts from "typescript";
+import { layOutEntry, sortIndex } from "../../../scripts/plugin-entry.mjs";
 
 /**
  * The decorators, as a plugin's bundle would carry them — here imported from this
@@ -79,4 +82,25 @@ export async function writeClassPackage(dir: string, pkg: ClassPackage): Promise
     "utf8",
   );
   return entry;
+}
+
+/**
+ * Rebuilds a shipped prefix's `index.json` the way scripts/build-plugins.mjs does: every package
+ * the prefix's own package.json names, laid out as an entry to learn its integrity.
+ */
+export async function writeShippedIndex(prefix: string): Promise<void> {
+  const manifest = JSON.parse(await readFile(path.join(prefix, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  const index = [];
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    const stage = await mkdtemp(path.join(tmpdir(), "shipped-entry-"));
+    try {
+      const pkgDir = path.join(prefix, "node_modules", ...name.split("/"));
+      index.push((await layOutEntry(stage, pkgDir, prefix, { stringifyToml })).manifest);
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
+  }
+  await writeFile(path.join(prefix, "index.json"), JSON.stringify(sortIndex(index)));
 }

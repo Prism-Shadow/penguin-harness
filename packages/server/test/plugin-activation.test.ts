@@ -15,7 +15,7 @@ import {
 import type { PluginAsk } from "../src/plugin/activation.js";
 import { storeEntryDir, storePackage } from "../src/plugin/store.js";
 import type { StoreIndexEntry } from "../src/plugin/store.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 
 let root: string;
 beforeEach(async () => {
@@ -25,7 +25,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** A package in an assets directory's `plugins/` prefix, named in its manifest: what a push ships. */
+/** A package in an assets directory's `plugins/` prefix, listed in its index: what a push ships. */
 async function ship(assets: string, name: string, module: string, version = "1.0.0") {
   const prefix = path.join(assets, "plugins");
   await writeClassPackage(path.join(prefix, "node_modules", ...name.split("/")), {
@@ -39,6 +39,7 @@ async function ship(assets: string, name: string, module: string, version = "1.0
   };
   manifest.dependencies = { ...manifest.dependencies, [name]: version };
   await writeFile(file, JSON.stringify(manifest));
+  await writeShippedIndex(prefix);
 }
 
 /** A package fetched from the registry, stored the way a fetch stores it. */
@@ -48,7 +49,7 @@ async function fetched(name: string, module: string, version: string) {
   await writeFile(path.join(prefix, "package.json"), "{}");
   const dir = path.join(prefix, "node_modules", ...name.split("/"));
   await writeClassPackage(dir, { name, module, version });
-  return storePackage(root, dir, prefix, "registry");
+  return storePackage(root, dir, prefix);
 }
 
 const asks = (entries: Record<string, PluginAsk[]>) => new Map(Object.entries(entries));

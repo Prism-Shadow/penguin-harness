@@ -10,22 +10,21 @@
  *   - the builtin registry serves the index the running BUILD carries: rebuilt by
  *     scripts/build-plugins.mjs from the store-shaped tree of what it packed, shipped beside
  *     the packages (`plugins/index.json` in a push's assets, or in the installation);
- *   - the store registry serves this machine's plugin store's own `index.json`, rebuilt from
- *     its tree after every write (plugin/store.ts);
+ *   - the store registry serves what this machine's plugin store holds, read off its tree
+ *     (plugin/store.ts);
  *   - the HTTP registry fetches the published `index.json` (see NIGHTLY_INDEX_URL), which the
  *     index repository rebuilds from the same tree shape, and runs it through the same
  *     validator — a remote index is trusted no further than the build's own.
  * Remote SVG icons are never trusted; on-machine package display fields are read locally.
  */
 import type { PluginIndexEntry } from "../api/types.js";
-import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { parsePluginPackage, readPluginIcon, userAgent } from "@prismshadow/penguin-core";
 import type { PluginPackageFields } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
-import { INDEX_FILE, readStore, storeSources } from "./store.js";
+import { readShippedIndex, readStore } from "./store.js";
 import { compareVersions, satisfies } from "./activation.js";
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
@@ -136,18 +135,12 @@ async function readmeOf(name: string, bases: readonly PluginBase[]): Promise<str
 }
 
 /**
- * The index the running build carries: `index.json` in the first of its prefixes that has one
- * — a push's assets before the installation's, as a boot imports them (plugin/store.ts
- * `storeSources`). Empty when neither does: a run from source ships no prefix.
+ * The index the running build carries (plugin/store.ts `readShippedIndex`): a push's before the
+ * installation's. Empty when neither has one: a run from source ships no prefix.
  */
 export async function shippedIndex(assetsDir: string | null): Promise<PluginIndexEntry[]> {
-  for (const { dir } of storeSources(assetsDir)) {
-    const file = path.join(dir, INDEX_FILE);
-    if (!fs.existsSync(file)) continue;
-    const text = await fsp.readFile(file, "utf8");
-    return parsePluginIndex(JSON.parse(text), BUILTIN_REGISTRY_SOURCE);
-  }
-  return [];
+  const shipped = await readShippedIndex(assetsDir);
+  return shipped === null ? [] : parsePluginIndex(shipped.entries, BUILTIN_REGISTRY_SOURCE);
 }
 
 /**

@@ -172,6 +172,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     ];
     const { loaded, skipped, unsatisfied } = deps.running();
     const bases = pluginBases(deps.root);
+    const shipped = await shippedPlugins(deps.assetsDir());
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
     // asked for. What the package declares is read from its files; whether the process holds
     // it, and why not, is the host's — a load that failed says so, rather than passing as a
@@ -210,7 +211,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       plugins.push({
         specifier,
         active,
-        builtin: declared.builtin,
+        builtin: shipped.includes(specifier),
         modules: declared.modules,
         replaces: declared.replaces,
         ...(!active && failure !== undefined ? { error: failure } : {}),
@@ -224,7 +225,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       plugins,
       // What the build ships, asked for or not: the Plugins page marks these rows "built in",
       // and asking for one is a list edit rather than a download.
-      shipped: await shippedPlugins(deps.assetsDir()),
+      shipped,
       file: PLUGINS_FILE,
       machineId: deps.machineId,
       // A plugin this server is asked to run that neither runs nor failed is waiting for a

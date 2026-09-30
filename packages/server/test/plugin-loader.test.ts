@@ -20,7 +20,7 @@ import {
   listProjectIds,
   shippedPlugins,
 } from "../src/plugin/loader.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 
 let root: string;
 
@@ -362,6 +362,7 @@ describe("builtin plugins", () => {
              export default { modules: [${moduleName}] };`),
       "utf8",
     );
+    await writeShippedIndex(prefix);
   }
 
   it("lists what the build ships, scoped and unscoped, and looks nothing up before an activation", async () => {
@@ -385,7 +386,7 @@ describe("builtin plugins", () => {
     expect(result.failed.get("@acme/installed")).toMatch(/not in the plugin store/);
     const gen = await readFile(path.join(root, "plugins", "current"), "utf8");
     expect(pluginBases(root)).toEqual([
-      { file: path.join(root, "plugins", gen.trim(), "package.json"), builtin: false, root },
+      { file: path.join(root, "plugins", gen.trim(), "package.json"), builtin: false },
     ]);
   });
 
@@ -431,6 +432,7 @@ describe("builtin plugins", () => {
       main: "./dist/index.js",
       exports: { ".": { types: "./dist/index.d.ts", import: "./dist/index.js" } },
     });
+    await writeShippedIndex(path.join(assets, "plugins"));
     await writeConfig({ plugins: ["@acme/exported"] });
     const result = await loadPlugins(root, assets);
     expect([...result.failed.entries()]).toEqual([]);

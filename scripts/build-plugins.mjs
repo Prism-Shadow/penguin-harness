@@ -26,7 +26,7 @@
  * prefix's root (scripts/lib/third-party-notices.mjs); a package without license text fails it.
  *
  * THE BUILTIN INDEX IS THE BUILD'S. Every package the prefix ships is also laid out as a
- * store entry — `<name>/<version>/<hash16>/manifest.toml + package-lock.json + package/`, the
+ * store entry — `<name>/<version>/<hash16>/manifest.toml + package/`, the
  * shape of a machine's plugin store and of the index repository (scripts/plugin-entry.mjs) —
  * in a tree beside the prefix, and `index.json` is rebuilt from that tree into the prefix. So
  * the index travels with the build, each entry's `integrity` is the one a machine computes

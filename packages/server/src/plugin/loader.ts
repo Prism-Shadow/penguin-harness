@@ -44,7 +44,6 @@ import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import {
   activatePlugins,
   currentGenerationDir,
-  generationSource,
   lendHostPackages,
   type Activation,
   type PluginAsk,
@@ -220,13 +219,12 @@ export async function readPluginClosure(
  * The loader has ONE: the current generation under `<root>/plugins/` (plugin/activation.ts).
  * The prefixes a hot push and the installation carry are sources of the plugin store, not
  * lookup locations; a path (a dev checkout's plugin) is the one specifier resolved elsewhere.
- * `builtin` marks a prefix the harness ships — for a generation, whether the package came from
- * the build is read per package from its store entry. `root` marks a generation of that root.
+ * `builtin` marks a prefix the harness ships; whether a package in a generation is one the build
+ * ships is the shipped list's (`shippedPlugins`).
  */
 export interface PluginBase {
   file: string;
   builtin: boolean;
-  root?: string;
 }
 
 /** A bare package name, scoped or not — never a subpath, a path, a URL or a version range. */
@@ -242,7 +240,7 @@ export function specifierFault(specifier: string): string | null {
 export function pluginBases(root: string | undefined): PluginBase[] {
   if (root === undefined || root === "") return [];
   const dir = currentGenerationDir(root);
-  return dir === null ? [] : [{ file: path.join(dir, "package.json"), builtin: false, root }];
+  return dir === null ? [] : [{ file: path.join(dir, "package.json"), builtin: false }];
 }
 
 /**
@@ -250,7 +248,7 @@ export function pluginBases(root: string | undefined): PluginBase[] {
  * shipped package's readme. Not a lookup location — nothing is loaded from them.
  */
 export function shippedBases(assetsDir: string | null): PluginBase[] {
-  return storeSources(assetsDir).map(({ dir }) => ({
+  return storeSources(assetsDir).map((dir) => ({
     file: path.join(dir, "package.json"),
     builtin: true,
   }));
@@ -346,13 +344,13 @@ function resolvePlugin(
 }
 
 /**
- * The plugins this build SHIPS: the names in the push's prefix manifest and the installation's
- * (what npm installed beside them, their dependencies, is not offered). Being shipped means
+ * The plugins this build SHIPS: the names the running build's `index.json` lists (plugin/store.ts
+ * `readShippedIndex`; what npm installed beside them, their dependencies, is not offered). Being shipped means
  * installing one needs no download — it does not mean it is installed. Nothing here loads;
  * the list is what marks an index entry as available offline and lets an install skip npm.
  */
 export async function shippedPlugins(assetsDir: string | null): Promise<string[]> {
-  return shippedNames(storeSources(assetsDir));
+  return shippedNames(assetsDir);
 }
 
 /**
@@ -427,12 +425,10 @@ export async function readPluginDeclaration(
     return { error: err instanceof Error ? err.message : String(err) };
   }
   if (read === null) return { error: `no package.json above ${resolved.file}` };
-  const root = resolved.base.root;
-  const source = root === undefined ? null : await generationSource(root, specifier);
   return {
     modules: [...read.plugin.modules],
     replaces: [...read.plugin.replaces],
-    builtin: resolved.base.builtin || source === "push" || source === "builtin",
+    builtin: resolved.base.builtin,
   };
 }
 
@@ -618,7 +614,10 @@ export async function loadPlugins(
     const first = !sweptRoots().has(root);
     if (first || activation.current !== activation.previous) {
       sweptRoots().add(root);
-      await sweepPlugins(root, { pins: await readPluginPins(root), assetsDir: pushedAssets });
+      await sweepPlugins(root, {
+        keep: [activation.current, ...(activation.previous !== null ? [activation.previous] : [])],
+        pins: await readPluginPins(root),
+      });
     }
   }
   const bases = pluginBases(root);
