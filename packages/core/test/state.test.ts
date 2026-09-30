@@ -988,7 +988,7 @@ describe("project-config round trip", () => {
   });
 
   it('normalizes the pre-0.4.2 client_type = "openai" alias to openai-chat on read and write', async () => {
-    // A config saved before AgentHub 0.4.2 renamed the generic Chat Completions client must
+    // A config saved before the generic Chat Completions client was renamed (AgentHub 0.4.2) must
     // keep working: the stored bare "openai" spelling reads back as the canonical
     // "openai-chat" (normalize-on-read, no error and no disk rewrite required).
     const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
@@ -1320,16 +1320,16 @@ describe("project-config round trip", () => {
         m.provider === cfg.default_model!.provider && m.modelId === cfg.default_model!.model_id,
     );
     expect(chosen?.supportsVision).toBe(true);
-    // And it has to be routable as written. deepseek-flash carries no `deepseek-v4`
-    // substring, which is all AgentHub routes DeepSeek on, so the preset entry for the
-    // default must carry the catalog row's pinned client and endpoint — a default that
-    // resolved to no client would fail every first request.
+    // And it has to be routable as written: `deepseek-flash` begins with the family MMSP
+    // routes to its DeepSeek client, so the preset entry for the default pins nothing — a
+    // default that resolved to no client would fail every first request.
     const defaultEntry = cfg.models.find(
       (m) =>
         m.provider === cfg.default_model!.provider && m.model_id === cfg.default_model!.model_id,
     );
-    expect(defaultEntry?.client_type).toBe("deepseek-v4");
-    expect(defaultEntry?.base_url).toBe("https://api.deepseek.com");
+    expect(defaultEntry).toBeDefined();
+    expect(defaultEntry?.client_type).toBeUndefined();
+    expect(defaultEntry?.base_url).toBeUndefined();
     // The catalog is presented in full, retired rows aside (they are kept only for Projects
     // that already carry them): provider and model_id are separate columns, model_id being the
     // plain upstream id (vision is only persisted as false for models that don't support images).

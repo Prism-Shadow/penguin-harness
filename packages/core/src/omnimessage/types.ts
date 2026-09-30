@@ -114,7 +114,7 @@ export interface SessionMetaPayload {
   session_id: string;
   /** The session model's provider group (paired with `model_id` to form a model reference). */
   provider: string;
-  /** The session model's upstream model_id (the request id sent to AgentHub; paired with `provider`). */
+  /** The session model's upstream model_id (the request id sent to MMSP; paired with `provider`). */
   model_id: string;
   model_context_window: number | string;
   /** The system prompt this context runs with (the assembled result, placeholders already substituted). */
@@ -141,7 +141,7 @@ export interface SessionMetaPayload {
 // Docs: /docs/omni-message § "model_msg: complete payloads"
 
 /**
- * Provider-fidelity payload (mirrors AgentHub's `Fidelity`): an arbitrary JSON-style object of
+ * Provider-fidelity payload (mirrors MMSP's `Fidelity`): an arbitrary JSON-style object of
  * wire-level data the LLM client records to reproduce the original message on replay — thinking
  * signatures, phase labels, encrypted reasoning, the upstream reasoning field name, etc. Opaque
  * to PenguinHarness: written to the Trace as-is and passed back verbatim; some models **require**
@@ -350,7 +350,7 @@ export interface TokenUsagePayload {
 /**
  * Request boundary event: the boundary of one LLM Request, produced **in pairs** by
  * `context_engine` and written to Trace. `request_end`
- * with `status` of `completed` means the turn has been committed by AgentHub — this is the
+ * with `status` of `completed` means the turn has been committed by MMSP — this is the
  * mechanical criterion Trace replay (Session resumption) uses to determine whether a turn was
  * committed, and it also gives performance analysis a basis for Request latency and turn counts.
  * A compaction request produces this same event pair too (written to Trace only, not streamed).

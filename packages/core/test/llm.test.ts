@@ -4,19 +4,28 @@
  * Covers two core pieces of logic:
  *   1. Merging OmniMessage[] into one UniMessage (including throwing on mixed roles, and
  *      mapping each content type);
- *   2. Translating/aggregating UniEvent[] into OmniMessage[] (partial_* ordering, complete
- *      messages, token_usage accumulation, tool_call_id passthrough).
+ *   2. Translating UniEvent[] into OmniMessage[] (partial_* ordering, complete messages,
+ *      token_usage, tool_call_id passthrough).
  * As well as helper functions for token conversion, UniConfig construction, and retry
  * determination.
  */
 import { describe, expect, it } from "vitest";
 import {
   EmptyResponseError,
+  StreamProtocolError,
   ThinkingLevel,
   ToolCallArgumentParseError,
   UnsupportedParameterError,
-} from "@prismshadow/agenthub";
-import type { UniConfig, UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
+} from "@prismshadow/mmsp";
+import type {
+  EventContentItem,
+  Fidelity,
+  FinishReason,
+  UniConfig,
+  UniEvent,
+  UniMessage,
+  UsageMetadata,
+} from "@prismshadow/mmsp";
 import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces/index.js";
 
 import {
@@ -58,16 +67,87 @@ import type {
   TokenUsagePayload,
 } from "../src/omnimessage/index.js";
 
-// Small helper to construct a UniEvent.
-function ev(partial: Partial<UniEvent> & Pick<UniEvent, "content_items">): UniEvent {
+// MMSP's public stream, built by hand: `delta` events carrying one item each, closed by one
+// `stop` event. An item streams as its fragments followed by its done item.
+
+const NO_USAGE: UsageMetadata = {
+  cached_tokens: 0,
+  prompt_tokens: 0,
+  thoughts_tokens: 0,
+  response_tokens: 0,
+};
+
+/** One `delta` event carrying one item — the only shape a delta event has. */
+function delta(item: EventContentItem): UniEvent {
   return {
     role: "assistant",
     event_type: "delta",
+    content_items: [item],
     usage_metadata: null,
     finish_reason: null,
-    ...partial,
   };
 }
+
+/** The one `stop` event that ends every successful stream: no items, the usage and the finish reason. */
+function stop(finishReason: FinishReason = "stop", usage: UsageMetadata = NO_USAGE): UniEvent {
+  return {
+    role: "assistant",
+    event_type: "stop",
+    content_items: [],
+    usage_metadata: usage,
+    finish_reason: finishReason,
+  };
+}
+
+/** A text item as it streams: its fragments, then the done item holding their join. */
+function text(chunks: string[], fidelity?: Fidelity): UniEvent[] {
+  return [
+    ...chunks.map((chunk) => delta({ type: "text.delta", text: chunk })),
+    delta({ type: "text.done", text: chunks.join(""), ...(fidelity ? { fidelity } : {}) }),
+  ];
+}
+
+/** A thinking item as it streams. */
+function thinking(chunks: string[], fidelity?: Fidelity): UniEvent[] {
+  return [
+    ...chunks.map((chunk) => delta({ type: "thinking.delta", thinking: chunk })),
+    delta({ type: "thinking.done", thinking: chunks.join(""), ...(fidelity ? { fidelity } : {}) }),
+  ];
+}
+
+/**
+ * A tool call as it streams: the name and id on the first fragment only, the arguments JSON
+ * in fragments, then the done item holding the parsed arguments.
+ */
+function call(name: string, id: string, fragments: string[], fidelity?: Fidelity): UniEvent[] {
+  return [
+    ...fragments.map((args, i) =>
+      delta({
+        type: "tool_call.delta",
+        name: i === 0 ? name : "",
+        arguments: args,
+        tool_call_id: i === 0 ? id : "",
+      }),
+    ),
+    delta({
+      type: "tool_call.done",
+      name,
+      arguments: JSON.parse(fragments.join("") || "{}") as Record<string, unknown>,
+      tool_call_id: id,
+      ...(fidelity ? { fidelity } : {}),
+    }),
+  ];
+}
+
+/** The stream every seam fake answers with: one word of text, then the stop event. */
+function okStream(usage: UsageMetadata = { ...NO_USAGE, prompt_tokens: 1, response_tokens: 1 }) {
+  return (async function* (): AsyncGenerator<UniEvent> {
+    yield* text(["ok"]);
+    yield stop("stop", usage);
+  })();
+}
+
+const typeOf = (m: OmniMessage): string => (m.payload as { type?: string }).type ?? "";
 
 describe("mergeOmniToUniMessage", () => {
   it("merges same-role messages into one UniMessage and maps content types", () => {
@@ -78,14 +158,14 @@ describe("mergeOmniToUniMessage", () => {
     ]);
     expect(uni.role).toBe("user");
     expect(uni.content_items).toHaveLength(3);
-    expect(uni.content_items[0]).toEqual({ type: "text", text: "hello" });
+    expect(uni.content_items[0]).toEqual({ type: "text.done", text: "hello" });
     expect(uni.content_items[1]).toEqual({
-      type: "image_url",
+      type: "image_url.done",
       image_url: "https://example.com/a.png",
     });
     const inline = uni.content_items[2]!;
-    expect(inline.type).toBe("inline_data");
-    if (inline.type === "inline_data") {
+    expect(inline.type).toBe("inline_data.done");
+    if (inline.type === "inline_data.done") {
       expect(inline.mime_type).toBe("image/png");
       expect(Buffer.isBuffer(inline.data)).toBe(true);
       expect(inline.data.toString()).toBe("xyz");
@@ -100,12 +180,12 @@ describe("mergeOmniToUniMessage", () => {
     expect(uni.role).toBe("assistant");
     expect(uni.content_items).toHaveLength(2);
     expect(uni.content_items[0]).toEqual({
-      type: "thinking",
+      type: "thinking.done",
       thinking: "step by step",
     });
     const inline = uni.content_items[1]!;
-    expect(inline.type).toBe("inline_thinking");
-    if (inline.type === "inline_thinking") {
+    expect(inline.type).toBe("inline_thinking.done");
+    if (inline.type === "inline_thinking.done") {
       expect(inline.mime_type).toBe("application/octet-stream");
       expect(Buffer.isBuffer(inline.data)).toBe(true);
       expect(inline.data.toString()).toBe("sig");
@@ -123,7 +203,7 @@ describe("mergeOmniToUniMessage", () => {
     expect(uni.role).toBe("assistant");
     const item = uni.content_items[0]!;
     expect(item).toEqual({
-      type: "tool_call",
+      type: "tool_call.done",
       name: "exec_command",
       arguments: { cmd: "ls -la" },
       tool_call_id: "call_1",
@@ -136,7 +216,7 @@ describe("mergeOmniToUniMessage", () => {
     ]);
     expect(uni.role).toBe("user");
     expect(uni.content_items[0]).toEqual({
-      type: "tool_result",
+      type: "tool_result.done",
       text: "total 0",
       tool_call_id: "call_1",
     });
@@ -149,7 +229,7 @@ describe("mergeOmniToUniMessage", () => {
     ]);
     expect(uni.role).toBe("user");
     expect(uni.content_items[0]).toEqual({
-      type: "tool_result",
+      type: "tool_result.done",
       text: "image/png, 4 B",
       images: [dataUrl],
       tool_call_id: "call_img",
@@ -159,7 +239,7 @@ describe("mergeOmniToUniMessage", () => {
   it("an injected request input (tool outputs + steered notice + steering) collapses into ONE user message", () => {
     // The engine's next-input assembly appends background notices and steering behind the
     // turn's tool outputs — several user-side OmniMessages. On the wire they must be a
-    // single user UniMessage (content_items in input order): what AgentHub receives always
+    // single user UniMessage (content_items in input order): what MMSP receives always
     // alternates user / assistant, and an injection can never produce two adjacent user
     // messages. The per-message granularity exists only at the OmniMessage/Trace layer.
     const notice = buildBackgroundTaskDoneMessage(
@@ -178,8 +258,12 @@ describe("mergeOmniToUniMessage", () => {
       userText(userSteeringText("also check the tests")),
     ]);
     expect(uni.role).toBe("user");
-    expect(uni.content_items.map((c) => c.type)).toEqual(["tool_result", "text", "text"]);
-    const texts = uni.content_items.filter((c) => c.type === "text");
+    expect(uni.content_items.map((c) => c.type)).toEqual([
+      "tool_result.done",
+      "text.done",
+      "text.done",
+    ]);
+    const texts = uni.content_items.filter((c) => c.type === "text.done");
     expect((texts[0] as { text: string }).text).toBe(notice);
     expect((texts[1] as { text: string }).text).toContain("[user_steering]");
   });
@@ -230,27 +314,13 @@ describe("usageToTokenCounts", () => {
 
 describe("translateEvents", () => {
   it("emits text partials (start/delta/stop), a complete text, and token_usage", () => {
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [] }),
-      ev({ content_items: [{ type: "text", text: "Hel" }] }),
-      ev({ content_items: [{ type: "text", text: "lo" }] }),
-      ev({
-        event_type: "stop",
-        content_items: [],
-        finish_reason: "stop",
-        usage_metadata: {
-          cached_tokens: 0,
-          prompt_tokens: 12,
-          thoughts_tokens: 0,
-          response_tokens: 4,
-        },
-      }),
-    ];
-    const { messages, requestTokens, sessionTokens } = translateEvents(events);
+    const { messages, requestTokens, sessionTokens } = translateEvents([
+      ...text(["Hel", "lo"]),
+      stop("stop", { cached_tokens: 0, prompt_tokens: 12, thoughts_tokens: 0, response_tokens: 4 }),
+    ]);
 
-    const types = messages.map((m) => (m.payload as { type: string }).type);
     // partial start, two deltas, partial stop, complete text, token_usage.
-    expect(types).toEqual([
+    expect(messages.map(typeOf)).toEqual([
       "partial_text",
       "partial_text",
       "partial_text",
@@ -261,7 +331,7 @@ describe("translateEvents", () => {
 
     // partial events: start (empty) → delta "Hel" → delta "lo" → stop.
     const ptexts = messages
-      .filter((m) => (m.payload as { type: string }).type === "partial_text")
+      .filter((m) => typeOf(m) === "partial_text")
       .map((m) => m.payload as { event_type: string; text: string });
     expect(ptexts).toEqual([
       {
@@ -294,9 +364,8 @@ describe("translateEvents", () => {
       },
     ]);
 
-    // complete text message: concatenated, stop_reason completed (finish_reason "stop").
-    const complete = messages.find((m) => (m.payload as { type: string }).type === "text")!
-      .payload as TextPayload;
+    // complete text message: the done item's text, stop_reason completed (finish_reason "stop").
+    const complete = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
     expect(complete.text).toBe("Hello");
     expect(complete.role).toBe("assistant");
     expect(complete.stop_reason).toBe("completed");
@@ -312,50 +381,12 @@ describe("translateEvents", () => {
     expect(tu.session.total).toBe(16);
   });
 
-  it("accumulates partial_tool_call args, uses complete tool_call as authoritative, preserves id", () => {
-    const events: UniEvent[] = [
-      ev({
-        event_type: "start",
-        content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "c1" },
-        ],
-      }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"ls',
-            tool_call_id: "c1",
-          },
-        ],
-      }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: ' -la"}',
-            tool_call_id: "c1",
-          },
-        ],
-      }),
-      ev({
-        event_type: "stop",
-        finish_reason: "tool_call",
-        content_items: [
-          {
-            type: "tool_call",
-            name: "exec_command",
-            arguments: { cmd: "ls -la" },
-            tool_call_id: "c1",
-          },
-        ],
-      }),
-    ];
-    const { messages } = translateEvents(events);
-    const types = messages.map((m) => (m.payload as { type: string }).type);
-    expect(types).toEqual([
+  it("streams a tool call from its fragments and completes it from its done item, preserving the id", () => {
+    const { messages } = translateEvents([
+      ...call("exec_command", "c1", ["", '{"cmd":"ls', ' -la"}']),
+      stop("tool_call"),
+    ]);
+    expect(messages.map(typeOf)).toEqual([
       "partial_tool_call", // start
       "partial_tool_call", // delta
       "partial_tool_call", // delta
@@ -366,7 +397,7 @@ describe("translateEvents", () => {
 
     // partial start carries name, no args; deltas carry arg fragments.
     const partials = messages
-      .filter((m) => (m.payload as { type: string }).type === "partial_tool_call")
+      .filter((m) => typeOf(m) === "partial_tool_call")
       .map((m) => m.payload as { event_type: string; arguments: string; tool_call_id: string });
     expect(partials[0]!.event_type).toBe("start");
     expect(partials[0]!.arguments).toBe("");
@@ -375,479 +406,275 @@ describe("translateEvents", () => {
     expect(partials[3]!.event_type).toBe("stop");
     expect(partials.every((p) => p.tool_call_id === "c1")).toBe(true);
 
-    // complete tool_call uses the authoritative complete content item.
-    const tc = messages.find((m) => (m.payload as { type: string }).type === "tool_call")!
-      .payload as ToolCallPayload;
+    // complete tool_call: the done item's parsed arguments, re-serialized.
+    const tc = messages.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
     expect(tc.name).toBe("exec_command");
     expect(tc.tool_call_id).toBe("c1");
     expect(tc.arguments).toBe('{"cmd":"ls -la"}');
     expect(tc.stop_reason).toBe("completed");
   });
 
-  it("falls back to accumulated arg buffer when no complete tool_call item arrives", () => {
-    const events: UniEvent[] = [
-      ev({
-        event_type: "start",
-        content_items: [
-          { type: "partial_tool_call", name: "do_it", arguments: '{"x":', tool_call_id: "z9" },
-        ],
+  it("reads the complete call off the done item alone: the fragments are never reconciled against it", () => {
+    // The fragments are what the provider streamed, the done item is the call; MMSP guarantees
+    // the two agree, and the translator takes the done item's word for it either way.
+    const { messages } = translateEvents([
+      delta({
+        type: "tool_call.delta",
+        name: "exec_command",
+        arguments: '{ "cmd" : "ls" }',
+        tool_call_id: "c1",
       }),
-      ev({
-        content_items: [
-          { type: "partial_tool_call", name: "do_it", arguments: "1}", tool_call_id: "z9" },
-        ],
+      delta({
+        type: "tool_call.done",
+        name: "exec_command",
+        arguments: { cmd: "ls" },
+        tool_call_id: "c1",
       }),
-      ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const tc = messages.find((m) => (m.payload as { type: string }).type === "tool_call")!
-      .payload as ToolCallPayload;
-    expect(tc.arguments).toBe('{"x":1}');
-    expect(tc.tool_call_id).toBe("z9");
-  });
-
-  it("ignores tool-call fragments with empty tool_call_id (no spurious empty tool_call)", () => {
-    // Regression: some early streamed fragments may carry an empty tool_call_id; this must not
-    // be used to generate an empty tool_call (otherwise it would trigger "Unknown tool" and
-    // AgentHub's "tool_call_id is required" error).
-    const events: UniEvent[] = [
-      ev({
-        event_type: "start",
-        content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "real1" },
-        ],
-      }),
-      // A streamed fragment with an empty id mixed in.
-      ev({
-        content_items: [{ type: "partial_tool_call", name: "", arguments: "", tool_call_id: "" }],
-      }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"ls"}',
-            tool_call_id: "real1",
-          },
-        ],
-      }),
-      ev({
-        event_type: "stop",
-        finish_reason: "tool_call",
-        content_items: [
-          {
-            type: "tool_call",
-            name: "exec_command",
-            arguments: { cmd: "ls" },
-            tool_call_id: "real1",
-          },
-          // A complete tool_call with an empty id should also be ignored.
-          { type: "tool_call", name: "", arguments: {}, tool_call_id: "" },
-        ],
-      }),
-    ];
-    const { messages } = translateEvents(events);
-    const toolCalls = messages.filter((m) => (m.payload as { type: string }).type === "tool_call");
-    expect(toolCalls).toHaveLength(1);
-    expect((toolCalls[0]!.payload as ToolCallPayload).tool_call_id).toBe("real1");
-    // No message should carry an empty tool_call_id.
-    const emptyIds = messages.filter(
-      (m) => (m.payload as { tool_call_id?: string }).tool_call_id === "",
-    );
-    expect(emptyIds).toHaveLength(0);
-  });
-
-  it("attributes empty-id tool-call argument deltas to the active tool call", () => {
-    const events: UniEvent[] = [
-      ev({
-        event_type: "start",
-        content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "real1" },
-        ],
-      }),
-      ev({
-        content_items: [
-          { type: "partial_tool_call", name: "", arguments: '{"cmd":"l', tool_call_id: "" },
-        ],
-      }),
-      ev({
-        content_items: [
-          { type: "partial_tool_call", name: "", arguments: 's"}', tool_call_id: "" },
-        ],
-      }),
-      ev({
-        event_type: "stop",
-        finish_reason: "tool_call",
-        content_items: [
-          {
-            type: "tool_call",
-            name: "exec_command",
-            arguments: { cmd: "ls" },
-            tool_call_id: "real1",
-          },
-        ],
-      }),
-    ];
-    const { messages } = translateEvents(events);
-    const deltas = messages
-      .filter(
-        (m) =>
-          (m.payload as { type: string }).type === "partial_tool_call" &&
-          (m.payload as { event_type: string }).event_type === "delta",
-      )
-      .map((m) => m.payload as { arguments: string; tool_call_id: string });
-
-    expect(deltas.map((p) => p.arguments)).toEqual(['{"cmd":"l', 's"}']);
-    expect(deltas.every((p) => p.tool_call_id === "real1")).toBe(true);
-  });
-
-  it("emits a complete tool_call immediately when its complete content item arrives mid-stream (async/incremental)", () => {
-    // Two tools: the first's complete content item arrives mid-stream (not at finish) -> should
-    // be produced immediately.
-    const events: UniEvent[] = [
-      ev({
-        event_type: "start",
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"a"}',
-            tool_call_id: "t1",
-          },
-        ],
-      }),
-      // t1's complete content item arrives early (before t2), and should finish t1 immediately.
-      ev({
-        content_items: [
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "a" }, tool_call_id: "t1" },
-        ],
-      }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"b"}',
-            tool_call_id: "t2",
-          },
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "b" }, tool_call_id: "t2" },
-        ],
-      }),
-      ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const completeToolCalls = messages.filter(
-      (m) => (m.payload as { type: string }).type === "tool_call",
-    );
-    // Both complete tool_calls are produced, with t1 before t2 (in arrival order, not as a
-    // batch at finish).
-    expect(completeToolCalls.map((m) => (m.payload as ToolCallPayload).tool_call_id)).toEqual([
-      "t1",
-      "t2",
+      stop("tool_call"),
     ]);
-    // t1's complete tool_call appears before t2's start fragment (proving it was produced
-    // before finish).
-    const idxT1Complete = messages.findIndex(
-      (m) =>
-        (m.payload as { type: string }).type === "tool_call" &&
-        (m.payload as ToolCallPayload).tool_call_id === "t1",
-    );
-    const idxT2Start = messages.findIndex(
-      (m) =>
-        (m.payload as { type: string }).type === "partial_tool_call" &&
-        (m.payload as { tool_call_id?: string }).tool_call_id === "t2",
-    );
-    expect(idxT1Complete).toBeLessThan(idxT2Start);
-    // Each tool is produced exactly once (no duplication at finish).
-    expect(completeToolCalls).toHaveLength(2);
+    const tc = messages.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
+    expect(tc.arguments).toBe('{"cmd":"ls"}');
   });
 
   it("does not write name on delta or stop tool-call partials", () => {
-    const events: UniEvent[] = [
-      ev({
-        event_type: "start",
-        content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "c1" },
-        ],
-      }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"ls"}',
-            tool_call_id: "c1",
-          },
-        ],
-      }),
-      ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const partials = messages.filter(
-      (m) => (m.payload as { type: string }).type === "partial_tool_call",
-    ) as { payload: { event_type: string; name: string } }[];
+    const { messages } = translateEvents([
+      ...call("exec_command", "c1", ["", '{"cmd":"ls"}']),
+      stop("tool_call"),
+    ]);
+    const partials = messages.filter((m) => typeOf(m) === "partial_tool_call") as {
+      payload: { event_type: string; name: string };
+    }[];
     const start = partials.find((p) => p.payload.event_type === "start")!;
-    const delta = partials.find((p) => p.payload.event_type === "delta")!;
-    const stop = partials.find((p) => p.payload.event_type === "stop")!;
+    const delta_ = partials.find((p) => p.payload.event_type === "delta")!;
+    const stop_ = partials.find((p) => p.payload.event_type === "stop")!;
     expect(start.payload.name).toBe("exec_command"); // start still carries name.
-    expect(delta.payload.name).toBe(""); // delta does not carry name.
-    expect(stop.payload.name).toBe(""); // stop does not carry name.
+    expect(delta_.payload.name).toBe(""); // delta does not carry name.
+    expect(stop_.payload.name).toBe(""); // stop does not carry name.
+  });
+
+  it("argument fragments belong to the call streaming now, whatever id they carry", () => {
+    // A call's name and id come once, on its first fragment; later fragments carry neither
+    // (some gateways put an id of their own on them). Every partial goes out under the call's id.
+    const { messages } = translateEvents([
+      delta({
+        type: "tool_call.delta",
+        name: "exec_command",
+        arguments: "",
+        tool_call_id: "real1",
+      }),
+      delta({ type: "tool_call.delta", name: "", arguments: '{"cmd":"l', tool_call_id: "" }),
+      delta({ type: "tool_call.delta", name: "", arguments: 's"}', tool_call_id: "other" }),
+      delta({
+        type: "tool_call.done",
+        name: "exec_command",
+        arguments: { cmd: "ls" },
+        tool_call_id: "real1",
+      }),
+      stop("tool_call"),
+    ]);
+    const partials = messages
+      .filter((m) => typeOf(m) === "partial_tool_call")
+      .map((m) => m.payload as { event_type: string; arguments: string; tool_call_id: string });
+    expect(partials.map((p) => p.event_type)).toEqual(["start", "delta", "delta", "stop"]);
+    expect(partials.every((p) => p.tool_call_id === "real1")).toBe(true);
+    expect(messages.filter((m) => typeOf(m) === "tool_call")).toHaveLength(1);
+  });
+
+  it("emits each complete tool_call as soon as its done item arrives, before the next call starts", () => {
+    // The engine starts approval/execution on the first call while the second still streams.
+    const { messages } = translateEvents([
+      ...call("exec_command", "t1", ['{"cmd":"a"}']),
+      ...call("exec_command", "t2", ['{"cmd":"b"}']),
+      stop("tool_call"),
+    ]);
+    const idxT1Complete = messages.findIndex(
+      (m) => typeOf(m) === "tool_call" && (m.payload as ToolCallPayload).tool_call_id === "t1",
+    );
+    const idxT2Start = messages.findIndex(
+      (m) =>
+        typeOf(m) === "partial_tool_call" &&
+        (m.payload as { tool_call_id?: string }).tool_call_id === "t2",
+    );
+    expect(idxT1Complete).toBeGreaterThanOrEqual(0);
+    expect(idxT1Complete).toBeLessThan(idxT2Start);
+    expect(
+      messages
+        .filter((m) => typeOf(m) === "tool_call")
+        .map((m) => (m.payload as ToolCallPayload).tool_call_id),
+    ).toEqual(["t1", "t2"]);
   });
 
   it("emits thinking partials and a complete thinking message before text", () => {
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "thinking", thinking: "Let me" }] }),
-      ev({ content_items: [{ type: "thinking", thinking: " think" }] }),
-      ev({ content_items: [{ type: "text", text: "Answer" }] }),
-      ev({ event_type: "stop", finish_reason: "stop", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "thinking" || t === "text");
-    // thinking complete message emitted before text complete message.
-    expect(completeTypes).toEqual(["thinking", "text"]);
-
-    const think = messages.find((m) => (m.payload as { type: string }).type === "thinking")!
-      .payload as ThinkingPayload;
+    const { messages } = translateEvents([
+      ...thinking(["Let me", " think"]),
+      ...text(["Answer"]),
+      stop(),
+    ]);
+    expect(messages.map(typeOf).filter((t) => t === "thinking" || t === "text")).toEqual([
+      "thinking",
+      "text",
+    ]);
+    const think = messages.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
     expect(think.thinking).toBe("Let me think");
-  });
-
-  it("emits complete thinking and text before a mid-stream complete tool_call", () => {
-    // Reproduces the "thinking ends up after tool_call in Trace" regression: the model thinks
-    // first, then outputs text, then the tool call's complete content item arrives before
-    // finish. The complete-message order must be thinking -> text -> tool_call (not
-    // tool_call -> thinking -> text).
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "thinking", thinking: "I should" }] }),
-      ev({ content_items: [{ type: "thinking", thinking: " run ls" }] }),
-      ev({ content_items: [{ type: "text", text: "Running it." }] }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"ls"}',
-            tool_call_id: "c1",
-          },
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
-        ],
-      }),
-      ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "thinking" || t === "text" || t === "tool_call");
-    // Complete-message order: thinking -> text -> tool_call, each exactly once (flush does not repeat).
-    expect(completeTypes).toEqual(["thinking", "text", "tool_call"]);
-
-    // Complete thinking/text are marked completed when finished at the boundary (the finish
-    // reason belongs to the tool_call itself).
-    const think = messages.find((m) => (m.payload as { type: string }).type === "thinking")!
-      .payload as ThinkingPayload;
-    expect(think.thinking).toBe("I should run ls");
-    expect(think.stop_reason).toBe("completed");
-    const text = messages.find((m) => (m.payload as { type: string }).type === "text")!
-      .payload as TextPayload;
-    expect(text.text).toBe("Running it.");
-    expect(text.stop_reason).toBe("completed");
-    const tc = messages.find((m) => (m.payload as { type: string }).type === "tool_call")!
-      .payload as ToolCallPayload;
-    expect(tc.stop_reason).toBe("completed");
-  });
-
-  it("flushes thinking/text emitted after a tool_call (does not drop later segments)", () => {
-    // Interleaved output: text appears both before and after tool_call. The reset-after-flush
-    // design should let a new text segment following tool_call still be produced correctly at
-    // finish (a one-shot guard would lose it).
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "text", text: "before " }] }),
-      ev({ content_items: [{ type: "text", text: "call" }] }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"ls"}',
-            tool_call_id: "c1",
-          },
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
-        ],
-      }),
-      ev({ content_items: [{ type: "text", text: "after call" }] }),
-      ev({ event_type: "stop", finish_reason: "stop", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "text" || t === "tool_call");
-    // Produces the text before tool_call first, then tool_call, then the new text segment after it.
-    expect(completeTypes).toEqual(["text", "tool_call", "text"]);
-
-    const texts = messages
-      .filter((m) => (m.payload as { type: string }).type === "text")
-      .map((m) => (m.payload as TextPayload).text);
-    expect(texts).toEqual(["before call", "after call"]);
-  });
-
-  it("keeps thinking and text as separate segments across a thinking→text boundary", () => {
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "thinking", thinking: "ponder" }] }),
-      ev({ content_items: [{ type: "text", text: "answer" }] }),
-      ev({ event_type: "stop", finish_reason: "stop", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "thinking" || t === "text");
-    expect(completeTypes).toEqual(["thinking", "text"]);
-    // The thinking segment finishes before the text segment starts: partial_thinking stop
-    // precedes partial_text start.
+    // The thinking item is closed before the text item opens: partial_thinking stop precedes
+    // partial_text start.
     const idxThinkStop = messages.findIndex(
       (m) =>
-        (m.payload as { type: string; event_type?: string }).type === "partial_thinking" &&
+        typeOf(m) === "partial_thinking" &&
         (m.payload as { event_type?: string }).event_type === "stop",
     );
     const idxTextStart = messages.findIndex(
       (m) =>
-        (m.payload as { type: string; event_type?: string }).type === "partial_text" &&
+        typeOf(m) === "partial_text" &&
         (m.payload as { event_type?: string }).event_type === "start",
     );
     expect(idxThinkStop).toBeGreaterThanOrEqual(0);
     expect(idxThinkStop).toBeLessThan(idxTextStart);
   });
 
-  it("emits text before thinking for a text→thinking boundary (not reordered)", () => {
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "text", text: "hello" }] }),
-      ev({ content_items: [{ type: "thinking", thinking: "hmm" }] }),
-      ev({ event_type: "stop", finish_reason: "stop", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "thinking" || t === "text");
-    // The generation order is text -> thinking, and the complete-message order must match it
-    // (the old implementation would reverse it to put thinking first).
-    expect(completeTypes).toEqual(["text", "thinking"]);
+  it("keeps the complete-message order thinking → text → tool_call, each item completed at its own end", () => {
+    const { messages } = translateEvents([
+      ...thinking(["I should", " run ls"]),
+      ...text(["Running it."]),
+      ...call("exec_command", "c1", ['{"cmd":"ls"}']),
+      stop("tool_call"),
+    ]);
+    expect(
+      messages.map(typeOf).filter((t) => t === "thinking" || t === "text" || t === "tool_call"),
+    ).toEqual(["thinking", "text", "tool_call"]);
+    // Items that ended before the stream did are `completed`: the finish reason belongs to the
+    // item that ends the stream (here the tool call).
+    const think = messages.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
+    expect(think.thinking).toBe("I should run ls");
+    expect(think.stop_reason).toBe("completed");
+    const txt = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
+    expect(txt.text).toBe("Running it.");
+    expect(txt.stop_reason).toBe("completed");
+    const tc = messages.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
+    expect(tc.stop_reason).toBe("completed");
   });
 
-  it("does not merge two thinking segments separated by text (think→text→think)", () => {
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "thinking", thinking: "first" }] }),
-      ev({ content_items: [{ type: "text", text: "mid" }] }),
-      ev({ content_items: [{ type: "thinking", thinking: "second" }] }),
-      ev({ event_type: "stop", finish_reason: "stop", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "thinking" || t === "text");
-    // Three separate segments, produced in generation order (the old implementation merged
-    // the two thinking segments and had no second start).
-    expect(completeTypes).toEqual(["thinking", "text", "thinking"]);
-    const thinkings = messages
-      .filter((m) => (m.payload as { type: string }).type === "thinking")
-      .map((m) => (m.payload as ThinkingPayload).thinking);
-    expect(thinkings).toEqual(["first", "second"]);
-    // The second thinking segment reopens a segment: two partial_thinking starts appear.
-    const thinkStarts = messages.filter(
+  it("keeps every item in generation order: text after a tool call, thinking between texts", () => {
+    const { messages } = translateEvents([
+      ...text(["before ", "call"]),
+      ...call("exec_command", "c1", ['{"cmd":"ls"}']),
+      ...text(["after call"]),
+      ...thinking(["hmm"]),
+      ...text(["c"]),
+      stop(),
+    ]);
+    expect(
+      messages.map(typeOf).filter((t) => t === "thinking" || t === "text" || t === "tool_call"),
+    ).toEqual(["text", "tool_call", "text", "thinking", "text"]);
+    expect(
+      messages.filter((m) => typeOf(m) === "text").map((m) => (m.payload as TextPayload).text),
+    ).toEqual(["before call", "after call", "c"]);
+    // Each item opens its own partial stream: three partial_text starts.
+    expect(
+      messages.filter(
+        (m) =>
+          typeOf(m) === "partial_text" &&
+          (m.payload as { event_type?: string }).event_type === "start",
+      ),
+    ).toHaveLength(3);
+  });
+
+  it("the item that ends the stream takes the request's finish reason: `length` ends it fatal", () => {
+    // A reply cut at the output cap: the request itself committed (nothing retries), but the
+    // last item ended in a way only a human can fix, which is what the abnormal terminal label
+    // tells the render layers. Earlier items are unaffected.
+    const { messages } = translateEvents([
+      ...thinking(["plan"]),
+      ...text(["cut off mid-sen"]),
+      stop("length"),
+    ]);
+    const think = messages.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
+    expect(think.stop_reason).toBe("completed");
+    const txt = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
+    expect(txt.stop_reason).toBe("fatal");
+    const textStop = messages.find(
       (m) =>
-        (m.payload as { type: string; event_type?: string }).type === "partial_thinking" &&
-        (m.payload as { event_type?: string }).event_type === "start",
-    );
-    expect(thinkStarts).toHaveLength(2);
+        typeOf(m) === "partial_text" &&
+        (m.payload as { event_type?: string }).event_type === "stop",
+    )!.payload as { stop_reason: string };
+    expect(textStop.stop_reason).toBe("fatal");
+    // The messages of the last item wait for the stop event: nothing about it went out before.
+    expect(messages.map(typeOf)).toEqual([
+      "partial_thinking",
+      "partial_thinking",
+      "partial_thinking",
+      "thinking",
+      "partial_text",
+      "partial_text",
+      "partial_text",
+      "text",
+      "token_usage",
+    ]);
   });
 
-  it("does not merge two text segments separated by thinking (text→think→text)", () => {
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "text", text: "a" }] }),
-      ev({ content_items: [{ type: "thinking", thinking: "b" }] }),
-      ev({ content_items: [{ type: "text", text: "c" }] }),
-      ev({ event_type: "stop", finish_reason: "stop", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "thinking" || t === "text");
-    expect(completeTypes).toEqual(["text", "thinking", "text"]);
-    const texts = messages
-      .filter((m) => (m.payload as { type: string }).type === "text")
-      .map((m) => (m.payload as TextPayload).text);
-    expect(texts).toEqual(["a", "c"]);
+  it("a fragment carrying only fidelity opens nothing on screen; its done item still becomes a complete message", () => {
+    // GPT-5 encrypted reasoning: a thinking item with no text, only the payload replay needs.
+    const { messages } = translateEvents([
+      delta({
+        type: "thinking.delta",
+        thinking: "",
+        fidelity: { id: "rs_1", encrypted_content: "aaa" },
+      }),
+      delta({
+        type: "thinking.done",
+        thinking: "",
+        fidelity: { id: "rs_1", encrypted_content: "aaa" },
+      }),
+      ...text(["answer"]),
+      stop(),
+    ]);
+    expect(messages.map(typeOf)).toEqual([
+      "thinking",
+      "partial_text",
+      "partial_text",
+      "partial_text",
+      "text",
+      "token_usage",
+    ]);
+    const think = messages[0]!.payload as ThinkingPayload;
+    expect(think.thinking).toBe("");
+    expect(think.fidelity).toEqual({ id: "rs_1", encrypted_content: "aaa" });
   });
 
-  it("flushes thinking/text before a partial-only tool_call (no full item until finish)", () => {
-    // The tool only goes through partial_tool_call deltas (no complete tool_call content item),
-    // and is produced by falling back at finish. The new tool's first delta is a type boundary,
-    // so thinking/text must be flushed first.
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "thinking", thinking: "plan" }] }),
-      ev({ content_items: [{ type: "text", text: "doing" }] }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":',
-            tool_call_id: "p1",
-          },
-        ],
-      }),
-      ev({
-        content_items: [
-          { type: "partial_tool_call", name: "", arguments: '"ls"}', tool_call_id: "p1" },
-        ],
-      }),
-      ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const completeTypes = messages
-      .map((m) => (m.payload as { type: string }).type)
-      .filter((t) => t === "thinking" || t === "text" || t === "tool_call");
-    expect(completeTypes).toEqual(["thinking", "text", "tool_call"]);
-    // Only one thinking, one text, each flushed exactly once before the tool's first delta.
-    const tc = messages.find((m) => (m.payload as { type: string }).type === "tool_call")!
-      .payload as ToolCallPayload;
-    expect(tc.arguments).toBe('{"cmd":"ls"}');
+  it("carries the done items' fidelity to the complete messages", () => {
+    const { messages } = translateEvents([
+      ...thinking(["deep"], { signature: "sig-1" }),
+      ...text(["hi"], { phase: "answer", signature: "sig-2" }),
+      ...call("t", "tc1", ["{}"], { signature: "sig-3" }),
+      stop("tool_call"),
+    ]);
+    const fidelityOf = (type: string): unknown =>
+      (messages.find((m) => typeOf(m) === type)!.payload as { fidelity?: unknown }).fidelity;
+    expect(fidelityOf("thinking")).toEqual({ signature: "sig-1" });
+    expect(fidelityOf("text")).toEqual({ phase: "answer", signature: "sig-2" });
+    expect(fidelityOf("tool_call")).toEqual({ signature: "sig-3" });
+    // Partials never carry it.
+    expect(
+      messages
+        .filter((m) => typeOf(m).startsWith("partial_"))
+        .every((m) => (m.payload as { fidelity?: unknown }).fidelity === undefined),
+    ).toBe(true);
   });
 
-  it("does not re-flush on continuation tool deltas lacking a tool_call_id", () => {
-    // Some providers' subsequent argument deltas do not carry an id, and are attributed to
-    // activeToolCallId; this must not trigger a duplicate flush, nor produce a spurious
-    // empty thinking/text complete message.
-    const events: UniEvent[] = [
-      ev({ event_type: "start", content_items: [{ type: "thinking", thinking: "go" }] }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"a":',
-            tool_call_id: "k1",
-          },
-        ],
-      }),
-      // A continuation delta with no id.
-      ev({
-        content_items: [{ type: "partial_tool_call", name: "", arguments: "1}", tool_call_id: "" }],
-      }),
-      ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
-    ];
-    const { messages } = translateEvents(events);
-    const thinkings = messages.filter((m) => (m.payload as { type: string }).type === "thinking");
-    const texts = messages.filter((m) => (m.payload as { type: string }).type === "text");
-    expect(thinkings).toHaveLength(1); // Exactly one, not duplicated by the continuation delta
-    expect(texts).toHaveLength(0); // Does not conjure an empty text out of nowhere
-    const toolStarts = messages.filter(
-      (m) =>
-        (m.payload as { type: string; event_type?: string }).type === "partial_tool_call" &&
-        (m.payload as { event_type?: string }).event_type === "start",
-    );
-    expect(toolStarts).toHaveLength(1); // The same tool has only one start
+  it("passes over items that are not model text, thinking or tool calls", () => {
+    // An image the model generated mid-reply is not streaming output here; the text before it
+    // is still closed in order.
+    const { messages } = translateEvents([
+      ...text(["see: "]),
+      delta({ type: "inline_data.delta", data: Buffer.from("png"), mime_type: "image/png" }),
+      delta({ type: "inline_data.done", data: Buffer.from("png"), mime_type: "image/png" }),
+      ...text(["done"]),
+      stop(),
+    ]);
+    expect(
+      messages.filter((m) => typeOf(m) === "text").map((m) => (m.payload as TextPayload).text),
+    ).toEqual(["see: ", "done"]);
+    expect(messages.map(typeOf)).not.toContain("inline_data");
   });
 
   it("accumulates session tokens across two requests", () => {
@@ -857,231 +684,116 @@ describe("translateEvents", () => {
       thoughts_tokens: 0,
       response_tokens: r,
     });
-    const first = translateEvents([
-      ev({ content_items: [{ type: "text", text: "a" }] }),
-      ev({
-        event_type: "stop",
-        finish_reason: "stop",
-        content_items: [],
-        usage_metadata: mkUsage(10, 5),
-      }),
-    ]);
+    const first = translateEvents([...text(["a"]), stop("stop", mkUsage(10, 5))]);
     expect(first.sessionTokens.total).toBe(15);
 
     const second = translateEvents(
-      [
-        ev({ content_items: [{ type: "text", text: "b" }] }),
-        ev({
-          event_type: "stop",
-          finish_reason: "stop",
-          content_items: [],
-          usage_metadata: mkUsage(20, 3),
-        }),
-      ],
+      [...text(["b"]), stop("stop", mkUsage(20, 3))],
       first.sessionTokens,
     );
     expect(second.requestTokens.total).toBe(23);
     expect(second.sessionTokens.total).toBe(38);
   });
-
-  it("keeps only the last usage snapshot within a request (per-chunk cumulative reports are not summed)", () => {
-    // Regression: Gemini (and some OpenAI-compatible endpoints) report usage as a **cumulative
-    // snapshot** per chunk; summing them would inflate usage by roughly the chunk count
-    // (especially for output), so the last snapshot must be authoritative.
-    const mkUsage = (p: number, t: number, r: number): UsageMetadata => ({
-      cached_tokens: null,
-      prompt_tokens: p,
-      thoughts_tokens: t,
-      response_tokens: r,
-    });
-    const { messages, requestTokens, sessionTokens } = translateEvents([
-      ev({ content_items: [{ type: "text", text: "Hel" }], usage_metadata: mkUsage(16, 488, 18) }),
-      ev({ content_items: [{ type: "text", text: "lo" }], usage_metadata: mkUsage(16, 488, 20) }),
-      ev({
-        event_type: "stop",
-        finish_reason: "stop",
-        content_items: [],
-        usage_metadata: mkUsage(16, 488, 20),
-      }),
-    ]);
-    // The last snapshot is authoritative: cache_write = 16, output = 488 + 20 = 508, total = 524.
-    expect(requestTokens).toEqual({ cache_read: 0, cache_write: 16, output: 508, total: 524 });
-    expect(sessionTokens).toEqual(requestTokens);
-    const tu = messages.at(-1)!.payload as TokenUsagePayload;
-    expect(tu.request.total).toBe(524);
-  });
-
-  it("drops an unused event without splitting the segment it interrupts", () => {
-    // AgentHub marks any stream event a client does not recognize `unused` and attaches no
-    // content items to it, so a frame a gateway injects mid-generation (heartbeat, cost
-    // ticker) must pass through the translator without opening, closing or splitting the
-    // text segment around it, and without disturbing the usage snapshot.
-    const { messages, requestTokens } = translateEvents([
-      ev({ event_type: "start", content_items: [] }),
-      ev({ content_items: [{ type: "text", text: "Hel" }] }),
-      ev({ event_type: "unused", content_items: [] }),
-      ev({ content_items: [{ type: "text", text: "lo" }] }),
-      ev({
-        event_type: "stop",
-        content_items: [],
-        finish_reason: "stop",
-        usage_metadata: {
-          cached_tokens: 0,
-          prompt_tokens: 12,
-          thoughts_tokens: 0,
-          response_tokens: 4,
-        },
-      }),
-    ]);
-
-    const types = messages.map((m) => (m.payload as { type: string }).type);
-    // One start, one delta per text item, one stop — the unused event adds nothing.
-    expect(types).toEqual([
-      "partial_text",
-      "partial_text",
-      "partial_text",
-      "partial_text",
-      "text",
-      "token_usage",
-    ]);
-    const complete = messages.find((m) => (m.payload as { type: string }).type === "text")!
-      .payload as TextPayload;
-    expect(complete.text).toBe("Hello");
-    expect(complete.stop_reason).toBe("completed");
-    expect(requestTokens.total).toBe(16);
-  });
 });
 
 describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () => {
-  it("closes an open text segment with a stop + complete text marked with the interruption reason, and emits no token_usage", () => {
-    const tr = new EventTranslator();
+  function pushAll(tr: EventTranslator, events: UniEvent[]): OmniMessage[] {
     const out: OmniMessage[] = [];
-    // Opens a text segment (start + two deltas), then gets interrupted (no stop / finish received).
-    for (const e of [
-      ev({ event_type: "start", content_items: [] }),
-      ev({ content_items: [{ type: "text", text: "Par" }] }),
-      ev({ content_items: [{ type: "text", text: "tial" }] }),
-    ]) {
-      for (const m of tr.pushEvent(e)) out.push(m);
-    }
+    for (const e of events) for (const m of tr.pushEvent(e)) out.push(m);
+    return out;
+  }
+
+  it("closes an open text item with a stop + complete text marked with the interruption reason, and emits no token_usage", () => {
+    const tr = new EventTranslator();
+    // Two fragments went out, then the stream broke (no done item, no stop event).
+    const out = pushAll(tr, [
+      delta({ type: "text.delta", text: "Par" }),
+      delta({ type: "text.delta", text: "tial" }),
+    ]);
     for (const m of tr.finishInterrupted("retryable")) out.push(m);
 
-    const types = out.map((m) => (m.payload as { type: string }).type);
-    expect(types).toEqual([
+    expect(out.map(typeOf)).toEqual([
       "partial_text", // start
       "partial_text", // delta Par
       "partial_text", // delta tial
       "partial_text", // stop (backfilled by finishInterrupted)
       "text", // complete message
     ]);
-    expect(types).not.toContain("token_usage"); // An interrupted Request has no usage.
 
-    const stop = out[3]!.payload as { event_type: string; stop_reason: string };
-    expect(stop.event_type).toBe("stop");
-    expect(stop.stop_reason).toBe("retryable");
+    const stop_ = out[3]!.payload as { event_type: string; stop_reason: string };
+    expect(stop_.event_type).toBe("stop");
+    expect(stop_.stop_reason).toBe("retryable");
     const complete = out[4]!.payload as TextPayload;
     expect(complete.text).toBe("Partial");
     expect(complete.stop_reason).toBe("retryable");
   });
 
-  it("closes an open thinking segment with the interruption reason on both partial stop and complete message", () => {
+  it("closes an open thinking item with the interruption reason on both partial stop and complete message", () => {
     const tr = new EventTranslator();
-    const out: OmniMessage[] = [];
-    // Opens a thinking segment (start + delta), then gets interrupted (no stop / finish received).
-    for (const e of [
-      ev({ event_type: "start", content_items: [] }),
-      ev({ content_items: [{ type: "thinking", thinking: "half a thought" }] }),
-    ]) {
-      for (const m of tr.pushEvent(e)) out.push(m);
-    }
+    const out = pushAll(tr, [delta({ type: "thinking.delta", thinking: "half a thought" })]);
     for (const m of tr.finishInterrupted("aborted")) out.push(m);
 
-    const stop = out.find(
+    const stop_ = out.find(
       (m) =>
-        (m.payload as { type: string; event_type?: string }).type === "partial_thinking" &&
+        typeOf(m) === "partial_thinking" &&
         (m.payload as { event_type?: string }).event_type === "stop",
     )!.payload as { stop_reason: string };
-    expect(stop.stop_reason).toBe("aborted");
-    const complete = out.find((m) => (m.payload as { type: string }).type === "thinking")!
-      .payload as ThinkingPayload;
+    expect(stop_.stop_reason).toBe("aborted");
+    const complete = out.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
     expect(complete.thinking).toBe("half a thought");
     // Streamed concatenation == complete message: the complete thinking's stop_reason matches
-    // partial(stop), no longer hardcoded to completed (regression: flushThinking used to
-    // hardcode completed).
+    // partial(stop).
     expect(complete.stop_reason).toBe("aborted");
   });
 
-  it("completes an incomplete (partials-only) tool_call with the interruption reason, not 'completed'", () => {
+  it("completes an incomplete (fragments-only) tool_call with the interruption reason, not 'completed'", () => {
     const tr = new EventTranslator();
-    const out: OmniMessage[] = [];
-    for (const e of [
-      ev({
-        event_type: "start",
-        content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "c1" },
-        ],
-      }),
-      ev({
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"ls',
-            tool_call_id: "c1",
-          },
-        ],
-      }),
-    ]) {
-      for (const m of tr.pushEvent(e)) out.push(m);
-    }
+    const out = pushAll(tr, [
+      delta({ type: "tool_call.delta", name: "exec_command", arguments: "", tool_call_id: "c1" }),
+      delta({ type: "tool_call.delta", name: "", arguments: '{"cmd":"ls', tool_call_id: "" }),
+    ]);
     for (const m of tr.finishInterrupted("aborted")) out.push(m);
 
-    const complete = out.find((m) => (m.payload as { type: string }).type === "tool_call")!
-      .payload as ToolCallPayload;
+    const complete = out.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
     expect(complete.tool_call_id).toBe("c1");
+    expect(complete.name).toBe("exec_command");
     // Key point: not "completed" -> context_engine will not dispatch it for execution (it only
     // serves structural completeness and observability).
     expect(complete.stop_reason).toBe("aborted");
-    expect(complete.arguments).toBe('{"cmd":"ls'); // Keeps the (incomplete) delta accumulated so far.
+    expect(complete.arguments).toBe('{"cmd":"ls'); // Keeps the (incomplete) fragments accumulated so far.
 
     const toolStop = out.find(
       (m) =>
-        (m.payload as { type: string }).type === "partial_tool_call" &&
+        typeOf(m) === "partial_tool_call" &&
         (m.payload as { event_type: string }).event_type === "stop",
     )!.payload as { stop_reason: string };
     expect(toolStop.stop_reason).toBe("aborted");
-    expect(out.map((m) => (m.payload as { type: string }).type)).not.toContain("token_usage");
+    expect(out.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("does not re-emit nor relabel a tool_call already completed mid-stream (keeps 'completed')", () => {
+  it("does not re-emit nor relabel a tool_call already completed by its done item (keeps 'completed')", () => {
     const tr = new EventTranslator();
-    const out: OmniMessage[] = [];
-    for (const e of [
-      ev({
-        event_type: "start",
-        content_items: [
-          {
-            type: "partial_tool_call",
-            name: "exec_command",
-            arguments: '{"cmd":"ls"}',
-            tool_call_id: "c1",
-          },
-        ],
-      }),
-      ev({
-        content_items: [
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
-        ],
-      }),
-    ]) {
-      for (const m of tr.pushEvent(e)) out.push(m);
-    }
+    const out = pushAll(tr, call("exec_command", "c1", ['{"cmd":"ls"}']));
     const before = out.length;
     for (const m of tr.finishInterrupted("retryable")) out.push(m);
-    expect(out.length).toBe(before); // Already produced immediately, not duplicated.
-    const complete = out.find((m) => (m.payload as { type: string }).type === "tool_call")!
-      .payload as ToolCallPayload;
+    expect(out.length).toBe(before); // Already produced on its done item, not duplicated.
+    const complete = out.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
     expect(complete.stop_reason).toBe("completed");
+  });
+
+  it("a finished text still waiting for the stream's end takes the interruption reason", () => {
+    // The text's done item arrived, but the stream broke before its stop event: the request
+    // never committed, so the complete text is labelled like the request — and goes out at
+    // all, rather than staying held.
+    const tr = new EventTranslator();
+    const out = pushAll(tr, text(["all of it"]));
+    expect(out.map(typeOf)).toEqual(["partial_text", "partial_text"]); // start + delta; the rest waits
+    for (const m of tr.finishInterrupted("retryable")) out.push(m);
+    expect(out.map(typeOf)).toEqual(["partial_text", "partial_text", "partial_text", "text"]);
+    const complete = out[3]!.payload as TextPayload;
+    expect(complete.text).toBe("all of it");
+    expect(complete.stop_reason).toBe("retryable");
+    expect((out[2]!.payload as { stop_reason: string }).stop_reason).toBe("retryable");
   });
 });
 
@@ -1153,11 +865,11 @@ describe("config helpers", () => {
 
   it("omits tools when empty and never sets tool_choice (strict endpoints reject both)", () => {
     // Empty tool list (connectivity probe, bare/meta LLM, vision describer): the `tools` key
-    // must be absent, not `[]` — AgentHub forwards any defined array verbatim, and strict
+    // must be absent, not `[]` — MMSP forwards any defined array verbatim, and strict
     // OpenAI-compatible servers (e.g. vLLM) reject `tools: []` with a 400.
     const empty = buildUniConfig({ modelId: "m", tools: [] });
     expect("tools" in empty).toBe(false);
-    // `tool_choice` must never be set: AgentHub only emits it on the wire when UniConfig
+    // `tool_choice` must never be set: MMSP only emits it on the wire when UniConfig
     // defines it, and leaving it off preserves the protocol default.
     expect("tool_choice" in empty).toBe(false);
     const withTools = buildUniConfig({ modelId: "m", tools: [{ name: "t", description: "d" }] });
@@ -1177,7 +889,7 @@ describe("config helpers", () => {
   });
 
   it("always asks for thought summaries (they keep a reasoning phase on the wire)", () => {
-    // Unconditional, unlike fast_mode: no client rejects the flag — AgentHub maps it where the
+    // Unconditional, unlike fast_mode: no client rejects the flag — MMSP maps it where the
     // provider has one and drops it where it doesn't. Beyond showing the user the reasoning,
     // it keeps events arriving while the model thinks, which is what the request timeout (an
     // idle budget between upstream events) actually measures.
@@ -1294,12 +1006,12 @@ describe("isAuthenticationError", () => {
 describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fast tier)", () => {
   const fastModeError = () =>
     new UnsupportedParameterError({
-      client: "KimiK3Client",
+      client: "MoonshotOfficialClient",
       parameter: "fast_mode",
       message: "Kimi does not support fast mode.",
     });
 
-  it("detects AgentHub's UnsupportedParameterError for fast_mode, including the cause chain", () => {
+  it("detects MMSP's UnsupportedParameterError for fast_mode, including the cause chain", () => {
     expect(isFastModeUnsupportedError(fastModeError())).toBe(true);
     // Wrapped one level up (a higher layer annotating the request) is still found.
     expect(
@@ -1322,7 +1034,7 @@ describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fa
     expect(
       isFastModeUnsupportedError(
         new UnsupportedParameterError({
-          client: "Gemini37Client",
+          client: "GeminiOfficialClient",
           parameter: "temperature",
           message: "temperature is not supported.",
         }),
@@ -1337,7 +1049,7 @@ describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fa
 
 describe("isMalformedJsonParseError", () => {
   it("detects JSON.parse SyntaxError by exception type, including the cause chain", () => {
-    // AgentHub uses JSON.parse internally; a parse failure throws a SyntaxError, so it can be
+    // MMSP uses JSON.parse internally; a parse failure throws a SyntaxError, so it can be
     // determined directly by exception type.
     expect(
       isMalformedJsonParseError(new SyntaxError("Unexpected token < in JSON at position 0")),
@@ -1358,13 +1070,13 @@ describe("isMalformedJsonParseError", () => {
     expect(isMalformedJsonParseError(new Error("socket hang up"))).toBe(false);
   });
 
-  it("detects AgentHub 0.4 parse/validation error classes (truncated tool args, thinking-only)", () => {
-    // A stream truncated mid-arguments surfaces as ToolCallArgumentParseError since agenthub
-    // 0.4 (previously a raw SyntaxError) — must stay malformed so the engine reconnects.
+  it("detects MMSP's stream errors (truncated tool args, thinking-only, a broken grammar)", () => {
+    // A stream truncated mid-arguments surfaces as ToolCallArgumentParseError, thrown in place
+    // of the call's done item — must stay malformed so the engine reconnects.
     expect(
       isMalformedJsonParseError(
         new ToolCallArgumentParseError({
-          client: "Claude5Client",
+          client: "AnthropicOfficialClient",
           toolName: "exec_command",
           toolCallId: "toolu_broken_1",
           rawArguments: '{"cmd": "ec',
@@ -1376,34 +1088,46 @@ describe("isMalformedJsonParseError", () => {
     // via malformed gives the model another chance instead of failing the turn.
     expect(
       isMalformedJsonParseError(
-        new EmptyResponseError({ client: "Claude5Client", finishReason: "stop" }),
+        new EmptyResponseError({ client: "AnthropicOfficialClient", finishReason: "stop" }),
+      ),
+    ).toBe(true);
+    // A client that broke the stream grammar: the response is unusable, the turn uncommitted.
+    expect(
+      isMalformedJsonParseError(
+        new StreamProtocolError({
+          client: "OpenaiChatClient",
+          message: "a delta event carries usage_metadata",
+        }),
       ),
     ).toBe(true);
     // Also detectable via the name fallback and the cause chain.
     expect(
       isMalformedJsonParseError(
         new Error("request failed", {
-          cause: new EmptyResponseError({ client: "GPT5_5Client", finishReason: null }),
+          cause: new EmptyResponseError({ client: "OpenAIOfficialClient", finishReason: null }),
         }),
       ),
     ).toBe(true);
+    expect(isMalformedJsonParseError({ name: "StreamProtocolError" })).toBe(true);
   });
 });
 
 describe("isIncompleteStreamError", () => {
-  it("detects AgentHub incomplete-stream validation errors by message prefix, incl. cause chain", () => {
-    // The server/proxy cleanly terminates the stream early at an event boundary: AgentHub's
-    // final-event validation throws a plain Error.
-    expect(isIncompleteStreamError(new Error("Streaming response yielded no events"))).toBe(true);
+  it("detects MMSP's incomplete-stream error by message prefix, incl. cause chain", () => {
+    // The server/proxy cleanly terminates the stream early at an event boundary: MMSP has no
+    // usage or finish reason to close the stream with and throws a plain Error in place of the
+    // stop event.
     expect(
-      isIncompleteStreamError(new Error('Last event must carry usage_metadata, got: {"a":1}')),
+      isIncompleteStreamError(new Error("Streaming response ended without usage_metadata")),
     ).toBe(true);
-    expect(isIncompleteStreamError(new Error("Last event must carry finish_reason, got: {}"))).toBe(
-      true,
-    );
+    expect(
+      isIncompleteStreamError(new Error("Streaming response ended without finish_reason")),
+    ).toBe(true);
     expect(
       isIncompleteStreamError(
-        new Error("request failed", { cause: new Error("Streaming response yielded no events") }),
+        new Error("request failed", {
+          cause: new Error("Streaming response ended without usage_metadata"),
+        }),
       ),
     ).toBe(true);
     expect(isIncompleteStreamError(new Error("socket hang up"))).toBe(false);
@@ -1427,18 +1151,7 @@ describe("GenerativeModel per-request thinking level", () => {
         config?: UniConfig,
       ): AsyncIterable<UniEvent> {
         configs.push(config);
-        return (async function* () {
-          yield ev({
-            content_items: [{ type: "text", text: "ok" }],
-            finish_reason: "stop",
-            usage_metadata: {
-              cached_tokens: 0,
-              prompt_tokens: 1,
-              thoughts_tokens: 0,
-              response_tokens: 1,
-            },
-          });
-        })();
+        return okStream();
       }
     }
     const model = new CapturingModel({
@@ -1494,18 +1207,7 @@ describe("GenerativeModel per-request output cap (window clamp, issue #218)", ()
         config?: UniConfig,
       ): AsyncIterable<UniEvent> {
         configs.push(config);
-        return (async function* () {
-          yield ev({
-            content_items: [{ type: "text", text: "ok" }],
-            finish_reason: "stop",
-            usage_metadata: {
-              cached_tokens: 0,
-              prompt_tokens: opts.promptTokens ?? 1,
-              thoughts_tokens: 0,
-              response_tokens: 1,
-            },
-          });
-        })();
+        return okStream({ ...NO_USAGE, prompt_tokens: opts.promptTokens ?? 1, response_tokens: 1 });
       }
     }
     const model = new WindowModel({
@@ -1639,18 +1341,7 @@ describe("GenerativeModel rotating credentials", () => {
           client: internals.client,
           historyLength: internals.client.getHistory().length,
         });
-        return (async function* () {
-          yield ev({
-            content_items: [{ type: "text", text: "ok" }],
-            finish_reason: "stop",
-            usage_metadata: {
-              cached_tokens: 0,
-              prompt_tokens: 1,
-              thoughts_tokens: 0,
-              response_tokens: 1,
-            },
-          });
-        })();
+        return okStream();
       }
     }
 
@@ -1731,9 +1422,9 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     });
   }
 
-  // Yields one piece of text, then throws a retryable network error (network drop).
+  // Yields one fragment of text, then throws a retryable network error (network drop).
   async function* dropAfterText(): AsyncGenerator<UniEvent> {
-    yield ev({ content_items: [{ type: "text", text: "hi" }] });
+    yield delta({ type: "text.delta", text: "hi" });
     throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
   }
 
@@ -1742,13 +1433,11 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     throw Object.assign(new Error("invalid api key"), { status: 401 });
   }
 
-  // AgentHub's response body is not valid JSON (e.g. the gateway returns HTML / a truncated response).
+  // The response body is not valid JSON (e.g. the gateway returns HTML / a truncated response).
   async function* malformedJsonAfterText(): AsyncGenerator<UniEvent> {
-    yield ev({ content_items: [{ type: "text", text: "hi" }] });
+    yield delta({ type: "text.delta", text: "hi" });
     throw new SyntaxError("Unexpected token < in JSON at position 0");
   }
-
-  const typeOf = (m: OmniMessage): string => (m.payload as { type?: string }).type ?? "";
 
   async function drain(
     gen: AsyncGenerator<OmniMessage, LLMOutcome | void>,
@@ -1785,7 +1474,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     // The upstream simulates the real cancellation behavior with "pulling again after being
     // aborted never settles." If the fix is missing, this test hangs until it times out and fails.
     async function* deadAfterAbort(): AsyncGenerator<UniEvent> {
-      yield ev({ content_items: [{ type: "text", text: "hi" }] });
+      yield delta({ type: "text.delta", text: "hi" });
       await new Promise<never>(() => {}); // Never settles
     }
     const ac = new AbortController();
@@ -1849,7 +1538,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("classifies an AgentHub JSON parse exception as retryable and closes partial output", async () => {
+  it("classifies a JSON parse exception as retryable and closes partial output", async () => {
     const model = new SeamModel(() => malformedJsonAfterText());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
@@ -1862,29 +1551,79 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("classifies a cleanly-truncated stream (AgentHub last-event validation) as malformed, not failed", async () => {
+  it("classifies a cleanly-truncated stream (no usage to close it with) as malformed, not failed", async () => {
     // The server/proxy cleanly drops the stream at an event boundary (no network error thrown):
-    // AgentHub's final-event validation throws a plain Error; this is an incomplete LLM
-    // Request that must go through the malformed reconnect path, and must not abort the task as failed.
+    // MMSP throws a plain Error in place of the stop event; this is an incomplete LLM Request
+    // that must go through the malformed reconnect path, and must not abort the task as failed.
     async function* cleanTruncationAfterText(): AsyncGenerator<UniEvent> {
-      yield ev({ content_items: [{ type: "text", text: "hi" }] });
-      throw new Error('Last event must carry usage_metadata, got: {"content_items":[]}');
+      yield* text(["hi"]);
+      throw new Error("Streaming response ended without usage_metadata");
     }
     const model = new SeamModel(() => cleanTruncationAfterText());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("retryable");
+    expect(outcome).toMatchObject({ status: "retryable", errorCode: "malformed" });
     expect(messages.map(typeOf)).not.toContain("token_usage");
+    // The text's done item had arrived, but its request never committed: labelled retryable.
+    const complete = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
+    expect(complete.text).toBe("hi");
+    expect(complete.stop_reason).toBe("retryable");
 
     async function* noEvents(): AsyncGenerator<UniEvent> {
-      throw new Error("Streaming response yielded no events");
+      throw new Error("Streaming response ended without finish_reason");
     }
     const model2 = new SeamModel(() => noEvents());
     const { outcome: outcome2 } = await drain(
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome2.status).toBe("retryable");
+  });
+
+  it("a stream that ends without its stop event is retryable, never completed", async () => {
+    // Nothing threw, but no stop event means no usage and no committed turn: the engine must
+    // reconnect, not report a completed request with empty usage.
+    async function* endsWithoutStop(): AsyncGenerator<UniEvent> {
+      yield* text(["hi"]);
+    }
+    const model = new SeamModel(() => endsWithoutStop());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome).toMatchObject({ status: "retryable", errorCode: "malformed" });
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+    expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).stop_reason).toBe(
+      "retryable",
+    );
+  });
+
+  it("a stop event in hand completes the request even when the abort landed as it arrived", async () => {
+    // MMSP records the turn in its history before yielding the stop event, so a request whose
+    // stop event was received is committed whatever the abort signal says: treating it as
+    // aborted would have the engine flatten a committed tool_use turn, and every later
+    // request would be rejected as an unanswered tool_use.
+    const controller = new AbortController();
+    const events = [...text(["done"]), stop("stop", { ...NO_USAGE, response_tokens: 1 })];
+    const source: AsyncIterable<UniEvent> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next(): Promise<IteratorResult<UniEvent>> {
+            const value = events.shift();
+            if (value === undefined) return Promise.resolve({ done: true, value: undefined });
+            // The abort lands in a microtask behind the stop event, ahead of the consumer.
+            if (value.event_type === "stop") void Promise.resolve().then(() => controller.abort());
+            return Promise.resolve({ done: false, value });
+          },
+        };
+      },
+    };
+    const model = new SeamModel(() => source);
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")], signal: controller.signal }),
+    );
+    expect(controller.signal.aborted).toBe(true);
+    expect(outcome.status).toBe("completed");
+    expect(messages.map(typeOf)).toContain("token_usage");
   });
 
   it("a user abort ends the run even when upstream ignores the signal and never settles", async () => {
@@ -1932,13 +1671,13 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
   });
 
   it("marks a fast-mode rejection as fatal with actionable guidance (guarded on its own config)", async () => {
-    // AgentHub throws UnsupportedParameterError before any network I/O when fast_mode is
+    // MMSP throws UnsupportedParameterError before any network I/O when fast_mode is
     // enabled on a model without a fast tier: deterministic for this object's frozen config,
     // so it is fatal — the engine aborts on it instead of retrying (the engine side is
     // covered in engine.test.ts).
     async function* fastModeRejected(): AsyncGenerator<UniEvent> {
       throw new UnsupportedParameterError({
-        client: "KimiK3Client",
+        client: "MoonshotOfficialClient",
         parameter: "fast_mode",
         message: "Kimi does not support fast mode.",
       });
@@ -1966,7 +1705,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("fatal");
-    // The surfaced text keeps AgentHub's own words and appends where the switch lives.
+    // The surfaced text keeps MMSP's own words and appends where the switch lives.
     expect(outcome.errorMessage).toContain("Kimi does not support fast mode.");
     expect(outcome.errorMessage).toContain(FAST_MODE_UNSUPPORTED_GUIDANCE);
     expect(messages.map(typeOf)).not.toContain("token_usage");
@@ -2031,7 +1770,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
 
   it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as retryable", async () => {
     async function* socketDrop(): AsyncGenerator<UniEvent> {
-      yield ev({ content_items: [{ type: "text", text: "hi" }] });
+      yield delta({ type: "text.delta", text: "hi" });
       throw new TypeError("terminated", {
         cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
       });
@@ -2061,188 +1800,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
   });
 });
 
-describe("provider fidelity payloads (opaque, AgentHub 0.4 semantics)", () => {
-  const complete = (messages: ReturnType<typeof translateEvents>["messages"]) =>
-    messages.filter((m) => !(m.payload as { type: string }).type.startsWith("partial_"));
-
-  it("captures the thinking fidelity arriving as an empty-text delta (Claude signature_delta)", () => {
-    const { messages } = translateEvents([
-      ev({ content_items: [{ type: "thinking", thinking: "let me think" }] }),
-      ev({
-        content_items: [{ type: "thinking", thinking: "", fidelity: { signature: "sig-abc" } }],
-      }),
-      ev({ content_items: [{ type: "text", text: "answer" }] }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
-    ]);
-    const thinking = complete(messages).find(
-      (m) => (m.payload as { type: string }).type === "thinking",
-    )!;
-    const p = thinking.payload as { thinking: string; fidelity?: Record<string, unknown> };
-    expect(p.thinking).toBe("let me think");
-    expect(p.fidelity).toEqual({ signature: "sig-abc" });
-  });
-
-  it("splits adjacent thinking blocks on differing fidelity (redacted + normal keep their own)", () => {
-    const { messages } = translateEvents([
-      // A redacted block: sentinel text + fidelity arrive together (Claude content_block_start).
-      ev({
-        content_items: [
-          { type: "thinking", thinking: "_REDACTED_THINKING", fidelity: { signature: "sig-red" } },
-        ],
-      }),
-      // The next, ordinary thinking block.
-      ev({ content_items: [{ type: "thinking", thinking: "visible" }] }),
-      ev({
-        content_items: [{ type: "thinking", thinking: "", fidelity: { signature: "sig-vis" } }],
-      }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
-    ]);
-    const thinkings = complete(messages).filter(
-      (m) => (m.payload as { type: string }).type === "thinking",
-    );
-    expect(
-      thinkings.map((m) => {
-        const p = m.payload as { thinking: string; fidelity?: Record<string, unknown> };
-        return [p.thinking, p.fidelity];
-      }),
-    ).toEqual([
-      ["_REDACTED_THINKING", { signature: "sig-red" }],
-      ["visible", { signature: "sig-vis" }],
-    ]);
-  });
-
-  it("keeps a run of equal fidelity as one thinking block (OpenAI-compatible reasoning_field per delta)", () => {
-    const rf = { reasoning_field: "reasoning_content" };
-    const { messages } = translateEvents([
-      ev({ content_items: [{ type: "thinking", thinking: "step 1, ", fidelity: { ...rf } }] }),
-      ev({ content_items: [{ type: "thinking", thinking: "step 2, ", fidelity: { ...rf } }] }),
-      ev({ content_items: [{ type: "thinking", thinking: "done", fidelity: { ...rf } }] }),
-      ev({ content_items: [{ type: "text", text: "answer" }] }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
-    ]);
-    const thinkings = complete(messages).filter(
-      (m) => (m.payload as { type: string }).type === "thinking",
-    );
-    expect(
-      thinkings.map((m) => {
-        const p = m.payload as { thinking: string; fidelity?: Record<string, unknown> };
-        return [p.thinking, p.fidelity];
-      }),
-    ).toEqual([["step 1, step 2, done", rf]]);
-  });
-
-  it("emits an empty-text thinking with fidelity (GPT-5 encrypted reasoning) and splits on the next one", () => {
-    const { messages } = translateEvents([
-      ev({
-        content_items: [
-          { type: "thinking", thinking: "", fidelity: { id: "rs_1", encrypted_content: "aaa" } },
-        ],
-      }),
-      ev({
-        content_items: [
-          { type: "thinking", thinking: "", fidelity: { id: "rs_2", encrypted_content: "bbb" } },
-        ],
-      }),
-      ev({ content_items: [{ type: "text", text: "answer" }] }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
-    ]);
-    const thinkings = complete(messages).filter(
-      (m) => (m.payload as { type: string }).type === "thinking",
-    );
-    expect(
-      thinkings.map((m) => {
-        const p = m.payload as { thinking: string; fidelity?: Record<string, unknown> };
-        return [p.thinking, p.fidelity];
-      }),
-    ).toEqual([
-      ["", { id: "rs_1", encrypted_content: "aaa" }],
-      ["", { id: "rs_2", encrypted_content: "bbb" }],
-    ]);
-  });
-
-  it("splits text segments on fidelity.phase markers arriving as empty-text deltas (GPT-5)", () => {
-    const { messages } = translateEvents([
-      ev({ content_items: [{ type: "text", text: "", fidelity: { phase: "planning" } }] }),
-      ev({ content_items: [{ type: "text", text: "plan..." }] }),
-      ev({ content_items: [{ type: "text", text: "", fidelity: { phase: "answer" } }] }),
-      ev({ content_items: [{ type: "text", text: "final" }] }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
-    ]);
-    const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
-    expect(
-      texts.map((m) => {
-        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
-        return [p.text, p.fidelity];
-      }),
-    ).toEqual([
-      ["plan...", { phase: "planning" }],
-      ["final", { phase: "answer" }],
-    ]);
-  });
-
-  it("closes a text segment on fidelity.signature: later text becomes its own segment (the signature must not cover unsigned text)", () => {
-    const { messages } = translateEvents([
-      // Gemini stamps a thoughtSignature on the text part it signed; whatever follows is
-      // unsigned. Merging them would replay a signature covering text the provider never
-      // signed, and the provider rejects the resumed turn.
-      ev({ content_items: [{ type: "text", text: "part one", fidelity: { signature: "sigA" } }] }),
-      ev({ content_items: [{ type: "text", text: "part two" }] }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
-    ]);
-    const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
-    expect(
-      texts.map((m) => {
-        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
-        return [p.text, p.fidelity];
-      }),
-    ).toEqual([
-      ["part one", { signature: "sigA" }],
-      ["part two", undefined],
-    ]);
-  });
-
-  it("accumulates fidelity keys across deltas of one text segment (phase marker + trailing signature)", () => {
-    const { messages } = translateEvents([
-      // GPT-5 opens the segment with a bare phase marker and signs it only at the end; a
-      // replacing (rather than merging) assignment would drop the phase and lose the
-      // segmentation on replay.
-      ev({ content_items: [{ type: "text", text: "", fidelity: { phase: "answer" } }] }),
-      ev({ content_items: [{ type: "text", text: "final" }] }),
-      ev({ content_items: [{ type: "text", text: "", fidelity: { signature: "sigB" } }] }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
-    ]);
-    const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
-    expect(
-      texts.map((m) => {
-        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
-        return [p.text, p.fidelity];
-      }),
-    ).toEqual([["final", { phase: "answer", signature: "sigB" }]]);
-  });
-
-  it("carries the tool_call fidelity through to the complete message", () => {
-    const { messages } = translateEvents([
-      ev({
-        content_items: [
-          {
-            type: "tool_call",
-            name: "exec_command",
-            arguments: { cmd: "ls" },
-            tool_call_id: "tc1",
-            fidelity: { signature: "sig-tool" },
-          },
-        ],
-      }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "tool_call" }),
-    ]);
-    const tc = complete(messages).find(
-      (m) => (m.payload as { type: string }).type === "tool_call",
-    )!;
-    expect((tc.payload as { fidelity?: Record<string, unknown> }).fidelity).toEqual({
-      signature: "sig-tool",
-    });
-  });
-
+describe("provider fidelity payloads (opaque)", () => {
   it("round-trips fidelity payloads back to UniMessage content items (setHistory path)", () => {
     const uni = mergeOmniToUniMessage([
       thinkingMessage("deep", "completed", { signature: "sig-1" }),
@@ -2250,10 +1808,10 @@ describe("provider fidelity payloads (opaque, AgentHub 0.4 semantics)", () => {
       toolCall({ name: "t", arguments: "{}", toolCallId: "tc1", fidelity: { signature: "sig-3" } }),
     ]);
     expect(uni.content_items).toEqual([
-      { type: "thinking", thinking: "deep", fidelity: { signature: "sig-1" } },
-      { type: "text", text: "hi", fidelity: { phase: "answer", signature: "sig-2" } },
+      { type: "thinking.done", thinking: "deep", fidelity: { signature: "sig-1" } },
+      { type: "text.done", text: "hi", fidelity: { phase: "answer", signature: "sig-2" } },
       {
-        type: "tool_call",
+        type: "tool_call.done",
         name: "t",
         arguments: {},
         tool_call_id: "tc1",
@@ -2261,69 +1819,54 @@ describe("provider fidelity payloads (opaque, AgentHub 0.4 semantics)", () => {
       },
     ]);
   });
-});
 
-describe("flushText fidelity parity (PR #39 review)", () => {
-  it("emits an empty-text message carrying a text fidelity instead of dropping it", () => {
-    const { messages } = translateEvents([
-      ev({ content_items: [{ type: "text", text: "", fidelity: { signature: "sig-t" } }] }),
-      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+  it("an empty-text message keeps its fidelity on the way out (a signed empty part is still signed)", () => {
+    const uni = mergeOmniToUniMessage([assistantText("", "completed", { signature: "sig-t" })]);
+    expect(uni.content_items).toEqual([
+      { type: "text.done", text: "", fidelity: { signature: "sig-t" } },
     ]);
-    const text = messages.find((m) => (m.payload as { type: string }).type === "text")!;
-    expect((text.payload as { text: string }).text).toBe("");
-    expect((text.payload as { fidelity?: Record<string, unknown> }).fidelity).toEqual({
-      signature: "sig-t",
-    });
   });
 });
 
 describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses the function name as the id)", () => {
   const callIdsOf = (messages: OmniMessage[]): string[] =>
     messages
-      .filter((m) => (m.payload as { type: string }).type === "tool_call")
+      .filter((m) => typeOf(m) === "tool_call")
       .map((m) => (m.payload as ToolCallPayload).tool_call_id);
 
-  it("the second complete tool_call with a duplicate id within one Request is not dropped and gets the #2 suffix", () => {
+  it("the second call with a duplicate id within one Request is not dropped and gets the #2 suffix", () => {
     const { messages } = translateEvents([
-      ev({
-        event_type: "stop",
-        finish_reason: "tool_call",
-        content_items: [
-          {
-            type: "tool_call",
-            name: "get_time",
-            arguments: { city: "Tokyo" },
-            tool_call_id: "get_time",
-          },
-          {
-            type: "tool_call",
-            name: "get_time",
-            arguments: { city: "Paris" },
-            tool_call_id: "get_time",
-          },
-        ],
-      }),
+      ...call("get_time", "get_time", ['{"city":"Tokyo"}']),
+      ...call("get_time", "get_time", ['{"city":"Paris"}']),
+      stop("tool_call"),
     ]);
     expect(callIdsOf(messages)).toEqual(["get_time", "get_time#2"]);
     const calls = messages
-      .filter((m) => (m.payload as { type: string }).type === "tool_call")
+      .filter((m) => typeOf(m) === "tool_call")
       .map((m) => m.payload as ToolCallPayload);
     expect(calls[0]!.arguments).toBe('{"city":"Tokyo"}');
     expect(calls[1]!.arguments).toBe('{"city":"Paris"}');
     expect(calls.every((c) => c.stop_reason === "completed")).toBe(true);
+    // The fragments of each call go out under its own id, the suffixed one included.
+    const partialIds = messages
+      .filter((m) => typeOf(m) === "partial_tool_call")
+      .map((m) => (m.payload as { tool_call_id: string }).tool_call_id);
+    expect(partialIds).toEqual([
+      "get_time",
+      "get_time",
+      "get_time",
+      "get_time#2",
+      "get_time#2",
+      "get_time#2",
+    ]);
   });
 
   it("parallel calls with distinct ids are unaffected (passed through as-is, no suffix)", () => {
     const { messages } = translateEvents([
-      ev({
-        event_type: "stop",
-        finish_reason: "tool_call",
-        content_items: [
-          { type: "tool_call", name: "get_time", arguments: {}, tool_call_id: "get_time" },
-          { type: "tool_call", name: "get_weather", arguments: {}, tool_call_id: "get_weather" },
-          { type: "tool_call", name: "get_time", arguments: {}, tool_call_id: "get_time" },
-        ],
-      }),
+      ...call("get_time", "get_time", ["{}"]),
+      ...call("get_weather", "get_weather", ["{}"]),
+      ...call("get_time", "get_time", ["{}"]),
+      stop("tool_call"),
     ]);
     expect(callIdsOf(messages)).toEqual(["get_time", "get_weather", "get_time#2"]);
   });
@@ -2333,15 +1876,12 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
     const round = (city: string): string[] => {
       const translator = new EventTranslator(ids);
       const out: OmniMessage[] = [];
-      const event = ev({
-        event_type: "stop",
-        finish_reason: "tool_call",
-        content_items: [
-          { type: "tool_call", name: "get_time", arguments: { city }, tool_call_id: "get_time" },
-        ],
-      });
-      for (const m of translator.pushEvent(event)) out.push(m);
-      for (const m of translator.finish()) out.push(m);
+      for (const e of [
+        ...call("get_time", "get_time", [`{"city":"${city}"}`]),
+        stop("tool_call"),
+      ]) {
+        for (const m of translator.pushEvent(e)) out.push(m);
+      }
       return callIdsOf(out);
     };
     expect(round("Tokyo")).toEqual(["get_time"]);
@@ -2352,43 +1892,20 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
   it("on a cross-Request collision, partial fragments and the complete message use the same suffixed id", () => {
     const ids = new ToolCallIdAllocator();
     ids.markUsed("exec"); // this provider id was already taken in the previous turn
-    const translator = new EventTranslator(ids);
-    const out: OmniMessage[] = [];
-    const push = (e: UniEvent): void => {
-      for (const m of translator.pushEvent(e)) out.push(m);
-    };
-    push(
-      ev({
-        event_type: "start",
-        content_items: [
-          { type: "partial_tool_call", name: "exec", arguments: '{"cmd":', tool_call_id: "exec" },
-        ],
-      }),
-    );
-    push(
-      ev({
-        content_items: [
-          { type: "partial_tool_call", name: "", arguments: '"ls"}', tool_call_id: "exec" },
-        ],
-      }),
-    );
-    push(
-      ev({
-        event_type: "stop",
-        finish_reason: "tool_call",
-        content_items: [
-          { type: "tool_call", name: "exec", arguments: { cmd: "ls" }, tool_call_id: "exec" },
-        ],
-      }),
-    );
-    for (const m of translator.finish()) out.push(m);
-
-    const partialIds = out
-      .filter((m) => (m.payload as { type: string }).type === "partial_tool_call")
+    const { messages } = (() => {
+      const translator = new EventTranslator(ids);
+      const out: OmniMessage[] = [];
+      for (const e of [...call("exec", "exec", ['{"cmd":', '"ls"}']), stop("tool_call")]) {
+        for (const m of translator.pushEvent(e)) out.push(m);
+      }
+      return { messages: out };
+    })();
+    const partialIds = messages
+      .filter((m) => typeOf(m) === "partial_tool_call")
       .map((m) => (m.payload as { tool_call_id: string }).tool_call_id);
-    expect(partialIds.length).toBeGreaterThanOrEqual(3); // start + delta×2 + stop
+    expect(partialIds).toHaveLength(4); // start + delta×2 + stop
     expect(partialIds.every((id) => id === "exec#2")).toBe(true);
-    expect(callIdsOf(out)).toEqual(["exec#2"]);
+    expect(callIdsOf(messages)).toEqual(["exec#2"]);
   });
 
   it("outbound restoration: the #n suffix on tool_call / tool_call_output is stripped before sending to the provider; unsuffixed ids pass as-is", () => {
@@ -2437,18 +1954,8 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
         _signal: AbortSignal,
       ): AsyncIterable<UniEvent> {
         return (async function* () {
-          yield ev({
-            event_type: "stop",
-            finish_reason: "tool_call",
-            content_items: [
-              {
-                type: "tool_call",
-                name: "get_time",
-                arguments: { city: "Paris" },
-                tool_call_id: "get_time",
-              },
-            ],
-          });
+          yield* call("get_time", "get_time", ['{"city":"Paris"}']);
+          yield stop("tool_call");
         })();
       }
     }

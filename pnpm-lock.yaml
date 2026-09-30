@@ -93,9 +93,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
-      '@prismshadow/agenthub':
-        specifier: ^0.4.15
-        version: 0.4.15(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/mmsp':
+        specifier: ^0.5.0
+        version: 0.5.0(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -178,9 +178,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
-      '@prismshadow/agenthub':
-        specifier: ^0.4.15
-        version: 0.4.15(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/mmsp':
+        specifier: ^0.5.0
+        version: 0.5.0(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -1322,8 +1322,8 @@ packages:
   '@fontsource/ibm-plex-sans-condensed@5.3.0':
     resolution: {integrity: sha512-fQyBpwbkguP4azjq7Cw8h/J3C/d8MFAzXOiSoFxyKCUK4x0XKrWEh3tGdTxhDM0HctVRQilQo1zGoyxDHLm5jQ==}
 
-  '@google/genai@1.52.0':
-    resolution: {integrity: sha512-gwSvbpiN/17O9TbsqSsE/OzZcpv5Fo4RQjdngGgogtuB9RsyJ8ZHhX5KjHj1bp5N9snN2eK8LDGXSaWW2hof8Q==}
+  '@google/genai@2.24.0':
+    resolution: {integrity: sha512-bIu5eoxF1AaPWs9ivmUJGp1RpDHyapoODvWvnkzRDx2CTIW6UJXFhDdjj0BlRve3ZHMMuEkQBVrA/ALqpW4apA==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@modelcontextprotocol/sdk': ^1.25.2
@@ -1659,8 +1659,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@prismshadow/agenthub@0.4.15':
-    resolution: {integrity: sha512-4vWn+R8ck1ByNnljo1HS4r4s7LZRot9oNmBAduIgiQMdZyZrIEY1C23DVlMSFyCgzcxu2uuonFivPzETcKbEzA==}
+  '@prismshadow/mmsp@0.5.0':
+    resolution: {integrity: sha512-8fDG87xIwSr1MAJQZBf5R2fTeizEy65SwpL5mKpZxmnPzh57FVuX9PSRn+AEYDuW2FbiRDWBbjXR0+zKq6MDpw==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -5319,7 +5319,7 @@ snapshots:
 
   '@fontsource/ibm-plex-sans-condensed@5.3.0': {}
 
-  '@google/genai@1.52.0(supports-color@10.2.2)':
+  '@google/genai@2.24.0(supports-color@10.2.2)':
     dependencies:
       google-auth-library: 10.7.0(supports-color@10.2.2)
       p-retry: 4.6.2
@@ -5573,11 +5573,11 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
-  '@prismshadow/agenthub@0.4.15(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.0(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
-      '@google/genai': 1.52.0(supports-color@10.2.2)
+      '@google/genai': 2.24.0(supports-color@10.2.2)
       express: 4.22.2(supports-color@10.2.2)
       openai: 6.42.0(ws@8.21.0)(zod@4.4.3)
     transitivePeerDependencies:
@@ -5588,11 +5588,11 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/agenthub@0.4.15(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/mmsp@0.5.0(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
-      '@google/genai': 1.52.0(supports-color@10.2.2)
+      '@google/genai': 2.24.0(supports-color@10.2.2)
       express: 4.22.2(supports-color@10.2.2)
       openai: 6.42.0(ws@8.21.0)(zod@4.4.3)
     transitivePeerDependencies:
@@ -5620,7 +5620,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.15(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.0(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       commander: 13.1.0
@@ -5653,7 +5653,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.15(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.0(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -5682,7 +5682,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.15(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/mmsp': 0.5.0(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0

@@ -1,5 +1,5 @@
 /**
- * GenerativeModel's attribution headers: what reaches AgentHub's client as `defaultHeaders`.
+ * GenerativeModel's attribution headers: what reaches MMSP's client as `defaultHeaders`.
  * OpenCode refuses a request that does not name its conversation in `x-opencode-session`, so
  * a model built for a Session sends that Session's id, and one built outside any Session (the
  * connectivity test, the vision probe) sends a fresh id of its own — never nothing, and never
@@ -10,8 +10,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const captured = vi.hoisted(() => ({ options: [] as Record<string, unknown>[] }));
 
-vi.mock("@prismshadow/agenthub", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@prismshadow/agenthub")>();
+vi.mock("@prismshadow/mmsp", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@prismshadow/mmsp")>();
   class FakeAutoLLMClient {
     constructor(options: Record<string, unknown>) {
       captured.options.push(options);

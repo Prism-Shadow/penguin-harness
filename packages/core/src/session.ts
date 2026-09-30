@@ -254,7 +254,7 @@ export class Session {
   readonly sessionId: string;
   /** The session model's provider group (paired with `modelId` to form the model reference). */
   readonly provider: string;
-  /** The session model's upstream model_id (the request id sent to AgentHub). */
+  /** The session model's upstream model_id (the request id sent to MMSP). */
   readonly modelId: string;
   readonly workspaceDir: string;
   /** Session resume: the full historical messages of the current context (for rendering); undefined for a non-resumed Session. */

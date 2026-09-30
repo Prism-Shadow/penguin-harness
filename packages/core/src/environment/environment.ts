@@ -79,7 +79,7 @@ const TOOL_EMPTY_NOTE = "[no output]";
 
 /**
  * Explanation for a failed argument JSON parse. The normal pipeline never reaches this: bad
- * JSON already throws during AgentHub's parsing stage, and the LLM layer finalizes it as
+ * JSON already throws during MMSP's parsing stage, and the LLM layer finalizes it as
  * malformed for the engine to reconnect (see generative-model.ts) — it's never dispatched into
  * Environment as a completed tool_call. This function is only a defensive fallback for the
  * public interface.

@@ -26,7 +26,7 @@
  *
  * Implementation note: an internal queue merges "the LLM event stream + N concurrent tool
  * output streams" into a single yield sequence. GenerativeModel is a stateful object
- * (AgentHub maintains the history); each turn the engine only hands it the "new" messages:
+ * (MMSP maintains the history); each turn the engine only hands it the "new" messages:
  * the user Prompt on the first turn, and the previous turn's tool_call_output afterward.
  */
 import {
@@ -149,7 +149,7 @@ interface CompactionResult {
   errorCode?: ErrorCode;
   errorMessage?: string;
   /**
-   * Whether at least one summarize attempt was **committed** by AgentHub (only a `completed`
+   * Whether at least one summarize attempt was **committed** by MMSP (only a `completed`
    * attempt commits — a `retryable` attempt ends an incomplete stream and fatal/aborted
    * throw or cut off before a clean end). The carry rule at every caller is a two-case binary on
    * this flag (issue #85): committed → the input the caller folded in (mid-Task tool outputs,
@@ -783,7 +783,7 @@ export class ContextEngine {
         // This turn's pending input (usually the previous turn's tool outputs) was never
         // submitted to the LLM: hold it as carry-over, to be resent merged with new input on
         // the next `run` (same as interruption-cleanup case A) — the previous turn's assistant
-        // tool_call has already been committed by AgentHub, so discarding its paired output and
+        // tool_call has already been committed by MMSP, so discarding its paired output and
         // sending a fresh message would be rejected by the provider as an unanswered tool_use
         // (400, see issue #33).
         this.pendingCarryOver = nextInput;
@@ -793,7 +793,7 @@ export class ContextEngine {
       turnCount += 1;
 
       // This turn's input. The safety invariant behind resending it: **no retryable attempt
-      // is ever committed to AgentHub's history**. AgentHub appends a turn to `_history` only
+      // is ever committed to MMSP's history**. MMSP appends a turn to `_history` only
       // after its stream has been consumed to the end and validated, so every abnormal exit —
       // whether the stream was cut, the payload failed to parse, or the request was rejected
       // outright — leaves history untouched.
@@ -990,7 +990,7 @@ export class ContextEngine {
       // this turn's tool outputs (or alone as the continuation input when the turn produced
       // no tool calls, instead of ending the Task — subject to the max-turns guard at the
       // top of the loop). Notices first; the user's own words come last. The whole batch is
-      // user-side and reaches AgentHub as ONE user message (streamGenerate merges a
+      // user-side and reaches MMSP as ONE user message (streamGenerate merges a
       // request's input into a single UniMessage), so injections never put two adjacent
       // user messages on the wire — the per-message granularity exists only in the
       // OmniMessage stream and the Trace.
@@ -1069,7 +1069,7 @@ export class ContextEngine {
       return;
     }
     // The carry seam is a clean binary on whether the compaction committed anything to
-    // AgentHub (PR #87 review):
+    // MMSP (PR #87 review):
     //   - nothing committed (every attempt retryable/fatal/aborted): the fold
     //     never reached the model context — restore the prior carry-over **verbatim**. Zero
     //     committed attempts also means zero synthesized repairs, so there is no stash to
@@ -1203,7 +1203,7 @@ export class ContextEngine {
       try {
         // Request boundary events (replayability): start is
         // emitted when the request is issued, stop carries the terminal state at completion —
-        // replay mechanically determines from these whether the turn was committed by AgentHub.
+        // replay mechanically determines from these whether the turn was committed by MMSP.
         const startEvt = requestBegin();
         queue.push(startEvt);
         await this.write(startEvt);
@@ -1276,7 +1276,7 @@ export class ContextEngine {
           // finishInterrupted): its arguments weren't fully emitted, and it exists only
           // for structural closure and observability — it isn't dispatched for execution, isn't
           // added to this turn's ledger, and gets no paired output backfilled: such a tool_call
-          // was never committed to history by AgentHub, so there's nothing to pair. This turn
+          // was never committed to history by MMSP, so there's nothing to pair. This turn
           // must then end with a non-completed outcome (only interruption closure produces such
           // a tool_call): a retryable outcome is cleaned up by
           // reconnect resending the flatten carry-over, while the run-ending ones
@@ -1622,7 +1622,7 @@ export class ContextEngine {
     await this.write(prompt);
 
     // Whether the folded input was absorbed into the old object's history — true once any
-    // attempt was committed by AgentHub (only `completed` commits: a retryable failure ends
+    // attempt was committed by MMSP (only `completed` commits: a retryable failure ends
     // an incomplete stream, and fatal/aborted throw or cut off before a clean end — none of
     // those reach the stateful commit). Returned as
     // `committed`: the callers' two-case carry rule branches on it.
@@ -1663,7 +1663,7 @@ export class ContextEngine {
       // be rebuilt below — repairs + corrective note + Prompt — instead of resent unchanged.
       let unusable = false;
       if (attempt.status === "completed") {
-        // The attempt was committed by AgentHub, so whatever its input carried — including
+        // The attempt was committed by MMSP, so whatever its input carried — including
         // repairs synthesized for a previous rejection — is now in history and must not be
         // resent. The first commit absorbs the folded turn input: the base shrinks to the
         // Prompt alone.
@@ -1736,7 +1736,7 @@ export class ContextEngine {
         lastErrorCode = attempt.errorCode;
       }
       // One failure path for everything else — unusable summaries and retryable failures
-      // (never committed by AgentHub) — treated like an
+      // (never committed by MMSP) — treated like an
       // ordinary LLM request's failures: the same budget (defaulting to the shared
       // maxReconnects, issue #170) and the same exponential ladder. An unusable attempt's
       // request_end carries status completed, for which no retry_in_ms is announced — the
@@ -2033,7 +2033,7 @@ export class ContextEngine {
    * does reconnect retry: retry input is assembled by withRetriedTurns, appending
    * `[turn_retried]` with the failed attempt's output, distinct from the user-interruption
    * `[turn_aborted]`):
-   * - Model output completed (case A, outcome=completed): AgentHub already committed an
+   * - Model output completed (case A, outcome=completed): MMSP already committed an
    *   assistant turn containing `tool_call`, so it can only be resent as a structured
    *   `tool_call_output` to pair with it (cannot flatten, or the already-committed tool_call
    *   would be left unanswered and rejected).

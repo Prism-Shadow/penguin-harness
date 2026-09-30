@@ -7,7 +7,7 @@
  * placeholders) is never written to Trace — replay reconstructs from the original messages
  * (unanswered input is resent as-is, pairing placeholders are resynthesized as needed). History is
  * guaranteed to be **structurally valid** (turns complete, tool_call pairs matched), not a
- * byte-for-byte match of what AgentHub actually received; incomplete model output (thinking/text)
+ * byte-for-byte match of what MMSP actually received; incomplete model output (thinking/text)
  * is allowed to be lost.
  *
  * Messages are attributed to a Request by **position**, not by content inspection:
@@ -393,7 +393,7 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
             committedCallIds.add(p.tool_call_id);
           }
         }
-        // A committed request inside a compaction span enters history as usual (AgentHub
+        // A committed request inside a compaction span enters history as usual (MMSP
         // committed it — e.g. an invalid-summary attempt of a compaction that then failed),
         // but does not count as a Session turn: in-process only runTurn increments the
         // counter, never runCompactionRequest.
