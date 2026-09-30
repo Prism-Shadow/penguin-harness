@@ -30,6 +30,7 @@ import type {
   SessionSandbox,
   SessionSource,
   ServerEvent,
+  UnavailableSandboxBackend,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -63,11 +64,13 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
 /**
  * A stored policy as the composer sees it, with which of its levels this server can enforce:
  * `dimensions` is what the mounted sandbox backends implement between them — none on a
- * deployment that has not installed one.
+ * deployment that has not installed one. `unavailable` is each backend that is enabled but
+ * failed to load or failed its check, with why; one for another platform is not among them.
  */
 export function sessionSandboxOf(
   policy: SandboxSettings,
   dimensions: readonly SandboxDimension[] = [],
+  unavailable: readonly UnavailableSandboxBackend[] = [],
 ): SessionSandbox {
   return {
     mode: policy.mode,
@@ -75,6 +78,7 @@ export function sessionSandboxOf(
     confinementSupported: dimensions.includes("fs-write"),
     noNetworkSupported: dimensions.includes("network"),
     localNetworkSupported: dimensions.includes("network-local"),
+    unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
   };
 }
 
@@ -198,6 +202,8 @@ export interface SessionServiceDeps {
   assembly?: AgentAssembly;
   /** The dimensions the mounted sandbox backends implement between them (none when absent). */
   sandboxDimensions?: () => readonly SandboxDimension[];
+  /** The enabled sandbox backends that failed to load or failed their check, with why. */
+  sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
 }
 
 export class SessionService {
@@ -219,7 +225,11 @@ export class SessionService {
 
   /** A policy as the composer sees it, with which of its levels this server can enforce. */
   sandboxView(policy: SandboxSettings): SessionSandbox {
-    return sessionSandboxOf(policy, this.sandboxDimensions());
+    return sessionSandboxOf(
+      policy,
+      this.sandboxDimensions(),
+      this.deps.sandboxUnavailable?.() ?? [],
+    );
   }
 
   /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */

@@ -2717,6 +2717,9 @@ Benchmark：
       noBackend:
         "本服务器没有安装沙盒后端，命令无法被封禁。管理员可在插件页启用适用于本平台的后端（更多…）。",
       noNetworkUnsupported: "本机的沙盒后端不支持断开网络",
+      notAvailable: "不可用",
+      backendUnavailable: (name: string, reason: string) =>
+        `沙盒后端 ${name} 已启用但未在用：${reason}。管理员可在「更多…」里的沙盒卡片处理。`,
       more: "更多…",
       approval: "审批",
     },

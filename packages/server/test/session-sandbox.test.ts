@@ -21,6 +21,7 @@ const NO_BACKEND = {
   confinementSupported: false,
   noNetworkSupported: false,
   localNetworkSupported: false,
+  unavailableBackends: [],
 };
 
 const ROW: SessionRow = {
@@ -68,6 +69,28 @@ describe("picking a Session's sandbox from the composer", () => {
       confinementSupported: true,
       noNetworkSupported: false,
       localNetworkSupported: false,
+      unavailableBackends: [],
+    });
+  });
+
+  it("names an enabled backend that failed its check, and leaves out one for another platform", async () => {
+    const svc = new SandboxService([
+      [
+        "penguin-wsl",
+        () => Promise.reject(new Error("the sandbox distro is not set up; run Set up")),
+      ],
+      // Another platform's backend declines: nothing is wrong with it here.
+      ["penguin-seatbelt", () => null],
+    ]);
+    await svc.whenReady();
+    const dimensions = [...new Set(svc.backends().flatMap((b) => b.dimensions))];
+    expect(sessionSandboxOf({ mode: "danger-full-access" }, dimensions, svc.failures())).toEqual({
+      mode: "danger-full-access",
+      network: "open",
+      ...NO_BACKEND,
+      unavailableBackends: [
+        { name: "penguin-wsl", reason: "the sandbox distro is not set up; run Set up" },
+      ],
     });
   });
 
@@ -93,6 +116,7 @@ describe("picking a Session's sandbox from the composer", () => {
       confinementSupported: true,
       noNetworkSupported: true,
       localNetworkSupported: true,
+      unavailableBackends: [],
     });
     // Under settings of "local", a non-admin may cut the network but not open it.
     const localDefaults: SandboxSettings = { mode: "workspace-write", network: "local" };

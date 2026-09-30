@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionSandbox } from "@prismshadow/penguin-server/api";
 import {
   PERMISSION_LEVEL_GLYPH,
+  firstUnavailableBackend,
   fsModeBlock,
   networkBlock,
   permissionLevel,
@@ -33,6 +34,33 @@ describe("which levels the composer lets a person pick", () => {
     expect(networkBlock(NO_BACKEND, "none")).toBe("no-backend");
     expect(networkBlock(NO_BACKEND, "local")).toBe("no-backend");
     expect(networkBlock(NO_BACKEND, "open")).toBeNull();
+  });
+
+  it("with an enabled backend that failed its check, those levels are unavailable, with its reason", () => {
+    const failed: SessionSandbox = {
+      ...NO_BACKEND,
+      unavailableBackends: [
+        { name: "penguin-wsl", reason: "the sandbox distro is not set up" },
+        { name: "penguin-dsh", reason: "cannot load" },
+      ],
+    };
+    expect(fsModeBlock(failed, "read-only")).toBe("unavailable");
+    expect(fsModeBlock(failed, "workspace-write")).toBe("unavailable");
+    expect(fsModeBlock(failed, "danger-full-access")).toBeNull();
+    expect(networkBlock(failed, "none")).toBe("unavailable");
+    expect(networkBlock(failed, "local")).toBe("unavailable");
+    expect(networkBlock(failed, "open")).toBeNull();
+    expect(firstUnavailableBackend(failed)).toEqual({
+      name: "penguin-wsl",
+      reason: "the sandbox distro is not set up",
+    });
+    // An empty list is the not-installed case.
+    const none: SessionSandbox = { ...NO_BACKEND, unavailableBackends: [] };
+    expect(fsModeBlock(none, "read-only")).toBe("no-backend");
+    expect(firstUnavailableBackend(none)).toBeNull();
+    // A mounted backend wins: a second one failing does not grey out what the first enforces.
+    const mounted: SessionSandbox = { ...failed, confinementSupported: true };
+    expect(fsModeBlock(mounted, "read-only")).toBeNull();
   });
 
   it("with a filesystem-only backend, confinement is open and only the network levels are not", () => {

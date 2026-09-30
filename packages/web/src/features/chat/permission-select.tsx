@@ -31,6 +31,7 @@ import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
   PERMISSION_LEVEL_TONE,
+  firstUnavailableBackend,
   fsModeBlock,
   networkBlock,
   permissionLevel,
@@ -111,16 +112,20 @@ export function PermissionSelect({
   const isAdmin = useAuth().user?.isAdmin === true;
   const P = S.chat.permission;
   // A level this server cannot enforce stays listed, greyed out, saying why — with no backend
-  // installed, that is every level short of full access.
+  // mounted, that is every level short of full access: not installed, or enabled but failing
+  // its check, with the first such backend's reason.
+  const failed = firstUnavailableBackend(sandbox);
   const blocked = (block: LevelBlock | null) =>
     block === null
       ? {}
       : block === "no-backend"
         ? { unavailable: P.noBackend, note: P.notInstalled }
-        : {
-            unavailable:
-              block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported,
-          };
+        : block === "unavailable" && failed !== null
+          ? { unavailable: P.backendUnavailable(failed.name, failed.reason), note: P.notAvailable }
+          : {
+              unavailable:
+                block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported,
+            };
   const level = permissionLevel(approvalMode, sandbox);
   // The swap animation plays only for a CHANGE of level, never on the first paint — React's
   // "adjust state while rendering" pattern for information from the previous render.

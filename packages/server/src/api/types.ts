@@ -1483,6 +1483,19 @@ export interface SessionSandbox {
    * (400 `sandbox_unsupported`).
    */
   localNetworkSupported?: boolean;
+  /**
+   * Response only, ignored in requests: the sandbox backends that are enabled here but failed
+   * to load or failed their check (a WSL distro not set up, a wrong program path), each with
+   * why. A backend for another platform is not listed. With none mounted and one listed, the
+   * composer marks the confining levels unavailable and gives the first one's reason.
+   */
+  unavailableBackends?: UnavailableSandboxBackend[];
+}
+
+/** An enabled sandbox backend that is not in use on this server, and why. */
+export interface UnavailableSandboxBackend {
+  name: string;
+  reason: string;
 }
 
 /** The network levels, widest first. */
