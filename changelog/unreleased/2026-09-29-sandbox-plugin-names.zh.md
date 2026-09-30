@@ -4,7 +4,6 @@
 - **Type:** refactor
 - **Scope:** `plugins`, `server`, `docs`, `release`, `ci`
 - **PR:** [Myriad-Dreamin/penguin-harness#68](https://github.com/Myriad-Dreamin/penguin-harness/pull/68)
-- **Breaking:** yes — Project 的 `[plugins]` 表必须按新包名点名沙盒后端
 
 [English](2026-09-29-sandbox-plugin-names.md)
 
@@ -26,9 +25,3 @@
 - 新增一条测试，对四个后端钉住这条规则。
 - 后端在 Harness 内部的身份没有变：设置组（`sandbox-<x>`）、后端名（`penguin-<x>`）与贡献 id 都不含包名，已保存的沙盒设置不受影响。
 - 后端仍是 private、不发布；本次只改了名。
-
-## 兼容性
-
-旧名不再被识别，也没有任何代码把它读作新名。Project 的 `.project_config.toml` 里的 `[plugins]` 表（共享表或某台机器自己的表）若仍按旧名点名后端，升级后在这个名字下加载不到任何后端；沙盒设置若依赖这个后端，每一条受约束的命令都会按 fail-closed 被拒绝。
-
-迁移办法：在每张受影响的表里改键名，例如把 `"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"` 改为 `"@penguinharness/sandbox-bwrap" = "*"`；也可以在插件页先移除该后端再重新安装。没有任何已发布版本把这些名字写进过 `[plugins]` 表，受影响的只有开发与预发布的数据根。
