@@ -89,6 +89,7 @@ import {
 import { useAuth } from "./auth";
 import { useOrgPages } from "../features/company/use-org-pages";
 import { useProject } from "./project";
+import { createProposalsRetry } from "./proposals-retry";
 import { useSessions } from "./sessions";
 
 /**
@@ -375,31 +376,13 @@ export async function heldMachines(projectId: string): Promise<HeldMachine[]> {
 }
 
 /**
- * A proposals read that failed is tried again after this, doubling up to the ceiling — the
- * sessions list's reload shape (state/sessions.tsx). The index behind every roadmap row's pill
- * and every `proposal:<n>` capsule is otherwise read once per organization entry, and the
- * event that would read it again is the one a dropped machine link stops delivering.
- */
-export const PROPOSALS_RETRY_MIN_MS = 2_000;
-export const PROPOSALS_RETRY_MAX_MS = 30_000;
-
-/**
  * Builds one Provider's store. Exported as a test seam: the package's vitest runs in Node
  * with no DOM, so the event routing below is exercised against the store directly.
  * `serverEnabled` seeds the server's master switch (the Provider passes the auth context's), so
  * the first render already knows whether company mode may be entered.
  */
 export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
-  /** The pending retry of a failed proposals read, and the organization it is for. */
-  let proposalsRetry: { key: string; timer: ReturnType<typeof setTimeout> } | null = null;
-  /** Failed reads in a row for `proposalsRetryKey`: the exponent of the next wait. */
-  let proposalsFailures = 0;
-  let proposalsRetryKey: string | null = null;
-  const cancelProposalsRetry = () => {
-    if (proposalsRetry === null) return;
-    clearTimeout(proposalsRetry.timer);
-    proposalsRetry = null;
-  };
+  const proposalsRetry = createProposalsRetry();
   return createStore<CompanyStoreState>((set, get) => ({
     serverEnabled: options.serverEnabled ?? false,
     personalEnabled: true,
@@ -736,42 +719,28 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
      * has since left is dropped, and a failure leaves whatever the index already holds — a
      * capsule that names a proposal off a stale title beats one that names it by number alone.
      *
-     * A failure is also read again on its own, backing off (`PROPOSALS_RETRY_*`) until one
-     * answers, the organization is left, or the plugin goes: nothing else is sure to ask again
-     * — the plugin's event that would is carried by the very machine link that may be down.
-     * Any read that starts, for whatever reason, replaces a retry still waiting.
+     * A failure is also read again on its own, backing off (state/proposals-retry.ts) until
+     * one answers, the organization is left, or the plugin goes: nothing else is sure to ask
+     * again — the plugin's event that would is carried by the very machine link that may be
+     * down. Any read that starts, for whatever reason, replaces a retry still waiting.
      */
     reloadProposals: async (projectId, orgId) => {
       const key = orgKey(projectId, orgId);
-      cancelProposalsRetry();
-      if (key !== proposalsRetryKey) {
-        proposalsRetryKey = key;
-        proposalsFailures = 0;
-      }
+      proposalsRetry.starting(key);
       if (!get().proposalsEnabled) return;
       try {
         const res = await api.listOrgProposals(projectId, orgId);
         if (get().currentOrgKey !== key) return;
-        proposalsFailures = 0;
+        proposalsRetry.answered();
         set({ proposals: res.proposals, proposalsError: null });
       } catch (e) {
         if (get().currentOrgKey !== key) return;
         set({ proposalsError: apiErrorText(e) });
-        // A newer read of the same organization may have started (and scheduled) meanwhile.
-        if (proposalsRetry !== null || proposalsRetryKey !== key) return;
-        const delay = Math.min(
-          PROPOSALS_RETRY_MAX_MS,
-          PROPOSALS_RETRY_MIN_MS * 2 ** proposalsFailures,
-        );
-        proposalsFailures += 1;
-        const timer = setTimeout(() => {
-          if (proposalsRetry?.timer !== timer) return;
-          proposalsRetry = null;
+        proposalsRetry.failed(key, () => {
           const state = get();
           if (state.currentOrgKey !== key || !state.proposalsEnabled) return;
           void state.reloadProposals(projectId, orgId);
-        }, delay);
-        proposalsRetry = { key, timer };
+        });
       }
     },
 

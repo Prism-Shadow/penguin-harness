@@ -1,5 +1,5 @@
 /**
- * state/company.tsx: a failed read of the open organization's proposals is read again on its
+ * state/company.tsx with state/proposals-retry.ts: a failed read of the open organization's proposals is read again on its
  * own, backing off, until one answers — the index behind every roadmap row's pill must not stay
  * empty for as long as the event that would re-read it is not arriving. A retry stops when the
  * organization is left or the plugin goes, and a read that starts for another reason replaces
@@ -14,8 +14,9 @@ vi.mock("../src/api/endpoints", async (importOriginal) => ({
   listOrgProposals: (projectId: string, orgId: string) => listOrgProposals(projectId, orgId),
 }));
 
-const { createCompanyStore, PROPOSALS_RETRY_MAX_MS, PROPOSALS_RETRY_MIN_MS } =
-  await import("../src/state/company");
+const { createCompanyStore } = await import("../src/state/company");
+const { PROPOSALS_RETRY_MAX_MS, PROPOSALS_RETRY_MIN_MS } =
+  await import("../src/state/proposals-retry");
 
 const item = { number: 105, title: "Right column", status: "ready", unread: 0 } as ProposalItem;
 const down = () => Promise.reject(new Error("no socket handshake in 10000 ms"));
