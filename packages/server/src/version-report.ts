@@ -13,7 +13,7 @@
  */
 import { buildInfo } from "@prismshadow/penguin-core";
 import type { VersionReport } from "@prismshadow/penguin-core";
-import { readHarnessInfo } from "./hmr/manifest.js";
+import { readHarnessInfo, readManifest } from "./hmr/manifest.js";
 
 /**
  * The running build's identity plus the harness committed to `root`'s HMR store.
@@ -21,7 +21,18 @@ import { readHarnessInfo } from "./hmr/manifest.js";
  * Never throws: an unreadable or malformed store reports `harness: null`, which is also
  * what a root with nothing ever pushed to it reports. Version reporting degrades to fewer
  * facts, never to a failure.
+ *
+ * `harness.assets` is read here rather than by the mechanism's readHarnessInfo, which the
+ * runtime layer owns: the report adds the pointer, the reader stays as it is.
  */
 export async function versionReport(root: string): Promise<VersionReport> {
-  return { ...buildInfo(), harness: await readHarnessInfo(root) };
+  const [harness, manifest] = await Promise.all([readHarnessInfo(root), readManifest(root)]);
+  const dir = manifest?.assets?.dir;
+  return {
+    ...buildInfo(),
+    harness:
+      harness === null
+        ? null
+        : { ...harness, assets: typeof dir === "string" && dir.length > 0 ? dir : null },
+  };
 }
