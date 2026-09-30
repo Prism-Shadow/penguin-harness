@@ -13,6 +13,7 @@ import {
   isBlankUrl,
   isWebUrl,
   normalizeAddress,
+  tabAddress,
   tabLabel,
 } from "../src/features/builtin-browser/address";
 
@@ -128,6 +129,12 @@ describe("address display", () => {
     expect(tabLabel({ title: "", url: BLANK_URL }, "New tab")).toBe("New tab");
     expect(tabLabel({ title: "", url: "" }, "New tab")).toBe("New tab");
   });
+
+  it("names a blank page a new tab, though Chromium titles it with its address", () => {
+    expect(tabLabel({ title: BLANK_URL, url: BLANK_URL }, "New tab")).toBe("New tab");
+    // A title the page gave itself still counts.
+    expect(tabLabel({ title: "Scratch", url: BLANK_URL }, "New tab")).toBe("Scratch");
+  });
 });
 
 describe("faviconSrc", () => {
@@ -147,5 +154,26 @@ describe("faviconSrc", () => {
     expect(faviconSrc("data:text/html,<b>x</b>", app)).toBeNull();
     expect(faviconSrc("", app)).toBeNull();
     expect(faviconSrc(undefined, app)).toBeNull();
+  });
+});
+
+describe("tabAddress", () => {
+  const home = "https://home.example/";
+
+  it("stands for the address a tab was opened at until its first page commits", () => {
+    expect(tabAddress({ url: "", loading: true }, home)).toBe(home);
+  });
+
+  it("is the page's own address once one committed, even while it loads", () => {
+    expect(tabAddress({ url: "https://home.example/next", loading: true }, home)).toBe(
+      "https://home.example/next",
+    );
+    expect(tabAddress({ url: BLANK_URL, loading: false }, home)).toBe(BLANK_URL);
+  });
+
+  it("never stands for a blank or unknown opening address, or a first page that stopped", () => {
+    expect(tabAddress({ url: "", loading: true }, BLANK_URL)).toBe("");
+    expect(tabAddress({ url: "", loading: true }, null)).toBe("");
+    expect(tabAddress({ url: "", loading: false }, home)).toBe("");
   });
 });

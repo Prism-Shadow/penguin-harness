@@ -74,6 +74,8 @@ function ToolButton({
 export interface BrowserToolbarProps {
   /** The tab on screen; null with none open (the address bar then opens one). */
   tab: BuiltinBrowserTab | null;
+  /** What the address bar shows for it: its page's address, or the one it is opening. */
+  address: string;
   /** An agent at work in the browser, if one is. */
   activity: BrowserActivity | null;
   /** The load warning, worded (load.ts), while the server gives one. */
@@ -148,7 +150,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
       {/* Keyed by tab: switching tabs drops a half-typed address instead of carrying it over. */}
       <AddressBar
         key={tab?.id ?? "none"}
-        url={tab?.url ?? ""}
+        url={props.address}
         onNavigate={props.onNavigate}
         inputRef={props.addressRef}
       />

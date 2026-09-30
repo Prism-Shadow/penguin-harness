@@ -340,7 +340,13 @@ export class BuiltinBrowser {
     // The agent's (or the panel's) new tab: its grace runs from now, as after an action.
     this.actedAt.set(tabId, this.now());
     this.syncThrottle();
-    if (isWebUrl(url)) await driver.waitForLoad(tabId, this.loadWaitMs);
+    if (isWebUrl(url)) {
+      // A window claims the tab as soon as it exists, on its initial empty document, which reads
+      // as loaded: the page asked for is waited for once it has committed.
+      const deadline = this.now() + this.loadWaitMs;
+      await this.tabs.waitForFirstPage(tabId, this.loadWaitMs);
+      await driver.waitForLoad(tabId, Math.max(0, deadline - this.now()));
+    }
     return this.tabOrThrow(tabId);
   }
 

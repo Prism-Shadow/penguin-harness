@@ -217,9 +217,6 @@ export const en: Strings = {
       screenshot: "taking a screenshot",
       cdp: "sending a DevTools command",
     },
-    emptyTitle: "No pages open",
-    emptyBody:
-      "Open a page, or let an agent browse for you. Sign-ins made here stay in the built-in browser.",
     unavailableTitle: "Built-in browser unavailable",
     unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
     unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",

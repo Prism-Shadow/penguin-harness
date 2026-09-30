@@ -4,11 +4,12 @@
  * pages shared by every conversation, so every dock that shows this panel shows the same
  * tabs — the panel holds no page itself, it only registers where the page should appear.
  *
- * No tab open: the slot shows how to start — a new tab, or importing sign-ins from a system
- * browser. A new tab opens the homepage when one is set; a blank one shows the slot's own
- * empty surface, themed, with the address bar waiting, rather than a white page. A tab whose
- * page crashed shows that in the slot, with Reload, instead of the dead page's blank area. Where
- * the browser cannot run (outside the desktop app, an older shell) the panel says so instead.
+ * The panel always has a tab: the layer opens the new-tab page when it shows none. A new tab
+ * opens the homepage when one is set, and reads as that homepage while it loads. A blank one
+ * shows the slot's own empty surface, themed, rather than a white page, and the address bar
+ * takes the focus to wait for an address. A tab whose page crashed shows that in the slot, with
+ * Reload, instead of the dead page's blank area. Where the browser cannot run (outside the
+ * desktop app, an older shell) the panel says so instead.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
@@ -18,6 +19,7 @@ import { isBlankUrl, isWebUrl } from "./address";
 import { activateBrowserTab, closeBrowserTab, openBrowserTab } from "./browser-actions";
 import {
   activeTab,
+  addressOf,
   browserOffered,
   currentActivity,
   guestForTab,
@@ -47,6 +49,17 @@ function drive(tabId: number | null, command: (view: WebviewElement) => void): v
   } catch {
     // Not attached yet, or already gone.
   }
+}
+
+/**
+ * Whether the focus is in a text field outside `panel`, such as the composer or a dialog's
+ * field. A blank tab coming on screen does not take the focus from someone typing there.
+ */
+function typingElsewhere(panel: HTMLElement | null): boolean {
+  const focused = document.activeElement;
+  if (!(focused instanceof HTMLElement) || panel?.contains(focused) === true) return false;
+  const tag = focused.tagName;
+  return focused.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
 /** Why the browser cannot run here, in the words the panel shows. */
@@ -86,6 +99,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   const [importOpen, setImportOpen] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [homepageOpen, setHomepageOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
 
   // The slot is where the layer puts the page on screen; it says so only while this panel is
@@ -98,20 +112,19 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   }, [slotId]);
   useLayoutEffect(() => setSlotVisible(slotId, active), [slotId, active]);
 
-  // A new tab from "+" opens the homepage, or waits blank for an address. The field is keyed
-  // by tab, so it is focused once the blank tab is the one on screen — the request can come
-  // back before that happens.
-  const [focusFor, setFocusFor] = useState<number | null>(null);
+  // A blank tab coming on screen waits for an address, so the address bar takes the focus,
+  // unless the user is typing somewhere else. It is decided once this window hosts the tab's
+  // page: until then a tab opening the homepage cannot be told from a blank one. The field is
+  // keyed by tab, so the one focused is the new tab's.
+  const address = tab === null ? "" : addressOf(state, tab);
+  const blankOnScreen =
+    active && tab !== null && guestForTab(state, tab.id) !== null && isBlankUrl(address)
+      ? tab.id
+      : null;
   useEffect(() => {
-    if (focusFor === null || focusFor !== tabId) return;
-    addressRef.current?.focus();
-    setFocusFor(null);
-  }, [focusFor, tabId]);
-  const newTab = () => {
-    void openBrowserTab().then((opened) => {
-      if (opened !== null && isBlankUrl(opened.url)) setFocusFor(opened.id);
-    });
-  };
+    if (blankOnScreen !== null && !typingElsewhere(rootRef.current)) addressRef.current?.focus();
+  }, [blankOnScreen]);
+  const newTab = () => void openBrowserTab();
 
   const navigate = (url: string) => {
     if (tabId === null) {
@@ -134,20 +147,20 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   const reload = () => drive(tabId, (view) => view.reload());
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {state.tabs.length > 0 && (
-        <BrowserTabStrip
-          tabs={state.tabs}
-          activeTabId={state.activeTabId}
-          busy={(id) => tabBusy(state, id)}
-          heavyMemory={(id) => heavyTabMemory(state.metrics, id)}
-          onSelect={activateBrowserTab}
-          onClose={closeBrowserTab}
-          onNew={newTab}
-        />
-      )}
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col">
+      <BrowserTabStrip
+        tabs={state.tabs}
+        activeTabId={state.activeTabId}
+        address={(shown) => addressOf(state, shown)}
+        busy={(id) => tabBusy(state, id)}
+        heavyMemory={(id) => heavyTabMemory(state.metrics, id)}
+        onSelect={activateBrowserTab}
+        onClose={closeBrowserTab}
+        onNew={newTab}
+      />
       <BrowserToolbar
         tab={tab}
+        address={address}
         activity={currentActivity(state)}
         loadWarning={loadWarningText(state.metrics, state.tabs.length)}
         hostsPage={guestForTab(state, tabId) !== null}
@@ -169,22 +182,6 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
         data-testid="builtin-browser-viewport"
         className="relative min-h-0 flex-1 overflow-hidden"
       >
-        {state.tabs.length === 0 && (
-          <div className="flex h-full items-center justify-center overflow-y-auto p-4">
-            <EmptyState
-              title={S.builtinBrowser.emptyTitle}
-              description={S.builtinBrowser.emptyBody}
-              action={
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <Button onClick={newTab}>{S.builtinBrowser.newTab}</Button>
-                  <Button variant="ghost" onClick={() => setImportOpen(true)}>
-                    {S.builtinBrowser.importAction}
-                  </Button>
-                </div>
-              }
-            />
-          </div>
-        )}
         {tab?.crashed !== undefined && (
           <div
             data-testid="builtin-browser-crashed"

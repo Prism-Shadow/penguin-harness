@@ -265,9 +265,6 @@ export const zh = {
       screenshot: "截取屏幕",
       cdp: "发送调试命令",
     },
-    /** The panel with no tab open. */
-    emptyTitle: "没有打开的网页",
-    emptyBody: "打开一个网页，或让智能体替你浏览。在这里登录的账号只保存在内置浏览器中。",
     /** The panel where the browser cannot run; the title, then why. */
     unavailableTitle: "内置浏览器不可用",
     unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",

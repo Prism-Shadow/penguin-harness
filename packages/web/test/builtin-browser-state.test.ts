@@ -2,7 +2,8 @@
  * The built-in browser's state in a window (features/builtin-browser/browser-state.ts): the
  * server's tab registry, the pages this window hosts, the agent's activity, the homepage and the
  * browser's load — driven by the user channel's five events and the window's own actions
- * (claim, close, activate, settings read or saved).
+ * (claim, close, activate, settings read or saved, a new tab asked for) — and the rule that keeps
+ * a tab open while the panel is on screen.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -13,6 +14,7 @@ import type {
 import {
   INITIAL_BROWSER_STATE,
   activeTab,
+  addressOf,
   browserOffered,
   currentActivity,
   guestByKey,
@@ -21,6 +23,7 @@ import {
   reduceBrowser,
   shouldReveal,
   tabBusy,
+  wantsNewTabPage,
   type BrowserAction,
   type BrowserState,
 } from "../src/features/builtin-browser/browser-state";
@@ -350,5 +353,99 @@ describe("load", () => {
       event({ type: "builtin_browser_tabs", tabs: [tab(4, { crashed: "oom" })], activeTabId: 4 }),
     );
     expect(activeTab(state)?.crashed).toBe("oom");
+  });
+});
+
+describe("the new-tab page", () => {
+  const listed = (...tabs: BuiltinBrowserTab[]) =>
+    event({ type: "builtin_browser_tabs", tabs, activeTabId: tabs.at(-1)?.id ?? null });
+
+  it("is opened for a panel on screen with no tab: the first time, or after a restart", () => {
+    expect(wantsNewTabPage(READY, true)).toBe(true);
+  });
+
+  it("is not opened out of sight, or where the browser cannot be used", () => {
+    expect(wantsNewTabPage(READY, false)).toBe(false);
+    expect(wantsNewTabPage(INITIAL_BROWSER_STATE, true)).toBe(false);
+    expect(wantsNewTabPage(reduceBrowser(READY, { type: "unreachable" }), true)).toBe(false);
+  });
+
+  it("is not opened beside a tab that is open", () => {
+    expect(wantsNewTabPage(run(READY, listed(tab(1))), true)).toBe(false);
+  });
+
+  it("is not opened beside a tab on its way", () => {
+    // Asked for by any window, the agent or a page: the page is being created here.
+    const creating = run(READY, open("r1"));
+    expect(wantsNewTabPage(creating, true)).toBe(false);
+    // Claimed, not yet in the registry.
+    const claimed = run(creating, { type: "attached", key: guestKey("r1"), tabId: 4 });
+    expect(wantsNewTabPage(claimed, true)).toBe(false);
+    // This window's own request, before the server has asked it for the page.
+    const asking = reduceBrowser(READY, { type: "opening", delta: 1 });
+    expect(wantsNewTabPage(asking, true)).toBe(false);
+    expect(wantsNewTabPage(reduceBrowser(asking, { type: "opening", delta: -1 }), true)).toBe(true);
+  });
+
+  it("replaces the last tab once it closes, however it closed", () => {
+    const one = run(
+      READY,
+      open("r1"),
+      { type: "attached", key: guestKey("r1"), tabId: 4 },
+      listed(tab(4)),
+    );
+    expect(wantsNewTabPage(one, true)).toBe(false);
+    // Its × here, or the agent's close through the server.
+    expect(wantsNewTabPage(reduceBrowser(one, { type: "closed", tabId: 4 }), true)).toBe(true);
+    const byAgent = run(one, event({ type: "builtin_browser_close", tabId: 4 }));
+    expect(wantsNewTabPage(byAgent, true)).toBe(true);
+    // Closed while the panel was out of sight: nothing until it is shown again.
+    expect(wantsNewTabPage(byAgent, false)).toBe(false);
+  });
+
+  it("counts this window's requests on their way, and never below none", () => {
+    const twice = run(
+      READY,
+      { type: "opening", delta: 1 },
+      { type: "opening", delta: 1 },
+      { type: "opening", delta: -1 },
+    );
+    expect(twice.opening).toBe(1);
+    expect(run(READY, { type: "opening", delta: -1 }).opening).toBe(0);
+  });
+});
+
+describe("the address a tab shows", () => {
+  const home = "https://home.example/";
+
+  it("is the address its page was opened at while the first page is on its way", () => {
+    const opening = tab(4, { url: "", title: "", loading: true });
+    const state = run(
+      READY,
+      open("r1", { url: home }),
+      { type: "attached", key: guestKey("r1"), tabId: 4 },
+      event({ type: "builtin_browser_tabs", tabs: [opening], activeTabId: 4 }),
+    );
+    expect(addressOf(state, opening)).toBe(home);
+  });
+
+  it("is the page's own once it committed, and blank for a blank new tab", () => {
+    const loaded = tab(4, { url: "https://home.example/welcome", loading: true });
+    const state = run(READY, open("r1", { url: home }), {
+      type: "attached",
+      key: guestKey("r1"),
+      tabId: 4,
+    });
+    expect(addressOf(state, loaded)).toBe("https://home.example/welcome");
+    const blank = run(READY, open("r2", { url: "about:blank" }), {
+      type: "attached",
+      key: guestKey("r2"),
+      tabId: 5,
+    });
+    expect(addressOf(blank, tab(5, { url: "", title: "", loading: true }))).toBe("");
+  });
+
+  it("is the registry's for a tab whose page this window does not host", () => {
+    expect(addressOf(READY, tab(8, { url: "", title: "", loading: true }))).toBe("");
   });
 });

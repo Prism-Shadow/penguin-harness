@@ -14,10 +14,15 @@
  * all of those.
  *
  * It also runs the lifecycle the server asks for over the user channel: `builtin_browser_open`
- * creates a page; once the page attaches, its webContents id claims the request (the first
- * window to claim wins, and a 409 removes this copy); `builtin_browser_close` removes one. An
- * agent opening a page or starting to act for the conversation on screen brings the browser's
- * dock tab up — once per conversation, so hiding it again is respected.
+ * creates a page; as soon as the page's element knows its webContents id, the id claims the
+ * request (the first window to claim wins, and a 409 removes this copy); `builtin_browser_close`
+ * removes one. An agent opening a page or starting to act for the conversation on screen brings
+ * the browser's dock tab up — once per conversation, so hiding it again is respected.
+ *
+ * And it keeps a tab while the browser is on screen: a panel showing no tab, the first time,
+ * after a restart or a reload of this window, or after the last tab closed, opens the new-tab
+ * page at once. The homepage when one is set, a blank page otherwise. Out of sight it opens
+ * nothing, so an agent closing the last tab leaves none until the panel is shown again.
  *
  * And it says once when the browser gets too heavy: each load warning the server starts giving
  * raises one toast, wherever the user is in the app; the toolbar's mark carries it after that.
@@ -40,11 +45,18 @@ import { isBlankUrl } from "./address";
 import {
   claimGuest,
   closeBrowserTab,
+  openBrowserTab,
   refreshBrowserSettings,
   refreshBrowserStatus,
 } from "./browser-actions";
 import { subscribeBuiltinBrowserEvents, subscribeBuiltinBrowserResync } from "./browser-events";
-import { activeTab, guestByKey, shouldReveal, type BrowserGuest } from "./browser-state";
+import {
+  activeTab,
+  guestByKey,
+  shouldReveal,
+  wantsNewTabPage,
+  type BrowserGuest,
+} from "./browser-state";
 import { browserState, dispatchBrowser, subscribeBrowser } from "./browser-store";
 import {
   DEFAULT_PARK_SIZE,
@@ -57,6 +69,7 @@ import {
   type Rect,
   type Size,
 } from "./geometry";
+import { watchGuestId } from "./guest-id";
 import { loadWarningText, newWarnings } from "./load";
 import { forgetOnScreenReport, reportOnScreenTab } from "./on-screen-report";
 import { hasVisibleSlot, slotsVersion, subscribeSlots, visibleSlot } from "./slot-registry";
@@ -204,21 +217,12 @@ const GuestPage = memo(function GuestPage({ guest }: { guest: BrowserGuest }) {
       host.view = view;
       host.applied = undefined;
       registerWebview(key, view);
-      // The tab id exists once the page has attached; either event may be the first to find
-      // it, and the claim is made once.
-      let claimed = false;
-      const claim = () => {
+      // The tab id exists once the page has attached, and the request is claimed with it at
+      // once (guest-id.ts): the claim brings the new tab to the front.
+      const stopWatching = watchGuestId(view, (tabId) => {
         const current = guestByKey(browserState(), key);
-        if (claimed || current === null || current.tabId !== null) return;
-        let tabId: number;
-        try {
-          tabId = view.getWebContentsId();
-        } catch {
-          return; // not attached yet
-        }
-        claimed = true;
-        void claimGuest(current, tabId);
-      };
+        if (current !== null && current.tabId === null) void claimGuest(current, tabId);
+      });
       // The page asked to close itself (window.close()).
       const close = () => {
         const tabId = guestByKey(browserState(), key)?.tabId ?? null;
@@ -230,13 +234,10 @@ const GuestPage = memo(function GuestPage({ guest }: { guest: BrowserGuest }) {
       const pressedInside = () => {
         view.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       };
-      view.addEventListener("did-attach", claim);
-      view.addEventListener("dom-ready", claim);
       view.addEventListener("close", close);
       view.addEventListener("focus", pressedInside);
       return () => {
-        view.removeEventListener("did-attach", claim);
-        view.removeEventListener("dom-ready", claim);
+        stopWatching();
         view.removeEventListener("close", close);
         view.removeEventListener("focus", pressedInside);
         registerWebview(key, null);
@@ -336,11 +337,30 @@ function LayerHost() {
 
   // A window hidden or shown again (minimized, closed to the tray) changes what is on screen, and
   // a hidden window lays out no frames to notice it by.
+  const [windowShown, setWindowShown] = useState(() => document.visibilityState !== "hidden");
   useEffect(() => {
-    const changed = () => placePages(ringRef.current);
+    const changed = () => {
+      setWindowShown(document.visibilityState !== "hidden");
+      placePages(ringRef.current);
+    };
     document.addEventListener("visibilitychange", changed);
     return () => document.removeEventListener("visibilitychange", changed);
   }, []);
+
+  // The new-tab page for a panel on screen with no tab. The rule reads the store as it is now,
+  // not as this render saw it: a second run of the effect for the same render (StrictMode) then
+  // finds the first run's request on its way. A request that failed is not repeated until the
+  // panel goes and comes back or a tab opens; a window that cannot open tabs would otherwise ask,
+  // and say it failed, again and again.
+  const panelOnScreen = slotShown && windowShown;
+  const newTabPageFailed = useRef(false);
+  useEffect(() => {
+    if (!panelOnScreen || state.tabs.length > 0) newTabPageFailed.current = false;
+    if (newTabPageFailed.current || !wantsNewTabPage(browserState(), panelOnScreen)) return;
+    void openBrowserTab().then((tab) => {
+      if (tab === null) newTabPageFailed.current = true;
+    });
+  }, [state, panelOnScreen]);
 
   // While a browser panel is on screen, follow its slot every frame.
   useEffect(() => {

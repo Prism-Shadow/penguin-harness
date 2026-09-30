@@ -75,6 +75,44 @@ describe("TabRegistry tabs", () => {
   });
 });
 
+describe("TabRegistry first pages", () => {
+  it("waits for a new tab's first page to commit, or its first load to end without one", async () => {
+    const tabs = new TabRegistry();
+    // Claimed before the shell reported it at all, then reported on its initial empty document.
+    const committed = tabs.waitForFirstPage(1, 1_000);
+    tabs.upsert(tab(1, { url: "", title: "", loading: true }));
+    tabs.upsert(tab(1, { url: "https://a.test/", loading: true }));
+    await expect(committed).resolves.toBe(true);
+    // A first load that stopped without committing anything.
+    tabs.upsert(tab(2, { url: "", title: "", loading: true }));
+    const stopped = tabs.waitForFirstPage(2, 1_000);
+    tabs.upsert(tab(2, { url: "", title: "", loading: false }));
+    await expect(stopped).resolves.toBe(true);
+    // Already past it: at once.
+    await expect(tabs.waitForFirstPage(1, 1_000)).resolves.toBe(true);
+    tabs.dispose();
+  });
+
+  it("ends the wait when the tab closes or crashes, and gives up after the timeout", async () => {
+    const tabs = new TabRegistry();
+    tabs.upsert(tab(1, { url: "", title: "", loading: true }));
+    tabs.upsert(tab(2, { url: "", title: "", loading: true }));
+    tabs.upsert(tab(3, { url: "", title: "", loading: true }));
+    const closed = tabs.waitForFirstPage(1, 1_000);
+    const crashed = tabs.waitForFirstPage(2, 1_000);
+    tabs.remove(1);
+    tabs.markCrashed(2, "crashed");
+    await expect(closed).resolves.toBe(true);
+    await expect(crashed).resolves.toBe(true);
+    await expect(tabs.waitForFirstPage(3, 20)).resolves.toBe(false);
+    // Gone from the shell's list after a refresh.
+    const refreshed = tabs.waitForFirstPage(3, 1_000);
+    tabs.replaceAll([]);
+    await expect(refreshed).resolves.toBe(true);
+    tabs.dispose();
+  });
+});
+
 describe("TabRegistry crashes", () => {
   it("marks a crashed tab with why until the shell reports it again", () => {
     const tabs = new TabRegistry();

@@ -245,6 +245,31 @@ describe("tabs", () => {
     );
   });
 
+  it("waits for a new tab's page, not the empty document a quick claim finds", async () => {
+    const h = mount();
+    // The initial empty document reads as loaded, as it does in Chromium.
+    h.shell.cdp = page(() => ({}));
+    let answered = false;
+    const opening = h.call("POST", "/tabs", { url: "https://example.test/slow" }).then((res) => {
+      answered = true;
+      return res;
+    });
+    await until(() => h.events.some((e) => e.type === "builtin_browser_open"), "the open event");
+    const open = openEvent(h.events);
+    // The window claims the tab while its first page is still on its way.
+    h.shell.show(tab(21, { url: "", title: "", loading: true }));
+    await h.call("POST", "/tabs/claim", { requestId: open.requestId, tabId: 21 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(answered).toBe(false);
+    h.shell.show(tab(21, { url: "https://example.test/slow", title: "Slow", loading: false }));
+    const res = await opening;
+    expect(res.status).toBe(200);
+    expect((await json<{ tab: BuiltinBrowserTab }>(res)).tab).toMatchObject({
+      id: 21,
+      url: "https://example.test/slow",
+    });
+  });
+
   it("answers no_window when no window claims the tab", async () => {
     const h = mount();
     const res = await h.call("POST", "/tabs", {});

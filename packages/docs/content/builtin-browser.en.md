@@ -25,6 +25,7 @@ When an agent opens a page from a conversation you are looking at, the dock swit
 ## Browse
 
 - The tab strip shows each tab's icon and title. Select **+** to open a new tab and **×** to close one.
+- The panel always has a tab. When it has none, the first time you open it, after the app restarts, or after the last tab closes, it opens a new tab at once. If an agent closes the last tab while the panel is out of sight, the new tab opens when you show the panel again.
 - The toolbar has **Back**, **Forward**, **Reload** (**Stop loading** while a page loads) and the address bar. Type a URL to open it. A bare domain such as `amazon.com` opens over `https://`. Anything else is searched with Bing. While you type, pages from the browser's history are suggested; use the arrow keys and Enter to pick one.
 - The toolbar's menu holds **Import from browser…**, **Clear browsing data…**, **Set homepage…**, **Open in system browser** and **Developer tools**.
 - A link that opens a new window, and a page's pop-up, open as new tabs. A page can open at most three tabs every five seconds; more are ignored.
@@ -34,13 +35,13 @@ The panel follows the app's light or dark theme; the pages themselves keep their
 
 ## Set a homepage
 
-The homepage is the page a new tab opens. Without one, a new tab is blank.
+The homepage is the page every new tab opens: the one **+** opens, the one the panel opens when it has no tab, and a new tab an agent opens without an address. While it loads, the tab already shows the homepage's address. Without a homepage, a new tab is blank and the address bar is ready for an address.
 
 1. In the toolbar's menu, select **Set homepage…**.
 2. Enter an address. It is read as the address bar reads one: a bare domain such as `example.com` opens over `https://`, and the field shows the page it will open. To take the page on screen, select **Use current page**.
 3. Select **Save**.
 
-While a homepage is set, a **Home** button beside **Reload** goes to it, and **+** opens it in the new tab. To remove the homepage, select **Clear** in the same dialog and save the empty field.
+While a homepage is set, a **Home** button beside **Reload** goes to it. To remove the homepage, select **Clear** in the same dialog and save the empty field.
 
 ## Open links from a conversation
 
@@ -70,7 +71,7 @@ Agents never type your passwords. When a page an agent needs asks for a sign-in,
 
 Import copies the cookies (which hold your sign-ins) and the history of one profile of a browser installed on this machine into the built-in browser.
 
-1. In the toolbar's menu, select **Import from browser…**. When no tab is open, the panel offers the same button.
+1. In the toolbar's menu, select **Import from browser…**.
 2. Pick a profile. Profiles are grouped by browser and named as the browser names them.
 3. Choose **Cookies & sign-ins**, **History**, or both.
 4. Optionally, list the sites to import cookies for, separated by commas, such as `amazon.com, github.com`. A site includes its subdomains. Leave the field empty to import the cookies of every site.

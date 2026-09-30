@@ -13,6 +13,9 @@
  * Activity (`builtin_browser_activity`) marks the tabs an agent is working in right now, the
  * homepage is the server's setting as this window last read or saved it, and the metrics are the
  * browser's load with the server's verdict on it (`builtin_browser_metrics`, about every 10 s).
+ *
+ * The browser keeps a tab while its panel is on screen: with none open and none on its way, the
+ * window opens the new-tab page by itself (`wantsNewTabPage`), the homepage or a blank page.
  */
 import type {
   BuiltinBrowserAction,
@@ -22,7 +25,7 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "@prismshadow/penguin-server/api";
-import { BLANK_URL } from "./address";
+import { BLANK_URL, tabAddress } from "./address";
 
 /** One webview this window hosts. */
 export interface BrowserGuest {
@@ -64,6 +67,8 @@ export interface BrowserState {
   homepage: string | null;
   /** The browser's load as last measured, with the server's warnings; null before the first measurement. */
   metrics: BuiltinBrowserMetrics | null;
+  /** This window's own requests for a new tab that have not been answered yet. */
+  opening: number;
 }
 
 export type BrowserAction =
@@ -83,7 +88,9 @@ export type BrowserAction =
   /** Events may have been lost: activity marks can no longer be trusted. */
   | { type: "resync" }
   /** The browser's settings as the server holds them (read, or answered to a save). */
-  | { type: "settings"; settings: BuiltinBrowserSettings };
+  | { type: "settings"; settings: BuiltinBrowserSettings }
+  /** This window asked for a new tab (1), or heard the answer (-1). */
+  | { type: "opening"; delta: 1 | -1 };
 
 export const INITIAL_BROWSER_STATE: BrowserState = {
   supported: false,
@@ -96,6 +103,7 @@ export const INITIAL_BROWSER_STATE: BrowserState = {
   closing: [],
   homepage: null,
   metrics: null,
+  opening: 0,
 };
 
 /** The key a guest is known by, from the request that created it. */
@@ -225,6 +233,8 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
       return state.homepage === action.settings.homepage
         ? state
         : { ...state, homepage: action.settings.homepage };
+    case "opening":
+      return { ...state, opening: Math.max(0, state.opening + action.delta) };
   }
 }
 
@@ -246,6 +256,31 @@ export function guestByKey(state: BrowserState, key: string): BrowserGuest | nul
 export function guestForTab(state: BrowserState, tabId: number | null): BrowserGuest | null {
   if (tabId === null) return null;
   return state.guests.find((guest) => guest.tabId === tabId) ?? null;
+}
+
+/**
+ * A tab's address as this window shows it: its page's, or while its first page is still on its
+ * way, the address this window created the page at (address.ts `tabAddress`).
+ */
+export function addressOf(state: BrowserState, tab: BuiltinBrowserTab): string {
+  return tabAddress(tab, guestForTab(state, tab.id)?.src ?? null);
+}
+
+/**
+ * Whether this window should open the new-tab page by itself: its browser panel is on screen,
+ * the browser can be used, and it has no tab, none open and none on its way. A tab on its way
+ * is a page this window is creating or has created and the registry does not list yet (from any
+ * window's, the agent's or a page's request), or a request of its own not yet answered, whose
+ * page this window has not been asked for yet.
+ */
+export function wantsNewTabPage(state: BrowserState, panelOnScreen: boolean): boolean {
+  return (
+    panelOnScreen &&
+    browserOffered(state) &&
+    state.tabs.length === 0 &&
+    state.guests.length === 0 &&
+    state.opening === 0
+  );
 }
 
 /** The mark of an agent working in the browser, the active tab's first when it is one of them. */

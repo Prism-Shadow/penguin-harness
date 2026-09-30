@@ -38,10 +38,13 @@ export async function refreshBrowserSettings(): Promise<void> {
 }
 
 /**
- * Opens a tab and brings it to the front: at `url`, or else where the server opens a new tab
- * — the homepage, or a blank page without one. The tab once it exists, else null.
+ * Opens a tab and brings it to the front: at `url`, or else at the new-tab page the server
+ * picks, the homepage, or a blank page without one. The tab once it exists, else null. While
+ * the request is on its way the store counts it, so the panel does not open the new-tab page
+ * beside it.
  */
 export async function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | null> {
+  dispatchBrowser({ type: "opening", delta: 1 });
   try {
     const { tab } = await api.openBuiltinBrowserTab(
       url === undefined ? { activate: true } : { url, activate: true },
@@ -50,6 +53,8 @@ export async function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | 
   } catch (err) {
     toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
     return null;
+  } finally {
+    dispatchBrowser({ type: "opening", delta: -1 });
   }
 }
 

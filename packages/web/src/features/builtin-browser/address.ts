@@ -114,11 +114,28 @@ export function displayAddress(url: string): string {
   return isBlankUrl(url) ? "" : url;
 }
 
-/** A tab's name in the strip: its title, else its host, else its address, else `untitled`. */
+/**
+ * The address a tab stands for: its page's, or, while its first page is still on its way and
+ * nothing has committed, the web address it was opened at, the way a browser shows a page it is
+ * loading. A new tab opening a slow homepage then reads as that homepage from the start rather
+ * than as an empty "New tab".
+ */
+export function tabAddress(
+  tab: { url: string; loading: boolean },
+  openedAt: string | null,
+): string {
+  if (tab.url === "" && tab.loading && openedAt !== null && isWebUrl(openedAt)) return openedAt;
+  return tab.url;
+}
+
+/**
+ * A tab's name in the strip: its title, else its host, else its address; `untitled` for a blank
+ * page, which Chromium titles with its own address.
+ */
 export function tabLabel(tab: { title: string; url: string }, untitled: string): string {
   const title = tab.title.trim();
+  if (isBlankUrl(tab.url) && (title === "" || title === BLANK_URL)) return untitled;
   if (title !== "") return title;
-  if (isBlankUrl(tab.url)) return untitled;
   const parsed = parseUrl(tab.url);
   return parsed !== null && parsed.hostname !== "" ? parsed.hostname : tab.url;
 }

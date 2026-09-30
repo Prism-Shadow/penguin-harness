@@ -34,6 +34,14 @@ interface OpenState extends OpenRequest {
 
 export type ClaimOutcome = "claimed" | "duplicate" | "unknown";
 
+/**
+ * Whether a tab is past its initial empty document: its first page committed (the shell reports
+ * no address before that), or its first load ended without one.
+ */
+function firstPageStarted(tab: BuiltinBrowserTab): boolean {
+  return tab.url !== "" || !tab.loading;
+}
+
 export class TabRegistry {
   /** In creation order: the last entry is the most recently created tab. */
   private tabs = new Map<number, BuiltinBrowserTab>();
@@ -42,6 +50,7 @@ export class TabRegistry {
   private pendingActive: number | null = null;
   private readonly opens = new Map<string, OpenState>();
   private readonly closeWaiters = new Map<number, Set<() => void>>();
+  private readonly firstPageWaiters = new Map<number, Set<(started: boolean) => void>>();
   private readonly timers = new Set<NodeJS.Timeout>();
 
   constructor(private readonly now: () => number = Date.now) {}
@@ -93,6 +102,7 @@ export class TabRegistry {
       this.active = tab.id;
       this.pendingActive = null;
     }
+    if (firstPageStarted(tab)) this.settleFirstPage(tab.id, true);
     return previous;
   }
 
@@ -104,6 +114,7 @@ export class TabRegistry {
     const tab = this.tabs.get(id);
     if (tab === undefined || (tab.crashed === reason && !tab.loading)) return false;
     this.tabs.set(id, { ...tab, loading: false, crashed: reason });
+    this.settleFirstPage(id, true);
     return true;
   }
 
@@ -112,6 +123,7 @@ export class TabRegistry {
     const known = this.tabs.delete(id);
     if (this.active === id) this.active = null;
     this.settleClose(id);
+    this.settleFirstPage(id, true);
     return known;
   }
 
@@ -138,6 +150,12 @@ export class TabRegistry {
     }
     if (this.active !== null && !next.has(this.active)) this.active = null;
     for (const id of gone) this.settleClose(id);
+    for (const id of [...this.firstPageWaiters.keys()]) {
+      const tab = next.get(id);
+      if (tab === undefined ? gone.includes(id) : firstPageStarted(tab)) {
+        this.settleFirstPage(id, true);
+      }
+    }
     return changed;
   }
 
@@ -154,6 +172,32 @@ export class TabRegistry {
       const done = () => {
         this.clearTimer(timer);
         resolve(true);
+      };
+      waiters.add(done);
+    });
+  }
+
+  /**
+   * Resolves true once a new tab's first page has committed, or its first load ended without
+   * one; at once when that already happened; false after `timeoutMs`. Until then the tab shows
+   * its initial empty document, which reads as fully loaded, so a wait for the page to load has
+   * to start after this. A tab not reported yet (a claim can overtake its first event) is waited
+   * for, and one that closes ends the wait.
+   */
+  waitForFirstPage(id: number, timeoutMs: number): Promise<boolean> {
+    const tab = this.tabs.get(id);
+    if (tab !== undefined && firstPageStarted(tab)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const waiters = this.firstPageWaiters.get(id) ?? new Set<(started: boolean) => void>();
+      this.firstPageWaiters.set(id, waiters);
+      const timer = this.timer(() => {
+        waiters.delete(done);
+        if (waiters.size === 0) this.firstPageWaiters.delete(id);
+        resolve(false);
+      }, timeoutMs);
+      const done = (started: boolean) => {
+        this.clearTimer(timer);
+        resolve(started);
       };
       waiters.add(done);
     });
@@ -241,6 +285,14 @@ export class TabRegistry {
       state.waiters.clear();
     }
     this.closeWaiters.clear();
+    for (const id of [...this.firstPageWaiters.keys()]) this.settleFirstPage(id, false);
+  }
+
+  private settleFirstPage(id: number, started: boolean): void {
+    const waiters = this.firstPageWaiters.get(id);
+    if (waiters === undefined) return;
+    this.firstPageWaiters.delete(id);
+    for (const waiter of waiters) waiter(started);
   }
 
   private settleClose(id: number): void {

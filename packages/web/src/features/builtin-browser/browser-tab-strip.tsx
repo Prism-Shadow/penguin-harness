@@ -6,7 +6,8 @@
  * It is shaped like a browser's rather than like the dock's pills right above it, so the two
  * strips never read as one: it sits on the sidebar's surface, and the active tab takes the
  * toolbar's surface and joins it. Tabs shrink to a minimum before the strip scrolls. A page
- * still loading shows a spinner where its icon goes, and a crashed one the warning glyph; a
+ * still loading shows a spinner where its icon goes, and a tab's first page is named after the
+ * address it is opening until the page has a title; a crashed page shows the warning glyph; a
  * page an agent is working in carries the busy dot, and one of the heaviest while the browser
  * warns about memory a small warning mark — each named in the tab's tooltip.
  */
@@ -67,6 +68,7 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
 export function BrowserTabStrip({
   tabs,
   activeTabId,
+  address,
   busy,
   heavyMemory,
   onSelect,
@@ -75,6 +77,8 @@ export function BrowserTabStrip({
 }: {
   tabs: BuiltinBrowserTab[];
   activeTabId: number | null;
+  /** A tab's address as the panel shows it: its page's, or the one it is opening. */
+  address: (tab: BuiltinBrowserTab) => string;
   /** Whether an agent is working in a tab right now. */
   busy: (tabId: number) => boolean;
   /** The memory (KB) of a tab the load warning points at, else null. */
@@ -92,7 +96,8 @@ export function BrowserTabStrip({
       >
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
-          const label = tabLabel(tab, S.builtinBrowser.untitled);
+          const shown = address(tab);
+          const label = tabLabel({ title: tab.title, url: shown }, S.builtinBrowser.untitled);
           const working = busy(tab.id);
           const heavyKB = heavyMemory(tab.id);
           const heavy =
@@ -100,7 +105,7 @@ export function BrowserTabStrip({
           // The tooltip carries what a truncated tab cannot: the whole title, the address, the
           // agent at work in it, a crash, and the memory it holds when the browser warns about it.
           const lines = [label];
-          if (!isBlankUrl(tab.url) && tab.url !== label) lines.push(tab.url);
+          if (!isBlankUrl(shown) && shown !== label) lines.push(shown);
           if (tab.crashed !== undefined) lines.push(S.builtinBrowser.crashedTab);
           if (working) lines.push(S.builtinBrowser.agentBusyTab);
           if (heavy !== null) lines.push(heavy);
