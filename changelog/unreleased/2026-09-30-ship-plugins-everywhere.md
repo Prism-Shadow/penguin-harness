@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `cli`, `server`, `web`, `tooling`, `ci`
+- **PR:** [#913](https://github.com/Prism-Shadow/penguin-harness/pull/913)
 
 [中文版](2026-09-30-ship-plugins-everywhere.zh.md)
 
