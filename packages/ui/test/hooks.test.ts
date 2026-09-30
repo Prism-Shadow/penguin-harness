@@ -12,9 +12,10 @@
  * rules) and `ui-field` (a labelled control row, which Console sets as a table row) — and the
  * eleventh, `ui-activity` (a step of the agent's work: Frost sweeps a highlight across its label,
  * Console renders a transcript; user decision, 2026-09-29), the twelfth and thirteenth,
- * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day), and the
- * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog, which Frost blurs; 2026-09-30).
- * This suite holds the source to it:
+ * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day), the
+ * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog, which Frost blurs; 2026-09-30),
+ * and the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
+ * block cursor; the same day). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -33,8 +34,9 @@
  *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
  *   (`thinking` / `tool`), its state (`running` / `done` / `error`) and its slots (`label`,
  *   `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`, `title`,
- *   `body`, `actions`), and a chart's parts are the seven the recipes style, wherever a
- *   `data-part` is written.
+ *   `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
+ *   (`caret`), and a chart's parts are the seven the recipes style, wherever a `data-part` is
+ *   written.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -60,6 +62,7 @@ const APPENDIX_A = [
   "ui-notice",
   "ui-chart",
   "ui-scrim",
+  "ui-stream",
 ];
 
 /**
@@ -131,6 +134,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
+  // An assistant reply as it arrives (2026-09-30): the reply body the transcript renders and the
+  // gallery frames on its own.
+  "ui-stream": ["AssistantReplyBody"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -146,6 +152,8 @@ const ACTIVITY_STATES = new Set(["running", "done", "error"]);
 const ACTIVITY_SLOTS = new Set(["label", "detail", "progress"]);
 const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]);
 const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
+const STREAM_STATES = new Set(["streaming", "done"]);
+const STREAM_SLOTS = new Set(["caret"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
 const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
@@ -201,7 +209,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the fourteen of Appendix A, each with its hosts", () => {
+  it("are the fifteen of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -340,6 +348,22 @@ describe("style hooks", () => {
             }
           }
         }
+        // A streaming reply names its state, as a literal the recipes select on or an
+        // expression; its one direct-child slot is the stream's edge, the caret (Frost's veil
+        // stops there, Console's cursor is drawn on it).
+        if (names.has("ui-stream")) {
+          const state = element.attributes.get("data-state");
+          if (state !== null && (typeof state !== "string" || !STREAM_STATES.has(state))) {
+            problems.push(
+              `${at} .ui-stream needs data-state="streaming|done", has ${String(state)}`,
+            );
+          }
+          for (const { slot } of childSlots(element)) {
+            if (!STREAM_SLOTS.has(slot)) {
+              problems.push(`${at} .ui-stream slot "${slot}" is not caret`);
+            }
+          }
+        }
         // A chart's parts are written wherever a mark is drawn, inside the frame's svg or by a
         // component that renders into it: every literal `data-part` is one the recipes style.
         const part = element.attributes.get("data-part");
@@ -471,5 +495,28 @@ describe("the hook checks, on known shapes", () => {
     expect(rows[1]!.attributes.get("data-branch")).toBe(true);
     const field = analysis.elements.find((e) => e.classes.some((t) => t.utility === "ui-field"))!;
     expect(childSlots(field).map((s) => s.slot)).toEqual(["label", "control"]);
+  });
+
+  it("read a stream's state and its caret as the recipes do", () => {
+    // The state is usually an expression (the check accepts it and judges only a literal); the
+    // caret is a direct child even when it is rendered conditionally.
+    const analysis = analyzeFile(
+      file(
+        "d.tsx",
+        [
+          "export function AssistantReplyBody({ revealing }: { revealing: boolean }) {",
+          "  return (",
+          '    <div className="ui-stream" data-state={revealing ? "streaming" : "done"}>',
+          "      <p>text</p>",
+          '      {revealing && <span data-slot="caret" aria-hidden />}',
+          "    </div>",
+          "  );",
+          "}",
+        ].join("\n"),
+      ),
+    );
+    const host = analysis.elements.find((e) => e.classes.some((t) => t.utility === "ui-stream"))!;
+    expect(host.attributes.get("data-state")).toBeNull();
+    expect(childSlots(host).map((s) => s.slot)).toEqual(["caret"]);
   });
 });

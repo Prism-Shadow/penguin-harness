@@ -24,6 +24,7 @@ import { InputsBoard } from "./boards/inputs";
 import { LoadingBoard } from "./boards/loading";
 import { NoticesBoard } from "./boards/notices";
 import { PickersBoard } from "./boards/pickers";
+import { StreamingBoard } from "./boards/streaming";
 import { TabsBoard } from "./boards/tabs";
 import { ToastsBoard } from "./boards/toasts";
 import { TooltipsBoard } from "./boards/tooltips";
@@ -41,6 +42,7 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   badges: BadgesBoard,
   empty: EmptyBoard,
   loading: LoadingBoard,
+  streaming: StreamingBoard,
   charts: ChartsBoard,
   avatars: AvatarsBoard,
   files: FilesBoard,

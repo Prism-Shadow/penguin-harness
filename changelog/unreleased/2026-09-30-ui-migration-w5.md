@@ -19,6 +19,7 @@ W5 of the UI-package migration moves the Web App's content rendering into `@pris
 ## Details
 
 - The package's accessibility fallbacks gain "Copy code", supplied by the Web App in the interface language.
+- `Md` takes extra remark plugins and element overrides on top of the shared pipeline; the company channel's mention chips and the tickets' path capsules render through them.
 - The gallery's component library gains a Content page.
 - KaTeX, Shiki and the remark / rehype plugins become dependencies of the package; the Web App keeps only `react-markdown`.
 

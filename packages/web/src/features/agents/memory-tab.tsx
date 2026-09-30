@@ -82,15 +82,6 @@ import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
 /**
- * Row-action glyphs (icon-only buttons, the skills tab's affordance) that differ from the
- * registry's drawings: edit is feather's edit-3 (`ICONS.penLine` is a wider pen), delete is the
- * tapered bin (`ICONS.trash` is straight-sided). View reads `ICONS.eye`.
- */
-const PENCIL_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
-const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-
-/**
  * The small ghost button's look on a `<label>`: the Button component only renders a `<button>`,
  * and the import control has to wrap a file input (the Agent State section's transfer label does
  * the same for its own size). Mirrors Button's `ghost` variant at `sm`, icon + text.
@@ -507,7 +498,7 @@ export function MemoryTab({
         title={S.memory.edit}
         onClick={() => openEditor(scope, file)}
       >
-        <GlyphIcon d={PENCIL_ICON} size={14} className="text-gray-600 dark:text-gray-300" />
+        <GlyphIcon d={ICONS.penLine} size={14} className="text-gray-600 dark:text-gray-300" />
       </IconButton>
       <IconButton
         variant="danger"
@@ -515,7 +506,7 @@ export function MemoryTab({
         title={S.memory.delete}
         onClick={() => setRemoving({ scope, file })}
       >
-        <GlyphIcon d={TRASH_ICON} size={14} />
+        <GlyphIcon d={ICONS.trash} size={14} />
       </IconButton>
     </div>
   );

@@ -66,6 +66,8 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.modelsGroupOrder.default_project": '["anthropic"]',
     "penguin.dock.layout": '{"scopes":{"session-1":{}},"bottomRatio":0.4}',
     "penguin.terminal.page.id": "term-1",
+    "penguin.orgTempSessions.admin.default_project.acme":
+      '[{"sessionId":"session-2","agentId":"acme_dev","title":"Build the site"}]',
 
     "penguin.theme": "dark",
     "penguin.themeId": "geek",
@@ -89,6 +91,7 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.files.treeWidth": "220",
     "penguin.files.editorWrap": "1",
     "penguin.notifications": "1",
+    "penguin.keybindings": '{"v":1,"linux":{"terminal.close":"Mod+Alt+KeyW"}}',
   });
 }
 
@@ -120,6 +123,7 @@ const PREFERENCE_KEYS = [
   "penguin.files.treeWidth",
   "penguin.files.editorWrap",
   "penguin.notifications",
+  "penguin.keybindings",
 ];
 
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));

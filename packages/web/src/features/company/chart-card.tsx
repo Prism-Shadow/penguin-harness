@@ -38,15 +38,18 @@ import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  Dot,
   Dropdown,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { budgetTone } from "./finance-tree";
 import { INVALID_ICON } from "./shared";
@@ -56,20 +59,22 @@ import { employeeStateTone } from "./chart-view";
 /** The legend's order: the states a reader is most likely to be looking for first. */
 const LEGEND_STATES: readonly OrgEmployeeState[] = ["running", "idle", "paused"];
 
-/** A 6px state dot with its label beside it; the running dot carries a pulsing halo (transform-only, so reduced motion leaves a plain dot). */
+/** The app's tones in the shared package's names: a busy dot takes the success fill. */
+const DOT_TONE: Record<Tone, ToneName> = {
+  busy: "success",
+  attention: "attention",
+  success: "success",
+  link: "info",
+  danger: "danger",
+  muted: "neutral",
+};
+
+/** A 6px state dot with its label beside it; the running dot pulses, reduced motion stills it. */
 export function ChartStateDot({ state }: { state: OrgEmployeeState }) {
-  const tone = employeeStateTone(state);
   const label = S.company.employeeStates[state] ?? state;
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
-      <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
-        {state === "running" && (
-          <span
-            className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${toneDot[tone]}`}
-          />
-        )}
-        <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
-      </span>
+      <Dot tone={DOT_TONE[employeeStateTone(state)]} pulse={state === "running"} />
       <span>{label}</span>
     </span>
   );

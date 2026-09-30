@@ -1,8 +1,9 @@
 /**
- * The shell's organization status marks (pure, unit tested): the tone the switcher's dot and
- * the overview's status pill take, and what a session-list group should render given what
- * the store holds for it — so the sidebar never shows a skeleton for a fetch that already
- * failed.
+ * The shell's organization status marks (pure, unit tested): the tone the switcher rows' status
+ * dots take — the status pill (the switcher's trigger, the overview, settings) reads its colour
+ * from shared.tsx's `ORG_STATUS_BADGE` instead — and what a session-list group should render
+ * given what the store holds for it, so the sidebar never shows a skeleton for a fetch that
+ * already failed.
  */
 import type { Tone } from "../../lib/tone";
 

@@ -168,16 +168,12 @@ export function SemanticIdField({
         <Button
           size="sm"
           title={S.semanticId.generateId}
-          aria-busy={busy || undefined}
-          disabled={disabled || busy || !derivable || projectId === null}
+          loading={busy}
+          disabled={disabled || !derivable || projectId === null}
           onClick={() => void generate()}
           className="shrink-0 whitespace-nowrap"
+          leading={<GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.inlineGlyph} />}
         >
-          {busy ? (
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-          ) : (
-            <GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.inlineGlyph} />
-          )}
           {S.semanticId.generateIdLabel}
         </Button>
       </div>

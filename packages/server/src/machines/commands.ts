@@ -271,14 +271,21 @@ export const DIR_LIST_MARK = "---penguin-dirs---";
  *
  * Hidden directories are dropped, matching what the local browser shows, and everything is
  * quoted for the remote shell by the caller's quoting rules.
+ *
+ * Exit 3 means there is no such directory; exit 4 means there is one and it may not be read
+ * (a folder without the search bit, or one macOS privacy protection holds back — `ls` fails
+ * there while `[ -r ]` still says yes, so the listing itself is what is tested). The listing
+ * is taken before anything is printed, so a refusal leaves no half-written answer behind.
  */
 export function listDirsCommand(dir: string): string {
   const target = dir === "" ? '"$HOME"' : shQuote(dir);
   return [
-    `cd ${target} 2>/dev/null || exit 3`,
+    `[ -d ${target} ] || exit 3`,
+    `cd ${target} 2>/dev/null || exit 4`,
+    `listing=$(ls -1p 2>/dev/null) || exit 4`,
     `pwd -P`,
     `echo ${DIR_LIST_MARK}`,
     // -1 one per line, trailing slash marks directories, then keep only those.
-    `ls -1p 2>/dev/null | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
+    `printf '%s\\n' "$listing" | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
   ].join("; ");
 }
