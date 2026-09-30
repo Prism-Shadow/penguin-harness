@@ -26,6 +26,16 @@ export function rememberSessionMachine(sessionId: string, machineId: string | nu
   else owners.set(sessionId, machineId);
 }
 
+/**
+ * Records the machine a LINK names for a Session (`/chat/<id>?machine=<id>`), for a page whose
+ * answers the app never saw — a plugin page in a frame. What the app already learned from its
+ * own lists wins: a link is a hint, and an older one must not move a Session the list placed.
+ */
+export function rememberLinkedMachine(sessionId: string, machineId: string | null): void {
+  if (machineId === null || machineId === "" || owners.has(sessionId)) return;
+  owners.set(sessionId, machineId);
+}
+
 /** The machine a Session lives on, or null for this one. */
 export function machineForSession(sessionId: string): string | null {
   return owners.get(sessionId) ?? null;

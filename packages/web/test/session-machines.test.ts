@@ -9,6 +9,7 @@ import {
   forgetSessionMachines,
   machineForPath,
   machineForSession,
+  rememberLinkedMachine,
   rememberSessionMachine,
   sessionIdInPath,
 } from "../src/lib/session-machines";
@@ -54,5 +55,23 @@ describe("where a Session lives", () => {
     rememberSessionMachine("s1", "M1");
     forgetSessionMachines();
     expect(machineForSession("s1")).toBeNull();
+  });
+});
+
+describe("a machine a link names", () => {
+  it("routes a Session the app never listed, and never moves one it did", () => {
+    // The Claude Code console links `/chat/<id>?machine=<id>`: its runs were fetched by a page
+    // in a frame, so without this the lookup asks this server and hears 404.
+    rememberLinkedMachine("cc-1", "devbox");
+    expect(machineForSession("cc-1")).toBe("devbox");
+    expect(machineForPath("/api/sessions/cc-1")).toBe("devbox");
+    // The list's answer stands against a link.
+    rememberSessionMachine("s1", "gpu");
+    rememberLinkedMachine("s1", "devbox");
+    expect(machineForSession("s1")).toBe("gpu");
+    // No machine, or an empty one, is this server.
+    rememberLinkedMachine("s2", null);
+    rememberLinkedMachine("s2", "");
+    expect(machineForSession("s2")).toBeNull();
   });
 });
