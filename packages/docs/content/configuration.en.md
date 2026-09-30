@@ -72,14 +72,14 @@ When a model entry has no inline `api_key`, it falls back to the provider's envi
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai, openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, modelscope, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai, openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, even when a preset row pins a model-specific protocol; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. The same holds for the opencode-go models on Anthropic Messages, whose client reads `ANTHROPIC_*`. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, even when a preset row pins a model-specific protocol; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
