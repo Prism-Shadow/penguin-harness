@@ -92,9 +92,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   ],
   // `Text` carries it for its eyebrow role (W5), the one door a group label takes in new code.
   "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog", "Text"],
-  // The page titles are `PageHeader`'s; the usage page and the draft view's hero still write
-  // their own until their waves (W8, W6).
-  "ui-display": ["Heading", "PageHeader", "EmptyState", "UsagePage", "DraftView"],
+  // The page titles are `PageHeader`'s; the draft view's hero still writes its own until its
+  // wave (W6).
+  "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
   "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar"],
   // The transcript's cards and the code block, and the page-level boxes (W4): the card and a
   // table that is its own box.
