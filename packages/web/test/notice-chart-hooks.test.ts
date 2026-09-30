@@ -12,7 +12,6 @@ import { NOTICE_TONE, NoticeStrip, ToastStack } from "@prismshadow/penguin-ui";
 import { expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
-const text = (id: string) => sourceFile(SCAN, `packages/web/src/${id}`).text;
 
 const NOTICE_STRIP = "packages/ui/src/components/feedback/notice/notice-strip.tsx";
 const TOASTER = "packages/ui/src/components/overlays/toaster/toaster.tsx";
@@ -138,21 +137,39 @@ describe("a notice's own mark", () => {
   });
 });
 
+const CHARTS = "packages/ui/src/components/charts";
+const CHART_MARKS = `${CHARTS}/marks/marks.tsx`;
+const TIMELINE_BAR = `${CHARTS}/marks/timeline-bar.tsx`;
+
 describe("charts", () => {
+  it("live in the shared UI package, one copy each", () => {
+    // The primitives' marks.tsx is left out: the icon marks share its file name.
+    for (const id of [
+      TIMELINE_BAR,
+      `${CHARTS}/chart-style.ts`,
+      `${CHARTS}/chart-frame/chart-frame.tsx`,
+      `${CHARTS}/chart-frame/chart-geom.ts`,
+      `${CHARTS}/token-donut/token-donut.tsx`,
+      `${CHARTS}/sparkline/sparkline.tsx`,
+      `${CHARTS}/ring/ring.tsx`,
+      `${CHARTS}/legend/legend.tsx`,
+    ]) {
+      expectSingleHome(SCAN, id);
+    }
+  });
+
   it("carry ui-chart on their roots and name their parts", () => {
     for (const id of [
-      "features/usage/chart-svg.tsx",
-      "components/ui/token-donut.tsx",
-      "features/benchmark/score-sparkline.tsx",
-      "features/traces/timeline-chart.tsx",
-      "features/agents/activity-sparkline.tsx",
+      `${CHARTS}/chart-frame/chart-frame.tsx`,
+      `${CHARTS}/token-donut/token-donut.tsx`,
+      `${CHARTS}/sparkline/sparkline.tsx`,
+      `${CHARTS}/ring/ring.tsx`,
+      "packages/web/src/features/traces/timeline-chart.tsx",
     ]) {
-      expect(text(id), id).toContain("ui-chart");
+      expect(sourceFile(SCAN, id).text, id).toContain("ui-chart");
     }
     // The parts are written by the chart primitives, the one place marks are drawn.
-    const parts = ["components/ui/chart/marks.tsx", "components/ui/chart/timeline-bar.tsx"]
-      .map(text)
-      .join("\n");
+    const parts = [CHART_MARKS, TIMELINE_BAR].map((id) => sourceFile(SCAN, id).text).join("\n");
     for (const part of ["series", "area", "bar", "point", "grid", "axis"]) {
       expect(parts, part).toMatch(new RegExp(`data-part(?:=|": )"${part}"`));
     }
