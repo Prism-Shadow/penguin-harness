@@ -1381,8 +1381,15 @@ export class SessionManager {
    *   its first context on the target, nothing streams, and the row carries the new pair by
    *   the time this returns (`switched: true`; the route answers with the fresh DTO);
    * - it yields — a driven run like a compaction (`switched: false`): status `compacting`,
-   *   idle when it ends. The head arrives promptly: a compaction's begin, or — for a context
-   *   just compacted, which streams no pair — the opener's first record.
+   *   idle when it ends. The head is a compaction's begin, the first record of a bootstrap (a
+   *   Session loaded from its Trace opens its context first), or — for a context just
+   *   compacted, which streams no pair — the opener's first record.
+   *
+   * The switch is the entry's run from that pull on — it can be stopped, and a deletion or a
+   * shutdown waits for it — while the entry only reads `compacting` once there is something
+   * to stream, so a refusal never flickers a state. The pull is not always brief: a loaded
+   * Session with nothing to compact holds the bootstrap of the context it leaves back, and
+   * answers only once that has settled (as long as a first run's connect).
    *
    * The entry and the row follow the runtime as the new context's `session_meta` passes
    * through the drive (see `drive`); a switch that does not complete streams no meta and
@@ -1416,22 +1423,30 @@ export class SessionManager {
       }
       const ac = new AbortController();
       const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
-      let head: IteratorResult<OmniMessage, StopReason>;
+      const head = gen.next();
+      const settled = (): void => {
+        entry.abort = null;
+        entry.running = null;
+      };
+      // One promise for the whole switch — the pull, then the drive behind it — so whoever
+      // waits for this entry's run to end waits for both.
+      entry.abort = ac;
+      entry.running = head.then((first) => {
+        if (first.done) return settled();
+        entry.status = "compacting";
+        this.publishState(entry, "compacting");
+        return this.drive(entry, resumeFrom(first.value, gen));
+      }, settled);
+      let first: IteratorResult<OmniMessage, StopReason>;
       try {
-        head = await gen.next();
+        first = await head;
       } catch (err) {
         throw switchRefusal(err, ref);
       }
       entry.lastActivityMs = Date.now();
-      if (head.done) {
-        this.syncEntryModel(entry);
-        return { sessionId: entry.sessionId, switched: true };
-      }
-      entry.status = "compacting";
-      entry.abort = ac;
-      this.publishState(entry, "compacting");
-      entry.running = this.drive(entry, resumeFrom(head.value, gen));
-      return { sessionId: entry.sessionId, switched: false };
+      if (!first.done) return { sessionId: entry.sessionId, switched: false };
+      this.syncEntryModel(entry);
+      return { sessionId: entry.sessionId, switched: true };
     });
   }
 

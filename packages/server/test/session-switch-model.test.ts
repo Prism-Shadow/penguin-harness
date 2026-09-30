@@ -14,6 +14,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  abortEvent,
   assistantText,
   compactionBegin,
   compactionEnd,
@@ -56,6 +57,11 @@ type SwitchBehaviour =
   | { kind: "throw"; error: Error }
   /** A Session that never ran: re-assembled on the target, nothing streamed. */
   | { kind: "inline" }
+  /**
+   * A loaded Session with nothing to compact, still settling the bootstrap of the context it
+   * leaves: no event until the signal fires, then the stopped bootstrap is shown.
+   */
+  | { kind: "held" }
   /** The compaction pair streams; `status` is how it ends. `gate` parks the compaction until it settles (or the signal fires). */
   | { kind: "stream"; status: StopReason; gate?: Promise<void> };
 
@@ -64,7 +70,16 @@ interface SwitchFake extends RuntimeSession {
   modelId: string;
   /** The signals `switchModel` was handed, so a test can see the abort reach it. */
   signals: AbortSignal[];
+  /** Whether a `switchModel` call has run to its end. */
+  ended: boolean;
 }
+
+/** Settles when `signal` fires. */
+const aborted = (signal: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener("abort", () => resolve(), { once: true });
+  });
 
 /**
  * A fake Session shaped like core's for a switch: the compaction request's token_usage rides
@@ -79,6 +94,7 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
     provider: model.provider,
     modelId: model.modelId,
     signals: [],
+    ended: false,
     toolPermission: () => "rw",
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
@@ -99,18 +115,16 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
         fake.modelId = opts.modelId;
         return "completed";
       }
+      if (behaviour.kind === "held") {
+        await aborted(opts.signal);
+        yield abortEvent("user_abort");
+        fake.ended = true;
+        return "aborted";
+      }
       yield compactionBegin({ reason: "manual", mode: "summarize", context: 4000, turns: 3 });
       // The compaction request itself, on the model being left.
       yield tokenUsage(counts(4000), counts(4000));
-      if (behaviour.gate) {
-        await Promise.race([
-          behaviour.gate,
-          new Promise<void>((resolve) => {
-            if (opts.signal.aborted) resolve();
-            else opts.signal.addEventListener("abort", () => resolve(), { once: true });
-          }),
-        ]);
-      }
+      if (behaviour.gate) await Promise.race([behaviour.gate, aborted(opts.signal)]);
       const status: StopReason = opts.signal.aborted ? "aborted" : behaviour.status;
       yield compactionEnd({ reason: "manual", mode: "summarize", status });
       if (status === "completed") {
@@ -503,6 +517,39 @@ describe("POST /switch-model", () => {
     expect(feed.rowAtMeta).toEqual([]);
     expect(row()).toMatchObject(A);
     expect(fake.modelId).toBe(A.modelId);
+  });
+
+  it("before its first event the switch is already the Session's run: POST /abort stops it, and nothing was announced until there was something to stream", async () => {
+    const fake = switchFake(A, { kind: "held" });
+    adopt(fake);
+    const feed = listen();
+    const pending = api.post(url, B);
+    await waitFor(() => fake.signals.length === 1);
+    // Core has not answered yet: the request is open, and no state has flipped.
+    expect(t.deps.manager.statusOf(SID)).toBe("idle");
+    expect(feed.events).toEqual([]);
+
+    expect((await api.post(`/api/sessions/${SID}/abort`, {})).status).toBe(202);
+    expect((await pending).status).toBe(202);
+    await waitFor(() => feed.states().includes("idle"));
+    expect(feed.states()).toEqual(["compacting", "idle"]);
+    expect(feed.kinds()).toEqual(["abort"]);
+    expect(row()).toMatchObject(A);
+  });
+
+  it("a deletion that lands before the switch's first event stops it and waits for it to end", async () => {
+    const fake = switchFake(A, { kind: "held" });
+    adopt(fake);
+    const pending = api.post(url, B);
+    await waitFor(() => fake.signals.length === 1);
+
+    const deleted = await api.delete(`/api/sessions/${SID}`);
+    expect(deleted.status).toBe(204);
+    // The run was over before the Session's files went: nothing of it can write afterwards.
+    expect(fake.signals[0]!.aborted).toBe(true);
+    expect(fake.ended).toBe(true);
+    await pending;
+    expect(t.deps.sessionsRepo.findById(SID)).toBeNull();
   });
 
   it("a main-session session_meta on the stream registers no child and records no error", async () => {
