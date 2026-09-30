@@ -196,12 +196,15 @@ export class FakeServer {
   compact: "reject" | ((session: FakeSessionState) => unknown[]) = "reject";
   /**
    * POST /switch-model behavior. "inline" (default): the Session never ran, so it switches
-   * inside the request and answers 200 with the updated SessionResponse. `{ refuse }`: 409
-   * with that code. A function streams like /compact (202): its `messages` are emitted
-   * between running and idle, and the Session's model changes only when `completed`.
+   * inside the request and answers 200 with the updated SessionResponse; "inline-rebuilt" does
+   * the same for a Session the server had to rebuild first, which comes back under a new id.
+   * `{ refuse }`: 409 with that code. A function streams like /compact (202): its `messages`
+   * are emitted between running and idle, and the Session's model changes only when
+   * `completed`.
    */
   switchModel:
     | "inline"
+    | "inline-rebuilt"
     | { refuse: string }
     | ((
         session: FakeSessionState,
@@ -1824,7 +1827,12 @@ export class FakeServer {
         if (typeof this.switchModel === "object") {
           return this.error(409, this.switchModel.refuse, `Refused: ${this.switchModel.refuse}.`);
         }
-        if (this.switchModel === "inline") {
+        if (this.switchModel === "inline" || this.switchModel === "inline-rebuilt") {
+          if (this.switchModel === "inline-rebuilt") {
+            this.sessions.delete(session.sessionId);
+            session.sessionId = this.mintSessionId();
+            this.sessions.set(session.sessionId, session);
+          }
           session.provider = target.provider;
           session.modelId = target.modelId;
           return this.json({ session: this.sessionInfo(session) });

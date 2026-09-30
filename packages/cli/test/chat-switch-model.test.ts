@@ -175,7 +175,7 @@ describe("chat /switch-model: 202 streams the switch", () => {
 });
 
 describe("chat /switch-model: 200 switches a Session that never ran inline", () => {
-  it("prints the model line without watching a stream; the Session is refreshed", async () => {
+  it("prints the model line without watching a stream; the Session is the one the response carries", async () => {
     server.switchModel = "inline";
     const out = await driveChat([SWITCH_LINE, "/switch-model", "/exit"]);
     expect(out).toContain(t.switchModelDone(CURRENT, TARGET));
@@ -183,9 +183,20 @@ describe("chat /switch-model: 200 switches a Session that never ran inline", () 
     expect(out).toContain(t.switchModelCurrent(TARGET));
     const session = [...server.sessions.values()][0]!;
     const log = requestLog(session.sessionId);
-    expect(log.slice(log.indexOf("POST /switch-model"))).toContain("GET /");
+    // The response is the refresh: nothing is read again.
+    expect(log.slice(log.indexOf("POST /switch-model"))).not.toContain("GET /");
     // Nothing ran, so there is nothing to resume.
     expect(out).not.toContain("--resume");
+  });
+
+  it("follows the id the response carries: a Session the server rebuilt answers to a new one from here on", async () => {
+    server.switchModel = "inline-rebuilt";
+    const out = await driveChat([SWITCH_LINE, "hello", "/exit"]);
+    expect(out).toContain(t.switchModelDone(CURRENT, TARGET));
+    const [rebuilt] = [...server.sessions.values()];
+    // The next turn went to the id that answers now, on the model switched to.
+    expect(requestLog(rebuilt!.sessionId)).toContain("POST /tasks");
+    expect(rebuilt!.modelId).toBe("anthropic/claude-opus-5");
   });
 });
 

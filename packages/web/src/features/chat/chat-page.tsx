@@ -956,6 +956,7 @@ export function ChatPage() {
   // Session switch: resets the usage-fetch marker, the file-card existence cache, any
   // thinking-level switch staged behind its dialog (per-session UI state — a compaction
   // that self-heals to a new session id routes through here too and drops the held pick),
+  // a model switch waiting behind its own dialog (it was asked of the conversation left),
   // and the popover's per-session data (process list / token buckets),
   // avoiding stale data from the previous Session (the panel jump commands reset in their
   // own effect above, and the cost hold re-keys itself inside advanceCostStat). The thinking level itself needs no reset — it is read off the
@@ -963,6 +964,7 @@ export function ChatPage() {
   useEffect(() => {
     usageAppliedRef.current = null;
     setThinkingSwitch(null);
+    setModelSwitchAsk(null);
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
@@ -1703,9 +1705,10 @@ export function ChatPage() {
   // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
   // compaction, the model-change marker alone) carries it from here, and the effect below moves
   // the Session row once the new context's session_meta names the new model. 200 = the Session
-  // never ran and switched inside the request: the row comes back with the response. A refusal
-  // (409 busy / same model / not configured / unavailable / compaction not configured / summary
-  // too large) is a toast.
+  // never ran and switched inside the request: the row comes back with the response — under a
+  // new id when the server had to rebuild a Session that left no Trace, which the page follows.
+  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured
+  // / summary too large) is a toast.
   const confirmModelSwitch = useCallback(async () => {
     const ask = modelSwitchAsk;
     if (!selected || ask === null || modelSwitchPosting) return;
@@ -1720,6 +1723,7 @@ export function ChatPage() {
       if ("session" in res) {
         applySessionRow(res.session);
         toastSuccess(S.chat.modelSwitchInSessionApplied(to));
+        await syncHealedSessionId(selected.sessionId, res.session.sessionId);
         return;
       }
       // Only a switch that compacts may say so; one that continues from a held summary runs
@@ -1729,10 +1733,10 @@ export function ChatPage() {
           ? S.chat.modelSwitchInSessionStarted(from, to)
           : S.chat.modelSwitchInSessionSwitching(to),
       );
-      // The switch shares get-or-resume-or-heal with /compact: follow a self-healed id.
-      await syncHealedSessionId(selected.sessionId, res.sessionId);
     } catch (e) {
-      toastError(apiErrorText(e, { modelId: ask.to.modelId }));
+      // The codes that take a model name are about the model the Session is on (its loader's
+      // missing credential); a refusal of the target names it in its own message.
+      toastError(apiErrorText(e, { modelId: selected.modelId }));
     } finally {
       setModelSwitchPosting(false);
       setModelSwitchAsk(null);
@@ -1811,12 +1815,16 @@ export function ChatPage() {
     [selected, addSession, navigate],
   );
 
-  // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
-  // (paired reference) current pricing; null if no pricing is configured. That pricing is the
-  // list price, so a promotion the models response reports for the Model comes off it here, as
-  // it does on the recorded cost.
-  const activeModel = models?.models.find((m) => sameModelRef(m, activeModelRef));
-  const modelPricing = promotedPricing(activeModel?.pricing, activeModel?.discount);
+  // Real-time cost for a turn: converts the Task's bucketed usage using a Model's (paired
+  // reference) current pricing; null if no pricing is configured. That pricing is the list
+  // price, so a promotion the models response reports for the Model comes off it here, as it
+  // does on the recorded cost. A Task is priced on the model it ran on when its row names one
+  // (a Session can switch models between Tasks), else on the Session's own.
+  const pricingOf = (ref: ModelRefDto | null) => {
+    const m = models?.models.find((x) => sameModelRef(x, ref));
+    return promotedPricing(m?.pricing, m?.discount);
+  };
+  const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
     onApprove,
@@ -1826,7 +1834,8 @@ export function ChatPage() {
     // happen mid-turn, and if only running were checked, the trailing group would flash
     // "finished running" during compaction before flipping back to "running".
     taskRunning: stream.taskState !== "idle",
-    taskCost: (stats) => bucketCostUsd(stats.tokensByBucket, modelPricing),
+    taskCost: (stats, model) =>
+      bucketCostUsd(stats.tokensByBucket, model ? pricingOf(model) : modelPricing),
     // Reconnect countdown controls (live waiting state only): retry-now skips the
     // remaining backoff server-side (benign no-op on timing races), give-up is the
     // ordinary session abort — the engine's abort-during-backoff path ends the turn.

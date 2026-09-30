@@ -514,6 +514,31 @@ describe("approvals and events", () => {
       "compaction",
       "model_change",
     ]);
+    // The round is priced on the model it ran on, though it was settled after the new context's
+    // meta had arrived.
+    const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+    expect(stats.model).toEqual({ provider: meta("s1").payload.provider, modelId: "a-1" });
+  });
+
+  it("a Task's stats row names the model its context ran on; one that began before any meta names none", () => {
+    const round = (m: StreamModel, n: number): void => {
+      const t = (s: number) => `2026-09-17T08:0${n}:0${s}.000Z`;
+      pushMessage(m, at(userText(`task ${n}`), t(1)));
+      pushMessage(m, at(requestBegin(), t(2)));
+      pushMessage(m, at(assistantText(`reply ${n}`), t(3)));
+      pushMessage(m, at(tokenUsage(counts(100 * n), counts(100)), t(4)));
+    };
+    const models = (m: StreamModel) =>
+      items(m).flatMap((i) => (i.kind === "task_stats" ? [i.model?.modelId] : []));
+    const m = createStreamModel();
+    // A window that starts partway into a context: no meta ahead of its first Task.
+    round(m, 1);
+    pushMessage(m, sessionMeta({ ...meta("s1").payload, model_id: "a-1" }));
+    round(m, 2);
+    pushMessage(m, sessionMeta({ ...meta("s1").payload, model_id: "b-2" }));
+    round(m, 3);
+    finalizeHistory(m);
+    expect(models(m)).toEqual([undefined, "a-1", "b-2"]);
   });
 
   it("compaction wall time is derived from the begin/end message timestamps", () => {

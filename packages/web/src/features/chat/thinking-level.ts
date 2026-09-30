@@ -146,6 +146,28 @@ export interface ThinkingSwitchItem {
 }
 
 /**
+ * Reads the end of a transcript: the trailing run of housekeeping rows — compaction banners,
+ * and what a context opens with behind them (the model-change marker of a model switch, the
+ * MCP connect row of a server that had to be connected again). `compacted` says a compaction
+ * in that run completed: the context in effect is what it left, and a failed retry after it
+ * changed nothing; one that failed or is still running leaves the old context in effect.
+ * `before` counts the items ahead of the run.
+ */
+export function trailingCompaction(items: ReadonlyArray<ThinkingSwitchItem>): {
+  compacted: boolean;
+  before: number;
+} {
+  let last = items.length - 1;
+  let compacted = false;
+  while (last >= 0 && ["compaction", "model_change", "mcp_connect"].includes(items[last]!.kind)) {
+    const c = items[last]!;
+    if (c.kind === "compaction" && !c.running && c.status === "completed") compacted = true;
+    last--;
+  }
+  return { compacted, before: last + 1 };
+}
+
+/**
  * Whether the loaded transcript indicates provider-side history whose prefix cache a
  * thinking-level change would invalidate (issue #310): some providers implement the
  * thinking level as a prompt prefix injected at the very FRONT of the chat template, so
@@ -157,23 +179,13 @@ export interface ThinkingSwitchItem {
  *   has a non-empty tail, and the trailing-compaction check below only looks at the tail.
  * - A transcript that ENDS in a settled successful compaction is also free to switch: the
  *   provider context was just rewritten to a short summary, so the user who followed the
- *   "compact first, then switch" advice is not warned a second time. Failed or still
- *   running trailing compactions don't count (the old context is still in effect), but a
- *   successful one anywhere in the trailing compaction run does (a failed retry after a
- *   success changed nothing). A model-change marker in that run — a model switch's new context
- *   opened behind its compaction — is housekeeping too, and changes nothing.
+ *   "compact first, then switch" advice is not warned a second time (see
+ *   `trailingCompaction` for what counts).
  */
 export function prefixCacheAtRisk(items: ReadonlyArray<ThinkingSwitchItem>): boolean {
-  let last = items.length - 1;
-  let compacted = false;
-  while (last >= 0 && ["compaction", "model_change"].includes(items[last]!.kind)) {
-    const c = items[last]!;
-    if (!c.running && c.status === "completed") compacted = true;
-    last--;
-  }
-  // Nothing but (at most) compaction rows: no billable history to protect.
-  if (last < 0) return false;
-  return !compacted;
+  const { compacted, before } = trailingCompaction(items);
+  // Nothing but (at most) housekeeping rows: no billable history to protect.
+  return before > 0 && !compacted;
 }
 
 /**

@@ -215,6 +215,16 @@ describe("prefixCacheAtRisk (issue #310 — provider prefix cache over the exist
     // The marker is not a compaction of its own: it makes nothing safe by itself.
     expect(prefixCacheAtRisk([user, reply, modelChange])).toBe(true);
   });
+
+  it("the connect row a compacted context opened with changes nothing either", () => {
+    const connect: ThinkingSwitchItem = {
+      kind: "mcp_connect",
+      running: false,
+      status: "completed",
+    };
+    expect(prefixCacheAtRisk([user, reply, stats, compactionDone, connect])).toBe(false);
+    expect(prefixCacheAtRisk([user, reply, connect])).toBe(true);
+  });
 });
 
 describe("needsThinkingSwitchConfirm (mid-chat switch guard for the session picker)", () => {

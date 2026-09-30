@@ -44,8 +44,8 @@ export interface StreamRenderContext {
    * long as the model might still call another tool, the trailing group always shows "Running".
    */
   taskRunning: boolean;
-  /** Converts this turn's stats into cost (USD) using the current Model pricing; returns null when no price is configured (cost is hidden). */
-  taskCost?: (stats: TaskStats) => number | null;
+  /** Converts this turn's stats into cost (USD) at the current pricing of `model`, the model the turn ran on (the Session's own when the turn names none); returns null when no price is configured (cost is hidden). */
+  taskCost?: (stats: TaskStats, model?: { provider: string; modelId: string }) => number | null;
   /**
    * "Retry now" on the live reconnect countdown: skips the remaining backoff wait
    * server-side (POST /retry-now); the line flips to "retrying" when the request_begin

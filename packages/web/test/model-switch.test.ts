@@ -34,6 +34,8 @@ describe("switchContextShape", () => {
   const failed = { kind: "compaction", running: false, status: "fatal" };
   const running = { kind: "compaction", running: true };
   const marker = { kind: "model_change" };
+  /** The connect row of a context whose opener had a server to connect again; its own `status` is not a compaction's. */
+  const connect = { kind: "mcp_connect", running: false, status: "completed" };
 
   it("is empty for no items, and compacts when there is conversation since the last compaction", () => {
     expect(switchContextShape([])).toBe("empty");
@@ -46,6 +48,11 @@ describe("switchContextShape", () => {
     expect(switchContextShape([user, done, failed])).toBe("compacted");
     expect(switchContextShape([user, done, marker])).toBe("compacted");
     expect(switchContextShape([done, marker])).toBe("compacted");
+    // Neither does what the opened context connected behind the compaction…
+    expect(switchContextShape([user, done, connect])).toBe("compacted");
+    expect(switchContextShape([user, done, connect, marker])).toBe("compacted");
+    // …which is no compaction of its own.
+    expect(switchContextShape([user, connect])).toBe("compact");
   });
 
   it("still compacts when the trailing compaction did not complete: the old context is in effect", () => {

@@ -463,22 +463,26 @@ export function registerChatCommand(program: Command, t: Messages): void {
       /**
        * `/switch-model <provider> <model_id>`: POST /switch-model through runTurn. A 202
        * streams like /compact — an ordinary compaction, rendered as any compaction is (none
-       * for a context just compacted); a 200 carries the Session back — it never ran, so it
-       * switched inside the request. Either way the Session is re-read afterwards: the model
-       * line prints only when it actually changed, since a failed compaction already said why
-       * it did not. A 409 prints one localized line per refusal code.
+       * for a context just compacted) — and the Session is re-read once it ends. A 200 carries
+       * the Session back: it never ran, so it switched inside the request (under a new id when
+       * the server had to rebuild one that left no Trace, which the chat follows). The model
+       * line prints only when the model actually changed, since a failed compaction already
+       * said why it did not. A 409 prints one localized line per refusal code.
        */
       const switchModel = async (target: ModelTarget): Promise<void> => {
         const previous = session;
         const startedAt = Date.now();
         let streamed: boolean;
+        let switched: SessionInfo | undefined;
         try {
           streamed = await runTurn(
             () => client.request("POST", `/api/sessions/${session.sessionId}/switch-model`, target),
             // 200 SessionResponse vs 202 TaskCreateResponse: only the former has `session`.
             {
-              inline: (response) =>
-                typeof response === "object" && response !== null && "session" in response,
+              inline: (response) => {
+                switched = (response as { session?: SessionInfo } | null)?.session;
+                return switched !== undefined;
+              },
             },
           );
         } catch (err) {
@@ -494,7 +498,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
           renderer.endCompact(Date.now() - startedAt);
         }
         if (streamed) resumable = true;
-        session = await getSessionInfo(client, previous.sessionId);
+        session = switched ?? (await getSessionInfo(client, previous.sessionId));
         if (session.provider !== previous.provider || session.modelId !== previous.modelId) {
           out.write(
             `${t.switchModelDone(

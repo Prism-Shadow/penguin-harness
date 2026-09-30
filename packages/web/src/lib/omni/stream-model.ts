@@ -447,6 +447,12 @@ export interface TaskStatsItem {
   forkable?: boolean;
   /** Memory topic files this Task changed through the structured file tools (merged, one row per file); absent when there were none. */
   memoryChanges?: MemoryChangeRow[];
+  /**
+   * The model this Task ran on — the one its context's `session_meta` names (see
+   * `StreamModel.contextModel`). Absent when the window held no meta before the Task began;
+   * the cost shown beside the row is then priced on the Session's current model.
+   */
+  model?: { provider: string; modelId: string };
 }
 
 export type ChatItem =
@@ -500,6 +506,8 @@ export interface StreamModel {
    * model when the two disagree (see `sessionRowStale`).
    */
   contextModel: { sessionId: string; provider: string; modelId: string } | null;
+  /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
+  taskModel: { provider: string; modelId: string } | null;
   /**
    * Elapsed-time stamps for the subagents panel's topology nodes (nested models only — the main
    * session's timing is covered by task stats). Stamped in routeNested: the `firstSeen` pair when
@@ -637,6 +645,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     meta: null,
     agentState: null,
     contextModel: null,
+    taskModel: null,
     stats: createTaskStatsTracker(),
     openText: null,
     openThinking: null,
@@ -971,6 +980,10 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   model.turnToolOutputs = false;
   model.reopenTaskAtSteering = false;
   model.taskOpen = true;
+  model.taskModel = model.contextModel && {
+    provider: model.contextModel.provider,
+    modelId: model.contextModel.modelId,
+  };
   model.taskStartLocalMs = nowMs;
   const ts = Date.parse(timestamp);
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
@@ -1024,6 +1037,7 @@ function finalizeOpenTask(model: StreamModel): void {
     ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
     ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
     ...(memoryChanges.length > 0 ? { memoryChanges } : {}),
+    ...(model.taskModel ? { model: model.taskModel } : {}),
   };
   // The stats row is inserted **before any trailing run of compaction banners** (and the
   // model-change markers a switch's compaction leaves behind them): compaction is its own

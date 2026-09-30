@@ -344,7 +344,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
 
   await ta.fill("/model");
   await ta.press("Enter");
-  await expect(page.getByText("换模型开新会话", { exact: true })).toBeVisible(); // picker title bar
+  // The model-picker dialog, named for what /model does (it has no visible title bar).
+  await expect(page.getByRole("dialog", { name: "换模型开新会话" })).toBeVisible();
   await expect(ta).toHaveValue(""); // the command consumed its own token
   await page.getByPlaceholder(/搜索模型/).fill("claude-4-8");
   // Both models match the query (one id is the other's prefix); pick the non-mini one, i.e. not

@@ -2271,9 +2271,9 @@ export const zh = {
     /** Body when the transcript is empty: there is no context to compact, so the switch is immediate. */
     modelSwitchInSessionDirectBody: (to: string): string =>
       `当前上下文没有内容，将直接切换到「${to}」。`,
-    /** Body when the transcript ends in a completed compaction with nothing since: the switch runs no compaction and continues from the summary already held. */
+    /** Body when the transcript ends in a completed compaction with nothing since: the switch runs no compaction and continues from what that one left (its summary, or nothing in discard mode). */
     modelSwitchInSessionCompactedBody: (to: string): string =>
-      `上下文刚压缩过、此后没有新的对话，不会再次压缩：本对话将带着该摘要以「${to}」继续。`,
+      `上下文刚压缩过、此后没有新的对话，不会再次压缩：本对话将从压缩后的上下文以「${to}」继续。`,
     /** Toast once the server accepted a compacting switch: the row in the conversation carries it from here. */
     modelSwitchInSessionStarted: (from: string, to: string): string =>
       `正在用「${from}」压缩上下文，完成后切换到「${to}」。`,

@@ -409,19 +409,23 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return <ReconnectLine item={item} ctx={ctx} />;
     case "compaction":
       return <CompactionBanner item={item} />;
-    case "model_change":
+    case "model_change": {
       // A slim divider between two contexts on different models (an in-session model switch),
       // named by model id: it renders from the Trace alone, so a model removed from the
-      // configuration since still reads.
+      // configuration since still reads. One id under two providers is told apart by the pair.
+      const sameId = item.from.modelId === item.to.modelId;
+      const name = (m: { provider: string; modelId: string }): string =>
+        sameId ? `${m.provider} / ${m.modelId}` : m.modelId;
       return (
         <div className="anim-msg my-3 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
           <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
           <span className="min-w-0 break-words text-center">
-            {S.chat.modelChanged(item.from.modelId, item.to.modelId)}
+            {S.chat.modelChanged(name(item.from), name(item.to))}
           </span>
           <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
         </div>
       );
+    }
     case "mcp_connect":
       return <McpConnectBanner item={item} />;
     case "task_stats":
@@ -453,7 +457,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           <TaskStatsLine
             stats={item.stats}
             assistantText={item.assistantText}
-            cost={item.stats ? (ctx.taskCost?.(item.stats) ?? null) : null}
+            cost={item.stats ? (ctx.taskCost?.(item.stats, item.model) ?? null) : null}
             {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
             {...(ctx.origin.length === 0 && item.forkable && ctx.onFork
               ? { onFork: ctx.onFork }

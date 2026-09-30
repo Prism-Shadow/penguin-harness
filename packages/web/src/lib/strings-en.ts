@@ -2242,7 +2242,7 @@ export const en: Strings = {
     modelSwitchInSessionDirectBody: (to: string): string =>
       `This conversation has no context yet, so it switches to "${to}" right away.`,
     modelSwitchInSessionCompactedBody: (to: string): string =>
-      `The context was compacted a moment ago and nothing has been said since, so nothing is compacted again: this conversation continues on "${to}" from that summary.`,
+      `The context was compacted a moment ago and nothing has been said since, so nothing is compacted again: this conversation continues on "${to}" from where that compaction left it.`,
     modelSwitchInSessionStarted: (from: string, to: string): string =>
       `Compacting the context on "${from}" — the conversation moves to "${to}" when it finishes.`,
     modelSwitchInSessionSwitching: (to: string): string => `Switching to "${to}".`,

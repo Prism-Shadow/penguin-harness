@@ -14,6 +14,7 @@
  */
 import type { ModelRefDto, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { sameModelRef } from "../models/model-grouping";
+import { trailingCompaction } from "./thinking-level";
 import type { ThinkingSwitchItem } from "./thinking-level";
 
 /**
@@ -32,26 +33,15 @@ export function sessionModelPickerDisabled(status: SessionStatus): boolean {
  * - `"empty"` — nothing at all yet: the switch is immediate (the server answers 200);
  * - `"compacted"` — the transcript ends in a completed compaction with nothing said since: the
  *   server runs no compaction and streams no summarize pair, the conversation continues on the
- *   target from the summary already held (a switch right after a switch closes the untouched
+ *   target from what that compaction left (a switch right after a switch closes the untouched
  *   context with a discard pair — housekeeping, not a compaction of anything).
  */
 export type SwitchContextShape = "compact" | "empty" | "compacted";
 
-/**
- * Walks the trailing run of compaction rows and model-change markers the way the thinking
- * switch's guard does (see `prefixCacheAtRisk`): a completed compaction anywhere in that run
- * means the context in effect is the summary; a failed one after it changed nothing.
- */
+/** Reads the shape off the transcript's end, the way the thinking switch's guard does (see `trailingCompaction`). */
 export function switchContextShape(items: ReadonlyArray<ThinkingSwitchItem>): SwitchContextShape {
   if (items.length === 0) return "empty";
-  let last = items.length - 1;
-  let compacted = false;
-  while (last >= 0 && ["compaction", "model_change"].includes(items[last]!.kind)) {
-    const c = items[last]!;
-    if (!c.running && c.status === "completed") compacted = true;
-    last--;
-  }
-  return compacted ? "compacted" : "compact";
+  return trailingCompaction(items).compacted ? "compacted" : "compact";
 }
 
 /**
