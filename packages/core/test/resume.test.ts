@@ -634,15 +634,9 @@ describe("agent.resumeSession after an in-session model switch", () => {
         streamed.push(msg);
       }
       // The engine is built first, so the bootstrap of the context being left streams. That
-      // context holds the summary and no completed turn: a discard pair closes it, then the
-      // target's own records and its meta.
-      expect(streamed.map(kind)).toEqual([
-        "tool_list_ready",
-        "compaction_begin",
-        "compaction_end",
-        "tool_list_ready",
-        "session_meta",
-      ]);
+      // context holds the summary and no completed turn: nothing to summarize and no pair —
+      // the target's own records and its meta follow.
+      expect(streamed.map(kind)).toEqual(["tool_list_ready", "tool_list_ready", "session_meta"]);
       expect(session.provider).toBe(ORIGINAL.provider);
       expect(session.modelId).toBe(ORIGINAL.model_id);
 
@@ -655,10 +649,11 @@ describe("agent.resumeSession after an in-session model switch", () => {
       expect(opened.map(kind)).toEqual(["session_meta", "tool_list_ready", "text"]);
       expect((opened[0]!.payload as { model_id: string }).model_id).toBe(ORIGINAL.model_id);
       expect((opened[2]!.payload as { text: string }).text).toBe(SUMMARY);
-      // The file being left is closed by the pair, and nothing else was added to it.
-      expect((await readTrace(leaving)).map(kind).slice(3)).toEqual([
-        "compaction_begin",
-        "compaction_end",
+      // Nothing was added to the file being left.
+      expect((await readTrace(leaving)).map(kind)).toEqual([
+        "session_meta",
+        "tool_list_ready",
+        "text",
       ]);
     } finally {
       session.dispose();

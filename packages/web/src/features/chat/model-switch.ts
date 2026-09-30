@@ -31,10 +31,9 @@ export function sessionModelPickerDisabled(status: SessionStatus): boolean {
  * - `"compact"` — there is conversation since the last compaction: the switch compacts it on
  *   the current model first, and the stream carries that compaction;
  * - `"empty"` — nothing at all yet: the switch is immediate (the server answers 200);
- * - `"compacted"` — the transcript ends in a completed compaction with nothing said since: the
- *   server runs no compaction and streams no summarize pair, the conversation continues on the
- *   target from what that compaction left (a switch right after a switch closes the untouched
- *   context with a discard pair — housekeeping, not a compaction of anything).
+ * - `"compacted"` — the transcript ends in a completed compaction or a model switch with
+ *   nothing said since: the server runs no compaction and streams no pair, and the
+ *   conversation continues on the target from what that context opened with.
  */
 export type SwitchContextShape = "compact" | "empty" | "compacted";
 

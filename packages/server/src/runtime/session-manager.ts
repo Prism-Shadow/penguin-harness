@@ -1382,8 +1382,8 @@ export class SessionManager {
    *   the time this returns (`switched: true`; the route answers with the fresh DTO);
    * - it yields — a driven run like a compaction (`switched: false`): status `compacting`,
    *   idle when it ends. The head is a compaction's begin, the first record of a bootstrap (a
-   *   Session loaded from its Trace opens its context first), or — for a context just
-   *   compacted, which streams no pair — the opener's first record.
+   *   Session loaded from its Trace opens its context first), or — for a context with no
+   *   completed turn, which streams no pair — the opener's first record.
    *
    * The switch is the entry's run from that pull on — it can be stopped, and a deletion or a
    * shutdown waits for it — while the entry only reads `compacting` once there is something

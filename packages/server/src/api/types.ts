@@ -1852,10 +1852,11 @@ export interface GoalResponse {
  *
  * - **202** {@link TaskCreateResponse} — the switch streams, the Session status `compacting`.
  *   A context with a completed turn is closed by an ordinary `manual` compaction pair (always
- *   summarize), one without by a `manual` / `discard` pair, and one a compaction had just
- *   closed streams no pair at all. Then come the new context's opener records and, last, its
- *   `session_meta`: its `provider` / `model_id` name the model the Session now runs on, the
- *   Session reads report that pair from this record on, and `task_state` turns idle after it.
+ *   summarize); one without — just compacted, or its first request never finished — has
+ *   nothing to summarize and streams no pair. Then come the new context's opener records
+ *   and, last, its `session_meta`: its `provider` / `model_id` name the model the Session now
+ *   runs on, the Session reads report that pair from this record on, and `task_state` turns
+ *   idle after it.
  *   A compaction that ends other than `completed` means no switch — no `session_meta` follows
  *   and the Session keeps its model.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it

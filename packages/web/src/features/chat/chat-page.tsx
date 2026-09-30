@@ -1723,8 +1723,8 @@ export function ChatPage() {
   // a new conversation instead). Re-picking the current model does nothing, and neither does a
   // pick that raced a Task starting (the picker is disabled then, and the server would refuse
   // it anyway); any other pick asks first, worded for what the switch will do: compact the
-  // context on the current model before moving on, or — right after a compaction, when there is
-  // nothing to compact — continue on the picked model from the summary already held.
+  // context on the current model before moving on, or — right after a compaction or a switch,
+  // when there is nothing to compact — continue on the picked model from what is already held.
   const onPickSessionModel = useCallback(
     (ref: ModelRefDto) => {
       if (!selected || sameModelRef(ref, selected)) return;
@@ -2712,10 +2712,10 @@ export function ChatPage() {
           choices only: compact and switch, or cancel. There is no "switch anyway" — a switch
           always compacts on the current model first, and a failed compaction keeps it. The two
           shapes with nothing to compact read "switch" instead: an empty transcript (the switch
-          is immediate) and a transcript ending in a completed compaction (no compaction runs;
-          the conversation continues from the summary already held). The session can start
-          running while the dialog is up (a queued follow-up, a schedule): the confirm is then
-          disabled and the body says why, exactly like the thinking dialog. */}
+          is immediate) and a transcript ending in a completed compaction or a model switch (no
+          compaction runs; the conversation continues from what is already held). The session
+          can start running while the dialog is up (a queued follow-up, a schedule): the confirm
+          is then disabled and the body says why, exactly like the thinking dialog. */}
       <ConfirmModal
         open={modelSwitchAsk !== null}
         title={S.chat.modelSwitchInSessionTitle}

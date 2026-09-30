@@ -209,11 +209,14 @@ describe("prefixCacheAtRisk (issue #310 — provider prefix cache over the exist
     expect(prefixCacheAtRisk([user, reply, compactionDone, user, reply])).toBe(true);
   });
 
-  it("a model switch's marker behind its successful compaction changes nothing — still safe", () => {
+  it("a transcript that ends in a model switch is safe: the context it opened has not been sent yet", () => {
     const modelChange: ThinkingSwitchItem = { kind: "model_change" };
     expect(prefixCacheAtRisk([user, reply, stats, compactionDone, modelChange])).toBe(false);
-    // The marker is not a compaction of its own: it makes nothing safe by itself.
-    expect(prefixCacheAtRisk([user, reply, modelChange])).toBe(true);
+    // A switch away from a context that had not answered runs no compaction: the marker
+    // stands alone, and the context behind it is just as new.
+    expect(prefixCacheAtRisk([user, modelChange])).toBe(false);
+    // Conversation since re-arms the guard.
+    expect(prefixCacheAtRisk([user, modelChange, user, reply])).toBe(true);
   });
 
   it("the connect row a compacted context opened with changes nothing either", () => {
