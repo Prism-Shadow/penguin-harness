@@ -148,6 +148,7 @@ import type {
   ProposalRevision,
   ProposalFileResponse,
   ProposalFeedbackRequest,
+  ProposalGraphResponse,
   ProposalImplementRequest,
   ProposalItem,
   ProposalMaterialRequest,
@@ -2966,6 +2967,10 @@ const proposalAction = <T>(
 
 export const listOrgProposals = (projectId: string, orgId: string) =>
   apiFetch<ProposalsResponse>(proposalsBase(projectId, orgId));
+
+/** The delivery repository's open PRs as a commit graph, with each node's proposal and origins. */
+export const getOrgProposalGraph = (projectId: string, orgId: string) =>
+  apiFetch<ProposalGraphResponse>(`${proposalsBase(projectId, orgId)}/graph`);
 
 export const createOrgProposal = (projectId: string, orgId: string, body: ProposalCreateRequest) =>
   apiFetch<ProposalItem>(proposalsBase(projectId, orgId), { method: "POST", body });

@@ -6273,6 +6273,48 @@ Scenarios:
       capsule: (n: number, title: string): string => `#${n} ${title}`,
       capsuleUnread: (n: number): string => `${n} unread`,
       openProposal: "Open the proposal",
+      /** The PR graph: the delivery repository's open PRs drawn as a commit graph, reached from the queue and from a proposal. */
+      graph: {
+        title: "PR graph",
+        open: "Graph",
+        openTitle: "Open the PR graph",
+        openForProposal: "See this proposal in the PR graph",
+        info: "Each open PR on the delivery repository is a node at its head, stacked layer by layer on the base branch by commit ancestry, newest on top. A node shows which proposal it is the impl PR of, how many commits it adds to the layer below, and the PRs the other origins have on the same branch. The graph marks the top, forks and layers off the chain; it does not pick between them.",
+        refresh: "Refresh",
+        loadFailed: "Could not read the PR graph",
+        partial: "The graph is partial; these could not be read:",
+        base: "base",
+        baseForked: "forks on the base",
+        top: "top",
+        fork: "fork",
+        offChain: (relation: string): string => `off the chain (${relation})`,
+        noProposal: "no proposal",
+        proposalRef: (n: number): string => `proposal #${n}`,
+        ahead: (n: number): string => `+${n}`,
+        aheadTitle: (n: number, base: string): string => `${n} commits on top of ${base}`,
+        relation: {
+          same: "same",
+          ahead: "ahead",
+          behind: "behind",
+          diverged: "diverged",
+          unknown: "unknown",
+        } as Record<string, string>,
+        originTitle: (origin: string, n: number, relation: string): string =>
+          `PR #${n} on ${origin}, same branch: ${relation}`,
+        detached: "PRs not on the graph",
+        detachedHint:
+          "Their declared base is neither the base branch nor the branch of any PR on the graph (usually a closed PR's branch).",
+        unplaced: "Proposals whose impl PR is not on the graph",
+        unplacedHint:
+          "The impl PR is registered but is not an open PR on the delivery repository (closed, merged, or opened elsewhere).",
+        empty: "No open PRs on the delivery repository; the graph is the base alone.",
+        focusMissing: (n: number): string =>
+          `Proposal #${n} has no impl PR registered, or its impl PR is not on the delivery repository.`,
+        checkedAt: (when: string): string => `read ${when}`,
+        summary: (nodes: number, onChain: number): string =>
+          `${nodes} PRs, ${onChain} on the chain`,
+        openPr: "Open on GitHub",
+      },
     },
   },
   errors: {

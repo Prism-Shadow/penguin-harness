@@ -1,5 +1,5 @@
 /**
- * The proposals pages — two, on one contributed route (`proposals/:number?`): the QUEUE, a
+ * The proposals pages — three, on one contributed route (`proposals/:number?`): the QUEUE, a
  * full-width list (one row per proposal: its number, its title as the link, its status as a
  * text pill, its author, its unread count and when it last moved; unread first, then newest),
  * and one PROPOSAL as its own page — a breadcrumb back to the queue, the header, the brief,
@@ -7,7 +7,9 @@
  * (grouped unit, integration, e2e, bench, then the rest), the sessions opened for it, the event
  * timeline, and the action bar. No side column: the body is what a person reads, and it gets
  * the width — until a scope or test file is opened, which takes the right of the row in a
- * panel (proposal-file-panel.tsx) while the proposal stays where it was.
+ * panel (proposal-file-panel.tsx) while the proposal stays where it was. The third is the PR
+ * GRAPH (`proposals/graph`, pr-graph-page.tsx), opened from the queue's header and from a
+ * proposal's header, which opens it on that proposal's impl PR.
  *
  * While an approval stands for an older revision, one line under the header says so and offers
  * Changes | Latest. With Changes every change is marked where it is — the title's words, each
@@ -97,6 +99,7 @@ import {
 } from "../company/shared";
 import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "./proposal-links";
 import { ProposalFilePanel, useFilePanelWidth } from "./proposal-file-panel";
+import { GraphPage } from "./pr-graph-page";
 import {
   PROPOSAL_STATUS_TONE,
   commentsInSection,
@@ -113,6 +116,7 @@ import {
   parseProposalHash,
   proposalActions,
   proposalsRoute,
+  GRAPH_SEGMENT,
   paragraphSpan,
   rangeOfSelection,
   diffParagraphs,
@@ -178,7 +182,9 @@ export function ProposalStatusPill({ status }: { status: ProposalStatus }) {
 export function OrgProposalsPage() {
   const params = useParams<{ number?: string }>();
   const route = proposalsRoute(params.number);
-  return "queue" in route ? <QueuePage /> : <DetailPage number={route.number} />;
+  if ("queue" in route) return <QueuePage />;
+  if ("graph" in route) return <GraphPage />;
+  return <DetailPage number={route.number} />;
 }
 
 /** Employee id → display name, for every principal drawn on these pages. */
@@ -304,9 +310,21 @@ function QueuePage() {
       title={S.nav.org.proposals}
       info={t.info}
       actions={
-        <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
-          {t.newProposal}
-        </Button>
+        <>
+          <Button
+            size="sm"
+            variant="secondary"
+            title={t.graph.openTitle}
+            onClick={() =>
+              navigate(orgContributedPagePath(projectId, orgId, `proposals/${GRAPH_SEGMENT}`))
+            }
+          >
+            {t.graph.open}
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
+            {t.newProposal}
+          </Button>
+        </>
       }
     >
       {company.proposalsError !== null && (
@@ -806,6 +824,20 @@ function DetailPage({ number }: { number: number }) {
             ) : undefined
           }
           info={t.info}
+          actions={
+            <Button
+              size="sm"
+              variant="secondary"
+              title={t.graph.openForProposal}
+              onClick={() =>
+                navigate(
+                  `${orgContributedPagePath(projectId, orgId, `proposals/${GRAPH_SEGMENT}`)}?proposal=${number}`,
+                )
+              }
+            >
+              {t.graph.open}
+            </Button>
+          }
         >
           {crumb}
           {detailError !== null ? (

@@ -266,6 +266,10 @@ describe("proposalsRoute", () => {
     expect(proposalsRoute("0")).toEqual({ queue: true });
     expect(proposalsRoute("x")).toEqual({ queue: true });
   });
+
+  it("shows the PR graph on its own segment", () => {
+    expect(proposalsRoute("graph")).toEqual({ graph: true });
+  });
 });
 
 describe("the queue's search grammar", () => {
