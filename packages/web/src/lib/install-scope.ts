@@ -297,6 +297,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.keybindings",
+    scope: "browser",
+    why: "The account's shortcut overrides, mirrored from ui_prefs for the first keystroke and for cross-tab sync; names nothing on the server, and the server copy is the truth.",
+  },
+  {
+    kind: "exact",
     key: "penguin.companyBetaNoticeShown",
     scope: "browser",
     why: "That company mode's beta notice has been shown in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
@@ -318,6 +324,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.orgPageHint.",
     scope: "install",
     why: "A dismissed empty-page note, keyed by user, Project and organization id of this root.",
+  },
+  {
+    kind: "family",
+    key: "penguin.orgTempSessions.",
+    scope: "install",
+    why: "The company sidebar's Temporary group of ticket sessions, keyed by user, Project and organization id and naming Sessions and Agents of this root.",
   },
   {
     kind: "family",

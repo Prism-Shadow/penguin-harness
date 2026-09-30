@@ -28,6 +28,7 @@ export type SettingsSectionKey =
   | "profile"
   | "general"
   | "appearance"
+  | "shortcuts"
   | "account"
   | "proxy"
   | "uploads"
@@ -60,6 +61,8 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "profile", group: "personal", visible: () => true },
     { key: "general", group: "personal", visible: () => true },
     { key: "appearance", group: "personal", visible: () => true },
+    // Keyboard shortcuts are the account's, and apply in every session of it.
+    { key: "shortcuts", group: "personal", visible: () => true },
     // The desktop shell's own window has no password to change; a password-established
     // session against the same server still does. Same predicate as the old menu row.
     { key: "account", group: "personal", visible: (v) => offersChangePassword(v) },

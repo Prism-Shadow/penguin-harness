@@ -138,6 +138,53 @@ export const en: Strings = {
     adminOnly: "Only an admin can manage machines.",
   },
 
+  /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
+  shortcuts: {
+    commands: {
+      "palette.toggle": "Command palette",
+      "sessions.search": "Search sessions",
+      "chat.new": "New chat",
+      "sidebar.toggle": "Show or hide the sidebar",
+      "dock.toggleRight": "Show or hide the right sidebar",
+      "dock.toggleBottom": "Show or hide the bottom panel",
+      "terminal.toggle": "Show or hide the terminal",
+      "terminal.new": "New terminal",
+      "terminal.close": "Close the focused terminal",
+      "editor.save": "Save",
+    },
+    groups: {
+      general: "General",
+      panels: "Panels",
+      terminal: "Terminal",
+      editor: "Editor",
+    },
+    /** Where a focus-scoped command wins, for the shadowed-conflict hint. */
+    scopes: {
+      terminal: "the terminal",
+      editor: "the editor",
+    },
+    unbound: "Not set",
+    /** The recorder button's tooltip. */
+    rebind: "Change shortcut",
+    record: "Press the new shortcut…",
+    recordHint: "Esc cancels · Backspace clears",
+    needsModifier:
+      "Hold Ctrl or Alt (⌘ or ⌃ on macOS); Shift only together with them. Or use an F key",
+    resetRow: "Restore default",
+    resetAll: "Reset all",
+    resetAllBody: (n: number): string => `Restore ${n} shortcuts to their defaults?`,
+    conflictSame: (other: string): string =>
+      `Shares its shortcut with "${other}"; only the first in the list fires`,
+    conflictShadowed: (other: string, surface: string): string =>
+      `In ${surface}, "${other}" takes this shortcut first`,
+    browserReserved:
+      "The browser keeps this combination for itself; it only works in the desktop app",
+    browserCommon:
+      "The browser also uses this combination; in a browser tab it takes over that browser function",
+    desktopMenuReserved: "Overrides the desktop app's menu shortcut of the same keys",
+    saveFailed: "Shortcuts could not be saved to the account",
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
@@ -304,6 +351,10 @@ export const en: Strings = {
     profile: "Profile",
     generalTitle: "General",
     appearanceTitle: "Appearance",
+    shortcutsTitle: "Keyboard shortcuts",
+    /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
+    shortcutsInfo:
+      "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example), so those work in the desktop app only; a chord the browser also uses (Ctrl+P / ⌘P prints) takes over that browser function in a browser tab. The list marks both.",
     accountTitle: "Account",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "Import Trace",
@@ -436,7 +487,11 @@ export const en: Strings = {
     title: "Command Palette",
     placeholder: "Type to filter commands…",
     noResults: "No matching commands",
-    hint: "Ctrl+P / Ctrl+Shift+P (⌘P) to toggle · ↑↓ to select · Enter to run",
+    /** Footer of the palette; `toggle` is the formatted palette.toggle chord, null while unbound. */
+    hint: (toggle: string | null): string =>
+      toggle === null
+        ? "↑↓ to select · Enter to run"
+        : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
   },
   modelPicker: {
@@ -460,10 +515,16 @@ export const en: Strings = {
     restore: "Restore",
     remove: "Remove",
     fillApp: "Fill the app",
-    fillAppHint:
-      "Show this page as the whole app; Ctrl+P / Ctrl+Shift+P opens the command palette to leave",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    fillAppHint: (palette: string | null): string =>
+      palette === null
+        ? "Show this page as the whole app; the command palette is the way to leave"
+        : `Show this page as the whole app; ${palette} opens the command palette to leave`,
     exitFullPage: "Exit full page (back to chat)",
-    exitHint: "Press Ctrl+P or Ctrl+Shift+P for the command palette to get back to the chat.",
+    exitHint: (palette: string | null): string =>
+      palette === null
+        ? "Open the command palette to get back to the chat."
+        : `Press ${palette} for the command palette to get back to the chat.`,
     noSuchPage: "This workflow does not exist or has no page.",
     removeConfirm: "Delete this workflow and all its recorded versions?",
     removeYes: "Remove",
@@ -3336,7 +3397,6 @@ Scenarios:
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "Wrap",
     unsaved: "Unsaved changes",
-    saveTitle: "Save (Ctrl+S / ⌘S)",
     saveConfirmTitle: "Save file",
     saveConfirm: (name: string): string =>
       `Save changes to ${name}? The file in the Workspace will be overwritten.`,
@@ -3956,7 +4016,7 @@ Scenarios:
       "deny-all": "Deny all",
     } as Record<string, string>,
     status: "Status",
-    statusActive: "Active",
+    statusActive: "Running",
     statusPaused: "Paused",
     pause: "Pause organization",
     resume: "Resume organization",
@@ -3976,6 +4036,11 @@ Scenarios:
     /** Principals as the chat and tickets name them. */
     principalSystem: "System",
     principalAll: "Everyone",
+    /** A data path in a ticket drawn as a capsule: the hover names the whole path, a click copies it. */
+    pathCapsule: {
+      hint: (path: string): string => `${path}\nClick to copy the full path`,
+      copy: (path: string): string => `Copy path ${path}`,
+    },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "Unbounded",
@@ -3989,6 +4054,10 @@ Scenarios:
       noEmployees: "This organization has no employees yet",
       untitledSession: "Untitled session",
       loadFailed: "The employee list could not be loaded",
+      temporary: (n: number): string => `Temporary (${n})`,
+      temporaryEntry: (title: string): string => `Temporary · ${title}`,
+      closeTemporary: "Remove from Temporary",
+      closeAllTemporary: "Close all",
     },
     overview: {
       title: "Overview",
@@ -4248,7 +4317,7 @@ Scenarios:
     },
     tickets: {
       title: "Tickets",
-      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Drag a card to move it between columns, click a card's title to open its detail in place; a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
+      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Click a card to open its detail in place, and drag it to another column to move it (on a touch screen, press and hold the card first); a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
       columns: {
         proposed: "Proposed",
         in_progress: "In progress",
@@ -4592,8 +4661,9 @@ Scenarios:
       documentLoadFailed: "Could not load the document",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the shortcut. */
-      editorHint: "Markdown · Ctrl/⌘+S to save",
+      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
+      editorHint: (shortcut: string | null): string =>
+        shortcut === null ? "Markdown" : `Markdown · ${shortcut} to save`,
     },
   },
   errors: {

@@ -14,6 +14,7 @@ import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { PANEL_BOTTOM_ICON, PANEL_RIGHT_ICON } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { toneDot } from "../../lib/tone";
 import {
   dockVersion,
@@ -42,14 +43,16 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
   // button — the edge the panel opens on.
   const pendingDock: DockPosition = panelDock("agents") ?? "right";
 
-  const toggles: Array<{ position: DockPosition; label: string; icon: string }> = [
-    { position: "bottom", label: S.dock.bottomDock, icon: PANEL_BOTTOM_ICON },
-    { position: "right", label: S.dock.rightDock, icon: PANEL_RIGHT_ICON },
+  const bottomTitle = useShortcutTitle(S.dock.bottomDock, "dock.toggleBottom");
+  const rightTitle = useShortcutTitle(S.dock.rightDock, "dock.toggleRight");
+  const toggles: Array<{ position: DockPosition; label: string; title: string; icon: string }> = [
+    { position: "bottom", label: S.dock.bottomDock, title: bottomTitle, icon: PANEL_BOTTOM_ICON },
+    { position: "right", label: S.dock.rightDock, title: rightTitle, icon: PANEL_RIGHT_ICON },
   ];
 
   return (
     <div className="flex shrink-0 items-center gap-1" data-testid="panels-toolbar">
-      {toggles.map(({ position, label, icon }) => (
+      {toggles.map(({ position, label, title, icon }) => (
         <button
           key={position}
           type="button"
@@ -57,7 +60,7 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
           // Hiding a dock keeps every body mounted (dock-panel.tsx renders it at zero
           // size), so a tab holding unsaved work has nothing to lose and nothing to ask.
           onClick={() => toggleDock(position)}
-          title={label}
+          title={title}
           aria-label={label}
           data-testid={`dock-toggle-${position}`}
           className={triggerClass(isDockVisible(position))}

@@ -42,7 +42,9 @@ import {
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { Kbd } from "../../components/ui/kbd";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { toneDot } from "../../lib/tone";
 import { useTerminalChrome } from "../terminal/terminal-appearance";
 import {
@@ -250,6 +252,7 @@ function DockPicker({
   /** The bottom (and merged) surface lays its choices out in a row, the right one as a list. */
   horizontal: boolean;
 }) {
+  const toggleChord = useDisplayedBinding("terminal.toggle");
   const rowClass =
     "flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
   const row = (kind: PanelKind) => (
@@ -288,9 +291,9 @@ function DockPicker({
               <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />
             </span>
             <span className="min-w-0 flex-1 truncate">{S.terminal.title}</span>
-            <kbd className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
-              Ctrl+`
-            </kbd>
+            {toggleChord !== null && (
+              <Kbd chord={toggleChord} className="shrink-0 text-gray-400 dark:text-gray-500" />
+            )}
           </button>
         )}
         {browserOffered && row("builtin-browser")}
@@ -328,6 +331,7 @@ export function DockPanel({
 }: DockPanelProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  const closeShortcut = useShortcutLabel("terminal.close");
   const browserOffered = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
   const terminalById = new Map(terminals.map((t) => [t.id, t]));
   const { position, merged, tabs, activeKey } = view;
@@ -685,7 +689,8 @@ export function DockPanel({
     if (tab.kind === "terminal") terminalOrdinals.set(tab.terminalId, terminalOrdinals.size + 1);
   });
 
-  // Ctrl+W inside a shown terminal asks for its tab to close, and takes the × path above,
+  // The terminal.close shortcut (⌃⌥` / Ctrl+Alt+` by default) inside a shown terminal asks for its
+  // tab to close, and takes the × path above,
   // confirmation included. Only the dock holding that tab answers — and not while it is
   // collapsing out, when the merged view may list the same tab — so no request is answered
   // twice. The ref keeps one subscription per mount while the handler reads the current tabs.
@@ -749,7 +754,7 @@ export function DockPanel({
               active={key === activeKey}
               badge={false}
               closeLabel={S.terminal.killShell}
-              closeShortcut="Ctrl+W"
+              closeShortcut={closeShortcut ?? undefined}
               onSelect={() => activateTab(key)}
               onClose={() => closeTab(tab, label)}
             />
