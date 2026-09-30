@@ -409,7 +409,8 @@ export const en: GalleryStrings = {
       },
       dialogs: {
         title: "Dialogs",
-        description: "Modal, confirmation, paged dialog, drawer, bottom sheet and lightbox.",
+        description:
+          "Modal, confirmation, paged dialog, drawer, bottom sheet, lightbox and command palette.",
       },
       tooltips: {
         title: "Tooltips",
@@ -430,7 +431,7 @@ export const en: GalleryStrings = {
       charts: {
         title: "Charts",
         description:
-          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, cost trend and token bars, requests and success rate, the activity and score sparklines, the Trace timeline.",
+          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
       },
       avatars: {
         title: "Avatars",
@@ -651,6 +652,12 @@ export const en: GalleryStrings = {
       lightbox: "Lightbox",
       lightboxHint: "Click the thumbnail to zoom in; Esc or a click outside the image closes it.",
       lightboxAlt: "The Penguin logo",
+      palette: "Command palette",
+      paletteAside: "Type to filter; each action opens another dialog on this board.",
+      openPalette: "Open the command palette",
+      palettePlaceholder: "Type to filter commands…",
+      paletteEmpty: "No matching commands",
+      paletteHint: "↑↓ to select · Enter to run · Esc to close",
     },
     tooltips: {
       attribute: "The data-tooltip attribute",
@@ -789,6 +796,24 @@ export const en: GalleryStrings = {
       donut: "Token donut",
       donutHint:
         "Cache reads, cache writes and output; the ring's remainder warns as usage nears the limit.",
+      donutLabels: {
+        usage: "Context usage",
+        cacheRead: "Cache read",
+        cacheWrite: "Cache write",
+        output: "Output",
+      },
+      ring: "Ring gauge",
+      ringHint:
+        "One arc against a budget in the budget's tone (under, near, over); without a budget the track stands alone; the composer's 12 px context ring takes the ink around it; several arcs split a whole into shares.",
+      ringSpend: (percent) => `Spend at ${percent}% of the budget`,
+      ringNoBudget: "No budget set",
+      ringShares: "Shares of a whole",
+      ringContext: "Context ring",
+      legend: "Legend",
+      legendHint:
+        "A row under a chart: pointing at one item fades the others, and an item that explains a line's shape stays out of it. A list legend prints each item's figures after its label and pins a row on click.",
+      legendHitRate: "Cache hit rate",
+      legendParts: ["System prompt", "Tool definitions", "Messages", "Tool results"],
       trend: "Cost trend",
       trendHint: "Fourteen days of cost as a line; hover a day.",
       tokens: "Token usage",
@@ -801,7 +826,8 @@ export const en: GalleryStrings = {
       activityHint:
         "The agent card's fourteen-day session count curve; relative ups and downs only.",
       sparkline: "Score sparkline",
-      sparklineHint: "One benchmark's scores over its runs, the newest marked.",
+      sparklineHint:
+        "One benchmark's scores over its runs, the newest marked; a single score is a lone point.",
       timeline: "Trace timeline",
       timelineHint:
         "One Task's model segments and tool calls: thinking, reply, tool-call generation, approval wait and execution, each in its lane.",

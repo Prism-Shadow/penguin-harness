@@ -1,7 +1,6 @@
 /**
- * Shared SVG skeleton for the daily trend charts (extracted from the
- * original TrendChart, reused by both the daily Token stacked bar and the
- * daily cost line): 4 horizontal grid lines + y-axis ticks, x-axis dates, a
+ * The plot frame every time-series chart draws in (the daily Token stacked bar, the cost line,
+ * the requests and score trends): 4 horizontal grid lines + y-axis ticks, x-axis dates, a
  * hover vertical indicator line + a transparent hit area + a value bubble
  * that follows the cursor at its lower-right (flipping to the other side of
  * the pointer near the edges, see chart-geom's bubblePosition). "Data marks" (line / area / bars) are drawn by
@@ -28,6 +27,9 @@
  * here, so their x axis covers unequal spans of time; axisBreaks draws the
  * "//" between two points that are not neighbours, which is what keeps the
  * axis from being read as a continuous one.
+ *
+ * The frame's own ink (the muted one) is what a mark painted with an empty `ink` draws in — the
+ * cost line, a single series with no identity to tell apart.
  */
 import {
   useEffect,
@@ -45,13 +47,7 @@ import {
   sparseLabelIdx,
   type ChartGeom,
 } from "./chart-geom";
-import {
-  ChartAxis,
-  ChartAxisBreak,
-  ChartCursor,
-  ChartGrid,
-  ChartHit,
-} from "../../components/ui/chart";
+import { ChartAxis, ChartAxisBreak, ChartCursor, ChartGrid, ChartHit } from "../marks/marks";
 
 /** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 2px stroke is too thin to aim at. */
 export const LINE_HIT_H = 10;
@@ -238,7 +234,7 @@ export function ChartFrame({
         height={CHART_H}
         // ui-chart: a theme may redraw the parts, which carry data-part — the grid, the axis
         // labels and breaks here, the series, areas, bars and points in the caller's marks.
-        className="ui-chart text-gray-600 dark:text-gray-400"
+        className="ui-chart text-fg-muted"
         role="img"
         onMouseLeave={() => {
           onHover(null);
@@ -315,7 +311,7 @@ export function ChartFrame({
       {bubble && hover !== null && dates[hover] && (
         <div
           ref={bubbleRef}
-          className="pointer-events-none absolute rounded border border-gray-200 bg-white px-2 py-1 text-xs whitespace-nowrap shadow-sm dark:border-gray-700 dark:bg-gray-900"
+          className="pointer-events-none absolute rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm"
           // Mounted hidden at the origin; placeBubble moves it to the
           // pointer's lower-right (flipping near the right/bottom edges, see
           // bubblePosition) and reveals it. The declared style below never

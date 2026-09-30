@@ -3,22 +3,29 @@
  * (Task) card on the Trace page — shows both **usage ratio** (sum of arc lengths
  * / limit) and **segment composition** (three segments). Draws, clockwise from
  * the top (12 o'clock), the cacheRead, cacheWrite, and output segments in order,
- * with the remainder left as an empty ring; the limit `max` = the model's context
- * window (defaults to 128000 via resolveContextWindow when the caller doesn't
- * supply one). If all three buckets are 0, only the base ring is drawn; when
- * usage exceeds the limit, the ring is filled proportionally to usage and
- * colored by threshold (>80% amber / >95% red) to signal approaching/exceeding
- * the limit; exact values show in the shared tooltip on hover.
- * Segments use the theme's Token-kind colours (useChartStyle); the base
- * ring uses a currentColor gray.
- * The context usage under the chat page's input box is a **single-color,
- * single-value** ring (total only), custom-drawn in context-gauge — it doesn't
- * use this component.
+ * with the remainder left as an empty ring; the limit `max` is the model's context
+ * window, which the caller resolves. If all three buckets are 0, only the base ring
+ * is drawn; when usage exceeds the limit, the ring is filled proportionally to usage
+ * and the remainder is coloured by threshold (>80% attention / >95% danger) to signal
+ * approaching/exceeding the limit; exact values show in the shared tooltip on hover.
+ * Segments use the theme's Token-kind colours; the base ring takes the ring's own ink.
+ *
+ * The words are the caller's: `labels` names the usage and each Token kind, and the
+ * figures come from `format` (the app's own token abbreviation).
+ *
+ * The composer's context usage is a single-colour, single-value ring (total only) — a
+ * `Ring`, not this component.
  */
-import { ChartArc } from "./chart";
-import { humanizeTokens } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { ChartArc } from "../marks/marks";
+
+/** The words the donut's accessible name and tooltip are built from. */
+export interface TokenDonutLabels {
+  /** What the ratio is ("Context usage"). */
+  usage: string;
+  cacheRead: string;
+  cacheWrite: string;
+  output: string;
+}
 
 export function TokenDonut({
   cacheRead,
@@ -26,6 +33,8 @@ export function TokenDonut({
   output,
   max,
   size = 44,
+  labels,
+  format = String,
 }: {
   cacheRead: number;
   cacheWrite: number;
@@ -34,6 +43,9 @@ export function TokenDonut({
   max: number;
   /** Outer diameter in pixels. */
   size?: number;
+  labels: TokenDonutLabels;
+  /** How a Token count is printed in the accessible name and tooltip. */
+  format?: (tokens: number) => string;
 }) {
   const total = cacheRead + cacheWrite + output;
   const strokeWidth = Math.max(2, Math.round(size * 0.16));
@@ -45,31 +57,21 @@ export function TokenDonut({
   // completely (arcs never wrap past a full circle).
   const denom = Math.max(max, total, 1);
   const pct = max > 0 ? total / max : 0;
-  // The base ring's (i.e. "empty ring / remainder") color shifts to amber / red as usage approaches the limit, as a warning.
+  // The base ring's (i.e. "empty ring / remainder") colour shifts to attention / danger as usage approaches the limit, as a warning.
   const ringTone =
     pct > 0.95
-      ? toneInk.danger
+      ? "text-tone-danger-fg"
       : pct > 0.8
-        ? toneInk.attention
-        : "text-gray-300 dark:text-gray-700";
+        ? "text-tone-attention-fg"
+        : "text-line-emphasis";
   const segs = [
-    {
-      key: "cacheRead",
-      value: cacheRead,
-      role: "cacheRead" as const,
-      label: S.usage.colCacheRead,
-    },
-    {
-      key: "cacheWrite",
-      value: cacheWrite,
-      role: "cacheWrite" as const,
-      label: S.usage.colCacheWrite,
-    },
-    { key: "output", value: output, role: "output" as const, label: S.usage.colOutput },
+    { key: "cacheRead", value: cacheRead, role: "cacheRead" as const, label: labels.cacheRead },
+    { key: "cacheWrite", value: cacheWrite, role: "cacheWrite" as const, label: labels.cacheWrite },
+    { key: "output", value: output, role: "output" as const, label: labels.output },
   ];
   const title =
-    `${S.chat.contextUsage} ${humanizeTokens(total)}/${humanizeTokens(max)}` +
-    segs.map((s) => ` · ${s.label} ${humanizeTokens(s.value)}`).join("");
+    `${labels.usage} ${format(total)}/${format(max)}` +
+    segs.map((s) => ` · ${s.label} ${format(s.value)}`).join("");
   let acc = 0;
   return (
     <svg

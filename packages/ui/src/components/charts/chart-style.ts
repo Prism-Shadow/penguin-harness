@@ -4,13 +4,14 @@
  * corner radius, a line's width and curve, a point's radius, the fill under a line — and the
  * series palette those marks paint with.
  *
- * Only the chart primitives (components/ui/chart) read it: every chart draws its marks through
- * them, so a token turns into geometry and colour in one place. Components never ask which
- * theme is active. It is read once per
- * theme change, not per render: one MutationObserver on <html> (the attributes the theme
- * provider and the boot script write — class for the mode, data-theme, data-accent, and the
- * root font size in `style`) drops the cached record, and every chart subscribed through
- * `useChartStyle` re-renders with the new one.
+ * Only the chart primitives (`marks/`) read it: every chart draws its marks through them, so a
+ * token turns into geometry and colour in one place. Components never ask which theme is active.
+ * It is read once per theme change, not per render: one MutationObserver on <html> — where the
+ * theme provider and the boot script write the mode class, the theme, the accent and the root
+ * font size — drops the cached record, and every chart subscribed through `useChartStyle`
+ * re-renders with the new one. Reading the tokens is what tells a real change from any other
+ * attribute write, so the observer watches every attribute and a read that finds nothing new
+ * hands back the same record.
  *
  * Slots are identities, fixed across themes: 1 violet, 2 amber, 3 sky, 4 rose, 5 emerald,
  * 6 fuchsia, 7 and 8 spare — each theme picks its own shade of each. A chart's series take the
@@ -49,15 +50,17 @@ export interface ChartStyle {
 }
 
 /**
- * What the charts draw with when no theme has answered (a document without the theme sheet,
- * server rendering in tests): the default theme's values, which are today's charts.
+ * What the charts draw with before a theme has answered (server rendering in tests, a first
+ * read with no stylesheet): the default theme's geometry, and colours that name the tokens
+ * themselves, so a mark painted with one still takes the theme's value wherever the theme sheet
+ * is loaded.
  */
 export const DEFAULT_CHART_STYLE: ChartStyle = {
-  series: ["#8b5cf6", "#f59e0b", "#0ea5e9", "#f43f5e", "#10b981", "#d946ef", "#64748b", "#14b8a6"],
-  ref: "#f59e0b",
-  cacheRead: "#7dd3fc",
-  cacheWrite: "#0ea5e9",
-  output: "#0369a1",
+  series: [1, 2, 3, 4, 5, 6, 7, 8].map((slot) => `var(--ui-chart-${slot})`),
+  ref: "var(--ui-chart-ref)",
+  cacheRead: "var(--ui-chart-cache-read)",
+  cacheWrite: "var(--ui-chart-cache-write)",
+  output: "var(--ui-chart-output)",
   barFill: 0.6,
   barRadius: 0,
   barStroke: 0,
@@ -82,8 +85,8 @@ function colourOf(raw: string, fallback: string): string {
 
 /**
  * The record, from a reader of custom properties (`getPropertyValue` on the root's computed
- * style). Every value falls back to the default theme's on its own, so a theme that has not
- * defined a token yet draws the way the app always has.
+ * style). Every value falls back to the default record's on its own, so a token a theme has not
+ * defined yet draws the way the default theme does.
  */
 export function readChartStyle(read: (name: string) => string): ChartStyle {
   const d = DEFAULT_CHART_STYLE;
@@ -159,10 +162,7 @@ function subscribe(listener: () => void): () => void {
       cached = next;
       for (const l of listeners) l();
     });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "data-theme", "data-accent", "style"],
-    });
+    observer.observe(document.documentElement, { attributes: true });
   }
   return () => {
     listeners.delete(listener);

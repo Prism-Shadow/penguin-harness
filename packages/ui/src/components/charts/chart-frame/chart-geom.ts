@@ -1,14 +1,14 @@
 /**
- * Geometry math for the cost center charts: pure functions, no React / no
- * JSX, easy to unit test (see test/usage-charts.test.ts). The time-series
+ * Geometry math for the plot frame and the charts drawn in it: pure functions, no React / no
+ * JSX, easy to unit test (see test/chart-geom.test.ts). The time-series
  * charts (the requests + success-rate combo, the Token bar's three-segment
- * stack, the cost line) share one coordinate system — canvas width, padding,
+ * stack, the cost line, the score trend) share one coordinate system — canvas width, padding,
  * the x()/y() mapping, series points, x-axis label indices. Per-segment
  * geometry (including per-segment hit bands) is produced by barSegments;
  * there's also hover-bubble placement (pointer lower-right, flipping at the
  * edges). How a bar fills its band and how a line runs between its points is
- * the theme's, and lives with the chart primitives (components/ui/chart/geom.ts).
- * See chart-svg.tsx for the render skeleton.
+ * the theme's, and lives with the chart primitives (../marks/geom.ts).
+ * See chart-frame.tsx for the render skeleton.
  *
  * **Canvas width = the container's measured pixel width (1 canvas unit = 1
  * CSS pixel)**: the SVG no longer stretches/scales via a fixed viewBox —
@@ -17,7 +17,7 @@
  * ~495px, a 0.77 factor), while requirements like "at least 25px wide" must
  * land on **real display pixels**. So the canvas width is supplied by the caller after measuring the container.
  */
-import { roundCoord as rnd } from "../../components/ui/chart/geom";
+import { roundCoord as rnd } from "../marks/geom";
 
 /** Canvas height and padding (carried over from the original TrendChart constants; width is now measured from the container, see the file header). */
 export const CHART_H = 200;
@@ -101,7 +101,6 @@ export interface LinePoint {
   value: number;
 }
 
-/** Straight-line path through the given points in order (`M` + `L`s), whatever slots lie between them; a single point yields a bare `M` that strokes nothing, so callers draw its dot instead. */
 /** A sparse series' points in the plot's coordinates, rounded like segmentPath's. */
 export function segmentPoints(
   geom: ChartGeom,
@@ -110,6 +109,7 @@ export function segmentPoints(
   return segment.map((p) => [rnd(geom.x(p.index)), rnd(geom.y(p.value))]);
 }
 
+/** Straight-line path through the given points in order (`M` + `L`s), whatever slots lie between them; a single point yields a bare `M` that strokes nothing, so callers draw its dot instead. */
 export function segmentPath(geom: ChartGeom, segment: readonly LinePoint[]): string {
   return segment
     .map((p, i) => `${i === 0 ? "M" : "L"}${rnd(geom.x(p.index))},${rnd(geom.y(p.value))}`)
@@ -191,7 +191,7 @@ export function bubblePosition(
  * chart's core requirement. Widening the bar (≥25px) doesn't help the
  * vertical dimension either: a sub-pixel value stays sub-pixel, so this
  * floor must be kept.
- * (The hit band's **width** is a separate matter: it spans the full cell horizontally, see TokenBarChart's hitLayer.)
+ * (The hit band's **width** is a separate matter: it spans the full cell horizontally, see the Web App's TokenBarChart hitLayer.)
  */
 export const MIN_HIT_H = 8;
 
@@ -282,7 +282,7 @@ export function stackSegments(geom: ChartGeom, values: readonly number[]): Stack
   });
 }
 
-/** Stacking order: bottom-to-top output → cacheWrite → cacheRead (matches TOKEN_COLORS' shading, darkest at the bottom). */
+/** Stacking order: bottom-to-top output → cacheWrite → cacheRead (the Token kinds' own shades, darkest at the bottom). */
 const STACK_ORDER: readonly TokenBucketKey[] = ["output", "cacheWrite", "cacheRead"];
 
 /** A Token bar's three-segment stack (see stackSegments), keyed by bucket so the caller can look up color and label. */

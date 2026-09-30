@@ -6,10 +6,12 @@
  * opacity (applied to the fill alone, so a dimmed bar's own opacity class still works).
  *
  * Everything else a lane needs from a bar — the pointer handlers, the jump on click, the
- * accessible name of a data mark, a ring for a failure, a pulse while it runs — passes through.
+ * accessible name of a data mark, a ring for a failure, a fade while another mark is singled
+ * out — passes through. The bar itself holds still: a bar that is still open is marked by the
+ * chart with a live state dot at its end, not by moving the bar.
  */
 import type { CSSProperties, HTMLAttributes } from "react";
-import { useChartStyle } from "../../../lib/chart-style";
+import { useChartStyle } from "../chart-style";
 import { resolvePaint } from "./marks";
 import type { ChartPaint } from "./marks";
 

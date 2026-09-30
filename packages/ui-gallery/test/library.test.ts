@@ -165,9 +165,10 @@ describe("the charts board", () => {
     expect(board).toMatch(/<ChartTokenTable \/>/);
   });
 
-  it("shows each primitive on its own, from the app's chart module", () => {
+  it("shows each primitive on its own, from the package and nothing from the app", () => {
     const stage = read("../src/library/boards/chart-primitives.tsx");
-    expect(stage).toMatch(/from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/components\/ui\/chart"/);
+    expect(stage).toMatch(/from "@prismshadow\/penguin-ui";/);
+    expect(stage).not.toMatch(/web\/src/);
     for (const primitive of [
       "ChartBar",
       "ChartLine",
@@ -221,16 +222,20 @@ describe("the charts board", () => {
     const board = read("../src/library/boards/charts.tsx");
     for (const chart of [
       "TokenDonut",
+      "Ring",
+      "Legend",
       "TrendChart",
       "TokenBarChart",
       "TokenLegend",
       "RequestsChart",
-      "ActivitySparkline",
-      "ScoreSparkline",
+      "Sparkline",
       "TimelineChart",
     ]) {
       expect(board).toMatch(new RegExp(`<${chart}[\\s/>]`));
     }
+    // The package's charts come from the package; the app's domain charts from the app.
+    expect(board).toMatch(/from "@prismshadow\/penguin-ui";/);
+    expect(board).not.toMatch(/token-donut"|-sparkline"/);
     expect(board).toMatch(
       /from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/features\/traces\/timeline-chart"/,
     );

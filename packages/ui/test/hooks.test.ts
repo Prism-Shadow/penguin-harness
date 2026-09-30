@@ -121,13 +121,13 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-field": ["Field", "PrefRow", "SettingRow"],
   "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow"],
   // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
-  // renders through. The charts: the usage charts' frame (its children — the trend, requests and
-  // token-bar charts — carry parts, not the hook), the token donut and the two sparklines.
+  // renders through. The charts: the plot frame (its children — the trend, requests, token-bar
+  // and score charts — carry parts, not the hook), the token donut, the sparkline and the ring.
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
   // SVG ones.
-  "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline", "ActivitySparkline", "TimelineChart"],
+  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart"],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],

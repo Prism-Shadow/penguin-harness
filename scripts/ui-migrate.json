@@ -620,6 +620,167 @@
           ]
         }
       ]
+    },
+    "W8": {
+      "packages/web/src/features/palette/command-palette": [
+        {
+          "owner": "W8-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/command-palette/command-palette.tsx",
+          "names": ["CommandPalette"]
+        }
+      ],
+      "packages/web/src/lib/command-palette": [
+        {
+          "owner": "W8-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/command-palette/command-palette.tsx",
+          "names": ["PaletteAction", "filterPaletteActions"]
+        }
+      ],
+      "packages/web/src/components/ui/chart": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/marks.tsx",
+          "names": [
+            "ChartArc",
+            "ChartArea",
+            "ChartAxis",
+            "ChartAxisBreak",
+            "ChartBar",
+            "ChartBarHit",
+            "ChartCursor",
+            "ChartGrid",
+            "ChartHit",
+            "ChartLine",
+            "ChartPoint",
+            "ChartSwatch",
+            "resolvePaint",
+            "useBarWidth",
+            "ChartPaint"
+          ]
+        },
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/timeline-bar.tsx",
+          "names": ["TimelineBar"]
+        },
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/geom.ts",
+          "names": ["BAR_W", "curvePath", "fitBarWidth", "roundCoord"]
+        }
+      ],
+      "packages/web/src/components/ui/chart/marks": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/marks.tsx",
+          "names": [
+            "ChartPaint",
+            "resolvePaint",
+            "useBarWidth",
+            "barPath",
+            "ChartBar",
+            "ChartLine",
+            "ChartArea",
+            "ChartPoint",
+            "ChartArc",
+            "ChartGrid",
+            "ChartCursor",
+            "ChartAxis",
+            "ChartAxisBreak",
+            "ChartHit",
+            "ChartBarHit",
+            "ChartSwatch"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/chart/geom": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/geom.ts",
+          "names": ["roundCoord", "curvePath", "BAR_W", "fitBarWidth"]
+        }
+      ],
+      "packages/web/src/components/ui/chart/timeline-bar": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/timeline-bar.tsx",
+          "names": ["TimelineBar"]
+        }
+      ],
+      "packages/web/src/lib/chart-style": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/chart-style.ts",
+          "names": [
+            "ChartCurve",
+            "ChartStyle",
+            "DEFAULT_CHART_STYLE",
+            "readChartStyle",
+            "seriesStroke",
+            "sameChartStyle",
+            "nextChartStyle",
+            "useChartStyle"
+          ]
+        }
+      ],
+      "packages/web/src/features/usage/chart-svg": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/chart-frame/chart-frame.tsx",
+          "names": ["LINE_HIT_H", "LineHits", "useChartWidth", "ChartFrame"]
+        }
+      ],
+      "packages/web/src/features/usage/chart-geom": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/chart-frame/chart-geom.ts",
+          "names": [
+            "CHART_H",
+            "PAD_L",
+            "PAD_R",
+            "PAD_T",
+            "PAD_B",
+            "PAD_R_AXIS",
+            "TokenBucketKey",
+            "ChartGeom",
+            "makeGeom",
+            "makeRangeGeom",
+            "seriesPoints",
+            "LinePoint",
+            "segmentPoints",
+            "segmentPath",
+            "sparseLabelIdx",
+            "autoLabelIdx",
+            "BUBBLE_OFFSET",
+            "BubbleView",
+            "bubblePosition",
+            "MIN_HIT_H",
+            "StackSegment",
+            "BarSegment",
+            "stackSegments",
+            "barSegments"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/token-donut": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/token-donut/token-donut.tsx",
+          "names": ["TokenDonut"]
+        }
+      ]
     }
   }
 }

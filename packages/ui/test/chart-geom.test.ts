@@ -1,12 +1,10 @@
 /**
- * Cost Center chart pure-function unit tests (chart-geom.ts, and the bar width and path the
- * chart primitives take from components/ui/chart/geom.ts): coordinate mapping, SVG path
- * assembly (straight paths through the points given in the default theme), container-fitting
- * bar width (charts never scroll), stacked-bar
- * segment geometry and per-segment hit bands, and hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit rate
- * shown in the cacheRead bubble is lib/format's shared cacheHitRate, tested in
- * format.test.ts). Component interaction isn't covered here (vitest runs in a node
- * environment, no DOM).
+ * The plot frame's geometry (charts/chart-frame/chart-geom.ts), and the bar width and path the
+ * chart primitives take from marks/geom.ts: coordinate mapping, SVG path assembly (straight
+ * paths through the points given in the default theme), container-fitting bar width (charts
+ * never scroll), stacked-bar segment geometry and per-segment hit bands, and hover-bubble
+ * placement (pointer lower-right, flipping at the edges). Component interaction isn't covered
+ * here (vitest runs in a node environment, no DOM).
  *
  * Canvas width is "measured container pixels" (1 canvas unit = 1 CSS pixel), so each case
  * passes an explicit width; 640 was the original fixed canvas width, and reusing it as the
@@ -29,8 +27,8 @@ import {
   PAD_L,
   PAD_R,
   PAD_R_AXIS,
-} from "../src/features/usage/chart-geom";
-import { BAR_W, curvePath, fitBarWidth } from "../src/components/ui/chart/geom";
+} from "../src/components/charts/chart-frame/chart-geom";
+import { BAR_W, curvePath, fitBarWidth } from "../src/components/charts/marks/geom";
 
 describe("makeGeom", () => {
   it("x takes each slot's midpoint; y runs top-down with max as full scale", () => {

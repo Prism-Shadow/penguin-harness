@@ -1,9 +1,10 @@
 /**
  * 图表: the chart foundation's page — first the primitives every chart draws through, then the
  * current theme's chart tokens, live, then every chart kind the app draws, on fixed demo data
- * so the themes' chart styles compare: the token donut, the cost trend line, the stacked token
- * bars with their cache-hit curve and legend, the requests-and-success-rate stack, the activity
- * and score sparklines, and the Trace timeline's lanes.
+ * so the themes' chart styles compare: the token donut, the ring gauge, the legend in both
+ * layouts, the cost trend line, the stacked token bars with their cache-hit curve and legend,
+ * the requests-and-success-rate stack, the sparkline at both scales, and the Trace timeline's
+ * lanes.
  *
  * Every input a chart receives is built once, at module level or memoized: a chart keeps
  * effects keyed on its data (the timeline re-measures its scroller whenever its groups change),
@@ -17,9 +18,9 @@ import type {
   TraceToolSpan,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-server/api";
-import { TokenDonut } from "../../../../web/src/components/ui/token-donut";
-import { ActivitySparkline } from "../../../../web/src/features/agents/activity-sparkline";
-import { ScoreSparkline } from "../../../../web/src/features/benchmark/score-sparkline";
+import { Legend, Ring, Sparkline, TokenDonut } from "@prismshadow/penguin-ui";
+import type { LegendItem, RingSegment, ToneName } from "@prismshadow/penguin-ui";
+import { humanizeTokens } from "../../../../web/src/lib/format";
 import { TimelineChart } from "../../../../web/src/features/traces/timeline-chart";
 import type { TraceHighlight } from "../../../../web/src/features/traces/timeline-chart";
 import { TrendChart } from "../../../../web/src/features/usage/trend-chart";
@@ -81,9 +82,48 @@ function agentCounts(
   });
 }
 
-const SCORES = [0.62, 0.66, 0.71, 0.69, 0.74, 0.78, 0.77, 0.83];
+const SCORES = [62, 66, 71, 69, 74, 78, 77, 83];
+const LONE_SCORE = SCORES.slice(-1);
 const ACTIVITY = [2, 3, 1, 5, 6, 4, 1, 0, 4, 7, 5, 3, 4, 5];
 const FLAT = [0, 0, 0, 0, 0, 0, 0];
+
+/** Usage well under, near and at the limit, then the first again at a larger size. */
+const DONUTS = [
+  { cacheRead: 42_000, cacheWrite: 6_000, output: 9_000, size: 44 },
+  { cacheRead: 120_000, cacheWrite: 14_000, output: 31_000, size: 44 },
+  { cacheRead: 150_000, cacheWrite: 20_000, output: 26_000, size: 44 },
+  { cacheRead: 42_000, cacheWrite: 6_000, output: 9_000, size: 64 },
+];
+
+/** Spend against a budget under, near and over it, each in the tone the finance page gives it. */
+const SPEND: readonly { ratio: number; tone: ToneName }[] = [
+  { ratio: 0.41, tone: "success" },
+  { ratio: 0.86, tone: "attention" },
+  { ratio: 1.2, tone: "danger" },
+];
+
+/** A whole split into shares, each in its series slot. */
+const SHARES: readonly RingSegment[] = [0.34, 0.22, 0.18, 0.12].map((value, series) => ({
+  value,
+  paint: { series },
+}));
+
+/** The list legend's demo figures, one per part: its estimate and its whole percent. */
+const PART_FIGURES = [
+  { tokens: 18_400, percent: 38 },
+  { tokens: 9_100, percent: 19 },
+  { tokens: 6_300, percent: 13 },
+  { tokens: 14_600, percent: 30 },
+] as const;
+
+function Figures({ tokens, percent }: { tokens: number; percent: number }) {
+  return (
+    <>
+      <span className="shrink-0 font-mono font-medium text-fg">~{humanizeTokens(tokens)}</span>
+      <span className="w-8 shrink-0 text-right font-mono text-fg-subtle">{percent}%</span>
+    </>
+  );
+}
 
 /** A Task's timeline: seconds after a fixed start, as the trace records them. */
 const T0 = Date.UTC(2026, 8, 28, 9, 0, 0);
@@ -155,7 +195,39 @@ export function ChartsBoard() {
   const t = S.library.charts;
   const [legend, setLegend] = useState<TokenLegendKey | null>(null);
   const [highlight, setHighlight] = useState<TraceHighlight | null>(null);
+  const [kind, setKind] = useState<string | null>(null);
+  const [part, setPart] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
   const entities = useMemo(() => agentCounts(SERIES, t.agents), [t.agents]);
+  const kinds = useMemo<LegendItem[]>(
+    () => [
+      ...(["cacheRead", "cacheWrite", "output"] as const).map((role) => ({
+        key: role,
+        label: t.donutLabels[role],
+        paint: { role },
+        shape: "chip" as const,
+      })),
+      // A line on its own axis, not a fourth kind: its item names the shape and stays still.
+      {
+        key: "hitRate",
+        label: t.legendHitRate,
+        paint: { role: "ref" },
+        shape: "dash",
+        interactive: false,
+      },
+    ],
+    [t],
+  );
+  const parts = useMemo<LegendItem[]>(
+    () =>
+      PART_FIGURES.map((figures, i) => ({
+        key: `part-${i}`,
+        label: t.legendParts[i] ?? "",
+        paint: { series: i },
+        value: <Figures {...figures} />,
+      })),
+    [t],
+  );
   return (
     <div className="gf-board">
       <Part title={t.parts.primitives} hint={t.parts.primitivesHint}>
@@ -167,16 +239,51 @@ export function ChartsBoard() {
       <Part title={t.parts.charts} hint={t.parts.chartsHint}>
         <BoardGroup title={t.donut} aside={t.donutHint}>
           <div className="lib-row">
-            <TokenDonut cacheRead={42_000} cacheWrite={6_000} output={9_000} max={200_000} />
-            <TokenDonut cacheRead={120_000} cacheWrite={14_000} output={31_000} max={200_000} />
-            <TokenDonut cacheRead={150_000} cacheWrite={20_000} output={26_000} max={200_000} />
-            <TokenDonut
-              cacheRead={42_000}
-              cacheWrite={6_000}
-              output={9_000}
-              max={200_000}
-              size={64}
-            />
+            {DONUTS.map((donut, i) => (
+              <TokenDonut
+                key={i}
+                {...donut}
+                max={200_000}
+                labels={t.donutLabels}
+                format={humanizeTokens}
+              />
+            ))}
+          </div>
+        </BoardGroup>
+        <BoardGroup title={t.ring} aside={t.ringHint}>
+          <div className="lib-row">
+            {SPEND.map(({ ratio, tone }) => (
+              <Ring
+                key={ratio}
+                segments={[{ value: ratio }]}
+                max={1}
+                size={40}
+                width={4}
+                tone={tone}
+                label={t.ringSpend(Math.round(ratio * 100))}
+              />
+            ))}
+            <Ring segments={[]} max={1} size={40} width={4} label={t.ringNoBudget} />
+            <Ring segments={SHARES} max={1} size={40} width={6} label={t.ringShares} />
+            <span className="lib-cell text-fg-subtle">
+              <Ring segments={[{ value: 0.62 }]} max={1} size={12} width={2} trackOpacity={0.25} />
+              <span className="lib-caption">{t.ringContext}</span>
+            </span>
+          </div>
+        </BoardGroup>
+        <BoardGroup title={t.legend} aside={t.legendHint}>
+          <div className="lib-stack">
+            <Legend items={kinds} active={kind} onHover={setKind} />
+            <div className="lib-box w-72 p-3">
+              <Legend
+                layout="list"
+                items={parts}
+                active={part ?? pinned}
+                pinned={pinned}
+                onHover={setPart}
+                onSelect={(key) => setPinned((current) => (current === key ? null : key))}
+              />
+            </div>
           </div>
         </BoardGroup>
         <BoardGroup title={t.trend} aside={t.trendHint}>
@@ -197,13 +304,24 @@ export function ChartsBoard() {
         </BoardGroup>
         <BoardGroup title={t.activity} aside={t.activityHint}>
           <div className="lib-row">
-            <ActivitySparkline data={ACTIVITY} label={t.activity} className="h-8 w-40" />
-            <ActivitySparkline data={FLAT} label={t.activity} className="h-8 w-40" />
+            {[ACTIVITY, FLAT].map((values, i) => (
+              <Sparkline
+                key={i}
+                values={values}
+                label={t.activity}
+                area
+                tone="success"
+                width={100}
+                height={30}
+                className="h-8 w-40"
+              />
+            ))}
           </div>
         </BoardGroup>
         <BoardGroup title={t.sparkline} aside={t.sparklineHint}>
           <div className="lib-row">
-            <ScoreSparkline values={SCORES} label={t.sparkline} />
+            <Sparkline values={SCORES} label={t.sparkline} scale="range" marker />
+            <Sparkline values={LONE_SCORE} label={t.sparkline} scale="range" marker />
           </div>
         </BoardGroup>
         <BoardGroup title={t.timeline} aside={t.timelineHint}>

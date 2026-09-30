@@ -38,10 +38,12 @@ import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  Dot,
   Dropdown,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Legend,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -77,16 +79,21 @@ export function ChartStateDot({ state }: { state: OrgEmployeeState }) {
 
 export function ChartLegend() {
   return (
-    <ul
-      aria-label={S.company.chart.legend}
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400"
-    >
-      {LEGEND_STATES.map((state) => (
-        <li key={state} className="flex items-center">
-          <ChartStateDot state={state} />
-        </li>
-      ))}
-    </ul>
+    <Legend
+      label={S.company.chart.legend}
+      items={LEGEND_STATES.map((state) => ({
+        key: state,
+        label: S.company.employeeStates[state] ?? state,
+        // Running and on-desk share one tone (busy and success are one emerald); the running
+        // dot is told apart by its pulse.
+        mark: (
+          <Dot
+            tone={employeeStateTone(state) === "attention" ? "attention" : "success"}
+            pulse={state === "running"}
+          />
+        ),
+      }))}
+    />
   );
 }
 
@@ -161,7 +168,7 @@ export function ChartCard({
           flagged ? "border-red-300 dark:border-red-800" : "border-gray-200 dark:border-gray-700"
         }`}
       >
-        <span className="flex items-center gap-2.5 pr-6">
+        <span className="flex items-center gap-2 pr-6">
           <AgentAvatar
             id={employee.agentId}
             name={employee.name}
@@ -169,18 +176,16 @@ export function ChartCard({
             className="shrink-0 rounded-md"
           />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] leading-4 font-semibold text-gray-900 dark:text-gray-100">
+            <span className="block truncate text-sm leading-4 font-semibold text-fg">
               {employee.name}
             </span>
-            <span className="block truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-              {employee.title}
-            </span>
+            <span className="block truncate text-xs leading-4 text-fg-muted">{employee.title}</span>
           </span>
         </span>
-        <span className="mt-2 flex items-center gap-1.5 text-[11px] leading-4 text-gray-600 dark:text-gray-300">
+        <span className="mt-2 flex items-center gap-1.5 text-xs leading-4 text-gray-600 dark:text-gray-300">
           <ChartStateDot state={state} />
           <span
-            className="flex min-w-0 flex-1 items-center gap-1 font-mono text-[10px] text-gray-400 dark:text-gray-500"
+            className="flex min-w-0 flex-1 items-center gap-1 font-mono text-fg-subtle"
             data-tooltip={flag ?? employee.resolvedWorkspace ?? employee.workspace}
           >
             {flag !== undefined ? (

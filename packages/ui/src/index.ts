@@ -107,3 +107,20 @@ export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
 export * from "./components/content/diff-viewer/diff-viewer";
+
+// W8-A — charts: the theme's chart style, the primitives every mark is drawn through, the plot
+// frame with its geometry, and the charts built on them — the token donut, the sparkline, the
+// ring gauge and the legend.
+export * from "./components/charts/chart-style";
+export * from "./components/charts/marks/geom";
+export * from "./components/charts/marks/marks";
+export * from "./components/charts/marks/timeline-bar";
+export * from "./components/charts/chart-frame/chart-geom";
+export * from "./components/charts/chart-frame/chart-frame";
+export * from "./components/charts/token-donut/token-donut";
+export * from "./components/charts/sparkline/sparkline";
+export * from "./components/charts/ring/ring";
+export * from "./components/charts/legend/legend";
+
+// W8-B — the command palette: the search box over the caller's actions, and its filter.
+export * from "./components/overlays/command-palette/command-palette";

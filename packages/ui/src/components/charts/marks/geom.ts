@@ -1,10 +1,10 @@
 /**
  * The geometry the chart primitives draw with — the part of a chart's layout a theme reaches
  * through its tokens: how a line runs between its points (`--ui-chart-curve`) and how wide a
- * bar is in its band (`--ui-chart-bar-fill`). Chart-specific layout (a plot's padding and
- * scales, stacked segments, hit bands, the hover bubble) stays with the charts that use it.
+ * bar is in its band (`--ui-chart-bar-fill`). A plot's own layout (its padding and scales,
+ * stacked segments, hit bands, the hover bubble) is the plot frame's (`chart-frame/chart-geom.ts`).
  */
-import type { ChartCurve } from "../../../lib/chart-style";
+import type { ChartCurve } from "../chart-style";
 
 /** Path coordinates keep 2 decimal places: the path string stays short and readable, and is easy to assert on in unit tests. */
 export const roundCoord = (v: number): number => Math.round(v * 100) / 100;

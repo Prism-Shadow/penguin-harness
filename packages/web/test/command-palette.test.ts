@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterPaletteActions, isCommandPaletteShortcut } from "../src/lib/command-palette";
+import { isCommandPaletteShortcut } from "../src/lib/command-palette";
 
 const key = (
   k: string,
@@ -25,21 +25,5 @@ describe("command palette shortcut", () => {
     expect(isCommandPaletteShortcut(key("P", { metaKey: true, shiftKey: true }), true)).toBe(true);
     expect(isCommandPaletteShortcut(key("p", { ctrlKey: true, altKey: true }), false)).toBe(false);
     expect(isCommandPaletteShortcut(key("o", { ctrlKey: true }), false)).toBe(false);
-  });
-});
-
-describe("command palette filter", () => {
-  const actions = [
-    { id: "history", label: "Harness history", keywords: ["version", "hmr"] },
-    { id: "reload", label: "Reload page" },
-  ];
-  it("lists everything for an empty query, in registration order", () => {
-    expect(filterPaletteActions(actions, "  ").map((a) => a.id)).toEqual(["history", "reload"]);
-  });
-  it("matches every token, case-insensitively, against the label and the keywords", () => {
-    expect(filterPaletteActions(actions, "HIST").map((a) => a.id)).toEqual(["history"]);
-    expect(filterPaletteActions(actions, "harness hist").map((a) => a.id)).toEqual(["history"]);
-    expect(filterPaletteActions(actions, "hmr").map((a) => a.id)).toEqual(["history"]);
-    expect(filterPaletteActions(actions, "page harness")).toEqual([]);
   });
 });

@@ -14,12 +14,20 @@ import type { BenchmarkCaseSummary, BenchmarkEvaluation } from "@prismshadow/pen
 import {
   AgentAvatar,
   Button,
+  ChartFrame,
+  ChartLine,
+  ChartPoint,
+  ChartSwatch,
   EmptyState,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   Modal,
+  makeRangeGeom,
+  segmentPoints,
+  useChartWidth,
 } from "@prismshadow/penguin-ui";
+import type { ChartPaint } from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -28,9 +36,6 @@ import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
-import { makeRangeGeom, segmentPoints } from "../usage/chart-geom";
-import { ChartLine, ChartPoint, ChartSwatch, type ChartPaint } from "../../components/ui/chart";
-import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 import { fetchBenchmarkCases } from "./benchmark-sources";

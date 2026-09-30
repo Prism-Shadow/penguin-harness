@@ -1,7 +1,8 @@
 /**
- * The charts' theme reading (lib/chart-style.ts) and the geometry it drives (chart/geom.ts):
- * tokens parse into the record with the default theme's values as the fallback for each one,
- * and the default values draw exactly what the charts drew before they read tokens.
+ * The charts' theme reading (charts/chart-style.ts) and the geometry it drives (marks/geom.ts):
+ * tokens parse into the record with the default record's values as the fallback for each one,
+ * the fallback colours name the tokens themselves, and the default geometry draws exactly what
+ * the charts drew before they read tokens.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -9,9 +10,9 @@ import {
   nextChartStyle,
   readChartStyle,
   seriesStroke,
-} from "../src/lib/chart-style";
-import { makeGeom, seriesPoints } from "../src/features/usage/chart-geom";
-import { curvePath, fitBarWidth } from "../src/components/ui/chart/geom";
+} from "../src/components/charts/chart-style";
+import { makeGeom, seriesPoints } from "../src/components/charts/chart-frame/chart-geom";
+import { curvePath, fitBarWidth } from "../src/components/charts/marks/geom";
 
 const reader = (tokens: Record<string, string>) => (name: string) => tokens[name] ?? "";
 
@@ -41,8 +42,10 @@ describe("readChartStyle", () => {
     });
   });
 
-  it("falls back token by token to the default theme's values", () => {
+  it("falls back token by token to the default record, whose colours are the tokens", () => {
     expect(readChartStyle(reader({}))).toEqual(DEFAULT_CHART_STYLE);
+    expect(DEFAULT_CHART_STYLE.series[2]).toBe("var(--ui-chart-3)");
+    expect(DEFAULT_CHART_STYLE.cacheRead).toBe("var(--ui-chart-cache-read)");
     const odd = readChartStyle(
       reader({ "--ui-chart-curve": "wiggly", "--ui-chart-bar-fill": "x" }),
     );

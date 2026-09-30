@@ -1,13 +1,13 @@
 /**
- * The chart primitives: the one place a theme's chart tokens (lib/chart-style.ts) become marks.
+ * The chart primitives: the one place a theme's chart tokens (../chart-style.ts) become marks.
  *
- * Every chart in the app — the cost center's requests, Token and cost charts, the context donut,
- * the score and activity sparklines — draws its bars, lines, areas, points, grid and axis
- * labels through these, and the Trace timeline its lanes through TimelineBar
- * (timeline-bar.tsx). A chart decides WHAT to draw — where a mark sits, which series it
- * belongs to, whether it is dimmed — and never HOW: the width of a bar in its band, its corner
- * radius, outline and fill opacity, a line's width and curve, a point's size, the fill under a
- * line and every colour come from the active theme here. A source guard (chart-marks.test.ts)
+ * Every chart — the cost center's requests, Token and cost charts, the token donut, the
+ * sparklines, the ring gauges — draws its bars, lines, areas, points, arcs, grid and axis labels
+ * through these, and the Trace timeline its lanes through TimelineBar (timeline-bar.tsx). A chart
+ * decides WHAT to draw — where a mark sits, which series it belongs to, whether it is dimmed —
+ * and never HOW: the width of a bar in its band, its corner radius, outline and fill opacity, a
+ * line's width and curve, a point's size, the fill under a line and every colour come from the
+ * active theme here. A source guard (chart-marks.test.ts, in this package and in the Web App)
  * holds the charts to that.
  *
  * Each primitive writes `data-part` (and `data-series` where a series index exists), so a theme
@@ -20,8 +20,8 @@
  * series, the cost line, a near-limit ring).
  */
 import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
-import { seriesStroke, useChartStyle } from "../../../lib/chart-style";
-import type { ChartStyle } from "../../../lib/chart-style";
+import { seriesStroke, useChartStyle } from "../chart-style";
+import type { ChartStyle } from "../chart-style";
 import { curvePath, fitBarWidth } from "./geom";
 
 export type ChartPaint =
@@ -235,9 +235,10 @@ export function ChartPoint({
 }
 
 /**
- * An arc of a ring (the context donut): `length` px of the circumference from `offset`, clockwise
- * from twelve o'clock, `width` thick. A series arc takes its paint; the ring's empty track is a
- * `grid` part painted with an ink at `trackOpacity`.
+ * An arc of a ring (the token donut, a ring gauge): `length` px of the circumference from
+ * `offset`, clockwise from twelve o'clock, `width` thick. A series arc takes its paint; the
+ * ring's empty track is a `grid` part painted with an ink at `trackOpacity`. `round` gives the
+ * arc round caps (a gauge's single arc that does not close the ring).
  */
 export function ChartArc({
   cx,
@@ -249,6 +250,7 @@ export function ChartArc({
   offset = 0,
   track = false,
   trackOpacity,
+  round = false,
 }: {
   cx: number;
   cy: number;
@@ -260,6 +262,7 @@ export function ChartArc({
   offset?: number;
   track?: boolean;
   trackOpacity?: number;
+  round?: boolean;
 }) {
   const chart = useChartStyle();
   const { color, className: ink } = resolvePaint(chart, paint);
@@ -275,6 +278,7 @@ export function ChartArc({
       stroke="currentColor"
       strokeWidth={width}
       {...(trackOpacity !== undefined ? { strokeOpacity: trackOpacity } : {})}
+      {...(round ? { strokeLinecap: "round" as const } : {})}
       {...(length !== undefined
         ? {
             strokeDasharray: `${length} ${circumference}`,
@@ -288,7 +292,7 @@ export function ChartArc({
   );
 }
 
-/** A horizontal grid line across the plot, in the chart's recessive gray. */
+/** A horizontal grid line across the plot, in the theme's grid ink. */
 export function ChartGrid({ x1, x2, y }: { x1: number; x2: number; y: number }) {
   return (
     <line
@@ -297,7 +301,7 @@ export function ChartGrid({ x1, x2, y }: { x1: number; x2: number; y: number }) 
       x2={x2}
       y1={y}
       y2={y}
-      className="stroke-gray-200 dark:stroke-gray-800"
+      className="stroke-chart-grid"
       strokeWidth={1}
     />
   );
@@ -305,16 +309,7 @@ export function ChartGrid({ x1, x2, y }: { x1: number; x2: number; y: number }) 
 
 /** The vertical line under the pointer on a line chart: chrome, not data, so it has no part. */
 export function ChartCursor({ x, y1, y2 }: { x: number; y1: number; y2: number }) {
-  return (
-    <line
-      x1={x}
-      x2={x}
-      y1={y1}
-      y2={y2}
-      className="stroke-gray-300 dark:stroke-gray-700"
-      strokeWidth={1}
-    />
-  );
+  return <line x1={x} x2={x} y1={y1} y2={y2} className="stroke-line-emphasis" strokeWidth={1} />;
 }
 
 /** An axis label (a tick value or a date), in the axis ink at the chart's small size. */
@@ -330,14 +325,7 @@ export function ChartAxis({
   children: ReactNode;
 }) {
   return (
-    <text
-      data-part="axis"
-      x={x}
-      y={y}
-      textAnchor={anchor}
-      className="fill-gray-400 dark:fill-gray-500"
-      fontSize={9}
-    >
+    <text data-part="axis" x={x} y={y} textAnchor={anchor} className="fill-chart-axis" fontSize={9}>
       {children}
     </text>
   );
@@ -349,11 +337,7 @@ export function ChartAxis({
  */
 export function ChartAxisBreak({ x, y }: { x: number; y: number }) {
   return (
-    <g
-      data-part="axis"
-      className="pointer-events-none stroke-gray-400 dark:stroke-gray-500"
-      strokeWidth={1}
-    >
+    <g data-part="axis" className="pointer-events-none stroke-chart-axis" strokeWidth={1}>
       {[-2, 2].map((dx) => {
         const cx = x + dx / 2;
         return <line key={dx} x1={cx - 2} y1={y + 3} x2={cx + 2} y2={y - 3} />;
@@ -427,6 +411,12 @@ export function ChartBarHit({
   );
 }
 
+/**
+ * A swatch's shape: square / block a series (sharper or softer corners), chip a wider bar
+ * swatch, dash / tick a line, long or short.
+ */
+export type ChartSwatchShape = "square" | "block" | "dash" | "tick" | "chip";
+
 /** A legend or bubble swatch in a paint: a square for a bar series, a dash for a line. */
 export function ChartSwatch({
   paint,
@@ -434,8 +424,7 @@ export function ChartSwatch({
   className = "",
 }: {
   paint: ChartPaint;
-  /** square / block: a series (sharper or softer corners); chip: a wider bar swatch; dash / tick: a line, long or short. */
-  shape?: "square" | "block" | "dash" | "tick" | "chip";
+  shape?: ChartSwatchShape;
   className?: string;
 }) {
   const chart = useChartStyle();

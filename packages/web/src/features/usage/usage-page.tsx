@@ -95,7 +95,7 @@ function SummaryCard({
   return (
     <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
       <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">{title}</p>
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}

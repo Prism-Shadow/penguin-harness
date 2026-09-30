@@ -12,8 +12,8 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
+import type { PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import type { PaletteAction } from "../../lib/command-palette";
 import { S } from "../../lib/strings";
 import {
   appPageTab,

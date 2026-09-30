@@ -407,7 +407,7 @@ export const zh = {
       notices: { title: "提示条", description: "占据一行的提示：每种语气，带与不带操作。" },
       dialogs: {
         title: "对话框",
-        description: "模态对话框、确认框、分页对话框、抽屉、底部面板与图片放大。",
+        description: "模态对话框、确认框、分页对话框、抽屉、底部面板、图片放大与命令面板。",
       },
       tooltips: {
         title: "悬停提示",
@@ -423,7 +423,7 @@ export const zh = {
       charts: {
         title: "图表",
         description:
-          "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、趋势与用量柱、请求与成功率、活动与评分折线、轨迹时间线。",
+          "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线。",
       },
       avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
       files: { title: "文件", description: "文件树与只读文件浏览器。" },
@@ -620,6 +620,12 @@ export const zh = {
       lightbox: "图片放大",
       lightboxHint: "点击缩略图放大；按 Esc 或点击图片以外的地方关闭。",
       lightboxAlt: "企鹅标志",
+      palette: "命令面板",
+      paletteAside: "输入以筛选；每个操作会打开本页的另一个对话框。",
+      openPalette: "打开命令面板",
+      palettePlaceholder: "输入以筛选命令…",
+      paletteEmpty: "没有匹配的命令",
+      paletteHint: "↑↓ 选择 · Enter 执行 · Esc 关闭",
     },
     tooltips: {
       attribute: "data-tooltip 属性",
@@ -754,6 +760,24 @@ export const zh = {
       } as Record<ChartToken, string>,
       donut: "Token 环形图",
       donutHint: "缓存读取、缓存写入与输出的构成，环的余量随接近上限变色。",
+      donutLabels: {
+        usage: "上下文占用",
+        cacheRead: "缓存读取",
+        cacheWrite: "缓存写入",
+        output: "输出",
+      },
+      ring: "环形仪表",
+      ringHint:
+        "一段弧对照预算，按预算状态着色（未超、将超、已超）；未设预算只剩底环；输入框的 12 px 上下文圆环沿用所在处的墨色；多段弧表示各部分占比。",
+      ringSpend: (percent: number) => `支出占预算 ${percent}%`,
+      ringNoBudget: "未设预算",
+      ringShares: "各部分占比",
+      ringContext: "上下文圆环",
+      legend: "图例",
+      legendHint:
+        "图表下方的一行图例：指向某项时其余各项淡出；说明线形的一项不参与高亮。列表图例在标签后列出数值，点击可固定一行。",
+      legendHitRate: "缓存命中率",
+      legendParts: ["系统提示词", "工具定义", "对话消息", "工具结果"] as readonly string[],
       trend: "成本趋势",
       trendHint: "十四天的成本折线，悬停查看某一天。",
       tokens: "Token 用量",
@@ -764,7 +788,7 @@ export const zh = {
       activity: "活动折线",
       activityHint: "智能体卡片上的十四天会话数曲线，只看相对起伏。",
       sparkline: "评分折线",
-      sparklineHint: "一个评估任务的历次得分，最新一次标出。",
+      sparklineHint: "一个评估任务的历次得分，最新一次标出；只有一次得分时是单独一个点。",
       timeline: "轨迹时间线",
       timelineHint:
         "一次 Task 的模型分段与工具调用：思考、回复、工具调用、等待审批与执行，各占一道。",
