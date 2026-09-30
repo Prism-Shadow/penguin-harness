@@ -50,6 +50,7 @@ import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 
 const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
@@ -260,6 +261,8 @@ export interface SessionServiceDeps {
   sandboxDimensions?: () => readonly SandboxDimension[];
   /** The enabled sandbox backends that failed to load or failed their check, with why. */
   sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
+  /** Telemetry's session-list segments (PRFC-0008); absent or off, nothing is timed. */
+  telemetry?: Telemetry;
 }
 
 export class SessionService {
@@ -490,6 +493,10 @@ export class SessionService {
     workspaceLatest?: Record<string, string>;
   }> {
     const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg } = opts;
+    // Telemetry's three list segments: the index query, the reconcile a hydration pass runs,
+    // and the per-row work (classification and toInfo).
+    const telemetry = this.deps.telemetry?.on() === true ? this.deps.telemetry : null;
+    const sqlAt = telemetry !== null ? performance.now() : 0;
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
@@ -497,6 +504,11 @@ export class SessionService {
     // below: the company caches are small, and a lookup per row would put a statement
     // behind every entry of a long sidebar list.
     const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
+    telemetry?.record({
+      probe: "sessions.list.sql",
+      durMs: performance.now() - sqlAt,
+      n: rows.size,
+    });
     if (excludeOrg) {
       for (const [id, row] of rows) if (isOrgOwned(row, orgIds)) rows.delete(id);
     }
@@ -507,7 +519,13 @@ export class SessionService {
       // reconciled index read supplies discovery so sourceOf's facts lookups and the
       // has_trace cache need no per-row work. Steady state (everything classified)
       // skips this.
+      const reconcileAt = telemetry !== null ? performance.now() : 0;
       traces = await this.discoverTraces(projectId, agentId);
+      telemetry?.record({
+        probe: "sessions.list.reconcile",
+        durMs: performance.now() - reconcileAt,
+        n: traces.size,
+      });
       for (const row of rows.values()) {
         if (!row.hasTrace && traces.has(row.sessionId)) {
           row.hasTrace = true;
@@ -531,13 +549,24 @@ export class SessionService {
       traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
       Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds)));
+    const rowsAt = telemetry !== null ? performance.now() : 0;
+    /** Rows classified or turned into infos, for the rows segment's count. */
+    let visited = 0;
+    const rowsDone = <T>(result: T): T => {
+      telemetry?.record({
+        probe: "sessions.list.rows",
+        durMs: performance.now() - rowsAt,
+        n: visited,
+      });
+      return result;
+    };
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && workspaceGroup === undefined && !withCounts) {
       const from = start + skip;
-      return {
-        sessions: await toPage(paging ? sorted.slice(from, from + paging.limit) : sorted),
-      };
+      const page = paging ? sorted.slice(from, from + paging.limit) : sorted;
+      visited = page.length;
+      return rowsDone({ sessions: await toPage(page) });
     }
 
     const want = paging ? skip + paging.limit : Infinity;
@@ -557,6 +586,7 @@ export class SessionService {
       const servable = i >= start;
       if (!servable && !withCounts) continue;
       if (!withCounts && matched.length >= want) break;
+      visited += 1;
       const cat = await this.categoryOf(row, rowHasTrace(row));
       counts[cat] += 1;
       if (withCounts) {
@@ -581,7 +611,9 @@ export class SessionService {
       if (wanted && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(skip, want) : matched);
-    return withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions };
+    return rowsDone(
+      withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions },
+    );
   }
 
   /**

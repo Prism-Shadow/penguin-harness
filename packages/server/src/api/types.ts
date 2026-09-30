@@ -325,6 +325,8 @@ export interface ServerSettingsUpdateRequest {
 export interface TelemetryKeys {
   request?: string;
   session?: string;
+  /** One run of a Session (a Task, a compaction, a goal loop), minted while the switch is on. */
+  task?: string;
   generation?: number;
 }
 
@@ -384,17 +386,75 @@ export interface TelemetrySessionSummary {
 }
 
 /**
- * `GET /api/telemetry?view=probes|sessions|samples[&probe=][&session=][&limit=]` (admin only).
+ * `GET /api/telemetry?view=probes|sessions|samples|machine[&probe=][&session=][&limit=]` (admin only).
  * `enabled: false` comes with empty lists: nothing is recorded while the switch is off.
  */
 export interface TelemetryResponse {
   enabled: boolean;
-  view: "probes" | "sessions" | "samples";
+  view: "probes" | "sessions" | "samples" | "machine";
   /** Samples in the buffer right now (before filtering). */
   buffered: number;
   probes?: TelemetryProbeSummary[];
   sessions?: TelemetrySessionSummary[];
   samples?: TelemetrySample[];
+  machine?: TelemetryMachineView;
+}
+
+/** The App generations of this process, as the telemetry machine view reports them. */
+export interface TelemetryGenerations {
+  /** This App's generation number (creates so far, this one included); null when unknown. */
+  current: number | null;
+  /** Per platform bundle (a short hash of its import address): how many times it was created. */
+  bundles: Array<{ bundle: string; creates: number }>;
+}
+
+/**
+ * What one loaded Session holds in memory, as its own structures report it (V8 cannot
+ * attribute heap to a Session). A null is a structure that cannot say — a channel or live
+ * tail built by an older runtime has no counter to read.
+ */
+export interface TelemetrySessionReport {
+  session: string;
+  status: string;
+  /** Messages the core Session was resumed with; null when it was created fresh or cannot say. */
+  resumedHistory: number | null;
+  channelEvents: number | null;
+  channelBytes: number | null;
+  subscribers: number | null;
+  liveFragments: number | null;
+  liveBytes: number | null;
+  followUps: number;
+  /** Since the entry's last activity, ms. */
+  idleMs: number;
+}
+
+/**
+ * `GET /api/telemetry?view=machine`: this process, read at request time — memory, the App
+ * generations it has created, and each loaded Session's own report. Absent while the switch
+ * is off, like every other view's content: nothing is asked of the Sessions then.
+ */
+export interface TelemetryMachineView {
+  process: {
+    pid: number;
+    uptimeMs: number;
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+    external: number;
+    arrayBuffers: number;
+  };
+  /** App generations this process has created (boot, pushes, re-assemblies). */
+  generation: TelemetryGenerations;
+  /** Each loaded Session's report; null when the Sessions module registered none. */
+  sessions: TelemetrySessionReport[] | null;
+  /** Sums over `sessions` (a null counter adds nothing). */
+  totals: {
+    sessions: number;
+    resumedHistory: number;
+    channelBytes: number;
+    liveBytes: number;
+    subscribers: number;
+  } | null;
 }
 
 /**

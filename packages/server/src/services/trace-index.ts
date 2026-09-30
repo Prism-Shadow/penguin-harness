@@ -51,6 +51,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionOrigins } from "../mechanisms/sessions.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -133,6 +134,8 @@ export class TraceIndexService implements TraceIndex {
   @Use() readonly repo!: TraceIndexStore;
   /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */
   @Use() private readonly sources?: SessionOrigins;
+  /** Telemetry's trace.reconcile (PRFC-0008); narrow tests omit it. */
+  @Use() private readonly telemetry?: Telemetry;
 
   /**
    * Brings one Agent's index in step with disk. Hot path: one root stat, then the
@@ -150,15 +153,42 @@ export class TraceIndexService implements TraceIndex {
     if (existing) {
       // A forced request must observe disk AFTER the point it was issued: chain a fresh
       // pass behind the in-flight one instead of piggybacking on possibly-gated work.
-      return opts.force === true
-        ? existing.then(() => this.reconcileAgent(projectId, agentId, opts))
-        : existing;
+      if (opts.force === true) {
+        return existing.then(() => this.reconcileAgent(projectId, agentId, opts));
+      }
+      return this.timed(existing, "shared", false);
     }
     const run = this.doReconcile(projectId, agentId, opts.force === true).finally(() => {
       this.inflight.delete(key);
     });
     this.inflight.set(key, run);
-    return run;
+    return this.timed(run, "led", opts.force === true);
+  }
+
+  /**
+   * Telemetry's trace.reconcile: the pass is counted once, on the call that started it (in
+   * that caller's request scope, so the request that paid for it is named); a call that
+   * joined a pass already in flight records `shared` and how long it waited.
+   */
+  private timed(run: Promise<void>, status: "led" | "shared", force: boolean): Promise<void> {
+    const telemetry = this.telemetry;
+    if (telemetry === undefined || !telemetry.on()) return run;
+    const start = performance.now();
+    const record = (outcome: string): void => {
+      telemetry.record({
+        probe: "trace.reconcile",
+        durMs: performance.now() - start,
+        status: outcome === "ok" ? status : "error",
+        attrs: { force },
+      });
+    };
+    return run.then(
+      () => record("ok"),
+      (err: unknown) => {
+        record("error");
+        throw err;
+      },
+    );
   }
 
   /** Reconciles every Agent of a Project (the subagent-pointer resolver's miss path). */

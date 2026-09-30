@@ -73,6 +73,16 @@ export class Channel {
     return this.listeners.size;
   }
 
+  /** Events held for replay right now (telemetry's per-session report; read-only). */
+  get bufferedEvents(): number {
+    return this.buffer.length;
+  }
+
+  /** Their size, in the units the byte cap counts (UTF-16 length of the serialized data). */
+  get bufferedBytes(): number {
+    return this.bufferBytes;
+  }
+
   /**
    * Id of the most recently assigned event (`<epoch>-<seq>`; seq 0 when none was assigned
    * yet). Unicast (sendTo) seqs count too — the value is a position marker, not a buffer

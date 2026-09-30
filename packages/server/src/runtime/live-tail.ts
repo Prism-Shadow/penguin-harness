@@ -152,6 +152,12 @@ export interface LiveTail {
   observe(sessionId: string, msg: OmniMessage): void;
   fragments(sessionId: string): OmniMessage[];
   clear(sessionId: string): void;
+  /**
+   * How much a session's open fragments hold: their count and their buffered length (UTF-16
+   * units, as the channel counts). Optional: a tracker an older generation built has no such
+   * reader, and a caller then reports the size as unknown.
+   */
+  size?(sessionId: string): { fragments: number; bytes: number };
 }
 
 export class LiveTailTracker implements LiveTail {
@@ -238,5 +244,12 @@ export class LiveTailTracker implements LiveTail {
   /** Drop all fragment state for a session (the run ended; nothing will continue these fragments). */
   clear(sessionId: string): void {
     this.sessions.delete(sessionId);
+  }
+
+  size(sessionId: string): { fragments: number; bytes: number } {
+    const open = this.sessions.get(sessionId);
+    let bytes = 0;
+    for (const frag of open?.values() ?? []) bytes += frag.buffer.length;
+    return { fragments: open?.size ?? 0, bytes };
   }
 }

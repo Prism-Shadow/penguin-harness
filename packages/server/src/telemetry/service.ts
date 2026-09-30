@@ -11,6 +11,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type {
+  TelemetryGenerations,
   TelemetryKeys,
   TelemetryQuery,
   TelemetrySample,
@@ -30,15 +31,42 @@ export const TELEMETRY_ENABLED_KEY = "telemetry.enabled";
  */
 export const TELEMETRY_GENERATION_RESOURCE_ID = "platform.telemetryGeneration";
 
+/**
+ * The registry entry behind TELEMETRY_GENERATION_RESOURCE_ID. Only grows: `n` is what the
+ * first slice registered, `bundles` came later, so an entry an older platform registered
+ * reads as "no bundle counted yet".
+ */
+export interface GenerationRecord {
+  n: number;
+  /** Creates per platform bundle, by the short hash of its import address. */
+  bundles?: Record<string, number>;
+}
+
+/**
+ * What the outgoing App measured of its own going — its park() and its dispose effect — left
+ * in the registry for the next generation to record (the outgoing buffer is dropped with it).
+ */
+export const TELEMETRY_HANDOVER_RESOURCE_ID = "platform.telemetryHandover";
+
+export interface TelemetryHandover {
+  generation: number;
+  parkMs?: number;
+  disposeMs?: number;
+}
+
 @Component()
 export class TelemetryService implements Telemetry {
   @Use() private readonly settings!: Settings;
   #ring: SampleRing | null = null;
   readonly #scope = new AsyncLocalStorage<TelemetryKeys>();
   #generation: number | undefined;
+  #bundles: Record<string, number> = {};
+  readonly #reports = new Map<string, () => unknown>();
 
   setup({ resources }: ClassCtx) {
-    this.#generation = resources.claim<{ n: number }>(TELEMETRY_GENERATION_RESOURCE_ID)?.n;
+    const record = resources.claim<GenerationRecord>(TELEMETRY_GENERATION_RESOURCE_ID);
+    this.#generation = record?.n;
+    this.#bundles = { ...record?.bundles };
     if (this.settings.get(TELEMETRY_ENABLED_KEY) === "true") this.#ring = new SampleRing();
   }
 
@@ -109,5 +137,20 @@ export class TelemetryService implements Telemetry {
 
   clear(): void {
     this.#ring?.clear();
+  }
+
+  addReport(name: string, read: () => unknown): void {
+    this.#reports.set(name, read);
+  }
+
+  report(name: string): unknown {
+    return this.#reports.get(name)?.();
+  }
+
+  generations(): TelemetryGenerations {
+    return {
+      current: this.#generation ?? null,
+      bundles: Object.entries(this.#bundles).map(([bundle, creates]) => ({ bundle, creates })),
+    };
   }
 }

@@ -4,6 +4,7 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
+  TelemetryGenerations,
   TelemetryKeys,
   TelemetryQuery,
   TelemetrySample,
@@ -44,4 +45,13 @@ export abstract class Telemetry extends Interface<{
   samples(query: TelemetryQuery): TelemetrySample[];
   /** Empties the buffer. */
   clear(): void;
+  /**
+   * Registers a self-report under `name` (the Sessions' is "sessions"): read only when the
+   * machine view is asked for, never on a schedule. A later registration replaces it.
+   */
+  addReport(name: string, read: () => unknown): void;
+  /** Reads the report registered under `name`; undefined when none is. */
+  report(name: string): unknown;
+  /** This App's generation number and how many times each platform bundle has been created in this process. */
+  generations(): TelemetryGenerations;
 }>() {}

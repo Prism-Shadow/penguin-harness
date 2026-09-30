@@ -243,6 +243,23 @@ export interface Messages {
     colDuration(): string;
     colStatus(): string;
     colDetail(): string;
+    /** `--by machine`: the process line (memory in the CLI's own byte format, uptime formatted). */
+    machineProcess(
+      pid: number,
+      uptime: string,
+      rss: string,
+      heapUsed: string,
+      heapTotal: string,
+    ): string;
+    /** `--by machine`: the generation line — this App's number and the per-bundle create counts. */
+    machineGeneration(current: string, bundles: string): string;
+    /** `--by machine`: no Session is loaded (or the Sessions module reports none). */
+    machineNoSessions(): string;
+    colHistory(): string;
+    colChannel(): string;
+    colSubscribers(): string;
+    colLive(): string;
+    colIdle(): string;
   };
   /** `penguin schedule`: scheduled-task listing and management (a validated writer over the schedules API; the TOML file stays the single source of truth). */
   schedule: {
@@ -1491,7 +1508,7 @@ const en: Messages = {
   },
   telemetry: {
     desc: "Show the server's telemetry readings (admin only; in-memory, off by default)",
-    by: "Summary view: probe (default) or session",
+    by: "Summary view: probe (default), session, or machine (this process: memory, generations, loaded sessions)",
     samples: "List the samples themselves instead of a summary",
     probe: "Only this probe (e.g. http.request, boot.module, session.messages)",
     session: "Only this session's samples",
@@ -1500,7 +1517,7 @@ const en: Messages = {
     onDesc: "Turn telemetry on (system setting, takes effect at once)",
     offDesc: "Turn telemetry off and drop the buffer",
     clearDesc: "Empty the telemetry buffer",
-    byInvalid: (value) => `Invalid --by value "${value}": expected probe or session.`,
+    byInvalid: (value) => `Invalid --by value "${value}": expected probe, session or machine.`,
     limitInvalid: (value) => `Invalid --limit value "${value}": expected a positive integer.`,
     off: () => "Telemetry is off on this server; turn it on with `penguin telemetry on`.",
     turnedOn: () => "Telemetry is on.",
@@ -1519,6 +1536,16 @@ const en: Messages = {
     colDuration: () => "DURATION",
     colStatus: () => "STATUS",
     colDetail: () => "DETAIL",
+    machineProcess: (pid, uptime, rss, heapUsed, heapTotal) =>
+      `Process ${pid}, up ${uptime}: rss ${rss}, heap ${heapUsed} of ${heapTotal}`,
+    machineGeneration: (current, bundles) =>
+      `Generation ${current}; creates per bundle: ${bundles}`,
+    machineNoSessions: () => "No session is loaded.",
+    colHistory: () => "HISTORY",
+    colChannel: () => "CHANNEL",
+    colSubscribers: () => "SUBSCRIBERS",
+    colLive: () => "LIVE TAIL",
+    colIdle: () => "IDLE",
   },
   schedule: {
     desc: "Manage scheduled tasks",
@@ -2790,7 +2817,7 @@ const zh: Messages = {
   },
   telemetry: {
     desc: "查看服务端的遥测读数（仅管理员；只在内存里，默认关）",
-    by: "汇总视图：probe（默认，按采集点）或 session",
+    by: "汇总视图：probe（默认，按采集点）、session，或 machine（本进程：内存、代数、已加载的会话）",
     samples: "列出样本本身，而不是汇总",
     probe: "只看这个采集点（如 http.request、boot.module、session.messages）",
     session: "只看这个会话的样本",
@@ -2799,7 +2826,7 @@ const zh: Messages = {
     onDesc: "打开遥测（系统设置，即时生效）",
     offDesc: "关闭遥测并丢弃缓冲",
     clearDesc: "清空遥测缓冲",
-    byInvalid: (value) => `无效的 --by 值 "${value}"：应为 probe 或 session。`,
+    byInvalid: (value) => `无效的 --by 值 "${value}"：应为 probe、session 或 machine。`,
     limitInvalid: (value) => `无效的 --limit 值 "${value}"：应为正整数。`,
     off: () => "这台服务端的遥测是关着的；用 `penguin telemetry on` 打开。",
     turnedOn: () => "遥测已打开。",
@@ -2818,6 +2845,15 @@ const zh: Messages = {
     colDuration: () => "用时",
     colStatus: () => "状态",
     colDetail: () => "详情",
+    machineProcess: (pid, uptime, rss, heapUsed, heapTotal) =>
+      `进程 ${pid}，已运行 ${uptime}：rss ${rss}，堆 ${heapUsed} / ${heapTotal}`,
+    machineGeneration: (current, bundles) => `第 ${current} 代；各平台包的 create 次数：${bundles}`,
+    machineNoSessions: () => "没有已加载的会话。",
+    colHistory: () => "恢复历史",
+    colChannel: () => "通道缓冲",
+    colSubscribers: () => "订阅",
+    colLive: () => "live tail",
+    colIdle: () => "闲置",
   },
   schedule: {
     desc: "管理定时任务",

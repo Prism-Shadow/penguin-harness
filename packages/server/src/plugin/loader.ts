@@ -558,6 +558,40 @@ function asPlugin(module: unknown): Plugin | null {
 }
 
 /**
+ * One step of a plugin load, as telemetry records it (`plugin.load`): `activate` is the
+ * generation flip and sweep for the whole closure (specifier `*`); per plugin, `reused` (the
+ * same file an earlier App imported, not imported again), `import`, `table` (its package
+ * table), `check` (the interface comparison) and `host` (joining the plugin host). A step that
+ * threw reports `ok: false`, and the plugin's remaining steps do not run.
+ */
+export type PluginLoadStep = "activate" | "reused" | "import" | "table" | "check" | "host";
+export type PluginLoadObserver = (
+  step: PluginLoadStep,
+  specifier: string,
+  ms: number,
+  ok: boolean,
+) => void;
+
+/** Times `run` as one step for `observe`, when there is one; the result or the throw passes through. */
+async function step<T>(
+  observe: PluginLoadObserver | undefined,
+  name: PluginLoadStep,
+  specifier: string,
+  run: () => Promise<T> | T,
+): Promise<T> {
+  if (observe === undefined) return run();
+  const start = performance.now();
+  let ok = false;
+  try {
+    const result = await run();
+    ok = true;
+    return result;
+  } finally {
+    observe(name, specifier, performance.now() - start, ok);
+  }
+}
+
+/**
  * Loads every configured plugin.
  *
  * Every failure is per entry, collected and skipped: an unresolvable specifier, a missing
@@ -589,6 +623,8 @@ export async function loadPlugins(
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
   /** This server's own machine id, which selects its `[plugins.<id>]` tables; null reads the shared tables alone. */
   machineId: string | null = null,
+  /** Per-step timings (telemetry's plugin.load); absent, nothing is timed. */
+  observe?: PluginLoadObserver,
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
   const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
@@ -598,26 +634,31 @@ export async function loadPlugins(
   const asks = await readPluginAsks(root, machineId);
   // The generation the closure resolves to becomes current before anything is imported. When
   // activation itself fails, whatever generation was current stays so and is loaded.
-  let activation: Activation | null = null;
-  try {
-    activation = await activatePlugins(root, asks, pushedAssets);
-  } catch (err) {
-    console.warn(
-      `[plugins] activation failed, the current generation is kept: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  // The sweep follows the flip, in this boot — so on the assembly queue, never beside a
-  // generation being written — and runs once at the first activation of the process.
-  if (activation !== null) {
-    const first = !sweptRoots().has(root);
-    if (first || activation.current !== activation.previous) {
-      sweptRoots().add(root);
-      await sweepPlugins(root, {
-        keep: [activation.current, ...(activation.previous !== null ? [activation.previous] : [])],
-        pins: await readPluginPins(root),
-      });
+  // Assigned inside the timed step below: the assertion keeps the checker from narrowing it
+  // to its initial null past the callback.
+  let activation = null as Activation | null;
+  await step(observe, "activate", "*", async () => {
+    try {
+      activation = await activatePlugins(root, asks, pushedAssets);
+    } catch (err) {
+      console.warn(
+        `[plugins] activation failed, the current generation is kept: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
-  }
+    // The sweep follows the flip, in this boot — so on the assembly queue, never beside a
+    // generation being written — and runs once at the first activation of the process.
+    const flipped = activation;
+    if (flipped !== null) {
+      const first = !sweptRoots().has(root);
+      if (first || flipped.current !== flipped.previous) {
+        sweptRoots().add(root);
+        await sweepPlugins(root, {
+          keep: [flipped.current, ...(flipped.previous !== null ? [flipped.previous] : [])],
+          pins: await readPluginPins(root),
+        });
+      }
+    }
+  });
   const bases = pluginBases(root);
   // A stored plugin runs from its store entry; the host SDK it keeps external is lent to it.
   lendHostPackages(root);
@@ -644,12 +685,15 @@ export async function loadPlugins(
       heldFile === resolvePlugin(specifier, bases)?.file &&
       held.stamp === entryStamp(heldFile)
     ) {
+      observe?.("reused", specifier, 0, true);
       loaded.push(held);
       continue;
     }
     try {
-      const { module, file, stamp } = await importPlugin(specifier, bases);
-      const read = await readPackageTable(file);
+      const { module, file, stamp } = await step(observe, "import", specifier, () =>
+        importPlugin(specifier, bases),
+      );
+      const read = await step(observe, "table", specifier, () => readPackageTable(file));
       if (read === null) {
         failed.set(specifier, `no package.json above ${file}`);
         continue;
@@ -683,11 +727,8 @@ export async function loadPlugins(
         });
       const modules = pair(plugin.modules);
       const replaces = pair(plugin.replaces);
-      const misfits = await interfaceMisfits(
-        specifier,
-        read.ifaces,
-        [...modules, ...replaces],
-        pushedAssets,
+      const misfits = await step(observe, "check", specifier, () =>
+        interfaceMisfits(specifier, read.ifaces, [...modules, ...replaces], pushedAssets),
       );
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
@@ -718,18 +759,20 @@ export async function loadPluginHost(
   assetsDir?: string | null,
   /** This server's own machine id (see loadPlugins). */
   machineId: string | null = null,
+  /** Per-step timings (see loadPlugins); `host` is timed here. */
+  observe?: PluginLoadObserver,
 ): Promise<PluginHost> {
   const inherited = pluginHostFrom(resources);
   // An older generation's host may predate `entries()`; then nothing is reused and every
   // specifier is imported again, which the ESM cache makes cheap.
   const reuse =
     typeof inherited.entries === "function" ? inherited.entries() : new Map<string, LoadedPlugin>();
-  const result = await loadPlugins(root, assetsDir, reuse, machineId);
+  const result = await loadPlugins(root, assetsDir, reuse, machineId, observe);
   const host = new PluginHost();
   for (const entry of result.loaded) {
     // A module name clash is a LOAD failure, isolated per entry like an import failure.
     try {
-      host.use(entry);
+      await step(observe, "host", entry.specifier, () => host.use(entry));
     } catch (err) {
       result.failed.set(entry.specifier, err instanceof Error ? err.message : String(err));
     }
