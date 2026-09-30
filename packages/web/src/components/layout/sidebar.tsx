@@ -54,6 +54,7 @@ import {
   Button,
   CheckIcon,
   ChevronDown,
+  GlyphIcon,
   ICONS,
   ICON_SIZE,
   ScheduleMark,
@@ -162,7 +163,6 @@ import {
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../ui/session-row-menu";
-import { GlyphIcon } from "../ui/glyph-icon";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
@@ -3169,7 +3169,7 @@ function NavPinButton({
       onClick={onToggle}
       className={`${hoverButtonClass} hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
     >
-      <GlyphIcon d={PIN_ICON} size={14} filled={pinned} />
+      <GlyphIcon d={ICONS.pin} size={14} filled={pinned} />
     </button>
   );
 }
