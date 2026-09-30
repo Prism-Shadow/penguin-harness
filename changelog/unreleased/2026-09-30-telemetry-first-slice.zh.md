@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `server`, `cli`, `core`
+- **PR:** [Myriad-Dreamin/penguin-harness#118](https://github.com/Myriad-Dreamin/penguin-harness/pull/118)
 
 [English](2026-09-30-telemetry-first-slice.md)
 
