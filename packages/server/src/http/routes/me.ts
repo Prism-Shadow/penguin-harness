@@ -46,6 +46,10 @@ import {
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
 } from "../../services/attachment-limits.js";
+import {
+  MAX_IMAGE_COMPRESSION_OVER_MB,
+  MIN_IMAGE_COMPRESSION_OVER_MB,
+} from "../../services/image-compression.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";
@@ -144,6 +148,11 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
         imageMaxMb: INLINE_IMAGE_MAX_MB,
         attachmentLimitMinMb: MIN_ATTACHMENT_MB,
         attachmentLimitMaxMb: MAX_ATTACHMENT_MB,
+      },
+      uploadPolicy: {
+        ...deps.serverSettingsRepo.getImageCompressionSettings(),
+        imageCompressionMinMb: MIN_IMAGE_COMPRESSION_OVER_MB,
+        imageCompressionMaxMb: MAX_IMAGE_COMPRESSION_OVER_MB,
       },
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
     } satisfies MeResponse);

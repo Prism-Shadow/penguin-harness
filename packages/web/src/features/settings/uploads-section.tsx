@@ -1,7 +1,12 @@
 /**
- * Upload limits (admin only, server-global), modelled on the proxy section beside it. Two
- * whole-MB numbers — the per-file attachment cap and the per-message total — written together
- * by a single PUT to /api/admin/settings, so a rejected value writes nothing.
+ * Uploads (admin only, server-global), modelled on the proxy section beside it. Two whole-MB
+ * limits — the per-file attachment cap and the per-message total — and the automatic image
+ * compression the composer applies before it uploads a large picture, written together by a
+ * single PUT to /api/admin/settings, so a rejected value writes nothing.
+ *
+ * The limits and the compression are different kinds of setting and are worded as such: a limit
+ * is what the server refuses, the compression is what a composer is asked to do before it sends.
+ * Nothing about the switch changes what an upload may weigh.
  *
  * The bounds quoted under each field, and the fixed limits the page's "?" names, come from the
  * server (`/api/me` uploadLimits) rather than from constants here: the range is a statement
@@ -21,17 +26,20 @@ import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { SectionShell } from "./section-shell";
 
 export function UploadsSection() {
-  const { uploadLimits, refresh } = useAuth();
+  const { uploadLimits, uploadPolicy, refresh } = useAuth();
   /** Stored settings as hydrated on mount (null until then) — the no-change baseline. */
   const [settings, setSettings] = useState<ServerSettings | null>(null);
   // Kept as strings: a number input that clears to NaN cannot be typed into (backspacing the
   // last digit would snap the field back to a value the user is in the middle of replacing).
   const [maxMb, setMaxMb] = useState("");
   const [totalMb, setTotalMb] = useState("");
+  const [compression, setCompression] = useState(false);
+  const [overMb, setOverMb] = useState("");
   /**
    * Inline error, and which fields it is about. The local shape check knows the offending field;
    * the server's `invalid_attachment_limit` is a statement about the pair, so it marks both.
@@ -41,6 +49,8 @@ export function UploadsSection() {
     max: boolean;
     total: boolean;
   } | null>(null);
+  /** Inline error under the compression threshold — its own field, its own server code. */
+  const [compressionError, setCompressionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   /** Adopt server-side truth: the baseline and the drafts move together. */
@@ -48,6 +58,8 @@ export function UploadsSection() {
     setSettings(next);
     setMaxMb(String(next.attachmentMaxMb));
     setTotalMb(String(next.attachmentTotalMb));
+    setCompression(next.imageCompression);
+    setOverMb(String(next.imageCompressionOverMb));
   };
 
   useEffect(() => {
@@ -70,37 +82,53 @@ export function UploadsSection() {
     if (settings === null || busy) return;
     const parsedMax = Number(maxMb.trim());
     const parsedTotal = Number(totalMb.trim());
+    const parsedOver = Number(overMb.trim());
     // Shape-check locally so an empty or non-numeric field never becomes a NaN in the request
     // body; the RANGE is left to the server, which owns it (this form only reports its verdict).
     const maxBad = maxMb.trim() === "" || !Number.isInteger(parsedMax);
     const totalBad = totalMb.trim() === "" || !Number.isInteger(parsedTotal);
-    if (maxBad || totalBad) {
-      setLimitError({
-        text: S.errors.byCode.invalid_attachment_limit,
-        max: maxBad,
-        total: totalBad,
-      });
+    const overBad = overMb.trim() === "" || !Number.isInteger(parsedOver);
+    if (maxBad || totalBad || overBad) {
+      if (maxBad || totalBad) {
+        setLimitError({
+          text: S.errors.byCode.invalid_attachment_limit,
+          max: maxBad,
+          total: totalBad,
+        });
+      }
+      if (overBad) setCompressionError(S.errors.byCode.invalid_image_compression);
       return;
     }
-    if (parsedMax === settings.attachmentMaxMb && parsedTotal === settings.attachmentTotalMb) {
+    if (
+      parsedMax === settings.attachmentMaxMb &&
+      parsedTotal === settings.attachmentTotalMb &&
+      compression === settings.imageCompression &&
+      parsedOver === settings.imageCompressionOverMb
+    ) {
       toastInfo(S.common.noChangesToSave);
       return;
     }
     setBusy(true);
     setLimitError(null);
+    setCompressionError(null);
     try {
       const res = await api.adminPutSettings({
         attachmentMaxMb: parsedMax,
         attachmentTotalMb: parsedTotal,
+        imageCompression: compression,
+        imageCompressionOverMb: parsedOver,
       });
       adopt(res.settings);
-      // The composer reads the limits from /api/me, so re-pull them: without this the tab that
-      // just raised the cap would keep refusing files at the old number until the next reload.
+      // The composer reads both the limits and the policy from /api/me, so re-pull them: without
+      // this the tab that just raised the cap would keep refusing files at the old number, and
+      // the one that just changed the threshold would keep applying the old one, until a reload.
       await refresh().catch(() => {});
       toastSuccess(S.common.saved);
     } catch (e) {
       if (e instanceof ApiError && e.code === "invalid_attachment_limit") {
         setLimitError({ text: apiErrorText(e), max: true, total: true });
+      } else if (e instanceof ApiError && e.code === "invalid_image_compression") {
+        setCompressionError(apiErrorText(e));
       } else {
         toastError(apiErrorText(e));
       }
@@ -167,6 +195,32 @@ export function UploadsSection() {
         onChange={(e) => {
           setTotalMb(e.target.value);
           if (limitError !== null) setLimitError(null);
+        }}
+      />
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium">{S.settings.imageCompression}</span>
+        <Switch checked={compression} onChange={setCompression} disabled={!hydrated} />
+      </div>
+      <Input
+        label={S.settings.imageCompressionOverMb}
+        required
+        size="sm"
+        type="number"
+        inputMode="numeric"
+        min={uploadPolicy.imageCompressionMinMb}
+        max={uploadPolicy.imageCompressionMaxMb}
+        hint={S.settings.imageCompressionOverMbHint(
+          uploadPolicy.imageCompressionMinMb,
+          uploadPolicy.imageCompressionMaxMb,
+        )}
+        value={overMb}
+        // Editable while the switch is off — the threshold is what the switch turns on, and a
+        // field that greys out on toggle would make setting the two in one pass awkward.
+        disabled={!hydrated}
+        {...(compressionError !== null ? { error: compressionError } : {})}
+        onChange={(e) => {
+          setOverMb(e.target.value);
+          if (compressionError !== null) setCompressionError(null);
         }}
       />
     </SectionShell>

@@ -18,6 +18,11 @@ export abstract class Settings extends Interface<{
   getAttachmentTotalMb(): number;
   setAttachmentTotalMb(value: number): void;
   getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number };
+  getImageCompression(): boolean;
+  setImageCompression(value: boolean): void;
+  getImageCompressionOverMb(): number;
+  setImageCompressionOverMb(value: number): void;
+  getImageCompressionSettings(): { imageCompression: boolean; imageCompressionOverMb: number };
   getCompanyMode(): boolean;
   setCompanyMode(value: boolean): void;
 }>() {}
