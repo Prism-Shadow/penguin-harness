@@ -54,8 +54,14 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { ApiError } from "../api/client";
+import { probeSession } from "../api/session-probe";
 import { openUserEvents } from "../api/sse";
 import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
+import {
+  isBuiltinBrowserEvent,
+  publishBuiltinBrowserEvent,
+  publishBuiltinBrowserResync,
+} from "../features/builtin-browser/browser-events";
 import { WORKFLOW_UPDATED_EVENT } from "../lib/workflow-tabs";
 import { mergeCounts, newestFirst } from "../lib/session-merge";
 import {
@@ -1063,6 +1069,14 @@ export function applyUserEvent(
     store.setState({ liveStatuses: new Map() });
     void store.getState().reload();
     publishCompanyResync();
+    if (source === null) publishBuiltinBrowserResync();
+    return;
+  }
+  // The built-in browser's tabs, page requests and agent activity go to the browser layer in
+  // the app shell. Only this server's: the pages live in the desktop shell that spawned it, and
+  // a machine's server drives no shell on this screen.
+  if (isBuiltinBrowserEvent(ev)) {
+    if (source === null) publishBuiltinBrowserEvent(ev);
     return;
   }
   // Company-mode notifications fan out to the company store and any mounted organization page
@@ -1291,6 +1305,14 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const conn = openUserEvents({
       onOmniMessage: () => undefined,
       onServerEvent: (ev) => applyUserEvent(store, ev, () => window.location.reload()),
+      // This stream is the only thing an idle window has open, and the server ends it when
+      // the session behind it is revoked — which EventSource reports as an ordinary fatal
+      // error, indistinguishable from a dead network. Asking settles it: a session that is
+      // really gone takes the window to the sign-in page instead of leaving it here
+      // listening to nothing (api/session-probe.ts).
+      onError: (closed) => {
+        if (closed) void probeSession();
+      },
     });
     return () => conn.close();
   }, [store]);

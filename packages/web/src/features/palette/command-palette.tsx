@@ -1,8 +1,8 @@
 /**
- * Ctrl+P / Cmd+P command palette, VSCode-style: a top-centered input filtering a list of
- * actions; Enter (or click) runs the selected one. The palette is mechanism only — its
- * actions come from the mount point (app-palette.tsx), so a new capability registers an
- * action instead of claiming another global shortcut.
+ * The command palette (the `palette.toggle` shortcut, ⌥⌘P / Ctrl+Alt+P by default), VSCode-style:
+ * a top-centered input filtering a list of actions; Enter (or click) runs the selected one. The
+ * palette is mechanism only — its actions come from the mount point (app-palette.tsx), so a new
+ * capability registers an action instead of claiming another global shortcut.
  *
  * Keyboard model: ArrowUp/ArrowDown move the selection (wrapping), Enter runs, Escape
  * closes through the shared esc-layer stack (the UI package's esc-layers), and the shortcut
@@ -11,37 +11,29 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDialogLayer } from "@prismshadow/penguin-ui";
-import {
-  filterPaletteActions,
-  isCommandPaletteShortcut,
-  type PaletteAction,
-} from "../../lib/command-palette";
+import { filterPaletteActions, type PaletteAction } from "../../lib/command-palette";
+import { onCommand } from "../../lib/shortcuts/dispatcher";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
-
-function isMacPlatform(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
-}
 
 export function CommandPalette({ actions }: { actions: readonly PaletteAction[] }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
 
-  // Global shortcut, registered once (a functional update reads the latest `open`).
-  // preventDefault on every match — otherwise the browser's print dialog opens underneath.
-  useEffect(() => {
-    const isMac = isMacPlatform();
-    const onKey = (e: KeyboardEvent) => {
-      if (!isCommandPaletteShortcut(e, isMac)) return;
-      e.preventDefault();
-      setOpen((o) => !o);
-      setQuery("");
-      setSelected(0);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  // The chord is the keymap's (lib/shortcuts): the window dispatcher matches it, calls this
+  // handler and prevents the browser default once it is handled. A functional update reads
+  // the latest `open`, so the handler registers once.
+  useEffect(
+    () =>
+      onCommand("palette.toggle", () => {
+        setOpen((o) => !o);
+        setQuery("");
+        setSelected(0);
+      }),
+    [],
+  );
+  const toggleShortcut = useShortcutLabel("palette.toggle");
 
   // Escape closes it only while it is the topmost esc-consuming layer (shared with Modal /
   // Dropdown, see the UI package's esc-layers), so an action's own dialog above it gets its
@@ -128,7 +120,7 @@ export function CommandPalette({ actions }: { actions: readonly PaletteAction[] 
           </ul>
         )}
         <div className="border-t border-gray-200 px-4 py-2 text-right text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500">
-          {S.commandPalette.hint}
+          {S.commandPalette.hint(toggleShortcut)}
         </div>
       </div>
     </div>,

@@ -72,11 +72,12 @@ import {
   toastInfo,
   toastSuccess,
   useRowContextMenu,
-  writeClipboard,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
+import { onCommand } from "../../lib/shortcuts/dispatcher";
+import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import {
   sessionActivityLabel,
   sessionBackgroundTasks,
@@ -175,6 +176,7 @@ import {
   storeGroupMode,
 } from "../ui/group-list";
 import type { GroupMode } from "../ui/group-list";
+import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../ui/truncated";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
@@ -375,9 +377,12 @@ function StatusGlyph({ activity }: { activity: SessionActivity }) {
 export function Sidebar({
   onNavigate,
   onCollapse,
+  initialSearchOpen = false,
 }: {
   onNavigate?: () => void;
   onCollapse?: () => void;
+  /** Mount with the session search open and focused: the search shortcut pressed on the collapsed rail. */
+  initialSearchOpen?: boolean;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -524,7 +529,26 @@ export function Sidebar({
     label: string;
   } | null>(null);
   /** Live title search: the input's visibility and its query (transient — never persisted). */
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(initialSearchOpen);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchTitle = useShortcutTitle(S.chat.searchSessions, "sessions.search");
+  const newChatTitle = useShortcutTitle(S.chat.newSessionMenu, "chat.new");
+  const collapseTitle = useShortcutTitle(S.nav.collapseSidebar, "sidebar.toggle");
+  // The sessions.search command: open the field, or put the caret back into an open one. It
+  // declines (the browser's own key runs) when the field could not be seen: company mode has
+  // no session list, and the pinned sidebar is `display: none` below the `md` breakpoint while
+  // still mounted. Re-registered when the field opens or closes so the handler reads the state.
+  useEffect(
+    () =>
+      onCommand("sessions.search", () => {
+        if (inCompany) return false;
+        if (rootRef.current !== null && rootRef.current.getClientRects().length === 0) return false;
+        if (searchOpen) searchInputRef.current?.focus();
+        else setSearchOpen(true);
+      }),
+    [searchOpen, inCompany],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   /** Header list-settings dropdown (grouping + sort radios). */
   const [listSettingsOpen, setListSettingsOpen] = useState(false);
@@ -1768,7 +1792,7 @@ export function Sidebar({
       }));
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div ref={rootRef} className="flex h-full w-full flex-col">
       {/* The work-mode switch, above the Project switcher: 开发 | 公司. Rendered only while
           company mode is available (the admin master switch and the user's own switch both
           on); the choice persists per user. The 内测版 tag rides on 公司 — the switch is the
@@ -1796,7 +1820,7 @@ export function Sidebar({
         {onCollapse && (
           <button
             type="button"
-            data-tooltip={S.nav.collapseSidebar}
+            data-tooltip={collapseTitle}
             aria-label={S.nav.collapseSidebar}
             onClick={onCollapse}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -1882,6 +1906,7 @@ export function Sidebar({
         <div className="shrink-0 px-2 pb-2 pt-2">
           <button
             type="button"
+            data-tooltip={newChatTitle}
             onClick={() => newChat()}
             className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors duration-150 ${
               activeSessionId === DRAFT_SESSION_ID
@@ -2076,6 +2101,7 @@ export function Sidebar({
                  box filling the row (its width rides the column tween). Esc and × both
                  collapse it and drop the filter, which is why the × stays while it is empty. */
                   <SearchInput
+                    ref={searchInputRef}
                     icon
                     alwaysClearable
                     autoFocus
@@ -2090,7 +2116,7 @@ export function Sidebar({
                 ) : (
                   <button
                     type="button"
-                    data-tooltip={S.chat.searchSessions}
+                    data-tooltip={searchTitle}
                     aria-label={S.chat.searchSessions}
                     onClick={() => setSearchOpen(true)}
                     className={headerControlClass(false)}
@@ -2818,7 +2844,7 @@ function DraftRow({
             data-tooltip={S.chat.deleteDraft}
             aria-label={S.chat.deleteDraft}
             onClick={onDelete}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-[opacity,background-color,color] duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
           >
             <Icon d={ICONS.trash} size={14} />
           </button>
@@ -2880,7 +2906,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
       aria-label={S.nav.pinGroup}
       aria-pressed={pinned}
       onClick={onToggle}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-[opacity,background-color,color] duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
         pinned
           ? "text-gray-500 dark:text-gray-400"
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
@@ -2978,10 +3004,10 @@ function SessionRow({
       rename: onRename,
       // The copy affordance's feedback normally rides on the button itself (copy-button.tsx),
       // which a menu row cannot do: the row acts and the panel closes under it. A toast is
-      // the confirmation that survives that, and it says the same word.
+      // the confirmation that survives that, and it says the same word — once the write
+      // has landed.
       copy: (x) => {
-        writeClipboard(x.sessionId);
-        toastSuccess(S.common.copied);
+        void writeClipboard(x.sessionId).then((ok) => ok && toastSuccess(S.common.copied));
       },
       messaging: onMessaging,
       archive: onToggleArchive,

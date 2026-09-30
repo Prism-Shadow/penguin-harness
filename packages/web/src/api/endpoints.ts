@@ -36,7 +36,9 @@ import type {
   CommandPolicyRuleDto,
   DefaultModelResponse,
   DefaultModelUpdateRequest,
+  DesktopPrivacyPane,
   DesktopUpdateStatusResponse,
+  DirAccessResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListRequest,
@@ -214,6 +216,14 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
   ContributionsResponse,
+  BuiltinBrowserHistoryResponse,
+  BuiltinBrowserImportRequest,
+  BuiltinBrowserImportResult,
+  BuiltinBrowserImportSourcesResponse,
+  BuiltinBrowserSettings,
+  BuiltinBrowserStatus,
+  BuiltinBrowserTab,
+  DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
@@ -706,6 +716,18 @@ export const listDirs = (projectId: string, path = "", machineId?: string | null
     : apiFetch<DirListResponse>(
         `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
       );
+
+/**
+ * Asks the desktop shell to read a folder macOS refused, in the app's own name — what makes
+ * macOS ask the user. Always this server: only the shell that started it can be asked. The
+ * answer waits on the user's reply to that prompt.
+ */
+export const requestDirAccess = (projectId: string, path: string) =>
+  apiFetch<DirAccessResponse>(`/api/projects/${encodeURIComponent(projectId)}/dirs/access`, {
+    method: "POST",
+    body: { path },
+    server: null,
+  });
 
 /**
  * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
@@ -1735,6 +1757,13 @@ export const patchOrganization = (
   body: OrganizationPatchRequest,
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
+/**
+ * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
+ * employees' Agents and its desk and ticket Sessions are left as they are.
+ */
+export const deleteOrganization = (projectId: string, orgId: string) =>
+  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
 
@@ -2004,6 +2033,14 @@ export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/de
 export const setDesktopTray = (patch: DesktopTrayPatch) =>
   apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });
 
+/** Has the desktop shell open System Settings at a Privacy & Security pane (macOS). */
+export const openPrivacySettings = (pane: DesktopPrivacyPane) =>
+  apiFetch<void>("/api/desktop/privacy-settings", {
+    method: "POST",
+    body: { pane },
+    server: null,
+  });
+
 // ---- Workflows (an Agent's own extension packages, served as tabs beside the chat) ----
 const workflowsBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workflows`;
@@ -2109,3 +2146,88 @@ export const uninstallPlugin = (
     }`,
     { method: "DELETE" },
   );
+
+// ---- The built-in browser (desktop app only; every route is admin-only) ----
+/**
+ * Always this server's: the pages live in the desktop shell this server was spawned by, so a
+ * machine's browser routes would drive a shell that is not on this screen.
+ */
+const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
+
+/** What the storage-clearing route takes (the shell's own clear-data command). */
+export type BuiltinBrowserStorage = Extract<
+  DesktopBrowserCommand,
+  { op: "clear-data" }
+>["storages"][number];
+
+/** Whether the browser can be driven at all, and its tabs as they stand. */
+export const getBuiltinBrowserStatus = () =>
+  apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server: null });
+/**
+ * A new tab, at `url` or else at the homepage (blank without one). The server asks this window
+ * (over the user channel) to create the page, and answers once the page is claimed — so this
+ * resolves after the tab exists.
+ */
+export const openBuiltinBrowserTab = (body: { url?: string; activate?: boolean }) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath("/tabs"), {
+    method: "POST",
+    body,
+    server: null,
+  });
+/** Ties a page this window created to the open request it answers; 409 when another window was first. */
+export const claimBuiltinBrowserTab = (requestId: string, tabId: number) =>
+  apiFetch<void>(builtinBrowserPath("/tabs/claim"), {
+    method: "POST",
+    body: { requestId, tabId },
+    server: null,
+  });
+/** The user brought a tab to the front: it is also the one an agent's next command acts on. */
+export const activateBuiltinBrowserTab = (tabId: number) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/activate`), {
+    method: "POST",
+    server: null,
+  });
+/** The tab this window shows on screen, or none: the server leaves that one unthrottled. */
+export const setBuiltinBrowserOnScreen = (tabId: number | null) =>
+  apiFetch<void>(builtinBrowserPath("/tabs/on-screen"), {
+    method: "POST",
+    body: { tabId },
+    server: null,
+  });
+export const closeBuiltinBrowserTab = (tabId: number) =>
+  apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server: null });
+/** The system browsers' profiles on this computer that can be imported from. */
+export const getBuiltinBrowserImportSources = () =>
+  apiFetch<BuiltinBrowserImportSourcesResponse>(builtinBrowserPath("/import/sources"), {
+    server: null,
+  });
+export const importIntoBuiltinBrowser = (body: BuiltinBrowserImportRequest) =>
+  apiFetch<BuiltinBrowserImportResult>(builtinBrowserPath("/import"), {
+    method: "POST",
+    body,
+    server: null,
+  });
+/** The browser's settings — its homepage. The server's own file: no desktop shell needed. */
+export const getBuiltinBrowserSettings = () =>
+  apiFetch<BuiltinBrowserSettings>(builtinBrowserPath("/settings"), { server: null });
+/** Replaces them; answers them as stored (a bare host given its scheme). */
+export const putBuiltinBrowserSettings = (settings: BuiltinBrowserSettings) =>
+  apiFetch<BuiltinBrowserSettings>(builtinBrowserPath("/settings"), {
+    method: "PUT",
+    body: settings,
+    server: null,
+  });
+/** History matching `q` (address and title), most visited first. */
+export const searchBuiltinBrowserHistory = (q: string, limit: number) =>
+  apiFetch<BuiltinBrowserHistoryResponse>(builtinBrowserPath("/history"), {
+    query: { q, limit },
+    server: null,
+  });
+export const clearBuiltinBrowserHistory = () =>
+  apiFetch<void>(builtinBrowserPath("/history"), { method: "DELETE", server: null });
+export const clearBuiltinBrowserData = (storages: BuiltinBrowserStorage[]) =>
+  apiFetch<void>(builtinBrowserPath("/clear-data"), {
+    method: "POST",
+    body: { storages },
+    server: null,
+  });

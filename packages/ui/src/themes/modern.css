@@ -341,6 +341,12 @@
     --ui-dur-layout: 320ms;
     --ui-ease-layout: cubic-bezier(0.22, 1, 0.36, 1);
 
+    /* Streaming: a reply surfaces word by word at about 220 characters a second — quick enough
+       never to hold a fast model back for long, even enough to read as a calm flow — through
+       the soft veil the `ui-stream` recipe draws over its trailing lines. */
+    --ui-stream-reveal: fade;
+    --ui-stream-rate: 220;
+
     /* Icons */
     --ui-icon-stroke: 1.6;
     --ui-icon-cap: round;
@@ -489,9 +495,9 @@
    * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
    * window's columns.
    *
-   * Frost gives all fourteen a recipe: glass, eyebrow (its ink; the rung is theme.css's),
+   * Frost gives all fifteen a recipe: glass, eyebrow (its ink; the rung is theme.css's),
    * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart,
-   * scrim.
+   * scrim, stream.
    */
 
   /* Frosted transient layer: menus, popovers, tooltips and the floating composer — the small
@@ -760,6 +766,58 @@
     }
     to {
       background-position: 0% 0;
+    }
+  }
+
+  /* A reply still arriving surfaces through a soft veil, so the newest words read as fading in
+     (the reveal paces them word by word): over the trailing three lines a gradient runs from
+     nothing to the page's own colour at a little over half strength, above a faint glow in the
+     accent's wash that fades out towards every edge — no line, no box, no band where the veil
+     stops. The text moving up through it is the only motion; each line brightens as it leaves.
+     The veil is the host's `::after`, drawn only while the stream's caret is the host's last
+     child: the caret marks where the text ends, so what the host appends after it (a stop
+     reason, a files card) is never veiled; the caret itself is not shown. On `done` — or once
+     something follows the caret — the veil eases away over the reveal duration: the fade runs
+     on opacity, and a discrete `step-end` transition holds the gradient until the fade is over,
+     so the last lines settle into full ink instead of snapping. A reply that mounts finished
+     carries only an empty, transparent layer. Under reduced motion the veil is not drawn. */
+  :root[data-theme="modern"] .ui-stream {
+    position: relative;
+  }
+  :root[data-theme="modern"] .ui-stream > [data-slot="caret"] {
+    display: none;
+  }
+  :root[data-theme="modern"] .ui-stream::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-size: 100% 3lh;
+    background-position: bottom;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition:
+      opacity var(--ui-dur-reveal) var(--ui-ease-out),
+      background-image var(--ui-dur-reveal) step-end allow-discrete;
+  }
+  :root[data-theme="modern"]
+    .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child)::after {
+    opacity: 1;
+    background-image:
+      linear-gradient(
+        to bottom,
+        transparent,
+        color-mix(in srgb, var(--ui-canvas) 55%, transparent)
+      ),
+      radial-gradient(closest-side, var(--ui-accent-muted), transparent);
+    transition: opacity var(--ui-dur-reveal) var(--ui-ease-out);
+  }
+  :root[data-theme="modern"][data-motion="reduced"] .ui-stream::after {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-theme="modern"] .ui-stream::after {
+      display: none;
     }
   }
 

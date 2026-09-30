@@ -21,6 +21,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type {
+  ErrorBody,
   ModelsResponse,
   ModelTestResponse,
   ModelVisionDetectResponse,
@@ -142,6 +143,25 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
 
+    // OpenCode Go pins each row's protocol and endpoint, so one group holds rows on different
+    // clients: a Messages row sits on the base without /v1, a Chat Completions row on the /v1
+    // base. Like every gateway's rows, neither falls back to its client's environment
+    // variable — that holds the user's vendor key, and the gateway is not the vendor.
+    const messagesRow = pick(body, "opencode-go", "qwen3.8-max");
+    expect(messagesRow).toMatchObject({
+      clientType: "ant-messages",
+      credential: { baseUrl: "https://opencode.ai/zen/go" },
+      vision: true,
+    });
+    expect(messagesRow.envKey).toBeUndefined();
+    const chatRow = pick(body, "opencode-go", "glm-5.3");
+    expect(chatRow).toMatchObject({
+      clientType: "openai-chat",
+      credential: { baseUrl: "https://opencode.ai/zen/go/v1" },
+      vision: false,
+    });
+    expect(chatRow.envKey).toBeUndefined();
+
     // A catalog row on a promotion is preset at its LIST price like every other row, and the
     // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the
     // catalog's flat promotions.
@@ -169,7 +189,7 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "tokendance", "hy4-preview")).not.toHaveProperty("discount");
   });
 
-  it("masks allowed direct and relay env fallbacks, never gateway fallbacks, and never leaks a value", async () => {
+  it("reports and masks the env fallback only where the entry is allowed one (the vendor's own endpoint, or the relay's own variable), and never leaks a value", async () => {
     const saved = {
       anthropic: process.env.ANTHROPIC_API_KEY,
       deepseek: process.env.DEEPSEEK_API_KEY,
@@ -193,16 +213,30 @@ describe("models preset & catalog enrichment", () => {
           { provider: "deepseek", modelId: "deepseek-v4-pro" },
           // Off-catalog id in a vendor group, pure auto-route: still first-party.
           { provider: "anthropic", modelId: "claude-sonnet-4-6-preview" },
-          // Vendor group re-pointed at a generic protocol: not first-party.
+          // Vendor group on a generic protocol with no base URL: the OpenAI client talks to
+          // api.openai.com, so the OpenAI key may back it — whatever the group is called.
           { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
-          // Gateway and custom groups never carry a preview, even with OPENAI_API_KEY set.
+          // A gateway row carries the gateway's endpoint: no fallback at all, so no envKey
+          // and no preview, even with OPENAI_API_KEY set.
           {
             provider: "openrouter",
             modelId: "xiaomi/mimo-v2.5",
             clientType: "openai-chat",
             baseUrl: "https://openrouter.ai/api/v1",
           },
+          // Custom rows are judged by their endpoint: none → the vendor's own (a fallback, but
+          // not a preview — see modelEnvPreviewKey); a private server → nothing.
           { provider: "custom", modelId: "my-model", clientType: "openai" },
+          {
+            provider: "custom",
+            modelId: "my-local",
+            clientType: "openai",
+            baseUrl: "http://127.0.0.1:8000/v1",
+          },
+          // A vLLM preset as seeded: no base URL, the vLLM adapter pinned. It falls back to
+          // OPENAI_API_KEY under the rule, but showing the mask would list a self-hosted id in
+          // the chat picker as configured and send the OpenAI key to api.openai.com.
+          { provider: "vllm", modelId: "Qwen/Qwen3.8-27B", clientType: "openai-chat-vllm-adapter" },
           // Both protocols in the relay group resolve the same provider-scoped key.
           {
             provider: "penguin-go",
@@ -228,13 +262,20 @@ describe("models preset & catalog enrichment", () => {
       expect(pick(body, "anthropic", "claude-sonnet-4-6").envKeyMasked).toBe(masked);
       expect(pick(body, "anthropic", "claude-sonnet-4-6-preview").envKeyMasked).toBe(masked);
       expect(pick(body, "deepseek", "deepseek-v4-pro").envKeyMasked).toBeUndefined();
+      const openaiMasked = `${openaiValue.slice(0, 4)}…${openaiValue.slice(-4)}`;
       const rePointed = pick(body, "anthropic", "claude-via-gateway");
       expect(rePointed.envKey).toBe("OPENAI_API_KEY");
-      expect(rePointed.envKeyMasked).toBeUndefined();
+      expect(rePointed.envKeyMasked).toBe(openaiMasked);
       const gateway = pick(body, "openrouter", "xiaomi/mimo-v2.5");
-      expect(gateway.envKey).toBe("OPENAI_API_KEY");
+      expect(gateway.envKey).toBeUndefined();
       expect(gateway.envKeyMasked).toBeUndefined();
+      expect(pick(body, "custom", "my-model").envKey).toBe("OPENAI_API_KEY");
       expect(pick(body, "custom", "my-model").envKeyMasked).toBeUndefined();
+      expect(pick(body, "custom", "my-local").envKey).toBeUndefined();
+      expect(pick(body, "custom", "my-local").envKeyMasked).toBeUndefined();
+      const vllm = pick(body, "vllm", "Qwen/Qwen3.8-27B");
+      expect(vllm.envKey).toBe("OPENAI_API_KEY");
+      expect(vllm.envKeyMasked).toBeUndefined();
       const penguinMasked = "sk-p…-456";
       expect(pick(body, "penguin-go", "gemini-3.8-flash").envKey).toBe("PENGUIN_GO_API_KEY");
       expect(pick(body, "penguin-go", "gemini-3.8-flash").envKeyMasked).toBe(penguinMasked);
@@ -302,6 +343,90 @@ describe("models preset & catalog enrichment", () => {
     expect(noProvider.status).toBe(400);
   });
 
+  it("PUT refuses an id a vendor group cannot route when the request introduces it, and carries a stored one through", async () => {
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    // A row in the shape a vendor-group add used to produce: no client_type, and an id
+    // AgentHub places nowhere, so it fails at request time with its "is not supported"
+    // sentence. Rows like this exist in configs written before the rule below.
+    await writeFile(
+      cfgFile,
+      ["[[models]]", 'provider = "deepseek"', 'model_id = "qwen/qwen3.8-flash-next"'].join("\n"),
+      "utf8",
+    );
+
+    // Already stored: the whole-table PUT writes it back untouched. The models page sends the
+    // entire table on every save, so refusing it here would make one legacy row block every
+    // later edit of every other row.
+    const kept = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next", contextWindow: 65536 },
+        { provider: "custom", modelId: "mine", clientType: "openai-chat" },
+      ],
+    });
+    expect(kept.status).toBe(200);
+    const keptBody = (await kept.json()) as ModelsResponse;
+    expect(pick(keptBody, "deepseek", "qwen/qwen3.8-flash-next").contextWindow).toBe(65536);
+
+    // New in this request: refused, by a code the frontend can localize and a message naming
+    // the entry and the way out.
+    const added = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        { provider: "deepseek", modelId: "another-fine-tune" },
+      ],
+    });
+    expect(added.status).toBe(400);
+    const error = ((await added.json()) as ErrorBody).error;
+    expect(error.code).toBe("model_not_routable");
+    expect(error.message).toContain("another-fine-tune");
+    expect(error.message).toContain("custom group");
+
+    // A changed id is a different entry, so the rename is judged like a new one.
+    const renamed = await api.put(url(), {
+      models: [
+        {
+          provider: "deepseek",
+          modelId: "qwen/qwen3.8-flash-next-preview",
+          renamedFrom: { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        },
+      ],
+    });
+    expect(renamed.status).toBe(400);
+    expect(((await renamed.json()) as ErrorBody).error.code).toBe("model_not_routable");
+
+    // So is moving a model into a vendor group: the group is the half of the key that changed.
+    const moved = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        {
+          provider: "deepseek",
+          modelId: "mine",
+          renamedFrom: { provider: "custom", modelId: "mine" },
+        },
+      ],
+    });
+    expect(moved.status).toBe(400);
+
+    // Nothing above was written: the stored table is still the one the accepted PUT left.
+    const stored = (await (await api.get(url())).json()) as ModelsResponse;
+    const expected = ["custom\0mine", "deepseek\0qwen/qwen3.8-flash-next"];
+    expect(stored.models.map(pairKey).sort()).toEqual(expected.sort());
+
+    // The same id is accepted wherever the group answers the protocol question itself.
+    const custom = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        {
+          provider: "custom",
+          modelId: "qwen/qwen3.8-flash-next",
+          clientType: "openai-chat",
+          baseUrl: "https://gateway.example/v1",
+        },
+      ],
+    });
+    expect(custom.status).toBe(200);
+  });
+
   it('a config stored before the AgentHub 0.4.2 rename (client_type = "openai") keeps working: GET reports the canonical openai-chat', async () => {
     // Simulate an existing user config written by an older harness version: the deprecated
     // bare "openai" spelling on disk. Reading must not error and must report the canonical
@@ -321,8 +446,8 @@ describe("models preset & catalog enrichment", () => {
     const body = (await (await api.get(url())).json()) as ModelsResponse;
     const legacy = pick(body, "custom", "legacy-openai-model");
     expect(legacy.clientType).toBe("openai-chat");
-    // The env fallback resolves like any openai-chat entry.
-    expect(legacy.envKey).toBe("OPENAI_API_KEY");
+    // Its own endpoint, so no environment fallback is reported for it.
+    expect(legacy.envKey).toBeUndefined();
   });
 
   it("a configured model that has since been dropped from the built-in catalog still loads, keeps its data, and stays usable", async () => {
@@ -369,7 +494,8 @@ describe("models preset & catalog enrichment", () => {
     expect(orphan.pricing).toEqual({ cacheRead: 0, cacheWrite: 0, output: 0 });
     expect(orphan.vision).toBe(false);
     expect(orphan.clientType).toBe("openai-chat");
-    expect(orphan.envKey).toBe("OPENAI_API_KEY");
+    // It still carries the gateway's endpoint, so it gets no environment fallback.
+    expect(orphan.envKey).toBeUndefined();
     // The credential survives, masked; the base URL is still inlined on the entry.
     expect(orphan.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(orphan.credential?.apiKeyMasked).toBeTruthy();
@@ -450,6 +576,9 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "moonshot", "kimi-k2.6").credential?.apiKeyMasked).toBe("sk-o…1111");
     expect(pick(body, "moonshot", "kimi-k2.6").envKey).toBe("MOONSHOT_API_KEY");
     expect(pick(body, "siliconflow", "kimi-k2.6").credential?.apiKeyMasked).toBe("sk-g…2222");
+    // Saved without the gateway's base URL, this row's client talks to api.openai.com — so
+    // the OpenAI variable honestly is its fallback (the preset, which carries the gateway
+    // endpoint, gets none; see the env-fallback test above).
     expect(pick(body, "siliconflow", "kimi-k2.6").envKey).toBe("OPENAI_API_KEY");
 
     // Round-trips through disk unchanged.
@@ -1048,6 +1177,71 @@ describe("model-reference rekeying and the connectivity test", () => {
     }
   });
 
+  it("the connectivity test and the group speed test refuse a keyless gateway row without touching the environment", async () => {
+    // The #786 review's finding: a keyless gateway row handed AgentHub no key, and its
+    // generic client read OPENAI_API_KEY / ANTHROPIC_API_KEY itself — one speed test on a
+    // gateway group sent the user's vendor keys to the gateway once per model. Both paths run
+    // through testModel; both must refuse before any request leaves the process.
+    const saved = { openai: process.env.OPENAI_API_KEY, anthropic: process.env.ANTHROPIC_API_KEY };
+    process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
+    process.env.ANTHROPIC_API_KEY = "vendor-anthropic-must-not-cross";
+    const realFetch = globalThis.fetch;
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      requests += 1;
+      throw new Error("no request may leave the process for a refused probe");
+    }) as typeof fetch;
+    try {
+      // A gateway preset: the group's endpoint, no key. Both OpenAI-protocol gateways and the
+      // Messages-protocol custom preset (Atria — the path that carried the Anthropic key in the
+      // #786 finding) are refused, and the refusal is the harness's own sentence, never the
+      // SDK's text with a vendor variable in it.
+      for (const [provider, modelId] of [
+        ["tokendance", "glm-5.3"],
+        ["openrouter", "openai/gpt-5.5"],
+        ["custom", "Atria-Dawn-Preview"],
+      ] as const) {
+        expect(catalogEntryFor(provider, modelId)).toBeDefined();
+        for (const speed of [false, true]) {
+          const res = await api.post(testUrl(), { provider, modelId, speed });
+          expect(res.status).toBe(200);
+          const body = (await res.json()) as ModelTestResponse;
+          expect(body.ok).toBe(false);
+          expect(body.message).toMatch(/has no API key/);
+          expect(body.message).toMatch(/set the API key on the model entry/);
+          expect(body.message).not.toMatch(/OPENAI_API_KEY|ANTHROPIC_API_KEY|must-not-cross/);
+        }
+      }
+      // A not-yet-saved custom row pointed at a private server: same refusal.
+      const draft = await api.post(testUrl(), {
+        provider: "custom",
+        modelId: "draft-model",
+        clientType: "openai-chat",
+        baseUrl: "http://127.0.0.1:9/v1",
+      });
+      expect(((await draft.json()) as ModelTestResponse).message).toMatch(/has no API key/);
+      // The vision probe shares the rule.
+      const vision = await api.post(`${url()}/detect-vision`, {
+        provider: "tokendance",
+        modelId: "glm-5.3",
+      });
+      expect((await vision.json()) as ModelVisionDetectResponse).toMatchObject({
+        outcome: "failed",
+        message: expect.stringMatching(/has no API key/) as string,
+      });
+      expect(requests).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
+      for (const [key, value] of [
+        ["OPENAI_API_KEY", saved.openai],
+        ["ANTHROPIC_API_KEY", saved.anthropic],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("Penguin Go probes never substitute vendor environment keys", async () => {
     const saved = {
       gemini: process.env.GEMINI_API_KEY,
@@ -1063,7 +1257,7 @@ describe("model-reference rekeying and the connectivity test", () => {
         expect(tested.status).toBe(200);
         expect((await tested.json()) as ModelTestResponse).toMatchObject({
           ok: false,
-          message: "Missing API key for Penguin Go.",
+          message: expect.stringMatching(/has no API key.*PENGUIN_GO_API_KEY/) as string,
         });
 
         const vision = await api.post(`${url()}/detect-vision`, {
@@ -1073,7 +1267,7 @@ describe("model-reference rekeying and the connectivity test", () => {
         expect(vision.status).toBe(200);
         expect((await vision.json()) as ModelVisionDetectResponse).toMatchObject({
           outcome: "failed",
-          message: "Missing API key for Penguin Go.",
+          message: expect.stringMatching(/has no API key.*PENGUIN_GO_API_KEY/) as string,
         });
       }
 
@@ -1085,7 +1279,7 @@ describe("model-reference rekeying and the connectivity test", () => {
       });
       expect((await noEndpoint.json()) as ModelTestResponse).toMatchObject({
         ok: false,
-        message: "Missing API base URL for Penguin Go.",
+        message: expect.stringMatching(/has no base URL/) as string,
       });
     } finally {
       for (const [key, value] of [

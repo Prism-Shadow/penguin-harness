@@ -12,6 +12,7 @@
 import { useSyncExternalStore } from "react";
 import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { toneDot } from "../../lib/tone";
 import {
   dockVersion,
@@ -40,14 +41,16 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
   // button — the edge the panel opens on.
   const pendingDock: DockPosition = panelDock("agents") ?? "right";
 
-  const toggles: Array<{ position: DockPosition; label: string; icon: string }> = [
-    { position: "bottom", label: S.dock.bottomDock, icon: ICONS.panelBottom },
-    { position: "right", label: S.dock.rightDock, icon: ICONS.panelRight },
+  const bottomTitle = useShortcutTitle(S.dock.bottomDock, "dock.toggleBottom");
+  const rightTitle = useShortcutTitle(S.dock.rightDock, "dock.toggleRight");
+  const toggles: Array<{ position: DockPosition; label: string; title: string; icon: string }> = [
+    { position: "bottom", label: S.dock.bottomDock, title: bottomTitle, icon: ICONS.panelBottom },
+    { position: "right", label: S.dock.rightDock, title: rightTitle, icon: ICONS.panelRight },
   ];
 
   return (
     <div className="flex shrink-0 items-center gap-1" data-testid="panels-toolbar">
-      {toggles.map(({ position, label, icon }) => (
+      {toggles.map(({ position, label, title, icon }) => (
         <button
           key={position}
           type="button"
@@ -55,7 +58,7 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
           // Hiding a dock keeps every body mounted (dock-panel.tsx renders it at zero
           // size), so a tab holding unsaved work has nothing to lose and nothing to ask.
           onClick={() => toggleDock(position)}
-          data-tooltip={label}
+          data-tooltip={title}
           aria-label={label}
           data-testid={`dock-toggle-${position}`}
           className={triggerClass(isDockVisible(position))}

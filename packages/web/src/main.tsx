@@ -21,14 +21,23 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { hasEscLayers } from "@prismshadow/penguin-ui";
 import { App } from "./app";
 import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
+// The global shortcut dispatcher installs itself at module evaluation (a React effect would
+// leave a post-paint window where a chord is dead); the import is what evaluates it.
+import { setShortcutBlocker } from "./lib/shortcuts/dispatcher";
 // KaTeX's stylesheet and its woff2 faces, resolved out of node_modules so Vite emits them as local
 // assets: the desktop app has to render math with no network, and a CDN <link> would leave every
 // formula as unstyled markup offline. Imported before styles.css so the app's own `.katex` rules
 // (CJK fallback, error state, wide-formula scrolling) come later in the cascade and win.
 import "katex/dist/katex.min.css";
 import "./styles.css";
+
+// No global command runs behind an open dialog or menu: they all join the UI package's Escape
+// layer stack, which is what the blocker reads. Installed here, before the mount, since the
+// package cannot reach the app's dispatcher.
+setShortcutBlocker(hasEscLayers);
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root mount point not found");

@@ -18,7 +18,7 @@ const appRoot = (classes: string[], fontSize: string) => ({
 describe("workflow theme", () => {
   it("reads the resolved appearance rather than recomputing it", () => {
     const values: Record<string, string> = {
-      "--accent-bg": " #2563eb ",
+      "--ui-accent": " #2563eb ",
       "--color-gray-950": "#000",
       "--color-gray-100": "",
     };
@@ -26,7 +26,7 @@ describe("workflow theme", () => {
     expect(theme.dark).toBe(true);
     expect(theme.fontSize).toBe("16px");
     // Trimmed, and a property the app does not define is not stamped as an empty value.
-    expect(theme.vars).toEqual({ "--accent-bg": "#2563eb", "--color-gray-950": "#000" });
+    expect(theme.vars).toEqual({ "--ui-accent": "#2563eb", "--color-gray-950": "#000" });
   });
 
   it("stamps light explicitly, so the app's choice beats the system preference", () => {
@@ -38,12 +38,12 @@ describe("workflow theme", () => {
     const theme: WorkflowTheme = {
       dark: true,
       fontSize: "16px",
-      vars: { "--accent-bg": "#2563eb" },
+      vars: { "--ui-accent": "#2563eb" },
     };
     applyWorkflowTheme(doc.document, theme);
     applyWorkflowTheme(doc.document, theme);
     expect(doc.classes).toEqual({ dark: true, light: false });
-    expect(doc.properties).toEqual({ "--accent-bg": "#2563eb" });
+    expect(doc.properties).toEqual({ "--ui-accent": "#2563eb" });
     expect(doc.root.style.fontSize).toBe("16px");
     expect(doc.links).toEqual([{ rel: "stylesheet", href: WORKFLOW_THEME_HREF }]);
 

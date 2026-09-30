@@ -38,6 +38,14 @@ export function isTopEscLayer(id: symbol): boolean {
 }
 
 /**
+ * Whether any dialog or menu is open — the state in which an app-wide keyboard shortcut must not
+ * run behind it. The app installs this as its shortcut blocker.
+ */
+export function hasEscLayers(): boolean {
+  return escLayers.length > 0;
+}
+
+/**
  * Joins the Escape stack while `active`: an Escape press calls `onEscape` only while this layer
  * is the topmost one. The overlays with no focus ring of their own (Drawer, Sheet, Lightbox) use
  * it directly; {@link useDialogLayer} builds on it.
