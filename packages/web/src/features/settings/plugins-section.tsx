@@ -1,8 +1,8 @@
 /**
  * Plugin options (admin only, server-global): one card per settings entry — a group a module
  * contributes (the sandbox) or a loaded plugin's declared configuration — drawn from its
- * schema: a string, a secret, a boolean, a number, a choice or a list of
- * lines per field, so the page knows nothing about any particular entry. An entry naming a
+ * schema: a string, a secret, a boolean, a number, a choice, a list of lines or a table (a
+ * row per preset, say) per field, so the page knows nothing about any particular entry. An entry naming a
  * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
  * saved with it; notices the entry reports sit under its title. Each card saves on its own;
  * nothing is written until its Save, which sends each changed entry of the card in one PUT. A secret field always starts empty and shows
@@ -57,11 +57,40 @@ const THIS_SERVER = "*";
  */
 type Draft = Record<string, unknown>;
 
+/** A `table` field's draft: every row's cells. */
+type TableDraft = Record<string, Record<string, string | boolean>>;
+
+/**
+ * A table's draft from its stored cells (only those that differ are stored): a text cell is
+ * what was saved into it, empty for the declared text (shown as the placeholder, in the page's
+ * language); every other cell is its value. Sent whole: an emptied text cell goes back to the
+ * declared text.
+ */
+function tableDraftOf(field: PluginConfigField, stored: unknown): TableDraft {
+  const saved = (stored ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  return Object.fromEntries(
+    (field.rows ?? []).map((row) => [
+      row.id,
+      Object.fromEntries(
+        (field.columns ?? []).map((c) => {
+          const v = saved[row.id]?.[c.name];
+          if (c.type === "string") return [c.name, typeof v === "string" ? v : ""];
+          return [c.name, v !== undefined ? (v as string | boolean) : row.values[c.name]!];
+        }),
+      ),
+    ]),
+  );
+}
+
 /** The draft a plugin's form starts from: every non-secret value as stored, every secret empty. */
 function draftOf(entry: PluginConfigEntry): Draft {
   const out: Draft = {};
   for (const [name, field] of Object.entries(entry.configuration.properties)) {
     if (field.type === "secret") continue;
+    if (field.type === "table") {
+      out[name] = tableDraftOf(field, entry.values[name]);
+      continue;
+    }
     const v = entry.values[name];
     if (v === undefined) continue;
     out[name] =
@@ -72,6 +101,11 @@ function draftOf(entry: PluginConfigEntry): Draft {
           : v;
   }
   return out;
+}
+
+/** What a field's saved value is compared with, in the draft's terms (a table as its draft). */
+function baselineOf(field: PluginConfigField, stored: unknown): unknown {
+  return field.type === "table" ? tableDraftOf(field, stored) : stored;
 }
 
 /** The value a draft sends for a field: a number parsed from its box, a list split into lines, everything else as is. */
@@ -255,7 +289,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       }
       // Only what changed: sending an untouched field would store its default as a value,
       // pinning it against a later change of the default.
-      if (sameValue(v, entry.values[name])) continue;
+      if (sameValue(v, baselineOf(field, entry.values[name]))) continue;
       values[name] = v;
       changed = true;
     }
@@ -360,6 +394,110 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     const hint = localized(field.description, field.descriptionZh);
     const disabled = busy !== null;
     switch (field.type) {
+      case "table": {
+        const table = (draft[name] ?? {}) as TableDraft;
+        const setCell = (row: string, column: string, value: string | boolean) =>
+          patch(entry.name, name, { ...table, [row]: { ...table[row], [column]: value } });
+        // A refused cell is named `<field>.<row>.<column>`; the table lists them under itself.
+        const errors = Object.entries(fieldErrors)
+          .filter(([k]) => k === key || k.startsWith(`${key}.`))
+          .map(([, text]) => text);
+        const th = "px-2 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400";
+        return (
+          <div key={name} className="space-y-1.5">
+            <p className="text-sm font-medium">{label}</p>
+            {hint !== undefined && <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[36rem] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-800">
+                    {(field.columns ?? []).map((c) => (
+                      <th key={c.name} scope="col" className={th}>
+                        {localized(c.title, c.titleZh)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(field.rows ?? []).map((row) => (
+                    <tr key={row.id} className="border-b border-gray-100 dark:border-gray-800/60">
+                      {(field.columns ?? []).map((c) => {
+                        const cell = table[row.id]?.[c.name];
+                        const locked = row.locked?.includes(c.name) === true;
+                        const cellLabel = `${localizedText(locale, String(row.values.name ?? row.id), row.valuesZh?.name)} · ${localized(c.title, c.titleZh)}`;
+                        return (
+                          <td key={c.name} className="px-2 py-1 align-middle">
+                            {c.type === "boolean" ? (
+                              <input
+                                type="checkbox"
+                                aria-label={cellLabel}
+                                checked={cell === true}
+                                disabled={disabled || locked}
+                                onChange={(e) => setCell(row.id, c.name, e.target.checked)}
+                              />
+                            ) : c.type === "enum" ? (
+                              <Select
+                                size="sm"
+                                aria-label={cellLabel}
+                                value={typeof cell === "string" ? cell : ""}
+                                disabled={disabled || locked}
+                                onChange={(e) => setCell(row.id, c.name, e.target.value)}
+                              >
+                                {(c.options ?? []).map((option) => {
+                                  const off = entry.unavailable?.find(
+                                    (u) =>
+                                      u.field === name &&
+                                      u.column === c.name &&
+                                      u.value === option.value,
+                                  );
+                                  const title = localized(option.title, option.titleZh);
+                                  return (
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                      disabled={off !== undefined}
+                                    >
+                                      {off === undefined
+                                        ? title
+                                        : S.settings.pluginOptionUnavailable(
+                                            title ?? option.value,
+                                            localized(off.reason, off.reasonZh) ?? off.reason,
+                                          )}
+                                    </option>
+                                  );
+                                })}
+                              </Select>
+                            ) : (
+                              <Input
+                                size="sm"
+                                aria-label={cellLabel}
+                                value={typeof cell === "string" ? cell : ""}
+                                placeholder={localizedText(
+                                  locale,
+                                  String(row.values[c.name] ?? ""),
+                                  row.valuesZh?.[c.name],
+                                )}
+                                disabled={disabled || locked}
+                                autoComplete="off"
+                                onChange={(e) => setCell(row.id, c.name, e.target.value)}
+                              />
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {errors.map((text, i) => (
+              <p key={i} className={`text-xs ${toneInk.danger}`}>
+                {text}
+              </p>
+            ))}
+          </div>
+        );
+      }
       case "enum":
         return (
           <Select

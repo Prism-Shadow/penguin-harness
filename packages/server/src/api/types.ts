@@ -1600,6 +1600,32 @@ export interface SessionSandbox {
    * composer marks the confining levels unavailable and gives the first one's reason.
    */
   unavailableBackends?: UnavailableSandboxBackend[];
+  /**
+   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
+   * in table order, disabled rows included. The composer lists the enabled ones and names the
+   * Session's level by the first row matching its mode, network and approval mode. A server
+   * that does not report it gets the composer's built-in table.
+   */
+  presets?: SessionSandboxPreset[];
+  /**
+   * Response only, ignored in requests: true when this Session's policy holds something the
+   * presets do not show — masked paths, or the temp directory not writable.
+   */
+  advanced?: boolean;
+}
+
+/** One sandbox preset: a named mode, network level and approval mode. */
+export interface SessionSandboxPreset {
+  id: string;
+  /** The name an administrator gave it, or its declared English name. */
+  name: string;
+  /** Its declared Chinese name, while it has not been renamed. */
+  nameZh?: string;
+  /** Whether the composer's menu lists it. */
+  enabled: boolean;
+  mode: SessionSandboxMode;
+  network: SessionSandboxNetwork;
+  approvalMode: ApprovalMode;
 }
 
 /** An enabled sandbox backend that is not in use on this server, and why. */
@@ -5397,10 +5423,11 @@ export interface ContributionsResponse {
  * One field of a settings group a module declares (its `PluginConfigProvider.groups`
  * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
  * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
- * `list` is a list of strings, drawn one per line.
+ * `list` is a list of strings, drawn one per line; `table` is a fixed set of `rows`, each a
+ * value per one of its `columns`, drawn as a table.
  */
 export interface PluginConfigField {
-  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list" | "table";
   title: string;
   titleZh?: string;
   description?: string;
@@ -5421,6 +5448,33 @@ export interface PluginConfigField {
   pattern?: string;
   /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
   patternErrorMessage?: string;
+  /**
+   * `table` only: its columns, in display order, and its rows, in display order. The table
+   * has no `default`: the rows' declared cells are its defaults, and what is stored is only
+   * the cells that differ from them — `{ [row id]: { [column]: value } }`.
+   */
+  columns?: PluginConfigTableColumn[];
+  rows?: PluginConfigTableRow[];
+}
+
+/** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
+export interface PluginConfigTableColumn {
+  name: string;
+  type: "string" | "boolean" | "enum";
+  title: string;
+  titleZh?: string;
+  options?: PluginConfigOption[];
+}
+
+/** One row of a `table` field: its id and its declared cells. */
+export interface PluginConfigTableRow {
+  id: string;
+  /** Every column's declared value. */
+  values: Record<string, string | boolean>;
+  /** A string cell's declared value in Chinese, shown until a save changes the cell. */
+  valuesZh?: Record<string, string>;
+  /** Columns whose cell in this row a save may not change. */
+  locked?: string[];
 }
 
 /** One choice of an `enum` field. */
@@ -5471,6 +5525,8 @@ export interface PluginConfigEntry {
 /** One enum option a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
   field: string;
+  /** A `table` field's column: the option is unavailable in every cell of that column. */
+  column?: string;
   value: string;
   reason: string;
   reasonZh?: string;

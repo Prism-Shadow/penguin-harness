@@ -9,7 +9,11 @@
  *   tool call approved without asking.
  * - `partial`: some write permission, with something still holding it back.
  */
-import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  SessionSandboxPreset,
+} from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
 import type { Tone } from "./tone";
 
@@ -97,3 +101,163 @@ export function networkBlock(
 
 /** What a Session starts from when the server has not said: confinement off, network open. */
 export const UNCONFINED: SessionSandbox = { mode: "danger-full-access", network: "open" };
+
+/** One pick from the composer's menu: a preset's three values, saved together. */
+export interface PermissionPick {
+  approvalMode: ApprovalMode;
+  sandbox: Pick<SessionSandbox, "mode" | "network">;
+}
+
+/**
+ * The presets a server that does not report its own gets: the Sandbox card's declared table
+ * (server `sandbox/settings-store.ts`), copied because an older server cannot send it. Kept
+ * in step with that declaration by hand; it only matters until every server reports `presets`.
+ */
+export const BUILTIN_PRESETS: readonly SessionSandboxPreset[] = [
+  {
+    id: "full-access",
+    name: "Full Access",
+    nameZh: "完全访问",
+    enabled: true,
+    mode: "danger-full-access",
+    network: "open",
+    approvalMode: "allow-all",
+  },
+  {
+    id: "always-ask",
+    name: "Always Ask",
+    nameZh: "每次询问",
+    enabled: true,
+    mode: "danger-full-access",
+    network: "open",
+    approvalMode: "always-ask",
+  },
+  {
+    id: "workspace-write",
+    name: "Workspace Write",
+    nameZh: "仅工作区可写",
+    enabled: true,
+    mode: "workspace-write",
+    network: "open",
+    approvalMode: "allow-all",
+  },
+  {
+    id: "read-only",
+    name: "Read Only",
+    nameZh: "只读",
+    enabled: true,
+    mode: "read-only",
+    network: "open",
+    approvalMode: "allow-all",
+  },
+  {
+    id: "workspace-write-ask",
+    name: "Workspace Write with Ask",
+    nameZh: "仅工作区可写并询问",
+    enabled: false,
+    mode: "workspace-write",
+    network: "open",
+    approvalMode: "always-ask",
+  },
+  {
+    id: "denied-all",
+    name: "Denied All",
+    nameZh: "全部拒绝",
+    enabled: false,
+    mode: "danger-full-access",
+    network: "open",
+    approvalMode: "deny-all",
+  },
+];
+
+/** The presets the composer offers and names levels by: the server's, else the built-in table. */
+export function presetsOf(sandbox: SessionSandbox): readonly SessionSandboxPreset[] {
+  return sandbox.presets ?? BUILTIN_PRESETS;
+}
+
+/**
+ * The preset a Session's level is: the first row, in table order, holding all three of its
+ * values — a disabled row counts too. Null when none does (a level set from the full settings
+ * or by an older client), which the composer shows as custom rather than rounding it to a row.
+ */
+export function matchPreset(
+  presets: readonly SessionSandboxPreset[],
+  approval: ApprovalMode,
+  sandbox: Pick<SessionSandbox, "mode" | "network">,
+): SessionSandboxPreset | null {
+  return (
+    presets.find(
+      (p) => p.approvalMode === approval && p.mode === sandbox.mode && p.network === sandbox.network,
+    ) ?? null
+  );
+}
+
+/**
+ * The rows the composer's menu lists, in table order: the enabled presets whose approval mode
+ * the Session may be given (`approvalModes`, from `approvalModeChoices`). An organization's
+ * Session leaves out `always-ask`, so its presets are not offered there either — except the
+ * current preset, which stays listed and ticked rather than leaving the menu with nothing
+ * selected, the same exception the approval-mode list makes for its current value.
+ */
+export function menuPresets(
+  presets: readonly SessionSandboxPreset[],
+  approvalModes: readonly ApprovalMode[],
+  current: SessionSandboxPreset | null,
+): SessionSandboxPreset[] {
+  return presets.filter(
+    (p) => p.enabled && (p.id === current?.id || approvalModes.includes(p.approvalMode)),
+  );
+}
+
+/** Why this server cannot enforce a preset, or null when it can: its mode's block, else its network's. */
+export function presetBlock(
+  sandbox: SessionSandbox,
+  preset: Pick<SessionSandboxPreset, "mode" | "network">,
+): LevelBlock | null {
+  return fsModeBlock(sandbox, preset.mode) ?? networkBlock(sandbox, preset.network);
+}
+
+/** One thing a preset holds back or lets through, as the hover text names it. */
+export type PresetEffect =
+  | "write-outside-workspace"
+  | "write-anywhere"
+  | "network"
+  | "network-beyond-localhost"
+  | "unasked-calls"
+  | "unasked-writes"
+  | "every-call"
+  | "files-everywhere"
+  | "files-in-workspace"
+  | "read-files"
+  | "network-open"
+  | "localhost"
+  | "calls-unasked"
+  | "reads-unasked";
+
+/** What a preset blocks and what it allows, from its three values, for the hover text. */
+export function presetEffects(preset: Pick<SessionSandboxPreset, "mode" | "network" | "approvalMode">): {
+  blocks: PresetEffect[];
+  allows: PresetEffect[];
+} {
+  const blocks: PresetEffect[] = [];
+  const allows: PresetEffect[] = [];
+  if (preset.mode === "workspace-write") {
+    blocks.push("write-outside-workspace");
+    allows.push("files-in-workspace");
+  } else if (preset.mode === "read-only") {
+    blocks.push("write-anywhere");
+    allows.push("read-files");
+  } else allows.push("files-everywhere");
+  if (preset.network === "none") blocks.push("network");
+  else if (preset.network === "local") {
+    blocks.push("network-beyond-localhost");
+    allows.push("localhost");
+  } else allows.push("network-open");
+  if (preset.approvalMode === "deny-all") blocks.push("every-call");
+  else if (preset.approvalMode === "always-ask") blocks.push("unasked-calls");
+  else if (preset.approvalMode === "read-only") {
+    blocks.push("unasked-writes");
+    allows.push("reads-unasked");
+  } else allows.push("calls-unasked");
+  return { blocks, allows };
+}

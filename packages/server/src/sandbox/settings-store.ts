@@ -16,8 +16,12 @@
  */
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SandboxMode, SandboxSettings as Policy } from "@prismshadow/penguin-core/plugin";
-import type { PluginConfigNotice } from "../api/types.js";
-import { PluginConfig } from "../plugin/config.js";
+import type {
+  PluginConfigNotice,
+  PluginConfiguration,
+  SessionSandboxPreset,
+} from "../api/types.js";
+import { PluginConfig, resolveTable } from "../plugin/config.js";
 import type { SettingsGroupStatus } from "../plugin/config.js";
 import { Sandbox, SandboxModule } from "./service.js";
 import { requestedDimensions } from "./dimensions.js";
@@ -43,6 +47,28 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
   };
 }
 
+/**
+ * The group's presets table as the composer reads it: every row in table order, disabled ones
+ * included. `schema` is the group's declared configuration, `doc` its stored document — the
+ * table's cells are stored only where they differ from the declaration.
+ */
+export function sandboxPresetsOf(
+  schema: PluginConfiguration | undefined,
+  doc: Record<string, unknown>,
+): SessionSandboxPreset[] {
+  const field = schema?.properties.presets;
+  if (field?.type !== "table") return [];
+  return resolveTable(field, doc.presets).map(({ id, values, valuesZh }) => ({
+    id,
+    name: values.name as string,
+    ...(valuesZh?.name !== undefined ? { nameZh: valuesZh.name } : {}),
+    enabled: values.enabled === true,
+    mode: values.mode as SessionSandboxPreset["mode"],
+    network: values.network as SessionSandboxPreset["network"],
+    approvalMode: values.approvalMode as SessionSandboxPreset["approvalMode"],
+  }));
+}
+
 @Component({
   contributes: {
     "PluginConfigProvider.groups": [
@@ -56,6 +82,127 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
         descriptionZh:
           "新建会话的初始封禁策略，由沙盒后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
         properties: {
+          // The composer's menu: each preset a named mode, network level and approval mode.
+          // Names and mappings only — the fields below are the policy, and sandboxPolicyOf never
+          // reads this. Declared first so the card draws the table on top. Full Access keeps
+          // its promise (nothing confined, everything approved): only its name and whether the
+          // menu lists it can change.
+          presets: {
+            type: "table",
+            title: "Presets",
+            titleZh: "预设",
+            description:
+              "What the composer's permission menu offers. A rename keeps the mapping; a Session keeps its own mode, network and approval mode, and the menu names it by the first row that matches.",
+            descriptionZh:
+              "输入框权限菜单提供的选项。改名不改映射；会话只保存自己的封禁模式、网络与审批方式，菜单按第一个匹配的行为它命名。",
+            columns: [
+              { name: "name", type: "string", title: "Name", titleZh: "名称" },
+              { name: "enabled", type: "boolean", title: "In menu", titleZh: "进菜单" },
+              {
+                name: "mode",
+                type: "enum",
+                title: "Files",
+                titleZh: "文件",
+                options: [
+                  { value: "danger-full-access", title: "Off", titleZh: "关闭" },
+                  { value: "workspace-write", title: "Workspace write", titleZh: "仅工作区可写" },
+                  { value: "read-only", title: "Read-only", titleZh: "只读" },
+                ],
+              },
+              {
+                name: "network",
+                type: "enum",
+                title: "Network",
+                titleZh: "网络",
+                options: [
+                  { value: "open", title: "Full", titleZh: "完全" },
+                  { value: "local", title: "Localhost only", titleZh: "仅本机" },
+                  { value: "none", title: "None", titleZh: "无网络" },
+                ],
+              },
+              {
+                name: "approvalMode",
+                type: "enum",
+                title: "Ask mode",
+                titleZh: "询问模式",
+                options: [
+                  { value: "allow-all", title: "Approve everything", titleZh: "全部批准" },
+                  { value: "read-only", title: "Approve read-only", titleZh: "批准只读" },
+                  { value: "always-ask", title: "Ask every time", titleZh: "每次询问" },
+                  { value: "deny-all", title: "Deny everything", titleZh: "全部拒绝" },
+                ],
+              },
+            ],
+            rows: [
+              {
+                id: "full-access",
+                values: {
+                  name: "Full Access",
+                  enabled: true,
+                  mode: "danger-full-access",
+                  network: "open",
+                  approvalMode: "allow-all",
+                },
+                valuesZh: { name: "完全访问" },
+                locked: ["mode", "network", "approvalMode"],
+              },
+              {
+                id: "always-ask",
+                values: {
+                  name: "Always Ask",
+                  enabled: true,
+                  mode: "danger-full-access",
+                  network: "open",
+                  approvalMode: "always-ask",
+                },
+                valuesZh: { name: "每次询问" },
+              },
+              {
+                id: "workspace-write",
+                values: {
+                  name: "Workspace Write",
+                  enabled: true,
+                  mode: "workspace-write",
+                  network: "open",
+                  approvalMode: "allow-all",
+                },
+                valuesZh: { name: "仅工作区可写" },
+              },
+              {
+                id: "read-only",
+                values: {
+                  name: "Read Only",
+                  enabled: true,
+                  mode: "read-only",
+                  network: "open",
+                  approvalMode: "allow-all",
+                },
+                valuesZh: { name: "只读" },
+              },
+              {
+                id: "workspace-write-ask",
+                values: {
+                  name: "Workspace Write with Ask",
+                  enabled: false,
+                  mode: "workspace-write",
+                  network: "open",
+                  approvalMode: "always-ask",
+                },
+                valuesZh: { name: "仅工作区可写并询问" },
+              },
+              {
+                id: "denied-all",
+                values: {
+                  name: "Denied All",
+                  enabled: false,
+                  mode: "danger-full-access",
+                  network: "open",
+                  approvalMode: "deny-all",
+                },
+                valuesZh: { name: "全部拒绝" },
+              },
+            ],
+          },
           mode: {
             type: "enum",
             title: "Confinement mode",
@@ -154,17 +301,19 @@ export class SandboxSettingsStatus {
       saved: () => sandbox.retryFailed(),
       // The local level needs a backend that declares it; where none does, the option is
       // shown greyed out and a save choosing it is refused.
-      unavailable: () =>
-        sandbox.backends().some((b) => b.dimensions.includes("network-local"))
-          ? []
-          : [
-              {
-                field: "network",
-                value: "local",
-                reason: "no sandbox backend on this host supports it",
-                reasonZh: "本机的沙盒后端不支持",
-              },
-            ],
+      unavailable: () => {
+        if (sandbox.backends().some((b) => b.dimensions.includes("network-local"))) return [];
+        const why = {
+          value: "local",
+          reason: "no sandbox backend on this host supports it",
+          reasonZh: "本机的沙盒后端不支持",
+        };
+        // The presets' network column follows the same rule as the field.
+        return [
+          { field: "network", ...why },
+          { field: "presets", column: "network", ...why },
+        ];
+      },
       notices: (): PluginConfigNotice[] => {
         const notices: PluginConfigNotice[] = [];
         const backends = sandbox.backends();

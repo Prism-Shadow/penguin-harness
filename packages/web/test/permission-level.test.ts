@@ -8,14 +8,21 @@
  * - Each level wears its own glyph, so the level never depends on colour alone.
  */
 import { describe, expect, it } from "vitest";
-import type { SessionSandbox } from "@prismshadow/penguin-server/api";
+import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
 import {
+  BUILTIN_PRESETS,
   PERMISSION_LEVEL_GLYPH,
   firstUnavailableBackend,
   fsModeBlock,
+  matchPreset,
+  menuPresets,
   networkBlock,
   permissionLevel,
+  presetBlock,
+  presetEffects,
+  presetsOf,
 } from "../src/lib/permission-level";
+import { APPROVAL_MODES, approvalModeChoices } from "../src/features/chat/approval-mode";
 
 const FULL: SessionSandbox = { mode: "danger-full-access", network: "open" };
 
@@ -112,5 +119,135 @@ describe("permission level", () => {
     const glyphs = Object.values(PERMISSION_LEVEL_GLYPH);
     expect(glyphs).toHaveLength(4);
     expect(new Set(glyphs).size).toBe(4);
+  });
+});
+
+describe("the composer's presets", () => {
+  const byId = (id: string) => BUILTIN_PRESETS.find((p) => p.id === id)!;
+
+  it("names a level by the first matching row, disabled rows included, and by none when no row matches", () => {
+    expect(matchPreset(BUILTIN_PRESETS, "allow-all", FULL)?.id).toBe("full-access");
+    expect(matchPreset(BUILTIN_PRESETS, "always-ask", FULL)?.id).toBe("always-ask");
+    expect(matchPreset(BUILTIN_PRESETS, "allow-all", { ...FULL, mode: "read-only" })?.id).toBe(
+      "read-only",
+    );
+    // Not in the menu, still its name.
+    expect(matchPreset(BUILTIN_PRESETS, "deny-all", FULL)?.id).toBe("denied-all");
+    // A level set from the full settings is custom, never rounded to a row.
+    expect(matchPreset(BUILTIN_PRESETS, "allow-all", { ...FULL, network: "none" })).toBeNull();
+    expect(matchPreset(BUILTIN_PRESETS, "read-only", FULL)).toBeNull();
+    // Two rows holding the same values: table order decides.
+    const twice = [
+      { ...byId("always-ask"), id: "first" },
+      { ...byId("always-ask"), id: "second", enabled: false },
+    ];
+    expect(matchPreset(twice, "always-ask", FULL)?.id).toBe("first");
+    expect(matchPreset(twice.slice().reverse(), "always-ask", FULL)?.id).toBe("second");
+  });
+
+  it("offers the server's table when it reports one, and the built-in table when it does not", () => {
+    expect(presetsOf(FULL)).toBe(BUILTIN_PRESETS);
+    const renamed = [{ ...byId("full-access"), name: "Anything goes" }];
+    expect(presetsOf({ ...FULL, presets: renamed })).toBe(renamed);
+    // The built-in menu is the four common presets; the other two start out of it.
+    expect(BUILTIN_PRESETS.filter((p) => p.enabled).map((p) => p.id)).toEqual([
+      "full-access",
+      "always-ask",
+      "workspace-write",
+      "read-only",
+    ]);
+  });
+
+  it("offers no preset whose approval mode the Session may not be given, except the current one", () => {
+    const ids = (modes: readonly ApprovalMode[], current: string | null) =>
+      menuPresets(BUILTIN_PRESETS, modes, current === null ? null : byId(current)).map((p) => p.id);
+    // An ordinary Session: every enabled row, in table order.
+    expect(ids(APPROVAL_MODES, "full-access")).toEqual([
+      "full-access",
+      "always-ask",
+      "workspace-write",
+      "read-only",
+    ]);
+    // An organization's Session is never offered always-ask, as a mode or through a preset.
+    expect(ids(approvalModeChoices("org", "allow-all"), "full-access")).toEqual([
+      "full-access",
+      "workspace-write",
+      "read-only",
+    ]);
+    expect(ids(approvalModeChoices("org", "allow-all"), null)).not.toContain("always-ask");
+    // Unless it is the current preset: listed in its usual place, ticked, until another is picked.
+    expect(ids(approvalModeChoices("org", "always-ask"), "always-ask")).toEqual([
+      "full-access",
+      "always-ask",
+      "workspace-write",
+      "read-only",
+    ]);
+    // The current preset is kept by the helper itself, whatever list it is handed.
+    expect(ids(["allow-all"], "always-ask")).toEqual([
+      "full-access",
+      "always-ask",
+      "workspace-write",
+      "read-only",
+    ]);
+    // A disabled row stays out of the menu even when it is the current preset.
+    expect(ids(APPROVAL_MODES, "denied-all")).not.toContain("denied-all");
+  });
+
+  it("greys out a preset this server cannot enforce, in each of the four cases", () => {
+    const blocks = (sandbox: SessionSandbox) =>
+      Object.fromEntries(BUILTIN_PRESETS.map((p) => [p.id, presetBlock(sandbox, p)]));
+    const neverBlocked = { "full-access": null, "always-ask": null, "denied-all": null };
+    // No backend: every preset that confines is not installed.
+    const none: SessionSandbox = {
+      ...FULL,
+      confinementSupported: false,
+      noNetworkSupported: false,
+      localNetworkSupported: false,
+      unavailableBackends: [],
+    };
+    expect(blocks(none)).toEqual({
+      ...neverBlocked,
+      "workspace-write": "no-backend",
+      "read-only": "no-backend",
+      "workspace-write-ask": "no-backend",
+    });
+    // A filesystem-only backend enforces the default table whole; cutting the network it cannot.
+    const fsOnly: SessionSandbox = { ...none, confinementSupported: true };
+    expect(Object.values(blocks(fsOnly)).every((b) => b === null)).toBe(true);
+    expect(presetBlock(fsOnly, { mode: "read-only", network: "none" })).toBe("none-unsupported");
+    // A full backend: nothing is blocked, the local level included.
+    const full: SessionSandbox = {
+      ...FULL,
+      confinementSupported: true,
+      noNetworkSupported: true,
+      localNetworkSupported: true,
+    };
+    expect(presetBlock(full, { mode: "workspace-write", network: "local" })).toBeNull();
+    // An older server that does not report the flags: nothing second-guessed but local.
+    expect(Object.values(blocks(FULL)).every((b) => b === null)).toBe(true);
+    expect(presetBlock(FULL, { mode: "read-only", network: "local" })).toBe("local-unsupported");
+  });
+
+  it("says what a preset blocks and allows, from its three values", () => {
+    expect(presetEffects(byId("full-access"))).toEqual({
+      blocks: [],
+      allows: ["files-everywhere", "network-open", "calls-unasked"],
+    });
+    expect(presetEffects(byId("always-ask"))).toEqual({
+      blocks: ["unasked-calls"],
+      allows: ["files-everywhere", "network-open"],
+    });
+    expect(presetEffects(byId("workspace-write-ask"))).toEqual({
+      blocks: ["write-outside-workspace", "unasked-calls"],
+      allows: ["files-in-workspace", "network-open"],
+    });
+    expect(presetEffects(byId("denied-all")).blocks).toEqual(["every-call"]);
+    expect(
+      presetEffects({ mode: "read-only", network: "local", approvalMode: "read-only" }),
+    ).toEqual({
+      blocks: ["write-anywhere", "network-beyond-localhost", "unasked-writes"],
+      allows: ["read-files", "localhost", "reads-unasked"],
+    });
+    expect(presetEffects({ ...byId("full-access"), network: "none" }).blocks).toEqual(["network"]);
   });
 });

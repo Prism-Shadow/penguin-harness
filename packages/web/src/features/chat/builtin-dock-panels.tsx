@@ -52,8 +52,7 @@ function AgentsPanelBody() {
     subagentFocus,
     subagentTaskScope,
     models,
-    onChangeApprovalMode,
-    onChangeSandbox,
+    onChangePermission,
     modeSaving,
     parentThinkingLevel,
   } = useChatDock();
@@ -74,8 +73,7 @@ function AgentsPanelBody() {
       models={models?.models ?? []}
       approvalMode={selected.approvalMode}
       approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
-      onChangeApprovalMode={onChangeApprovalMode}
-      onChangeSandbox={onChangeSandbox}
+      onChangePermission={onChangePermission}
       modeSaving={modeSaving}
       parentThinkingLevel={parentThinkingLevel}
     />

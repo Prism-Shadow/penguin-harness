@@ -28,6 +28,7 @@ import type {
   SessionCategoryCounts,
   SessionInfo,
   SessionSandbox,
+  SessionSandboxPreset,
   SessionSource,
   ServerEvent,
   UnavailableSandboxBackend,
@@ -66,12 +67,16 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
  * `dimensions` is what the mounted sandbox backends implement between them — none on a
  * deployment that has not installed one. `unavailable` is each backend that is enabled but
  * failed to load or failed its check, with why; one for another platform is not among them.
+ * `presets` is the Sandbox card's table the composer names levels by, when there is one; the
+ * policy is `advanced` when it holds what no preset shows (masked paths, a read-only temp).
  */
 export function sessionSandboxOf(
   policy: SandboxSettings,
   dimensions: readonly SandboxDimension[] = [],
   unavailable: readonly UnavailableSandboxBackend[] = [],
+  presets?: readonly SessionSandboxPreset[],
 ): SessionSandbox {
+  const advanced = (policy.maskPaths ?? []).length > 0 || policy.writableTemp === false;
   return {
     mode: policy.mode,
     network: networkOf(policy),
@@ -79,6 +84,8 @@ export function sessionSandboxOf(
     noNetworkSupported: dimensions.includes("network"),
     localNetworkSupported: dimensions.includes("network-local"),
     unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
+    ...(presets !== undefined ? { presets: presets.map((p) => ({ ...p })) } : {}),
+    ...(advanced ? { advanced: true } : {}),
   };
 }
 
@@ -242,6 +249,8 @@ export interface SessionServiceDeps {
   sandboxDimensions?: () => readonly SandboxDimension[];
   /** The enabled sandbox backends that failed to load or failed their check, with why. */
   sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
+  /** The Sandbox card's presets table, in table order (absent: the view carries none). */
+  sandboxPresets?: () => readonly SessionSandboxPreset[];
 }
 
 export class SessionService {
@@ -267,6 +276,7 @@ export class SessionService {
       policy,
       this.sandboxDimensions(),
       this.deps.sandboxUnavailable?.() ?? [],
+      this.deps.sandboxPresets?.(),
     );
   }
 

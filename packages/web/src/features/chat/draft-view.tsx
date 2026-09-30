@@ -64,6 +64,7 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { UNCONFINED } from "../../lib/permission-level";
+import type { PermissionPick } from "../../lib/permission-level";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
@@ -737,12 +738,11 @@ export function DraftView({
     // home, or the next Session would be created on the machine the previous pick named.
     setWorkspaceMachine(machineId ?? null);
   }, []);
-  const changeApprovalMode = useCallback((mode: ApprovalMode) => {
+  // A preset sets both halves of the draft's level at once, as it does on a Session.
+  const changePermission = useCallback((pick: PermissionPick) => {
     touchedRef.current.approval = true;
-    setApprovalMode(mode);
-  }, []);
-  const changeSandbox = useCallback((pick: Partial<SessionSandbox>) => {
-    setSandboxPick((prev) => ({ ...prev, ...pick }));
+    setApprovalMode(pick.approvalMode);
+    setSandboxPick((prev) => ({ ...prev, ...pick.sandbox }));
   }, []);
 
   // Synchronous in-flight guard for the one send entry point (the composer): a second
@@ -911,9 +911,8 @@ export function DraftView({
           approvalMode={approvalMode}
           // A draft becomes an ordinary conversation, never an organization's: every mode.
           approvalModes={APPROVAL_MODES}
-          onChangeApprovalMode={changeApprovalMode}
           sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
-          onChangeSandbox={changeSandbox}
+          onChangePermission={changePermission}
           modeSaving={false}
           autoFocus
           agents={agents}

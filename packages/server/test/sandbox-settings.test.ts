@@ -15,6 +15,7 @@ import type { PluginConfigResponse } from "../src/api/types.js";
 import type { PluginConfig } from "../src/plugin/config.js";
 import { PluginHost } from "../src/plugin/host.js";
 import type { SandboxService } from "../src/sandbox/service.js";
+import { sandboxPolicyOf } from "../src/sandbox/settings-store.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -125,6 +126,8 @@ describe("sandbox settings group", () => {
     const entry = (await list()).find((e) => e.name === "sandbox")!;
     expect(entry.unavailable).toEqual([
       expect.objectContaining({ field: "network", value: "local" }),
+      // The presets' network column follows the same rule, in every row.
+      expect.objectContaining({ field: "presets", column: "network", value: "local" }),
     ]);
     const refused = await admin.put("/api/admin/plugin-config", {
       name: "sandbox",
@@ -132,8 +135,39 @@ describe("sandbox settings group", () => {
     });
     expect(refused.status).toBe(400);
     expect(await refused.text()).toContain("network");
+    const refusedCell = await admin.put("/api/admin/plugin-config", {
+      name: "sandbox",
+      values: { presets: { "read-only": { network: "local" } } },
+    });
+    expect(refusedCell.status).toBe(400);
+    expect(await refusedCell.text()).toContain("presets.read-only.network");
     // Nothing was stored: the service still runs the defaults.
     expect(sandbox.currentSettings()).toEqual({ mode: "danger-full-access" });
+    expect((await list()).find((e) => e.name === "sandbox")!.values.presets).toBeUndefined();
+  });
+
+  it("stores the presets beside the policy without changing it: the service gets the same policy either way", async () => {
+    const { t, admin, sandbox } = await appWith([]);
+    apps.push(t);
+    const policy = { mode: "workspace-write", network: "none", maskPaths: ["/secret"] };
+    expect((await admin.put("/api/admin/plugin-config", { name: "sandbox", values: policy })).status).toBe(200);
+    const without = sandbox.currentSettings();
+    const saved = await admin.put("/api/admin/plugin-config", {
+      name: "sandbox",
+      values: {
+        presets: {
+          "workspace-write": { name: "Project only", network: "none" },
+          "denied-all": { enabled: true },
+        },
+      },
+    });
+    expect(saved.status).toBe(200);
+    expect(sandbox.currentSettings()).toEqual(without);
+    expect(without).toEqual({ mode: "workspace-write", network: "none", maskPaths: ["/secret"] });
+    // And as a pure read of the document: the presets key is not part of the policy.
+    expect(
+      sandboxPolicyOf({ ...policy, presets: { "read-only": { mode: "workspace-write" } } }),
+    ).toEqual(sandboxPolicyOf(policy));
   });
 
   it("applies a saved policy to the next spawn; the backend reads its own saved group", async () => {

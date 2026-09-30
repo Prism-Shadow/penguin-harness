@@ -128,6 +128,7 @@ import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
+import type { PermissionPick } from "../../lib/permission-level";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { SkillPickList } from "../skills/skill-pick-list";
 import { toggleSkillName } from "../skills/skill-selection";
@@ -627,9 +628,8 @@ export function ChatInput({
   vision,
   approvalMode,
   approvalModes,
-  onChangeApprovalMode,
   sandbox,
-  onChangeSandbox,
+  onChangePermission,
   modeSaving,
   autoFocus,
   agents,
@@ -803,16 +803,16 @@ export function ChatInput({
   vision: boolean;
   approvalMode: ApprovalMode;
   /**
-   * The modes the permission button's Approval section lists, in order (`approvalModeChoices`):
-   * all four, except that an organization's Session leaves out `always-ask` unless it is the
-   * current value. The button's level and title follow `approvalMode` whatever the list holds.
+   * The approval modes the permission button may offer, in order (`approvalModeChoices`): all
+   * four, except that an organization's Session leaves out `always-ask` unless it is the current
+   * value. A preset whose approval mode is not listed is left out of the menu, unless it is the
+   * current preset. The button's level and title follow `approvalMode` whatever the list holds.
    */
   approvalModes: readonly ApprovalMode[];
-  /** A returned promise keeps the permission button's pick on screen until the save settles. */
-  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
   /** The Session's own sandbox policy (the draft's pick before there is a Session). */
   sandbox: SessionSandbox;
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
+  /** Saves a preset's approval mode and sandbox together; a returned promise keeps the permission button's pick on screen until the save settles. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   modeSaving: boolean;
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
@@ -2511,8 +2511,7 @@ export function ChatInput({
               approvalMode={approvalMode}
               approvalModes={approvalModes}
               sandbox={sandbox}
-              onChangeApprovalMode={onChangeApprovalMode}
-              onChangeSandbox={onChangeSandbox}
+              onChange={onChangePermission}
               disabled={modeSaving}
               direction={models && onChangeModel ? "down" : "up"}
             />

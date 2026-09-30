@@ -8,7 +8,8 @@
  * can list and validate it without running the package. Its shape is VS Code's
  * `contributes.configuration` cut down to what a settings page can draw without knowing the
  * module — a titled group of fields (a string, a secret, a boolean, a number, a choice among
- * options, or a list of lines) — plus a `parent` that draws the group inside another's card.
+ * options, a list of lines, or a table of fixed rows) — plus a `parent` that draws the group
+ * inside another's card.
  * The group's name is the contribution's id. A group whose status changes at run time (the
  * sandbox's backends) contributes that as code to `PluginConfigPage.status`.
  *
@@ -37,6 +38,9 @@ import type {
   PluginConfigEntry,
   PluginConfigField,
   PluginConfigNotice,
+  PluginConfigOption,
+  PluginConfigTableColumn,
+  PluginConfigTableRow,
   PluginConfiguration,
 } from "../api/types.js";
 import { Settings } from "../mechanisms/settings.js";
@@ -51,10 +55,195 @@ const FIELD_TYPES = new Set<PluginConfigField["type"]>([
   "number",
   "enum",
   "list",
+  "table",
 ]);
 
 /** A field name: what the manifest and the stored document are keyed by. */
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+/** A table row's id: what its stored cells are keyed by. */
+const ROW_ID = /^[a-z][a-z0-9-]*$/;
+
+const COLUMN_TYPES = new Set<PluginConfigTableColumn["type"]>(["string", "boolean", "enum"]);
+
+/** An enum's options, checked: every one a string value with a title. */
+function parseOptions(options: unknown, where: string): PluginConfigOption[] {
+  if (!Array.isArray(options) || options.length === 0) {
+    throw new Error(`${where}.options must list the choices`);
+  }
+  return options.map((o, i) => {
+    const opt = (o ?? {}) as Record<string, unknown>;
+    if (typeof opt.value !== "string" || typeof opt.title !== "string") {
+      throw new Error(`${where}.options[${i}] needs a string value and title`);
+    }
+    return {
+      value: opt.value,
+      title: opt.title,
+      ...(typeof opt.titleZh === "string" ? { titleZh: opt.titleZh } : {}),
+    };
+  });
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** Whether a value is of a table column's type. */
+function cellFits(column: PluginConfigTableColumn, value: unknown): boolean {
+  if (column.type === "boolean") return typeof value === "boolean";
+  if (column.type === "enum") {
+    return typeof value === "string" && (column.options ?? []).some((o) => o.value === value);
+  }
+  return typeof value === "string";
+}
+
+/** A `table` field's columns and rows, checked: every row declares every column, and fits it. */
+function parseTable(
+  f: Record<string, unknown>,
+  where: string,
+): { columns: PluginConfigTableColumn[]; rows: PluginConfigTableRow[] } {
+  if (!Array.isArray(f.columns) || f.columns.length === 0) {
+    throw new Error(`${where}.columns must list the columns`);
+  }
+  const columns = f.columns.map((raw, i): PluginConfigTableColumn => {
+    const c = (raw ?? {}) as Record<string, unknown>;
+    const at = `${where}.columns[${i}]`;
+    if (typeof c.name !== "string" || !FIELD_NAME.test(c.name)) {
+      throw new Error(`${at}.name is not a valid name`);
+    }
+    if (typeof c.type !== "string" || !COLUMN_TYPES.has(c.type as PluginConfigTableColumn["type"])) {
+      throw new Error(`${at}.type must be one of ${[...COLUMN_TYPES].join(", ")}`);
+    }
+    if (typeof c.title !== "string" || c.title === "") throw new Error(`${at}.title is required`);
+    return {
+      name: c.name,
+      type: c.type as PluginConfigTableColumn["type"],
+      title: c.title,
+      ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
+      ...(c.type === "enum" ? { options: parseOptions(c.options, at) } : {}),
+    };
+  });
+  if (!Array.isArray(f.rows) || f.rows.length === 0) {
+    throw new Error(`${where}.rows must list the rows`);
+  }
+  const ids = new Set<string>();
+  const rows = f.rows.map((raw, i): PluginConfigTableRow => {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const at = `${where}.rows[${i}]`;
+    if (typeof r.id !== "string" || !ROW_ID.test(r.id) || ids.has(r.id)) {
+      throw new Error(`${at}.id must be a unique lower-case id`);
+    }
+    ids.add(r.id);
+    const values = isRecord(r.values) ? r.values : {};
+    for (const column of columns) {
+      if (!cellFits(column, values[column.name])) {
+        throw new Error(`${at}.values.${column.name} does not fit its column`);
+      }
+    }
+    const row: PluginConfigTableRow = {
+      id: r.id,
+      values: Object.fromEntries(columns.map((c) => [c.name, values[c.name] as string | boolean])),
+    };
+    if (r.valuesZh !== undefined) {
+      if (!isRecord(r.valuesZh)) throw new Error(`${at}.valuesZh must be an object`);
+      for (const [name, v] of Object.entries(r.valuesZh)) {
+        if (columns.find((c) => c.name === name)?.type !== "string" || typeof v !== "string") {
+          throw new Error(`${at}.valuesZh.${name} must be a string column's text`);
+        }
+      }
+      row.valuesZh = r.valuesZh as Record<string, string>;
+    }
+    if (r.locked !== undefined) {
+      if (
+        !Array.isArray(r.locked) ||
+        !r.locked.every((n) => columns.some((c) => c.name === n))
+      ) {
+        throw new Error(`${at}.locked must list columns of the table`);
+      }
+      row.locked = r.locked as string[];
+    }
+    return row;
+  });
+  return { columns, rows };
+}
+
+/**
+ * A `table` field as read: every declared row, in order, with the stored cells laid over the
+ * declared ones. A cell a save changed drops its Chinese text — the name an administrator gave
+ * is the name in every language. Stored rows the table does not declare are left out.
+ */
+export function resolveTable(field: PluginConfigField, stored: unknown): PluginConfigTableRow[] {
+  const cells = isRecord(stored) ? stored : {};
+  return (field.rows ?? []).map((row) => {
+    const own = isRecord(cells[row.id]) ? (cells[row.id] as Record<string, unknown>) : {};
+    const values = { ...row.values };
+    for (const column of field.columns ?? []) {
+      const v = own[column.name];
+      if (v !== undefined && cellFits(column, v)) values[column.name] = v as string | boolean;
+    }
+    const zh = Object.entries(row.valuesZh ?? {}).filter(([name]) => values[name] === row.values[name]);
+    const { valuesZh: _declared, ...rest } = row;
+    return { ...rest, values, ...(zh.length > 0 ? { valuesZh: Object.fromEntries(zh) } : {}) };
+  });
+}
+
+/**
+ * One update of a `table` field folded onto its stored cells. Each cell is checked against its
+ * column and named `<field>.<row>.<column>` when refused; a cell set back to its declared value
+ * (or sent empty) is dropped, so only the cells that differ are stored; a row the table does not
+ * declare is dropped; a locked cell may not change.
+ */
+function applyTableUpdate(
+  name: string,
+  field: PluginConfigField,
+  stored: unknown,
+  update: unknown,
+): Record<string, Record<string, string | boolean>> {
+  if (!isRecord(update)) {
+    throw new PluginConfigError(name, `"${name}" must be an object of rows`);
+  }
+  const before = isRecord(stored) ? stored : {};
+  const next: Record<string, Record<string, string | boolean>> = {};
+  for (const row of field.rows ?? []) {
+    const cells: Record<string, string | boolean> = {};
+    const kept = isRecord(before[row.id]) ? (before[row.id] as Record<string, unknown>) : {};
+    for (const column of field.columns ?? []) {
+      const v = kept[column.name];
+      if (v !== undefined && cellFits(column, v)) cells[column.name] = v as string | boolean;
+    }
+    const sent = update[row.id];
+    if (sent !== undefined) {
+      if (!isRecord(sent)) {
+        throw new PluginConfigError(name, `"${name}.${row.id}" must be an object of cells`);
+      }
+      for (const [columnName, raw] of Object.entries(sent)) {
+        const at = `${name}.${row.id}.${columnName}`;
+        const column = (field.columns ?? []).find((c) => c.name === columnName);
+        if (column === undefined) {
+          throw new PluginConfigError(name, `"${at}" is not a column of this table`);
+        }
+        const value = typeof raw === "string" ? raw.trim() : raw;
+        if (value === null || value === "" || value === row.values[columnName]) {
+          delete cells[columnName];
+          continue;
+        }
+        if (!cellFits(column, value)) {
+          throw new PluginConfigError(
+            name,
+            column.type === "enum"
+              ? `"${at}" must be one of ${(column.options ?? []).map((o) => o.value).join(", ")}`
+              : `"${at}" must be a ${column.type}`,
+          );
+        }
+        if (row.locked?.includes(columnName)) {
+          throw new PluginConfigError(name, `"${at}" cannot be changed`);
+        }
+        cells[columnName] = value as string | boolean;
+      }
+    }
+    if (Object.keys(cells).length > 0) next[row.id] = cells;
+  }
+  return next;
+}
 
 /**
  * Validates a declared configuration. Undefined when there is none; a malformed one throws,
@@ -107,23 +296,15 @@ export function parsePluginConfiguration(
       field[key] = v;
     }
     if (field.type === "enum") {
-      const options = f.options;
-      if (!Array.isArray(options) || options.length === 0) {
-        throw new Error(`${where}: configuration.properties.${name}.options must list the choices`);
+      field.options = parseOptions(f.options, `${where}: configuration.properties.${name}`);
+    }
+    if (field.type === "table") {
+      Object.assign(field, parseTable(f, `${where}: configuration.properties.${name}`));
+      if (f.default !== undefined) {
+        throw new Error(
+          `${where}: configuration.properties.${name}.default: a table's rows are its defaults`,
+        );
       }
-      field.options = options.map((o, i) => {
-        const opt = (o ?? {}) as Record<string, unknown>;
-        if (typeof opt.value !== "string" || typeof opt.title !== "string") {
-          throw new Error(
-            `${where}: configuration.properties.${name}.options[${i}] needs a string value and title`,
-          );
-        }
-        return {
-          value: opt.value,
-          title: opt.title,
-          ...(typeof opt.titleZh === "string" ? { titleZh: opt.titleZh } : {}),
-        };
-      });
     }
     if (field.type === "list" && f.maxItems !== undefined) {
       if (typeof f.maxItems !== "number" || !Number.isInteger(f.maxItems) || f.maxItems < 1) {
@@ -200,6 +381,8 @@ export function valueFits(field: PluginConfigField, value: unknown): boolean {
       return typeof value === "string" && (field.options ?? []).some((o) => o.value === value);
     case "list":
       return Array.isArray(value) && value.every((v) => typeof v === "string");
+    case "table":
+      return isRecord(value);
     default:
       return typeof value === "string";
   }
@@ -294,6 +477,12 @@ export function applyUpdate(
       const current = stored[name];
       if (typeof current === "string" && current !== "" && value === maskApiKey(current)) continue;
     }
+    if (field.type === "table") {
+      const cells = applyTableUpdate(name, field, stored[name], value);
+      if (Object.keys(cells).length === 0) delete next[name];
+      else next[name] = cells;
+      continue;
+    }
     if (!valueFits(field, value)) {
       throw new PluginConfigError(
         name,
@@ -377,6 +566,8 @@ export interface SettingsGroupStatus {
 /** One enum option a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailable {
   field: string;
+  /** A `table` field's column: the option is unavailable in every cell of that column. */
+  column?: string;
   value: string;
   reason: string;
   reasonZh?: string;
@@ -414,6 +605,8 @@ export abstract class PluginConfig {
   abstract watch(name: string, cb: (values: Record<string, unknown>) => void): () => void;
   /** Whether anything was ever saved under `name` — what tells a default from a choice. */
   abstract saved(name: string): boolean;
+  /** The configuration `name` was declared with (what `resolveTable` reads a table by); undefined for none. */
+  abstract schema(name: string): PluginConfiguration | undefined;
 }
 
 export interface PluginConfigSlots {
@@ -479,6 +672,10 @@ export class PluginConfigStore {
 
   saved(name: string): boolean {
     return this.deps.settings.get(`plugin-config:${name}`) !== null;
+  }
+
+  schema(name: string): PluginConfiguration | undefined {
+    return this.group(name)?.configuration;
   }
 
   watch(name: string, cb: (values: Record<string, unknown>) => void): () => void {
@@ -585,6 +782,28 @@ export class PluginConfigPage {
       set: async (name, update) => {
         // An option this machine cannot honour is refused like an invalid value, naming it.
         for (const u of status.get(name)?.unavailable?.() ?? []) {
+          if (u.column !== undefined) {
+            // A table is saved whole: only a cell the save CHANGES to the value is refused, so
+            // one already holding it (a backend went away since) does not block the others.
+            const rows = update[u.field];
+            const entry = entries.describe().find((e) => e.name === name);
+            const field = entry?.configuration.properties[u.field];
+            const current =
+              field?.type === "table" ? resolveTable(field, entry!.values[u.field]) : [];
+            const before = (id: string): Record<string, unknown> =>
+              current.find((r) => r.id === id)?.values ?? {};
+            const row = Object.entries(isRecord(rows) ? rows : {}).find(
+              ([id, cells]) =>
+                isRecord(cells) &&
+                cells[u.column!] === u.value &&
+                before(id)[u.column!] !== u.value,
+            );
+            if (row !== undefined) {
+              const at = `${u.field}.${row[0]}.${u.column}`;
+              throw new PluginConfigError(u.field, `"${at}" cannot be "${u.value}" here: ${u.reason}`);
+            }
+            continue;
+          }
           if (update[u.field] === u.value) {
             throw new PluginConfigError(
               u.field,

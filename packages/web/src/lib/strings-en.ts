@@ -2845,6 +2845,34 @@ Scenarios:
         `The sandbox backend ${name} is enabled but not in use: ${reason}. An administrator can fix this on the Sandbox card (More…).`,
       more: "More…",
       approval: "Approval",
+      /** The button's name for a level no preset matches (set from the full settings, or by an older client). */
+      custom: "Custom",
+      /** The menu's top line when the Session's policy holds what no preset shows. */
+      advancedActive: "Advanced settings in effect",
+      advancedHint:
+        "This Session also has masked paths or a read-only temp directory, set from the Sandbox card; picking a preset keeps them.",
+      /** A preset's hover text: what it blocks, what it allows, and whether this machine can enforce it. */
+      blocks: "Blocks",
+      allows: "Allows",
+      nothing: "nothing",
+      enforceable: "This machine can enforce it.",
+      needsNoBackend: "Needs no sandbox backend.",
+      effects: {
+        "write-outside-workspace": "writing outside the workspace",
+        "write-anywhere": "writing any file",
+        network: "all network access",
+        "network-beyond-localhost": "network beyond localhost",
+        "unasked-calls": "tool calls without asking (each one asks first)",
+        "unasked-writes": "writes without asking (a call that may write asks first)",
+        "every-call": "every tool call (all denied)",
+        "files-everywhere": "reading and writing any file",
+        "files-in-workspace": "writing inside the workspace",
+        "read-files": "reading files",
+        "network-open": "the full network",
+        localhost: "this machine's localhost",
+        "calls-unasked": "every tool call, unasked",
+        "reads-unasked": "read-only calls, unasked",
+      } as Record<string, string>,
     },
     approvalModeNames: {
       "allow-all": "Approve everything",
