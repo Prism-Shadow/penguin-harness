@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assistantText,
   imageUrlMessage,
+  mcpConnectBegin,
   sessionMeta,
   tokenUsage,
   toolCall,
@@ -1004,6 +1005,46 @@ describe("in-session model switch", () => {
     expect(texts.at(-1)).toBe("task two");
   });
 
+  it("a fold that fails comes after the switch is recorded: the new file is open on the target and its meta was streamed", async () => {
+    // As above: a context with no completed turn, holding an image as carry-over.
+    const llmA = new ScriptedLLM(
+      [{ messages: [], outcome: { status: "fatal", errorMessage: "A is down" } }],
+      "A",
+    );
+    const h = harness(traces, {
+      llmA,
+      llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] },
+      vision: { [MODEL_B.model_id]: false },
+    });
+    sessions.push(h.session);
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    const controller = new AbortController();
+    controller.abort();
+    await collect(
+      h.session.run([userText("look"), imageUrlMessage("https://images.invalid/pic.png")], {
+        signal: controller.signal,
+      }),
+    );
+    // The fold writes image files into the scratchpad; this one cannot.
+    (h.session as unknown as { foldImages: () => Promise<never> }).foldImages = async () => {
+      throw new Error("scratchpad is read-only");
+    };
+
+    const streamed: OmniMessage[] = [];
+    const failure = await (async () => {
+      for await (const msg of switchTo(h.session, MODEL_B)) streamed.push(msg);
+    })().catch((e: unknown) => e);
+
+    expect((failure as Error).message).toBe("scratchpad is read-only");
+    // Everything a host follows the switch by came first: the Session is on the target in
+    // memory, on the stream and on disk alike.
+    expectEndsWithMetaOn(streamed, MODEL_B);
+    expect(h.session.modelId).toBe(MODEL_B.model_id);
+    const opened = await readTrace(h.trace.currentPath());
+    expect(opened[0]!.type).toBe("session_meta");
+    expect(modelOf(opened[0]!)).toEqual(MODEL_B);
+  });
+
   it("a Session that never ran is re-assembled on the target: no events, nothing written, and its first run opens on it", async () => {
     const llmB = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 20)] }], "B");
     const h = harness(traces, { llmA: llmB, llms: {}, vision: { [MODEL_B.model_id]: false } });
@@ -1225,31 +1266,179 @@ describe("in-session model switch", () => {
     );
   });
 
-  it("a Session resumed after a restart builds its engine first, so the switch compacts the real conversation", async () => {
+  it("a Session resumed after a restart builds its engine first, so the switch compacts the real conversation — and that context's first-run records stay in its own file", async () => {
     // What agent.resumeSession derives from a Trace: real history, no engine yet.
     const resumedLLM = new ScriptedLLM(
       [{ messages: [assistantText(SUMMARY_REPLY), usage(90, 90)] }],
       "A",
     );
-    const llmB = new ScriptedLLM([], "B");
+    const llmB = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 110)] }], "B");
     const h = harness(traces, {
       llmA: resumedLLM,
       llms: { [MODEL_B.model_id]: [llmB] },
       extras: {
+        // Like the real opener, the bootstrap publishes the context's toolset record.
+        bootstrap: async ({ emit }) => {
+          emit(toolListReady([]));
+          return { llm: resumedLLM };
+        },
         metaAlreadyWritten: true,
         initialEngineState: { sessionTurns: 3, lastRequestTotal: 80 },
       },
     });
     sessions.push(h.session);
     expect(h.session.compactability()).toBe("ok");
+    const oldPath = h.trace.currentPath();
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
     expect(result).toBe("completed");
     expect(resumedLLM.calls).toHaveLength(1);
     expect(compactionEvents(all)[0]).toMatchObject({ reason: "manual", turns: 3 });
+    // With turns to summarize, the bootstrap streams: the stream opens on its toolset record.
+    expect(payloadTypes(all)[0]).toBe("tool_list_ready");
     expectEndsWithMetaOn(all, MODEL_B);
     expect(h.session.modelId).toBe(MODEL_B.model_id);
+
+    // The engine was built for the switch, not by a run: the old context's toolset record goes
+    // into the old file, ahead of the pair that closes it — never into the target's.
+    expect(payloadTypes(await readTrace(oldPath)).slice(0, 2)).toEqual([
+      "tool_list_ready",
+      "compaction_begin",
+    ]);
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened).slice(0, 5)).toEqual([
+      "session_meta",
+      "tool_list_ready",
+      "text",
+      "text",
+      "request_begin",
+    ]);
+    expect(payloadTypes(opened).filter((t) => t === "tool_list_ready")).toHaveLength(1);
+  });
+
+  it("a Session resumed just compacted refuses a target its held summary does not fit before any event: the bootstrap of the context being left stays off the stream", async () => {
+    const held = userText(`[context_summary]\n${"x".repeat(12000)}\n[/context_summary]`);
+    const h = harness(traces, {
+      llmA: new ScriptedLLM([], "A"),
+      llms: {
+        [MODEL_B.model_id]: [new ScriptedLLM([], "B")],
+        [MODEL_C.model_id]: [new ScriptedLLM([], "C")],
+      },
+      windows: { [MODEL_B.model_id]: 4096, [MODEL_C.model_id]: 200000 },
+      extras: {
+        bootstrap: async ({ emit }) => {
+          emit(toolListReady([]));
+          return { llm: new ScriptedLLM([], "A") };
+        },
+        metaAlreadyWritten: true,
+        // What a resume of a file closed by a completed compaction hands the engine.
+        initialEngineState: {
+          pendingSummary: held,
+          pendingTraceRotation: true,
+          fromCompaction: true,
+          sessionTurns: 0,
+        },
+      },
+    });
+    sessions.push(h.session);
+    expect(h.session.compactability()).toBe("just_compacted");
+
+    const streamed: OmniMessage[] = [];
+    const refusal = await (async () => {
+      for await (const msg of switchTo(h.session, MODEL_B)) streamed.push(msg);
+    })().catch((e: unknown) => e);
+    expect(refusal).toBeInstanceOf(ModelSwitchRefusedError);
+    expect((refusal as ModelSwitchRefusedError).reason).toBe("summary_too_large");
+    expect(streamed).toEqual([]);
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
+
+    // A target with room takes it: no pair (the closing pair is on the closed file), the
+    // target's own records, and its meta — still nothing from the context that never ran.
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
+    expect(result).toBe("completed");
+    expect(payloadTypes(all)).toEqual(["tool_list_ready", "session_meta"]);
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready", "text"]);
+    expect(textOf(opened[2]!)).toBe(textOf(held));
+  });
+
+  it("a switch stopped while that held-back bootstrap is still connecting shows the stopped bootstrap: no switch ends short of completed without an event", async () => {
+    const controller = new AbortController();
+    let connecting!: () => void;
+    const started = new Promise<void>((resolve) => (connecting = resolve));
+    const h = harness(traces, {
+      llmA: new ScriptedLLM([], "A"),
+      llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] },
+      extras: {
+        // A connect that never finishes: only the stop ends it.
+        bootstrap: ({ emit }) => {
+          emit(mcpConnectBegin(["slow"]));
+          connecting();
+          return new Promise(() => {});
+        },
+        metaAlreadyWritten: true,
+        initialEngineState: {
+          pendingSummary: userText(SUMMARY_TEXT),
+          pendingTraceRotation: true,
+          fromCompaction: true,
+          sessionTurns: 0,
+        },
+      },
+    });
+    sessions.push(h.session);
+
+    const switching = collectWithReturn(switchTo(h.session, MODEL_B, controller.signal));
+    await started;
+    // Let the Session take the connect's first record before the stop lands.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.abort();
+    const { all, result } = await switching;
+
+    expect(result).toBe("aborted");
+    expect(payloadTypes(all)).toEqual(["mcp_connect_begin", "mcp_connect_end", "abort"]);
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
+    expect(h.opens).toEqual([]);
+  });
+
+  it("a Session resumed from a file a switch opened carries the summary on through another switch", async () => {
+    // What a resume of [session_meta, tool_list_ready, summary] hands the engine: the summary
+    // is pending input, and is known as the summary this context opened with.
+    const held = userText(SUMMARY_TEXT);
+    const llmC = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 20)] }], "C");
+    const h = harness(traces, {
+      llmA: new ScriptedLLM([], "A"),
+      llms: { [MODEL_C.model_id]: [llmC] },
+      extras: {
+        metaAlreadyWritten: true,
+        initialEngineState: {
+          carryOver: [held],
+          contextSummary: held,
+          fromCompaction: true,
+          sessionTurns: 0,
+        },
+      },
+    });
+    sessions.push(h.session);
+
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
+    expect(result).toBe("completed");
+    expect(compactionEvents(all).map((e) => [e.reason, e.mode])).toEqual([
+      ["manual", "discard"],
+      ["manual", "discard"],
+    ]);
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready", "text"]);
+    expect(textOf(opened[2]!)).toBe(SUMMARY_TEXT);
+
+    // Sent once, and never written a second time.
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    expect(llmC.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
+    const latest = await readTrace(h.trace.currentPath());
+    expect(latest.filter((m) => m.type === "model_msg" && textOf(m) === SUMMARY_TEXT)).toHaveLength(
+      1,
+    );
   });
 
   it("switching is refused when compaction is not configured and there is a context to close", async () => {

@@ -1986,7 +1986,11 @@ describe("context compaction", () => {
     const written: OmniMessage[] = [];
     const session = new Session({
       meta: metaMessage.payload,
-      bootstrap: async () => ({ llm: resumedLLM }),
+      // Like the real opener, the bootstrap publishes the context's toolset record.
+      bootstrap: async ({ emit }) => {
+        emit(toolListReady([]));
+        return { llm: resumedLLM };
+      },
       environment: fakeEnvironment,
       trace: {
         write: async (msg) => {
@@ -2012,6 +2016,12 @@ describe("context compaction", () => {
     // Compaction reset the context, and the reason stays specific rather than falling back to
     // "nothing said yet".
     expect(session.compactability()).toBe("just_compacted");
+    // The engine was built for this call rather than by a run, so the context's first-run
+    // records were still owed: they go into its own file, ahead of the pair that closes it —
+    // not behind the next run's input, which the next context's file holds.
+    const types = payloadTypes(written);
+    expect(types.filter((t) => t === "tool_list_ready")).toHaveLength(1);
+    expect(types.indexOf("tool_list_ready")).toBeLessThan(types.indexOf("compaction_begin"));
     session.dispose();
   });
 

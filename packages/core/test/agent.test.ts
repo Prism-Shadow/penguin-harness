@@ -1358,6 +1358,22 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
         apiKey: "proxy-key",
         baseUrl: "https://proxy.invalid/v1",
       });
+      // The Agent's own copy of the config followed the read, so a child spawned from here —
+      // which inherits the model just switched to — finds it configured.
+      expect(agent.projectConfig.models.some((m) => m.provider === "myproxy")).toBe(true);
+      const runner = (capturedEnvServices.list.at(-1) as EnvironmentServices).subagentRunner!;
+      const child = await runner.spawn({});
+      try {
+        const gen = child.run({ messages: [userText("noop")] });
+        const first = await gen.next();
+        await gen.return(null);
+        expect((first.value as OmniMessage).payload).toMatchObject({
+          provider: "myproxy",
+          model_id: "claude-sonnet-4-6",
+        });
+      } finally {
+        child.dispose();
+      }
     } finally {
       session.dispose();
     }
@@ -1431,6 +1447,60 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       // The Session's own answer follows the opened context.
       expect(session.provider).toBe("anthropic");
       expect(session.modelId).toBe("claude-sonnet-4-6");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("an open that fails leaves the running context in place: the Environment is equipped for it again and the next rotation keeps its model", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-open-fails");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      const internals = session as unknown as {
+        environment: {
+          listTools(): Promise<unknown>;
+          reconfigure(update: { toolConfig: unknown }): void;
+        };
+        engine: { deps: { openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext> } };
+      };
+      const opener = internals.engine.deps.openNextContext;
+      const reconfigure = vi.spyOn(internals.environment, "reconfigure");
+      const target = { provider: "anthropic", model_id: "claude-sonnet-4-6" };
+
+      // A plain rotation first, so the running context is one this opener equipped.
+      await opener({ emit: () => {} });
+      const running = reconfigure.mock.calls[0]![0].toolConfig;
+
+      // The target assembles, the Environment is equipped for it, and then its toolset cannot
+      // be resolved: the open fails.
+      vi.spyOn(internals.environment, "listTools").mockRejectedValueOnce(
+        new Error("toolset unavailable"),
+      );
+      await expect(opener({ emit: () => {}, modelRef: target })).rejects.toThrow(
+        "toolset unavailable",
+      );
+      expect(reconfigure).toHaveBeenCalledTimes(3);
+      expect(reconfigure.mock.calls[1]![0].toolConfig).not.toBe(running);
+      expect(reconfigure.mock.calls[2]![0].toolConfig).toBe(running);
+      expect(session.modelId).toBe("deepseek-flash");
+
+      // The running context is still the one a rotation re-assembles.
+      const kept = await opener({ emit: () => {} });
+      expect((kept.sessionMeta!.payload as { model_id: string }).model_id).toBe("deepseek-flash");
+      expect(lastBuilt()!.modelId).toBe("deepseek-flash");
+
+      // A target gone from the config by the time the context opens is a failure of the
+      // switch, not its typed refusal: the refusal is the validation's answer, before any event.
+      const gone = await opener({
+        emit: () => {},
+        modelRef: { provider: "custom", model_id: "nobody-configured-this" },
+      }).catch((e: unknown) => e);
+      expect(gone).toBeInstanceOf(Error);
+      expect(gone).not.toBeInstanceOf(ModelSwitchRefusedError);
+      expect((gone as Error).message).toMatch(/is not in the Project config/);
     } finally {
       session.dispose();
     }

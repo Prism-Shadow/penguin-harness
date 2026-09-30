@@ -28,7 +28,7 @@ import {
 } from "../src/omnimessage/index.js";
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
 import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
-import { readTrace } from "../src/trace/index.js";
+import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { agentsMdPath, tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
@@ -551,6 +551,7 @@ describe("agent.resumeSession after an in-session model switch", () => {
         engineDeps: {
           initialState?: {
             pendingSummary?: OmniMessage;
+            contextSummary?: OmniMessage;
             carryOver?: OmniMessage[];
             sessionTurns?: number;
             pendingTraceRotation?: boolean;
@@ -601,7 +602,64 @@ describe("agent.resumeSession after an in-session model switch", () => {
       expect((state?.carryOver ?? []).map((m) => (m.payload as { text: string }).text)).toEqual([
         SUMMARY,
       ]);
+      // …and it is known as the summary this context opened with, so another switch before the
+      // first turn writes it on to the next file.
+      expect(state?.contextSummary).toBe(state?.carryOver?.[0]);
       expect(session.compactability()).toBe("just_compacted");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a switch made right after the restart carries the summary on: the next file opens with it, and the bootstrap of the context being left stays off the stream", async () => {
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
+    const leaving = await writeTraceFile(
+      tmpRoot,
+      SID,
+      [metaFor(SID, workspace, MODEL), toolListReady([]), userText(SUMMARY)],
+      { index: "002" },
+    );
+    const kind = (m: OmniMessage): string | undefined =>
+      m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type;
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      // Nothing ran since the restart: the engine is built by the switch itself.
+      const streamed: OmniMessage[] = [];
+      for await (const msg of session.switchModel({
+        provider: ORIGINAL.provider,
+        modelId: ORIGINAL.model_id,
+      })) {
+        streamed.push(msg);
+      }
+      // The context on MODEL holds the summary and no completed turn: a discard pair closes
+      // it, then the target's own records and its meta. The context being left never ran in
+      // this process, and its bootstrap is not streamed.
+      expect(streamed.map(kind)).toEqual([
+        "compaction_begin",
+        "compaction_end",
+        "tool_list_ready",
+        "session_meta",
+      ]);
+      expect(session.provider).toBe(ORIGINAL.provider);
+      expect(session.modelId).toBe(ORIGINAL.model_id);
+
+      const located = await findLatestTraceFile(
+        tracesDir(tmpRoot, "default_project", "default_agent"),
+        SID,
+      );
+      expect(located!.index).toBe(3);
+      const opened = await readTrace(located!.path);
+      expect(opened.map(kind)).toEqual(["session_meta", "tool_list_ready", "text"]);
+      expect((opened[0]!.payload as { model_id: string }).model_id).toBe(ORIGINAL.model_id);
+      expect((opened[2]!.payload as { text: string }).text).toBe(SUMMARY);
+      // The file being left took its own first-run records ahead of the pair that closes it.
+      expect((await readTrace(leaving)).map(kind).slice(3)).toEqual([
+        "tool_list_ready",
+        "compaction_begin",
+        "compaction_end",
+      ]);
     } finally {
       session.dispose();
     }

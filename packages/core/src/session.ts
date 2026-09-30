@@ -244,6 +244,15 @@ function raceAbort<T>(
   });
 }
 
+/** Drives a generator to its end, holding what it yields in `held` instead of forwarding it, and returns its return value. */
+async function settle<T, R>(gen: AsyncGenerator<T, R>, held: T[]): Promise<R> {
+  for (;;) {
+    const res = await gen.next();
+    if (res.done) return res.value;
+    held.push(res.value);
+  }
+}
+
 /**
  * Caps on captured title material (chars per side); accumulation stops once exceeded. The
  * assistant body is capped tighter: a title only needs the opening of the answer, and hosts
@@ -915,8 +924,9 @@ export class Session {
    * conversation. What the engine then does is at `ContextEngine.switchModel`.
    *
    * Returns the terminal status: `completed` — the Session is on the target, and children
-   * spawned from here inherit it; anything else — the compaction was aborted or failed (its
-   * `compaction_end` says how) and the Session stays on the model it was on.
+   * spawned from here inherit it; anything else — the switch was stopped or its compaction
+   * failed (the events say how) and the Session stays on the model it was on. Only a
+   * `completed` switch can end without an event: the no-op and the never-ran Session.
    */
   async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<OmniMessage, StopReason> {
     const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
@@ -946,7 +956,19 @@ export class Session {
         "Context compaction is not configured for this Session, so its model cannot be switched.",
       );
     }
-    if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
+    // A Session resumed after a restart has no engine yet; it is built here, as compact()
+    // builds it. With turns to summarize, its bootstrap streams as usual. With none, the
+    // context being left never ran in this process and is closed unused: its bootstrap is not
+    // news, and holding it back keeps the engine's own refusal (a held summary the target
+    // cannot take) ahead of any event. A bootstrap that is stopped is shown after all, like
+    // any stopped bootstrap — the switch never ends short of `completed` without an event.
+    const building = this.ensureEngine(opts.signal);
+    const held: OmniMessage[] = [];
+    const ready = this.compactability() === "ok" ? yield* building : await settle(building, held);
+    if (!ready) {
+      yield* held;
+      return "aborted";
+    }
     const room = await this.summaryRoom(contextWindow);
     const status = yield* this.engine!.switchModel(
       { ref: target, ...(room ? { summaryRoom: room } : {}) },
@@ -955,8 +977,8 @@ export class Session {
     // Input an aborted bootstrap left with the Session was folded for the model that was
     // running then; a context opened on a model without vision takes it folded, like the
     // engine folds its own carry-over. (The folded form is a record the old file does not
-    // hold, so the next run writes it into the new context's file; the original stays where
-    // the abort wrote it.)
+    // hold, so the next run writes it into the new context's file; unfolded, it rides in
+    // memory like the engine's carry-over, and the original stays where the abort wrote it.)
     if (status === "completed" && !this.modelHasVision && this.carryOverInput.length > 0) {
       this.carryOverInput = await this.foldImages(this.carryOverInput);
     }

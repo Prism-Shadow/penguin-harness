@@ -262,6 +262,8 @@ export interface EngineInitialState {
   carryOver?: OmniMessage[];
   /** Summary recovered from a completed summarize compaction: used as the prefix of the next `run` input (merged with the user Prompt). */
   pendingSummary?: OmniMessage;
+  /** The summary the resumed context's file opened with, while no turn has completed since (it is in `carryOver` as pending input): restores `contextSummary`. */
+  contextSummary?: OmniMessage;
   /** Carried-over Session cumulative turn count. */
   sessionTurns?: number;
   /**
@@ -578,8 +580,8 @@ export class ContextEngine {
    * The summary on the running context's Trace file as its first input, until the context
    * completes a turn (see `writeContextSummary`). It is the only record of the conversation
    * before the compaction, so a model switch that discards such a context writes it again at
-   * the head of the next file (see `switchModel`). Null for a context rebuilt from a Trace:
-   * its summary is ordinary carry-over by then.
+   * the head of the next file (see `switchModel`). A resume restores it from the file (see
+   * EngineInitialState.contextSummary).
    */
   private contextSummary: OmniMessage | null = null;
   /** Bootstrap records still owed to the Trace (written after the first run's input); see ContextEngineDeps.bootstrapRecords. */
@@ -588,7 +590,7 @@ export class ContextEngine {
    * Set to true once compaction completes: Trace rotation is deferred until the next
    * message that needs writing (see `write`) — so that if no further messages follow the
    * compaction, we don't create an empty file containing only session_meta. A model switch is
-   * the one exception: it performs the rotation at once (see `openContextFile`).
+   * the one exception: it performs the rotation at once (see `switchModel`).
    */
   private pendingTraceRotation = false;
   /**
@@ -650,6 +652,7 @@ export class ContextEngine {
     if (init) {
       this.pendingCarryOver = init.carryOver ?? [];
       this.pendingSummary = init.pendingSummary ?? null;
+      this.contextSummary = init.contextSummary ?? null;
       this.sessionTurns = init.sessionTurns ?? 0;
       this.fromCompaction = init.fromCompaction ?? false;
       this.lastSessionTokens = init.sessionTokens ?? emptyTokenCounts();
@@ -663,7 +666,12 @@ export class ContextEngine {
     this.thinkingLevel = level;
   }
 
-  /** Writes the first context's records still owed to the Trace — its connect pair, then its toolset — once (see ContextEngineDeps.bootstrapRecords); a no-op afterwards. */
+  /**
+   * Writes the first context's records still owed to the Trace — its connect pair, then its
+   * toolset — once (see ContextEngineDeps.bootstrapRecords); a no-op afterwards. A run writes
+   * them behind its input; a compaction or a model switch on an engine no run has used yet
+   * writes them ahead of whatever closes the context, so they stay in that context's file.
+   */
   private async writeOwedBootstrapRecords(): Promise<void> {
     if (!this.pendingBootstrapRecords) return;
     for (const msg of this.pendingBootstrapRecords) await this.write(msg);
@@ -1152,6 +1160,7 @@ export class ContextEngine {
     // pendingSummary with an "empty summary," permanently losing the only record of the prior
     // conversation.
     if (this.sessionTurns === 0) return;
+    await this.writeOwedBootstrapRecords();
     if (this.compaction.mode === "discard") {
       this.dropCarriedToolOutputs();
       yield* this.discardContext("manual");
@@ -1216,9 +1225,11 @@ export class ContextEngine {
    *   closing pair is on the closed file, and the pending rotation simply lands on the target.
    *
    * Nothing on the events names a model. The model is recorded where it always is — the opened
-   * context's `session_meta` — and the switch opens that context's Trace file at once (see
-   * `openContextFile`), so a resume of the latest file lands on the target; the same record is
-   * yielded last. Returns the terminal status: `completed` once the new context is open.
+   * context's `session_meta` — and the switch opens that context's Trace file at once rather
+   * than at its first message, its one deviation from the lazy rotation: the file's head is
+   * the durable record of the switch, so a resume of the latest file lands on the target. The
+   * same record is yielded last. Returns the terminal status: `completed` once the new context
+   * is open.
    */
   async *switchModel(
     target: ModelSwitchTarget,
@@ -1233,6 +1244,7 @@ export class ContextEngine {
     // The summary the next context opens with, if any.
     let summary: OmniMessage | null;
     if (this.sessionTurns > 0) {
+      await this.writeOwedBootstrapRecords();
       // The prompt of the compaction request comes from the live settings, like compact()'s.
       await this.refreshCompaction();
       const status = yield* this.summarizeAtBoundary(signal, target);
@@ -1247,37 +1259,27 @@ export class ContextEngine {
       if (overflow !== undefined) throw new ModelSwitchRefusedError("summary_too_large", overflow);
       if (this.pendingTraceRotation) {
         yield* this.startNewContext(target.ref);
-        // First-run records still owed (a Session resumed into the closed context and
-        // switched before running) describe a context that never got a file: dropped.
+        // First-run records still owed (the engine was built for this call rather than by a
+        // run) describe a context that never got a file: dropped.
         this.pendingBootstrapRecords = null;
       } else {
-        // The context's own records go into its file ahead of the pair that closes it.
         await this.writeOwedBootstrapRecords();
         this.dropCarriedToolOutputs();
         yield* this.discardContext("manual", target.ref);
       }
     }
-    // The carry-over was held for the model that was running; one without vision takes it
-    // with its images folded, like a Prompt.
-    this.pendingCarryOver = await this.foldForContext(this.pendingCarryOver);
-    yield* this.openContextFile(summary);
-    return "completed";
-  }
-
-  /**
-   * Opens the running context's Trace file now rather than at its first message — a model
-   * switch's one deviation from the lazy rotation: the file's head, the context's
-   * session_meta, is the durable record of the model the Session moved to. `summary`, the
-   * context's opening summary if it has one, follows as the file's first input — the state a
-   * resume of this file rebuilds; the next run sends it without writing it again (see
-   * `writeContextSummary`). The meta is yielded last, so the stream names the new model too:
-   * there it follows the opener's records (yielded live while the context opened), in the
-   * file it precedes them — both are read as state, not as a sequence.
-   */
-  private async *openContextFile(summary: OmniMessage | null): AsyncGenerator<OmniMessage> {
+    // The new context's file, now: its session_meta and records, then the summary as its first
+    // input — the state a resume of this file rebuilds; the next run sends the summary without
+    // writing it again (see `writeContextSummary`). On the stream the meta follows the opener's
+    // records (yielded live while the context opened), in the file it precedes them: both are
+    // read as state, not as a sequence.
     await this.rotateIfPending();
     if (summary) await this.writeContextSummary(summary);
     if (this.contextMeta) yield this.contextMeta;
+    // The carry-over was held for the model that was running; one without vision takes it with
+    // its images folded, like a Prompt. Last, so a fold that fails leaves a finished switch.
+    this.pendingCarryOver = await this.foldForContext(this.pendingCarryOver);
+    return "completed";
   }
 
   /** `messages` as the running context's model takes them: images folded into path lines when it has no vision (see ContextEngineDeps.foldInputImages), unchanged otherwise. */
@@ -2180,7 +2182,7 @@ export class ContextEngine {
    * Trace **does not** split files immediately — that's deferred until the next message that
    * needs writing, when it rotates and opens with the context's session_meta and records (see
    * `write`), avoiding an empty file if no further messages follow the compaction; a model
-   * switch opens the file right after this returns instead (see `openContextFile`).
+   * switch opens the file right after this returns instead (see `switchModel`).
    *
    * `next` is a model switch's target: the opener is told which model to open the context on;
    * every other rotation leaves it out and the opener keeps the closing context's model.
@@ -2387,9 +2389,9 @@ export class ContextEngine {
    * Performs the deferred Trace rotation when one is pending: splits the file and opens it with
    * the current context's session_meta and records (its MCP connect pair, if any, and its
    * toolset). Best-effort like every Trace write. Reached through `write` by the first message
-   * after a compaction, and directly by `openContextFile` when a model switch opens the file at
-   * once. The flag falls with or without a sink: it also says whether the context a rotation
-   * opened has been written on yet (see `switchModel`).
+   * after a compaction, and directly by `switchModel`, which opens the file at once. The flag
+   * falls with or without a sink: it also says whether the context a rotation opened has been
+   * written on yet.
    */
   private async rotateIfPending(): Promise<void> {
     if (!this.pendingTraceRotation) return;

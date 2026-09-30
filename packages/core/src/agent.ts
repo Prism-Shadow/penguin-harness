@@ -401,6 +401,11 @@ function entryCredential(
   });
 }
 
+/** The message for a model reference that names no entry in the Project config. */
+function modelNotConfigured(ref: ModelRef): string {
+  return `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`;
+}
+
 /**
  * Output cap for meta requests (title generation / vision describing): these carry their own
  * small hardcoded budget, tightened further by the entry's per-model `max_tokens` when that is
@@ -441,7 +446,8 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
 export class Agent {
   constructor(
     readonly state: AgentState,
-    readonly projectConfig: ProjectConfig,
+    /** The Project config as this Agent last read it from disk (see `projectConfig`). */
+    private config: ProjectConfig,
     /** See {@link CreateAgentOptions.proxyEnv}; forwarded into every Session's Environment. */
     private readonly proxyEnv?: () => ProxyEnvPolicy | null,
     /** See {@link CreateAgentOptions.controlEnv}; evaluated per Session with that Session's coordinates. */
@@ -453,6 +459,15 @@ export class Agent {
     /** See {@link CreateAgentOptions.assembly}; read at every Session creation. */
     private readonly assembly?: AgentAssembly,
   ) {}
+
+  /**
+   * The Project config as this Agent last read it from disk: when it was created, and again
+   * whenever a model switch resolved its target (see `modelEntryOnDisk`). Session creation
+   * and resumption resolve their model against it.
+   */
+  get projectConfig(): ProjectConfig {
+    return this.config;
+  }
 
   /**
    * A Session's default thinking level when no explicit per-session level is given — the
@@ -491,7 +506,7 @@ export class Agent {
    * stays fixed is the Session itself (`spec`): id, Workspace, origin, depth and the
    * thinking-level pin. The model is the caller's to name: `modelEntry` is the entry the
    * context runs on — the closing context's for an ordinary rotation, the one the user picked
-   * for a switch (see `modelEntryFromDisk`).
+   * for a switch (see `modelEntryOnDisk`).
    *
    * The vault's values go to the Environment's command subprocesses and only its **key
    * names** enter the prompt (so the model knows which API keys are available); Skills only
@@ -632,22 +647,15 @@ export class Agent {
   }
 
   /**
-   * The entry a model switch opens the next context on, resolved against the Project config
-   * **as it is on disk** rather than this Agent object's load-time snapshot: the user picks
-   * from the models configured now, a long-lived Agent must not answer from the ones
-   * configured when it loaded. Throws the switch's typed refusal when the pair names no entry
-   * — the switch is refused before anything is sent or recorded.
+   * The entry `ref` names in the Project config **as it is on disk**, or undefined: the user
+   * picks a switch target from the models configured now, and a long-lived Agent must not
+   * answer from the ones configured when it loaded. The Agent's own copy follows the read, so
+   * what is resolved against it afterwards — a subagent spawned on the model just switched to,
+   * the vision model a text-only target describes images with — sees the same config.
    */
-  private async modelEntryFromDisk(ref: ModelRef): Promise<ModelEntry> {
-    const projectConfig = await loadProjectConfig(this.state.root, this.state.projectId);
-    const entry = getModel(projectConfig, ref);
-    if (!entry) {
-      throw new ModelSwitchRefusedError(
-        "model_not_configured",
-        `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
-      );
-    }
-    return entry;
+  private async modelEntryOnDisk(ref: ModelRef): Promise<ModelEntry | undefined> {
+    this.config = await loadProjectConfig(this.state.root, this.state.projectId);
+    return getModel(this.config, ref);
   }
 
   /**
@@ -679,11 +687,7 @@ export class Agent {
       );
     }
     const modelEntry = getModel(this.projectConfig, ref);
-    if (!modelEntry) {
-      throw new Error(
-        `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
-      );
-    }
+    if (!modelEntry) throw new Error(modelNotConfigured(ref));
     // Credentials are inlined on the model entry (single config file); an explicit
     // argument takes priority. With neither, the entry may lean on the environment only
     // where the rule in resolveModelCredential allows (the vendor's own endpoint): a keyless
@@ -899,6 +903,7 @@ export class Agent {
       initialEngineState: {
         carryOver: resumed.carryOver,
         ...(resumed.pendingSummary ? { pendingSummary: resumed.pendingSummary } : {}),
+        ...(resumed.openingSummary ? { contextSummary: resumed.openingSummary } : {}),
         sessionTurns: resumed.sessionTurns,
         sessionTokens: resumed.sessionTokens,
         lastRequestTotal: resumed.lastRequestTotal,
@@ -1018,9 +1023,9 @@ export class Agent {
    */
   private buildRuntime(spec: SessionSpec, initial: AssembledContext): SessionRuntime {
     const { sessionId, workspaceDir, subagentDepth } = spec;
-    // The context the Session is running: the initial one, then whatever `openNextContext` (or
-    // a never-run Session's model switch, see `modelSwitch` below) last assembled. Its model
-    // entry is the model the Session is on.
+    // The context the Session is running: the initial one, then whatever `openNextContext` last
+    // opened (or a never-run Session's model switch re-assembled, see `modelSwitch` below). Its
+    // model entry is the model the Session is on.
     let current = initial;
     // The host's per-request credential resolver for one entry (see
     // AgentAssembly.resolveModelApiKey), when the host supplies one.
@@ -1383,20 +1388,14 @@ export class Agent {
     const bootstrap = async (opts: OpenContextOptions): Promise<{ llm: GenerativeModel }> =>
       openAssembled(current, opts.emit);
 
-    // Assembles the context that follows the running one, on `entry`, and equips the
-    // Environment for it — the toolset (selected for that model's type), the vault, and the
-    // vision answer read_file needs — without opening it. Shared by the rotation opener below
-    // and the never-run Session's model switch, which re-assembles the first context instead.
-    const assembleNext = async (entry: ModelEntry): Promise<AssembledContext> => {
-      const next = await this.assembleContext(spec, entry);
-      current = next;
+    // Equips the Environment for a context: its toolset (selected for its model's type), its
+    // vault, and the vision answer read_file needs.
+    const equip = (context: AssembledContext): void =>
       environment.reconfigure({
-        toolConfig: next.toolConfig,
-        vault: next.vault,
-        visionDescriber: visionDescriberFor(entry) ?? null,
+        toolConfig: context.toolConfig,
+        vault: context.vault,
+        visionDescriber: visionDescriberFor(context.modelEntry) ?? null,
       });
-      return next;
-    };
     // What an assembled context tells the Session and its engine beyond its LLM (see
     // SessionOpenedContext): its meta and engine settings, its vision answer, and the hooks
     // it runs with.
@@ -1407,6 +1406,14 @@ export class Agent {
       modelHasVision: context.modelEntry.vision !== false,
       hooks: this.sessionHooks(subagentRunner, context.hookPackages, spec),
     });
+    // A switch target's entry once the switch is under way (the opener, or the never-run
+    // re-assembly): validated a moment ago, so one that is gone by now is a failure, not the
+    // refusal `modelSwitch.validate` answers with.
+    const switchTargetEntry = async (ref: ModelRef): Promise<ModelEntry> => {
+      const entry = await this.modelEntryOnDisk(ref);
+      if (!entry) throw new Error(modelNotConfigured(ref));
+      return entry;
+    };
 
     // The context that follows a completed compaction: assembled anew from the Agent State
     // as it is now — an edit the model (or the user) made during the old context to
@@ -1417,14 +1424,23 @@ export class Agent {
     // procedure as the first one — the engine yields the published records live and writes
     // them at the head of the rotated Trace file. An Agent State that cannot be assembled (a
     // config that no longer parses) throws: the run fails with that error and the engine
-    // keeps the old context.
+    // keeps the old context. So does this layer when the open itself fails: `current` moves
+    // only once the context is open, and the Environment goes back to the running one.
     const openNextContext = async ({
       emit,
       modelRef,
     }: OpenContextOptions): Promise<SessionOpenedContext> => {
-      const entry = modelRef ? await this.modelEntryFromDisk(modelRef) : current.modelEntry;
-      const next = await assembleNext(entry);
-      const { llm } = await openAssembled(next, emit);
+      const entry = modelRef ? await switchTargetEntry(modelRef) : current.modelEntry;
+      const next = await this.assembleContext(spec, entry);
+      equip(next);
+      let llm: GenerativeModel;
+      try {
+        ({ llm } = await openAssembled(next, emit));
+      } catch (err) {
+        equip(current);
+        throw err;
+      }
+      current = next;
       return { llm, ...contextFacts(next) };
     };
 
@@ -1458,10 +1474,13 @@ export class Agent {
     // The composition layer's half of an in-session model switch (see Session.switchModel):
     // the target is validated exactly as a creation model is — configured on disk, credential
     // present at client construction — before anything is sent or recorded; a Session that
-    // never ran has its first context re-assembled on the target instead of rotated.
+    // never ran has its first context assembled again on the target, which the bootstrap then
+    // opens like any first context.
     const modelSwitch: ModelSwitchSupport = {
       validate: async (ref) => {
-        const entry = await this.modelEntryFromDisk(ref);
+        const entry = await this.modelEntryOnDisk(ref);
+        if (!entry)
+          throw new ModelSwitchRefusedError("model_not_configured", modelNotConfigured(ref));
         try {
           createBareLLM(entry);
         } catch (err) {
@@ -1474,8 +1493,12 @@ export class Agent {
         }
         return { contextWindow: entry.context_window };
       },
-      reassembleInitialContext: async (ref) =>
-        contextFacts(await assembleNext(await this.modelEntryFromDisk(ref))),
+      reassembleInitialContext: async (ref) => {
+        const next = await this.assembleContext(spec, await switchTargetEntry(ref));
+        equip(next);
+        current = next;
+        return contextFacts(next);
+      },
     };
 
     return {

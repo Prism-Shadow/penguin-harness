@@ -49,7 +49,12 @@ import type {
   TokenUsagePayload,
   ToolCallPayload,
 } from "../omnimessage/index.js";
-import { buildContextSummaryText, extractSummary } from "../omnimessage/markers/index.js";
+import {
+  buildContextSummaryText,
+  extractSummary,
+  MARKER_TAGS,
+  startsWithMarker,
+} from "../omnimessage/markers/index.js";
 
 /** Replay result: all the state needed to resume a Session. */
 export interface ResumeResult {
@@ -65,6 +70,14 @@ export interface ResumeResult {
   contextClosed: boolean;
   /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
   pendingSummary?: OmniMessage;
+  /**
+   * The `[context_summary]` this file's context opened with, while no turn has completed since:
+   * the first pending input (so it is in `carryOver` too). Until a turn completes it is this
+   * file's only record of the conversation before the compaction, which a model switch that
+   * discards the context writes again at the head of the next file (see ContextEngine's
+   * `contextSummary`).
+   */
+  openingSummary?: OmniMessage;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
   sessionTokens: TokenCounts;
   /** The request.total from the last token_usage (context usage figure). */
@@ -257,6 +270,16 @@ function isRequestEnd(msg: OmniMessage): msg is OmniMessage<RequestEndPayload> {
 
 function isCompactionEnd(msg: OmniMessage): msg is OmniMessage<CompactionEndPayload> {
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "compaction_end";
+}
+
+/** Whether the message is a `[context_summary]` user text: the first input of a context a summarize compaction opened. */
+function isContextSummary(msg: OmniMessage): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  return (
+    p.type === "text" &&
+    p.role === "user" &&
+    startsWithMarker(p.text ?? "", MARKER_TAGS.contextSummary)
+  );
 }
 
 function toolCallOutputId(msg: OmniMessage): string | null {
@@ -466,10 +489,13 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
     pairingBackfill.push(placeholderFor(id));
   }
 
+  const opening = sessionTurns === 0 ? pending[0] : undefined;
+
   return {
     history,
     carryOver: [...pending, ...pairingBackfill],
     contextClosed: false,
+    ...(opening !== undefined && isContextSummary(opening) ? { openingSummary: opening } : {}),
     sessionTokens,
     lastRequestTotal,
     sessionTurns,
