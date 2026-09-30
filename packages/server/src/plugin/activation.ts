@@ -14,7 +14,8 @@
  * the same directory. Writing one is atomic for a reader: it is built in `plugins/.tmp-<pid>/`,
  * marked complete, renamed to `plugins/<gen>/`, and only then is `current` flipped — by writing a
  * temporary file and renaming it over the pointer. A reader sees the whole old generation or the
- * whole new one, never a half.
+ * whole new one, never a half. `plugins/previous` names the generation `current` named before
+ * its last flip — the one a failed boot points back at, and the other one the sweep keeps.
  *
  * A generation is RESOLVED from the closure (every Project's table for this machine): for each
  * name, the entry a Project pinned (`integrity`), or else the store entries whose version
@@ -26,8 +27,10 @@
  * Activation runs at every App boot — the first, a hot push's, and every re-assembly, which
  * the platform serializes on its one queue (hmr/platform.ts), so two admins' edits never
  * interleave. A boot that fails after activating flips the pointer back to the generation
- * before it. What is in `<root>/plugins/` besides generations (the npm prefix older builds
- * installed into) is neither read nor removed.
+ * before it. After the flip the loader sweeps (plugin/gc.ts): generations other than the
+ * current and the previous one go. What is in `<root>/plugins/` besides generations (the npm
+ * prefix older builds installed into) is retained; its installed modules are adopted
+ * into the store before resolution, so upgrading never drops an installed module.
  *
  * A linked plugin runs from its store entry, so the host SDK it keeps external is lent to it
  * from the running program (`lendHostPackages`).
@@ -54,10 +57,13 @@ import type { StoreIndexEntry, StoreSource } from "./store.js";
 export const PLUGINS_DIR = "plugins";
 /** The pointer file naming the current generation. */
 export const CURRENT_FILE = "current";
+/** The pointer file naming the generation `current` named before its last flip. */
+export const PREVIOUS_FILE = "previous";
 /** A generation's completion marker, written before it is renamed into place. */
 export const COMPLETE_FILE = ".complete";
 
-const GENERATION = /^[0-9a-f]{16}$/;
+/** A generation's directory name. */
+export const GENERATION = /^[0-9a-f]{16}$/;
 
 export function pluginsDir(root: string): string {
   return path.join(root, PLUGINS_DIR);
@@ -78,16 +84,32 @@ export interface GenerationEntry {
   integrity: string;
 }
 
-/** The generation `current` names, when the pointer and a complete generation behind it exist. */
-export function currentGeneration(root: string): string | null {
+/** The generation a pointer file names, whether or not a generation stands behind it. */
+function readPointer(root: string, file: string): string | null {
   let gen: string;
   try {
-    gen = fs.readFileSync(path.join(pluginsDir(root), CURRENT_FILE), "utf8").trim();
+    gen = fs.readFileSync(path.join(pluginsDir(root), file), "utf8").trim();
   } catch {
     return null;
   }
-  if (!GENERATION.test(gen)) return null;
+  return GENERATION.test(gen) ? gen : null;
+}
+
+/** The generation a pointer names, when a complete generation stands behind it. */
+function completeAt(root: string, file: string): string | null {
+  const gen = readPointer(root, file);
+  if (gen === null) return null;
   return fs.existsSync(path.join(pluginsDir(root), gen, COMPLETE_FILE)) ? gen : null;
+}
+
+/** The generation `current` names, when the pointer and a complete generation behind it exist. */
+export function currentGeneration(root: string): string | null {
+  return completeAt(root, CURRENT_FILE);
+}
+
+/** The generation `current` named before its last flip, when it is still complete; else null. */
+export function previousGeneration(root: string): string | null {
+  return completeAt(root, PREVIOUS_FILE);
 }
 
 /** The directory of the current generation, or null. */
@@ -181,17 +203,27 @@ export async function writeGeneration(
   }
 }
 
-/** Points `current` at `gen` (null removes the pointer): a temporary file renamed over it. */
-export async function pointCurrent(root: string, gen: string | null): Promise<void> {
-  const file = path.join(pluginsDir(root), CURRENT_FILE);
-  if (gen === null) {
-    await fsp.rm(file, { force: true });
-    return;
-  }
+/** Writes a pointer file: a temporary file renamed over it. */
+async function writePointer(root: string, name: string, gen: string): Promise<void> {
+  const file = path.join(pluginsDir(root), name);
   await fsp.mkdir(pluginsDir(root), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   await fsp.writeFile(tmp, `${gen}\n`);
   await fsp.rename(tmp, file);
+}
+
+/**
+ * Points `current` at `gen` (null removes the pointer), after recording the generation it
+ * named until now in `previous` — so a flip back is a flip like any other.
+ */
+export async function pointCurrent(root: string, gen: string | null): Promise<void> {
+  if (gen === null) {
+    await fsp.rm(path.join(pluginsDir(root), CURRENT_FILE), { force: true });
+    return;
+  }
+  const before = readPointer(root, CURRENT_FILE);
+  if (before !== null && before !== gen) await writePointer(root, PREVIOUS_FILE, before);
+  await writePointer(root, CURRENT_FILE, gen);
 }
 
 /** `1.2.3-rc.1` as numbers and a prerelease tag; null when it is not a version. */

@@ -31,6 +31,10 @@
  *   - registry  a package fetched by npm into `.staging/<pid>/`, packed, hashed, compared with
  *               the integrity its index entry names, stored, and the staging directory removed.
  *
+ * Every write and the sweep take turns on one queue (`onStoreQueue`): a fetch never lands an
+ * entry in a directory the sweep is emptying, and the sweep never removes a content a write
+ * has just found already stored. What the sweep keeps and removes is plugin/gc.ts.
+ *
  * The store is not a lookup location. Nothing resolves a module from it by name: the process
  * loads from the current generation under `<root>/plugins/`, whose `node_modules/<name>` links
  * to an entry's `package/` (plugin/activation.ts). Its own `index.json` is rebuilt
@@ -129,7 +133,7 @@ function isStored(dir: string): boolean {
 
 let stagingSeq = 0;
 /** A fresh directory under `.staging/<pid>/`. */
-async function stagingDir(root: string, label: string): Promise<string> {
+export async function stagingDir(root: string, label: string): Promise<string> {
   stagingSeq += 1;
   const dir = path.join(
     pluginStoreDir(root),
@@ -143,7 +147,7 @@ async function stagingDir(root: string, label: string): Promise<string> {
 }
 
 /** Removes `.staging/<pid>/` once nothing of this process is left in it. */
-async function tidyStaging(root: string): Promise<void> {
+export async function tidyStaging(root: string): Promise<void> {
   const mine = path.join(pluginStoreDir(root), STAGING_DIR, String(process.pid));
   try {
     await fsp.rmdir(mine);
@@ -268,10 +272,19 @@ function nameOf(specifier: string): string {
  * its index entry names) when there is one, and stored; the staging directory is removed
  * whatever happened. npm's own lock of the install is the entry's lock.
  */
-export async function fetchIntoStore(
+export function fetchIntoStore(
   root: string,
   specifier: string,
   { expected, install = npmInstall }: { expected?: string; install?: RegistryInstall } = {},
+): Promise<StoredEntry> {
+  return onStoreQueue(() => fetchNow(root, specifier, expected, install));
+}
+
+async function fetchNow(
+  root: string,
+  specifier: string,
+  expected: string | undefined,
+  install: RegistryInstall,
 ): Promise<StoredEntry> {
   const prefix = await stagingDir(root, "fetch");
   try {
@@ -382,13 +395,28 @@ export function storeSources(
 const imported = new Map<string, StoredEntry[]>();
 let chain: Promise<unknown> = Promise.resolve();
 
+/**
+ * Runs `fn` after every store write and sweep queued before it, and before any queued after:
+ * the one order the store's writers and its sweep keep within the process. A failure is the
+ * caller's; the queue goes on.
+ */
+export function onStoreQueue<T>(fn: () => Promise<T>): Promise<T> {
+  const next = chain.then(fn);
+  chain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
 const importKey = (root: string, dir: string) => `${root}\0${path.resolve(dir)}`;
 
 /**
  * Brings the store up to date with the prefixes of this boot (`storeSources`), each once per
- * process, then rebuilds its index. Serialized within the process, best effort: a failure is
- * logged and never fails the boot — a package that did not reach the store is reported by the
- * activation that cannot find it (plugin/activation.ts).
+ * process — and again once the sweep has removed an entry one of them yielded — then rebuilds
+ * its index. On the store's queue, best effort: a failure is logged and never fails the boot —
+ * a package that did not reach the store is reported by the activation that cannot find it
+ * (plugin/activation.ts).
  */
 export function syncPluginStore(
   root: string,
@@ -399,7 +427,11 @@ export function syncPluginStore(
     let wrote = false;
     for (const { dir, source } of sources) {
       const key = importKey(root, dir);
-      if (imported.has(key) || !fs.existsSync(path.join(dir, "package.json"))) continue;
+      // A shipped package no generation holds is swept like any other entry (plugin/gc.ts);
+      // the prefix still ships it, so it is stored again the next time it is asked for.
+      const held = imported.get(key);
+      if (held !== undefined && held.every((e) => isStored(e.dir))) continue;
+      if (!fs.existsSync(path.join(dir, "package.json"))) continue;
       const { stored, failed } = await importPrefix(root, dir, source);
       imported.set(key, stored);
       wrote ||= stored.length > 0;
@@ -407,11 +439,9 @@ export function syncPluginStore(
     }
     if (wrote) await rebuildStoreIndex(root);
   };
-  const next = chain.then(run).catch((err: unknown) => {
+  return onStoreQueue(run).catch((err: unknown) => {
     log(`[plugin-store] ${err instanceof Error ? err.message : String(err)}`);
   });
-  chain = next;
-  return next;
 }
 
 /**

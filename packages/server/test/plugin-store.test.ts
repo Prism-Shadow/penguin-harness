@@ -307,7 +307,7 @@ describe("plugin store", () => {
     expect(await fs.readdir(path.join(pluginStoreDir(root), ".staging"))).toEqual([]);
   });
 
-  it("syncs a boot's prefixes once each, skips a missing one, and logs a failure instead of throwing", async () => {
+  it("syncs a boot's prefixes once each, again when an entry they yielded is gone, and logs a failure instead of throwing", async () => {
     const good = await prefix(path.join(dir, "a"));
     const broken = path.join(dir, "broken");
     await write(broken, {
@@ -330,9 +330,15 @@ describe("plugin store", () => {
     ).toEqual([row]);
     // Already imported by this process: a second boot of the same prefix does not copy it again.
     const entry = storeEntryDir(root, row!.name, row!.version, row!.integrity);
+    const marker = path.join(entry, ".stored");
+    const written = (await fs.stat(marker)).mtimeMs;
+    await syncPluginStore(root, [{ dir: good, source: "builtin" }], (m) => logged.push(m));
+    expect((await fs.stat(marker)).mtimeMs).toBe(written);
+    // Unless an entry it yielded is gone (the sweep took it): then it is stored again.
     await fs.rm(entry, { recursive: true });
     await syncPluginStore(root, [{ dir: good, source: "builtin" }], (m) => logged.push(m));
-    expect(await exists(entry)).toBe(false);
+    expect(await exists(marker)).toBe(true);
+    expect(logged).toHaveLength(1);
   });
 
   it("names the push's unpacked prefix and the installation's as a boot's sources", () => {
