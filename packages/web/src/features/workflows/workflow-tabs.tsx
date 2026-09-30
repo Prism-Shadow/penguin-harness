@@ -95,7 +95,7 @@ const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 const TAB_BASE =
   "relative h-9 shrink-0 border-b-2 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
-const TAB_ACTIVE = "border-[var(--accent-bg)] font-medium text-gray-900 dark:text-gray-100";
+const TAB_ACTIVE = "border-accent font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 

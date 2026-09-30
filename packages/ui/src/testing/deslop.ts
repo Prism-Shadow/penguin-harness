@@ -1143,10 +1143,22 @@ const cssUppercaseCheck: Check = (analysis) =>
       : [],
   );
 
-/** Rule 16: a hook recipe (`.ui-*`) setting a mono `font-family`. */
+/**
+ * Marks a recipe may set in the mono face because they are technical on purpose (user decision,
+ * 2026-09-30, when Console's chrome moved to a sans and kept mono for these alone): a
+ * `.ui-activity` step's label and progress bar, the transcript's capitals and its block bar; a
+ * `.ui-notice` tag drawn in `::before`, a console status line's `[ OK ]`; and the text of a
+ * `.ui-chart`, a plot's axis labels. A detail slot, a frame's head or a notice's message is
+ * not one of them.
+ */
+const MONO_MARKS =
+  /\.ui-activity\b[^,]*\[data-slot="(?:label|progress)"\]|\.ui-notice\b[^,\s]*::before|\.ui-chart\b[^,]*\btext\b/;
+
+/** Rule 16: a hook recipe (`.ui-*`) setting a mono `font-family`, off the marks above. */
 const cssHookMonoCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) =>
     /\.ui-[a-z]/.test(fullSelector(rule)) &&
+    !MONO_MARKS.test(fullSelector(rule)) &&
     decl.name === "font-family" &&
     /--ui-font-mono|monospace/.test(decl.value)
       ? [{ line: decl.line, found: `${rule.selector} { font-family: ${decl.value} }` }]

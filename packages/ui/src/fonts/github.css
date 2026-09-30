@@ -4,8 +4,8 @@
  * @fontsource-variable/jetbrains-mono (OFL-1.1).
  *
  * `themes/github.css` puts them first in its sans and mono stacks (Primer's CJK face, Noto Sans
- * SC, is `cjk.css`); Frost names the same JetBrains Mono faces, declared once here. The `url()`s
- * are relative to this file on purpose — see `index.css`.
+ * SC, is `cjk.css`); Frost and Console name the same JetBrains Mono faces, declared once here.
+ * The `url()`s are relative to this file on purpose — see `index.css`.
  */
 
 @font-face {

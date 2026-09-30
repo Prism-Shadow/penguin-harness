@@ -18,10 +18,10 @@
  * | --------------- | ---------------------------------- | ---------------------- | ----------------------------- | ---------------------------- |
  * | Primer `github` | Mona Sans Variable                 | = sans                 | JetBrains Mono Variable       | Noto Sans SC Variable        |
  * | Frost `modern`  | MiSans 400 / 500                   | = sans                 | JetBrains Mono Variable       | MiSans (the same family)     |
- * | Console `geek`  | IBM Plex Sans Variable             | Commit Mono 400 / 700  | Commit Mono 400 / 700         | Noto Sans SC Variable        |
+ * | Console `geek`  | IBM Plex Sans Variable             | = sans                 | JetBrains Mono Variable       | Noto Sans SC Variable        |
  *
- * The display face is the chrome face in every theme (Console's h1 is the mono bold); IBM Plex
- * Sans Condensed stays declared in `geek.css` until its dependency is dropped.
+ * The display face is the chrome face in every theme (Console's h1 is the Plex Sans bold); IBM
+ * Plex Sans Condensed stays declared in `geek.css` until its dependency is dropped.
  *
  * Every face but MiSans is SIL Open Font License 1.1 and arrives through a fontsource package,
  * whose licence text `scripts/sync-font-licenses.mjs` mirrors into `LICENSES/`. MiSans has no

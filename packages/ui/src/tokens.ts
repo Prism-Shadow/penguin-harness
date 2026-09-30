@@ -25,11 +25,11 @@
  *
  * Two faces, not one: `--ui-font-ui` is the chrome's face (navigation, controls, labels, headings,
  * badges, tables — `body` reads it), `--ui-font-sans` the reading face (message text, prose, the
- * composer's input, which opt in with `font-sans`). Primer and Frost point both at one family;
- * Console sets the chrome in a monospaced face and keeps reading text in a sans. Every sans
- * stack reads `--ui-font-cjk` for Han, so the user's font pairing (boot.ts, `data-font-latin` /
- * `data-font-cjk`, resolved in `theme.css`'s `ui-font` layer) replaces the sans and the CJK face
- * under any theme and leaves the mono face alone.
+ * composer's input, which opt in with `font-sans`). Every theme points the chrome at its sans
+ * today (Console's chrome was monospaced until 2026-09-30); the two names stay so a theme can
+ * set them apart. Every sans stack reads `--ui-font-cjk` for Han, so the user's font pairing
+ * (boot.ts, `data-font-latin` / `data-font-cjk`, resolved in `theme.css`'s `ui-font` layer)
+ * replaces the sans and the CJK face under any theme and leaves the mono face alone.
  *
  * Dark mode is calmer than a white-on-black inversion, but not dim: `--ui-fg` is the body ink
  * at roughly 84% white (about 12:1 on the page surfaces, never under 11:1 — the owner found a
@@ -131,10 +131,11 @@ export const ACCENT_PRESET_IDS: readonly AccentPreset[] = [
  * mode, spelled as the theme file spells it, so a picker can paint the "theme's own" swatch
  * without a stylesheet probe (a test holds each value equal to the CSS). Primer's and Console's
  * are monochrome — the ink in light, a near-white in dark — so that swatch shows black or white
- * rather than a hue; Frost's is its green.
+ * rather than a hue; Primer's are zero-chroma neutrals (2026-09-30), not the slate of Tailwind's
+ * stock gray. Frost's is its green.
  */
 export const THEME_OWN_ACCENTS: OwnAccents = {
-  github: { light: "#111827", dark: "#f3f4f6" },
+  github: { light: "#171717", dark: "#f5f5f5" },
   modern: { light: "#006838", dark: "#4aa45c" },
   geek: { light: "#1d1d1f", dark: "#f4f2f2" },
 };

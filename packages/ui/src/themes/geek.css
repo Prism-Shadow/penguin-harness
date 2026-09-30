@@ -1,17 +1,17 @@
 /**
- * Console (`geek`) — mono chrome, as plain as a terminal. Navigation, controls, labels,
- * headings, badges and tables are set in Commit Mono; only reading text (message bubbles,
- * assistant prose, the composer's input) stays in IBM Plex Sans. Paper-white light and warm
- * near-black dark with no fill on a card or a row (a card is the page), one accent — black and
- * white by default, the interface orange and five terminal hues as presets — square corners
- * everywhere, no shadow anywhere, hairlines only where they carry structure, a
+ * Console (`geek`) — as plain as a terminal. The interface and its reading text are set in IBM
+ * Plex Sans; JetBrains Mono is kept for code and for the marks that are technical on purpose —
+ * the status-line tags, a step's label and block bar, a chart's axis labels. Paper-white light
+ * and warm near-black dark with no fill on a card or a row (a card is the page), one accent —
+ * black and white by default, the interface orange and five terminal hues as presets — square
+ * corners everywhere, no shadow anywhere, hairlines only where they carry structure, a
  * ruled full-bleed window, a standalone frame a plain hairline box, the selected navigation row
  * set in the bold cut, a block caret, motion that jumps in steps, and the agent's work rendered
  * as a transcript — `└` steps, mono capitals, a hatched block bar. References: opencode.ai (the
- * mono chrome, the paper and the warm black, the ruled column, the underline tabs, the calm
- * dark), e2b.dev (the orange, the square shapes, the stepped signals), claude.dev's blog (the
- * tree, the progress line, the near-boxless dark) and a Linux console (the owner's ask of
- * 2026-09-29: as minimal as possible, no decoration).
+ * paper and the warm black, the ruled column, the underline tabs, the calm dark), e2b.dev (the
+ * orange, the square shapes, the stepped signals), claude.dev's blog (the tree, the progress
+ * line, the near-boxless dark) and a Linux console (the owner's ask of 2026-09-29: as minimal as
+ * possible, no decoration).
  *
  * Status of each group:
  * - Light is opencode's paper (`#fdfcfc` page, `rgb(29 29 31)` ink, `rgb(100 98 98)` muted),
@@ -29,17 +29,21 @@
  *   ruled word, never a coloured shape), tuned so every tone reads at 4.5:1 as text on the page
  *   and 3:1 as a mark on every surface; the line and the solid fill of a tone are its ink,
  *   declared once; dark danger is lifted to `#ff5252` so it reads on the warm black.
- * - Fonts: Commit Mono (400 / 700, the face opencode and e2b.dev ship) for the chrome and for
- *   code — one stack, the chrome face reads the data face — IBM Plex Sans for reading, Noto Sans
- *   SC behind both for Han (`fonts/geek.css`). The Plex Sans Condensed face the old uppercase h1
- *   used is still declared and no longer named here; drop its dependency with the next install.
+ * - Fonts (owner's call, 2026-09-30): IBM Plex Sans is the main face — navigation, controls,
+ *   labels, headings and reading text alike — and JetBrains Mono the mono face, with Noto Sans
+ *   SC behind both for Han (`fonts/geek.css`; JetBrains Mono is declared once for every theme in
+ *   `fonts/github.css`). The mono face is kept for code and for the few marks that are technical
+ *   on purpose, each named in its recipe below; everywhere else the sans takes over from the
+ *   monospaced chrome (Commit Mono) the theme had before. The Plex Sans Condensed face the old
+ *   uppercase h1 used is still declared and no longer named here; drop its dependency with the
+ *   next install.
  * - Radius is 0 everywhere, badges, counters, avatars and controls included (`--ui-radius-pill`
  *   and `--ui-radius-control` are 0). State dots and the switch knob stay round and the switch
  *   track stays a pill: those components use Tailwind's literal `rounded-full`, which no token
  *   re-points.
  * - Density and type are Console's own: a 0.225rem space unit (10% under Tailwind's 0.25rem, so
- *   every `h-8` and `px-2` shrinks with it) and a 0.8125rem body rung. Medium weight is 400 —
- *   Commit Mono has no 500 — so emphasis in the chrome is colour, and strong is the 700 cut.
+ *   every `h-8` and `px-2` shrinks with it) and a 0.8125rem body rung. Medium weight is 400 and
+ *   strong the 700 cut: the recipes emphasise with colour, not with a middle weight.
  * - Lines and fills (2026-09-29): a rule is drawn only where it carries structure, and a fill
  *   nowhere but a hover. The window's columns are ruled off each other and a standalone frame
  *   keeps a plain hairline box (the earlier TUI head — the title standing in the top rule — was
@@ -220,10 +224,9 @@
     --ui-shell-radius: 0px;
     --ui-shell-shadow: 0 0 #0000;
 
-    /* Structure: a tree indents two characters of the mono face per level (1rem at the 13px
-       body) from the row inset, and its connector rules take the emphasis line so `└` reads on
-       paper and on the warm black alike; a field is a table row with a 10rem label column and
-       three quarters of a rem before the value. */
+    /* Structure: a tree indents 1rem per level from the row inset, and its connector rules take
+       the emphasis line so `└` reads on paper and on the warm black alike; a field is a table row
+       with a 10rem label column and three quarters of a rem before the value. */
     --ui-tree-inset: 0.625rem;
     --ui-tree-indent: 1rem;
     --ui-tree-guide: var(--ui-line-emphasis);
@@ -238,21 +241,21 @@
     --ui-switch-knob-line: rgb(0 0 0 / 0.1);
 
     /* Typography — families. Latin face first, so ASCII always renders in the theme's face; the
-       chrome is the mono face — one stack, read by both names — with Noto behind it for Han, and
-       reading text is Plex Sans. */
+       chrome and reading text share Plex Sans — the chrome reads the sans by name, so a chosen
+       Latin face reaches it as in every theme — with Noto behind it for Han, and JetBrains Mono
+       is the code face. */
     --ui-font-cjk: "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
     --ui-font-sans:
       "IBM Plex Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
     --ui-font-mono:
-      "Commit Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+      "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
       var(--ui-font-cjk), monospace;
-    --ui-font-ui: var(--ui-font-mono);
+    --ui-font-ui: var(--ui-font-sans);
     --ui-font-display: var(--ui-font-ui);
 
-    /* Typography — scale and roles: a 13px body at the 16px root (Commit Mono is wide), 12px
-       small and caption, 16px reading text; headings in the chrome face at 700, sentence case,
-       no tracking — mono needs none — and the h6 group label uppercase with letter-spacing, the
-       one eyebrow rung. */
+    /* Typography — scale and roles: a 13px body at the 16px root, 12px small and caption, 16px
+       reading text; headings in the chrome face at 700, sentence case, no tracking, and the h6
+       group label uppercase with letter-spacing, the one eyebrow rung. */
     --ui-text-body-size: 0.8125rem;
     --ui-text-body-lh: 1.5;
     --ui-text-small-size: 0.75rem;
@@ -495,8 +498,8 @@
     color: var(--ui-fg-muted);
   }
 
-  /* The page's one display title: the chrome face at its bold cut, sentence case, no tracking —
-     opencode's h1. Han glyphs need a little more leading than the Latin bold. */
+  /* The page's one display title: the chrome face at its bold cut, sentence case, no tracking.
+     Han glyphs need a little more leading than the Latin bold. */
   :root[data-theme="geek"] .ui-display {
     font-family: var(--ui-font-ui);
     font-weight: 700;
@@ -593,7 +596,10 @@
   }
   /* The selected navigation row — a nav entry or the open session — is marked quietly: the
      bold cut over the host's own selected fill, no glyph (a first pass hung an accent `>` before
-     it; the owner asked for it to go). Mono bold keeps the row's advance, so nothing moves. */
+     it; the owner asked for it to go). The bold cut is wider than the regular, but a row's label
+     starts the row and is the last thing in its flow (a trailing mark is positioned), so it
+     grows only toward the row's free end, and a label that fills the row truncates a little
+     earlier; nothing else in the row moves. */
   :root[data-theme="geek"] .ui-shell [data-slot="nav"] [aria-current="page"] {
     font-weight: var(--ui-weight-strong);
   }
@@ -680,15 +686,16 @@
 
   /* Work in progress, as a transcript (claude.dev's tree and progress line): the row is no box —
      no border, no corner, no shadow, and the rule a list draws above it goes with the border —
-     its label is the chrome face at the small rung, uppercase and tracked like an eyebrow, muted
+     its label is the mono face at the small rung, uppercase and tracked like an eyebrow, muted
      once the step is done and the body ink while it runs (the danger ink when it failed), the
-     detail (a path, an argument preview, a duration) is muted, and while the step runs the
-     progress slot draws a hatched block bar: a dotted track of `░` under a shaded fill of `▓`
-     that advances a block at a time and starts over — indeterminate, because a step has no
-     percentage. The host hides the slot; the recipe shows it. A step in a work group hangs off
-     the `└` its tree row draws, so no connector is added here. The slots are found anywhere
-     inside the row (a card nests them in its own button). Under reduced motion the bar holds
-     one fill. */
+     detail (a path, an argument preview, a duration) is muted in the host's own face (the host
+     sets a duration or a step count in mono and a description in the sans), and while the step
+     runs the progress slot draws a hatched block bar in the mono face: a dotted track of `░`
+     under a shaded fill of `▓` that advances a block at a time and starts over — indeterminate,
+     because a step has no percentage. The host hides the slot; the recipe shows it. A step in a
+     work group hangs off the `└` its tree row draws, so no connector is added here. The slots
+     are found anywhere inside the row (a card nests them in its own button). Under reduced
+     motion the bar holds one fill. */
   :root[data-theme="geek"] .ui-activity {
     border-color: transparent;
     border-radius: 0;
@@ -711,7 +718,7 @@
     color: var(--ui-fg);
   }
   :root[data-theme="geek"] .ui-activity [data-slot="label"] {
-    font-family: var(--ui-font-ui);
+    font-family: var(--ui-font-mono);
     font-size: var(--ui-text-small-size);
     font-weight: var(--ui-weight-body);
     letter-spacing: var(--ui-tracking-label);
@@ -725,7 +732,6 @@
     color: var(--ui-tone-danger-fg);
   }
   :root[data-theme="geek"] .ui-activity [data-slot="detail"] {
-    font-family: var(--ui-font-ui);
     font-size: var(--ui-text-small-size);
     color: var(--ui-fg-muted);
   }
@@ -733,7 +739,7 @@
     position: relative;
     display: inline-block;
     vertical-align: middle;
-    font-family: var(--ui-font-ui);
+    font-family: var(--ui-font-mono);
     font-size: var(--ui-text-small-size);
     line-height: 1;
     letter-spacing: 0;
@@ -760,13 +766,15 @@
   }
 
   /* A notice is a status line, the way a console prints one: a bracketed tone tag in the tone's
-     ink — `[ OK ]`, `[WARN]`, `[FAIL]` — in the chrome face at the start, the message beside it
+     ink — `[ OK ]`, `[WARN]`, `[FAIL]` — in the mono face at the start, the message beside it
      in the reading face, nothing round it, painted in the page's own colour (quiet on the page,
      opaque where a toast floats over content). The tag stands out of the flow — absolutely at
      the row's inset, the host padded for it — because a host lays its body and actions out as a
-     flex row, and a tag in the flow would be a third item pushing the body to the middle. A
-     toast is the same line inside one hairline, so it has an edge where it floats. (Two earlier
-     passes — a coloured left rule, then a solid tone block — were decoration and went.) */
+     flex row, and a tag in the flow would be a third item pushing the body to the middle. Every
+     tag is six characters, so in the mono face all five are one width, and the fixed 4rem
+     column holds each of them with room to spare. A toast is the same line inside one hairline,
+     so it has an edge where it floats. (Two earlier passes — a coloured left rule, then a solid
+     tone block — were decoration and went.) */
   :root[data-theme="geek"] .ui-notice {
     position: relative;
     padding-inline-start: calc(4rem + var(--ui-row-px));
@@ -792,7 +800,7 @@
     display: flex;
     align-items: center;
     color: var(--_tone-fg);
-    font-family: var(--ui-font-ui);
+    font-family: var(--ui-font-mono);
     font-size: var(--ui-text-small-size);
     font-weight: var(--ui-weight-strong);
   }
@@ -810,7 +818,7 @@
   }
 
   /* Charts are drawn like a terminal plot: a dashed grid on crisp pixels, axis labels in the
-     chrome face as tracked capitals, 1px lines with hard joins and ends, square points, and
+     mono face as tracked capitals, 1px lines with hard joins and ends, square points, and
      thin solid bars outlined in the ink (the tokens say so; an earlier stripe hatch was
      decoration and went). The chart primitives write every colour, width, radius and opacity
      the tokens hold; the recipe owns only what a token cannot: dashes, joins and caps, pixel
@@ -833,7 +841,7 @@
   /* The axis part is both the tick text and the axis-break marks: the face rules reach the text
      alone, so a line never picks up a font. */
   :root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"]) {
-    font-family: var(--ui-font-ui);
+    font-family: var(--ui-font-mono);
     letter-spacing: var(--ui-tracking-label);
     text-transform: uppercase;
   }

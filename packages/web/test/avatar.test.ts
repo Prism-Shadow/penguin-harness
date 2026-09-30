@@ -112,9 +112,10 @@ function tileOver(h: number, surface: [number, number, number]): [number, number
 const hexRgb = (s: string) =>
   [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16) / 255) as [number, number, number];
 
-// App surfaces the tile sits on: light = white / gray-50 rows / gray-100 hover;
-// dark = the default theme's true-neutral overrides (penguin-ui themes/github.css: gray-900/800/700).
-const LIGHT_SURFACES = ["#ffffff", "#f9fafb", "#f3f4f6"].map(hexRgb);
+// App surfaces the tile sits on: light = white / gray-50 rows / gray-100 hover, which the
+// default theme bridges to Tailwind's zero-chroma neutral scale (penguin-ui themes/github.css);
+// dark = that theme's true-neutral overrides (gray-900/800/700).
+const LIGHT_SURFACES = ["#ffffff", "#fafafa", "#f5f5f5"].map(hexRgb);
 const DARK_SURFACES = ["#0d0d0d", "#1f1f1f", "#303030"].map(hexRgb);
 
 /** Saturation/lightness actually emitted by avatarTile (parsed so this test can't drift from the implementation). */

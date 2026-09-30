@@ -6,7 +6,7 @@
 
 [中文版](2026-09-30-primer-typeface.zh.md)
 
-Primer (通用), the default theme, had set its text in the platform's system fonts. It switched to the typefaces GitHub Primer uses: Mona Sans for Latin text, JetBrains Mono for code and Noto Sans SC as its CJK face, each placed ahead of the system fonts it used before, which stay behind them as the fallback. Only the typefaces changed; Primer's colours, text sizes and spacing stayed as they were.
+Primer (通用), the default theme, had set its text in the platform's system fonts. It switched to the typefaces GitHub Primer uses: Mona Sans for Latin text, JetBrains Mono for code and Noto Sans SC as its CJK face, each placed ahead of the system fonts it used before, which stay behind them as the fallback. Primer's text sizes and spacing stayed as they were. Its grays changed separately, in [Primer's blacks, whites and grays become pure neutral](2026-09-30-primer-neutral-grays.md).
 
 ## Details
 

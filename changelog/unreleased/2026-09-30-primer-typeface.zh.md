@@ -6,7 +6,7 @@
 
 [English](2026-09-30-primer-typeface.md)
 
-默认主题通用（Primer）此前使用平台的系统字体，现改用 GitHub Primer 所用的字体：英文为 Mona Sans，代码为 JetBrains Mono，CJK 字体为 Noto Sans SC；三者各自排在原先的系统字体之前，系统字体留作兜底。改动只涉及字体，通用主题的颜色、字号与间距均保持不变。
+默认主题通用（Primer）此前使用平台的系统字体，现改用 GitHub Primer 所用的字体：英文为 Mona Sans，代码为 JetBrains Mono，CJK 字体为 Noto Sans SC；三者各自排在原先的系统字体之前，系统字体留作兜底。通用主题的字号与间距保持不变；灰阶另行调整，见[通用主题（Primer）的黑白灰改为纯中性色](2026-09-30-primer-neutral-grays.zh.md)。
 
 ## 细节
 
