@@ -37,15 +37,18 @@ describe("PROTOCOL_CLIENT_TYPES", () => {
 });
 
 describe("isGenericProtocolClientType", () => {
-  it("accepts the protocol trio, the bare openai alias, and empty; rejects vendor-pinned types", () => {
+  it("accepts the protocol trio, the bare openai alias, and empty; rejects every other client type", () => {
     expect(isGenericProtocolClientType("openai-responses")).toBe(true);
     expect(isGenericProtocolClientType("ant-messages")).toBe(true);
     expect(isGenericProtocolClientType("openai-chat")).toBe(true);
     expect(isGenericProtocolClientType("openai")).toBe(true);
     expect(isGenericProtocolClientType("")).toBe(true);
     expect(isGenericProtocolClientType(" OpenAI-Responses ")).toBe(true);
-    expect(isGenericProtocolClientType("deepseek-v4")).toBe(false);
-    expect(isGenericProtocolClientType("claude-4-8")).toBe(false);
+    // Official clients, compatible clients outside the trio, and a pre-0.5.0 vendor name.
+    expect(isGenericProtocolClientType("deepseek-official")).toBe(false);
+    expect(isGenericProtocolClientType("anthropic-official")).toBe(false);
+    expect(isGenericProtocolClientType("gemini-generate-content")).toBe(false);
+    expect(isGenericProtocolClientType("openai-chat-vllm-adapter")).toBe(false);
     expect(isGenericProtocolClientType("minimax-m3")).toBe(false);
   });
 });
@@ -100,7 +103,7 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
 
   it("still pins vendor-specific or empty types to openai-chat when moving to Custom, and never touches other groups", () => {
     expect(clientTypeAfterProviderChange("custom", "")).toBe("openai-chat");
-    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai-chat");
+    expect(clientTypeAfterProviderChange("custom", "anthropic-official")).toBe("openai-chat");
     expect(clientTypeAfterProviderChange("google", "openai")).toBe("openai");
     expect(clientTypeAfterProviderChange("my-group", "ant-messages")).toBe("ant-messages");
   });
@@ -111,7 +114,9 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
     expect(clientTypeAfterProviderChange("vllm", "")).toBe("openai-chat-vllm-adapter");
     expect(clientTypeAfterProviderChange("vllm", "openai-chat")).toBe("openai-chat-vllm-adapter");
     expect(clientTypeAfterProviderChange("vllm", "ant-messages")).toBe("openai-chat-vllm-adapter");
-    expect(clientTypeAfterProviderChange("vllm", "deepseek-v4")).toBe("openai-chat-vllm-adapter");
+    expect(clientTypeAfterProviderChange("vllm", "deepseek-official")).toBe(
+      "openai-chat-vllm-adapter",
+    );
     // A gateway can pin too: OpenRouter speaks the Responses API for every upstream it
     // serves, so an entry dragged in is rewritten off whatever it carried before.
     expect(clientTypeAfterProviderChange("openrouter", "")).toBe("openai-responses");
@@ -212,9 +217,11 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
   it("names the vendor's variable for a first-party row, and the relay's own for Penguin Go", () => {
     expect(envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "")).toBe("ANTHROPIC_API_KEY");
     expect(envHintKeyFor("google", "gemini-3.1-pro", "", "")).toBe("GEMINI_API_KEY");
-    expect(
-      envHintKeyFor("deepseek", "deepseek-flash", "deepseek-v4", "https://api.deepseek.com"),
-    ).toBe("DEEPSEEK_API_KEY");
+    expect(envHintKeyFor("deepseek", "deepseek-flash", "", "")).toBe("DEEPSEEK_API_KEY");
+    // A vendor row that carries the vendor's own endpoint keeps the vendor's key.
+    expect(envHintKeyFor("deepseek", "deepseek-flash", "", "https://api.deepseek.com")).toBe(
+      "DEEPSEEK_API_KEY",
+    );
     // A custom row pointed at the vendor's own endpoint gets the vendor's key: it goes to the vendor.
     expect(envHintKeyFor("custom", "gpt-5.6", "openai-chat", "https://api.openai.com/v1")).toBe(
       "OPENAI_API_KEY",
@@ -223,7 +230,7 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
       envHintKeyFor(
         "penguin-go",
         "gemini-3.8-flash",
-        "gemini-3.8",
+        "gemini-generate-content",
         "https://token.penguin.ooo/api",
       ),
     ).toBe("PENGUIN_GO_API_KEY");
@@ -256,7 +263,12 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
       ["anthropic", "claude-sonnet-4-6", "", ""],
       ["anthropic", "claude-sonnet-4-6", "", "https://proxy.example/anthropic"],
       ["tokendance", "glm-5.3", "openai-chat", "https://tokendance.space/gateway/v1"],
-      ["penguin-go", "gemini-3.8-flash", "gemini-3.8", "https://token.penguin.ooo/api"],
+      [
+        "penguin-go",
+        "gemini-3.8-flash",
+        "gemini-generate-content",
+        "https://token.penguin.ooo/api",
+      ],
     ];
     for (const [provider, modelId, clientType, baseUrl] of cases) {
       expect(envHintKeyFor(provider, modelId, clientType, baseUrl), `${provider}/${modelId}`).toBe(
@@ -277,8 +289,9 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
 
 describe("protocolForPersist (an empty protocol must never reach the config)", () => {
   it("falls back to openai-chat for a custom-like entry that still has none", () => {
-    // AutoLLMClient THROWS on an unmatched client type, so persisting "" would save a
-    // model that cannot start.
+    // AutoLLMClient routes an entry with no client type by the vendor family its id begins
+    // with and THROWS for an id of no known family, so persisting "" would save a model that
+    // cannot start (or one sent to a vendor's official client instead of the endpoint).
     expect(protocolForPersist("custom", "")).toBe("openai-chat");
     expect(protocolForPersist("my-group", "   ")).toBe("openai-chat");
   });
@@ -296,7 +309,7 @@ describe("protocolForPersist (an empty protocol must never reach the config)", (
     expect(protocolForPersist("vllm", "openai-chat")).toBe("openai-chat");
   });
 
-  it("leaves preset / vendor groups empty so AgentHub still infers from the model id", () => {
+  it("leaves preset / vendor groups empty so MMSP still routes by the model id's vendor family", () => {
     expect(protocolForPersist("openai", "")).toBe("");
     expect(protocolForPersist("anthropic", "")).toBe("");
     expect(protocolForPersist("google", "")).toBe("");
@@ -332,7 +345,7 @@ describe("rowToEntry (the persistence funnel)", () => {
     expect(rowToEntry(row({ clientType: "ant-messages" })).clientType).toBe("ant-messages");
   });
 
-  it("omits clientType for a vendor group so AgentHub keeps inferring it", () => {
+  it("omits clientType for a vendor group so MMSP keeps routing it by the id", () => {
     expect(rowToEntry(row({ provider: "openai", modelId: "gpt-5.6" })).clientType).toBeUndefined();
   });
 
@@ -394,7 +407,7 @@ describe("detection copy", () => {
 });
 
 describe("protocolPathForModel (generic protocol client types)", () => {
-  it("maps each protocol client to the path its AgentHub client appends", () => {
+  it("maps each protocol client to the path its MMSP client appends", () => {
     expect(protocolPathForModel("custom", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
     expect(protocolPathForModel("custom", "openai-chat")).toBe("/chat/completions");
@@ -402,8 +415,8 @@ describe("protocolPathForModel (generic protocol client types)", () => {
     expect(protocolPathForModel("my-group", "openai")).toBe("/chat/completions");
   });
 
-  it("keeps the legacy explicit-type and group fallbacks intact", () => {
-    expect(protocolPathForModel("custom", "claude-4-8")).toBe("/v1/messages");
+  it("falls back to the group's path for no client type, or one MMSP does not know", () => {
+    expect(protocolPathForModel("custom", "claude-4-8")).toBe("/chat/completions");
     expect(protocolPathForModel("openai", "")).toBe("/responses");
     expect(protocolPathForModel("anthropic", "")).toBe("/v1/messages");
     expect(protocolPathForModel("custom", "")).toBe("/chat/completions");

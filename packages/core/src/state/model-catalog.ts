@@ -2867,9 +2867,9 @@ export function providerClientType(providerId: string): string | undefined {
  *
  * What distinguishes it is that nothing in it decides a protocol: its entries persist no
  * `client_type`, so MMSP places every one of them by the spelling of the upstream model id
- * alone. That makes the group's contents a closed set — the ids this catalog ships, plus
- * the few whose preset pins a protocol because their own id would not route — and an id
- * outside it cannot be started at all, whatever else is configured on the entry. Every
+ * alone. That bounds the group's contents to the ids that begin with a vendor family MMSP
+ * knows — the ids this catalog ships and any other of the same family — and an id outside
+ * that cannot be started at all, whatever else is configured on the entry. Every
  * surface that has to answer "may a model be added here, and is this one routable?" reads
  * the group's shape through this one predicate rather than re-deriving it: the models page's
  * group actions and its config dialog, the models PUT, and the CLI's `config model add`.
@@ -3075,8 +3075,8 @@ export interface ModelEnvFallback extends ModelEnvInfo {
  * - No base URL on the entry: the routed client talks to its own default endpoint, or to the
  *   `*_BASE_URL` the user set beside the key — that pairing is MMSP's own and is left to it
  *   entirely; the client reads the pair itself.
- * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS; the
- *   catalog pins the DeepSeek and MiniMax rows this way) — allowed.
+ * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS) —
+ *   allowed, the harness reading the variable and passing it explicitly.
  * - Anything else — every gateway group's preset endpoint, custom / user-defined / vLLM rows
  *   with their own endpoints, a vendor row re-pointed at a proxy — refused. A row's own base
  *   URL equal to the `*_BASE_URL` variable's value earns no exception either (per the user:
@@ -3278,7 +3278,7 @@ export type FastModeProtocol = "openai" | "anthropic";
  * is something to warn about before enabling, not grounds to hide the setting.
  *
  * Three runtime inputs stay invisible to a pure function of the config and can still flip the
- * answer: the server's `CLIENT_TYPE` env var overrides the entry's client type,
+ * answer: the server's `CLIENT_TYPE` env var names the client for an entry that pins none,
  * `ANTHROPIC_BASE_URL` supplies the base URL when the entry leaves it blank (so a `bedrock://`
  * there sends Claude to Bedrock, which has no fast tier), and a Vertex service-account key
  * sends a Gemini id to the generateContent client instead. Third-party OpenAI-compatible
@@ -3321,9 +3321,8 @@ export function fastModeProtocol(
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
  * auto-routed by MMSP leave client_type unset; gateway models (OpenRouter / SiliconFlow)
  * always pin a client_type — openai-responses for the OpenRouter rows, each OpenCode Go row's
- * own endpoint protocol, openai-chat for the rest — and inline a preset base_url. The direct
- * MiniMax M3 entry also pins its protocol and endpoint. No secrets are included, so only an
- * API key is needed.
+ * own endpoint protocol, openai-chat for the rest — and inline a preset base_url. No secrets
+ * are included, so only an API key is needed.
  *
  * Pricing is written as the LIST price the catalog records (a scheduled row's PEAK price),
  * never a discounted number. What is on disk then stays true whatever promotion is live and

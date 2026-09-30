@@ -73,7 +73,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 如果协议无法列出模型（「该协议不支持列出模型，请手动添加」），或者列表为空，什么都不会保存，弹窗保持打开。检测失败只会把协议后缀变成琥珀色；你仍然可以手动选择协议，或者改回**仅新增分组**。
 
-列出模型走的是 `POST /api/projects/:id/models/list`（仅 owner 可用），它会以 20 秒为限，在该协议对应的客户端上调用 AgentHub 的 `listModels()`。
+列出模型走的是 `POST /api/projects/:id/models/list`（仅 owner 可用），它会以 20 秒为限，在该协议对应的客户端上调用 MMSP 的 `listModels()`。
 
 ### 删除分组
 
@@ -135,7 +135,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 ## 检测自定义模型的协议
 
-**Custom** 分组和你自己创建的分组里的模型，使用的都是 AgentHub 的某一种通用协议，弹窗可以检测出一个 base URL 到底支持哪一种。新建的自定义模型一开始没有选择协议：base URL 输入框右端的后缀显示为**选择协议**。
+**Custom** 分组和你自己创建的分组里的模型，使用的都是 MMSP 的某一种通用协议，弹窗可以检测出一个 base URL 到底支持哪一种。新建的自定义模型一开始没有选择协议：base URL 输入框右端的后缀显示为**选择协议**。
 
 要检测协议，点击 base URL 输入框右上角的**检测协议**。这个按钮始终可用，也不需要 API key。服务端会按下面的顺序向 URL 发出三个轻量请求，并采用端点支持的第一个协议：
 
@@ -162,7 +162,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 ### 探测原理
 
 - 探测请求是请求体为 `{}` 的最小无效请求，不消耗 Token，也不需要有效的模型 id：返回的错误若符合协议自身的格式，就证明路由存在；返回 `404` 或 `405`，说明路径没有提供服务；HTML 或网关杂讯一律不算数。
-- 探测用的 URL 和认证头，与保存后 AgentHub 客户端实际使用的完全一致：OpenAI 系协议用 `Authorization: Bearer`，`ant-messages` 用 `x-api-key` 加 `Authorization: Bearer` 和 `anthropic-version`。所以检测出的协议一定真实可用。
+- 探测用的 URL 和认证头，与保存后 MMSP 客户端实际使用的完全一致：OpenAI 系协议用 `Authorization: Bearer`，`ant-messages` 用 `x-api-key` 加 `Authorization: Bearer` 和 `anthropic-version`。所以检测出的协议一定真实可用。
 - 服务端按三步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，最后用探测目标协议对应的环境变量（`ant-messages` 用 `ANTHROPIC_API_KEY`，两个 OpenAI 协议用 `OPENAI_API_KEY`）——但只在被探测的 URL 是该厂商自己的端点时才会使用。每发一次探测都会重新选择，因为此刻要确定的就是协议。这些值不会传到浏览器，也不会出现在响应里。
 - 完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由。因此网关或私有服务器一律匿名探测：你的厂商 key 不会发往你输入的 URL。
 - 在这些分组里，不会从模型 id 推断任何东西。在自定义分组里输入 `claude-sonnet-5`，不会因此选用 Anthropic 客户端或它的 `ANTHROPIC_*` key：自定义分组一律回退到 `openai-chat`，API key 提示也照此显示。供应商分组和网关分组不受影响；模型目录认识它们的 id，所以按 id 或按分组的预置来路由。
@@ -188,7 +188,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它。
 - **整个分组。** 在分组标题栏上点击**手动设置密钥**并输入 key，组内所有模型都会使用它。
-- **不配 key。** 没配 key 的模型**只在请求确实发往该供应商的官方端点时**使用服务端上供应商的环境变量：条目没有 base URL（此时按 AgentHub 自己的 `*_API_KEY` / `*_BASE_URL` 配对），或 base URL 是厂商自己的端点。自带 base URL 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、两个 Qwen 网关、ModelScope）、**Custom**、**vLLM** 和你创建的分组指向别的端点，其中的模型必须配自己的 key：在这些分组里对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。Penguin Go 分组是唯一的例外，它回退到自己的 `PENGUIN_GO_API_KEY`，从不使用厂商变量。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
+- **不配 key。** 没配 key 的模型**只在请求确实发往该供应商的官方端点时**使用服务端上供应商的环境变量：条目没有 base URL（此时按 MMSP 自己的 `*_API_KEY` / `*_BASE_URL` 配对），或 base URL 是厂商自己的端点。自带 base URL 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、两个 Qwen 网关、ModelScope）、**Custom**、**vLLM** 和你创建的分组指向别的端点，其中的模型必须配自己的 key：在这些分组里对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。Penguin Go 分组是唯一的例外，它回退到自己的 `PENGUIN_GO_API_KEY`，从不使用厂商变量。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -317,9 +317,9 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 开启前会先要求确认，因为这会改变模型的成本。开启快速模式的模型会显示**快速**标签。
 
-开启快速模式后，对话请求会带上 AgentHub 的 `fast_mode` 标志：
+开启快速模式后，对话请求会带上 MMSP 的 `fast_mode` 标志：
 
-- OpenAI 协议客户端发送 `service_tier: "priority"`。
+- OpenAI 协议客户端（包括 MiniMax 的官方客户端）和 Gemini 的官方客户端发送 `service_tier: "priority"`。
 - Anthropic 协议客户端发送 `speed: "fast"`，并附带 fast-mode beta 请求头。
 
 快速层级按供应商的溢价价格计费：MiniMax 收标准费率的 1.5 倍，OpenAI 和 Anthropic 则各自公布单独的溢价费率。
@@ -329,24 +329,24 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 ### 哪些模型支持快速模式
 
-存不存在快速层级，取决于模型路由到的 AgentHub 客户端，而不是模型条目。只有客户端确实会发送这个参数时，开关才会出现：
+存不存在快速层级，取决于模型路由到的 MMSP 客户端，而不是模型条目。只有客户端确实会发送这个参数时，开关才会出现：
 
 | 路由到的客户端 | 快速模式 |
 | --- | --- |
-| OpenAI 协议（`openai_chat`、`openai_responses`、`gpt6`、`minimax_m3`） | 以 `service_tier: "priority"` 发送 |
-| Anthropic 协议（`ant_messages`、`claude5`） | 以 `speed: "fast"` 发送，外加 beta 请求头 |
-| Gemini、GLM、Kimi、DeepSeek、OpenAI embeddings | 拒绝，不显示开关 |
-| Bedrock 上的 Claude，或 Claude 4.6 id | 拒绝，不显示开关 |
+| OpenAI 协议（`openai-official`、`openai-responses`、`openai-chat`、`openai-chat-vllm-adapter`）、`minimax-official`、`gemini-official`（Interactions API） | 以 `service_tier: "priority"` 发送 |
+| Anthropic 协议（`anthropic-official`、`ant-messages`） | 以 `speed: "fast"` 发送，外加 beta 请求头 |
+| `zai-official`、`moonshot-official`、`deepseek-official`、`gemini-generate-content`、OpenAI embeddings | 拒绝，不显示开关 |
+| Bedrock 上的 `anthropic-official`，或 Claude 4.6、Sonnet 5.5、Fable 5.1 的 id | 拒绝，不显示开关 |
 
-路由跟随条目的 `client_type`；没有设置时，按 `model_id` 判断，所以同一个上游 id 可能落到不同的客户端。添加在网关分组下的 Kimi 模型（`client_type = "openai"`）可以使用快速模式，同一个 id 路由到 Kimi 自己的客户端就不行。你自己 base URL 背后的 custom 模型会保留开关：它走 OpenAI 协议，背后很可能就是 OpenAI，但第三方服务器完全可以接受这个参数，然后照常按标准层级提供服务。
+路由跟随条目的 `client_type`；没有设置时，由 `model_id` 开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）指定该厂商的官方客户端。因此同一个上游 id 可能落到不同的客户端。添加在网关分组下的 Kimi 模型（`client_type = "openai-chat"`）可以使用快速模式，同一个 id 路由到 Moonshot 的官方客户端就不行。你自己 base URL 背后的 custom 模型会保留开关：它走 OpenAI 协议，背后很可能就是 OpenAI，但第三方服务器完全可以接受这个参数，然后照常按标准层级提供服务。
 
 开关无法替你确认两件事：
 
 - Anthropic 的快速模式目前是限量研究预览。在你的组织获得访问权限之前，请求会返回 429 限流错误。对 Anthropic 协议的模型，确认提示里会说明这一点。
-- 服务端环境变量里的 `CLIENT_TYPE` 和 `ANTHROPIC_BASE_URL` 会覆盖条目设置，可能把模型路由到开关没有预料到的地方。
+- 服务端的环境可能把模型路由到开关没有预料到的地方：`CLIENT_TYPE` 为所有没有 `client_type` 的条目指定客户端；`ANTHROPIC_BASE_URL` 为没有 base URL 的 Claude 条目提供端点（`bedrock://` 端点没有快速层级）；Vertex AI 服务账号 key 会把 Gemini 模型送到 generateContent，那里同样没有快速层级。
 
 > [!NOTE]
-> 如果请求仍然落到拒绝 `fast_mode` 的客户端，AgentHub 会在发出任何网络请求之前直接拒绝。这一轮对话会立即结束，并给出供应商的消息和指向设置的提示。必定重复出现的拒绝不会重试。
+> 如果请求仍然落到拒绝 `fast_mode` 的客户端，MMSP 会在发出任何网络请求之前直接拒绝。这一轮对话会立即结束，并给出供应商的消息和指向设置的提示。必定重复出现的拒绝不会重试。
 
 如果条目在不支持快速模式的模型上保存了 `fast_mode = true`，弹窗里的开关仍然保留，并标记为不支持，你随时可以关掉它。
 
@@ -414,22 +414,22 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
-| minimax | `MINIMAX_API_KEY` | 直连 MiniMax M3 的 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3`，上下文窗口 1,000,000 Token，支持视觉；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan 订阅密钥或按量付费 API key |
+| minimax | `MINIMAX_API_KEY` | `MiniMax-M3`，上下文窗口 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
 | qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen 按量付费（DashScope 的 OpenAI 兼容端点），预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售的第三方模型保留供应商前缀 id（如 `kimi/kimi-k3`） |
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；价格取自各模型页面的官方牌价（预览模型只有配额倍率优惠，没有牌价） |
 | modelscope | `OPENAI_API_KEY` | 魔搭的 OpenAI 兼容 api-inference 网关，预置 base URL `https://api-inference.modelscope.cn/v1`；id 就是上游仓库名（如 `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）；分组标题栏可以经授权中转层为你自动授权一把 token，也可以手动设置。见 [ModelScope 分组](#modelscope-分组) |
 | vllm | `OPENAI_API_KEY` | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组同样如此，除非条目的 base URL 就是厂商自己的端点。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组同样如此，除非条目的 base URL 就是厂商自己的端点。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
-- ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 AgentHub 通用 Responses 客户端（`client_type = "openai-responses"`）。
+- ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 这些网关客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
 - OpenCode Go 分组是例外：它的模型用到三种协议，因此每个模型各自固定协议，见 [OpenCode Go 分组](#opencode-go-分组)。
 
-直连 MiniMax M3 的客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型使用 `https://api.minimax.io/v1`。只有条目没有自己的 `base_url` 时，才会读取 `MINIMAX_BASE_URL`。
+MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型不带 `base_url`，因此设置了 `MINIMAX_BASE_URL` 时用它，否则用 `https://api.minimax.io/v1`；和其他 `*_BASE_URL` 一样，只有条目没有自己的 `base_url` 时才会读取这个变量。
 
 ### Penguin Go 分组
 
@@ -454,7 +454,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 ### ModelScope 分组
 
-`modelscope` 是聚合网关分组：三条预置共用魔搭 api-inference 端点，预置 base URL 为 `https://api-inference.modelscope.cn/v1`。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。三条预置都固定使用 AgentHub 通用 Responses 客户端（`client_type = "openai-responses"`），推理请求发往 `{base_url}/responses`。新建的 Project 立即带上这些预置；既有 Project 可通过**同步预置**或下一次 ModelScope 授权更新已存的协议。
+`modelscope` 是聚合网关分组：三条预置共用魔搭 api-inference 端点，预置 base URL 为 `https://api-inference.modelscope.cn/v1`。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。三条预置都固定使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`），推理请求发往 `{base_url}/responses`。新建的 Project 立即带上这些预置；既有 Project 可通过**同步预置**或下一次 ModelScope 授权更新已存的协议。
 
 分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权走一台授权中转层，由中转层持有魔搭的 client secret 并交回一组 api-inference access token / refresh token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；access token 和其他分组的 key 一样写进 `.project_config.toml`，refresh token 只保存在服务端 DB。access token 会过期，PenguinHarness 会在模型请求前静默续期；refresh token 缺失或失效时，才需要从标题栏重新授权一次。
 
@@ -481,7 +481,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，**同步预置**也会继续更新它的价格。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
 - **OpenAI 出现两次。** OpenAI 全系模型出现了两遍：一次直连（用你自己的 OpenAI key，官方牌价），一次在 OpenRouter 上以 `openai/<id>` 形式（网关费率，随其当前促销活动浮动）。
-- **GLM-5.3 Flash 出现六次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：AgentHub 的 GLM 客户端只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
+- **GLM-5.3 Flash 出现六次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：MMSP 的 Z.AI 客户端（`zai-official`）只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
 - **OpenRouter 免费档。** 目录收录了 `:free` 变体 `nvidia/nemotron-3-ultra-550b-a55b:free`，以及 `openrouter/free` 这个统一的免费模型路由（Free Models Router）。它们不花钱，但 OpenRouter 免费档的限流和数据政策仍然适用。
 
 ### 价格与促销
@@ -516,12 +516,12 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 | `model_id` | 上游请求 id |
 | `context_window` | 上下文窗口（Token）。不只是展示，而是实际参与运算：每个请求的有效输出上限和压缩阈值都由它推导，因此请求要求的输出永远不会超过窗口的剩余空间。未设置（或数值小得不合理，低于 4096）时，输出限制关闭，压缩按假定的 128000 计算；窗口较小的模型请填写真实值。在 Web 弹窗中，模型不在模型目录里且这个字段留空时，会写入 1,000,000（手动添加的条目按已知模型处理，而不是当作窗口未知）；如果端点实际支持的窗口更小，就把它调小。`penguin config model add` 省略 `--context-window` 时不写任何默认值 |
 | `max_tokens` | 可选的单模型输出上限（每次请求最多输出的 Token 数）。设置后会覆盖 Agent 的 `model.max_tokens`；未设置就继承这个值。这个上限只是封顶值，不是实际发出的数值：每个请求实际发送 `min(max_tokens, context_window − estimated input − safety margin)`，所以小窗口模型不用手动调整也能正常工作。在 Web 端整表保存时省略这个字段会把它清空 |
-| `client_type` | 协议提示（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等）；省略时由 AgentHub 根据模型 id 推断。自定义端点使用这三种通用协议客户端之一，Web 弹窗可以检测一个 base URL 对应哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
+| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用这三种通用协议客户端之一，Web 弹窗可以检测一个 base URL 对应哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
 | `display_name` | 展示名称 |
 | `vision` | 是否支持图像输入，默认 true |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |
 | `pricing` | 三档价格（单位 `usd_per_mtok`，即每百万 Token 的美元价格）：`cache_read` / `cache_write` / `output` |
-| `api_key` / `base_url` | 内联的凭证，两项都可选；留空时 AgentHub 回退到环境变量 |
+| `api_key` / `base_url` | 内联的凭证，两项都可选；留空时回退到供应商的环境变量，其中 key 仅在[设置 API key](#设置-api-key) 允许的范围内回退 |
 
 文件里还保存着 `default_model`，以及可选的 `vision_model`，也就是视觉代理模型。文件结构（示例）：
 
@@ -533,8 +533,6 @@ vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 provider = "deepseek"
 model_id = "deepseek-flash"
 context_window = 1000000
-client_type = "deepseek-v4"
-base_url = "https://api.deepseek.com"
 
 [[models]]
 provider = "custom"
@@ -548,7 +546,7 @@ api_key = "sk-..."
 
 有些网关会读取一个请求头，把调用记到发起调用的应用名下，用于自己的应用排行、用量报告或路由。
 
-模型目录按**端点主机**决定这些请求头，而不是按条目所属的供应商分组。归在 custom 下的条目，只要 base URL 指向这类网关，就会带上同样的请求头。只看条目自己的 `base_url`：通过 `OPENAI_BASE_URL` 提供的端点在 AgentHub 内部解析，条目这一侧看不到，因此不会归因。
+模型目录按**端点主机**决定这些请求头，而不是按条目所属的供应商分组。归在 custom 下的条目，只要 base URL 指向这类网关，就会带上同样的请求头。只看条目自己的 `base_url`：通过 `OPENAI_BASE_URL` 提供的端点在 MMSP 内部解析，条目这一侧看不到，因此不会归因。
 
 | 端点 | 请求头 | 值 |
 | --- | --- | --- |
@@ -564,11 +562,11 @@ api_key = "sk-..."
 
 ### 统一网关
 
-所有模型访问都走同一个网关库：`@prismshadow/agenthub`（AutoLLMClient）。核心只定义了一个轻量的 `LLMInterface`（参见[接口契约](/interfaces)）。按供应商做协议适配的工作放在 AgentHub 内部完成，因此 1000 多个在线和本地模型都能接入，包括任何 OpenAI 兼容端点。协议转换的代码在 `packages/core/src/llm/generative-model.ts`。
+所有模型访问都走同一个网关库：[`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp)（MMSP，AutoLLMClient）。核心只定义了一个轻量的 `LLMInterface`（参见[接口契约](/interfaces)）。按供应商做协议适配的工作放在 MMSP 内部完成，因此 1000 多个在线和本地模型都能接入，包括任何 OpenAI 兼容端点。协议转换的代码在 `packages/core/src/llm/generative-model.ts`。
 
 ### 模型标识
 
-模型的标识永远是 `(provider, model_id)` 这一对。`provider` 是配置分组名，`model_id` 是上游请求 id，原样发给 AgentHub。两者是独立的字段，流水线中的任何环节都禁止把它们拼成一个字符串。
+模型的标识永远是 `(provider, model_id)` 这一对。`provider` 是配置分组名，`model_id` 是上游请求 id，原样发给 MMSP。两者是独立的字段，流水线中的任何环节都禁止把它们拼成一个字符串。
 
 凡是要指定模型的接口，都要求给出完整的一对值：CLI、HTTP API 和 SDK 遇到只写一半的引用会直接拒绝，而不是替你补全。供应商不会从模型 id 推断，也没有默认值，因为网关会按上游 id 转售厂商模型；一旦猜错分组，条目的凭证就可能发给一个没人指定的厂商。
 

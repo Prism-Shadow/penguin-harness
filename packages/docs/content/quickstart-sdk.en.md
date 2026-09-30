@@ -31,7 +31,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 
 Replace `sk-...` with your API key. The CLI writes the model to the data root, and the SDK can use it right away.
 
-You can also keep credentials off disk entirely. When a model entry has no inline `api_key`, AgentHub (the LLM gateway library) reads environment variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
+You can also keep credentials off disk entirely. When a model entry has no inline `api_key` and its requests go to the vendor's own endpoint, the key comes from the vendor's environment variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
 
 ## Run your first program
 

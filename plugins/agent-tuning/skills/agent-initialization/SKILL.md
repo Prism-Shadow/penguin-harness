@@ -69,7 +69,7 @@ Do not register Skills in AGENTS.md; the frontmatter is injected automatically.
 
 Common library bundles, so you don't under-equip the target:
 
-- **App builder** (builds apps or web frontends): `penguin-sdk`, `web-design`, `agenthub-models`.
+- **App builder** (builds apps or web frontends): `penguin-sdk`, `web-design`, `unified-llm-api`.
 - **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
 - **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 

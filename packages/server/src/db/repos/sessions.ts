@@ -15,7 +15,7 @@ export interface SessionRow {
   agentId: string;
   /** Provider group of the session's model (pairs with `modelId` to form the model reference). */
   provider: string;
-  /** Upstream model_id of the session's model (sent as-is to AgentHub; never concatenated). */
+  /** Upstream model_id of the session's model (sent as-is to MMSP; never concatenated). */
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;

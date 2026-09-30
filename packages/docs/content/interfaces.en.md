@@ -26,13 +26,13 @@ All types are exported by `@prismshadow/penguin-core`. The source lives in `pack
         LLMInterface │            │ EnvironmentInterface
                      ▼            ▼
         GenerativeModel        Environment
-         └─ AgentHub gateway    └─ BuiltinTool registry (exec_command …)
+         └─ MMSP gateway        └─ BuiltinTool registry (exec_command …)
 ```
 
 | Interface | Contract | Built-in implementation |
 | --- | --- | --- |
 | Human | `session.run`'s inputs and streamed output | CLI, Server (SSE) |
-| LLM | `LLMInterface.streamGenerate` | `GenerativeModel` (over AgentHub) |
+| LLM | `LLMInterface.streamGenerate` | `GenerativeModel` (over MMSP) |
 | Environment | `EnvironmentInterface.executeTool` et al. | `Environment` + the builtin tool registry |
 
 Every interface follows two rules:
@@ -146,12 +146,12 @@ interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
   baseUrl?: string;
-  clientType?: string;             // AgentHub client protocol (openai-chat / openai-responses / …); inferred from modelId when omitted
+  clientType?: string;             // MMSP client type (openai-chat / openai-responses / …); when omitted, routed by the vendor family modelId begins with (gpt-, claude-, …)
   tools: ToolDefinition[];
   systemPrompt?: string;           // fully assembled system prompt, placeholders substituted
   contextWindow?: number;
   maxTokens?: number;
-  fastMode?: boolean;              // per-model fast mode (AgentHub fast_mode; premium faster tier), off by default
+  fastMode?: boolean;              // per-model fast mode (MMSP fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
   requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
   sessionId?: string;              // the Session's id, sent only to endpoints whose attribution header names the conversation
@@ -161,16 +161,15 @@ interface GenerativeModelConfig {
 
 ### The built-in implementation: GenerativeModel
 
-`GenerativeModel` (`packages/core/src/llm/generative-model.ts`) builds the contract on the `AutoLLMClient` of the `@prismshadow/agenthub` model gateway.
+`GenerativeModel` (`packages/core/src/llm/generative-model.ts`) builds the contract on the `AutoLLMClient` of the MMSP model gateway ([`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp)).
 
 **History.** The gateway keeps conversation history **statefully** and receives only the new messages each turn. Resuming a Session replays the committed history through a one-time `setHistory`.
 
-**Event translation.** An internal `EventTranslator` turns gateway stream events into `partial_*` fragments plus complete messages, and keeps each item's opaque `fidelity` payload verbatim. Segmentation mirrors the gateway's own aggregation:
+**Event translation.** An internal `EventTranslator` turns gateway stream events into `partial_*` fragments plus complete messages, and keeps each item's opaque `fidelity` payload verbatim. The gateway streams one item at a time, as `.delta` fragments closed by the item's `.done`, and ends every response with one `stop` event, so the translation is one to one and nothing is reassembled:
 
-- A thinking block is closed by its fidelity payload.
-- A run of equal fidelity stays one block. OpenAI-compatible clients stamp every delta with the same `{ reasoning_field }`, which must not split blocks.
-- A text segment splits on a differing `fidelity.phase` and closes on a `fidelity.signature`. Fidelity keys accumulate on merge.
-- Complete messages settle in thinking → text → tool_call order.
+- A `.delta` becomes a `partial_*` delta, behind a `start` on the item's first fragment.
+- A `.done` becomes the partial `stop` and the complete message (thinking, text or tool call), read off the `.done` item alone.
+- The `stop` event carries the request's Token usage and finish reason. A response that finishes on `length` (cut off at the output cap) or `unknown` ends its last item `fatal`; a stream that ends without a `stop` event is `retryable`.
 
 **Thought summaries.** Every request asks the gateway for thought summaries (`thinking_summary`). No provider rejects the flag: the gateway drops it for families without such a feature, and the Claude family reads it as summarized thinking. Besides letting the reader watch the model reason, it keeps events arriving during a reasoning phase.
 

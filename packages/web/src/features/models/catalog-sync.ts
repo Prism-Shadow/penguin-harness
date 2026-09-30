@@ -11,7 +11,9 @@
  *   flag, and the promotion — describe the model itself, so the catalog wins wherever the two
  *   differ. Missing catalog pricing removes local pricing, and a missing catalog promotion
  *   removes the stored one. The protocol pin is the reason this direction matters: re-syncing
- *   is how a built-in row saved before the catalog pinned its protocol gets repaired.
+ *   is how a built-in row gets repaired when the catalog has since added, renamed or dropped
+ *   its protocol pin — until then such a row counts as out of date (catalogDelta) and, where
+ *   its stored pin no longer routes, the models page says so on its card.
  * - **Deployment fields** — base URL, API key, output cap, fast mode — say how this install
  *   reaches the model, and nothing in the catalog can know them. A sync never overwrites one.
  *   An empty base URL is the single exception, and it is a fill rather than a reset: see

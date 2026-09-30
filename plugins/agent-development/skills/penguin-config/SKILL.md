@@ -23,7 +23,7 @@ penguin config model add --provider <group> --model-id <upstream_id> [--api-key 
 ```
 
 - A model is identified by the `(provider, model_id)` pair, so `--provider` and `--model-id` are **both required** — the group is never inferred from the model id, because gateways resell vendor models under their upstream ids and a wrong guess would send the key to another vendor's endpoint. `--model-id` takes the provider's upstream model id (what the API expects) and is persisted as the entry's request id, so it reaches the API unchanged; `--provider` names the group (`deepseek`, `openai`, `anthropic`, `google`, `openrouter`, `siliconflow`, … — `custom` for any other endpoint).
-- For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
+- For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` in a vendor group and MMSP routes the id by the family it begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`).
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
 - `--max-tokens <n>` pins a per-model output cap (positive integer), overriding the Agent's `model.max_tokens`; omit to inherit. Lower it for small-context models — the per-Agent default (32000) cannot fit into e.g. a 32k context window together with any prompt.

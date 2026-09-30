@@ -5,7 +5,7 @@
  * required probe order (openai-responses → ant-messages → openai-chat, candidate by
  * candidate, stop at the first served protocol) and the base URL reported back,
  * auth header shapes per protocol (Bearer for the OpenAI protocols; x-api-key +
- * Bearer + anthropic-version for ant-messages, mirroring AgentHub's clients), the
+ * Bearer + anthropic-version for ant-messages, mirroring MMSP's clients), the
  * per-protocol environment-variable fallback used when no key was typed or stored
  * (ANTHROPIC_* for ant-messages, OPENAI_* for the other two), and the
  * POST /api/projects/:p/models/detect route (validation, stored-key fallback via the
@@ -412,7 +412,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(pushed).toBeLessThanOrEqual(MAX_PROBE_BODY_BYTES * 2);
   });
 
-  it("auth headers mirror the AgentHub clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {
+  it("auth headers mirror the MMSP clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {
     const seen: SeenCall[] = [];
     await detectModelProtocol({
       baseUrl: `${BASE}/`, // trailing slash must not double up
@@ -460,7 +460,7 @@ describe("envApiKeyForProtocol", () => {
   const OPENAI = "https://api.openai.com/v1";
   const ANTHROPIC = "https://api.anthropic.com";
 
-  it("maps each protocol to the variable its AgentHub client actually reads, for the vendor's own endpoint", () => {
+  it("maps each protocol to the variable its MMSP client actually reads, for the vendor's own endpoint", () => {
     const env = { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" };
     expect(envApiKeyForProtocol("openai-responses", OPENAI, env)).toBe("sk-openai");
     expect(envApiKeyForProtocol("openai-chat", OPENAI, env)).toBe("sk-openai");

@@ -51,15 +51,15 @@ describe("ProjectConfigService.listEndpointModels", () => {
     expect(calls[0]).toEqual({ clientType: "ant-messages", baseUrl: "https://gw.example/v1" });
   });
 
-  it("flags AgentHub's UnsupportedOperationError so the dialog can point at the manual path", async () => {
+  it("flags MMSP's UnsupportedOperationError so the dialog can point at the manual path", async () => {
     const res = await service.listEndpointModels(req, async () => {
-      throw Object.assign(new Error("Claude5Client cannot list models"), {
+      throw Object.assign(new Error("Bedrock does not support listing models."), {
         name: "UnsupportedOperationError",
       });
     });
     expect(res.ok).toBe(false);
     expect(res.unsupported).toBe(true);
-    expect(res.message).toBe("Claude5Client cannot list models");
+    expect(res.message).toBe("Bedrock does not support listing models.");
   });
 
   it("collapses SDK failures into ok:false with the reason truncated", async () => {

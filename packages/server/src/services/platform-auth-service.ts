@@ -236,7 +236,9 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
       pricing: promotion?.listPricing ?? billed,
       ...(promotion !== undefined ? { discount: promotion.discount } : {}),
       baseUrl: endpointByName[googleRoute ? "google" : "openai"],
-      clientType: googleRoute ? ("gemini-3.8" as const) : ("deepseek-v4" as const),
+      clientType: googleRoute
+        ? ("gemini-generate-content" as const)
+        : ("deepseek-official" as const),
     };
   });
   return { models };

@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   project_id    TEXT NOT NULL,
   agent_id      TEXT NOT NULL,
   provider      TEXT NOT NULL,                     -- provider group of the session model (paired with model_id as a model reference)
-  model_id      TEXT NOT NULL,                     -- upstream model id (sent to AgentHub as-is; never concatenate <provider>/<id>)
+  model_id      TEXT NOT NULL,                     -- upstream model id (sent to MMSP as-is; never concatenate <provider>/<id>)
   workspace     TEXT NOT NULL,
   approval_mode TEXT NOT NULL DEFAULT 'allow-all',   -- allow-all|deny-all|read-only|always-ask
   thinking_level TEXT,                               -- level pinned for THIS session (none|low|medium|high|xhigh|max); NULL=not pinned, runs follow the Agent config

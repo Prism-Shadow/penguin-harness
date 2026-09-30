@@ -73,7 +73,7 @@ Some ids are skipped, and the result says how many: "Imported {added} models, sk
 
 If the protocol cannot list models ("This protocol cannot list models — add them manually") or the list is empty, nothing is saved and the dialog stays open. A failed detection only turns the protocol suffix amber; you can still pick the protocol by hand or switch back to **Create only**.
 
-The listing uses `POST /api/projects/:id/models/list` (owner only), which calls AgentHub's `listModels()` on that protocol's client with a 20-second limit.
+The listing uses `POST /api/projects/:id/models/list` (owner only), which calls MMSP's `listModels()` on that protocol's client with a 20-second limit.
 
 ### Delete a group
 
@@ -135,7 +135,7 @@ The **Models** page reloads the table on every visit, so the new group is there 
 
 ## Detect a custom model's protocol
 
-Models in **Custom** and in groups you created speak one of AgentHub's generic protocols, and the dialog can find out which one a base URL serves. A new custom model starts with no protocol selected: the suffix at the right edge of the base URL field reads **Select protocol**.
+Models in **Custom** and in groups you created speak one of MMSP's generic protocols, and the dialog can find out which one a base URL serves. A new custom model starts with no protocol selected: the suffix at the right edge of the base URL field reads **Select protocol**.
 
 To detect the protocol, select **Detect** at the top-right of the base URL field. It is always available, and no API key is needed. The server probes the URL with three cheap requests, in this order, and applies the first protocol the endpoint serves:
 
@@ -162,7 +162,7 @@ Detection never blocks a save. If you select **Confirm** while the protocol is s
 ### How probing works
 
 - Probes are minimal invalid requests with `{}` bodies. They cost no Tokens and need no valid model id: an error in the protocol's own shape proves the route exists, a `404` or `405` means the path is not served, and HTML or gateway noise counts for nothing.
-- The probed URLs and auth headers are exactly what the AgentHub client uses after saving: `Authorization: Bearer` for the OpenAI protocols, and `x-api-key` plus `Authorization: Bearer` and `anthropic-version` for `ant-messages`. A detected protocol is one that will really work.
+- The probed URLs and auth headers are exactly what the MMSP client uses after saving: `Authorization: Bearer` for the OpenAI protocols, and `x-api-key` plus `Authorization: Bearer` and `anthropic-version` for `ant-messages`. A detected protocol is one that will really work.
 - The server picks the probe credential in three steps: the API key typed in the dialog, else the key already stored for the entry, else the environment variable of the protocol that probe speaks (`ANTHROPIC_API_KEY` for `ant-messages`, `OPENAI_API_KEY` for the two OpenAI protocols) — but only when the probed URL is that vendor's own endpoint. The choice is made per probe, because the protocol is what is being determined. None of these values reach the browser or the response.
 - Detection works with no credential at all, since a protocol-shaped `401` identifies the route. A gateway or a private server is therefore probed anonymously: your vendor key is never sent to a URL you typed.
 - Nothing is inferred from the model id in these groups. Typing `claude-sonnet-5` into a custom group does not select the Anthropic client or its `ANTHROPIC_*` key: custom groups fall back to `openai-chat`, and the API key hint follows that. Vendor and gateway groups are not affected; their ids are known to the catalog, so they route by id or by the group's preset.
@@ -188,7 +188,7 @@ Each model carries its own API key, or none.
 
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it.
 - **A whole group.** On a group's header, select **Set key** and enter the key. It applies to every model in the group.
-- **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (AgentHub's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
+- **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (MMSP's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
@@ -318,9 +318,9 @@ Turn fast mode on or off per model in one of three ways:
 
 Turning it on asks for confirmation first, because it changes what the model costs. A model with fast mode on shows the **Fast** tag.
 
-With fast mode on, conversation requests carry AgentHub's `fast_mode` flag:
+With fast mode on, conversation requests carry MMSP's `fast_mode` flag:
 
-- OpenAI-protocol clients send `service_tier: "priority"`.
+- OpenAI-protocol clients (MiniMax's official client included) and Gemini's official client send `service_tier: "priority"`.
 - Anthropic-protocol clients send `speed: "fast"` with the fast-mode beta header.
 
 Fast tiers are billed at the provider's premium prices: MiniMax charges 1.5x its standard rate, and OpenAI and Anthropic publish separate premium rates.
@@ -330,24 +330,24 @@ Fast tiers are billed at the provider's premium prices: MiniMax charges 1.5x its
 
 ### Which models offer it
 
-Whether a fast tier exists depends on the AgentHub client a model routes to, not on the model entry. The switch appears only where that client actually sends the parameter:
+Whether a fast tier exists depends on the MMSP client a model routes to, not on the model entry. The switch appears only where that client actually sends the parameter:
 
 | Routed client | Fast mode |
 | --- | --- |
-| OpenAI protocol (`openai_chat`, `openai_responses`, `gpt6`, `minimax_m3`) | sent as `service_tier: "priority"` |
-| Anthropic protocol (`ant_messages`, `claude5`) | sent as `speed: "fast"` plus the beta header |
-| Gemini, GLM, Kimi, DeepSeek, OpenAI embeddings | rejected — no toggle |
-| Claude on Bedrock, or a Claude 4.6 id | rejected — no toggle |
+| OpenAI protocol (`openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`), `minimax-official`, `gemini-official` (Interactions API) | sent as `service_tier: "priority"` |
+| Anthropic protocol (`anthropic-official`, `ant-messages`) | sent as `speed: "fast"` plus the beta header |
+| `zai-official`, `moonshot-official`, `deepseek-official`, `gemini-generate-content`, OpenAI embeddings | rejected — no toggle |
+| `anthropic-official` on Bedrock, or a Claude 4.6, Sonnet 5.5 or Fable 5.1 id | rejected — no toggle |
 
-Routing follows the entry's `client_type`, or its `model_id` when none is set, so the same upstream id can land in different places. A Kimi model added under a gateway group (`client_type = "openai"`) can use fast mode, while the same id routed to Kimi's own client cannot. A custom model behind your own base URL keeps the switch: it speaks the OpenAI protocol and may well be OpenAI, but a third-party server is free to accept the parameter and serve the standard tier anyway.
+Routing follows the entry's `client_type`; when none is set, the vendor family its `model_id` begins with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`) names the vendor's official client. The same upstream id can therefore land in different places. A Kimi model added under a gateway group (`client_type = "openai-chat"`) can use fast mode, while the same id routed to Moonshot's official client cannot. A custom model behind your own base URL keeps the switch: it speaks the OpenAI protocol and may well be OpenAI, but a third-party server is free to accept the parameter and serve the standard tier anyway.
 
 Two things the switch cannot check for you:
 
 - Anthropic's fast mode is a limited research preview. Until your organization is granted access, requests return a 429 rate-limit error. The confirmation says so for Anthropic-protocol models.
-- `CLIENT_TYPE` and `ANTHROPIC_BASE_URL` in the server's environment override the entry, and can route a model somewhere the switch did not anticipate.
+- The server's environment can route a model somewhere the switch did not anticipate: `CLIENT_TYPE` names the client of every entry without a `client_type`, `ANTHROPIC_BASE_URL` gives Claude entries without a base URL their endpoint (a `bedrock://` one has no fast tier), and a Vertex AI service-account key sends a Gemini model to generateContent, which has none either.
 
 > [!NOTE]
-> If a request still reaches a client that rejects `fast_mode`, AgentHub refuses it before any network request. The conversation ends that turn immediately with the provider's message and a pointer to the setting. A rejection that will always repeat is never retried.
+> If a request still reaches a client that rejects `fast_mode`, MMSP refuses it before any network request. The conversation ends that turn immediately with the provider's message and a pointer to the setting. A rejection that will always repeat is never retried.
 
 An entry that stores `fast_mode = true` on a model that cannot serve it keeps its switch in the dialog, marked unsupported, so you can always turn it off.
 
@@ -415,22 +415,22 @@ The table below lists the built-in groups and the environment variables their mo
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
-| minimax | `MINIMAX_API_KEY` | Direct MiniMax M3 Responses client (`client_type = "minimax-m3"`): `MiniMax-M3` with a 1,000,000-token context window and vision; preset base URL `https://api.minimax.io/v1`; accepts a Token Plan Subscription Key or pay-as-you-go API key |
+| minimax | `MINIMAX_API_KEY` | `MiniMax-M3` with a 1,000,000-token context window and vision, routed by its id to MiniMax's official Responses client (`minimax-official`); no preset base URL, so requests go to `https://api.minimax.io/v1` unless `MINIMAX_BASE_URL` names another; accepts a Token Plan Subscription Key or pay-as-you-go API key |
 | qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen pay-as-you-go (DashScope's OpenAI-compatible endpoint), preset base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`; resold third-party models keep vendor-prefixed ids (e.g. `kimi/kimi-k3`) |
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway, preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`; pricing from each model page's official list price (the preview model has only a quota-multiplier promo, no list price) |
 | modelscope | `OPENAI_API_KEY` | ModelScope's OpenAI-compatible api-inference gateway, preset base URL `https://api-inference.modelscope.cn/v1`; ids are the upstream repo names (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`); the group's header authorizes a token for you through an authorization bridge, or takes one you set by hand. See [The ModelScope group](#the-modelscope-group) |
 | vllm | `OPENAI_API_KEY` | Self-hosted vLLM servers: protocol fixed to `openai-chat-vllm-adapter`, no preset base URL, eight preset models priced at 0 (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)) |
 | custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, needs its own key, 256K window, priced at $0 until the vendor publishes prices) |
 
-The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for custom, vLLM and user-created groups unless the row's base URL is the vendor's own endpoint. ModelScope also uses the `OPENAI_*` credential variables because its credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
+The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through MMSP's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for custom, vLLM and user-created groups unless the row's base URL is the vendor's own endpoint. ModelScope also uses the `OPENAI_*` credential variables because its credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
 
 - The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
-- ModelScope is an aggregate gateway like Penguin Go, but all three of its presets use AgentHub's generic Responses client (`client_type = "openai-responses"`).
+- ModelScope is an aggregate gateway like Penguin Go, but all three of its presets use MMSP's generic Responses client (`client_type = "openai-responses"`).
 - Those gateway clients read the same `OPENAI_*` variables, so the credential rules are identical either way.
 - The OpenCode Go group is the exception: its models use three protocols, so each one pins its own; see [The OpenCode Go group](#the-opencode-go-group).
 
-The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset uses `https://api.minimax.io/v1`. `MINIMAX_BASE_URL` is read only for entries without their own `base_url`.
+MiniMax's official client reads `MINIMAX_API_KEY`. The built-in MiniMax preset carries no `base_url`, so it uses `MINIMAX_BASE_URL` when set and `https://api.minimax.io/v1` otherwise; like every other `*_BASE_URL`, the variable is read only for entries without their own `base_url`.
 
 ### The Penguin Go group
 
@@ -455,7 +455,7 @@ The platform quotes peak rates in USD per million Tokens. The group's DeepSeek r
 
 ### The ModelScope group
 
-`modelscope` is an aggregate gateway group: one ModelScope api-inference endpoint behind the preset base URL `https://api-inference.modelscope.cn/v1`. Model ids are upstream repo names, so they keep their vendor prefix (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`). All three preset rows pin AgentHub's generic Responses client (`client_type = "openai-responses"`) and send inference requests to `{base_url}/responses`. A new Project gets these presets right away; an existing Project updates its stored protocol with **Sync presets** or the next ModelScope authorization.
+`modelscope` is an aggregate gateway group: one ModelScope api-inference endpoint behind the preset base URL `https://api-inference.modelscope.cn/v1`. Model ids are upstream repo names, so they keep their vendor prefix (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`). All three preset rows pin MMSP's generic Responses client (`client_type = "openai-responses"`) and send inference requests to `{base_url}/responses`. A new Project gets these presets right away; an existing Project updates its stored protocol with **Sync presets** or the next ModelScope authorization.
 
 The group's key comes from its header; see [Authorize a new API key](#authorize-a-new-api-key). Authorization goes through an authorization bridge, which holds the ModelScope client secret and returns an api-inference access token / refresh token pair, rather than through ModelScope's own pages. Nothing else about the group is special: inference requests go straight to `https://api-inference.modelscope.cn/v1` and never through the bridge. The access token is written into `.project_config.toml` like any other group key, while the refresh token stays only in the server DB. The access token expires, and PenguinHarness silently renews it before model requests; re-authorize from the header only when the refresh token is missing or no longer valid.
 
@@ -482,7 +482,7 @@ The list is not exhaustive.
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
 - **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, and **Sync presets** keeps its price current. A retired row is never added to a Project that does not have it, and a new Project never gets one.
 - **OpenAI twice.** The whole OpenAI line-up is listed twice: directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions).
-- **GLM-5.3 Flash six times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: AgentHub's GLM client forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
+- **GLM-5.3 Flash six times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: MMSP's Z.AI client (`zai-official`) forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
 - **OpenRouter free tier.** The catalog carries the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but OpenRouter's free-tier rate limits and data policy apply.
 
 ### Prices and promotions
@@ -517,12 +517,12 @@ Each `ModelEntry` has these fields:
 | `model_id` | Upstream request id |
 | `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset (or implausibly small, under 4096): the output clamp turns off and compaction derives from an assumed 128000 — set the real value for models with smaller windows. The Web dialog writes 1,000,000 when a model that is not in the catalog leaves the field blank (a hand-added entry is a known model, not an unknown window); narrow it when the endpoint serves less. `penguin config model add` writes no default at all when `--context-window` is omitted |
 | `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the agent's `model.max_tokens`; unset inherits it. The cap is a ceiling, not the literal wire value: each request sends `min(max_tokens, context_window − estimated input − safety margin)`, so small-window models work without hand-tuning it. Omitting the field on a Web full-table save clears it |
-| `client_type` | Protocol hint (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …); inferred by AgentHub from the model id when omitted. Custom endpoints use one of those three generic protocol clients, and the Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
+| `client_type` | MMSP client type: a generic protocol client (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …) or a vendor's official client (`deepseek-official`, `anthropic-official`, …). When omitted, MMSP routes the model id by the vendor family it begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Custom endpoints use one of those three generic protocol clients, and the Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
 | `fast_mode` | Optional fast mode (off by default): opts the model's Session requests into the provider's faster serving tier at premium pricing. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Models without a fast tier reject requests carrying it (see [Fast mode](#fast-mode)) |
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
-| `api_key` / `base_url` | Inlined credentials, both optional; when blank, AgentHub falls back to environment variables |
+| `api_key` / `base_url` | Inlined credentials, both optional; when blank, they fall back to the provider's environment variables, the key only where [Set API keys](#set-api-keys) allows it |
 
 The file also holds `default_model`, and optionally `vision_model`, the proxy vision model. File shape (illustrative):
 
@@ -534,8 +534,6 @@ vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 provider = "deepseek"
 model_id = "deepseek-flash"
 context_window = 1000000
-client_type = "deepseek-v4"
-base_url = "https://api.deepseek.com"
 
 [[models]]
 provider = "custom"
@@ -549,7 +547,7 @@ api_key = "sk-..."
 
 Some gateways read a request header that files a call under the app that made it, for their own app rankings, usage reports or routing.
 
-The catalog decides these headers by **endpoint host**, not by the entry's provider group. An entry filed under custom whose base URL points at such a gateway carries the same headers. Only the entry's own `base_url` counts: an endpoint supplied through `OPENAI_BASE_URL` is resolved inside AgentHub, is not visible on this side, and is therefore not attributed.
+The catalog decides these headers by **endpoint host**, not by the entry's provider group. An entry filed under custom whose base URL points at such a gateway carries the same headers. Only the entry's own `base_url` counts: an endpoint supplied through `OPENAI_BASE_URL` is resolved inside MMSP, is not visible on this side, and is therefore not attributed.
 
 | Endpoint | Header | Value |
 | --- | --- | --- |
@@ -565,11 +563,11 @@ Every other endpoint, including every direct vendor and every gateway that reads
 
 ### One gateway
 
-All model access goes through one gateway library, `@prismshadow/agenthub` (AutoLLMClient). The core defines only a thin `LLMInterface` (see [Interfaces](/interfaces)). Per-provider protocol adaptation happens inside AgentHub, so 1000+ online and local models are reachable, including any OpenAI-compatible endpoint. The protocol translation lives in `packages/core/src/llm/generative-model.ts`.
+All model access goes through one gateway library, [`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp) (MMSP, AutoLLMClient). The core defines only a thin `LLMInterface` (see [Interfaces](/interfaces)). Per-provider protocol adaptation happens inside MMSP, so 1000+ online and local models are reachable, including any OpenAI-compatible endpoint. The protocol translation lives in `packages/core/src/llm/generative-model.ts`.
 
 ### Model identity
 
-A model's identity is always the `(provider, model_id)` pair. `provider` is a config group name, and `model_id` is the upstream request id, sent to AgentHub unchanged. The two are independent fields, and joining them into one string is forbidden anywhere in the pipeline.
+A model's identity is always the `(provider, model_id)` pair. `provider` is a config group name, and `model_id` is the upstream request id, sent to MMSP unchanged. The two are independent fields, and joining them into one string is forbidden anywhere in the pipeline.
 
 Every interface that names a model takes the complete pair: the CLI, the HTTP API and the SDK all reject half a reference instead of completing it. The provider is never inferred from the model id and has no default, because gateways resell vendor models under their upstream ids; a guessed group would send the entry's credential to a vendor nobody named.
 

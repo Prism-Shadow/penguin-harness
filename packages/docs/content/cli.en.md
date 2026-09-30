@@ -557,7 +557,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--base-url <url>` | Custom endpoint base URL. | See below |
 | `--context-window <n>` | Context window size, in tokens. | — |
 | `--max-tokens <n>` | Maximum output tokens for this model, a positive integer. When set, it overrides the agent's `model.max_tokens`; lower it for small-context models. | The agent's `model.max_tokens` |
-| `--client-type <type>` | AgentHub client protocol type, such as `openai-chat`. | See below |
+| `--client-type <type>` | MMSP client type, such as `openai-chat`. | See below |
 | `--vision` / `--no-vision` | Marks image input as supported or unsupported. | Keeps the current value |
 | `--fast-mode` / `--no-fast-mode` | Turns fast mode (faster output at premium pricing) on or off. | Off; omitting both keeps the current value |
 | `--price-cache-read <n>` | Cache-read price, in USD per million tokens. | — |
@@ -566,8 +566,8 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--set-default` | Also sets the entry as the Project's default model. | — |
 
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
-- For a new entry, `--client-type` and `--base-url` default to what the built-in catalog sets for that exact `(provider, model_id)` pair. Without a catalog row, the group decides: a group that pins a protocol uses it; `custom`, user-defined and gateway groups get `openai-chat`, with a gateway's endpoint filled in as the base URL; and first-party vendor groups leave both unset. Updating an existing entry changes them only when you pass the flags.
-- Turning on `--fast-mode` for a model whose AgentHub client rejects the parameter still writes the entry, but prints a warning on stderr.
+- For a new entry, `--client-type` and `--base-url` default to what the built-in catalog sets for that exact `(provider, model_id)` pair. Without a catalog row, the group decides: a group that pins a protocol uses it; `custom`, user-defined and gateway groups get `openai-chat`, with a gateway's endpoint filled in as the base URL; and first-party vendor groups leave both unset, so MMSP routes the model id by the vendor family it begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Updating an existing entry changes them only when you pass the flags.
+- Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
 
 ### model default / model vision / model list / model remove
 

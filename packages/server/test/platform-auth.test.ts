@@ -93,7 +93,7 @@ describe("Penguin Go key delivery validation", () => {
         models: [
           {
             modelId: "gemini-3.8-flash",
-            clientType: "gemini-3.8",
+            clientType: "gemini-generate-content",
             // A promoted model normalizes to its list price, which is what a Project stores,
             // and the fraction off it; the billed price is only checked against the two.
             pricing: {
@@ -106,7 +106,7 @@ describe("Penguin Go key delivery validation", () => {
           },
           {
             modelId: "deepseek-future",
-            clientType: "deepseek-v4",
+            clientType: "deepseek-official",
             pricing: { unit: "usd_per_mtok", cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
           },
         ],
@@ -294,7 +294,7 @@ describe("Penguin Go key authorization routes", () => {
     expect(deepseekFuture).toMatchObject({
       displayName: "DeepSeek Future",
       contextWindow: 1_000_000,
-      clientType: "deepseek-v4",
+      clientType: "deepseek-official",
       vision: false,
       pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
       credential: { baseUrl: "https://token.penguin.ooo/api" },
@@ -305,7 +305,7 @@ describe("Penguin Go key authorization routes", () => {
     // beside it in web.db.
     const gemini = penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash");
     expect(gemini).toMatchObject({
-      clientType: "gemini-3.8",
+      clientType: "gemini-generate-content",
       pricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 },
       discount: 0.5,
     });
@@ -416,7 +416,7 @@ describe("Penguin Go key authorization routes", () => {
     expect(added.models.find((model) => model.modelId === "gemini-future")).toMatchObject({
       displayName: "Gemini Future",
       contextWindow: 1_048_576,
-      clientType: "gemini-3.8",
+      clientType: "gemini-generate-content",
       vision: true,
       pricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
       discount: 0.5,

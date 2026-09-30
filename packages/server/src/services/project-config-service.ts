@@ -11,7 +11,7 @@
  * Model references are **fully split into separate fields**: an entry is
  * stored as two independent fields, `provider` and `model_id`; the `(provider,
  * model_id)` pair is the entry's unique key. `model_id` is the upstream request id,
- * sent to AgentHub verbatim — string concatenation like `<provider>/<id>` is
+ * sent to MMSP verbatim — string concatenation like `<provider>/<id>` is
  * forbidden everywhere in the pipeline. `default_model` / `vision_model` are `{
  * provider, model_id }` paired references (TOML tables).
  *
@@ -783,11 +783,12 @@ export class ProjectConfigService implements ProjectConfigStore {
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
    * system prompt, thinking at the lowest level, a tiny output cap, 20s timeout —
-   * just to see whether the endpoint answers. The model id sent to AgentHub is
-   * `modelId` itself (the upstream id verbatim; client_type inference follows it).
+   * just to see whether the endpoint answers. The model id sent to MMSP is
+   * `modelId` itself (the upstream id verbatim; without a client_type, MMSP routes it
+   * by the vendor family the id begins with).
    *
    * A reasoning-heavy model can spend the whole tiny output cap on thinking
-   * (finish_reason=length with no text — AgentHub raises EmptyResponseError,
+   * (finish_reason=length with no text — MMSP raises EmptyResponseError,
    * collapsed to a malformed outcome): the endpoint demonstrably streamed model
    * output, which is everything a connectivity test proves, so that case counts as
    * ok too (see probeVerdict).
@@ -1072,7 +1073,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    * back to; an omitted key is lent the protocol's environment variable only when the URL is
    * that vendor's own (core's endpointEnvApiKey), and refused otherwise. Never throws: SDK
    * construction
-   * and request failures collapse into `{ ok:false, message }`, an AgentHub
+   * and request failures collapse into `{ ok:false, message }`, an MMSP
    * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
    * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
    * timed out. Nothing cancels the request behind it: the race only stops waiting, and a
@@ -1146,8 +1147,9 @@ export class ProjectConfigService implements ProjectConfigStore {
         const cat = catalogEntryFor(provider, modelId);
         const credBaseUrl = optStr(m.base_url);
         // The env fallback the entry is actually allowed (core's modelEnvFallback): the
-        // variable AgentHub's routed client reads — an explicit client_type takes priority,
-        // otherwise the id auto-routes — but only while the entry's endpoint is the vendor's
+        // variable MMSP's routed client reads — an explicit client_type takes priority,
+        // otherwise the id routes by the vendor family it begins with — but only while the
+        // entry's endpoint is the vendor's
         // own. A gateway, custom or vLLM row with its own endpoint gets no envKey at all:
         // reporting a name there would promise a fallback the harness refuses.
         const fallback = modelEnvFallback({ provider, modelId, clientType, baseUrl: credBaseUrl });
@@ -1244,7 +1246,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the entry renames the row or changes its pricing; a row left out of the table takes its
    * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
    *
-   * An entry the request adds to a first-party vendor group under a model id AgentHub cannot
+   * An entry the request adds to a first-party vendor group under a model id MMSP cannot
    * route is rejected as well (`model_not_routable`); one already stored under that key is
    * written as it stands. See the loop below for why the two differ.
    */
@@ -1271,10 +1273,11 @@ export class ProjectConfigService implements ProjectConfigStore {
       (model) => model.provider === MODELSCOPE_PROVIDER_ID,
     );
 
-    // A vendor group carries the built-in catalog and nothing else: its entries persist no
-    // client_type, so AgentHub places each one by the spelling of the model id alone, and an
-    // id it cannot place fails at request time with a sentence listing client types the user
-    // never chose. Refused here, while the request can still be sent somewhere that works.
+    // A vendor group decides no protocol: its entries persist no client_type, so MMSP places
+    // each one by the vendor family its model id begins with (`gpt-`, `claude-`, `gemini-`,
+    // `glm-`, `kimi-`, `deepseek-`, `minimax-`), and an id of no known family fails at request
+    // time with a sentence listing client types the user never chose. Refused here, while the
+    // request can still be sent somewhere that works.
     //
     // Only an entry this request introduces is judged. The models page replaces the whole
     // table on every save, so an id written before this rule existed would otherwise block
@@ -1287,7 +1290,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       throw new HttpError(
         400,
         "model_not_routable",
-        `Model ${showRef(entry.provider, entry.modelId)} cannot be routed: a vendor group carries built-in models only. Add it under a custom group, where its protocol can be picked or detected.`,
+        `Model ${showRef(entry.provider, entry.modelId)} cannot be routed: a vendor group routes a model by the vendor prefix its id begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add it under a custom group, where its protocol can be picked or detected.`,
       );
     }
 
@@ -1677,7 +1680,7 @@ export function isProbeContent(msg: OmniMessage): boolean {
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
  * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
- * AgentHub's EmptyResponseError, a `retryable` outcome that still streamed content) — the
+ * MMSP's EmptyResponseError, a `retryable` outcome that still streamed content) — the
  * endpoint, credential, and model id all demonstrably work, which is what a connectivity
  * test measures. Everything else (fatal rejections, and retryable failures with nothing
  * received) fails with the outcome's message.

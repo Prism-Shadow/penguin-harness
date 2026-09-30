@@ -116,8 +116,9 @@ const server = http.createServer((req, res) => {
     const isSubagentTurn = flat.includes(SUBAGENT_PROMPT) && !flat.includes("run a subagent");
     const wantsSubagent = flat.includes("run a subagent");
     // "Bad stream" test case: the first request streams half the tool_use arguments then cuts
-    // the connection (no message_stop), so AgentHub reports "stream incomplete" -> GenerativeModel
-    // resolves it as malformed. On reconnect the engine **resends the input verbatim** — in this
+    // the connection (no message_delta / message_stop), so MMSP fails those arguments with a
+    // ToolCallArgumentParseError when the stream ends -> GenerativeModel resolves it as
+    // malformed. On reconnect the engine **resends the input verbatim** — in this
     // scenario the failed attempt only has a half tool_call (never committed to the ledger), so
     // the retry request carries no [turn_retried] block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
@@ -270,7 +271,7 @@ const server = http.createServer((req, res) => {
           delta: { type: "input_json_delta", partial_json: '{"cmd": "ec' },
         });
         sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
-        res.end(); // ends normally but is missing message_delta/message_stop -> AgentHub reports "stream incomplete"
+        res.end(); // ends normally but is missing message_delta/message_stop -> MMSP cannot parse the half-streamed arguments
         return;
       }
       // Retry (original input resent): return a complete tool_use, then proceed normally.

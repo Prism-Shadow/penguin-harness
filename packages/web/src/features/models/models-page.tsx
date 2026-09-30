@@ -3,7 +3,7 @@
  *
  * Model entries are persisted as two independent fields, `provider` and `model_id`;
  * the (provider, model_id) pair is the entry's unique key — **zero
- * concatenation** anywhere in the pipeline, `model_id` is sent to AgentHub verbatim as the
+ * concatenation** anywhere in the pipeline, `model_id` is sent to MMSP verbatim as the
  * upstream request id. The dialog's identity section = (group dropdown, upstream id input);
  * changing either one is a rename, submitted as a paired `renamedFrom` (the server uses it
  * to migrate the credential and pointers).
@@ -16,15 +16,16 @@
  * default / set as vision model / delete); the "add model" entry point lives in each group
  * header (owner only) and reuses the same dialog — provider is pre-filled with that group;
  * the protocol follows group semantics: a first-party vendor group doesn't persist
- * client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from the
- * id), while custom / user-defined groups / gateways use a fixed OpenAI protocol, and
- * gateways (OpenRouter / SiliconFlow / Qwen Token Plan) additionally pre-fill their endpoint
- * base URL; the "get model id / API key" external links sit next to the corresponding
- * input's label (shown in both add and edit dialogs). The group list ends with an "add
- * group" action (user-defined groups share custom's semantics; the group appears once the
- * first model saves successfully — groups are carried by the model entry's provider field,
- * not persisted separately). The header also holds an owner-only "sync presets" action next
- * to the search box (union-merge with the built-in catalog, see catalog-sync.ts).
+ * client_type (MMSP routes by the vendor family the upstream id begins with, with env
+ * fallback resolved live from the id), while custom / user-defined groups / gateways use a
+ * fixed OpenAI protocol, and gateways (OpenRouter / SiliconFlow / Qwen Token Plan)
+ * additionally pre-fill their endpoint base URL; the "get model id / API key" external links
+ * sit next to the corresponding input's label (shown in both add and edit dialogs). The group
+ * list ends with an "add group" action (user-defined groups share custom's semantics; the
+ * group appears once the first model saves successfully — groups are carried by the model
+ * entry's provider field, not persisted separately). The header also holds an owner-only
+ * "sync presets" action next to the search box (union-merge with the built-in catalog, see
+ * catalog-sync.ts).
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
@@ -317,7 +318,7 @@ export interface RowState {
    * displayed (see model-grouping).
    */
   provider: string;
-  /** Upstream model id (i.e. the stored model_id, sent to AgentHub verbatim). */
+  /** Upstream model id (i.e. the stored model_id, sent to MMSP verbatim). */
   modelId: string;
   /**
    * The identity as loaded (paired reference): differing from the current (provider,
@@ -347,16 +348,17 @@ export interface RowState {
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
   /**
-   * Per-model fast mode (premium faster serving tier, AgentHub `fast_mode`): off by default;
+   * Per-model fast mode (premium faster serving tier, MMSP `fast_mode`): off by default;
    * user-only, never preset by the catalog, editable on every model (preset ones included).
    * Models without a fast tier reject requests carrying it, hence the standing hint while ON.
    */
   fastMode: boolean;
   /**
-   * AgentHub client protocol. Empty for preset models (auto-routed from the model id) and
-   * for a NEW custom model, which starts with nothing selected until the user picks from
-   * the base URL field's suffix or a detection run fills it in; gateway groups start on
-   * their preset pin. Never persisted empty for a custom-like entry — see protocolForPersist.
+   * MMSP client type. Empty for vendor-group preset models (routed by the vendor family their
+   * id begins with) and for a NEW custom model, which starts with nothing selected until the
+   * user picks from the base URL field's suffix or a detection run fills it in; gateway
+   * groups start on their preset pin. Never persisted empty for a custom-like entry — see
+   * protocolForPersist.
    */
   clientType: string;
   /** Price buckets in USD per million tokens: the list price, any promotion kept in `discount`. */
@@ -447,20 +449,34 @@ function isPreset(row: RowState): boolean {
 }
 
 /**
+ * MMSP's compatible clients that speak an OpenAI protocol, plus the deprecated bare `openai`
+ * alias: an entry pinned to one of them names no vendor, so its endpoint cannot be inferred
+ * (see the dialog's base URL policy). `openai-official` is deliberately absent — it is
+ * OpenAI's own client, with OpenAI's default endpoint.
+ */
+const OPENAI_COMPATIBLE_CLIENT_TYPES: ReadonlySet<string> = new Set([
+  "openai",
+  "openai-chat",
+  "openai-responses",
+  "openai-chat-vllm-adapter",
+  "openai-embedding",
+]);
+
+/**
  * What to tell the owner of an entry its vendor group cannot route — `null` when there is
  * nothing wrong with it. The two answers are different advice, and giving the wrong one is
  * worse than giving none:
  *
  * - `"sync"` — the catalog knows this exact `(provider, model_id)` pair, so this is a
- *   built-in model whose stored entry predates the protocol the catalog now pins for it
- *   (`deepseek-flash` is the live example: AgentHub routes DeepSeek on a substring its
- *   released id no longer carries, so the preset pins `deepseek-v4`, and a Project written
- *   before that pin holds the row without it). Syncing presets writes the pin back. Telling
- *   this owner to move a built-in model into a custom group would send them away from the
- *   one action that fixes it.
+ *   built-in model whose stored entry disagrees with the protocol the catalog carries for it
+ *   today (the live example: a Project written before MMSP 0.5.0 holds `deepseek-flash`
+ *   pinned to `deepseek-v4`, a client type MMSP no longer has, while the catalog row now
+ *   pins nothing and routes by its `deepseek-` prefix). Syncing presets writes the catalog's
+ *   pin back. Telling this owner to move a built-in model into a custom group would send
+ *   them away from the one action that fixes it.
  * - `"custom"` — the catalog does not know it, so it was added by hand into a group that
- *   carries built-in models only, and it belongs under a custom group where a protocol can
- *   be picked or detected.
+ *   carries built-in models only, under an id of no vendor family MMSP knows, and it belongs
+ *   under a custom group where a protocol can be picked or detected.
  *
  * Judged on the CURRENT reference rather than the identity as loaded (isPreset): an id the
  * user has just retyped is not the catalog's row any more, and a sync would not touch it.
@@ -614,10 +630,10 @@ export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
  * Whether the model dialog offers the fast-mode switch for a draft row, and on which protocol
  * the parameter would travel.
  *
- * `protocol` is AgentHub's own answer (see fastModeProtocol): `undefined` means the routed
- * client rejects `fast_mode` — or the id routes to no client at all — so arming the switch
- * could only produce a turn-killing error, and it is not offered. `show` adds the one
- * exception: a row that already stores fast mode keeps its switch regardless, because a
+ * `protocol` is the routed MMSP client's own answer (see fastModeProtocol): `undefined`
+ * means that client rejects `fast_mode` — or the id routes to no client at all — so arming
+ * the switch could only produce a turn-killing error, and it is not offered. `show` adds
+ * the one exception: a row that already stores fast mode keeps its switch regardless, because a
  * value that arrived another way (a hand-edited config, `penguin config model add
  * --fast-mode`, or an upstream id renamed afterwards) has to remain switchable off — the
  * runtime rejection tells the user to turn it off in the model settings, and that has to be
@@ -628,7 +644,7 @@ export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
  * be SAVED with — rather than the raw field, for the same reason envHintClientType exists: a
  * custom-like group leaves the protocol empty until detection or a manual pick fills it in,
  * and fastModeProtocol then falls back to routing by model id. Typing an id that routes to a
- * client with no fast tier (`kimi-k3`, `gemini-3-pro`) into a custom group would hide a
+ * client with no fast tier (`kimi-k3`, `deepseek-v4-pro`) into a custom group would hide a
  * switch that the persisted `openai-chat` entry can in fact serve. An empty result keeps the
  * id-based routing the preset and vendor groups genuinely use.
  */
@@ -679,7 +695,8 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   const cw = Number(row.contextWindow.trim());
   if (row.contextWindow.trim() && Number.isFinite(cw)) entry.contextWindow = cw;
   // Never persists an empty protocol for a custom-like entry (that entry could not start —
-  // see protocolForPersist); preset / vendor rows keep "" so AgentHub infers from the id.
+  // see protocolForPersist); preset / vendor rows keep "" so MMSP routes by the id's vendor
+  // family.
   const clientType = protocolForPersist(row.provider, row.clientType);
   if (clientType) entry.clientType = clientType;
   // Supported by default: submit false only when explicitly marked "unsupported" (preset vision models and checked custom models aren't persisted).
@@ -1356,10 +1373,10 @@ export function ModelsPage() {
                         // Add-model entry point: on every group header whose group decides a
                         // protocol — custom, user-defined, and the gateways. A vendor group
                         // carries the built-in catalog and nothing else: it persists no
-                        // client_type, so AgentHub places its entries by the model id alone
-                        // and anything outside the catalog's ids cannot start. The way to add
-                        // a model of one's own is a custom group, which has a protocol to
-                        // pick. Narrow rows never hide a group action — they drop its label
+                        // client_type, so MMSP places its entries by the vendor family their
+                        // id begins with, and an id of no known family cannot start. The way
+                        // to add a model of one's own is a custom group, which has a protocol
+                        // to pick. Narrow rows never hide a group action — they drop its label
                         // and keep the icon (same pattern for every action in this row), so
                         // the button stays reachable.
                         <Button
@@ -2164,11 +2181,11 @@ export function ModelCard({
   onOpen: () => void;
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
-  /** Runs the header's "sync presets" merge, which writes back a built-in model's missing protocol pin; absent for a member. */
+  /** Runs the header's "sync presets" merge, which writes back the protocol pin the catalog carries for a built-in model; absent for a member. */
   onSyncPresets?: () => void;
 }) {
   /**
-   * A stored entry that sits in a vendor group under an id AgentHub cannot place, and which
+   * A stored entry that sits in a vendor group under an id MMSP cannot place, and which
    * of the two fixes it needs. Saving one is refused now, so this can only be a row that
    * predates that rule — it stays in the config untouched, and the card is where its owner
    * finds out, because every other sign of it arrives as a failed request minutes into a
@@ -2572,10 +2589,12 @@ function ModelDialog({
   };
 
   /**
-   * What a failed probe says. An entry its group cannot place fails upstream with AgentHub's
-   * own sentence — the id, then the list of client types it does support — which names an
-   * internal vocabulary and leaves the reader to infer what to do about it. That case gets a
-   * message naming the problem and the fix its own shape calls for (unroutableFix); every
+   * What a failed probe says. An entry its group cannot place fails upstream with MMSP's own
+   * sentence — `No client for model "<id>": its family is not known`, or `Unknown client
+   * type "<type>"` for a pin MMSP does not have, then the list of client types it does have —
+   * which names an internal vocabulary and leaves the reader to infer what to do about it.
+   * That case gets a message naming the problem and the fix its own shape calls for
+   * (unroutableFix, which reads the config rather than matching that text); every
    * other failure still relays the upstream text, which is what makes a wrong key or a wrong
    * endpoint diagnosable. The relayed sentence is not lost either way: it goes to the console,
    * where a developer looking into a report can still read it.
@@ -2804,20 +2823,21 @@ function ModelDialog({
    * top-level banner: it's too far from the error site, and with three price fields it's
    * hard to tell which one is wrong).
    */
-  // base URL required-field policy: an OpenAI-protocol endpoint can't be
-  // inferred — required for custom / user-defined groups and entries with an explicit
-  // openai protocol (gateway groups already have it pre-filled); optional for entries
-  // auto-routed within a first-party vendor group (the client has its own official
-  // default endpoint). The Penguin Go relay is also required: its shared key must never
-  // fall through to a vendor default. Shared by validation and the label's required "*" mark.
+  // base URL required-field policy: an endpoint behind a compatible OpenAI-protocol client
+  // can't be inferred — required for custom / user-defined groups and entries pinned to one
+  // of those clients (gateway groups already have it pre-filled); optional for entries
+  // routed within a first-party vendor group, and for an `openai-official` pin (an official
+  // client has its vendor's default endpoint). The Penguin Go relay is also required: its
+  // shared key must never fall through to a vendor default. Shared by validation and the
+  // label's required "*" mark.
   const openAiLike =
-    form.clientType.trim().toLowerCase().includes("openai") ||
+    OPENAI_COMPATIBLE_CLIENT_TYPES.has(form.clientType.trim().toLowerCase()) ||
     form.provider === "custom" ||
     providerInfo(form.provider) === undefined;
   const baseUrlRequired = form.provider === PENGUIN_GO_PROVIDER_ID || (!preset && openAiLike);
-  // Custom-like groups (custom + user-defined) pick among AgentHub's generic protocol
+  // Custom-like groups (custom + user-defined) pick among MMSP's generic protocol
   // clients: the base URL field's suffix becomes the protocol picker there, unless the
-  // entry carries a legacy vendor-pinned client_type — that keeps the read-only note below
+  // entry is pinned to a client outside that trio — that keeps the read-only note below
   // instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
   const customLikeGroup = form.provider === "custom" || providerInfo(form.provider) === undefined;
   const showProtocolSelector =
@@ -2828,8 +2848,8 @@ function ModelDialog({
   // Protocol-path suffix shown inside the base URL field (every model, even while the
   // field is empty): the path the client appends to the base URL, i.e. the endpoint
   // shape a custom URL must serve. Recomputed from the live form so switching the
-  // group in add mode updates it.
-  const protocolPath = protocolPathForModel(form.provider, form.clientType);
+  // group in add mode, or typing an id of another vendor family, updates it.
+  const protocolPath = protocolPathForModel(form.provider, form.clientType, form.modelId);
   // Which protocol the picker shows as chosen — null while a fresh custom model has none.
   const protocolChoice = protocolSelectorValue(form.clientType);
   // In the picker, an unchosen protocol has no path to show: the field would otherwise
@@ -3593,9 +3613,10 @@ function ModelDialog({
 
         {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}
-        {/* Legacy entries carrying a client_type other than the standard openai-chat
-            (historical config): read-only display. Compared canonically so the deprecated
-            bare "openai" spelling (pre-0.4.2 configs) is not flagged as legacy either,
+        {/* An entry pinned to a protocol the dialog cannot edit — a client outside the generic
+            trio (a Penguin Go row the platform added, a vLLM-adapter row in a custom group), or
+            a pin from an older config: read-only display. Compared canonically so the
+            deprecated bare "openai" spelling (pre-0.4.2 configs) is not flagged either,
             skipped when the protocol selector above already represents it (generic protocol
             types in custom-like groups are editable there), and skipped when the value IS
             the group's own pin — that is this group's normal protocol, not a leftover from
@@ -3679,7 +3700,7 @@ function ModelDialog({
             )}
 
             {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
-                pricing). Offered only where AgentHub's routed client actually puts the
+                pricing). Offered only where MMSP's routed client actually puts the
                 parameter on the wire (fastModeProtocol) — a model whose client rejects it
                 would otherwise arm a switch that kills the next turn. Same inline-switch shape
                 as vision; the one small muted line appears in the non-default (ON) state, and

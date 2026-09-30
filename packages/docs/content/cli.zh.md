@@ -557,7 +557,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--base-url <url>` | 自定义端点的 base URL。 | 见下文 |
 | `--context-window <n>` | 上下文窗口大小，单位是 Token。 | — |
 | `--max-tokens <n>` | 这个模型的最大输出 Token 数，必须是正整数。设置后会覆盖 Agent 的 `model.max_tokens`；小上下文模型应调低此值。 | Agent 的 `model.max_tokens` |
-| `--client-type <type>` | AgentHub 客户端协议类型，例如 `openai-chat`。 | 见下文 |
+| `--client-type <type>` | MMSP 客户端类型，例如 `openai-chat`。 | 见下文 |
 | `--vision` / `--no-vision` | 标记是否支持图片输入。 | 保持当前值 |
 | `--fast-mode` / `--no-fast-mode` | 开启或关闭快速模式（输出更快，价格更高）。 | 关闭；两个都不写则保持当前值 |
 | `--price-cache-read <n>` | 缓存读取价格，单位为美元每百万 Token。 | — |
@@ -566,8 +566,8 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--set-default` | 同时把这条条目设为 Project 的默认模型。 | — |
 
 - CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
-- 新建条目时，`--client-type` 和 `--base-url` 默认取内置模型目录为对应 `(provider, model_id)` 组合设置的值。模型目录里没有这一条时由分组决定：指定了协议的分组就用它指定的协议；`custom`、用户自定义和网关分组用 `openai-chat`，网关分组的端点会自动填成 base URL；第一方厂商分组则两项都不设置。更新已有条目时，只有显式传入这两个选项才会改动。
-- 如果模型的 AgentHub 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
+- 新建条目时，`--client-type` 和 `--base-url` 默认取内置模型目录为对应 `(provider, model_id)` 组合设置的值。模型目录里没有这一条时由分组决定：指定了协议的分组就用它指定的协议；`custom`、用户自定义和网关分组用 `openai-chat`，网关分组的端点会自动填成 base URL；第一方厂商分组则两项都不设置，由 MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。更新已有条目时，只有显式传入这两个选项才会改动。
+- 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
 
 ### model default / model vision / model list / model remove
 

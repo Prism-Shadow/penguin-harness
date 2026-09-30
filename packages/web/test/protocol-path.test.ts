@@ -1,33 +1,63 @@
 /**
- * Protocol-path suffix for the base URL field (pure mapping): which path the AgentHub
- * client appends to a custom base URL, keyed off (provider, clientType). The expected
- * paths mirror the vendored agenthub clients: Anthropic direct posts /v1/messages,
- * OpenAI, MiniMax and DeepSeek direct use a Responses API (/responses), Google direct hits
- * /v1beta/models/<id>:…, and every OpenAI-compatible client posts /chat/completions.
+ * Protocol-path suffix for the base URL field (pure mapping): which path the MMSP client
+ * appends to a custom base URL, keyed off (provider, clientType, modelId). The expected paths
+ * mirror the MMSP 0.5.0 clients: the Anthropic Messages clients post /v1/messages; OpenAI's,
+ * DeepSeek's and MiniMax's official clients and the compatible Responses client use a
+ * Responses API (/responses); OpenAI's embedding ids and the compatible embedding client post
+ * /embeddings; Google's official client speaks the Interactions API (/v1beta/interactions) and
+ * the generateContent client /v1beta/models/<id>:…; and every Chat Completions client posts
+ * /chat/completions.
  */
 import { describe, expect, it } from "vitest";
 import { MODEL_CATALOG } from "@prismshadow/penguin-core/model-catalog";
 import { protocolPathForModel } from "../src/features/models/protocol-path";
 
 describe("protocolPathForModel", () => {
-  it("first-party vendor groups (auto-routed, no client type) map to their official protocol path", () => {
+  it("first-party vendor groups (no client type) map to their official client's path before an id is typed", () => {
     expect(protocolPathForModel("anthropic", "")).toBe("/v1/messages");
     expect(protocolPathForModel("openai", "")).toBe("/responses");
-    expect(protocolPathForModel("google", "")).toBe("/v1beta/models");
+    expect(protocolPathForModel("google", "")).toBe("/v1beta/interactions");
     expect(protocolPathForModel("minimax", "")).toBe("/responses");
     expect(protocolPathForModel("deepseek", "")).toBe("/responses");
   });
 
-  it("the MiniMax M3 client speaks MiniMax's Responses API, not chat completions", () => {
-    expect(protocolPathForModel("minimax", "minimax-m3")).toBe("/responses");
-    expect(protocolPathForModel("myproxy", "minimax-m3")).toBe("/responses");
+  it("an unpinned id routes by the vendor family it begins with, as MMSP routes it", () => {
+    expect(protocolPathForModel("anthropic", "", "claude-opus-5")).toBe("/v1/messages");
+    expect(protocolPathForModel("openai", "", "gpt-5.6")).toBe("/responses");
+    expect(protocolPathForModel("google", "", "gemini-3.8-flash")).toBe("/v1beta/interactions");
+    expect(protocolPathForModel("minimax", "", "MiniMax-M3")).toBe("/responses");
+    expect(protocolPathForModel("deepseek", "", "deepseek-flash")).toBe("/responses");
+    expect(protocolPathForModel("zhipu", "", "glm-5.3")).toBe("/chat/completions");
+    expect(protocolPathForModel("moonshot", "", "kimi-k3")).toBe("/chat/completions");
+    // The id decides, not the group: a gpt- id reaches OpenAI's client wherever it sits.
+    expect(protocolPathForModel("anthropic", "", "gpt-5.6")).toBe("/responses");
+    // An id of no known family routes nowhere, so the group's own client stands in.
+    expect(protocolPathForModel("deepseek", "", "qwen/qwen3.8-flash-next")).toBe("/responses");
   });
 
-  it("the DeepSeek V4 client speaks DeepSeek's Responses API (agenthub 0.4.6)", () => {
-    // Until 0.4.6 this client posted /chat/completions; the vendored client now posts
-    // /responses, and the hint has to name the endpoint shape a custom base URL must serve.
-    expect(protocolPathForModel("deepseek", "deepseek-v4")).toBe("/responses");
-    expect(protocolPathForModel("myproxy", "deepseek-v4")).toBe("/responses");
+  it("OpenAI's embedding ids go to the Embeddings API, like the compatible embedding client", () => {
+    expect(protocolPathForModel("openai", "", "text-embedding-3-small")).toBe("/embeddings");
+    expect(protocolPathForModel("custom", "openai-embedding")).toBe("/embeddings");
+  });
+
+  it("each official client pinned explicitly maps to its own path", () => {
+    expect(protocolPathForModel("myproxy", "openai-official")).toBe("/responses");
+    expect(protocolPathForModel("myproxy", "anthropic-official")).toBe("/v1/messages");
+    expect(protocolPathForModel("myproxy", "gemini-official")).toBe("/v1beta/interactions");
+    expect(protocolPathForModel("myproxy", "deepseek-official")).toBe("/responses");
+    expect(protocolPathForModel("myproxy", "minimax-official")).toBe("/responses");
+    expect(protocolPathForModel("myproxy", "zai-official")).toBe("/chat/completions");
+    expect(protocolPathForModel("myproxy", "moonshot-official")).toBe("/chat/completions");
+  });
+
+  it("Penguin Go's pins: the Gemini rows speak generateContent, the DeepSeek rows DeepSeek's Responses API", () => {
+    const rows = MODEL_CATALOG.filter((m) => m.provider === "penguin-go");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const m of rows) {
+      expect(protocolPathForModel(m.provider, m.clientType ?? "", m.modelId), m.modelId).toBe(
+        m.modelId.startsWith("gemini-") ? "/v1beta/models" : "/responses",
+      );
+    }
   });
 
   it("ModelScope aggregate presets display the Responses path", () => {
@@ -66,7 +96,7 @@ describe("protocolPathForModel", () => {
     expect(rows).toHaveLength(27);
     const hit = new Set<string>();
     for (const m of rows) {
-      const url = `${m.baseUrl}${protocolPathForModel(m.provider, m.clientType ?? "")}`;
+      const url = `${m.baseUrl}${protocolPathForModel(m.provider, m.clientType ?? "", m.modelId)}`;
       expect(endpoints.has(url), `${m.modelId} -> ${url}`).toBe(true);
       hit.add(url);
     }
@@ -82,26 +112,32 @@ describe("protocolPathForModel", () => {
   });
 
   it("openai-chat-vllm-adapter is chat completions, whatever the model id looks like", () => {
-    // It contains "openai" and reaches the same branch, which is the right answer: the vLLM
-    // client subclasses openai-chat and POSTs the same path. The DeepSeek id is the one that
-    // would go wrong if the group implied the path — the vendor's own client uses /responses.
+    // The vLLM client subclasses openai-chat and POSTs the same path. The DeepSeek id is the
+    // one that would go wrong if the id decided: unpinned, it begins with "deepseek-" and would
+    // route to DeepSeek's official client, which uses /responses.
     expect(protocolPathForModel("vllm", "openai-chat-vllm-adapter")).toBe("/chat/completions");
     expect(protocolPathForModel("custom", "openai-chat-vllm-adapter")).toBe("/chat/completions");
+    expect(
+      protocolPathForModel("vllm", "openai-chat-vllm-adapter", "deepseek-ai/DeepSeek-V4-Flash"),
+    ).toBe("/chat/completions");
   });
 
-  it("an explicit openai-chat client type wins over vendor-group membership", () => {
+  it("an explicit openai-chat client type wins over vendor-group membership and the id", () => {
     expect(protocolPathForModel("anthropic", "openai-chat")).toBe("/chat/completions");
-    expect(protocolPathForModel("google", "openai-chat")).toBe("/chat/completions");
+    expect(protocolPathForModel("google", "openai-chat", "gemini-3.8-flash")).toBe(
+      "/chat/completions",
+    );
     // The gateway rows reselling DeepSeek pin openai-chat, so they stay on chat completions
-    // even though the vendor's own client moved to /responses.
-    expect(protocolPathForModel("siliconflow", "openai-chat")).toBe("/chat/completions");
+    // even though the vendor's own client uses /responses.
+    expect(protocolPathForModel("siliconflow", "openai-chat", "deepseek-ai/DeepSeek-V4-Pro")).toBe(
+      "/chat/completions",
+    );
   });
 
-  it("the generic protocol clients (agenthub 0.4.2) map to their own endpoint shapes", () => {
-    // openai-responses contains "openai" but speaks the Responses API; ant-messages speaks
-    // the Anthropic Messages API — both must win over the generic openai substring match.
+  it("the compatible protocol clients map to their own endpoint shapes", () => {
     expect(protocolPathForModel("custom", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
+    expect(protocolPathForModel("custom", "gemini-generate-content")).toBe("/v1beta/models");
     expect(protocolPathForModel("deepseek", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("myproxy", " Ant-Messages ")).toBe("/v1/messages");
     // Every built-in OpenRouter preset pins openai-responses, so the gateway's base URL is
@@ -109,17 +145,18 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("openrouter", "openai-responses")).toBe("/responses");
   });
 
-  it("legacy explicit client types pin the family like auto-routing would", () => {
-    expect(protocolPathForModel("myproxy", "claude-5")).toBe("/v1/messages");
-    expect(protocolPathForModel("myproxy", "claude-4-6")).toBe("/v1/messages");
-    expect(protocolPathForModel("myproxy", "gemini-3.6")).toBe("/v1beta/models");
-    expect(protocolPathForModel("myproxy", "gpt-5.5")).toBe("/responses");
-    expect(protocolPathForModel("myproxy", "glm-5.2")).toBe("/chat/completions");
-    expect(protocolPathForModel("myproxy", "kimi-k3")).toBe("/chat/completions");
+  it("a pinned client type MMSP does not know falls back to the group's path, never to the id's family", () => {
+    // Pre-0.5.0 vendor names are no client type MMSP has: it refuses them rather than routing
+    // the id, so the hint follows the group.
+    expect(protocolPathForModel("myproxy", "claude-5")).toBe("/chat/completions");
+    expect(protocolPathForModel("myproxy", "gpt-5.5", "gpt-5.5")).toBe("/chat/completions");
+    expect(protocolPathForModel("deepseek", "deepseek-v4", "deepseek-flash")).toBe("/responses");
   });
 
-  it("client type matching is trim- and case-insensitive", () => {
+  it("client type and model id matching is trim- and case-insensitive", () => {
     expect(protocolPathForModel("custom", " OpenAI ")).toBe("/chat/completions");
-    expect(protocolPathForModel("anthropic", " Claude-5 ")).toBe("/v1/messages");
+    expect(protocolPathForModel("custom", " OPENAI-RESPONSES ")).toBe("/responses");
+    expect(protocolPathForModel("openai", "", " TEXT-EMBEDDING-3-LARGE ")).toBe("/embeddings");
+    expect(protocolPathForModel("google", "", " Gemini-3.8-Flash ")).toBe("/v1beta/interactions");
   });
 });

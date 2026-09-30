@@ -1,11 +1,12 @@
 /**
  * A vendor group carries the built-in catalog and nothing else.
  *
- * Its entries persist no `client_type`, so AgentHub places each one by the spelling of the
- * model id alone; an id it cannot place is a model that never starts. The page therefore
- * offers no add-model entry point on such a group, and marks a row that cannot route — with
- * the fix that row's own shape calls for, since a built-in model whose stored entry lost its
- * protocol pin must not be told to move into a custom group.
+ * Its entries persist no `client_type`, so MMSP places each one by the vendor family its
+ * model id begins with; an id of no known family — or an entry still pinned to a client type
+ * MMSP does not have — is a model that never starts. The page therefore offers no add-model
+ * entry point on such a group, and marks a row that cannot route — with the fix that row's
+ * own shape calls for, since a built-in model whose stored entry carries a stale protocol pin
+ * must not be told to move into a custom group.
  *
  * vitest runs node-only here, so the card is rendered to static markup and the group header —
  * which lives inside the page component and needs a fetch, a Project and localStorage — is
@@ -59,19 +60,21 @@ const render = (patch: Partial<RowState>, owner = true) =>
     }),
   );
 
-/** In the catalog, and unroutable without the pin the catalog carries for it. */
-const PRESET_MISSING_PIN = { modelId: "deepseek-flash" };
+/**
+ * In the catalog, and unroutable by the pin it carries: a Project written before MMSP 0.5.0
+ * holds deepseek-flash pinned to `deepseek-v4`, a client type MMSP no longer has.
+ */
+const PRESET_STALE_PIN = { modelId: "deepseek-flash", clientType: "deepseek-v4" };
 /** Not in the catalog: added by hand into a group that routes by id. */
 const HAND_ADDED = { modelId: "qwen/qwen3.8-flash-next" };
 
 describe("unroutableFix", () => {
   it("sends a built-in model to the preset sync, never to a custom group", () => {
-    // deepseek-flash is the live case: AgentHub routes DeepSeek on a substring the released
-    // id no longer carries, so the catalog pins deepseek-v4 — a Project written before that
-    // pin holds the row without it.
-    expect(unroutableFix("deepseek", "deepseek-flash", "")).toBe("sync");
-    // With the pin the catalog carries today there is nothing wrong with the row at all.
-    expect(unroutableFix("deepseek", "deepseek-flash", "deepseek-v4")).toBeNull();
+    // The live case: the stale pin fails at construction, while the catalog row pins nothing
+    // today and routes by its `deepseek-` prefix — which is what a sync writes back.
+    expect(unroutableFix("deepseek", "deepseek-flash", "deepseek-v4")).toBe("sync");
+    // As the catalog carries it today there is nothing wrong with the row at all.
+    expect(unroutableFix("deepseek", "deepseek-flash", "")).toBeNull();
   });
 
   it("sends a hand-added id to a custom group", () => {
@@ -81,11 +84,13 @@ describe("unroutableFix", () => {
   it("judges the id currently in the field, not the one the row was loaded with", () => {
     // Retyping a preset's id makes it a different model; a sync would not touch it, so the
     // advice has to change with the field.
-    expect(unroutableFix("deepseek", "deepseek-flash-0731", "")).toBe("custom");
+    expect(unroutableFix("deepseek", "deepseek-flash-0731", "deepseek-v4")).toBe("custom");
   });
 
   it("has nothing to say about a routable row, a blank id, or a group that picks its protocol", () => {
     expect(unroutableFix("deepseek", "deepseek-v4-pro", "")).toBeNull();
+    // An id outside the catalog routes all the same when it begins with the vendor's family.
+    expect(unroutableFix("deepseek", "deepseek-flash-0731", "")).toBeNull();
     expect(unroutableFix("deepseek", "  ", "")).toBeNull();
     expect(unroutableFix("custom", "qwen/qwen3.8-flash-next", "openai-chat")).toBeNull();
     expect(unroutableFix("openrouter", "qwen/qwen3.8-flash-next", "")).toBeNull();
@@ -95,7 +100,7 @@ describe("unroutableFix", () => {
 
 describe("a card for a row its vendor group cannot route", () => {
   it("tells a built-in model's owner to sync presets, and offers that action", () => {
-    const html = render(PRESET_MISSING_PIN);
+    const html = render(PRESET_STALE_PIN);
     expect(html).toContain(S.models.vendorRowStalePin);
     expect(html).toContain(S.models.syncCatalog);
     // The wrong advice for this row: it is a built-in model, and it stays where it is.
@@ -112,7 +117,7 @@ describe("a card for a row its vendor group cannot route", () => {
   });
 
   it("still warns a member in both cases, who has no config write and so is offered no action", () => {
-    const preset = render(PRESET_MISSING_PIN, false);
+    const preset = render(PRESET_STALE_PIN, false);
     expect(preset).toContain(S.models.vendorRowStalePin);
     expect(preset).not.toContain(S.models.syncCatalog);
     const handAdded = render(HAND_ADDED, false);
@@ -121,9 +126,9 @@ describe("a card for a row its vendor group cannot route", () => {
   });
 
   it("leaves a routable row, and every row outside a vendor group, unmarked", () => {
-    // Routable by its own id, and routable by the protocol its own preset pins.
+    // Routable by its own id, and routable by a pin MMSP has.
     const byId = render({ modelId: "deepseek-v4-pro" });
-    const byPin = render({ modelId: "deepseek-flash", clientType: "deepseek-v4" });
+    const byPin = render({ modelId: "deepseek-flash", clientType: "deepseek-official" });
     // The same unplaceable id in a group that decides the protocol itself.
     const inCustom = render({
       provider: "custom",

@@ -7,7 +7,7 @@
  * language (module-level constants do not update on switch — keep reads inside components).
  * Keep domain terms capitalized in English — Workspace, Token, Task, Session, Project, Trace.
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
- * label/sentence or in a proper name (Agent State, AgentHub). zh names the SURFACE
+ * label/sentence or in a proper name (Agent State). zh names the SURFACE
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
@@ -1364,26 +1364,29 @@ export const zh = {
     /** The same note for a gateway group that pins a protocol: the endpoint is the gateway's, already filled in. */
     addProtocolHintPinnedGateway: (protocol: string): string =>
       `本分组的模型固定使用 ${protocol} 协议，base URL 已预填网关端点`,
-    autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
+    autoRouteNone:
+      "厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由，该模型 ID 无法路由；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
-    /** Warning on a hand-added vendor-group row whose model id AgentHub cannot route (such a row can no longer be created, only inherited). */
-    vendorRowUnroutable: "该模型 ID 无法路由，运行时会失败：厂商分组只承载内置模型。",
+    /** Warning on a hand-added vendor-group row whose model id MMSP cannot route — it begins with no known vendor prefix (such a row can no longer be created, only inherited). */
+    vendorRowUnroutable:
+      "该模型 ID 无法路由，运行时会失败：厂商分组只能路由以已知厂商前缀开头的模型 ID。",
     /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
     moveToCustomGroup: "移到自定义分组",
     /**
-     * Warning on a built-in row saved before the catalog pinned the protocol its id needs:
-     * re-merging the catalog repairs it, and a move would be the wrong advice. It never
-     * quotes the sync button's own label — a member sees this sentence with no button beside
-     * it, and the owner who does have one reads the label right there.
+     * Warning on a built-in row whose stored protocol pin differs from the one the catalog
+     * sets for it today (a pin MMSP no longer has, or one the catalog added since), so it
+     * cannot be routed: re-merging the catalog repairs it, and a move would be the wrong
+     * advice. It never quotes the sync button's own label — a member sees this sentence with
+     * no button beside it, and the owner who does have one reads the label right there.
      */
     vendorRowStalePin:
-      "该内置模型的条目早于目录为它钉下的协议，当前无法路由；重新同步内置目录即可补回。",
-    /** Connectivity test on a hand-added row: replaces the upstream "is not supported" sentence, which names client types the user has no way to act on. */
+      "该内置模型的条目与目录当前为它设定的协议不一致，当前无法路由；重新同步内置目录即可恢复。",
+    /** Connectivity test on a hand-added row: replaces MMSP's "No client for model" sentence, which names client types the user has no way to act on. */
     testNotRoutable:
-      "连通失败：该模型 ID 无法路由。厂商分组只承载内置模型；把它移到自定义分组，并选择或检测其接口协议。",
-    /** Connectivity test on a built-in row missing its pin: the same split the card makes, so the two never give opposite advice. */
+      "连通失败：该模型 ID 无法路由。厂商分组只能路由以已知厂商前缀开头的模型 ID；把它移到自定义分组，并选择或检测其接口协议。",
+    /** Connectivity test on a built-in row with a stale pin: the same split the card makes, so the two never give opposite advice. */
     testStalePin:
-      "连通失败：该内置模型的条目早于目录为它钉下的协议，当前无法路由。重新同步内置目录即可补回该协议，它不属于自定义分组。",
+      "连通失败：该内置模型的条目与目录当前为它设定的协议不一致，当前无法路由。重新同步内置目录即可恢复，它不属于自定义分组。",
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
@@ -1496,7 +1499,7 @@ export const zh = {
       "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
-    /** Protocol selector (custom / user-defined groups): AgentHub's generic protocol clients. Protocol names are proper nouns, identical in both locales. */
+    /** Protocol selector (custom / user-defined groups): MMSP's generic protocol clients. Protocol names are proper nouns, identical in both locales. */
     protocol: "接口协议",
     protocolNames: {
       "openai-responses": "OpenAI Responses",
@@ -1536,7 +1539,7 @@ export const zh = {
     detectVisionNo: "该模型不接受图片输入，视觉保持关闭",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (read_file hands them to it). */
     visionOffProxyHint: "使用视觉代理模型读图",
-    /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose AgentHub client can carry the parameter. */
+    /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose MMSP client can carry the parameter. */
     fastMode: "快速模式",
     /** Shown while the fast-mode switch is ON (and as the label's hover title): what it buys, and that the recorded prices do not follow the premium rate. */
     fastModeHint: "输出更快，按厂商的溢价档位计费；成本中心仍按条目记录的标准单价统计",
@@ -1679,7 +1682,8 @@ export const zh = {
     },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
-    // base URL). Written to match AgentHub's actual behavior; rendered wherever the env fallback hint appears.
+    // base URL). Written to match the defaults MMSP's Z.AI and Moonshot clients carry; rendered
+    // wherever the env fallback hint appears.
     providerEnvNotes: {
       zhipu:
         "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需填 base URL https://open.bigmodel.cn/api/paas/v4",
@@ -4770,7 +4774,7 @@ Benchmark：
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       model_not_routable:
-        "该模型 ID 无法按厂商分组的协议路由。厂商分组只承载内置模型；请在自定义分组中添加该模型，并选择或检测其接口协议。",
+        "该模型 ID 无法路由：厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:

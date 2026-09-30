@@ -127,7 +127,8 @@ describe("models preset & catalog enrichment", () => {
     expect(sonnet.envKey).toBe("ANTHROPIC_API_KEY");
     expect(sonnet.contextWindow).toBe(1000000);
     expect(sonnet.pricing).toEqual({ cacheRead: 0.3, cacheWrite: 3.75, output: 15 });
-    // Preset models have no credential and no client_type (AgentHub auto-routes by upstream id).
+    // Preset models have no credential and no client_type (MMSP routes by the family the
+    // upstream id begins with).
     expect(sonnet.credential).toBeUndefined();
     expect(sonnet.clientType).toBeUndefined();
 
@@ -241,13 +242,13 @@ describe("models preset & catalog enrichment", () => {
           {
             provider: "penguin-go",
             modelId: "gemini-3.8-flash",
-            clientType: "gemini-3.8",
+            clientType: "gemini-generate-content",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
           {
             provider: "penguin-go",
             modelId: "deepseek-flash",
-            clientType: "deepseek-v4",
+            clientType: "deepseek-official",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
         ],
@@ -320,7 +321,7 @@ describe("models preset & catalog enrichment", () => {
     expect(opaque.envKey).toBeUndefined();
 
     // Listed under one vendor's group but using the openai protocol (a model added at a group header):
-    // AgentHub's openai client actually reads OPENAI_API_KEY, so the env fallback reports that, not the vendor's var name.
+    // MMSP's openai-chat client actually reads OPENAI_API_KEY, so the env fallback reports that, not the vendor's var name.
     expect(pick(body, "anthropic", "claude-via-gateway").envKey).toBe("OPENAI_API_KEY");
 
     // GET again: vision was persisted (not just echoed from the request body), and the disk
@@ -345,9 +346,9 @@ describe("models preset & catalog enrichment", () => {
 
   it("PUT refuses an id a vendor group cannot route when the request introduces it, and carries a stored one through", async () => {
     const cfgFile = path.join(t.root, projectId, ".project_config.toml");
-    // A row in the shape a vendor-group add used to produce: no client_type, and an id
-    // AgentHub places nowhere, so it fails at request time with its "is not supported"
-    // sentence. Rows like this exist in configs written before the rule below.
+    // A row in the shape a vendor-group add used to produce: no client_type, and an id of no
+    // family MMSP knows, so it fails at request time with its `No client for model` sentence.
+    // Rows like this exist in configs written before the rule below.
     await writeFile(
       cfgFile,
       ["[[models]]", 'provider = "deepseek"', 'model_id = "qwen/qwen3.8-flash-next"'].join("\n"),
@@ -742,8 +743,9 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(moved.provider).toBe("custom");
     expect(moved.modelId).toBe("deepseek-v4-pro");
     expect(moved.credential?.apiKeyMasked).toBe("sk-s…1234");
-    // The env fallback follows client resolution — with no client_type on the entry,
-    // AgentHub still routes by id to the DeepSeek client (reading DEEPSEEK_API_KEY), regardless of group membership.
+    // The env fallback follows client resolution — with no client_type on the entry, MMSP
+    // still routes the `deepseek-` id to the DeepSeek client (reading DEEPSEEK_API_KEY),
+    // regardless of group membership.
     expect(moved.envKey).toBe("DEEPSEEK_API_KEY");
   });
 
@@ -1178,7 +1180,7 @@ describe("model-reference rekeying and the connectivity test", () => {
   });
 
   it("the connectivity test and the group speed test refuse a keyless gateway row without touching the environment", async () => {
-    // The #786 review's finding: a keyless gateway row handed AgentHub no key, and its
+    // The #786 review's finding: a keyless gateway row handed the library no key, and its
     // generic client read OPENAI_API_KEY / ANTHROPIC_API_KEY itself — one speed test on a
     // gateway group sent the user's vendor keys to the gateway once per model. Both paths run
     // through testModel; both must refuse before any request leaves the process.

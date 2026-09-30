@@ -79,7 +79,7 @@ When a model entry has no inline `api_key`, it falls back to the provider's envi
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. The same holds for the opencode-go models on Anthropic Messages, whose client reads `ANTHROPIC_*`. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, and all three presets pin the generic Responses client; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. The same holds for the opencode-go models on Anthropic Messages, whose client reads `ANTHROPIC_*`. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, and all three presets pin the generic Responses client; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
@@ -100,9 +100,9 @@ The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `provider` | string | — | Provider group; with `model_id`, the entry's unique key |
-| `model_id` | string | — | Upstream request id, sent to AgentHub unchanged |
+| `model_id` | string | — | Upstream request id, sent to MMSP unchanged |
 | `context_window` | number | — | Context window size |
-| `client_type` | string | Inferred from `model_id` | AgentHub client protocol |
+| `client_type` | string | Routed by the vendor family `model_id` begins with | MMSP client type |
 | `display_name` | string | The built-in catalog name | Display name; persisted only when it differs from the catalog |
 | `vision` | boolean | `true` | Whether the model accepts image input |
 | `max_tokens` | number | The agent's `model.max_tokens` | Per-model max output Tokens; overrides the agent's `model.max_tokens` when set |
@@ -114,10 +114,10 @@ The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you
 
 Field notes:
 
-- `client_type`: custom endpoints use a generic protocol client: `openai-responses`, `ant-messages` or `openai-chat`. The Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias of `openai-chat`, normalized on read.
-- `fast_mode`: only `true` is persisted. It is offered only for models whose AgentHub client can serve it, and the others reject requests that carry it. See [Models](/models#fast-mode).
+- `client_type`: custom endpoints use a generic protocol client: `openai-responses`, `ant-messages` or `openai-chat`. The Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias of `openai-chat`, normalized on read. MMSP's other client types are accepted too: a vendor's official client (`openai-official`, `anthropic-official`, `gemini-official`, `zai-official`, `moonshot-official`, `deepseek-official`, `minimax-official`) and the remaining generic clients (`openai-chat-vllm-adapter`, `openai-embedding`, `gemini-generate-content`). Unset, the model id routes to the official client of the vendor family it begins with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`); an id of any other family needs a `client_type`.
+- `fast_mode`: only `true` is persisted. It is offered only for models whose MMSP client can serve it, and the others reject requests that carry it. See [Models](/models#fast-mode).
 - `pricing`: the figure here is the list price. A running promotion is not written to this file: the server keeps it in `web.db` and takes it off when it computes cost. See [Prices and promotions](/models#prices-and-promotions).
-- `base_url`: the built-in catalog presets it for gateways and for the direct rows that pin a client, MiniMax M3 and DeepSeek `deepseek-flash`.
+- `base_url`: the built-in catalog presets it for gateway rows. Direct vendor rows leave it unset and reach the vendor's default endpoint, or its `*_BASE_URL` variable.
 - `api_key`: when empty, the entry falls back to the provider's environment variable only when its endpoint is the vendor's own (see [Provider credential variables](#provider-credential-variables)); a gateway, custom or vLLM entry needs its own key.
 
 ```toml
@@ -128,8 +128,6 @@ provider = "deepseek"
 model_id = "deepseek-flash"
 context_window = 1000000
 vision = true
-client_type = "deepseek-v4"
-base_url = "https://api.deepseek.com"
 api_key = "sk-..."
 
 [models.pricing]

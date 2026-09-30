@@ -9,8 +9,8 @@ PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP
 (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell
 (`packages/desktop`), the landing and docs sites, and the shipped plugin library — one npm package
 per plugin under the repo root's `plugins/`, with `packages/plugins` as the loader that depends on
-them all. It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider
-clients of its own.
+them all. It **consumes** LLM providers through `@prismshadow/mmsp` (MMSP, formerly
+`@prismshadow/agenthub`) and implements no provider clients of its own.
 
 This page is the part that applies to every change. Four reference files carry the detail, read
 them when the task reaches them:
@@ -56,9 +56,9 @@ checkout's copy of the file you are already looking at. When a path does not res
 narrowing — reason about the package layout, ask `git ls-files`, follow the conventions above — over
 widening the root. The only paths outside the worktree worth reading are the siblings named here:
 `../penguin-harness-design` for specs, `../penguin-harness-wt/*` for another topic's tree, and
-`../agenthub` where it is checked out. Reach them by name; never find them by scanning. Say all of
-this to every subagent you dispatch — widening the search root is the first move a subagent makes
-when a path does not resolve.
+`../agenthub` for MMSP where it is checked out (the checkout keeps the library's former name).
+Reach them by name; never find them by scanning. Say all of this to every subagent you dispatch —
+widening the search root is the first move a subagent makes when a path does not resolve.
 
 ## Verify what you changed
 

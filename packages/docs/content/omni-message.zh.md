@@ -38,7 +38,7 @@ interface OmniMessage<P extends OmniPayload = OmniPayload> {
 interface SessionMetaPayload {
   session_id: string;
   provider: string;                       // one half of the model-identity pair
-  model_id: string;                       // the upstream request id sent to AgentHub
+  model_id: string;                       // the upstream request id sent to MMSP
   model_context_window: number | string;
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
