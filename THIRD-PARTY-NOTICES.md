@@ -177,8 +177,9 @@ from Xiaomi's official package into `unicode-range` WOFF2 slices: glyph outlines
 features and name records are kept, the tables that index glyphs are rebuilt for each slice's
 smaller glyph set, and the DSIG table is dropped. The slices are distributed only as part of the
 application, in its source tree, its builds and its npm package, and are never offered on their
-own. The application states that it uses MiSans in a credit line at the end of the Web App's
-account menu (condition 1 of the Agreement).
+own. The application states that it uses MiSans on the Credits page of the Web App's settings
+(Settings → Credits / 设置 → 版权信息), which names every bundled font with its licence
+(condition 1 of the Agreement).
 
 Every slice keeps the copyright notice of the font files:
 
