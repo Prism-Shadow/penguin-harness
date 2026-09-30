@@ -24,6 +24,8 @@ import {
   ICON_SIZE,
   PlusIcon,
   SkeletonList,
+  menuRowClass,
+  menuRowTone,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
@@ -37,7 +39,6 @@ import {
   useOrganizationCreated,
 } from "./org-dialogs";
 import { OrgStatusDot, OrgStatusPill, orgStatusText } from "./shared";
-import { menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** The switcher's rows: the shared menu row, a list of organizations and the actions under it. */
 const menuItemBase = `flex items-center ${ICON_GAP.menu} ${menuRowClass} text-sm`;

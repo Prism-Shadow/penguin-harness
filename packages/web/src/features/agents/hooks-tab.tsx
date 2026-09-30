@@ -29,10 +29,12 @@ import {
   CopyCheckGlyph,
   DownloadIcon,
   GlyphIcon,
+  HelpFold,
   HiddenFileInput,
   ICONS,
   SettingsEmpty,
   SkeletonList,
+  Textarea,
   useCopied,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -42,8 +44,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { HelpFold } from "../../components/ui/help-fold";
-import { Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";
@@ -52,7 +52,7 @@ import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { TRASH_ICON, UPLOAD_LABEL_CLASS } from "./skills-tab";
+import { UPLOAD_LABEL_CLASS } from "./skills-tab";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the package name for the confirm copy. */
 interface PendingOverwrite {
@@ -319,7 +319,7 @@ export function HooksTab({
                   disabled={busy}
                   onClick={() => setRemoving(hook.name)}
                 >
-                  <GlyphIcon d={TRASH_ICON} size={14} />
+                  <GlyphIcon d={ICONS.trash} size={14} />
                 </Button>
               </div>
             );

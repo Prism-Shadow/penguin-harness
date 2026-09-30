@@ -43,10 +43,9 @@ import type {
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Button, ICON_GAP } from "@prismshadow/penguin-ui";
+import { Button, ICON_GAP, noAutofill } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
-import { noAutofill } from "../../components/ui/input";
 import { PrincipalChip } from "./shared";
 import {
   mentionInsertId,

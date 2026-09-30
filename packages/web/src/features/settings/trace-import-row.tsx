@@ -19,15 +19,13 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
-import { HiddenFileInput, UploadIcon } from "@prismshadow/penguin-ui";
+import { HiddenFileInput, PrefRow, Select, UploadIcon } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { Select } from "../../components/ui/select";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { PrefRow } from "./setting-row";
 
 /** Client-side pre-check before reading the picked file (the same cap as the server's import route). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;

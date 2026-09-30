@@ -29,9 +29,15 @@ import {
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
+  InfoPopover,
+  Input,
+  OptionMenu,
   Skeleton,
+  Switch,
+  Textarea,
   UpdateDot,
 } from "@prismshadow/penguin-ui";
+import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -40,9 +46,6 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Input, Textarea } from "../../components/ui/input";
-import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
-import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";
@@ -53,7 +56,6 @@ import { SchedulesTab } from "./schedules-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
-import { InfoPopover } from "../../components/ui/info-popover";
 
 type TabKey =
   | "overview"

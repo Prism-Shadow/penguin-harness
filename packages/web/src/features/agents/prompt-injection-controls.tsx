@@ -28,16 +28,13 @@ import type {
   AgentSkillsConfigDto,
   AgentVaultConfigDto,
 } from "@prismshadow/penguin-server/api";
-import { Button } from "@prismshadow/penguin-ui";
+import { Button, InfoPopover, Textarea, ToggleRow } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Textarea } from "../../components/ui/input";
-import { Switch } from "../../components/ui/switch";
 import { useSaveConfirm } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { InfoPopover } from "../../components/ui/info-popover";
 import { NoticeStrip } from "../../components/ui/notice-strip";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
@@ -205,20 +202,14 @@ export function usePromptInjection({
     });
 
   const toggleCard = state !== null && (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
-      {/* The "?" sits inside the label so it modifies a title rather than standing alone (see info-popover.tsx). */}
-      <p className="flex items-center gap-1.5 text-sm font-medium text-gray-800 dark:text-gray-200">
-        {strings.enable}
-        {strings.enableHint !== undefined && (
-          <InfoPopover label={strings.enable}>{strings.enableHint}</InfoPopover>
-        )}
-      </p>
-      <Switch
-        checked={state.enabled}
-        onChange={(v) => void toggleEnabled(v)}
-        disabled={switchBusy || !canEdit}
-      />
-    </div>
+    <ToggleRow
+      variant="card"
+      label={strings.enable}
+      info={strings.enableHint}
+      checked={state.enabled}
+      onChange={(v) => void toggleEnabled(v)}
+      disabled={switchBusy || !canEdit}
+    />
   );
 
   // Legacy templates get the migration wording (and the legacy strings always exist for the

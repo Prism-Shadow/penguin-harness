@@ -20,7 +20,10 @@ describe("uiStringsFor", () => {
       const strings = uiStringsFor(locale);
       expect(Object.keys(strings).sort(), locale).toEqual(KEYS);
       for (const [key, value] of Object.entries(strings)) {
-        expect(typeof value === "string" && value.trim() !== "", `${locale}.${key}`).toBe(true);
+        // A formatter (`moreInfoAbout`) is checked by what it says about a subject.
+        const text = typeof value === "function" ? value("Vault") : value;
+        expect(typeof text === "string" && text.trim() !== "", `${locale}.${key}`).toBe(true);
+        if (typeof value === "function") expect(text, `${locale}.${key}`).toContain("Vault");
       }
     }
   });

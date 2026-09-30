@@ -18,17 +18,23 @@
  */
 import { useState } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { Button, SettingsEmpty } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  InfoPopover,
+  Input,
+  OptionMenu,
+  Segmented,
+  SettingsEmpty,
+  Textarea,
+} from "@prismshadow/penguin-ui";
+import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { McpServerTestResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
-import { Segmented } from "../../components/ui/segmented";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   emptyMcpForm,
@@ -43,7 +49,6 @@ import {
   type McpTransportKind,
 } from "./mcp-servers-form";
 import { toneInk } from "../../lib/tone";
-import { InfoPopover } from "../../components/ui/info-popover";
 
 /** Maps a validation error code to its localized message. */
 function errorText(err: McpFormError | undefined): string | undefined {

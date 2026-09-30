@@ -1,9 +1,8 @@
 /** 对话框: Modal, ConfirmModal, Drawer and Sheet, each opened from a button and closed as the app closes it. */
 import { useState } from "react";
-import { Button } from "@prismshadow/penguin-ui";
+import { Button, Input } from "@prismshadow/penguin-ui";
 import { ConfirmModal } from "../../../../web/src/components/ui/confirm-modal";
 import { Drawer } from "../../../../web/src/components/ui/drawer";
-import { Input } from "../../../../web/src/components/ui/input";
 import { Modal } from "../../../../web/src/components/ui/modal";
 import { Sheet } from "../../../../web/src/components/ui/sheet";
 import type { SheetSnap } from "../../../../web/src/components/ui/sheet";

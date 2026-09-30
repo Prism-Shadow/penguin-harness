@@ -36,9 +36,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import {
+  menuPanelClass,
+  menuRowClass,
+  menuRowTone,
+  scrollMovesAnchor,
+} from "@prismshadow/penguin-ui";
 import { FOCUSABLE_SELECTOR, isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
-import { scrollMovesAnchor } from "../../lib/context-menu";
-import { menuPanelClass, menuRowClass, menuRowTone } from "./field";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
 const PANEL_GAP = 4;

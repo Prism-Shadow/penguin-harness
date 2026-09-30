@@ -18,14 +18,15 @@
  * The chevron is the app's one collapse indicator, the same glyph every other collapsible
  * rotates; a help fold that announced itself differently would be a second pattern for no reason.
  *
- * A lone row reads "More info" and borrows its subject from `label`. Several stacked into an FAQ
- * take `title` instead and say what each one holds, because a column of identical "More info" rows
- * tells a reader nothing about which one answers their question.
+ * A lone row reads "More info" (`UiStrings.moreInfo`) and borrows its subject from `label`.
+ * Several stacked into an FAQ take `title` instead and say what each one holds, because a column
+ * of identical "More info" rows tells a reader nothing about which one answers their question.
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
-import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
+import { useUiStrings } from "../../../strings";
+import { Chevron } from "../../icons/chevron/chevron";
 
 export function HelpFold({
   children,
@@ -56,6 +57,7 @@ export function HelpFold({
   flush?: boolean;
   className?: string;
 }) {
+  const strings = useUiStrings();
   const [open, setOpen] = useState(false);
   const panelId = useId();
   return (
@@ -67,19 +69,19 @@ export function HelpFold({
         // The visible text is a prefix of the accessible name, so "label in name" holds and a
         // voice-control user can still say what they see.
         {...(title === undefined && label !== undefined
-          ? { "aria-label": S.common.moreInfoAbout(label) }
+          ? { "aria-label": strings.moreInfoAbout(label) }
           : {})}
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center ${ICON_GAP.tight} rounded text-xs text-gray-500 transition-colors duration-150 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200`}
+        className={`flex items-center ${ICON_GAP.tight} rounded-sm text-xs text-fg-muted transition-colors duration-150 hover:text-fg`}
       >
         <Chevron open={open} size={ICON_SIZE.chevronDense} />
-        {title ?? S.common.moreInfo}
+        {title ?? strings.moreInfo}
       </button>
       {/* pl-4.5 = the chevron's 12px plus the row's gap, so the body lines up under the label. */}
       <div
         id={panelId}
         hidden={!open}
-        className={`mt-1.5 ${flush ? "" : "pl-4.5"} text-xs leading-relaxed text-gray-500 dark:text-gray-400`}
+        className={`mt-1.5 ${flush ? "" : "pl-4.5"} text-xs leading-relaxed text-fg-muted`}
       >
         {children}
       </div>

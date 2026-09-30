@@ -31,6 +31,7 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  SearchInput,
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -43,7 +44,6 @@ import { formatDateTime, formatMessageTime } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import { Dropdown } from "../../components/ui/dropdown";
 import { toastError } from "../../components/ui/toast";
-import { noAutofill, panelSearchClass } from "../../components/ui/input";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
@@ -361,15 +361,13 @@ export function MachinesPage() {
               {/* The search row: matched characters bright and the rest dimmed — with a
                   subsequence match, an unmarked row looks wrong. */}
               <div className="px-2 pt-2 pb-1">
-                <input
-                  type="search"
+                <SearchInput
+                  variant="panel"
                   autoFocus
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={setQuery}
                   placeholder={S.machines.search}
                   aria-label={S.machines.search}
-                  {...noAutofill}
-                  className={`${panelSearchClass} px-2.5 py-1.5`}
                 />
               </div>
               <ul

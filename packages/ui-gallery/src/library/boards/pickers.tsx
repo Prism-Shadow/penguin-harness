@@ -1,21 +1,39 @@
-/** 选择器: the app's Select, Segmented, Switch, OptionMenu and Dropdown, each holding its own choice. */
+/**
+ * 选择器: the package's Select, Segmented, Switch, ToggleRow, SwatchPicker and OptionMenu, and the
+ * app's Dropdown, each holding its own choice.
+ */
 import { useState } from "react";
-import { Button, ChevronDown } from "@prismshadow/penguin-ui";
+import {
+  ACCENT_PRESETS,
+  Button,
+  ChevronDown,
+  OptionMenu,
+  Segmented,
+  Select,
+  SwatchPicker,
+  Switch,
+  ToggleRow,
+} from "@prismshadow/penguin-ui";
 import { Dropdown, menuItemClass } from "../../../../web/src/components/ui/dropdown";
-import { OptionMenu } from "../../../../web/src/components/ui/option-menu";
-import { Segmented } from "../../../../web/src/components/ui/segmented";
-import { Select } from "../../../../web/src/components/ui/select";
-import { Switch } from "../../../../web/src/components/ui/switch";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
 export function PickersBoard() {
-  const { S } = useGallery();
+  const { S, state } = useGallery();
   const t = S.library.pickers;
   const [model, setModel] = useState(t.options[0] ?? "");
   const [segment, setSegment] = useState(t.segments[0] ?? "");
   const [notify, setNotify] = useState(true);
   const [shortNames, setShortNames] = useState(false);
+  const [launcher, setLauncher] = useState(true);
+  const [proxy, setProxy] = useState(false);
+  const [memory, setMemory] = useState(true);
+  const swatches = ACCENT_PRESETS[state.theme].map((preset) => ({
+    value: preset.id as string,
+    color: preset.swatch,
+    label: preset.id,
+  }));
+  const [swatch, setSwatch] = useState(swatches[0]?.value ?? "");
   const [permission, setPermission] = useState<string | null>(t.choices[1]?.value ?? null);
   const [menuOpen, setMenuOpen] = useState(false);
   return (
@@ -58,6 +76,42 @@ export function PickersBoard() {
             <span>{t.switchOff}</span>
             <Switch checked={shortNames} onChange={setShortNames} />
           </label>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.toggleRows}>
+        <div className="lib-stack">
+          {/* The three frames: a ruled settings list, a spaced stack, a panel's master switch. */}
+          <div className="divide-y divide-line-muted">
+            <ToggleRow
+              label={t.toggleRowLabel}
+              info={t.toggleRowInfo}
+              checked={launcher}
+              onChange={setLauncher}
+            />
+            <ToggleRow label={t.switchOff} checked={shortNames} onChange={setShortNames} />
+          </div>
+          <ToggleRow
+            variant="plain"
+            label={t.togglePlainLabel}
+            hint={t.togglePlainHint}
+            checked={proxy}
+            onChange={setProxy}
+          />
+          <ToggleRow
+            variant="card"
+            label={t.toggleCardLabel}
+            checked={memory}
+            onChange={setMemory}
+          />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.swatches}>
+        <div className="lib-row">
+          <SwatchPicker
+            options={swatches}
+            value={swatches.some((option) => option.value === swatch) ? swatch : ""}
+            onChange={setSwatch}
+          />
         </div>
       </BoardGroup>
       <BoardGroup title={t.optionMenu}>

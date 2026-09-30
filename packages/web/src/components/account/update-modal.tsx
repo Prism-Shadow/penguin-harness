@@ -14,7 +14,7 @@
  * The flow and the actions live in `use-update-flow.ts`; this file only renders.
  */
 import type { ReactNode } from "react";
-import { Button, Link } from "@prismshadow/penguin-ui";
+import { Button, Link, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { toneInk } from "../../lib/tone";
@@ -235,12 +235,7 @@ function Footer({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNo
 function Line({ spinner, children }: { spinner?: boolean; children: ReactNode }) {
   return (
     <p className="flex items-center gap-2 text-sm">
-      {spinner && (
-        <span
-          aria-hidden
-          className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-        />
-      )}
+      {spinner && <Spinner size="md" label={S.common.loading} />}
       <span>{children}</span>
     </p>
   );

@@ -262,6 +262,137 @@
           "names": ["HiddenFileInput"]
         }
       ]
+    },
+    "W2": {
+      "packages/web/src/components/ui/field": [
+        {
+          "owner": "W2-0",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/menu-panel/menu-panel.tsx",
+          "names": ["menuPanelClass", "menuRowClass", "menuRowTone", "ChoiceCheck"]
+        },
+        {
+          "owner": "W2-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/field/field.tsx",
+          "names": ["Field", "FieldLabel", "FieldHint", "FieldError", "RequiredMark", "controlBase"]
+        }
+      ],
+      "packages/web/src/components/ui/input": [
+        {
+          "owner": "W2-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/input/input.tsx",
+          "names": [
+            "Input",
+            "InputProps",
+            "Textarea",
+            "TextareaProps",
+            "ControlSize",
+            "sizeTextClass",
+            "sizeClass",
+            "errorClass",
+            "autofillProps",
+            "noAutofill"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/password-input": [
+        {
+          "owner": "W2-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/password-input/password-input.tsx",
+          "names": ["PasswordInput"]
+        }
+      ],
+      "packages/web/src/components/ui/use-portal-panel": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/use-portal-panel.ts",
+          "names": ["usePortalPanel", "PortalPanelPosition"]
+        }
+      ],
+      "packages/web/src/lib/context-menu": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/use-portal-panel.ts",
+          "names": ["scrollMovesAnchor"]
+        }
+      ],
+      "packages/web/src/components/ui/info-popover": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/info-popover/info-popover.tsx",
+          "names": ["InfoPopover"]
+        }
+      ],
+      "packages/web/src/components/ui/help-fold": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/info-popover/help-fold.tsx",
+          "names": ["HelpFold"]
+        }
+      ],
+      "packages/web/src/components/ui/select": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/select/select.tsx",
+          "names": ["Select", "SelectProps"]
+        }
+      ],
+      "packages/web/src/components/ui/option-menu": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/select/option-menu.tsx",
+          "names": ["OptionMenu", "OptionMenuChoice", "rowDescClass"]
+        }
+      ],
+      "packages/web/src/features/chat/model-select": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/picker-list/picker-list.tsx",
+          "names": ["PickerList"]
+        }
+      ],
+      "packages/web/src/components/ui/switch": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/switch/switch.tsx",
+          "names": ["Switch", "SwitchProps"]
+        }
+      ],
+      "packages/web/src/components/ui/segmented": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/segmented/segmented.tsx",
+          "names": ["Segmented"]
+        }
+      ],
+      "packages/web/src/features/settings/setting-row": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/pref-row/pref-row.tsx",
+          "names": ["PrefRow"]
+        }
+      ],
+      "packages/web/src/features/settings/section-shell": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/pref-row/pref-row.tsx",
+          "names": ["SectionShell→SettingsSection"]
+        }
+      ]
     }
   }
 }

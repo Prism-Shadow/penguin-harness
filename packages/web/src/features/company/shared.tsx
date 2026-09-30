@@ -18,9 +18,13 @@ import {
   AgentAvatar,
   Badge,
   Button,
+  FieldError,
+  FieldHint,
+  FieldLabel,
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
+  Input,
 } from "@prismshadow/penguin-ui";
 import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -28,8 +32,6 @@ import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { Input } from "../../components/ui/input";
 import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";

@@ -33,7 +33,13 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  Input,
+  Segmented,
+  Select,
   Skeleton,
+  Switch,
+  Textarea,
+  usePortalPanel,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -45,13 +51,8 @@ import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { toastAttention, toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {

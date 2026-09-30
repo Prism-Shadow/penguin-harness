@@ -26,8 +26,11 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  SearchInput,
+  Segmented,
   SettingsEmpty,
   SkeletonList,
+  Switch,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -38,14 +41,11 @@ import { useProject } from "../../state/project";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
 import { Icon } from "../../components/ui/group-list";
-import { Input } from "../../components/ui/input";
-import { Segmented } from "../../components/ui/segmented";
 import {
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../../components/ui/session-row-menu";
-import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { CreateButtons } from "../ai-create";
 import { describeSchedule } from "./schedule-describe";
@@ -254,14 +254,12 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
           />
         </div>
 
-        <Input
+        <SearchInput
           size="sm"
-          type="search"
           value={query}
           placeholder={S.schedule.panelSearchPlaceholder}
           aria-label={S.schedule.panelSearchPlaceholder}
-          autoComplete="off"
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
         />
         <Segmented
           cols={4}

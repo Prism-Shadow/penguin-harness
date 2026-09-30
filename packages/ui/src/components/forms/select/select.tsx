@@ -1,31 +1,30 @@
 /**
- * Dropdown select component: **custom-drawn** (not the native browser select),
- * keeping the same API — parses `<option>` children and follows the
- * `value` / `onChange(e.target.value)` convention. The menu is rendered via
- * portal to body (fixed positioning from the shared usePortalPanel hook), so it
- * is never clipped by a Modal or scroll container; it closes on outside click,
- * Esc, a scroll that moves the trigger, or resize. Styling matches Input.
+ * Dropdown select: **custom-drawn** (not the native browser select) but keeping the native API —
+ * it parses `<option>` children and follows the `value` / `onChange(e.target.value)` convention.
+ * The menu is rendered via portal to body (fixed positioning from the shared usePortalPanel hook),
+ * so it is never clipped by a Modal or scroll container; it closes on outside click, Esc, a scroll
+ * that moves the trigger, or resize. The trigger wears the control look Input wears, and the panel
+ * is the menu panel every picker shares.
  */
 import { Children, isValidElement, useId, useState } from "react";
 import type { ChangeEvent, ReactNode, SelectHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown } from "@prismshadow/penguin-ui";
-import { errorClass, sizeClass, sizeTextClass } from "./input";
-import type { ControlSize } from "./input";
+import { ChevronDown } from "../../icons/marks/marks";
 import {
   ChoiceCheck,
-  Field,
-  controlBase,
   menuPanelClass,
   menuRowClass,
   menuRowTone,
-} from "./field";
-import { usePortalPanel } from "./use-portal-panel";
+} from "../../overlays/menu-panel/menu-panel";
+import { usePortalPanel } from "../../overlays/portal-panel/use-portal-panel";
+import { Field, controlBase } from "../field/field";
+import { errorClass, sizeClass, sizeTextClass } from "../input/input";
+import type { ControlSize } from "../input/input";
 
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
   label?: string;
   hint?: string;
-  /** Field-value error: red border + message below, exactly like Input. */
+  /** Field-value error: the error border + message below, exactly like Input. */
   error?: string;
   /** Same size tier as Input: sm is for filter bars, keeps the toolbar from growing taller. */
   size?: ControlSize;
@@ -108,7 +107,7 @@ export function Select({
         <span className="min-w-0 flex-1 truncate">
           {selected?.label ?? options[0]?.label ?? ""}
         </span>
-        <ChevronDown className="text-gray-400" />
+        <ChevronDown className="text-fg-subtle" />
       </button>
       {open &&
         position &&

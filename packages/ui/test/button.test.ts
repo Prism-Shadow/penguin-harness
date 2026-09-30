@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Button, IconButton, buttonClass } from "../src/components/actions/button/button";
 import type { ButtonSize, ButtonVariant } from "../src/components/actions/button/button";
-import { UiStringsProvider } from "../src/strings";
+import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
 
 const VARIANTS: ButtonVariant[] = ["primary", "secondary", "danger", "ghost", "link"];
@@ -69,7 +69,7 @@ describe("Button", () => {
     const injected = renderStatic(
       createElement(
         UiStringsProvider,
-        { strings: { close: "关闭", copied: "已复制", loading: "加载中…" } },
+        { strings: { ...DEFAULT_UI_STRINGS, close: "关闭", copied: "已复制", loading: "加载中…" } },
         createElement(Button, { loading: true }, "保存"),
       ),
     );

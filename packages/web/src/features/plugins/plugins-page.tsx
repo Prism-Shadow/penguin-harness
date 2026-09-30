@@ -55,6 +55,8 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  InfoPopover,
+  SearchInput,
   Skeleton,
   SkeletonCard,
   StatusIcon,
@@ -86,9 +88,7 @@ import { PluginDetailModal } from "./plugin-detail";
 import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
-import { InfoPopover } from "../../components/ui/info-popover";
 import { toneInk, toneSurface } from "../../lib/tone";
-import { Input } from "../../components/ui/input";
 import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /**
@@ -686,13 +686,12 @@ export function PluginsPage() {
         ) : (
           <div className="mt-6 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
             <div className="min-w-0 space-y-3">
-              <Input
+              <SearchInput
                 size="sm"
-                type="search"
                 value={query}
                 placeholder={S.plugins.searchPlaceholder}
                 aria-label={S.plugins.searchPlaceholder}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={setQuery}
               />
               {/* ONE list, one plugin per row, every kind in the same card: what is installed
                   first — the library's plugins (they ship with the build and every Agent may use

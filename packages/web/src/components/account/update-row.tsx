@@ -5,6 +5,7 @@
  * update modal, which is where the flow is explained and acted on. The running version
  * sits muted on the right. Renders nothing where this session can update nothing.
  */
+import { Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { updateRowModel } from "../../lib/update-flow";
 import type { UpdateFlow } from "../../lib/update-flow";
@@ -29,11 +30,12 @@ export function UpdateRow({
       className={`${menuItemClass} flex items-center justify-between gap-2`}
     >
       <span className="flex min-w-0 items-center gap-2">
+        {/* The row's words already say what is running; hidden, the spinner stays out of the
+            menu item's accessible name. */}
         {row.busy && (
-          <span
-            aria-hidden
-            className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-          />
+          <span aria-hidden className="flex shrink-0">
+            <Spinner size="sm" label={S.common.loading} />
+          </span>
         )}
         {row.dot && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent" />}
         <span className="min-w-0 truncate">{rowLabel(flow)}</span>

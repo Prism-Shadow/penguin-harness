@@ -24,7 +24,15 @@ import type {
   ReactNode,
 } from "react";
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
-import { Button, CloseIcon, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CloseIcon,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  noAutofill,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { writeClipboard } from "../../lib/clipboard";
@@ -41,7 +49,6 @@ import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { Dropdown } from "../../components/ui/dropdown";
-import { noAutofill } from "../../components/ui/input";
 import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {

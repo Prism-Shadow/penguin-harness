@@ -11,7 +11,9 @@
  *
  * **Dismissal** is the third: the panel listens for scroll in the capture phase, which
  * reaches every scrolling container in the document, so the rule that closes a menu whose
- * anchor point has moved must not close one anchored somewhere that did not move.
+ * anchor point has moved must not close one anchored somewhere that did not move. That rule,
+ * `scrollMovesAnchor`, is the UI package's (its cases are in the package's
+ * portal-panel.test.ts); what is pinned here is the menu consulting it.
  *
  * The last part pins **suppression scope** against the source text. Preventing the
  * browser's own menu is correct on the row and wrong everywhere else, and nothing in a
@@ -33,7 +35,6 @@ import {
   longPressMoved,
   pointerAnchor,
   reduceHold,
-  scrollMovesAnchor,
   withinSettleWindow,
 } from "../src/lib/context-menu";
 import type { HoldEvent } from "../src/lib/context-menu";
@@ -228,63 +229,6 @@ describe("reduceHold", () => {
   });
 });
 
-/**
- * Scroll dismissal (`components/ui/dropdown.tsx`). A pointer anchor is a position rather
- * than an element, so once the content under it moves the panel dismisses instead of
- * following — but the listener that decides this is capture-phase, and therefore hears
- * every scroller in the document. The reported failure was a Session row's menu that
- * "kept getting wiped": while a conversation streams, the message list scrolls itself on
- * every chunk, and each of those scrolls was closing a menu opened in the sidebar.
- */
-describe("scrollMovesAnchor", () => {
-  /** A stand-in for a DOM node, implementing the containment the rule reads off one. */
-  interface FakeNode {
-    parent: FakeNode | null;
-    contains: (n: FakeNode | null) => boolean;
-  }
-  /** `contains` is inclusive, exactly as the DOM's is: a node contains itself. */
-  const node = (parent: FakeNode | null): FakeNode => {
-    const self: FakeNode = {
-      parent,
-      contains: (n) => {
-        for (let at = n; at !== null; at = at.parent) if (at === self) return true;
-        return false;
-      },
-    };
-    return self;
-  };
-  // The suite is node-only, so the rule is fed stand-ins rather than real elements; it
-  // reads nothing off a node but `contains`, which is what these implement.
-  const asNode = (n: FakeNode) => n as unknown as Node;
-
-  // The page as the bug found it: a sidebar that scrolls its Session list, a chat pane
-  // that scrolls its messages, and no relation between the two but the document.
-  const doc = node(null);
-  const sidebarScroller = node(doc);
-  const row = node(sidebarScroller);
-  const messageList = node(doc);
-
-  it("ignores a scroll in an unrelated container, so streaming output leaves the menu open", () => {
-    expect(scrollMovesAnchor(asNode(messageList), asNode(row))).toBe(false);
-  });
-
-  it("dismisses when the container holding the anchored row scrolls", () => {
-    expect(scrollMovesAnchor(asNode(sidebarScroller), asNode(row))).toBe(true);
-  });
-
-  it("dismisses when the anchored row is itself what scrolled", () => {
-    expect(scrollMovesAnchor(asNode(row), asNode(row))).toBe(true);
-  });
-
-  it("dismisses on a page-level scroll, which targets the document and needs no case of its own", () => {
-    expect(scrollMovesAnchor(asNode(doc), asNode(row))).toBe(true);
-  });
-
-  it("dismisses on any scroll when the caller names no owner, as anchored panels always did", () => {
-    expect(scrollMovesAnchor(asNode(messageList), null)).toBe(true);
-  });
-});
-
 /** Every .ts/.tsx under web and the shared UI package (test/helpers/roots.ts). */
 const SCAN = scanSources([".ts", ".tsx"]);
 
@@ -325,9 +269,9 @@ describe("sourceFiles", () => {
 
 describe("anchored dismissal wiring", () => {
   it("asks scrollMovesAnchor before dismissing an anchored panel", () => {
-    // The rule's own cases are covered above against stand-in nodes. What a node-only suite
-    // cannot reach is the component consulting it at all, and that is where this silently
-    // breaks: drop the call and every assertion above still passes while the reported bug —
+    // The rule's own cases are covered in the package against stand-in nodes. What a node-only
+    // suite cannot reach is the component consulting it at all, and that is where this silently
+    // breaks: drop the call and every assertion there still passes while the reported bug —
     // a streaming message list wiping a menu opened in the sidebar — comes straight back.
     const dropdown = sourceFiles().find(([path]) => path === DROPDOWN);
     expect(dropdown).toBeDefined();

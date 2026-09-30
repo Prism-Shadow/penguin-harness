@@ -24,16 +24,22 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
-import { Button, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  FieldHint,
+  FieldLabel,
+  GlyphIcon,
+  ICONS,
+  Input,
+  Segmented,
+  Select,
+  Textarea,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
-import { FieldHint, FieldLabel } from "../../components/ui/field";
-import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { ModelSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";

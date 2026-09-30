@@ -20,9 +20,9 @@
  * - **Keyboard**: the search field keeps focus the whole time and drives a highlight (the
  *   combobox pattern, via `aria-activedescendant`), so typing always lands in it. ↑/↓ walk the
  *   list or the rail, ←/→ or Tab switch between them, ⌥1–9 (Alt off macOS) jump to a group,
- *   Enter chooses, Escape closes (the Modal's esc layer, so a picker opened from a dialog closes
- *   alone). Rows and rail entries are not in the Tab order, and no click takes focus away
- *   from the search field.
+ *   Enter chooses, Escape empties a typed query first (the shared search box) and then closes
+ *   (the Modal's esc layer, so a picker opened from a dialog closes alone). Rows and rail
+ *   entries are not in the Tab order, and no click takes focus away from the search field.
  * - **Phone width**: the dialog fills the screen and the rail becomes a strip of group chips
  *   scrolling sideways above the list.
  *
@@ -32,11 +32,17 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
-import { CloseButton, GlyphIcon, ICONS, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
+import {
+  ChoiceCheck,
+  CloseButton,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  ProviderLogo,
+  SearchInput,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Modal } from "../../components/ui/modal";
-import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ChoiceCheck } from "../../components/ui/field";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { TAG_SHAPE } from "../models/model-tags";
@@ -309,12 +315,13 @@ function ModelPickerBody({
       className="flex h-[calc(100dvh_-_env(safe-area-inset-bottom))] flex-col pt-[env(safe-area-inset-top)] sm:h-[min(32rem,80vh)] sm:pt-0"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2.5 dark:border-gray-800">
-        <input
+        <SearchInput
           ref={inputRef}
+          variant="panel"
           autoFocus
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
+          onChange={(next) => {
+            setQuery(next);
             setSearchRow(0);
           }}
           placeholder={S.models.searchPlaceholder}
@@ -324,8 +331,7 @@ function ModelPickerBody({
           aria-controls={listId}
           aria-autocomplete="list"
           {...(highlighted ? { "aria-activedescendant": optionId(highlighted) } : {})}
-          {...noAutofill}
-          className={`${panelSearchClass} min-w-0 flex-1 px-2.5 py-1.5`}
+          className="min-w-0 flex-1"
         />
         <CloseButton onClose={onClose} />
       </div>

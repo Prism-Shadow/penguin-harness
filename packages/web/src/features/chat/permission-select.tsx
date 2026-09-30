@@ -16,7 +16,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
+import { ChoiceCheck, GlyphIcon, menuRowClass, menuRowTone } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { toneInk } from "../../lib/tone";
@@ -27,7 +27,6 @@ import {
 } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
 import { SettingsDialog } from "../settings/settings-dialog";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];

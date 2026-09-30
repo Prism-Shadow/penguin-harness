@@ -15,18 +15,22 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
-import { Button, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  HelpFold,
+  Input,
+  PasswordInput,
+  SettingsEmpty,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Input } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { HelpFold } from "../../components/ui/help-fold";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { NoticeStrip } from "../../components/ui/notice-strip";
 

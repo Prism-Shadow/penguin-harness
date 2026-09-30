@@ -1,6 +1,7 @@
 /**
- * Scroll dismissal for the shared portal panel (src/components/ui/use-portal-panel.ts),
- * which OptionMenu, Select, InfoPopover and the composer toolbar's context ring all open through.
+ * Scroll dismissal for the shared portal panel (the UI package's
+ * src/components/overlays/portal-panel/use-portal-panel.ts), which OptionMenu, Select,
+ * InfoPopover and the composer toolbar's context ring all open through.
  *
  * The panel listens for scroll in the capture phase because scroll does not bubble, and the
  * price of capture on `window` is that it hears every scrolling element in the document. The
@@ -9,8 +10,8 @@
  * streaming reply closes a panel opened in the composer toolbar, over content that never
  * moved.
  *
- * `scrollMovesAnchor` itself is exercised in context-menu.test.ts; what cannot be reached
- * from a node-only suite (`environment: "node"`, no jsdom) is the wiring, and the wiring is
+ * `scrollMovesAnchor` itself is exercised in the package's portal-panel.test.ts; what cannot be
+ * reached from a node-only suite (`environment: "node"`, no jsdom) is the wiring, and the wiring is
  * where this silently breaks: the rule is answered with the trigger element, so a consumer
  * that never attaches `triggerRef` hands it a null owner and quietly gets the old
  * close-on-any-scroll behavior back for its own panel. So the scan below discovers the
@@ -22,7 +23,7 @@ import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } fro
 
 /** Every .ts/.tsx under web and the shared UI package: a consumer is covered on either side. */
 const SCAN = scanSources([".ts", ".tsx"]);
-const HOOK = "packages/web/src/components/ui/use-portal-panel.ts";
+const HOOK = "packages/ui/src/components/overlays/portal-panel/use-portal-panel.ts";
 
 /** The body of a handler declared as `const <name> = ...` up to its closing `};`. */
 function handler(src: string, name: string): string {

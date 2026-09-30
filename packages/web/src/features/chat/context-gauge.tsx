@@ -68,10 +68,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
+import { Input, usePortalPanel } from "@prismshadow/penguin-ui";
 import { getSessionContext } from "../../api/endpoints";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Input } from "../../components/ui/input";
-import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import {
   MIN_COMPACTION_THRESHOLD,
   THRESHOLD_STEP,
