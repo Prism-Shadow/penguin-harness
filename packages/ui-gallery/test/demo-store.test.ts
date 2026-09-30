@@ -9,8 +9,9 @@ import { catalogEntryFor } from "../../core/dist/state/model-catalog.js";
 import { catalogDelta } from "../../web/src/features/models/catalog-sync";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { ALL_SESSION_IDS, IDS } from "../src/app/mock/ids";
-import { resetStore } from "../src/app/mock/store";
-import { TOOL_CALL_IDS } from "../src/app/mock/transcripts";
+import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src/app/mock/store";
+import { scriptDuration, streamScript } from "../src/app/mock/stream-script";
+import { streamingAnswer, TOOL_CALL_IDS } from "../src/app/mock/transcripts";
 import { payloadOf } from "../src/app/mock/types";
 import type { OmniMessage, StreamHandlers } from "../src/app/mock/types";
 
@@ -33,6 +34,13 @@ function shape(value: unknown): unknown {
 
 /** A message's payload type, the session_meta record reading as its own kind. */
 const typeOf = (m: OmniMessage): string => payloadOf(m)?.type ?? "session_meta";
+
+/** The text deltas among `messages`, in order. */
+const textDeltas = (messages: OmniMessage[]): string[] =>
+  messages.flatMap((m) => {
+    const p = payloadOf(m);
+    return p?.type === "partial_text" && p.event_type === "delta" ? [p.text] : [];
+  });
 
 /** A subscriber that keeps what it is sent. */
 function collector(): StreamHandlers & { messages: OmniMessage[]; events: ServerEvent[] } {
@@ -68,7 +76,14 @@ describe("the fixtures", () => {
         .filter((s) => s.status === "running")
         .map((s) => s.sessionId)
         .sort(),
-    ).toEqual([IDS.sessions.approval, IDS.sessions.runningTool, IDS.sessions.thinking].sort());
+    ).toEqual(
+      [
+        IDS.sessions.approval,
+        IDS.sessions.runningTool,
+        IDS.sessions.thinking,
+        IDS.sessions.streaming,
+      ].sort(),
+    );
   });
 
   it("carry the whole built-in catalog, settled: the app's sync check finds nothing to add or update", () => {
@@ -129,6 +144,53 @@ describe("the running states", () => {
     const after = (grown.fragments[0]!.payload as { thinking: string }).thinking;
     expect(after.length).toBeGreaterThan(before.length);
     expect(grown.cursor).not.toBe(tail.cursor);
+  });
+
+  it("a reply streaming on a loop: bursty deltas, the complete answer, then a rewind, a resync and the next round", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "zh", signedIn: true, now: NOW });
+    const id = IDS.sessions.streaming;
+    const base = store.transcript(id)!.history.length;
+    const answer = streamingAnswer("zh");
+    const sub = collector();
+    store.channel(id)!.subscribe(sub);
+    store.onSubscribe(id, sub);
+    // A second subscription (a remount) joins the running loop rather than starting another.
+    store.onSubscribe(id, sub);
+    expect(sub.events[0]).toEqual({ type: "task_state", state: "running" });
+
+    // Mid-round, the live tail carries the open fragment with exactly what has streamed.
+    vi.advanceTimersByTime(REPLY_LEAD_MS + 1500);
+    const streamed = textDeltas(sub.messages).join("");
+    expect(streamed.length).toBeGreaterThan(0);
+    expect(answer.startsWith(streamed)).toBe(true);
+    expect(store.liveTail(id)!.fragments.at(-1)!.payload).toEqual({
+      type: "partial_text",
+      role: "assistant",
+      event_type: "start",
+      text: streamed,
+    });
+
+    // The round closes with the complete answer in the history, cut as the first seed's script.
+    const round = REPLY_LEAD_MS + scriptDuration(streamScript(answer, 1)) + REPLY_CLOSE_MS;
+    vi.advanceTimersByTime(round - (REPLY_LEAD_MS + 1500));
+    expect(textDeltas(sub.messages)).toEqual(streamScript(answer, 1).map((c) => c.text));
+    expect(store.transcript(id)!.history.length).toBe(base + 1);
+    expect(store.transcript(id)!.history.at(-1)!.payload).toMatchObject({ text: answer });
+    expect(store.liveTail(id)!.fragments).toEqual([]);
+
+    // After the hold it is rewound out of the history, the page is told to refetch, and the next
+    // round opens a fresh fragment.
+    vi.advanceTimersByTime(REPLY_HOLD_MS);
+    expect(store.transcript(id)!.history.length).toBe(base);
+    expect(sub.events.at(-1)).toEqual({ type: "resync_required" });
+    vi.advanceTimersByTime(REPLY_LEAD_MS);
+    const starts = sub.messages.filter((m) => {
+      const p = payloadOf(m);
+      return p?.type === "partial_text" && p.event_type === "start";
+    });
+    expect(starts).toHaveLength(2);
+    expect(store.session(id)?.status).toBe("running");
   });
 
   it("an approval pending: the subscription is told, and a decision runs the command and settles", () => {

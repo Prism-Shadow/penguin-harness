@@ -6,8 +6,9 @@
  * `themes/geek.css` gives **every** name below a value in **both** modes (light and dark): its
  * base rule declares all of them with the light values, and its dark rule declares only the names
  * whose value dark changes — a group that does not vary by mode (shape, families, type scale,
- * density, motion, icons) lives once, in the base rule. The contract test parses the three files
- * and diffs each mode (the base rule plus that mode's own) against {@link TOKEN_NAMES}. Components
+ * density, motion, streaming, icons) lives once, in the base rule. The contract test parses the
+ * three files and diffs each mode (the base rule plus that mode's own) against
+ * {@link TOKEN_NAMES}. Components
  * read these names only — through the semantic Tailwind utilities `theme.css` bridges
  * (`bg-surface`, `text-fg-muted`, `border-line`, …) or through `var(--ui-*)` directly — and never
  * branch on which theme is active.
@@ -43,6 +44,9 @@
  * rules in `theme.css` for `data-presence`, `data-backdrop`, `data-reveal` and
  * `data-layout-motion`; a theme picks a quick fade, a soft spring or a `steps()` jump by value
  * alone. `--ui-dur-fast` / `base` / `slow` stay the state-change durations a component may name.
+ * A reply that is still streaming is paced by the two streaming tokens (`--ui-stream-reveal`,
+ * `--ui-stream-rate`) and dressed by the `ui-stream` hook: Primer shows it as it lands, Frost
+ * lets it surface word by word through a soft veil, Console types it out behind a block cursor.
  */
 
 /** Stable, lowercase theme ids. Display names (Primer / Frost / Console) are UI copy, not ids. */
@@ -502,6 +506,17 @@ export const TOKEN_GROUPS = [
     ],
   },
   {
+    id: "stream",
+    title: "Streaming — how a reply is revealed",
+    // What the app's stream-reveal hook reads, once per theme, to pace an assistant reply that
+    // is still arriving: the reveal (`instant` shows the text as it lands, `fade` reveals it word
+    // by word, `typewriter` character by character — the exact keywords) and its rate, a plain
+    // number of characters per second (0 where the reveal is `instant` and no rate applies).
+    // The look of the arriving text is the `ui-stream` hook's (hooks.ts); these two say only
+    // how fast it arrives. Neither varies by mode.
+    names: ["--ui-stream-reveal", "--ui-stream-rate"],
+  },
+  {
     id: "icons",
     title: "Icons",
     names: ["--ui-icon-stroke", "--ui-icon-cap", "--ui-icon-join"],
@@ -532,6 +547,15 @@ export type TokenName = TokenGroup["names"][number];
 export const TOKEN_NAMES: readonly TokenName[] = TOKEN_GROUPS.flatMap(
   (group): readonly TokenName[] => group.names,
 );
+
+/**
+ * The keywords `--ui-stream-reveal` takes, exactly: `instant` (a streaming reply shows as it
+ * lands), `fade` (it is revealed word by word) and `typewriter` (character by character), the
+ * last two at `--ui-stream-rate` characters per second. A value outside the list reads as
+ * `instant`, so a reader never paces text a theme did not ask to pace.
+ */
+export const STREAM_REVEALS = ["instant", "fade", "typewriter"] as const;
+export type StreamReveal = (typeof STREAM_REVEALS)[number];
 
 /** `var(--ui-…)` for a contract name — for inline styles and SVG attributes that cannot take a class. */
 export function tokenVar(name: TokenName): `var(${TokenName})` {

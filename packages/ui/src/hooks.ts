@@ -31,6 +31,8 @@
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
+ * | `ui-stream`        | the body of an assistant reply, which may still be       | `data-state="streaming" \| "done"`; while streaming, the markdown blocks are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends |
+ * |                    | streaming                                                |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour: Frost paints the navigation
  * column a soft grey beside a near-white main column, flat (its earlier warm field and floating
@@ -104,6 +106,21 @@
  * leave the dim as it is; Frost blurs the page behind it, the reference's frosted backdrop — a
  * backdrop filter never reaches the element's own descendants, so a panel inside the scrim stays
  * sharp. It moves only with the host's fade, so reduced motion needs nothing from it.
+ *
+ * `ui-stream` (2026-09-30) is how a theme shows a reply arriving. The host is the reply's body:
+ * it stays `data-state="streaming"` until its paced reveal (`--ui-stream-reveal` /
+ * `--ui-stream-rate`, tokens.ts) has caught up with the stream, and until then renders the
+ * stream's edge — the caret slot — as a direct child right after the markdown blocks; whatever
+ * else it holds (a stop reason, a files card) comes after the caret, and the Web App's host holds
+ * those back until `done`. Primer changes nothing: the
+ * host's own pulsing caret glyph stays. Frost hides the caret and lets the trailing lines surface
+ * through a soft veil — a gradient from nothing to the page's colour over the last three lines,
+ * with a faint glow in the accent's wash behind them — drawn only while the caret is the host's
+ * last child, so the veil covers the text and never what the host appends after it; on `done`
+ * the veil eases away over the reveal duration instead of snapping off. Console draws the caret
+ * as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and runs a last
+ * paragraph in so the cursor follows its last character; nothing else moves. Under reduced
+ * motion the caret holds still and Frost draws no veil.
  */
 export const HOOKS = [
   "ui-glass",
@@ -120,6 +137,7 @@ export const HOOKS = [
   "ui-notice",
   "ui-chart",
   "ui-scrim",
+  "ui-stream",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];
