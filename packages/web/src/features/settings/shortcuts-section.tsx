@@ -8,9 +8,14 @@
  * tab never receives ⌘W; ⌘P takes over the browser's Print; the desktop menu also carries ⌘R).
  */
 import { useState } from "react";
-import { Button, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  ConfirmModal,
+  GlyphIcon,
+  ICON_SIZE,
+  SettingsSection,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { conflictsOf, findConflicts, type Conflict } from "../../lib/shortcuts/conflicts";
 import { currentHost, currentPlatform } from "../../lib/shortcuts/platform";
 import { SHORTCUT_COMMANDS, SHORTCUT_GROUPS, commandById } from "../../lib/shortcuts/registry";
@@ -19,7 +24,6 @@ import { isOverridden, resetAll, resetBinding, setBinding } from "../../lib/shor
 import type { Chord, CommandId, ShortcutCommand } from "../../lib/shortcuts/types";
 import { useKeymap } from "../../lib/shortcuts/use-keymap";
 import { toneInk } from "../../lib/tone";
-import { SectionShell } from "./section-shell";
 import { ShortcutRecorder } from "./shortcut-recorder";
 
 /** Counter-clockwise arrow: back to the default. */
@@ -124,7 +128,7 @@ export function ShortcutsSection() {
   })).filter(({ commands }) => commands.length > 0);
 
   return (
-    <SectionShell
+    <SettingsSection
       actions={
         <Button
           size="sm"
@@ -164,10 +168,11 @@ export function ShortcutsSection() {
             setConfirmReset(false);
           }}
           confirmLabel={S.shortcuts.resetAll}
+          cancelLabel={S.common.cancel}
         >
           {S.shortcuts.resetAllBody(overriddenCount)}
         </ConfirmModal>
       )}
-    </SectionShell>
+    </SettingsSection>
   );
 }

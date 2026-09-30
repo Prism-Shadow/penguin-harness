@@ -5,12 +5,12 @@
  * capability registers an action instead of claiming another global shortcut.
  *
  * Keyboard model: ArrowUp/ArrowDown move the selection (wrapping), Enter runs, Escape
- * closes through the shared esc-layer stack (modal.tsx), and the shortcut that opened it
- * toggles it closed. Filtering is filterPaletteActions (lib/command-palette.ts).
+ * closes through the shared esc-layer stack (the UI package's esc-layers), and the shortcut
+ * that opened it toggles it closed. Filtering is filterPaletteActions (lib/command-palette.ts).
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useDialogLayer } from "../../components/ui/modal";
+import { useDialogLayer } from "@prismshadow/penguin-ui";
 import { filterPaletteActions, type PaletteAction } from "../../lib/command-palette";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
@@ -36,8 +36,8 @@ export function CommandPalette({ actions }: { actions: readonly PaletteAction[] 
   const toggleShortcut = useShortcutLabel("palette.toggle");
 
   // Escape closes it only while it is the topmost esc-consuming layer (shared with Modal /
-  // Dropdown, see modal.tsx), so an action's own dialog above it gets its Escape first; Tab
-  // stays inside the panel, and closing hands focus back to where it was.
+  // Dropdown, see the UI package's esc-layers), so an action's own dialog above it gets its
+  // Escape first; Tab stays inside the panel, and closing hands focus back to where it was.
   const panelRef = useRef<HTMLDivElement>(null);
   const { onKeyDown: onPanelKeyDown } = useDialogLayer(open, panelRef, () => setOpen(false));
 

@@ -25,9 +25,10 @@ This file records the decisions that already exist so they are not re-litigated 
 | `danger` | failed, destructive, over a limit | errors, delete affordances |
 | `muted` | settled; the mark should recede | a done row's glyph |
 
-Four maps, by the shape of the thing being coloured: `toneInk` (a glyph or a line of status text),
-`toneSurface` (a tinted pill with its own text — badges), `toneDot` (the 6px state dots),
-`toneStrip` (a bordered notice that owns a row).
+Three maps, by the shape of the thing being coloured: `toneInk` (a glyph or a line of status text),
+`toneSurface` (a tinted pill with its own text — badges), `toneDot` (the 6px state dots). A
+notice that owns a row is the shared UI package's `NoticeStrip`, which takes the package's tone
+names (`busy` → `success`, `link` → `info`, `muted` → `neutral`); toasts render through it.
 
 Rules:
 
@@ -73,12 +74,12 @@ Two forms, and **a title decides between them, not taste**:
 > **The circled "?" may only appear beside a title. It must never stand alone on its own line.
 > Where it would stand alone, use the fold.**
 
-- **A title is present** → `InfoPopover` (`components/ui/info-popover.tsx`). A circled "?"
+- **A title is present** → `InfoPopover` (`@prismshadow/penguin-ui`). A circled "?"
   immediately after the section heading, the table column header, or the field label — the last of
   those via `Field`/`Input`/`Textarea`/`PasswordInput`'s `info` prop. The "?" is an *anchored*
   mark: it reads as help only because it modifies the title it sits against, and it borrows that
   title's meaning instead of restating it.
-- **No title on the surface** → `HelpFold` (`components/ui/help-fold.tsx`). A compact row that
+- **No title on the surface** → `HelpFold` (`@prismshadow/penguin-ui`). A compact row that
   names itself and expands its explanation inline underneath. This is the Agent settings tabs:
   their name lives in the tab bar and the panel does not repeat it, so a "?" at the top of the
   panel would be a mark modifying nothing. A neighbouring `<Button>` does not rescue it — a
@@ -103,7 +104,7 @@ siblings. Extend `TITLE_ELEMENTS` there if you add a component whose job is to b
 its first labelable descendant — so a "?" nested inside `Field`'s usual `<label>` would silently
 retarget the field's title from the input to the button. `Field` therefore has two layouts: without
 `info` it wraps in `<label>`; with `info` it splits the title out and associates it by `htmlFor`,
-which is why the control needs an id. `test/info-popover.test.ts` guards this.
+which is why the control needs an id. The UI package's `test/field.test.ts` guards this.
 
 ## Icons
 
@@ -137,9 +138,10 @@ the caret, the close cross or the collapse chevron.
 
 ## Control sizes
 
-One record: `sizeTextClass` in `components/ui/input.tsx`. Two rungs — `sm` is `text-xs`, `base` is
-`text-base` — and `sizeClass` pairs each with its padding. `Select`'s menu rows, `OptionMenu`'s row
-titles, `Textarea` and `FormPicker` all read it, so a rung moves the whole family at once.
+One record: `sizeTextClass` in the UI package's `components/forms/input/input.tsx`. Two rungs —
+`sm` is `text-xs`, `base` is `text-base` — and `sizeClass` pairs each with its padding. `Select`'s
+menu rows, `OptionMenu`'s row titles, `Textarea` and `FormPicker` all read it, so a rung moves the
+whole family at once.
 
 The rungs are **relative, not the pixel values their names suggest**. `FONT_SCALE_PX` (in
 `@prismshadow/penguin-ui/boot`, applied before first paint and by `theme.tsx`) sets the root font
@@ -151,12 +153,12 @@ component's own rung are both single-class font-size utilities of equal specific
 wins depends on the order the CSS was generated in, not the order of classes in the string: the
 built sheet emits `.text-base` before `.text-sm` before `.text-xs`, so a caller's `text-sm` silently
 loses to an `sm` control's `text-xs`, and a bracket value beats all three. (`input.tsx`'s
-`errorClass` meets the same hazard on border and background and forces past it with `!`. A font
-size has a `size` prop instead, so it does not need to.)
+`errorClass` meets the same hazard on the border and the focus ring and forces past it with `!`. A
+font size has a `size` prop instead, so it does not need to.)
 
 **No `text-[Npx]` on a control**: fixed px opts it out of the user's font-size setting altogether.
-`rowDescClass.sm` (`option-menu.tsx`) is the single grandfathered exception — a row description sits
-one step under a `text-xs` title, and there is no rung below `text-xs` to step down to.
+There is no exception: an `OptionMenu` row's description at the `sm` tier shares the `text-xs` rung
+with its title (there is no rung below it) and stands apart by its muted ink (`rowDescClass`).
 
 A form field takes `sm`: dense forms, dialogs and filter bars, which is near enough the whole app.
 `base` is for a standalone page holding two controls and nothing else, and is **passed by name** —
@@ -208,7 +210,7 @@ exercise CJK behaviour. Comments, test names and every other string are English.
 ## Popups: portal, do not absolutely position
 
 Anything that overlays — a menu, a picker, an info popover — uses `usePortalPanel`
-(`components/ui/use-portal-panel.ts`) and `createPortal` to `document.body`, positioned `fixed`
+(`@prismshadow/penguin-ui`) and `createPortal` to `document.body`, positioned `fixed`
 against viewport coordinates. An in-place absolute panel is a DOM descendant of its trigger, so any
 ancestor with `overflow-x-auto` clips it vertically (the CSS spec forces the visible axis to `auto`
 when the other is not visible), and auditing every call site's ancestor chain is not a plan.
@@ -222,9 +224,16 @@ Three behaviours there are load-bearing:
 - **`z-[60]`**, above the modal overlay's `z-50`: a portaled node sits in the root stacking context
   and may be opened from inside a dialog.
 
-Modals and `Dropdown` additionally register in the Esc-layer stack (`modal.tsx`'s `pushEscLayer`),
-so Escape only acts on the topmost layer. A portal panel does not need to — capture plus
-`stopPropagation` already gets there first.
+Modals, drawers, sheets, the lightbox and `Dropdown` additionally register in the Esc-layer stack
+(the UI package's `esc-layers.ts`: `useEscLayer`, or `pushEscLayer` / `isTopEscLayer`), so Escape
+only acts on the topmost layer. A portal panel does not need to — capture plus `stopPropagation`
+already gets there first.
+
+A menu's rows are the package's Menu family, never a hand-built row: `Menu` (the list, `role="menu"`,
+density `md` for account and project menus, `sm` for a row's overflow and context menus) holding
+`MenuItem` (glyph, label, description, trailing note, `danger`, `checked`, `href`),
+`MenuRadioItem`, `MenuSeparator` and `MenuLabel`. The panel around them stays a `Dropdown`. A row
+outside a `Menu` is a plain button, for a panel that mixes rows with a search box or a listbox.
 
 ## The rest of the house style
 

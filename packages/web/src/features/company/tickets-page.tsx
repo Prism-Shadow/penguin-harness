@@ -35,7 +35,25 @@ import type {
   OrgTicketStatus,
   OrgTicketsResponse,
 } from "@prismshadow/penguin-server/api";
-import { Button, CloseIcon, GlyphIcon, ICONS, ICON_SIZE, Skeleton } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CloseIcon,
+  FieldLabel,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Input,
+  Modal,
+  NoticeStrip,
+  SearchInput,
+  Segmented,
+  Select,
+  Skeleton,
+  Switch,
+  Textarea,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -43,13 +61,6 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Switch } from "../../components/ui/switch";
-import { Segmented } from "../../components/ui/segmented";
-import { Modal } from "../../components/ui/modal";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { FieldLabel } from "../../components/ui/field";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   BlockedBadge,
@@ -75,7 +86,6 @@ import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
@@ -329,16 +339,14 @@ export function TicketsPage() {
       wide
       actions={
         <>
-          <div className="w-44">
-            <Input
-              size="sm"
-              type="search"
-              aria-label={S.company.tickets.searchPlaceholder}
-              placeholder={S.company.tickets.searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
+          <SearchInput
+            size="sm"
+            className="w-44"
+            aria-label={S.company.tickets.searchPlaceholder}
+            placeholder={S.company.tickets.searchPlaceholder}
+            value={query}
+            onChange={setQuery}
+          />
           <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
             {S.company.tickets.blockedOnly}
             <Switch
@@ -372,7 +380,7 @@ export function TicketsPage() {
         board.invalidFiles.length === 0 &&
         !hintDismissed && (
           <NoticeStrip
-            tone="muted"
+            tone="neutral"
             className="mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs"
           >
             <span className="min-w-0 flex-1">{S.company.tickets.emptyHint}</span>

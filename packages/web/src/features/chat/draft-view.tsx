@@ -51,7 +51,15 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, Chevron, ICONS, ICON_GAP, PenguinLogo } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  Chevron,
+  Dropdown,
+  ICONS,
+  MenuItem,
+  PenguinLogo,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { UNCONFINED } from "../../lib/permission-level";
@@ -63,8 +71,6 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { Dropdown } from "../../components/ui/dropdown";
-import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { versionBadgeFor } from "../../lib/update-flow";
 import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
@@ -94,7 +100,6 @@ import { newChatAgentId } from "./new-chat";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -1117,32 +1122,28 @@ function AgentSelect({
         {agents.map((a) => {
           const active = a.agentId === selected?.agentId;
           return (
-            <button
+            <MenuItem
               key={a.agentId}
-              type="button"
+              density="sm"
               aria-pressed={active}
-              onClick={() => {
+              checked={active}
+              onSelect={() => {
                 onSelect(a);
                 setOpen(false);
               }}
-              className={`flex items-center ${ICON_GAP.menu} ${menuRowClass} ${menuRowTone(active)}`}
-            >
-              <AgentAvatar
-                id={a.agentId}
-                name={agentDisplayName(a)}
-                size={20}
-                className="shrink-0 rounded"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs">{agentDisplayName(a)}</span>
-                {a.description && (
-                  <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
-                    {a.description}
-                  </span>
-                )}
-              </span>
-              <ChoiceCheck on={active} />
-            </button>
+              glyph={
+                <AgentAvatar
+                  id={a.agentId}
+                  name={agentDisplayName(a)}
+                  size={20}
+                  className="shrink-0 rounded"
+                />
+              }
+              label={agentDisplayName(a)}
+              description={
+                a.description ? <span className="block truncate">{a.description}</span> : undefined
+              }
+            />
           );
         })}
       </div>

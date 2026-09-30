@@ -68,10 +68,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
+import { ConfirmModal, Input, usePortalPanel } from "@prismshadow/penguin-ui";
 import { getSessionContext } from "../../api/endpoints";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Input } from "../../components/ui/input";
-import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import {
   MIN_COMPACTION_THRESHOLD,
   THRESHOLD_STEP,
@@ -812,6 +810,7 @@ function ThresholdDialog({
       title={S.chat.contextThresholdTitle}
       tone="primary"
       confirmLabel={S.common.save}
+      cancelLabel={S.common.cancel}
       confirmDisabled={!valid}
       busy={busy}
       onClose={onClose}

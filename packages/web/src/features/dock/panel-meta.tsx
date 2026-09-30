@@ -29,21 +29,26 @@ export function panelLabel(kind: PanelKind): string {
   }
 }
 
-export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton): ReactNode {
+/** The panel's mark, as the registry path a Menu row draws on its own. */
+export function panelGlyphPath(kind: PanelKind): string {
   switch (kind) {
     case "agents":
-      return <GlyphIcon d={ICONS.robotPair} size={size} />;
+      return ICONS.robotPair;
     case "workspace":
-      return <GlyphIcon d={ICONS.folder} size={size} />;
+      return ICONS.folder;
     case "memory":
-      return <GlyphIcon d={ICONS.brain} size={size} />;
+      return ICONS.brain;
     case "trace":
-      return <GlyphIcon d={NAV_ICONS.traces} size={size} />;
+      return NAV_ICONS.traces;
     case "messaging":
-      return <GlyphIcon d={ICONS.paperPlane} size={size} />;
+      return ICONS.paperPlane;
     case "schedules":
-      return <GlyphIcon d={ICONS.alarmClock} size={size} />;
+      return ICONS.alarmClock;
     case "builtin-browser":
-      return <GlyphIcon d={ICONS.globe} size={size} />;
+      return ICONS.globe;
   }
+}
+
+export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton): ReactNode {
+  return <GlyphIcon d={panelGlyphPath(kind)} size={size} />;
 }

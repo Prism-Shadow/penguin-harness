@@ -11,8 +11,7 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { Toaster } from "../../../web/src/components/ui/toast";
-import { TooltipLayer } from "../../../web/src/components/ui/tooltip";
+import { Toaster, TooltipLayer } from "@prismshadow/penguin-ui";
 import { LocaleProvider, LocaleScope } from "../../../web/src/state/locale";
 import { ThemeProvider } from "../../../web/src/state/theme";
 // The app's dependency, reached through its own node_modules, ahead of the app's own sheet.

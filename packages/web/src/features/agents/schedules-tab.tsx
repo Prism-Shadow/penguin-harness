@@ -24,21 +24,27 @@ import type {
   SchedulesResponse,
   ScheduleStatus,
 } from "@prismshadow/penguin-server/api";
-import { Badge, Button, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  Button,
+  ConfirmModal,
+  HelpFold,
+  SettingsEmpty,
+  SkeletonList,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { HelpFold } from "../../components/ui/help-fold";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
@@ -321,6 +327,8 @@ export function SchedulesTab({
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.schedule.deleteConfirm(deleting) : ""}

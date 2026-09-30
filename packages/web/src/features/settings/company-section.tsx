@@ -13,15 +13,13 @@
  * wherever the switch stands.
  */
 import { useEffect, useState } from "react";
+import { SettingsSection, ToggleRow, toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { Switch } from "../../components/ui/switch";
-import { toastError } from "../../components/ui/toast";
 import { writeCompanyMode } from "./company-mode-write";
-import { SectionShell } from "./section-shell";
 
 export function CompanySection() {
   const { refresh } = useAuth();
@@ -74,17 +72,15 @@ export function CompanySection() {
 
   const hydrated = stored !== null;
   return (
-    <SectionShell>
+    <SettingsSection>
       <div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.companyModeServer}</span>
-          <Switch
-            checked={companyMode}
-            onChange={(next) => void toggle(next)}
-            disabled={!hydrated || busy}
-            aria-label={S.settings.companyModeServer}
-          />
-        </div>
+        <ToggleRow
+          variant="plain"
+          label={S.settings.companyModeServer}
+          checked={companyMode}
+          onChange={(next) => void toggle(next)}
+          disabled={!hydrated || busy}
+        />
         {/* The reason the switch went back, under the switch it went back on. */}
         {error !== undefined && <p className={`mt-2 text-xs ${toneInk.danger}`}>{error}</p>}
         {/* The mode is a beta, and this switch signs a whole server up for it: the warning
@@ -92,6 +88,6 @@ export function CompanySection() {
             click away and is read once. */}
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.company.betaNotice}</p>
       </div>
-    </SectionShell>
+    </SettingsSection>
   );
 }

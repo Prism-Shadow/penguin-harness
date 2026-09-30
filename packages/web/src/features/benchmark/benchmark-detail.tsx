@@ -18,6 +18,7 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Modal,
 } from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
@@ -26,7 +27,6 @@ import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../.
 import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Modal } from "../../components/ui/modal";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import { makeRangeGeom, segmentPoints } from "../usage/chart-geom";
 import { ChartLine, ChartPoint, ChartSwatch, type ChartPaint } from "../../components/ui/chart";

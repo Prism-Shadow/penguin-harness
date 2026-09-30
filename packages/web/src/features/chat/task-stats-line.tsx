@@ -28,7 +28,7 @@
  */
 import { useState } from "react";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
-import { CopyButton, GlyphIcon } from "@prismshadow/penguin-ui";
+import { ConfirmModal, CopyButton, GlyphIcon, Spinner } from "@prismshadow/penguin-ui";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -40,7 +40,6 @@ import {
 } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
@@ -199,29 +198,33 @@ export function TaskStatsLine({
             onClick={() => setConfirmingFork(true)}
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-300"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className={forking ? "animate-pulse" : ""}
-            >
-              <circle cx="6" cy="5" r="2" />
-              <circle cx="18" cy="7" r="2" />
-              <circle cx="6" cy="19" r="2" />
-              <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
-            </svg>
+            {forking ? (
+              <Spinner size="sm" label={S.common.loading} />
+            ) : (
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <circle cx="6" cy="5" r="2" />
+                <circle cx="18" cy="7" r="2" />
+                <circle cx="6" cy="19" r="2" />
+                <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
+              </svg>
+            )}
           </button>
           <ConfirmModal
             open={confirmingFork}
             title={S.chat.forkSession}
             tone="primary"
             confirmLabel={S.chat.forkSessionConfirmAction}
+            cancelLabel={S.common.cancel}
             busy={forking}
             onClose={() => setConfirmingFork(false)}
             onConfirm={() => {

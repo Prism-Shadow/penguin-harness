@@ -3,7 +3,6 @@
  * (member management and deletion, owner only). Invoked from the sidebar's Project switcher.
  */
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import type {
   ApprovalMode,
   ChatDefaultsDto,
@@ -13,7 +12,23 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
-import { Badge, Button, ICONS } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  Button,
+  ConfirmModal,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  ICONS,
+  InfoPopover,
+  Input,
+  Modal,
+  Select,
+  SettingRow,
+  Switch,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -33,14 +48,6 @@ import { ModelSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
-import { Input } from "../ui/input";
-import { Select } from "../ui/select";
-import { Switch } from "../ui/switch";
-import { FieldError, FieldHint, FieldLabel } from "../ui/field";
-import { toastError, toastSuccess } from "../ui/toast";
-import { Modal } from "../ui/modal";
-import { ConfirmModal } from "../ui/confirm-modal";
-import { InfoPopover } from "../ui/info-popover";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
@@ -187,31 +194,6 @@ function TabIcon({ d }: { d: string }) {
     >
       <path d={d} />
     </svg>
-  );
-}
-
-/**
- * One row of a settings page: title plus a one-line gray description on the left, the
- * control on the right. Rows are separated by the parent container's divide-y hairlines
- * (ruled sections, not card boxes).
- */
-function SettingRow({
-  title,
-  description,
-  children,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm">{title}</p>
-        {description !== undefined && <p className="mt-0.5 text-xs text-gray-400">{description}</p>}
-      </div>
-      {children !== undefined && <div className="flex shrink-0 items-center gap-2">{children}</div>}
-    </div>
   );
 }
 
@@ -413,6 +395,8 @@ function GeneralSection({
         title={S.project.deleteProject}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
       </ConfirmModal>
@@ -1072,7 +1056,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                         <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
                       )}
                       <p
-                        className="mt-0.5 truncate font-mono text-[11px] text-gray-400"
+                        className="mt-0.5 truncate font-mono text-xs text-gray-400"
                         data-tooltip={r.pattern}
                         data-tooltip-content="code"
                       >

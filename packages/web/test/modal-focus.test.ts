@@ -1,34 +1,41 @@
 /**
- * Focus behaviour of the Modal primitive (src/components/ui/modal.tsx), which every dialog in
- * the app inherits: focus enters the panel on open, Tab and Shift+Tab cycle inside it, and
- * focus returns to the trigger on close. The wiring lives in `useDialogLayer`, which the
- * command palette and the harness history overlay share with Modal, so what is pinned here
+ * Focus behaviour of the Modal primitive (the UI package's
+ * src/components/overlays/modal/modal.tsx), which every dialog in the app inherits: focus enters
+ * the panel on open, Tab and Shift+Tab cycle inside it, and focus returns to the trigger on close.
+ * The wiring lives in `useDialogLayer` (src/components/overlays/esc-layers/esc-layers.ts), which
+ * the command palette and the harness history overlay share with Modal, so what is pinned here
  * holds for those two as well.
  *
  * `nextFocusIndex` is the arithmetic and is exercised directly. The wiring around it cannot
  * be: this suite is `environment: "node"` with no jsdom, and Modal renders through
  * `createPortal(…, document.body)`, so it cannot even be handed to `renderToStaticMarkup` the
- * way info-popover.test.ts renders Field. So the wiring is asserted against the source, the
- * way portal-panel-dismiss.test.ts asserts its hook's listeners — thin, but it pins the parts
- * that are silent when they break: an aria attribute that reappears inside the `headerless`
- * branch names only half the dialogs, and a restore target read one commit too late is a
- * dialog that hands focus back to itself.
+ * way the UI package's field.test.ts renders Field. So the wiring is asserted against the
+ * source, the way portal-panel-dismiss.test.ts asserts its hook's listeners — thin, but it pins
+ * the parts that are silent when they break: an aria attribute that reappears inside the
+ * `headerless` branch names only half the dialogs, and a restore target read one commit too late
+ * is a dialog that hands focus back to itself.
  */
 import { describe, expect, it } from "vitest";
-import { nextFocusIndex } from "../src/components/ui/modal";
+import { nextFocusIndex } from "@prismshadow/penguin-ui";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
-const MODAL = "packages/web/src/components/ui/modal.tsx";
-const DROPDOWN = "packages/web/src/components/ui/dropdown.tsx";
+const MODAL = "packages/ui/src/components/overlays/modal/modal.tsx";
+const LAYER = "packages/ui/src/components/overlays/esc-layers/esc-layers.ts";
+const DROPDOWN = "packages/ui/src/components/overlays/dropdown/dropdown.tsx";
 const modal = sourceFile(SCAN, MODAL).text;
+const layer = sourceFile(SCAN, LAYER).text;
+/** `useDialogLayer`'s body: the focus wiring, without the Escape hook declared above it. */
+const dialogLayer = layer.slice(layer.indexOf("export function useDialogLayer("));
 const dropdown = sourceFile(SCAN, DROPDOWN).text;
 
 describe("the dialog primitives' sources", () => {
-  it("scan every source root, and find Modal and Dropdown in one place each", () => {
+  it("scan every source root, and find Modal, its layer and Dropdown in one place each", () => {
     expectEveryRootScanned(SCAN);
     expectSingleHome(SCAN, MODAL);
+    expectSingleHome(SCAN, LAYER);
     expectSingleHome(SCAN, DROPDOWN);
+    expect(layer).toContain("export function useDialogLayer(");
   });
 });
 
@@ -39,14 +46,14 @@ function panelTag(): string {
   return tag![0];
 }
 
-/** The `useEffect(...)` block containing `marker`, up to and including its dependency array. */
-function effectWith(marker: string): string {
-  const at = modal.indexOf(marker);
-  expect(at, `expected ${marker} in modal.tsx`).toBeGreaterThan(-1);
-  const start = modal.lastIndexOf("useEffect(", at);
+/** The `useEffect(...)` block of `src` holding `marker`, up to and including its dependencies. */
+function effectWith(src: string, marker: string): string {
+  const at = src.indexOf(marker);
+  expect(at, `expected ${marker} in esc-layers.ts`).toBeGreaterThan(-1);
+  const start = src.lastIndexOf("useEffect(", at);
   expect(start, `${marker} should sit inside a useEffect`).toBeGreaterThan(-1);
-  const deps = modal.indexOf("}, [", at);
-  return modal.slice(start, modal.indexOf(");", deps) + 2);
+  const deps = src.indexOf("}, [", at);
+  return src.slice(start, src.indexOf(");", deps) + 2);
 }
 
 describe("nextFocusIndex", () => {
@@ -97,11 +104,16 @@ describe("Modal dialog semantics", () => {
   it("keeps the container focusable so a dialog with no controls can still hold focus", () => {
     expect(panelTag()).toContain("tabIndex={-1}");
   });
+
+  it("takes its keyboard wiring from the shared dialog layer", () => {
+    expect(modal).toContain("useDialogLayer(open, panelRef, onClose)");
+    expect(panelTag()).toContain("onKeyDown={onPanelKeyDown}");
+  });
 });
 
 describe("Modal focus containment", () => {
   it("moves focus into the panel on open, yielding to a child that autofocused", () => {
-    const effect = effectWith("FOCUSABLE_SELECTOR) ?? panel");
+    const effect = effectWith(dialogLayer, "FOCUSABLE_SELECTOR) ?? panel");
     // A child with autoFocus is focused during the commit, before this effect runs; stealing
     // focus back to the close button would undo it at every call site that uses autoFocus.
     expect(effect).toContain("!panel.contains(document.activeElement)");
@@ -111,7 +123,7 @@ describe("Modal focus containment", () => {
   it("returns focus on every close path", () => {
     // Keyed on `open` alone, so the cleanup runs for Escape, the close button, the overlay
     // mousedown, the prop going false, and an outright unmount alike.
-    const effect = effectWith("restoreFocusRef.current?.focus()");
+    const effect = effectWith(dialogLayer, "restoreFocusRef.current?.focus()");
     expect(effect).toContain("return () => restoreFocusRef.current?.focus();");
     expect(effect).toContain("[open]");
   });
@@ -119,14 +131,14 @@ describe("Modal focus containment", () => {
   it("reads the element to return to during render, before any effect can run", () => {
     // autoFocus fires in the same commit, so an effect-time read would capture a node inside
     // the dialog and hand focus back to the dialog that just closed.
-    const capture = modal.indexOf("restoreFocusRef.current =");
+    const capture = dialogLayer.indexOf("restoreFocusRef.current =");
     expect(capture).toBeGreaterThan(-1);
-    expect(capture).toBeLessThan(modal.indexOf("useEffect("));
+    expect(capture).toBeLessThan(dialogLayer.indexOf("useEffect("));
   });
 
   it("cycles Tab within the panel, and yields to the two things that own it first", () => {
-    const handler = /const onPanelKeyDown = [\s\S]*?\n {2}\};/.exec(modal);
-    expect(handler, "onPanelKeyDown should be declared in modal.tsx").not.toBeNull();
+    const handler = /const onPanelKeyDown = [\s\S]*?\n {2}\};/.exec(dialogLayer);
+    expect(handler, "onPanelKeyDown should be declared in useDialogLayer").not.toBeNull();
     const body = handler![0];
     expect(body).toContain("nextFocusIndex(");
     expect(body).toContain("e.shiftKey");
@@ -140,13 +152,14 @@ describe("Modal focus containment", () => {
   });
 
   it("leaves Escape on the layer stack, so only the topmost dialog closes", () => {
-    expect(effectWith("const id = pushEscLayer();")).toContain("isTopEscLayer(id)");
+    expect(dialogLayer).toContain("useEscLayer(open, onClose)");
+    expect(effectWith(layer, "const id = pushEscLayer();")).toContain("isTopEscLayer(id)");
   });
 });
 
 describe("focusable selector", () => {
   it("is shared with Dropdown rather than copied into it", () => {
-    expect(modal).toContain("export const FOCUSABLE_SELECTOR =");
+    expect(layer).toContain("export const FOCUSABLE_SELECTOR =");
     expect(dropdown).toContain("querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)");
     expect(dropdown).not.toContain("a[href]");
   });
@@ -155,7 +168,7 @@ describe("focusable selector", () => {
     // The app's file pickers are hidden the `sr-only` way — position/clip, not `display:
     // none` — specifically so they stay Tab-reachable (hidden-file-input.tsx). A selector
     // narrowed to visible boxes would drop every "upload" and "import" control in a dialog.
-    expect(modal).toContain("input:not([disabled])");
-    expect(modal).not.toContain("offsetParent");
+    expect(layer).toContain("input:not([disabled])");
+    expect(layer).not.toContain("offsetParent");
   });
 });

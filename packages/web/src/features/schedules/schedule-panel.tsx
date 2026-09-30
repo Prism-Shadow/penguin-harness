@@ -23,11 +23,20 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Badge,
+  ConfirmModal,
+  Dropdown,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Menu,
+  MenuItem,
+  SearchInput,
+  Segmented,
   SettingsEmpty,
   SkeletonList,
+  Switch,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -35,18 +44,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Dropdown } from "../../components/ui/dropdown";
-import { Icon } from "../../components/ui/group-list";
-import { Input } from "../../components/ui/input";
-import { Segmented } from "../../components/ui/segmented";
-import {
-  overflowMenuDangerClass,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
-import { Switch } from "../../components/ui/switch";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { CreateButtons } from "../ai-create";
 import { describeSchedule } from "./schedule-describe";
 import { ScheduleAiModal } from "./schedule-ai-modal";
@@ -92,7 +89,7 @@ function StateGlyph({ item }: { item: ScheduleItem }) {
   );
 }
 
-/** A row's overflow menu: edit, and delete in the destructive treatment (the session row menu's rows). */
+/** A row's overflow menu: edit, and delete in the destructive treatment (small Menu rows). */
 function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   const item = (fn: () => void) => () => {
@@ -119,17 +116,11 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
         </button>
       }
     >
-      <button type="button" className={overflowMenuRowClass} onClick={item(onEdit)}>
-        {overflowMenuGlyph(ICONS.pencil)}
-        {S.common.edit}
-      </button>
-      <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
+      <Menu density="sm">
+        <MenuItem glyph={ICONS.pencil} label={S.common.edit} onSelect={item(onEdit)} />
         {/* The glyph inherits the row's red. */}
-        <span className="shrink-0">
-          <Icon d={ICONS.trash} size={13} />
-        </span>
-        {S.common.delete}
-      </button>
+        <MenuItem glyph={ICONS.trash} label={S.common.delete} danger onSelect={item(onDelete)} />
+      </Menu>
     </Dropdown>
   );
 }
@@ -254,14 +245,12 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
           />
         </div>
 
-        <Input
+        <SearchInput
           size="sm"
-          type="search"
           value={query}
           placeholder={S.schedule.panelSearchPlaceholder}
           aria-label={S.schedule.panelSearchPlaceholder}
-          autoComplete="off"
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
         />
         <Segmented
           cols={4}
@@ -361,6 +350,8 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.schedule.deleteConfirm(deleting.name) : ""}

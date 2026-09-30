@@ -94,7 +94,6 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   ],
   "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog"],
   "ui-display": [
-    "Heading",
     "EmptyState",
     "AgentsPage",
     "ModelsPage",
@@ -114,6 +113,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "PagedDialog",
     "SettingsDialog",
     "MenuItemGlyph",
+    "MenuItem",
     "GroupHeader",
     "Tabs",
     "EmptyState",

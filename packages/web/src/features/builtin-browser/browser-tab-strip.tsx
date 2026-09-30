@@ -13,7 +13,7 @@
  */
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
+import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE, PlusIcon, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
 import { faviconSrc, isBlankUrl, tabLabel } from "./address";
@@ -35,11 +35,7 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
   }
   if (tab.loading) {
     return (
-      <span
-        aria-hidden
-        style={{ width: ICON_SIZE.inlineGlyph, height: ICON_SIZE.inlineGlyph }}
-        className="inline-block shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-gray-400 dark:text-gray-500"
-      />
+      <Spinner size="md" label={S.common.loading} className="text-gray-400 dark:text-gray-500" />
     );
   }
   const src = faviconSrc(tab.favicon, window.location.origin);

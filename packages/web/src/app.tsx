@@ -10,13 +10,11 @@
  * drop on the sidebar do something; it makes it do nothing.
  */
 import { useEffect } from "react";
-import { ClipboardWriterProvider } from "@prismshadow/penguin-ui";
+import { ClipboardWriterProvider, Toaster, TooltipLayer } from "@prismshadow/penguin-ui";
 import { LocaleProvider, LocaleScope } from "./state/locale";
 import { ThemeProvider } from "./state/theme";
 import { AuthProvider } from "./state/auth";
 import { AppRouter } from "./router";
-import { Toaster } from "./components/ui/toast";
-import { TooltipLayer } from "./components/ui/tooltip";
 import { writeClipboard } from "./lib/clipboard";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 
