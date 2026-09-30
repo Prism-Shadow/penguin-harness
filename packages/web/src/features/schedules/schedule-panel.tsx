@@ -44,7 +44,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { CreateButtons } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { describeSchedule } from "./schedule-describe";
 import { ScheduleAiModal } from "./schedule-ai-modal";
 import { ScheduleFormModal } from "./schedule-form-modal";
@@ -238,7 +238,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
           </div>
           {/* The AI half is open to every member — asking the agent for a task is a message,
               not a write — while the form writes files and stays with the owner. */}
-          <CreateButtons
+          <AiCreateButtons
             size="sm"
             onAi={() => openAi("")}
             {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
@@ -270,7 +270,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         ) : visible.length === 0 ? (
           <SettingsEmpty>{S.schedule.panelNoMatch}</SettingsEmpty>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {visible.map((item) => {
               const line = describeSchedule(item, locale);
               return (

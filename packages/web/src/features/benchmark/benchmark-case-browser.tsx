@@ -17,6 +17,7 @@ import type {
   CaseMaterial,
   WorkspaceFileEntry,
 } from "@prismshadow/penguin-server/api";
+import { Badge } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
@@ -334,14 +335,14 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
     if (row.depth === 0) {
       if (row.material !== "rubric") return null;
       return (
-        <span className="shrink-0 rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-          {S.benchmark.agentHidden}
+        <span className="shrink-0">
+          <Badge size="sm">{S.benchmark.agentHidden}</Badge>
         </span>
       );
     }
     if (row.kind !== "file") return null;
     return (
-      <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+      <span className="shrink-0 font-mono text-xs text-gray-400 dark:text-gray-500">
         {formatBytes(row.sizeBytes)}
       </span>
     );
@@ -349,8 +350,8 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
 
   // One fixed width per language, so opening or closing a folder never moves the preview beside
   // the tree. It is sized to the rubric folder's row, whose name shares the row with the
-  // hidden-from-agent badge: the English pair takes about 320px at the default 18px root and the
-  // Chinese pair about 230px. A longer file name is cut, and its row's tooltip holds the path.
+  // hidden-from-agent badge: the English pair takes about 370px at the default 18px root and the
+  // Chinese pair about 260px. A longer file name is cut, and its row's tooltip holds the path.
   return (
     <FileBrowser
       rows={caseTreeRows(materials, listings, expanded)}
@@ -366,7 +367,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
       preview={preview}
       emptyPreview={S.benchmark.caseFileUnavailable}
       resolveRef={resolveRef}
-      treeWidth={locale === "en" ? 330 : 240}
+      treeWidth={locale === "en" ? 380 : 270}
       treeMaxHeight={53}
       previewHeight={52}
       minHeight={58}

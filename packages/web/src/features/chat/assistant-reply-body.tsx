@@ -10,12 +10,12 @@
  * soft veil at the body's foot, and Console types it out behind a block caret.
  *
  * Markdown renders the revealed prefix, so code blocks and lists grow as they are typed. It
- * stays in its streaming mode (no highlighting, no KaTeX; see md.tsx) until the reveal is done,
- * and `children` (the stop reason, a nested reply's files card) wait for the same moment, so
- * nothing lands under text that is still coming in.
+ * stays in its streaming mode (no highlighting, no KaTeX; see the UI package's Md) until the
+ * reveal is done, and `children` (the stop reason, a nested reply's files card) wait for the same
+ * moment, so nothing lands under text that is still coming in.
  */
 import type { ReactNode } from "react";
-import { Md } from "./md";
+import { Md } from "@prismshadow/penguin-ui";
 import { StreamingCaret } from "./streaming-caret";
 import { useStreamReveal } from "./use-stream-reveal";
 
@@ -38,7 +38,7 @@ export function AssistantReplyBody({
       className="ui-stream md-body anim-msg my-3 font-sans text-base leading-relaxed text-gray-800 dark:text-gray-100"
       data-state={live ? "streaming" : "done"}
     >
-      {/* Re-renders the revealed text directly while live; memoized, so a settled reply skips the re-parse, and code blocks highlight once on settle (see md.tsx). */}
+      {/* Re-renders the revealed text directly while live; memoized, so a settled reply skips the re-parse, and code blocks highlight once on settle (see the UI package's Md). */}
       <Md text={revealed} streaming={live} />
       {live && <StreamingCaret />}
       {!live && children}

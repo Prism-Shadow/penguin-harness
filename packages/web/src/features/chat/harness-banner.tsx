@@ -5,13 +5,14 @@
  * machine-composed protocol, worth a glance, not a read. Expanded, the full text shows in
  * the tool cards' output styling; the Trace page shows the raw message as-is.
  */
-import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
 import {
   DISCLOSURE_CARD_CLASS,
   DISCLOSURE_OUTPUT_PRE_CLASS,
   DisclosureRow,
-} from "./disclosure-row";
+  GlyphIcon,
+  ICONS,
+} from "@prismshadow/penguin-ui";
+import { S } from "../../lib/strings";
 
 export function HarnessInjectedBanner({ text }: { text: string }) {
   return (
