@@ -42,8 +42,16 @@ export type ScopeDecision =
       /** A 201 answer's `session.sessionId` becomes one of the credential's own sessions. */
       adoptCreated?: boolean;
       /** The identity claims must be checked against the credential (see {@link checkClaims}). */
-      claims?: "caller" | "caller-session";
+      claims?: ClaimsMode;
     };
+
+/**
+ * Where a request carries its caller: `caller` reads `sessionId` / `agentId`; `caller-session`
+ * reads `sessionId` / `callerAgentId`, for the writes whose `agentId` names someone else;
+ * `caller-agent` reads `callerSessionId` / `agentId`, for the write whose `sessionId` names
+ * someone else (the Session `tickets/:id/attach` attaches).
+ */
+export type ClaimsMode = "caller" | "caller-session" | "caller-agent";
 
 /** `<projectId>/<agentId>`: the key {@link ScopeLookups.createdBy} answers with. */
 export function agentKey(projectId: string, agentId: string): string {
@@ -93,6 +101,13 @@ const OTHER_AGENT_WRITES: readonly RegExp[] = [
   /^\/proposals\/[^/]+\/implement$/,
 ];
 
+/**
+ * Organization writes whose body `sessionId` is the Session acted on, not the caller's. Which
+ * Sessions a ticket may take is the organization's rule (an employee's, in this Project), so
+ * the gate holds only the caller to the credential here.
+ */
+const OTHER_SESSION_WRITES: readonly RegExp[] = [/^\/tickets\/[^/]+\/attach$/];
+
 function deny(message: string): ScopeDecision {
   return { kind: "deny", message };
 }
@@ -134,9 +149,17 @@ export const SESSION_ROUTES: readonly Row[] = [
       }
       // A few writes name in `agentId` someone other than the caller — the employee a ticket
       // session runs as, the Agent a hire takes on, whose calendar an event goes into, a
-      // proposal's implementer; there the caller is its session, or `callerAgentId`.
-      const other = method === "POST" && OTHER_AGENT_WRITES.some((re) => re.test(rest ?? ""));
-      return { kind: "allow", claims: other ? "caller-session" : "caller" };
+      // proposal's implementer; there the caller is its session, or `callerAgentId`. One names
+      // in `sessionId` a Session other than the caller's — the one a ticket attaches; there the
+      // caller is its `agentId`, or `callerSessionId`.
+      const post = method === "POST";
+      const mode: ClaimsMode =
+        post && OTHER_AGENT_WRITES.some((re) => re.test(rest ?? ""))
+          ? "caller-session"
+          : post && OTHER_SESSION_WRITES.some((re) => re.test(rest ?? ""))
+            ? "caller-agent"
+            : "caller";
+      return { kind: "allow", claims: mode };
     },
   },
   {
@@ -225,16 +248,23 @@ export function sessionScope(
   return deny(`This session's credential does not reach ${method} ${path}.`);
 }
 
-/** The identity claims in a query or a JSON body: `sessionId`, and the Agent under `field`. */
+/** The members a {@link ClaimsMode} reads the caller's session and Agent from. */
+const CLAIM_FIELDS: Record<ClaimsMode, { session: string; agent: string }> = {
+  caller: { session: "sessionId", agent: "agentId" },
+  "caller-session": { session: "sessionId", agent: "callerAgentId" },
+  "caller-agent": { session: "callerSessionId", agent: "agentId" },
+};
+
+/** The identity claims in a query or a JSON body, read from the members `fields` names. */
 function claimOf(
   source: URLSearchParams | Record<string, unknown>,
-  field: "agentId" | "callerAgentId",
+  fields: { session: string; agent: string },
 ): CarriedClaims {
   const get = (k: string): unknown =>
     source instanceof URLSearchParams ? source.get(k) : source[k];
   const out: CarriedClaims = {};
-  const sessionId = get("sessionId");
-  const agentId = get(field);
+  const sessionId = get(fields.session);
+  const agentId = get(fields.agent);
   if (typeof sessionId === "string" && sessionId !== "") out.sessionId = sessionId;
   if (typeof agentId === "string" && agentId !== "") out.agentId = agentId;
   return out;
@@ -246,14 +276,14 @@ function claimOf(
  * of its writes to the same reading.
  */
 export function carriedClaims(
-  mode: "caller" | "caller-session",
+  mode: ClaimsMode,
   query: URLSearchParams,
   body: unknown,
 ): CarriedClaims {
-  const field = mode === "caller" ? "agentId" : "callerAgentId";
-  const carried = claimOf(query, field);
+  const fields = CLAIM_FIELDS[mode];
+  const carried = claimOf(query, fields);
   if (body !== null && typeof body === "object") {
-    Object.assign(carried, claimOf(body as Record<string, unknown>, field));
+    Object.assign(carried, claimOf(body as Record<string, unknown>, fields));
   }
   return carried;
 }
@@ -262,9 +292,8 @@ export function carriedClaims(
  * The identity a request claims must be the credential's own: the claimed Agent is the
  * credential's Agent and the claimed session one of its sessions. A write that claims neither
  * is refused, because without a claim the routes attribute it to the person behind the
- * credential, and a session credential never speaks as a person. The caller reads the claimed
- * Agent from `agentId` (mode `caller`) or, where `agentId` names someone else, from
- * `callerAgentId` (mode `caller-session`).
+ * credential, and a session credential never speaks as a person. Where the claims are read
+ * from is the row's {@link ClaimsMode}.
  */
 export function checkClaims(
   carried: CarriedClaims,

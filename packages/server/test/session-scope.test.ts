@@ -4,7 +4,7 @@
  * CLI makes from inside a Session.
  */
 import { describe, expect, it } from "vitest";
-import { checkClaims, sessionScope } from "../src/auth/session-scope.js";
+import { carriedClaims, checkClaims, sessionScope } from "../src/auth/session-scope.js";
 import type { ScopeLookups } from "../src/auth/session-scope.js";
 import { mintSessionToken, verifySessionToken } from "../src/auth/session-token.js";
 import type { SessionClaims } from "../src/auth/session-token.js";
@@ -107,6 +107,10 @@ describe("session scope", () => {
         rest,
       ).toMatchObject({ claims: "caller-session" });
     }
+    // Attach names in `sessionId` the Session it attaches; the caller is `callerSessionId`.
+    expect(
+      verdict("POST", "/api/projects/p/organizations/acme/tickets/t1/attach", desk),
+    ).toMatchObject({ claims: "caller-agent" });
   });
 
   it("claims: own Agent and sessions pass; another's, or a write with none, do not", () => {
@@ -116,5 +120,38 @@ describe("session scope", () => {
     expect(checkClaims({ agentId: "ops" }, claims, lookups, false)).not.toBeNull();
     expect(checkClaims({ sessionId: "s-colleague" }, claims, lookups, true)).not.toBeNull();
     expect(checkClaims({}, claims, lookups, true)).not.toBeNull();
+  });
+
+  it("attach: a colleague's session is what is attached, not a claim", () => {
+    const body = { sessionId: "s-colleague", callerSessionId: "s-own", agentId: "dev" };
+    expect(
+      checkClaims(
+        carriedClaims("caller-agent", new URLSearchParams(), body),
+        claims,
+        lookups,
+        true,
+      ),
+    ).toBeNull();
+    // Read as `caller`, the same body is refused — the collision this mode removes.
+    expect(
+      checkClaims(carriedClaims("caller", new URLSearchParams(), body), claims, lookups, true),
+    ).toMatch(/not s-colleague/);
+    const forged = { ...body, callerSessionId: "s-colleague" };
+    expect(
+      checkClaims(
+        carriedClaims("caller-agent", new URLSearchParams(), forged),
+        claims,
+        lookups,
+        true,
+      ),
+    ).not.toBeNull();
+    expect(
+      checkClaims(
+        carriedClaims("caller-agent", new URLSearchParams(), { ...body, agentId: "ops" }),
+        claims,
+        lookups,
+        true,
+      ),
+    ).not.toBeNull();
   });
 });

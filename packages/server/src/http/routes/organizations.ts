@@ -101,17 +101,18 @@ function nullableString(
  * already admin authority. A cookie proves a person, not a session, so a cookie-authenticated
  * claim is dropped and the write is attributed to that person; otherwise any Project member
  * could quote the CEO desk session id `GET /:orgId` returns and write as `agent:<org>_ceo`.
- * Dropped rather than rejected because the field is not always a claim: `tickets/:id/attach`
- * takes the Session to attach in the same field, and the Web App sends it over a cookie.
- * Over the token it is a claim, and one that does not hold is refused where it is judged: a
- * channel message whose session names no employee is a 400 `unknown_session`, not the
- * token holder's own line.
+ * Dropped rather than rejected because the Web App sends a `sessionId` that is no claim —
+ * `tickets/:id/attach` takes the Session to attach in that member, and there the caller's
+ * session rides as `callerSessionId` (`field`). Over the token it is a claim, and one that
+ * does not hold is refused where it is judged: a channel message whose session names no
+ * employee is a 400 `unknown_session`, not the token holder's own line.
  */
 function callerSessionId(
   c: { var: { sessionVia: SessionVia } },
   body: Record<string, unknown>,
+  field: "sessionId" | "callerSessionId" = "sessionId",
 ): string | undefined {
-  const sessionId = optionalString(body, "sessionId", { minLen: 1, maxLen: 200 });
+  const sessionId = optionalString(body, field, { minLen: 1, maxLen: 200 });
   return c.var.sessionVia === "token" ? sessionId : undefined;
 }
 
@@ -124,14 +125,15 @@ function callerSessionId(
  * `identityAgentId: false` is for the one route whose body already uses `agentId` for
  * something else: `tickets/:id/start` names there the employee the ticket session is to run
  * as, which may be a colleague the owner enlists — reading it as the caller would hand the
- * ownership check the wrong principal.
+ * ownership check the wrong principal. `sessionField: "callerSessionId"` is its mirror, for
+ * `tickets/:id/attach`, whose body `sessionId` is the Session to attach.
  */
 function actorOf(
   c: { var: { user: { userId: string }; sessionVia: SessionVia } },
   body: Record<string, unknown>,
-  opts: { identityAgentId?: boolean } = {},
+  opts: { identityAgentId?: boolean; sessionField?: "sessionId" | "callerSessionId" } = {},
 ): Actor {
-  const sessionId = callerSessionId(c, body);
+  const sessionId = callerSessionId(c, body, opts.sessionField);
   const agentId =
     opts.identityAgentId !== false && c.var.sessionVia === "token"
       ? optionalString(body, "agentId", { minLen: 2, maxLen: 64 })
@@ -792,7 +794,14 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const sessionId = requireString(body, "sessionId", { minLen: 1, maxLen: 200 });
     return c.json(
-      await deps.orgService.attachTicket(projectId, orgId, ticketId, sessionId, actorOf(c, body)),
+      // `sessionId` is the Session to attach; the caller's own rides as `callerSessionId`.
+      await deps.orgService.attachTicket(
+        projectId,
+        orgId,
+        ticketId,
+        sessionId,
+        actorOf(c, body, { sessionField: "callerSessionId" }),
+      ),
     );
   });
 

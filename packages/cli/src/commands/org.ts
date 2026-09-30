@@ -1753,13 +1753,17 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const sessionId = await resolveSessionRef(scope.client, scope.projectId, ref, t);
-    // `sessionId` here is the Session to attach, not the caller's — so only the Agent id of
-    // {@link actorFields} rides along, and it is what the history entry is recorded under.
-    const { agentId } = actorFields();
+    // `sessionId` here is the Session to attach, not the caller's — so the caller's own session
+    // rides as `callerSessionId`, beside the Agent id the history entry is recorded under.
+    const caller = actorFields();
     const detail = await scope.client.request<OrgTicketDetail>(
       "POST",
       `${scope.base}/tickets/${enc(ticketId)}/attach`,
-      { sessionId, ...(agentId !== undefined ? { agentId } : {}) },
+      {
+        sessionId,
+        ...(caller.sessionId !== undefined ? { callerSessionId: caller.sessionId } : {}),
+        ...(caller.agentId !== undefined ? { agentId: caller.agentId } : {}),
+      },
     );
     if (opts.json === true) printJson(detail);
     else printLine(t.org.ticketAttached(detail.ticketId, sessionId));

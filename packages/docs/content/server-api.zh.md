@@ -66,7 +66,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 会话凭据只够得到 Agent 自己的命令要调用的路由，其余一律以 `403 session_scope` 拒绝：
 
 - 本 Agent 自己的会话（以及它用 `penguin run` 创建的会话）：任务、事件流、消息、引导；会话列表只保留这些；
-- 本 Project 的组织（desk 或工单会话只到自己的组织），请求里声明的 `sessionId` / `agentId` 必须是凭据自己的；
+- 本 Project 的组织（desk 或工单会话只到自己的组织），请求里声明的 `sessionId` / `agentId` 必须是凭据自己的（`tickets/:ticketId/attach` 的请求体里 `sessionId` 是要挂接的会话，可以是同事的，调用方自己的会话放在 `callerSessionId`）；
 - 本 Project 的 Agent 列表、创建 Agent、自己的定时任务、本 Project 的用量；
 - 遥测，须用 `session=` 指名自己的一个会话。
 
@@ -707,7 +707,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | POST | `/:orgId/tickets/:ticketId/unblock` | 解除阻塞 |
 | POST | `/:orgId/tickets/:ticketId/progress` | `{text}`：向 `## Progress` 追加一句纯文本 |
 | POST | `/:orgId/tickets/:ticketId/start` | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：启动工单会话 |
-| POST | `/:orgId/tickets/:ticketId/attach` | `{sessionId}`：把已有会话登记为贡献会话 |
+| POST | `/:orgId/tickets/:ticketId/attach` | `{sessionId, callerSessionId?, agentId?}`：把已有会话登记为贡献会话；`sessionId` 是要挂接的会话，另两项指明调用方 |
 | GET / POST | `/:orgId/channels` | 调用者可见的频道，`default_channel` 在最前 / 打开一个频道 |
 | GET / PATCH | `/:orgId/channels/:channelId` | 频道和成员 / 重命名、修改 `purpose`、设置 `archived` |
 | POST | `/:orgId/channels/:channelId/members` | `{principal}`：添加成员 |

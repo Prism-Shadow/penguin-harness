@@ -148,6 +148,29 @@ describe("session credential", () => {
     expect(read.status).toBe(403);
   });
 
+  it("ticket attach names the Session to attach, and holds only the caller to the credential", async () => {
+    const attach = `/api/projects/${PROJECT}/organizations/acme/tickets/2026-09-30-t/attach`;
+    const post = (body: Record<string, unknown>) =>
+      as(credential, attach, { method: "POST", body });
+    // A colleague's session is what gets attached, not a claim: the gate lets the route judge.
+    const res = await post({
+      sessionId: colleague,
+      callerSessionId: own,
+      agentId: "default_agent",
+    });
+    expect(await code(res)).not.toBe("session_scope");
+    // The caller's own claims are still held: a colleague's session or Agent as the caller is not.
+    for (const body of [
+      { sessionId: colleague, callerSessionId: colleague },
+      { sessionId: own, agentId: "helper" },
+      { sessionId: own },
+    ] as Record<string, unknown>[]) {
+      const refused = await post(body);
+      expect(refused.status, JSON.stringify(body)).toBe(403);
+      expect(await code(refused)).toBe("session_scope");
+    }
+  });
+
   it("a desk's credential reaches its own organization only", async () => {
     const desk = mintSessionToken(t.deps.authService.localApiToken()!, {
       projectId: PROJECT,

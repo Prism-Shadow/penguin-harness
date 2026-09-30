@@ -66,7 +66,7 @@ Every protected route also accepts `Authorization: Bearer <token>`. Two kinds of
 A session credential reaches only what an agent's own commands call, and refuses everything else with `403 session_scope`:
 
 - the agent's own sessions (and the ones it created with `penguin run`): tasks, stream, messages, steering; a session list keeps only these;
-- the Project's organizations, or only its own one for a desk or ticket session, with the `sessionId` / `agentId` a request claims held to the credential's own;
+- the Project's organizations, or only its own one for a desk or ticket session, with the `sessionId` / `agentId` a request claims held to the credential's own (on `tickets/:ticketId/attach` the body's `sessionId` is the Session to attach, which may be a colleague's, and the caller's session is `callerSessionId`);
 - the Project's agent list, agent creation, its own schedules, and the Project's usage;
 - telemetry, read with `session=` naming one of its own sessions.
 
@@ -707,7 +707,7 @@ All paths below are under `/api/projects/:projectId/organizations`. While the se
 | POST | `/:orgId/tickets/:ticketId/unblock` | Clears the block |
 | POST | `/:orgId/tickets/:ticketId/progress` | `{text}`: appends one plain sentence to `## Progress` |
 | POST | `/:orgId/tickets/:ticketId/start` | `{agentId?, message?, workspace?}` → 202 `{sessionId}`: starts a ticket session |
-| POST | `/:orgId/tickets/:ticketId/attach` | `{sessionId}`: records an existing session as contributing |
+| POST | `/:orgId/tickets/:ticketId/attach` | `{sessionId, callerSessionId?, agentId?}`: records an existing session as contributing; `sessionId` is the Session to attach, the other two name the caller |
 | GET / POST | `/:orgId/channels` | The channels the caller may see, `default_channel` first / opens a channel |
 | GET / PATCH | `/:orgId/channels/:channelId` | The channel and its members / renames it, changes `purpose`, sets `archived` |
 | POST | `/:orgId/channels/:channelId/members` | `{principal}`: adds a member |

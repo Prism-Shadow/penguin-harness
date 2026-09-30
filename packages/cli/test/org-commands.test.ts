@@ -820,9 +820,10 @@ describe("penguin org ticket (writes carry the calling session)", () => {
   it("attach defaults to the calling session, resolves a fragment, and needs one of the two", async () => {
     server.addTicket("acme", { ticketId: "2026-09-02-site", title: "Site" });
     expect(await cli(["org", "ticket", "attach", "2026-09-02-site"])).toBe(0);
-    // `sessionId` is the Session to attach; the Agent id is what says who attached it.
+    // `sessionId` is the Session to attach; `callerSessionId` and the Agent id say who attached it.
     expect(lastRequest("POST", "/tickets/2026-09-02-site/attach")?.body).toEqual({
       sessionId: DESK_SESSION,
+      callerSessionId: DESK_SESSION,
       agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.ticketAttached("2026-09-02-site", DESK_SESSION)}\n`);
@@ -833,6 +834,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     );
     expect(lastRequest("POST", "/tickets/2026-09-02-site/attach")?.body).toEqual({
       sessionId: "session-2026-09-02-10-00-00-abcd0002",
+      callerSessionId: DESK_SESSION,
       agentId: "dev1",
     });
     expect(org().tickets.get("2026-09-02-site")!.sessions).toEqual([
@@ -913,6 +915,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
 });
 
 describe("penguin org writes under a session's own credential", () => {
+  const OPS_SESSION = "session-2026-09-02-10-00-00-0b5e0001";
   // What the server's session gate (auth/session-scope.ts) does with each request: the route
   // table's verdict, then — where the row checks claims — the identity the request carries.
   const credential = {
@@ -950,6 +953,7 @@ describe("penguin org writes under a session's own credential", () => {
     });
     server.addEmployee("acme", { agentId: "dev1", title: "Developer" });
     server.addSession({ sessionId: DESK_SESSION, agentId: "dev1" });
+    server.addSession({ sessionId: OPS_SESSION, agentId: "ops1" });
     server.addTicket("acme", { ticketId: "2026-09-02-site", title: "Site", owner: "agent:dev1" });
     process.env.PENGUIN_SESSION_ID = DESK_SESSION;
     process.env.PENGUIN_AGENT_ID = "dev1";
@@ -966,6 +970,8 @@ describe("penguin org writes under a session's own credential", () => {
       ["leave", "ops1"],
       ["ticket", "move", "2026-09-02-site", "--to", "in_progress"],
       ["ticket", "progress", "2026-09-02-site", "-m", "half done"],
+      // A colleague's session: `sessionId` names what is attached, not who attaches it.
+      ["ticket", "attach", "2026-09-02-site", "--session", OPS_SESSION],
     ];
     for (const command of commands) {
       expect(await cli(["org", ...command]), `${command.join(" ")}: ${err()}`).toBe(0);
@@ -979,6 +985,14 @@ describe("penguin org writes under a session's own credential", () => {
     // The gate still refuses the same write without an identity: the check above is not vacuous.
     const bare = writes.find((w) => w.method === "PUT" && w.path.endsWith("/conventions.md"))!;
     expect(refusal({ ...bare, body: { content: "# Conventions" } })).toMatch(/must carry/);
+    // …and still refuses a caller session that is not the credential's own.
+    const attach = writes.find((w) => w.path.endsWith("/attach"))!;
+    expect(
+      refusal({
+        ...attach,
+        body: { sessionId: OPS_SESSION, callerSessionId: OPS_SESSION, agentId: "dev1" },
+      }),
+    ).toMatch(/its own sessions/);
   });
 });
 

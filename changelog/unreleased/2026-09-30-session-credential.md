@@ -12,7 +12,7 @@ A server-driven session's tool subprocesses no longer get the admin's authority 
 
 - The credential reaches what an agent's own commands call, and nothing else (`403 session_scope`):
   - the agent's own sessions and the ones it creates with `penguin run` — a session list keeps only these;
-  - the Project's organizations, or only its own for a desk or ticket session, with the `sessionId` / `agentId` a request claims held to the credential's own, and a write that claims nothing refused — every `penguin org` write carries its caller, including `handbook write` / `rm`, `calendar add` / `update` / `rm`, `hire`, `employee set`, `leave` and `desk renew`;
+  - the Project's organizations, or only its own for a desk or ticket session, with the `sessionId` / `agentId` a request claims held to the credential's own, and a write that claims nothing refused — every `penguin org` write carries its caller, including `handbook write` / `rm`, `calendar add` / `update` / `rm`, `hire`, `employee set`, `leave` and `desk renew`; `ticket attach` sends the caller's session as `callerSessionId`, since its `sessionId` is the session being attached, so an agent may attach a colleague's session;
   - the Project's agent list and agent creation, its own schedules, the Project's usage;
   - telemetry, read with `session=` naming one of its own sessions.
 - Admin routes, hot updates (`/api/hmr`), machine proxies (`/server/…`), other Projects and every other route are refused.

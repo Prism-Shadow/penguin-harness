@@ -12,7 +12,7 @@
 
 - 这个凭据只够得到 Agent 自己的命令要调用的路由，其余一律 `403 session_scope`：
   - 本 Agent 自己的会话，以及它用 `penguin run` 创建的会话；会话列表只保留这些；
-  - 本 Project 的组织（desk 或工单会话只到自己的组织），请求声明的 `sessionId` / `agentId` 必须是凭据自己的，不带任何声明的写请求被拒绝——`penguin org` 的每一条写都带上调用方，包括 `handbook write` / `rm`、`calendar add` / `update` / `rm`、`hire`、`employee set`、`leave` 与 `desk renew`；
+  - 本 Project 的组织（desk 或工单会话只到自己的组织），请求声明的 `sessionId` / `agentId` 必须是凭据自己的，不带任何声明的写请求被拒绝——`penguin org` 的每一条写都带上调用方，包括 `handbook write` / `rm`、`calendar add` / `update` / `rm`、`hire`、`employee set`、`leave` 与 `desk renew`；`ticket attach` 的 `sessionId` 是被挂接的会话，调用方自己的会话改放 `callerSessionId`，因此 Agent 可以挂接同事的会话；
   - 本 Project 的 Agent 列表与创建 Agent、自己的定时任务、本 Project 的用量；
   - 遥测，须用 `session=` 指名自己的一个会话。
 - 管理员路由、热更新（`/api/hmr`）、机器代理（`/server/…`）、其他 Project 以及其余所有路由都被拒绝。
