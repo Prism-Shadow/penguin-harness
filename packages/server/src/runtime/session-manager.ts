@@ -1387,9 +1387,7 @@ export class SessionManager {
    *
    * The switch is the entry's run from that pull on — it can be stopped, and a deletion or a
    * shutdown waits for it — while the entry only reads `compacting` once there is something
-   * to stream, so a refusal never flickers a state. The pull is not always brief: a loaded
-   * Session with nothing to compact holds the bootstrap of the context it leaves back, and
-   * answers only once that has settled (as long as a first run's connect).
+   * to stream, so a refusal never flickers a state.
    *
    * The entry and the row follow the runtime as the new context's `session_meta` passes
    * through the drive (see `drive`); a switch that does not complete streams no meta and
@@ -2113,8 +2111,12 @@ export class SessionManager {
           // The main session's own session_meta is streamed when a model switch opens its new
           // context, and the runtime is on that context's model by then: the entry and the row
           // follow it here, ahead of the publish below, so a client that re-reads the Session
-          // on this record already finds the new model.
-          if (isSessionMeta(msg)) this.syncEntryModel(entry);
+          // on this record already finds the new model. The new context's file is open too, its
+          // records on it, and what the context it replaced still held pending went with it.
+          if (isSessionMeta(msg)) {
+            this.syncEntryModel(entry);
+            entry.pendingBootstrap = [];
+          }
         } else if (isSessionMeta(msg)) {
           // Subagent registration is only a "side effect" — it must never interrupt the
           // main run flow on error: wrap the whole thing in a defensive try/catch.

@@ -122,7 +122,12 @@ import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
-import { DesktopRoutes, DesktopTrayRoutes, DesktopUpdateRoutes } from "./http/routes/desktop.js";
+import {
+  DesktopPrivacySettingsRoutes,
+  DesktopRoutes,
+  DesktopTrayRoutes,
+  DesktopUpdateRoutes,
+} from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
@@ -435,6 +440,7 @@ export class CompanyModule {}
     DesktopRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
+    DesktopPrivacySettingsRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
     InstalledPluginRoutes,

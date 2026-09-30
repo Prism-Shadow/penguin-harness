@@ -38,6 +38,12 @@
  * tab registry, the page scripts, scan / exec / click, import and history are the server
  * platform's, delivered by push like any other product behavior.
  *
+ * Folder access (macOS): on the Workspace picker's request, relayed over the same port, the
+ * main process reads a protected folder once and opens System Settings at a privacy pane (see
+ * folder-access.ts). It lives here because it has to: macOS asks about Desktop, Documents and
+ * Downloads only on behalf of the app it holds responsible, and the app is this process. What
+ * to tell the user about the outcome is the Web App's.
+ *
  * Dev isolation: the dev profile — an unpackaged run, or any build launched with `--dev`
  * — takes a dev-suffixed identity (own userData, and with it the single-instance lock and
  * sticky port) and defaults to the ~/.penguin/dev-data root, so it runs beside an
@@ -72,6 +78,8 @@ import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
+import { handleFolderAccessFrame } from "./folder-access.js";
+import type { FolderAccessFrameDeps } from "./folder-access.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
@@ -89,12 +97,12 @@ import {
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
+  APP_WINDOW_OPTIONS,
   childGoneLine,
   classifyWindowOpen,
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
-  isAuthorizationBridgeUrl,
   isExternalScheme,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
@@ -140,6 +148,15 @@ const builtinBrowser = createBuiltinBrowserShell({
   locale: () => trayLocale,
   log: (line) => logLine(`[shell] ${line}`),
 });
+/** The Workspace picker's macOS folder access (see the header); replies go to whichever child is live. */
+const folderAccess: FolderAccessFrameDeps = {
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  readdir: (dir) => fs.promises.readdir(dir),
+  openExternal: (url) => shell.openExternal(url),
+  post: (reply) => relayChild?.postMessage(reply),
+  log: (line) => logLine(`[shell] ${line}`),
+};
 /** App origin (embedded or attached); null until boot resolves. */
 let appOrigin: string | null = null;
 let quitting = false;
@@ -199,33 +216,11 @@ function createWindow(url: string): void {
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
   // terminal get a window of this app; other sites go to the system browser; anything else
   // on this instance is refused, since every other app path boots a second copy of the App.
-  win.webContents.setWindowOpenHandler(({ url: target }) => {
-    // The one addition, and this window's alone: Penguin Go's authorization bridge. The Web
-    // App opens it from the Authorize click, then points it at the platform or closes it when
-    // `/start` fails. It is an implementation detail, not a second app window, so it stays
-    // hidden. It is decided here and not in openWindowFor, which every opened window shares, so
-    // HTML in a preview window cannot open hidden windows. An HTML preview in this window's own
-    // Files panel still can: its iframe allows popups, and this handler is not told which frame
-    // asked.
-    if (isAuthorizationBridgeUrl(target)) {
-      return {
-        action: "allow",
-        overrideBrowserWindowOptions: {
-          show: false,
-          webPreferences: {
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            webviewTag: false,
-          },
-        },
-      };
-    }
-    return openWindowFor(target, iconPath);
-  });
-  win.webContents.on("did-create-window", (child, details) =>
-    guardOpenedWindow(child, iconPath, isAuthorizationBridgeUrl(details.url)),
-  );
+  // This window gets no exception of its own: the handler is not told which frame asked, and
+  // the Files panel previews Agent-written HTML in an iframe that allows popups, so any window
+  // allowed here is one that HTML can open too — a hidden one, it could own outright.
+  win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
+  win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
       event.preventDefault();
@@ -283,10 +278,9 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
     case "window":
       return {
         action: "allow",
+        // Electron merges the page's `window.open` feature string under this override, so
+        // every key a page could use to hide the window is pinned here (APP_WINDOW_OPTIONS).
         overrideBrowserWindowOptions: {
-          width: 1100,
-          height: 800,
-          autoHideMenuBar: true,
           ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: a preview is Agent-written, untrusted HTML
           // and must never get Node. Nor <webview>, the main window's alone: Electron copies
@@ -299,6 +293,7 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
             sandbox: true,
             webviewTag: false,
           },
+          ...APP_WINDOW_OPTIONS,
         },
       };
     case "external":
@@ -315,18 +310,19 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * opens: a window-open handler belongs to one window, so a window opened from a preview page
  * would otherwise open anything at all. Its navigation policy is "stay within this instance's
  * loopback surface": a child lands on the preview host after the redirect, and the main
- * window's stricter app-origin-only rule would bounce the preview itself out.
+ * window's stricter app-origin-only rule would bounce the preview itself out. A window stays
+ * open when one of its links opens externally.
  *
- * `authorizationBridge` marks the main window's hidden Penguin Go bridge. Only the main window
- * opens one, so every window further down passes false.
+ * The window is also kept where the user can see it. APP_WINDOW_OPTIONS pins what the page's
+ * feature string could hide, but a position is not an option to pin — `left`/`top` arrive as
+ * `x`/`y` — so the window is centered here instead, and the page's own `moveTo`/`resizeTo`,
+ * which Electron would otherwise apply, is refused: off-screen is hidden too.
  */
-function guardOpenedWindow(
-  child: BrowserWindow,
-  iconPath: string | null,
-  authorizationBridge: boolean,
-): void {
+function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
+  child.center();
+  child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
-  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
+  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath));
   // A session that dies while a child window is open sends that window to the sign-in page
   // too — the App's guard redirects on the first 401, wherever it is rendered. A sign-in form
   // is of no use in a subordinate surface: there is no password to type, and signing back in
@@ -345,9 +341,6 @@ function guardOpenedWindow(
     if (!isLocalSurfaceUrl(target, appOrigin)) {
       event.preventDefault();
       openInSystem(target);
-      // A preview window stays open when one of its links opens externally. The hidden
-      // authorization bridge has completed its only job and must not linger.
-      if (authorizationBridge) child.close();
     }
   });
 }
@@ -546,15 +539,17 @@ function setTrayLocale(next: TrayLocale): void {
 
 /**
  * Shell relay over the utilityProcess port: forward the account-menu row's check/install
- * frames to the updater, the Appearance switch's frames to the tray and the built-in browser's
- * commands to its guests, push every updater status fold back, and push both current states
- * now — the fresh child, restarts included, must not start blind. The subscription dies with
- * the child; the next start wires the next one.
+ * frames to the updater, the Appearance switch's frames to the tray, the built-in browser's
+ * commands to its guests and the Workspace picker's folder-access requests to folder-access.ts,
+ * push every updater status fold back, and push both current states now — the fresh child,
+ * restarts included, must not start blind. The subscription dies with the child; the next
+ * start wires the next one.
  */
 function wireShellRelay(child: EmbeddedServer["child"]): void {
   relayChild = child;
   child.on("message", (message: unknown) => {
     if (builtinBrowser.handle(message)) return;
+    if (handleFolderAccessFrame(message, folderAccess)) return;
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);

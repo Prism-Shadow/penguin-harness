@@ -280,26 +280,25 @@ describe("prompt-cache invariants of request assembly", () => {
   });
 
   it("a model switch's compaction request extends the turn it follows on the old model; the new model's first request is a new line carrying its id", async () => {
-    const target = { provider: "anthropic", model_id: "claude-opus-4-7" };
+    const target = "claude-opus-4-7";
     const first = recordingModel(modelConfig(), [
       { text: "First answer.", promptTokens: 20 },
       { text: "[summary]the distilled summary[/summary]", promptTokens: 30 },
     ]);
-    const second = recordingModel(modelConfig({ modelId: target.model_id }), [
+    const second = recordingModel(modelConfig({ modelId: target }), [
       { text: "Carried on from the summary." },
     ]);
+    // The opener decides which model the next context runs on; the engine only closes the
+    // running context and opens the next.
     const engine = new ContextEngine({
       llm: first.model,
       environment: fakeEnvironment,
       compaction: compactionSettings(),
-      openNextContext: ({ modelRef }) => {
-        expect(modelRef).toEqual(target);
-        return { llm: second.model };
-      },
+      openNextContext: () => ({ llm: second.model }),
     });
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
-    await collect(engine.switchModel({ ref: target }));
+    await collect(engine.switchContext());
     await collect(engine.run([userText("task two")], { approve: allowAll }));
 
     // The switch's compaction request is an ordinary compaction request to the OLD model: same
@@ -317,7 +316,7 @@ describe("prompt-cache invariants of request assembly", () => {
     // The new model's first request is a new cache line by definition — a prompt cache is
     // scoped to one model — and it opens with the summary the old model wrote.
     expect(second.requests).toHaveLength(1);
-    expect(second.requests[0]!.wireConfig.model).toBe(target.model_id);
+    expect(second.requests[0]!.wireConfig.model).toBe(target);
     const opening = wireMessage(second.requests[0]!, 0);
     expect(opening.role).toBe("user");
     expect(blockTypes(opening)).toEqual(["text", "text"]);
@@ -326,13 +325,12 @@ describe("prompt-cache invariants of request assembly", () => {
   });
 
   it("a model switch that does not complete leaves the old model's line intact: every later request still extends the one before it", async () => {
-    const target = { provider: "anthropic", model_id: "claude-opus-4-7" };
     const first = recordingModel(modelConfig(), [
       { text: "First answer.", promptTokens: 20 },
       // The first switch's compaction request is cut by the user: nothing is committed.
       { text: "[summary]half a summ", promptTokens: 30, outcome: "abort-after-text" },
-      // The second switch's summary is complete, and the target's window cannot take it.
-      { text: `[summary]${"x".repeat(4000)}[/summary]`, promptTokens: 30 },
+      // The second switch's summary is complete, and the target's context cannot be opened.
+      { text: "[summary]the distilled summary[/summary]", promptTokens: 30 },
       { text: "Second answer.", promptTokens: 40 },
     ]);
     const engine = new ContextEngine({
@@ -340,35 +338,29 @@ describe("prompt-cache invariants of request assembly", () => {
       environment: fakeEnvironment,
       compaction: compactionSettings(),
       openNextContext: () => {
-        throw new Error("a switch that does not complete opens no context");
+        throw new Error("the target's context could not be assembled");
       },
     });
-    /** Drives a switch to its end and returns its terminal status; `onMessage` sees each record. */
-    const switchStatus = async (
-      gen: ReturnType<ContextEngine["switchModel"]>,
-      onMessage: (payload: { type?: string; event_type?: string }) => void = () => {},
-    ) => {
-      for (;;) {
-        const res = await gen.next();
-        if (res.done) return res.value;
-        onMessage(res.value.payload as { type?: string; event_type?: string });
-      }
-    };
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
     const controller = new AbortController();
-    const aborted = await switchStatus(
-      engine.switchModel({ ref: target }, controller.signal),
-      (payload) => {
-        if (payload.type === "partial_text" && payload.event_type === "delta") controller.abort();
-      },
-    );
-    const refused = await switchStatus(
-      engine.switchModel({ ref: target, summaryRoom: { tokens: 100, contextWindow: 4096 } }),
+    const switching = engine.switchContext(controller.signal);
+    let aborted: string | undefined;
+    for (;;) {
+      const res = await switching.next();
+      if (res.done) {
+        aborted = res.value;
+        break;
+      }
+      const payload = res.value.payload as { type?: string; event_type?: string };
+      if (payload.type === "partial_text" && payload.event_type === "delta") controller.abort();
+    }
+    await expect(collect(engine.switchContext())).rejects.toThrow(
+      "the target's context could not be assembled",
     );
     await collect(engine.run([userText("task two")], { approve: allowAll }));
 
-    expect([aborted, refused]).toEqual(["aborted", "fatal"]);
+    expect(aborted).toBe("aborted");
     // Four requests, all to the OLD model with one config: the aborted compaction request, the
     // same request again (nothing was committed, so nothing moved), and the next turn on top of
     // the committed compaction exchange. Nothing about either target reached the wire.

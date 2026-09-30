@@ -156,7 +156,7 @@ import {
 } from "../ui/group-list";
 import type { GroupMode } from "../ui/group-list";
 import { toastError, toastInfo, toastSuccess } from "../ui/toast";
-import { writeClipboard } from "../ui/copy-button";
+import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import {
@@ -3010,10 +3010,10 @@ function SessionRow({
       rename: onRename,
       // The copy affordance's feedback normally rides on the button itself (copy-button.tsx),
       // which a menu row cannot do: the row acts and the panel closes under it. A toast is
-      // the confirmation that survives that, and it says the same word.
+      // the confirmation that survives that, and it says the same word — once the write
+      // has landed.
       copy: (x) => {
-        writeClipboard(x.sessionId);
-        toastSuccess(S.common.copied);
+        void writeClipboard(x.sessionId).then((ok) => ok && toastSuccess(S.common.copied));
       },
       messaging: onMessaging,
       archive: onToggleArchive,

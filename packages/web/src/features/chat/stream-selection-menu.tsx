@@ -45,7 +45,7 @@ import {
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { useAuth } from "../../state/auth";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
+import { writeClipboard } from "../../lib/clipboard";
 import { Dropdown } from "../../components/ui/dropdown";
 import {
   ADD_TO_CHAT_ICON,
@@ -97,8 +97,7 @@ export function SelectionMenuRows({
             type="button"
             className={overflowMenuRowClass}
             onClick={() => {
-              writeClipboard(selection.text);
-              toastSuccess(S.common.copied);
+              void writeClipboard(selection.text).then((ok) => ok && toastSuccess(S.common.copied));
               onDone(selection);
             }}
           >
@@ -185,8 +184,7 @@ export function LinkMenuRows({
                 type="button"
                 className={overflowMenuRowClass}
                 onClick={run(() => {
-                  writeClipboard(href);
-                  toastSuccess(S.common.copied);
+                  void writeClipboard(href).then((ok) => ok && toastSuccess(S.common.copied));
                 })}
               >
                 {overflowMenuGlyph(LINK_ICON)}

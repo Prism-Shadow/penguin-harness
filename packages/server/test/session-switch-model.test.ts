@@ -23,6 +23,7 @@ import {
   requestEnd,
   sessionMeta,
   tokenUsage,
+  toolListReady,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, StopReason, TokenCounts } from "@prismshadow/penguin-core";
 import type {
@@ -85,7 +86,7 @@ const aborted = (signal: AbortSignal): Promise<void> =>
  * A fake Session shaped like core's for a switch: the compaction request's token_usage rides
  * between a plain manual pair, and the getters move only once the new context is open — after
  * the completed `compaction_end` and before the new context's `session_meta` is yielded, exactly
- * as core adopts the opened context before `openContextFile` yields its meta — so the manager
+ * as core adopts the opened context before it yields that context's meta — so the manager
  * follows the runtime in the real order.
  */
 function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake {
@@ -128,10 +129,12 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
       const status: StopReason = opts.signal.aborted ? "aborted" : behaviour.status;
       yield compactionEnd({ reason: "manual", mode: "summarize", status });
       if (status === "completed") {
-        // The new context opens on the target: the getters follow it from here, and its
-        // session_meta — main-session, no origin — is the last record on the stream.
+        // The new context opens on the target: the getters follow it from here. Its opener's
+        // toolset record comes first, and its session_meta — main-session, no origin — is the
+        // last record on the stream.
         fake.provider = opts.provider;
         fake.modelId = opts.modelId;
+        yield toolListReady([]);
         yield sessionMeta({
           session_id: SID,
           provider: opts.provider,
@@ -181,6 +184,8 @@ describe("POST /switch-model", () => {
     const rowAtEnd: ModelRefDto[] = [];
     /** The row's model as it stood when each session_meta was published. */
     const rowAtMeta: ModelRefDto[] = [];
+    /** How many bootstrap records the manager held for GET /messages as each message was published. */
+    const heldAt: Array<[string | undefined, number]> = [];
     t.deps.channels.get(SID).subscribe((evt) => {
       if (evt.event === "server_event") {
         events.push(JSON.parse(evt.data) as ServerEvent);
@@ -188,6 +193,10 @@ describe("POST /switch-model", () => {
       }
       const msg = JSON.parse(evt.data) as OmniMessage;
       messages.push(msg);
+      heldAt.push([
+        msg.type === "session_meta" ? "session_meta" : (msg.payload as { type?: string }).type,
+        t.deps.manager.pendingBootstrap(SID).length,
+      ]);
       const r = row();
       if (msg.type === "session_meta") rowAtMeta.push({ provider: r.provider, modelId: r.modelId });
       if ((msg.payload as { type?: string }).type === "compaction_end") {
@@ -199,6 +208,7 @@ describe("POST /switch-model", () => {
       events,
       rowAtEnd,
       rowAtMeta,
+      heldAt,
       /** Each message's kind: its payload type, or `session_meta`. */
       kinds: () =>
         messages.map((m) =>
@@ -320,26 +330,6 @@ describe("POST /switch-model", () => {
     expect(row().modelId).toBe(A.modelId);
   });
 
-  it("409 summary_too_large with core's own numbers: a summary already held does not fit the target's window", async () => {
-    // A Session just compacted has a summary in hand; core refuses before any event when the
-    // target cannot take it (there is no pair to end `fatal`). The message names both sizes.
-    const message =
-      "The summary (about 15000 tokens) does not fit the context window of the model switched to (8000 tokens, about 5000 left after its prompt and tools); the Session stays on its current model.";
-    adopt(
-      switchFake(A, {
-        kind: "throw",
-        error: new ModelSwitchRefusedError("summary_too_large", message),
-      }),
-    );
-    const res = await api.post(url, B);
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: { code: string; message: string } };
-    expect(body.error.code).toBe("summary_too_large");
-    expect(body.error.message).toBe(message);
-    expect(t.deps.manager.statusOf(SID)).toBe("idle");
-    expect(row().modelId).toBe(A.modelId);
-  });
-
   it("409 compaction_not_configured: the Session has a context to close but no compaction to close it with", async () => {
     adopt(
       switchFake(A, {
@@ -440,7 +430,14 @@ describe("POST /switch-model", () => {
       "compaction_begin",
       "token_usage",
       "compaction_end",
+      "tool_list_ready",
       "session_meta",
+    ]);
+    // The opener's record is held for history reads until it is on the Trace; the meta says
+    // the new context's file is open, and nothing is pending any more.
+    expect(feed.heldAt.slice(-2)).toEqual([
+      ["tool_list_ready", 1],
+      ["session_meta", 0],
     ]);
     // Nothing on the pair names a model.
     expect(feed.messages[2]!.payload).toEqual({
@@ -450,7 +447,7 @@ describe("POST /switch-model", () => {
       status: "completed",
     });
     // The new model is on the new context's meta, a main-session record (no origin).
-    const meta = feed.messages[3]!;
+    const meta = feed.messages[4]!;
     expect(meta.origin).toBeUndefined();
     expect(meta.payload).toMatchObject({ provider: B.provider, model_id: B.modelId });
     // A client refetching the Session on that very record reads the new model: the row had

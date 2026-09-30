@@ -2,13 +2,18 @@
  * The Workspace finder's decisions, kept apart from the modal so they are testable without a
  * DOM: path breadcrumbs, back/forward history, what the list shows and in which order,
  * type-to-select, the sidebar's places (Quick access, with the user's own additions and
- * removals), the context menu's items, and the keyboard map.
+ * removals), the context menu's items, the keyboard map, and what the box for a folder the
+ * server may not read offers.
  *
  * Paths come from whichever machine is being browsed, so nothing here asks the browser's own
  * platform about a path — a Windows server's `C:\Users\me` and a Linux one's `/home/me` both
  * have to split correctly in the same tab.
  */
-import type { DirEntryInfo, DirListResponse } from "@prismshadow/penguin-server/api";
+import type {
+  DesktopPrivacyPane,
+  DirEntryInfo,
+  DirListResponse,
+} from "@prismshadow/penguin-server/api";
 import {
   TEMP_WORKSPACE_GROUP_KEY,
   isTempWorkspace,
@@ -462,3 +467,63 @@ export function isTypeSelectKey(e: FinderKey): boolean {
 
 /** How long type-to-select keeps adding to what was typed before starting over. */
 export const TYPE_SELECT_RESET_MS = 900;
+
+/**
+ * Where the "Allow access" exchange for a refused folder stands: not asked yet, waiting on the
+ * desktop shell (its read holds until the user answers the macOS prompt), or asked — and the
+ * folder still refused, whether it was the shell's own read or the listing after it. `packaged`
+ * is the shell's word on whose permission it is: the app's, or for a development instance
+ * started from a terminal, that terminal's.
+ */
+export type AccessAsk =
+  { phase: "idle" } | { phase: "asking" } | { phase: "asked"; packaged: boolean };
+
+/** What the box for a refused folder says (a key of the finder's strings), and what it offers. */
+export interface DeniedBox {
+  text: "denied" | "deniedMacServer" | "deniedMacAsk" | "deniedMacRefused" | "deniedMacRefusedDev";
+  /** "Allow access": not offered, ready, or disabled while the shell waits on the user. */
+  allow: "none" | "ready" | "waiting";
+  /** The Privacy & Security pane "Open System Settings" goes to; null when it is not offered. */
+  settings: DesktopPrivacyPane | null;
+  retry: boolean;
+}
+
+/**
+ * The box for a folder the server may not read. Only a Mac has anything to ask for. There, a
+ * page in the desktop shell that is browsing its own server has the shell read the folder in
+ * the app's own name — what makes macOS ask — and, if the folder is still refused, offers
+ * System Settings: Full Disk Access for a packaged app, where it can be added by hand when
+ * macOS never listed it under Files and Folders, and Files and Folders for a development
+ * instance, whose permission is its terminal's. A browser tab has no shell to ask, and a
+ * machine's listing comes from another computer, so both can only say which process has to be
+ * allowed. Retry is offered wherever the user may have changed something outside the app, and
+ * never before the app has asked: it would only repeat the refusal.
+ */
+export function deniedBox(input: {
+  /** The browsed machine's platform, from its listing. */
+  platform: string | undefined;
+  /** The page is drawn by the desktop shell, and the shell answers this server. */
+  desktopShell: boolean;
+  /** The machine being browsed (null: this server). */
+  machine: string | null;
+  ask: AccessAsk;
+}): DeniedBox {
+  if (input.platform !== "darwin") {
+    return { text: "denied", allow: "none", settings: null, retry: true };
+  }
+  if (!input.desktopShell || input.machine !== null) {
+    return { text: "deniedMacServer", allow: "none", settings: null, retry: true };
+  }
+  const { ask } = input;
+  if (ask.phase === "asked") {
+    return ask.packaged
+      ? { text: "deniedMacRefused", allow: "none", settings: "fullDisk", retry: true }
+      : { text: "deniedMacRefusedDev", allow: "none", settings: "files", retry: true };
+  }
+  return {
+    text: "deniedMacAsk",
+    allow: ask.phase === "asking" ? "waiting" : "ready",
+    settings: null,
+    retry: false,
+  };
+}

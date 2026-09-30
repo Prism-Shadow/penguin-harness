@@ -33,6 +33,8 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { switchDeskModel } from "../company/desk-model";
+import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
@@ -311,6 +313,7 @@ export function ChatPage() {
   const location = useLocation();
   const params = useParams<{ sessionId?: string }>();
   const { user } = useAuth();
+  const company = useCompany();
   const { currency } = useTheme();
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -1278,6 +1281,38 @@ export function ChatPage() {
           prevModelId: selected.modelId,
         }),
       };
+      // A desk is not forked: the switch is the EMPLOYEE's. Its model goes into the chart and
+      // its desk is renewed onto it (features/company/desk-model.ts), so the organization —
+      // its sidebar, its calendar rounds, its @mentions — follows to the Session the person
+      // is now talking in, instead of staying on the old one while a stray one is opened.
+      if (selected.orgId !== undefined) {
+        try {
+          const deskId = await switchDeskModel(
+            api,
+            {
+              projectId,
+              orgId: selected.orgId,
+              agentId: selected.agentId,
+              sessionId: selected.sessionId,
+            },
+            ref,
+          );
+          if (deskId !== null) {
+            const res = await api.postTask(deskId, { input: [origin, ...input] });
+            discardSessionDraft();
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+            navigate(`/chat/${res.sessionId}`);
+            return true;
+          }
+        } catch (e) {
+          // The model may be written and the desk renewed by now; the lists say which.
+          void company.reloadOrgChart();
+          void company.reloadOrgSessions();
+          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          return false;
+        }
+      }
       let createdId: string | null = null;
       try {
         const created = await api.createSession(
@@ -1309,7 +1344,7 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate],
+    [projectId, selected, addSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -1707,8 +1742,8 @@ export function ChatPage() {
   // the Session row once the new context's session_meta names the new model. 200 = the Session
   // never ran and switched inside the request: the row comes back with the response — under a
   // new id when the server had to rebuild a Session that left no Trace, which the page follows.
-  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured
-  // / summary too large) is a toast.
+  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured)
+  // is a toast.
   const confirmModelSwitch = useCallback(async () => {
     const ask = modelSwitchAsk;
     if (!selected || ask === null || modelSwitchPosting) return;

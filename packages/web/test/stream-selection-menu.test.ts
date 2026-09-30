@@ -3,9 +3,9 @@
  * element tree for their click handlers — node env, no DOM): the rows it draws, and what each
  * does with the selection or the link it was opened on. "Add to conversation" stages a chip
  * through the composer's control — the same `addReference` the Files panel stages through —
- * and that chip shows the excerpt rather than a path; Copy writes the selection and confirms
- * with a toast, the menu-row convention. A link's rows open it in the built-in browser or
- * outside the app, or copy its address.
+ * and that chip shows the excerpt rather than a path; Copy writes the selection through the
+ * clipboard entry and confirms with a toast, the menu-row convention — once the write landed.
+ * A link's rows open it in the built-in browser or outside the app, or copy its address.
  *
  * Reading the selection and the link off the page and anchoring the panel are DOM work this
  * environment cannot run; the rules deciding them are pinned in selection-menu.test.ts.
@@ -51,6 +51,11 @@ vi.mock("../src/features/builtin-browser/browser-actions", async (importOriginal
   };
 });
 
+/** The clipboard entry's answer for the next write (its own behaviour is clipboard.test.ts's). */
+const writeClipboard = vi.hoisted(() => vi.fn<(text: string) => Promise<boolean>>());
+
+vi.mock("../src/lib/clipboard", () => ({ writeClipboard }));
+
 const EXCERPT = "Run the migration first.\nThen restart the server so it picks up the new schema.";
 
 /** A selection as the stream captures it: the text as selected (a trailing newline included). */
@@ -81,6 +86,7 @@ afterEach(() => {
   setActiveStrings(zh);
   toasts.length = 0;
   openedInBrowser.length = 0;
+  writeClipboard.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -156,17 +162,30 @@ describe("Add to conversation", () => {
 });
 
 describe("Copy", () => {
-  it("writes the selection as it was selected, and confirms with a toast", () => {
-    const writeText = vi.fn(async () => {});
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
+  it("writes the selection as it was selected, and confirms with a toast", async () => {
+    writeClipboard.mockResolvedValue(true);
     const onDone = vi.fn();
     const copy = rows({ selection: SELECTION, onAddExcerpt: () => {}, onDone }).find(
       (row) => label(row) === S.common.copy,
     );
     copy!.props.onClick();
 
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(SELECTION.text);
-    expect(toasts).toEqual([S.common.copied]);
+    expect(writeClipboard).toHaveBeenCalledExactlyOnceWith(SELECTION.text);
+    expect(onDone).toHaveBeenCalledExactlyOnceWith(SELECTION);
+    await vi.waitFor(() => expect(toasts).toEqual([S.common.copied]));
+  });
+
+  it("raises no toast when the write was refused", async () => {
+    writeClipboard.mockResolvedValue(false);
+    const onDone = vi.fn();
+    const copy = rows({ selection: SELECTION, onAddExcerpt: () => {}, onDone }).find(
+      (row) => label(row) === S.common.copy,
+    );
+    copy!.props.onClick();
+    await writeClipboard.mock.results[0]?.value;
+    await Promise.resolve();
+
+    expect(toasts).toEqual([]);
     expect(onDone).toHaveBeenCalledExactlyOnceWith(SELECTION);
   });
 });
@@ -245,16 +264,15 @@ describe("LinkMenuRows", () => {
     expect(onDone).toHaveBeenCalledOnce();
   });
 
-  it("copies the address and confirms with a toast, as Copy does", () => {
-    const writeText = vi.fn(async () => {});
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
+  it("copies the address and confirms with a toast, as Copy does", async () => {
+    writeClipboard.mockResolvedValue(true);
     const onDone = vi.fn();
     const row = linkRows({ href: HREF, builtinBrowser: true, desktopShell: true, onDone }).find(
       (r) => label(r) === S.chat.linkMenu.copyLink,
     );
     row!.props.onClick();
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(HREF);
-    expect(toasts).toEqual([S.common.copied]);
+    expect(writeClipboard).toHaveBeenCalledExactlyOnceWith(HREF);
     expect(onDone).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(toasts).toEqual([S.common.copied]));
   });
 });

@@ -97,16 +97,6 @@ describe("switchModelRefusal (409 codes -> one localized line)", () => {
     expect(line).toContain("OPENROUTER_API_KEY is not set");
   });
 
-  it("summary_too_large names the target, says to pick a larger window, and carries the server's sizes", () => {
-    const detail = "about 15000 tokens vs 8000";
-    const line = refuse("summary_too_large", detail);
-    expect(line).toBe(t.switchModelSummaryTooLarge(label, detail));
-    expect(line).toContain(label);
-    expect(line).toContain(detail);
-    expect(line).toMatch(/larger context window|上下文窗口更大/);
-    expect(refuse("summary_too_large", "")).not.toMatch(/\(\)|（）/);
-  });
-
   it("an unknown code is left to the caller", () => {
     expect(refuse("not_found")).toBeNull();
   });

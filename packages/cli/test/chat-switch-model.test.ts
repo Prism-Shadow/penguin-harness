@@ -215,7 +215,6 @@ describe("chat /switch-model: 409 refusals print one localized line each", () =>
     ],
     ["model_unavailable", t.switchModelUnavailable(TARGET, "Refused: model_unavailable.")],
     ["compaction_not_configured", t.switchModelNoCompaction()],
-    ["summary_too_large", t.switchModelSummaryTooLarge(TARGET, "Refused: summary_too_large.")],
   ];
   for (const [code, line] of cases) {
     it(code, async () => {

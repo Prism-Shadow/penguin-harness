@@ -43,7 +43,6 @@ describe("apiErrorText", () => {
       "model_not_configured",
       "model_unavailable",
       "compaction_not_configured",
-      "summary_too_large",
       "task_in_progress",
       "compacting",
     ];
@@ -71,6 +70,9 @@ describe("apiErrorText", () => {
       "memory_scope_not_found",
       "trace_not_found",
       "platform_rate_limited",
+      // The Workspace picker's "Allow access" in the desktop app: no shell, or no answer.
+      "shell_unreachable",
+      "timeout",
       "internal",
     ];
     for (const code of reachable) {

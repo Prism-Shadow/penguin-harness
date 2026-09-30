@@ -591,7 +591,7 @@ async function driveModelSwitch(onRequest: (request: RecordedRequest) => void): 
       sessionMeta: sessionMeta({ ...META, ...SWITCH_TARGET }),
     }),
     modelSwitch: {
-      validate: async () => ({ contextWindow: 200000 }),
+      validate: async () => {},
       reassembleInitialContext: async () => ({}),
     },
   });

@@ -1,5 +1,5 @@
 /**
- * In-session model switch (`Session.switchModel` over `ContextEngine.switchModel`).
+ * In-session model switch (`Session.switchModel` over `ContextEngine.switchContext`).
  *
  * A switch is a compaction whose new context opens on the model the user picked: the running
  * context is summarized on the model it is on — always summarize, whatever the configured mode —
@@ -7,15 +7,16 @@
  * OmniMessage field or reason names the switch. The model lives only in the new context's
  * `session_meta`, and the switch opens that context's Trace file at once — its head is the
  * durable record — and streams the meta last, so a Session rebuilt from the latest file alone
- * runs on the new model, carrying the summary.
+ * runs on the new model, carrying the summary. The engine knows nothing of models: the Session
+ * tells its opener which one the next context opens on.
  *
  * Covered here with fake collaborators: the three engine shapes (completed turns / a context a
  * compaction just closed / an open context without a completed turn), switching twice before
  * typing, the never-run Session, the same-model and refused-target no-ops, the failure paths
- * that keep the old model, the summary-too-large guard, and — for every switch path — the file
- * the switch opened and what `resumeTrace` recovers from it. The real Agent's composition
- * (Project config, credentials, spawn inheritance) is in agent.test.ts; `agent.resumeSession`
- * on a switched Session's Trace is in resume.test.ts.
+ * that keep the old model, and — for every switch path — the file the switch opened and what
+ * `resumeTrace` recovers from it. The real Agent's composition (Project config, credentials,
+ * spawn inheritance) is in agent.test.ts; `agent.resumeSession` on a switched Session's Trace
+ * is in resume.test.ts.
  */
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -45,10 +46,13 @@ import type {
   LLMInterface,
   LLMOutcome,
 } from "../src/interfaces/index.js";
-import type { CompactionSettings, OpenContextOptions } from "../src/engine/context-engine.js";
-import { ModelSwitchRefusedError } from "../src/engine/context-engine.js";
-import { Session } from "../src/session.js";
-import type { ModelSwitchSupport, SessionConfig } from "../src/session.js";
+import type { CompactionSettings } from "../src/engine/context-engine.js";
+import { ModelSwitchRefusedError, Session } from "../src/session.js";
+import type {
+  ModelSwitchSupport,
+  SessionConfig,
+  SessionOpenContextOptions,
+} from "../src/session.js";
 import type { ModelRef } from "../src/state/project-config.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 
@@ -224,8 +228,9 @@ function harness(
     llms: Record<string, LLMInterface[]>;
     compaction?: CompactionSettings;
     vision?: Record<string, boolean>;
-    windows?: Record<string, number | undefined>;
     modelHasVision?: boolean;
+    /** Runs the Session without a Trace sink (an embedder that records nothing). */
+    sinkless?: boolean;
     extras?: Partial<SessionConfig>;
   },
 ): Harness {
@@ -249,8 +254,6 @@ function harness(
       if (ref.model_id === "unknown") {
         throw new Error(`Model is not in the Project config: ${ref.model_id}`);
       }
-      const windows = args.windows ?? {};
-      return { contextWindow: ref.model_id in windows ? windows[ref.model_id] : 200000 };
     },
     async reassembleInitialContext(ref) {
       reassembled.push(ref);
@@ -267,14 +270,15 @@ function harness(
     meta: metaFor(MODEL_A),
     bootstrap: async () => ({ llm: args.llmA }),
     environment: fakeEnvironment,
-    trace: sink,
+    ...(args.sinkless ? {} : { trace: sink }),
     compaction: args.compaction ?? settings(),
-    openNextContext: ({ modelRef, emit }: OpenContextOptions) => {
+    openNextContext: ({ modelRef, emit }: SessionOpenContextOptions) => {
       opens.push(modelRef);
       const model = modelRef ?? current;
-      current = model;
       const llm = args.llms[model.model_id]?.shift();
       if (!llm) throw new Error(`no LLM prepared for a context on ${model.model_id}`);
+      // Like the real opener, the running model moves only once the context is open.
+      current = model;
       emit(toolListReady([]));
       return {
         llm,
@@ -694,6 +698,40 @@ describe("in-session model switch", () => {
     expect(userTexts(resumeTrace(latest).history)).toEqual([SUMMARY_TEXT, "task two"]);
   });
 
+  it("without a Trace sink the stream reads the same: switching twice before typing still closes the untouched context with a discard pair", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        { messages: [assistantText(SUMMARY_REPLY), usage(60, 110)] },
+      ],
+      "A",
+    );
+    const llmC = new ScriptedLLM(
+      [{ messages: [assistantText("answer two"), usage(20, 130)] }],
+      "C",
+    );
+    const h = harness(traces, {
+      llmA,
+      llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")], [MODEL_C.model_id]: [llmC] },
+      sinkless: true,
+    });
+    sessions.push(h.session);
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    await collect(switchTo(h.session, MODEL_B));
+
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
+
+    expect(result).toBe("completed");
+    expect(compactionEvents(all).map((e) => [e.reason, e.mode])).toEqual([
+      ["manual", "discard"],
+      ["manual", "discard"],
+    ]);
+    expectEndsWithMetaOn(all, MODEL_C);
+    expect(h.written).toEqual([]);
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    expect(llmC.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
+  });
+
   it("a failed first request on the new model, then another switch: the summary the failed context opened with heads the next file, while the model gets the [turn_aborted] flatten", async () => {
     const llmA = new ScriptedLLM(
       [
@@ -843,96 +881,6 @@ describe("in-session model switch", () => {
     expect(modelOf(opened[0]!)).toEqual(MODEL_B);
     expect(textOf(opened[2]!)).toBe(SUMMARY_TEXT);
     expect(resumeTrace(opened).carryOver.map(textOf)).toEqual([SUMMARY_TEXT]);
-  });
-
-  it("a second switch before typing checks the held summary too: a target it does not fit is refused, and the Session stays where the first switch put it", async () => {
-    const longSummary = `[summary]${"x".repeat(12000)}[/summary]`;
-    const llmA = new ScriptedLLM(
-      [
-        { messages: [assistantText("answer one"), usage(50, 50)] },
-        { messages: [assistantText(longSummary), usage(3100, 3150)] },
-      ],
-      "A",
-    );
-    const h = harness(traces, {
-      llmA,
-      llms: {
-        [MODEL_B.model_id]: [new ScriptedLLM([], "B")],
-        [MODEL_C.model_id]: [new ScriptedLLM([], "C")],
-      },
-      // C takes the summary; B: 4096 − prefix − 2048 headroom leaves ~2k for a ~3k summary.
-      windows: { [MODEL_B.model_id]: 4096, [MODEL_C.model_id]: 200000 },
-    });
-    sessions.push(h.session);
-    await collect(h.session.run([userText("task one")], { approve: allowAll }));
-    await collect(switchTo(h.session, MODEL_C));
-    const writtenBefore = h.written.length;
-
-    // C's context holds the summary and no completed turn: nothing would be compacted, so the
-    // misfit is refused before the discard pair that would otherwise close C's file.
-    const refusal = await collect(switchTo(h.session, MODEL_B)).catch((e: unknown) => e);
-    expect(refusal).toBeInstanceOf(ModelSwitchRefusedError);
-    expect((refusal as ModelSwitchRefusedError).reason).toBe("summary_too_large");
-    expect(h.written).toHaveLength(writtenBefore);
-    expect(h.opens).toEqual([MODEL_C]);
-    expect(h.session.modelId).toBe(MODEL_C.model_id);
-    expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`, `${SESSION_ID}_002.jsonl`]);
-  });
-
-  it("a held summary the target's window cannot take refuses a just-compacted switch before any event, and a roomier target then takes it", async () => {
-    const longSummary = `[summary]${"x".repeat(12000)}[/summary]`;
-    const llmA = new ScriptedLLM(
-      [
-        { messages: [assistantText("answer one"), usage(50, 50)] },
-        { messages: [assistantText(longSummary), usage(3100, 3150)] },
-      ],
-      "A",
-    );
-    // The compaction opens a fresh context on A (never asked anything: the switch away from it
-    // sends no request); the refused target B gets no context; C takes the summary.
-    const llmA2 = new ScriptedLLM([], "A2");
-    const llmB = new ScriptedLLM([], "B");
-    const llmC = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 3170)] }], "C");
-    const h = harness(traces, {
-      llmA,
-      llms: {
-        [MODEL_A.model_id]: [llmA2],
-        [MODEL_B.model_id]: [llmB],
-        [MODEL_C.model_id]: [llmC],
-      },
-      // B: 4096 − prefix − 2048 headroom leaves ~2k for a ~3k summary. C: room to spare.
-      windows: { [MODEL_B.model_id]: 4096, [MODEL_C.model_id]: 200000 },
-    });
-    sessions.push(h.session);
-    await collect(h.session.run([userText("task one")], { approve: allowAll }));
-    await collect(h.session.compact());
-    expect(h.session.compactability()).toBe("just_compacted");
-    const writtenBefore = h.written.length;
-
-    // No pair can end `fatal` here — nothing is compacted — so the switch is refused the way
-    // target validation refuses: typed, before any event, the Session untouched.
-    const refusal = await collect(switchTo(h.session, MODEL_B)).catch((e: unknown) => e);
-    expect(refusal).toBeInstanceOf(ModelSwitchRefusedError);
-    expect((refusal as ModelSwitchRefusedError).reason).toBe("summary_too_large");
-    expect((refusal as Error).message).toMatch(/about 30\d\d tokens/);
-    expect((refusal as Error).message).toMatch(/4096 tokens/);
-    expect((refusal as Error).message).toMatch(/stays on its current model/);
-    expect(h.written).toHaveLength(writtenBefore);
-    // The compaction's own open (on A, no target) is the only one; B was never opened.
-    expect(h.opens).toEqual([undefined]);
-    expect(h.session.modelId).toBe(MODEL_A.model_id);
-    expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
-    expect(h.session.compactability()).toBe("just_compacted");
-
-    // The summary is still held: a target with room takes it at the head of its file.
-    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
-    expect(result).toBe("completed");
-    expect(compactionEvents(all)).toEqual([]);
-    expectEndsWithMetaOn(all, MODEL_C);
-    const opened = await readTrace(h.trace.currentPath());
-    expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready", "text"]);
-    expect(textOf(opened[2]!)).toContain("x".repeat(12000));
-    expect(h.session.modelId).toBe(MODEL_C.model_id);
   });
 
   it("a switch carries text alone: a Prompt stopped before its bootstrap rides on without its image", async () => {
@@ -1103,15 +1051,22 @@ describe("in-session model switch", () => {
     expect(h.trace.currentPath()).toBe(oldPath);
   });
 
-  it("an aborted compaction request keeps the old model too", async () => {
+  it("an aborted compaction request keeps the old model too, and the compaction after it opens on that model", async () => {
     const llmA = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(50, 50)] },
         { messages: [], outcome: { status: "aborted" } },
+        { messages: [assistantText(SUMMARY_REPLY), usage(60, 110)] },
       ],
       "A",
     );
-    const h = harness(traces, { llmA, llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] } });
+    const h = harness(traces, {
+      llmA,
+      llms: {
+        [MODEL_A.model_id]: [new ScriptedLLM([], "A2")],
+        [MODEL_B.model_id]: [new ScriptedLLM([], "B")],
+      },
+    });
     sessions.push(h.session);
     await collect(h.session.run([userText("task one")], { approve: allowAll }));
 
@@ -1123,65 +1078,124 @@ describe("in-session model switch", () => {
     expect(h.session.modelId).toBe(MODEL_A.model_id);
     expect(h.opens).toEqual([]);
     expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
+
+    // The target was the stopped switch's alone: an ordinary compaction names no model to its
+    // opener, and the next context opens on the model the Session is on.
+    await collect(h.session.compact());
+    expect(h.opens).toEqual([undefined]);
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
   });
 
-  it("a summary the target's window cannot hold ends the switch fatal, naming both numbers, and the Session stays on its model", async () => {
-    const longSummary = `[summary]${"x".repeat(12000)}[/summary]`;
+  it("a target whose context cannot be opened after the compaction completed fails the switch: the Session stays on its model, and so does the next compaction", async () => {
     const llmA = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(50, 50)] },
-        { messages: [assistantText(longSummary), usage(3100, 3150)] },
+        { messages: [assistantText(SUMMARY_REPLY), usage(60, 110)] },
+        { messages: [assistantText(SUMMARY_REPLY), usage(70, 180)] },
       ],
       "A",
     );
-    const llmB = new ScriptedLLM([], "B");
-    const h = harness(traces, {
-      llmA,
-      llms: { [MODEL_B.model_id]: [llmB] },
-      // The smallest window taken at face value: 4096 − prefix − 2048 headroom leaves ~2k.
-      windows: { [MODEL_B.model_id]: 4096 },
-    });
+    // Nothing is prepared for a context on B: the opener throws.
+    const h = harness(traces, { llmA, llms: { [MODEL_A.model_id]: [new ScriptedLLM([], "A2")] } });
     sessions.push(h.session);
     await collect(h.session.run([userText("task one")], { approve: allowAll }));
 
-    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
-
-    expect(result).toBe("fatal");
-    const end = compactionEvents(all)[1] as CompactionEndPayload;
-    expect(end).toMatchObject({ reason: "manual", status: "fatal", error_code: "unsupported" });
-    expect(end.error_message).toMatch(/about 30\d\d tokens/);
-    expect(end.error_message).toMatch(/4096 tokens/);
-    expect(end.error_message).toMatch(/stays on its current model/);
-    expect(hasMeta(all)).toBe(false);
-    expect(h.opens).toEqual([]);
+    await expect(collect(switchTo(h.session, MODEL_B))).rejects.toThrow(
+      /no LLM prepared for a context on model-b/,
+    );
+    expect(h.opens).toEqual([MODEL_B]);
     expect(h.session.modelId).toBe(MODEL_A.model_id);
     expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
-    // The compaction exchange is committed on the old object, like any failed-after-commit
-    // compaction; the context is still compactable (and switchable to a roomier model).
-    expect(h.session.compactability()).toBe("ok");
+
+    // The failed switch's target is not held: the next rotation keeps the running model.
+    await collect(h.session.compact());
+    expect(h.opens).toEqual([MODEL_B, undefined]);
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
   });
 
-  it("a target without a usable window is not guarded", async () => {
-    const longSummary = `[summary]${"x".repeat(12000)}[/summary]`;
+  it("a target whose context cannot be opened leaves a just-compacted context as it was: the summary still pending, nothing written", async () => {
     const llmA = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(50, 50)] },
-        { messages: [assistantText(longSummary), usage(3100, 3150)] },
+        { messages: [assistantText(SUMMARY_REPLY), usage(60, 110)] },
       ],
       "A",
     );
-    const h = harness(traces, {
-      llmA,
-      llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] },
-      windows: { [MODEL_B.model_id]: undefined },
-    });
+    const llmA2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 130)] }]);
+    const h = harness(traces, { llmA, llms: { [MODEL_A.model_id]: [llmA2] } });
     sessions.push(h.session);
     await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    await collect(h.session.compact());
+    const writtenBefore = h.written.length;
 
-    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
-    expect(result).toBe("completed");
-    expectEndsWithMetaOn(all, MODEL_B);
+    await expect(collect(switchTo(h.session, MODEL_B))).rejects.toThrow(
+      /no LLM prepared for a context on model-b/,
+    );
+    expect(h.written).toHaveLength(writtenBefore);
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
+    expect(h.session.compactability()).toBe("just_compacted");
+
+    // The context the compaction opened is still the one that runs next, opening with the summary.
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    expect(llmA2.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened).slice(0, 4)).toEqual([
+      "session_meta",
+      "tool_list_ready",
+      "text",
+      "text",
+    ]);
+    expect(modelOf(opened[0]!)).toEqual(MODEL_A);
+  });
+
+  it("a target whose context cannot be opened leaves an unanswered context's summary recoverable: a restart finds it pending, and a retry carries it on", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        { messages: [assistantText(SUMMARY_REPLY), usage(60, 110)] },
+      ],
+      "A",
+    );
+    const llmC = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 130)] }], "C");
+    const llms: Record<string, LLMInterface[]> = { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] };
+    const h = harness(traces, { llmA, llms });
+    sessions.push(h.session);
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    await collect(switchTo(h.session, MODEL_B));
+    const bPath = h.trace.currentPath();
+
+    // B's context holds the summary and no completed turn, in a file of its own: the discard
+    // pair that closes it is written before C's context is opened, and the open fails.
+    await expect(collect(switchTo(h.session, MODEL_C))).rejects.toThrow(
+      /no LLM prepared for a context on model-c/,
+    );
     expect(h.session.modelId).toBe(MODEL_B.model_id);
+    expect(h.trace.currentPath()).toBe(bPath);
+    const left = await readTrace(bPath);
+    expect(payloadTypes(left)).toEqual([
+      "session_meta",
+      "tool_list_ready",
+      "text",
+      "compaction_begin",
+      "compaction_end",
+    ]);
+    // A restart now reads a closed context on B — with the summary it opened with still
+    // pending: the switch is lost, the conversation before it is not.
+    const resumed = resumeTrace(left);
+    expect(resumed.contextClosed).toBe(true);
+    expect(modelOf(resumed.meta!)).toEqual(MODEL_B);
+    expect(textOf(resumed.pendingSummary!)).toBe(SUMMARY_TEXT);
+
+    // In-process nothing was lost either: the retry carries the summary to C's file.
+    llms[MODEL_C.model_id] = [llmC];
+    const { result } = await collectWithReturn(switchTo(h.session, MODEL_C));
+    expect(result).toBe("completed");
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready", "text"]);
+    expect(modelOf(opened[0]!)).toEqual(MODEL_C);
+    expect(textOf(opened[2]!)).toBe(SUMMARY_TEXT);
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    expect(llmC.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
   });
 
   it("the vision answer follows the model: a switch to a model without vision folds the next Prompt's images", async () => {
@@ -1218,7 +1232,56 @@ describe("in-session model switch", () => {
     );
   });
 
-  it("a Session resumed after a restart builds its engine first, so the switch compacts the real conversation — and that context's first-run records stay in its own file", async () => {
+  it("the engine's own fold follows the model too: a steering message's image reaches a model without vision as a path line", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        { messages: [assistantText(SUMMARY_REPLY), usage(60, 110)] },
+      ],
+      "A",
+    );
+    // B is steered while it answers: the message is delivered between its two requests.
+    let steer = (): void => {};
+    const llmB = new (class extends ScriptedLLM {
+      override async *streamGenerate(
+        params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        steer();
+        steer = () => {};
+        return yield* super.streamGenerate(params);
+      }
+    })(
+      [
+        { messages: [assistantText("working"), usage(20, 130)] },
+        { messages: [assistantText("seen"), usage(30, 160)] },
+      ],
+      "B",
+    );
+    const h = harness(traces, {
+      llmA,
+      llms: { [MODEL_B.model_id]: [llmB] },
+      vision: { [MODEL_B.model_id]: false },
+    });
+    sessions.push(h.session);
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    await collect(switchTo(h.session, MODEL_B));
+
+    steer = () => {
+      h.session.steer([
+        userText("look at this"),
+        imageUrlMessage("https://images.invalid/pic.png"),
+      ]);
+    };
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+
+    expect(llmB.calls).toHaveLength(2);
+    const delivered = llmB.calls[1]!;
+    expect(payloadTypeList(delivered)).toEqual(["text"]);
+    expect(textOf(delivered[0]!)).toContain("look at this");
+    expect(textOf(delivered[0]!)).toContain("[attached image: https://images.invalid/pic.png]");
+  });
+
+  it("a Session resumed after a restart builds its engine first, so the switch compacts the real conversation — and the first-run records of the context it leaves never reach the target's file", async () => {
     // What agent.resumeSession derives from a Trace: real history, no engine yet.
     const resumedLLM = new ScriptedLLM(
       [{ messages: [assistantText(SUMMARY_REPLY), usage(90, 90)] }],
@@ -1240,24 +1303,20 @@ describe("in-session model switch", () => {
     });
     sessions.push(h.session);
     expect(h.session.compactability()).toBe("ok");
-    const oldPath = h.trace.currentPath();
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
     expect(result).toBe("completed");
     expect(resumedLLM.calls).toHaveLength(1);
     expect(compactionEvents(all)[0]).toMatchObject({ reason: "manual", turns: 3 });
-    // With turns to summarize, the bootstrap streams: the stream opens on its toolset record.
+    // The bootstrap streams as it does for a run: the stream opens on its toolset record.
     expect(payloadTypes(all)[0]).toBe("tool_list_ready");
     expectEndsWithMetaOn(all, MODEL_B);
     expect(h.session.modelId).toBe(MODEL_B.model_id);
 
-    // The engine was built for the switch, not by a run: the old context's toolset record goes
-    // into the old file, ahead of the pair that closes it — never into the target's.
-    expect(payloadTypes(await readTrace(oldPath)).slice(0, 2)).toEqual([
-      "tool_list_ready",
-      "compaction_begin",
-    ]);
+    // The engine was built for the switch, not by a run, so that record was still owed to the
+    // Trace: it is dropped with the context it describes. The target's file holds the target's
+    // own and no other.
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
     const opened = await readTrace(h.trace.currentPath());
     expect(payloadTypes(opened).slice(0, 5)).toEqual([
@@ -1270,15 +1329,11 @@ describe("in-session model switch", () => {
     expect(payloadTypes(opened).filter((t) => t === "tool_list_ready")).toHaveLength(1);
   });
 
-  it("a Session resumed just compacted refuses a target its held summary does not fit before any event: the bootstrap of the context being left stays off the stream", async () => {
-    const held = userText(`[context_summary]\n${"x".repeat(12000)}\n[/context_summary]`);
+  it("a Session resumed just compacted switches without a pair: its bootstrap streams, then the target's records and meta, and the held summary heads the new file", async () => {
+    const held = userText(SUMMARY_TEXT);
     const h = harness(traces, {
       llmA: new ScriptedLLM([], "A"),
-      llms: {
-        [MODEL_B.model_id]: [new ScriptedLLM([], "B")],
-        [MODEL_C.model_id]: [new ScriptedLLM([], "C")],
-      },
-      windows: { [MODEL_B.model_id]: 4096, [MODEL_C.model_id]: 200000 },
+      llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] },
       extras: {
         bootstrap: async ({ emit }) => {
           emit(toolListReady([]));
@@ -1297,26 +1352,18 @@ describe("in-session model switch", () => {
     sessions.push(h.session);
     expect(h.session.compactability()).toBe("just_compacted");
 
-    const streamed: OmniMessage[] = [];
-    const refusal = await (async () => {
-      for await (const msg of switchTo(h.session, MODEL_B)) streamed.push(msg);
-    })().catch((e: unknown) => e);
-    expect(refusal).toBeInstanceOf(ModelSwitchRefusedError);
-    expect((refusal as ModelSwitchRefusedError).reason).toBe("summary_too_large");
-    expect(streamed).toEqual([]);
-    expect(h.session.modelId).toBe(MODEL_A.model_id);
-
-    // A target with room takes it: no pair (the closing pair is on the closed file), the
-    // target's own records, and its meta — still nothing from the context that never ran.
-    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
     expect(result).toBe("completed");
-    expect(payloadTypes(all)).toEqual(["tool_list_ready", "session_meta"]);
+    // The closing pair is on the closed file: none here. The bootstrap's toolset record, the
+    // target's own, then its meta.
+    expect(payloadTypes(all)).toEqual(["tool_list_ready", "tool_list_ready", "session_meta"]);
     const opened = await readTrace(h.trace.currentPath());
     expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready", "text"]);
-    expect(textOf(opened[2]!)).toBe(textOf(held));
+    expect(modelOf(opened[0]!)).toEqual(MODEL_B);
+    expect(textOf(opened[2]!)).toBe(SUMMARY_TEXT);
   });
 
-  it("a switch stopped while that held-back bootstrap is still connecting shows the stopped bootstrap: no switch ends short of completed without an event", async () => {
+  it("a switch stopped while a resumed Session is still opening the context it leaves ends aborted, with the stopped bootstrap on the stream", async () => {
     const controller = new AbortController();
     let connecting!: () => void;
     const started = new Promise<void>((resolve) => (connecting = resolve));
@@ -1355,9 +1402,14 @@ describe("in-session model switch", () => {
   });
 
   it("a Session resumed from a file a switch opened carries the summary on through another switch", async () => {
-    // What a resume of [session_meta, tool_list_ready, summary] hands the engine: the summary
-    // is pending input, and is known as the summary this context opened with.
-    const held = userText(SUMMARY_TEXT);
+    // What a resume of the file a switch opened hands the engine: the summary as pending
+    // input, named as the one the context opened with.
+    const resumed = resumeTrace([
+      sessionMeta(metaFor(MODEL_A)),
+      toolListReady([]),
+      userText(SUMMARY_TEXT),
+    ]);
+    expect(resumed.openingSummary).toBe(resumed.carryOver[0]);
     const llmC = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 20)] }], "C");
     const h = harness(traces, {
       llmA: new ScriptedLLM([], "A"),
@@ -1365,10 +1417,10 @@ describe("in-session model switch", () => {
       extras: {
         metaAlreadyWritten: true,
         initialEngineState: {
-          carryOver: [held],
-          contextSummary: held,
+          carryOver: resumed.carryOver,
+          openingSummary: resumed.openingSummary!,
           fromCompaction: true,
-          sessionTurns: 0,
+          sessionTurns: resumed.sessionTurns,
         },
       },
     });
@@ -1402,7 +1454,7 @@ describe("in-session model switch", () => {
       environment: fakeEnvironment,
       trace: { write: async (m) => void written.push(m) },
       modelSwitch: {
-        validate: async () => ({ contextWindow: undefined }),
+        validate: async () => {},
         reassembleInitialContext: async () => ({}),
       },
       imagesDir: join(traces, "scratch"),

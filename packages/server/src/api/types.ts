@@ -1857,16 +1857,13 @@ export interface GoalResponse {
  *   `session_meta`: its `provider` / `model_id` name the model the Session now runs on, the
  *   Session reads report that pair from this record on, and `task_state` turns idle after it.
  *   A compaction that ends other than `completed` means no switch — no `session_meta` follows
- *   and the Session keeps its model (a summary that does not fit the target's window ends the
- *   pair `fatal`).
+ *   and the Session keeps its model.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.
  * - **409**, one code per refusal, before any event: `task_in_progress` / `compacting` (busy),
  *   `same_model`, `model_not_configured` (the target is not in the Project config),
- *   `model_unavailable` (its client cannot be constructed, e.g. no credential),
- *   `compaction_not_configured`, and `summary_too_large` (the Session holds a summary and has
- *   nothing to compact, and the target's context window cannot take that summary; the message
- *   names both sizes — the remedy is a target with a larger window).
+ *   `model_unavailable` (its client cannot be constructed, e.g. no credential), and
+ *   `compaction_not_configured`.
  */
 export interface SessionSwitchModelRequest {
   /** Provider group of the target model. */
@@ -3983,6 +3980,62 @@ export interface DesktopTrayCommandMessage {
   type: "desktop-tray-command";
   showTrayIcon?: boolean;
   locale?: DesktopTrayLocale;
+}
+
+// Desktop folder access (desktop mode, macOS)
+//
+// macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
+// volumes. It asks the user only on behalf of an app it holds responsible for a read, and lists
+// under Files and Folders only the apps it has asked about; any other read gets a silent EPERM.
+// The Workspace picker's "Allow access" therefore goes to the shell, over the same
+// utilityProcess message channel as the updater and tray above: its main process reads the
+// folder once in the app's own name and says whether it could, and once the app is allowed its
+// children (this server, the agents' shells) read too. The page can also have the shell open
+// the Privacy & Security pane to change it. What either outcome means for the user is the
+// page's to say; the shell only reports.
+
+/** What the shell's read of one folder came to. */
+export interface DesktopFolderAccessResult {
+  /** The folder could be read. Always true off macOS, where the shell reads nothing. */
+  granted: boolean;
+  /** The failed read's errno code (`EPERM`, `EACCES`, `ENOENT`, …); `EINVAL` for a path that is not absolute. */
+  code?: string;
+  /**
+   * Whether the app is a packaged build (Electron's `app.isPackaged`). An unpackaged one is a
+   * development instance started from a terminal, and macOS holds that terminal responsible
+   * for its reads rather than the app.
+   */
+  packaged: boolean;
+}
+
+/** Server → shell request over the utilityProcess message channel (relayed from POST /api/projects/:projectId/dirs/access). */
+export interface DesktopFolderAccessMessage {
+  type: "desktop-folder-access";
+  /** Pairs the reply with its request. */
+  id: string;
+  /** The folder to read, as an absolute path. */
+  path: string;
+}
+
+/** Shell → server reply to one {@link DesktopFolderAccessMessage}, carrying its `id`. */
+export interface DesktopFolderAccessResultMessage extends DesktopFolderAccessResult {
+  type: "desktop-folder-access-result";
+  id: string;
+}
+
+/** POST /api/projects/:projectId/dirs/access: the shell's answer, for the picker to act on. */
+export interface DirAccessResponse {
+  granted: boolean;
+  packaged: boolean;
+}
+
+/** The Privacy & Security panes the page may open: Files and Folders, and Full Disk Access. */
+export type DesktopPrivacyPane = "files" | "fullDisk";
+
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/privacy-settings). No reply. */
+export interface DesktopOpenPrivacySettingsMessage {
+  type: "desktop-open-privacy-settings";
+  pane: DesktopPrivacyPane;
 }
 
 /**

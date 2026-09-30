@@ -23,12 +23,14 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import type { DirListResponse } from "@prismshadow/penguin-server/api";
+import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { writeClipboard } from "../../lib/clipboard";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
+import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { formatDateTime } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -39,7 +41,6 @@ import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
 import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CLOCK_ICON, FOLDER_ICON, FOLDER_OPEN_ICON } from "../../components/ui/group-list";
@@ -66,6 +67,7 @@ import {
   canGoBack,
   canGoForward,
   defaultPlaces,
+  deniedBox,
   drivePlaces,
   finderKeyAction,
   finderMenuItems,
@@ -87,6 +89,7 @@ import {
   visibleEntries,
 } from "./workspace-finder-model";
 import type {
+  AccessAsk,
   FinderAction,
   FinderMenuItem,
   FinderMenuTarget,
@@ -223,6 +226,19 @@ export function WorkspaceFinder({
    */
   const menu = useRowContextMenu();
   const [menuTarget, setMenuTarget] = useState<FinderMenuTarget | null>(null);
+
+  /** Drawn by the desktop shell, which can ask macOS for a refused folder in the app's own name. */
+  const inShell = useMemo(
+    () => typeof navigator !== "undefined" && isElectronRenderer(navigator.userAgent),
+    [],
+  );
+  /**
+   * The "Allow access" exchange and the folder it is about: the shell answers only once the user
+   * has answered macOS, and the finder may stand somewhere else by then.
+   */
+  const [access, setAccess] = useState<{ path: string; ask: AccessAsk } | null>(null);
+  /** This server has no shell to ask: a desktop window attached to a server started elsewhere. */
+  const [shellUnreachable, setShellUnreachable] = useState(false);
 
   /**
    * Monotonic id of the newest listing request. Only the newest may publish: navigations race
@@ -428,6 +444,43 @@ export function WorkspaceFinder({
     if (path !== "") load(path, { record: false, select: selected });
   };
 
+  /**
+   * "Allow access": the shell reads the refused folder in the app's own name, which is what
+   * makes macOS ask. Granted, the folder is read again — unless the finder has moved on while
+   * macOS waited for the user. A server with no shell to ask turns the box into the
+   * explanation a browser tab gets.
+   */
+  const askAccess = () => {
+    const target = view.path;
+    const seq = loadSeq.current;
+    /** Records the answer, unless the exchange on record is already another folder's. */
+    const settle = (ask: AccessAsk | null) =>
+      setAccess((cur) => {
+        if (cur?.path !== target) return cur;
+        return ask === null ? null : { path: target, ask };
+      });
+    setAccess({ path: target, ask: { phase: "asking" } });
+    api
+      .requestDirAccess(projectId, target)
+      .then((res) => {
+        settle({ phase: "asked", packaged: res.packaged });
+        if (res.granted && loadSeq.current === seq) load(target, { record: false });
+      })
+      .catch((err: unknown) => {
+        settle(null);
+        if (
+          err instanceof ApiError &&
+          (err.code === "shell_unreachable" || err.code === "desktop_shell_only")
+        )
+          setShellUnreachable(true);
+        else toastError(apiErrorText(err));
+      });
+  };
+
+  const openSystemSettings = (pane: DesktopPrivacyPane) => {
+    void api.openPrivacySettings(pane).catch((err: unknown) => toastError(apiErrorText(err)));
+  };
+
   /** The address bar becomes a path field holding the folder on screen, ready to be typed over. */
   const editAddress = () => {
     setAddressDraft(view.listing?.path ?? view.path);
@@ -498,8 +551,7 @@ export function WorkspaceFinder({
       case "copyPath":
         // A menu row cannot show the copy button's own feedback — the panel closes out from
         // under it — so a toast confirms, as the Files panel's copy-path row does.
-        writeClipboard(target.path);
-        toastSuccess(S.common.copied);
+        void writeClipboard(target.path).then((ok) => ok && toastSuccess(S.common.copied));
         break;
       case "refresh":
         refresh();
@@ -1105,28 +1157,53 @@ export function WorkspaceFinder({
 
   let body: ReactNode;
   if (view.error !== null) {
+    // A refused folder says whose permission is missing and offers what can get it (see
+    // deniedBox); any other failure names itself and offers Retry.
+    const denied = permissionDenied
+      ? deniedBox({
+          platform,
+          desktopShell: inShell && !shellUnreachable,
+          machine,
+          ask: access?.path === view.path ? access.ask : { phase: "idle" },
+        })
+      : null;
+    const settingsPane = denied?.settings ?? null;
     body = (
       <div className="p-4">
         <div
-          className={`rounded-md border px-3 py-2.5 text-sm ${toneStrip[permissionDenied ? "attention" : "danger"]}`}
+          className={`rounded-md border px-3 py-2.5 text-sm ${toneStrip[denied !== null ? "attention" : "danger"]}`}
         >
-          <p className="font-medium">{permissionDenied ? f.deniedTitle : f.loadFailed}</p>
+          <p className="font-medium">{denied !== null ? f.deniedTitle : f.loadFailed}</p>
           <p className="mt-1 text-xs leading-5">
-            {permissionDenied
-              ? platform === "darwin"
-                ? f.deniedMac
-                : f.denied
-              : apiErrorText(view.error)}
+            {denied !== null ? f[denied.text] : apiErrorText(view.error)}
           </p>
           <p className="mt-1 break-all font-mono text-xs opacity-80">{view.path}</p>
-          <Button
-            size="sm"
-            className="mt-2"
-            disabled={loading}
-            onClick={() => load(view.path, { record: false })}
-          >
-            {S.common.retry}
-          </Button>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {denied !== null && denied.allow !== "none" && (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={denied.allow === "waiting" || loading}
+                onClick={askAccess}
+              >
+                {denied.allow === "waiting" ? f.allowAccessWaiting : f.allowAccess}
+              </Button>
+            )}
+            {settingsPane !== null && (
+              <Button size="sm" variant="primary" onClick={() => openSystemSettings(settingsPane)}>
+                {f.openSystemSettings}
+              </Button>
+            )}
+            {(denied === null || denied.retry) && (
+              <Button
+                size="sm"
+                disabled={loading}
+                onClick={() => load(view.path, { record: false })}
+              >
+                {S.common.retry}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     );
