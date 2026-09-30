@@ -270,7 +270,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         ) : visible.length === 0 ? (
           <SettingsEmpty>{S.schedule.panelNoMatch}</SettingsEmpty>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {visible.map((item) => {
               const line = describeSchedule(item, locale);
               return (

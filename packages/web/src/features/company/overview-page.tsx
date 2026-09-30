@@ -36,10 +36,12 @@ import {
   Chevron,
   EmptyState,
   GlyphIcon,
+  Heading,
   ICON_GAP,
   ICON_SIZE,
   RuledSection,
   Segmented,
+  Text,
   toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -157,9 +159,9 @@ function SummaryLabel({
 }) {
   return (
     <div className="flex items-start justify-between gap-2">
-      <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <Text variant="eyebrow" as="span" className="block">
         {label}
-      </span>
+      </Text>
       <JumpButton label={jump} onClick={onJump} />
     </div>
   );
@@ -227,9 +229,7 @@ function MissionFold({ mission }: { mission: string }) {
   const toggle = expanded ? S.company.overview.collapse : S.company.overview.expand;
   return (
     <div className="mt-3 max-w-3xl">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {S.company.overview.mission}
-      </p>
+      <Text variant="eyebrow">{S.company.overview.mission}</Text>
       <div className="mt-0.5 flex items-baseline gap-3">
         <p
           ref={textRef}
@@ -515,7 +515,10 @@ export function OverviewPage() {
           period's spend is not repeated here — it is the last cell of the KPI strip. */}
       <header className="min-w-0 border-b border-gray-200 pb-5 dark:border-gray-800">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-2xl font-semibold tracking-tight">{detail.name}</h2>
+          {/* The organization's name on the h1 rung, one outline level under the page title. */}
+          <Heading level={1} as="h2">
+            {detail.name}
+          </Heading>
           <OrgStatusPill org={detail} />
         </div>
         <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
@@ -720,7 +723,7 @@ export function OverviewPage() {
             {visibleInbox.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.inboxEmpty}</OrgEmptyLine>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {visibleInbox.map((row) => (
                   <li key={row.key} className={rowClass}>
                     <span
@@ -815,7 +818,7 @@ export function OverviewPage() {
             {detail.alerts.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.alertsEmpty}</OrgEmptyLine>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {detail.alerts.map((a) => (
                   <li key={`${a.agentId}/${a.period}`} className={rowClass}>
                     <TitleButton

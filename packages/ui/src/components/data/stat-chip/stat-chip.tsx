@@ -8,6 +8,7 @@
  * so a row fits a phone); `wideOnly` drops the whole chip there (the least useful reading of a
  * crowded row).
  */
+import type { ReactNode } from "react";
 import { ICON_GAP } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 
@@ -20,7 +21,8 @@ export function StatChip({
 }: {
   /** A 24×24 line path. */
   glyph: string;
-  value: string;
+  /** The reading: text, or a live element (a clock that ticks while a run is open). */
+  value: ReactNode;
   compactValue?: string;
   /** What the reading is: the chip's tooltip and accessible name. */
   label: string;

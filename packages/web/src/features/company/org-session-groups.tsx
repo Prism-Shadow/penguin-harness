@@ -308,7 +308,7 @@ export function OrgSessionGroups({
             {S.company.sessionList.noEmployees}
           </p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {desks.map((d) => (
               <DeskRow
                 key={d.agentId}

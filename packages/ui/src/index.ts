@@ -136,3 +136,6 @@ export * from "./components/data/list-row/list-row";
 export * from "./components/data/key-value/key-value";
 export * from "./components/data/log-view/log-view";
 export * from "./components/data/table/table";
+
+// W4-C — navigation: the nav list and its rows, the rail of a paged dialog or a settings page.
+export * from "./components/navigation/nav-list/nav-list";

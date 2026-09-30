@@ -1,7 +1,8 @@
 /**
  * 布局: a page frame with its header (the display title and its "?", the line under it, the way
  * back and the actions), the card padded and flush, the ruled section, the collapsible section
- * open and folded, and the entity header — all from the package.
+ * open and folded, the entity header, and the navigation list at both densities — all from the
+ * package.
  */
 import { useState } from "react";
 import {
@@ -12,6 +13,7 @@ import {
   CardHeader,
   CollapsibleSection,
   CopyButton,
+  Count,
   EntityHeader,
   GlyphIcon,
   ICONS,
@@ -19,6 +21,8 @@ import {
   IconButton,
   Input,
   ListRow,
+  NavList,
+  NavRow,
   PageFrame,
   PageHeader,
   ProviderLogo,
@@ -32,11 +36,22 @@ import { useGallery } from "../../state";
 const MODELS = ["gpt-5.4", "gpt-5.4-mini", "o4-mini"];
 const AGENT_ID = "code-reviewer";
 
+/** The rail's pages and their glyphs; the last one has nowhere to go yet. */
+const NAV_PAGES = [
+  { key: "overview", glyph: ICONS.gear },
+  { key: "models", glyph: ICONS.chip },
+  { key: "schedules", glyph: ICONS.alarmClock },
+  { key: "vault", glyph: ICONS.key },
+  { key: "billing", glyph: ICONS.dollarCircle },
+] as const;
+type NavPage = (typeof NAV_PAGES)[number]["key"];
+
 export function LayoutBoard() {
   const { S } = useGallery();
   const t = S.library.layout;
   const [query, setQuery] = useState("");
   const [groupOpen, setGroupOpen] = useState(true);
+  const [navPage, setNavPage] = useState<NavPage>("overview");
   return (
     <div className="gf-board">
       <BoardGroup title={t.page} aside={t.pageHint}>
@@ -159,6 +174,41 @@ export function LayoutBoard() {
             ))}
           </div>
         </EntityHeader>
+      </BoardGroup>
+      <BoardGroup title={t.nav} aside={t.navHint}>
+        <div className="lib-stack lib-stack-wide">
+          <span className="lib-caption">{t.navRail}</span>
+          <div className="lib-box" data-narrow>
+            <NavList label={t.navLabel} className="p-3">
+              {NAV_PAGES.map((page) => (
+                <NavRow
+                  key={page.key}
+                  label={t.navRows[page.key]}
+                  glyph={page.glyph}
+                  active={navPage === page.key}
+                  disabled={page.key === "billing"}
+                  badge={page.key === "schedules" ? <Count n={3} /> : undefined}
+                  onClick={() => setNavPage(page.key)}
+                />
+              ))}
+            </NavList>
+          </div>
+          <span className="lib-caption">{t.navDense}</span>
+          <div className="lib-box" data-narrow>
+            <NavList label={t.navDense} className="p-2">
+              {NAV_PAGES.slice(0, 3).map((page) => (
+                <NavRow
+                  key={page.key}
+                  density="sm"
+                  label={t.navRows[page.key]}
+                  glyph={page.glyph}
+                  active={navPage === page.key}
+                  onClick={() => setNavPage(page.key)}
+                />
+              ))}
+            </NavList>
+          </div>
+        </div>
       </BoardGroup>
     </div>
   );

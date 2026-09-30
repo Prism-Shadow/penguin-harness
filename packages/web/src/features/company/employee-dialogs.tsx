@@ -223,8 +223,8 @@ export function HireDialog({
           </>
         }
       >
-        <div className="space-y-5">
-          <RuledSection title={S.company.chart.hireAgentSection}>
+        <div className="space-y-6">
+          <RuledSection level={3} title={S.company.chart.hireAgentSection}>
             <div className="space-y-3">
               <div>
                 <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
@@ -326,7 +326,7 @@ export function HireDialog({
               )}
             </div>
           </RuledSection>
-          <RuledSection title={S.company.chart.hirePositionSection}>
+          <RuledSection level={3} title={S.company.chart.hirePositionSection}>
             <div className="space-y-3">
               <Input
                 label={S.company.chart.employeeTitle}

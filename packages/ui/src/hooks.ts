@@ -29,6 +29,7 @@
  * | `ui-underline-nav` | the selected-tab marker of a tab bar                     | items `[role="tab"]`, selected by `aria-selected="true"` |
  * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]` |
  * | `ui-icon-decor`    | an icon that says nothing its label does not already say | on the icon itself (or the element holding only it); optional `data-role="nav" \| "group" \| "menu" \| "empty"` |
+ * |                    | hosts: the icon renderers' call sites, `NavRow`'s glyph  |                                                       |
  * | `ui-tree`          | a container whose rows nest                              | rows carry `data-depth="0"…"8"`, the last row of a level `data-last="true"`; a row's children may follow it in a `data-branch` element carrying the children's `data-depth` |
  * | `ui-field`         | a labelled control row                                   | children carry `data-slot="label" \| "control"` and optionally `"hint"` |
  * | `ui-activity`      | a step of the agent's work in the transcript: a thinking | `data-kind="thinking" \| "tool"`, `data-state="running" \| "done" \| "error"`; descendants may carry `data-slot="label" \| "detail" \| "progress"` (the progress slot exists only while running, hidden by the host — a recipe that draws it sets `display` itself) |

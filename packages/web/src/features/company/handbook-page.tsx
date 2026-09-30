@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { OrgHandbookFile, OrgHandbookFileResponse } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   Button,
   ConfirmModal,
   EmptyState,
@@ -59,7 +60,7 @@ import {
 } from "./handbook-tree";
 
 /** The two panes: a fixed list column beside the document, stacked on a narrow screen. */
-const PANES_CLASS = "grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-[17rem_minmax(0,1fr)]";
+const PANES_CLASS = "grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-[17rem_minmax(0,1fr)]";
 
 /** The size a listing row would report for content just written, before the listing is re-read. */
 const byteLength = (text: string) => new TextEncoder().encode(text).length;
@@ -309,7 +310,7 @@ export function HandbookPage() {
                   setToggled(null);
                   setExpanded(new Set<string>());
                 }}
-                className="inline-flex items-center justify-center rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                className="inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
               >
                 <GlyphIcon d={COLLAPSE_ALL_ICON} size={ICON_SIZE.groupHeaderAction} />
               </button>
@@ -345,13 +346,13 @@ export function HandbookPage() {
                   in a list of them. The explorer row carries the same sentence in its tooltip
                   and its accessible name. */}
               {isIndex && (
-                <span className="shrink-0 rounded-full bg-gray-100 px-1.5 text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {S.company.handbook.indexLabel}
+                <span className="shrink-0">
+                  <Badge size="sm">{S.company.handbook.indexLabel}</Badge>
                 </span>
               )}
               {selectedFile !== null && (
                 <span
-                  className="hidden shrink-0 text-[11px] text-gray-400 sm:inline dark:text-gray-500"
+                  className="hidden shrink-0 text-xs text-gray-400 sm:inline dark:text-gray-500"
                   data-tooltip={S.company.handbook.updatedAt(
                     formatDateTime(selectedFile.updatedAt),
                     formatBytes(selectedFile.size),
@@ -364,7 +365,7 @@ export function HandbookPage() {
             <div className="flex shrink-0 items-center gap-1.5">
               {editing ? (
                 <>
-                  <span className="hidden text-[11px] text-gray-400 sm:inline dark:text-gray-500">
+                  <span className="hidden text-xs text-gray-400 sm:inline dark:text-gray-500">
                     {S.company.handbook.editorHint}
                   </span>
                   <Button size="sm" disabled={saving} onClick={() => setEditing(false)}>

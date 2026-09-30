@@ -449,7 +449,7 @@ export const en: GalleryStrings = {
       layout: {
         title: "Layout",
         description:
-          "The page frame and header, cards and their headers, ruled and collapsible sections, and the entity header.",
+          "The page frame and header, cards and their headers, ruled and collapsible sections, the entity header and the navigation list.",
       },
       data: {
         title: "Data",
@@ -943,6 +943,19 @@ export const en: GalleryStrings = {
       copyId: "Copy id",
       entityAction: "Open a session",
       entityTags: ["review", "read-only"],
+      nav: "Navigation list",
+      navHint:
+        "The current row takes the solid fill and is the current page; a glyph is decoration beside a label that already says it. A dialog's rail scrolls sideways on a phone.",
+      navLabel: "Agent settings",
+      navRail: "A rail: glyph, label and a trailing count; the last row has nowhere to go yet",
+      navDense: "Dense, inside a panel",
+      navRows: {
+        overview: "Overview",
+        models: "Models",
+        schedules: "Schedules",
+        vault: "Vault",
+        billing: "Billing",
+      },
     },
     data: {
       table: "Table",

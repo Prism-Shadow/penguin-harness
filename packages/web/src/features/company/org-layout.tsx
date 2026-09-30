@@ -31,6 +31,7 @@ import {
   Button,
   EmptyState,
   GlyphIcon,
+  Heading,
   ICONS,
   ICON_SIZE,
   PageFrame,
@@ -138,7 +139,9 @@ function OrgEmptyLanding() {
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300">
           <GlyphIcon d={ICONS.building} size={ICON_SIZE.sectionMark + 6} />
         </span>
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight">{S.company.landingTitle}</h1>
+        <Heading level={1} display className="mt-4">
+          {S.company.landingTitle}
+        </Heading>
         <p className="mx-auto mt-2 max-w-xl text-sm text-gray-600 dark:text-gray-300">
           {S.company.landingBody}
         </p>

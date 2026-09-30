@@ -436,7 +436,7 @@ export const zh = {
       },
       layout: {
         title: "布局",
-        description: "页面框架与页头、卡片与卡片头、分节、可折叠分节，以及实体头部。",
+        description: "页面框架与页头、卡片与卡片头、分节、可折叠分节、实体头部，以及导航列表。",
       },
       data: { title: "数据", description: "表格、列表行、键值对与日志。" },
       colour: {
@@ -894,6 +894,19 @@ export const zh = {
       copyId: "复制 ID",
       entityAction: "打开会话",
       entityTags: ["审查", "只读"],
+      nav: "导航列表",
+      navHint:
+        "当前行用实色填充，并标为当前页；图标只是装饰，旁边的标签已经说明了它。对话框的侧栏在手机上横向滚动。",
+      navLabel: "智能体设置",
+      navRail: "侧栏：图标、标签与行尾计数；最后一行暂时无处可去",
+      navDense: "紧凑：用在面板里",
+      navRows: {
+        overview: "概览",
+        models: "模型",
+        schedules: "定时任务",
+        vault: "密钥库",
+        billing: "账单",
+      },
     },
     data: {
       table: "表格",

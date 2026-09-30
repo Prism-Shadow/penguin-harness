@@ -294,6 +294,8 @@ describe("the layout and data boards", () => {
         "RuledSection",
         "CollapsibleSection",
         "EntityHeader",
+        "NavList",
+        "NavRow",
       ],
       data: [
         "Table",

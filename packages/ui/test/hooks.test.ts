@@ -71,10 +71,10 @@ const APPENDIX_A = [
  * tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
  * marks for the spinner, a pulsing state dot and the machines page's working marks; frames for
  * the transcript's cards, the code block, the page's cards and a table that is its own box; the
- * shell for the app layout; a decorative icon for the rows and headers
- * whose label already says what the icon says (sidebar rows and group headers, the settings rail,
- * a menu row's glyph, a tab, an empty state) — a session row is not a host, its avatar and marks
- * carry information; a tree for a file tree and a work group's steps; a field for a settings row;
+ * shell for the app layout; a decorative icon for the rows and headers whose label already says
+ * what the icon says (sidebar rows and group headers, a nav row's glyph in a rail, a menu row's
+ * glyph, a tab, an empty state) — a session row is not a host, its avatar and marks carry
+ * information; a tree for a file tree and a work group's steps; a field for a settings row;
  * activity for the transcript's work in progress (the work group's header, a tool call, the
  * thinking row).
  */
@@ -92,18 +92,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   ],
   // `Text` carries it for its eyebrow role (W5), the one door a group label takes in new code.
   "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog", "Text"],
-  "ui-display": [
-    "Heading",
-    "PageHeader",
-    "EmptyState",
-    "AgentsPage",
-    "ModelsPage",
-    "PluginsPage",
-    "UsagePage",
-    "BenchmarkPage",
-    "MachinesPage",
-    "DraftView",
-  ],
+  // The page titles are `PageHeader`'s; the usage page and the draft view's hero still write
+  // their own until their waves (W8, W6).
+  "ui-display": ["Heading", "PageHeader", "EmptyState", "UsagePage", "DraftView"],
   "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar"],
   // The transcript's cards and the code block, and the page-level boxes (W4): the card and a
   // table that is its own box.
@@ -113,7 +104,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-icon-decor": [
     "GlyphIcon",
     "Sidebar",
-    "PagedDialog",
+    "NavRow",
     "SettingsDialog",
     "MenuItemGlyph",
     "MenuItem",
