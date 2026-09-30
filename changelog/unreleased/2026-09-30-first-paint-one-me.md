@@ -14,7 +14,7 @@ Before its first paint a page waited on two requests in a row: the mount waited 
 
 - The boot asks `GET /api/me` while it waits for the install id, and the sign-in state takes that answer when the app mounts instead of asking again.
 - While a `GET /api/me` is in flight, the API socket waits for its answer rather than asking the same question itself. If that request fails, the next call asks as before.
-- `UserInfo` (in `GET /api/me`, the sign-in answers and `PUT /api/me/profile`) carries `avatarRev`, the content revision of the avatar, instead of the image. The image is served by `GET /api/me/avatar?rev=<avatarRev>`, cached for good because a new picture is a new revision — the shape the employee avatar already has. Each account gets only its own avatar.
+- `UserInfo` (in `GET /api/me`, the sign-in answers and `PUT /api/me/profile`) carries `avatarRev`, the content revision of the avatar, instead of the image. The image is served by `GET /api/me/avatar?rev=<avatarRev>`, cached for good because a new picture is a new revision — the shape the employee avatar already has; a `rev` that is not the current one (or none) still gets the current picture, just not cached for good. Each account gets only its own avatar.
 
 ## Compatibility
 

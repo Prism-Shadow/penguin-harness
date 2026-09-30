@@ -84,6 +84,18 @@ describe("PUT /api/me/profile", () => {
     ).json()) as UpdateProfileResponse;
     expect(next.user.avatarRev).not.toBe(me.user.avatarRev);
 
+    // A stale revision, or none, still loads the current picture but is not cached for good
+    // under it: switching back to the old picture would otherwise show this one.
+    const stale = await api.get(`/api/me/avatar?rev=${me.user.avatarRev}`);
+    expect(stale.status).toBe(200);
+    expect(stale.headers.get("content-type")).toBe("image/webp");
+    expect(stale.headers.get("cache-control")).toBe("private, no-cache");
+    expect((await api.get("/api/me/avatar")).headers.get("cache-control")).toBe(
+      "private, no-cache",
+    );
+    const fresh = await api.get(`/api/me/avatar?rev=${next.user.avatarRev}`);
+    expect(fresh.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+
     // Cleared, there is nothing to serve.
     await api.put("/api/me/profile", { avatar: null });
     expect((await api.get("/api/me/avatar")).status).toBe(404);
