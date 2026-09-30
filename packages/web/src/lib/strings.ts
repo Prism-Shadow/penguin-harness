@@ -111,6 +111,7 @@ export const zh = {
     conflictShadowed: (other: string, surface: string): string =>
       `在${surface}里会被「${other}」抢先`,
     browserReserved: "浏览器保留了这个组合，只在桌面应用里生效",
+    browserCommon: "浏览器本身也用这个组合，在浏览器里会取代它的那个功能",
     desktopMenuReserved: "会覆盖桌面应用菜单里使用同一组合的快捷键",
     saveFailed: "快捷键未能保存到账号",
   },
@@ -200,7 +201,7 @@ export const zh = {
     shortcutsTitle: "快捷键",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
-      "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效，列表中已标出。",
+      "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效；浏览器本身也用的组合（如打印的 Ctrl+P / ⌘P）在浏览器标签页里会取代它的那个功能。两者都在列表中标出。",
     accountTitle: "账户",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "导入 Trace",

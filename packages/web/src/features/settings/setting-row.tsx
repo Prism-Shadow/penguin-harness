@@ -8,7 +8,6 @@
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { ICON_GAP } from "../../lib/icon-scale";
-import { toneInk } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ACCENT_SWATCHES } from "../../state/theme";
 import type { Accent } from "../../state/theme";
@@ -16,7 +15,6 @@ import type { Accent } from "../../state/theme";
 export function PrefRow({
   label,
   hint,
-  hintTone,
   info,
   children,
 }: {
@@ -27,8 +25,6 @@ export function PrefRow({
    * `info` so a reader who already knows is not made to scroll past it again.
    */
   hint?: string;
-  /** `attention` when the hint reports something unfinished about the row's value (a conflicting shortcut); muted otherwise. */
-  hintTone?: "attention";
   /** Semantic explanation, disclosed by a "?" beside the label. */
   info?: ReactNode;
   children: ReactNode;
@@ -41,13 +37,7 @@ export function PrefRow({
           {info !== undefined && <InfoPopover label={label}>{info}</InfoPopover>}
         </p>
         {hint !== undefined && (
-          <p
-            className={`mt-0.5 text-xs ${
-              hintTone === "attention" ? toneInk.attention : "text-gray-500 dark:text-gray-400"
-            }`}
-          >
-            {hint}
-          </p>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
         )}
       </div>
       <div className="shrink-0">{children}</div>

@@ -7,7 +7,7 @@
 
 export type Platform = "mac" | "windows" | "linux";
 
-/** Which host runs the page: the reserved-chord notice differs, nothing else does. */
+/** Which host runs the page: tooltips drop a browser-reserved chord, and the settings page names the desktop menu's claims. */
 export type HostKind = "browser" | "desktop";
 
 /**
