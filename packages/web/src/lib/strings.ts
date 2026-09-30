@@ -4757,8 +4757,6 @@ Benchmark：
       same_model: "本会话已在使用该模型。",
       model_not_configured: "所选模型不在本 Project 的模型配置中。",
       model_unavailable: "所选模型暂不可用（例如还没有 API key），请先在「模型」页配置。",
-      summary_too_large:
-        "上下文摘要放不进所选模型的上下文窗口，本对话保持当前模型——请选一个上下文窗口更大的模型。",
       nothing_to_compact: "当前上下文还没有可压缩的内容（尚未完成一轮对话）。",
       already_compacted: "刚刚压缩过，之后还没有新的对话，无需重复压缩。",
       version_conflict: "快照版本不高于当前版本。",

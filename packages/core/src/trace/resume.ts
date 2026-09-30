@@ -68,14 +68,17 @@ export interface ResumeResult {
   carryOver: OmniMessage[];
   /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
   contextClosed: boolean;
-  /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
+  /**
+   * The `[context_summary]` the next run's input is prepended with. A summarize closure: the
+   * summary reconstructed from the compaction's output. A discard closure of a context that
+   * completed no turn (a model switch away from it): the summary that context opened with —
+   * never answered, so still the only record of the conversation before it.
+   */
   pendingSummary?: OmniMessage;
   /**
-   * The `[context_summary]` this file's context opened with, while no turn has completed since:
-   * the first pending input (so it is in `carryOver` too). Until a turn completes it is this
-   * file's only record of the conversation before the compaction, which a model switch that
-   * discards the context writes again at the head of the next file (see ContextEngine's
-   * `contextSummary`).
+   * The `[context_summary]` this file's context opened with, while no turn has completed on
+   * it: its first pending input (so it is in `carryOver` too). A model switch away from such
+   * a context writes it at the head of the next file (see ContextEngine's `openingSummary`).
    */
   openingSummary?: OmniMessage;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
@@ -272,7 +275,11 @@ function isCompactionEnd(msg: OmniMessage): msg is OmniMessage<CompactionEndPayl
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "compaction_end";
 }
 
-/** Whether the message is a `[context_summary]` user text: the first input of a context a summarize compaction opened. */
+/**
+ * Whether the message is a `[context_summary]` user text: the first input of a context a
+ * summarize compaction opened. Read off the text because no field marks the record (see the
+ * markers module's consumption boundary for why that is safe here).
+ */
 function isContextSummary(msg: OmniMessage): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: string };
   return (
@@ -313,7 +320,16 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         renderMessages: [],
         meta,
       };
-      if (p.mode !== "summarize") return result;
+      if (p.mode !== "summarize") {
+        // A discard closure leaves nothing pending, with one exception: a model switch closes
+        // a context that completed no turn this way, and the summary such a context opened
+        // with stays pending — the switch that died before it opened the next file is lost,
+        // the summary is not.
+        const answered = messages.some((m) => isRequestEnd(m) && m.payload.status === "completed");
+        const opening = answered ? undefined : messages.find(isContextSummary);
+        if (opening) result.pendingSummary = opening;
+        return result;
+      }
       // Reconstruct the summary from the compaction request's output (the assistant text of
       // the last completed Request). Always rebuilt in the current [context_summary] form —
       // extractSummary itself still accepts the old <summary> tags an old Trace may contain.

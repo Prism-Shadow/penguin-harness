@@ -4743,8 +4743,6 @@ Scenarios:
       model_not_configured: "That model is not in this Project's model configuration.",
       model_unavailable:
         "That model cannot be used yet (it may have no API key) — configure it on the Models page first.",
-      summary_too_large:
-        "The context summary does not fit that model's context window, so the conversation stays on its current model — pick a model with a larger context window.",
       nothing_to_compact:
         "There is nothing to compact in the current context yet (no completed conversation turn).",
       already_compacted:

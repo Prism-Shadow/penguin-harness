@@ -1707,8 +1707,8 @@ export function ChatPage() {
   // the Session row once the new context's session_meta names the new model. 200 = the Session
   // never ran and switched inside the request: the row comes back with the response — under a
   // new id when the server had to rebuild a Session that left no Trace, which the page follows.
-  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured
-  // / summary too large) is a toast.
+  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured)
+  // is a toast.
   const confirmModelSwitch = useCallback(async () => {
     const ask = modelSwitchAsk;
     if (!selected || ask === null || modelSwitchPosting) return;

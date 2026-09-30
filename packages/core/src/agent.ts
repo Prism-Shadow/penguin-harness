@@ -62,12 +62,17 @@ import {
   readTraceTolerant,
   resumeTrace,
 } from "./trace/index.js";
-import { Session } from "./session.js";
+import { ModelSwitchRefusedError, Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
 import type { ScriptHookOptions } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
 import { predatesEveryPromptHooks, userPromptTrigger } from "./plugins/index.js";
-import type { ModelSwitchSupport, SessionConfig, SessionOpenedContext } from "./session.js";
+import type {
+  ModelSwitchSupport,
+  SessionConfig,
+  SessionOpenContextOptions,
+  SessionOpenedContext,
+} from "./session.js";
 import {
   createTempWorkspace,
   formatSessionId,
@@ -91,7 +96,6 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import { ModelSwitchRefusedError } from "./engine/context-engine.js";
 import type { CompactionSettings, OpenContextOptions } from "./engine/context-engine.js";
 import type {
   ApproveFn,
@@ -308,7 +312,7 @@ interface SessionRuntime {
    * with it, then the same opening procedure as `bootstrap` — and the session_meta recording
    * the context alongside its engine settings, with the hooks the context runs with.
    */
-  openNextContext: (opts: OpenContextOptions) => Promise<SessionOpenedContext>;
+  openNextContext: (opts: SessionOpenContextOptions) => Promise<SessionOpenedContext>;
   /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
   commandPolicy: () => CommandPolicyConfig | undefined;
   /** The running context's model window — follows the rotation, so the live compaction reader caps the threshold against the model that is running (see `compactionReader`). */
@@ -903,7 +907,7 @@ export class Agent {
       initialEngineState: {
         carryOver: resumed.carryOver,
         ...(resumed.pendingSummary ? { pendingSummary: resumed.pendingSummary } : {}),
-        ...(resumed.openingSummary ? { contextSummary: resumed.openingSummary } : {}),
+        ...(resumed.openingSummary ? { openingSummary: resumed.openingSummary } : {}),
         sessionTurns: resumed.sessionTurns,
         sessionTokens: resumed.sessionTokens,
         lastRequestTotal: resumed.lastRequestTotal,
@@ -1429,7 +1433,7 @@ export class Agent {
     const openNextContext = async ({
       emit,
       modelRef,
-    }: OpenContextOptions): Promise<SessionOpenedContext> => {
+    }: SessionOpenContextOptions): Promise<SessionOpenedContext> => {
       const entry = modelRef ? await switchTargetEntry(modelRef) : current.modelEntry;
       const next = await this.assembleContext(spec, entry);
       equip(next);
@@ -1491,7 +1495,6 @@ export class Agent {
             err instanceof Error ? err.message : String(err),
           );
         }
-        return { contextWindow: entry.context_window };
       },
       reassembleInitialContext: async (ref) => {
         const next = await this.assembleContext(spec, await switchTargetEntry(ref));

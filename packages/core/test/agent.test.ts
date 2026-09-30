@@ -16,7 +16,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
+import type { ModelRef, OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
 import {
   agentsMdPath,
   hooksDir,
@@ -31,6 +31,7 @@ import {
   createAgent,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
+  imageUrlMessage,
   installSkill,
   loadProjectConfig,
   ModelSwitchRefusedError,
@@ -1275,6 +1276,23 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       { modelId?: string; apiKey?: string; baseUrl?: string; systemPrompt?: string } | undefined;
   const modelIdOf = (session: { metaMessage: OmniMessage }): string =>
     (session.metaMessage.payload as { model_id: string }).model_id;
+  /**
+   * The opener the Session's engine calls for its next context, and the Session's way of
+   * telling it which model a switch is moving to: `open()` is a plain rotation, `open(target)`
+   * a switch's — what `Session.switchModel` sets around the engine's rotation.
+   */
+  function openerOf(session: unknown): (target?: ModelRef) => Promise<OpenedContext> {
+    const internals = session as {
+      switchTarget: ModelRef | undefined;
+      engine: { deps: { openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext> } };
+    };
+    return (target) => {
+      internals.switchTarget = target;
+      return internals.engine.deps
+        .openNextContext({ emit: () => {} })
+        .finally(() => (internals.switchTarget = undefined));
+    };
+  }
 
   it("a Session that never ran is re-assembled on the target: nothing recorded, and its first run opens on it", async () => {
     const agent = await createAgent();
@@ -1416,32 +1434,32 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
     const session = await agent.createSession({ workspaceDir: ws });
     try {
       await bootstrapped(session);
-      const opener = (
+      const open = openerOf(session);
+      // The fold the engine asks for a steering message's images: `null` means the running
+      // context's model takes them as they are.
+      const { foldInputImages } = (
         session as unknown as {
           engine: {
-            deps: { openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext> };
+            deps: { foldInputImages: (messages: OmniMessage[]) => Promise<OmniMessage[] | null> };
           };
         }
-      ).engine.deps.openNextContext;
+      ).engine.deps;
+      const picture = [imageUrlMessage("https://images.invalid/pic.png")];
 
-      // A plain rotation: the same model, re-assembled, with the image fold its vision answer
-      // calls for (none for a model that takes images).
-      const kept = await opener({ emit: () => {} });
+      // A plain rotation: the same model, re-assembled, with the vision answer its entry gives.
+      const kept = await open();
       expect((kept.sessionMeta!.payload as { model_id: string }).model_id).toBe("deepseek-flash");
       const deepseek = agent.projectConfig.models.find((m) => m.model_id === "deepseek-flash")!;
-      expect(kept.foldInputImages === null).toBe(deepseek.vision !== false);
+      expect((await foldInputImages(picture)) === null).toBe(deepseek.vision !== false);
       expect(lastBuilt()!.modelId).toBe("deepseek-flash");
       expect(session.modelId).toBe("deepseek-flash");
 
-      // A switch's rotation: the target, with its own fold and window-derived settings.
-      const switched = await opener({
-        emit: () => {},
-        modelRef: { provider: "anthropic", model_id: "claude-sonnet-4-6" },
-      });
+      // A switch's rotation: the target, with its own vision answer and window-derived settings.
+      const switched = await open({ provider: "anthropic", model_id: "claude-sonnet-4-6" });
       expect((switched.sessionMeta!.payload as { model_id: string }).model_id).toBe(
         "claude-sonnet-4-6",
       );
-      expect(switched.foldInputImages).toBeNull();
+      expect(await foldInputImages(picture)).toBeNull();
       expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
       expect(lastBuilt()!.systemPrompt).toContain("claude-sonnet-4-6");
       // The Session's own answer follows the opened context.
@@ -1459,45 +1477,39 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
     const session = await agent.createSession({ workspaceDir: ws });
     try {
       await bootstrapped(session);
-      const internals = session as unknown as {
+      const { environment } = session as unknown as {
         environment: {
           listTools(): Promise<unknown>;
           reconfigure(update: { toolConfig: unknown }): void;
         };
-        engine: { deps: { openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext> } };
       };
-      const opener = internals.engine.deps.openNextContext;
-      const reconfigure = vi.spyOn(internals.environment, "reconfigure");
+      const open = openerOf(session);
+      const reconfigure = vi.spyOn(environment, "reconfigure");
       const target = { provider: "anthropic", model_id: "claude-sonnet-4-6" };
 
       // A plain rotation first, so the running context is one this opener equipped.
-      await opener({ emit: () => {} });
+      await open();
       const running = reconfigure.mock.calls[0]![0].toolConfig;
 
       // The target assembles, the Environment is equipped for it, and then its toolset cannot
       // be resolved: the open fails.
-      vi.spyOn(internals.environment, "listTools").mockRejectedValueOnce(
-        new Error("toolset unavailable"),
-      );
-      await expect(opener({ emit: () => {}, modelRef: target })).rejects.toThrow(
-        "toolset unavailable",
-      );
+      vi.spyOn(environment, "listTools").mockRejectedValueOnce(new Error("toolset unavailable"));
+      await expect(open(target)).rejects.toThrow("toolset unavailable");
       expect(reconfigure).toHaveBeenCalledTimes(3);
       expect(reconfigure.mock.calls[1]![0].toolConfig).not.toBe(running);
       expect(reconfigure.mock.calls[2]![0].toolConfig).toBe(running);
       expect(session.modelId).toBe("deepseek-flash");
 
       // The running context is still the one a rotation re-assembles.
-      const kept = await opener({ emit: () => {} });
+      const kept = await open();
       expect((kept.sessionMeta!.payload as { model_id: string }).model_id).toBe("deepseek-flash");
       expect(lastBuilt()!.modelId).toBe("deepseek-flash");
 
       // A target gone from the config by the time the context opens is a failure of the
       // switch, not its typed refusal: the refusal is the validation's answer, before any event.
-      const gone = await opener({
-        emit: () => {},
-        modelRef: { provider: "custom", model_id: "nobody-configured-this" },
-      }).catch((e: unknown) => e);
+      const gone = await open({ provider: "custom", model_id: "nobody-configured-this" }).catch(
+        (e: unknown) => e,
+      );
       expect(gone).toBeInstanceOf(Error);
       expect(gone).not.toBeInstanceOf(ModelSwitchRefusedError);
       expect((gone as Error).message).toMatch(/is not in the Project config/);

@@ -43,7 +43,6 @@ describe("apiErrorText", () => {
       "model_not_configured",
       "model_unavailable",
       "compaction_not_configured",
-      "summary_too_large",
       "task_in_progress",
       "compacting",
     ];

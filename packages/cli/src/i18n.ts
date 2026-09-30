@@ -918,8 +918,6 @@ export interface Messages {
   switchModelNotConfigured(model: string, listCommand: string, addCommand: string): string;
   /** 409 `model_unavailable`: the target is configured but cannot be constructed (e.g. no credential); `detail` is the server's message, verbatim (may be empty). */
   switchModelUnavailable(model: string, detail: string): string;
-  /** 409 `summary_too_large`: the summary held from the last compaction does not fit the target's context window; `detail` is the server's message (names both sizes; may be empty), and the line says to pick a model with a larger window. */
-  switchModelSummaryTooLarge(model: string, detail: string): string;
   /** 409 `compaction_not_configured`: a switch always compacts first, and this Session has no compaction. */
   switchModelNoCompaction(): string;
   /** `/verbose` toggled on: tool output renders in full from here on. */
@@ -1891,8 +1889,6 @@ const en: Messages = {
     `[model switch] ${model} is not in the Project config: ${listCommand} lists the configured models, ${addCommand} adds it`,
   switchModelUnavailable: (model, detail) =>
     `[model switch] ${model} is configured but cannot be used${detail ? `: ${detail}` : ""}`,
-  switchModelSummaryTooLarge: (model, detail) =>
-    `[model switch] the context summary does not fit the context window of ${model}, so the Session stays on its current model — pick a model with a larger context window${detail ? ` (${detail})` : ""}`,
   switchModelNoCompaction: () =>
     "[model switch] context compaction is not configured for this Session, and a model switch always compacts first",
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
@@ -2787,8 +2783,6 @@ const zh: Messages = {
     `[切换模型] Project 配置中没有 ${model}：${listCommand} 列出已配置的模型，${addCommand} 可添加它`,
   switchModelUnavailable: (model, detail) =>
     `[切换模型] ${model} 已配置但无法使用${detail ? `：${detail}` : ""}`,
-  switchModelSummaryTooLarge: (model, detail) =>
-    `[切换模型] 上下文摘要放不进 ${model} 的上下文窗口，Session 保持当前模型——请选一个上下文窗口更大的模型${detail ? `（${detail}）` : ""}`,
   switchModelNoCompaction: () =>
     "[切换模型] 本 Session 未配置上下文压缩，而切换模型必须先压缩，因此无法切换",
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",

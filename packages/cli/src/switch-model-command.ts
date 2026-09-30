@@ -70,8 +70,6 @@ export function switchModelRefusal(
       return t.switchModelUnavailable(label, err.detail);
     case "compaction_not_configured":
       return t.switchModelNoCompaction();
-    case "summary_too_large":
-      return t.switchModelSummaryTooLarge(label, err.detail);
     default:
       return null;
   }

@@ -37,28 +37,24 @@ export * from "./hooks/index.js";
 export * from "./plugins/index.js";
 
 // Runtime entry points
-export {
-  ContextEngine,
-  ModelSwitchRefusedError,
-  reconnectDelayMs,
-} from "./engine/context-engine.js";
+export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";
 export type {
   CompactAvailability,
   CompactionSettings,
   ContextEngineDeps,
   EngineInitialState,
-  ModelSwitchRefusal,
-  ModelSwitchTarget,
   OpenContextOptions,
   OpenedContext,
   RunOptions,
   TraceSink,
 } from "./engine/context-engine.js";
-export { Session } from "./session.js";
+export { ModelSwitchRefusedError, Session } from "./session.js";
 export type {
   ModelSwitchOptions,
+  ModelSwitchRefusal,
   ModelSwitchSupport,
   SessionConfig,
+  SessionOpenContextOptions,
   SessionOpenedContext,
 } from "./session.js";
 export type { AgentAssembly, ModelRequestContext, PromptSection } from "./agent.js";

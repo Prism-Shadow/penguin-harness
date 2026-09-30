@@ -33,11 +33,6 @@ import type {
 import { stripLeadingMarkerBlocks } from "./omnimessage/markers/index.js";
 import type { ModelRef } from "./state/project-config.js";
 import { sameModelRef } from "./state/project-config.js";
-import {
-  COMPACTION_HEADROOM,
-  approximateTokens,
-  resolveContextWindow,
-} from "./llm/context-limits.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runStopHooks } from "./hooks/stop-hook.js";
 import type { HookSubagentSpawner, SessionHooks, StopHook } from "./hooks/stop-hook.js";
@@ -64,16 +59,11 @@ import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js
 import type { CommandPolicySource } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
-import {
-  compactAvailability,
-  ContextEngine,
-  ModelSwitchRefusedError,
-} from "./engine/context-engine.js";
+import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
 import type {
   CompactAvailability,
   CompactionSettings,
   EngineInitialState,
-  ModelSwitchTarget,
   OpenContextOptions,
   OpenedContext,
   RunOptions,
@@ -84,15 +74,24 @@ import type {
  * A context as the composition layer opens it for a Session: the engine's
  * {@link OpenedContext}, plus the hooks that context runs with. Hook packages are read when
  * a model context opens, like the rest of the Agent State, so a rotation brings its own
- * set; the engine never sees them. The image fold is the Session's own, so the opener says
- * whether the context's model has vision and the Session hands the engine the fold that
- * follows from it.
+ * set; the engine never sees them. Nor does it see whether the context's model has vision:
+ * the image fold is the Session's own.
  */
-export interface SessionOpenedContext extends Omit<OpenedContext, "foldInputImages"> {
+export interface SessionOpenedContext extends OpenedContext {
   /** The opened context's hooks, replacing the Session's whole set. Absent = the Session keeps the ones it has (an embedder that registered in-process hooks and rotates without re-reading any). */
   hooks?: SessionHooks;
   /** Whether the opened context's model accepts image input (see SessionConfig.modelHasVision). Absent = as before. */
   modelHasVision?: boolean;
+}
+
+/**
+ * What `SessionConfig.openNextContext` is called with: the engine's options, plus the model a
+ * switch in flight opens the context on (see {@link Session.switchModel}) — absent for every
+ * other rotation, which keeps the model the closing context ran on. The opener resolves the
+ * reference against the Project config as it is on disk.
+ */
+export interface SessionOpenContextOptions extends OpenContextOptions {
+  modelRef?: ModelRef;
 }
 
 export interface SessionConfig {
@@ -129,7 +128,7 @@ export interface SessionConfig {
    * {@link SessionOpenedContext}).
    */
   openNextContext?: (
-    opts: OpenContextOptions,
+    opts: SessionOpenContextOptions,
   ) => SessionOpenedContext | Promise<SessionOpenedContext>;
 
   /**
@@ -188,6 +187,31 @@ export interface SessionConfig {
 /** `Session.run` options: the engine's per-call options. */
 export type SessionRunOptions = RunOptions;
 
+/** Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}). */
+export type ModelSwitchRefusal =
+  /** The target pair names no entry in the Project config on disk. */
+  | "model_not_configured"
+  /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session has no switch support. */
+  | "model_unavailable"
+  /** The Session has a context to close but no compaction configured to close it with. */
+  | "compaction_not_configured";
+
+/**
+ * A model switch refused before anything was sent or recorded: no event was produced and the
+ * Session is exactly where it was. `Session.switchModel` throws it for the refusals `reason`
+ * enumerates, so a host maps each to its own code (the server's 409s) and treats anything
+ * else a switch throws as a failure.
+ */
+export class ModelSwitchRefusedError extends Error {
+  constructor(
+    readonly reason: ModelSwitchRefusal,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ModelSwitchRefusedError";
+  }
+}
+
 /**
  * What the composition layer provides for {@link Session.switchModel}: the Session owns the
  * policy, the Agent owns the Project config, the credentials and the assembly.
@@ -197,10 +221,9 @@ export interface ModelSwitchSupport {
    * Validates a switch target before anything is sent or recorded: resolves it against the
    * Project config as it is on disk and constructs its client, so a pair that is not
    * configured, or has no credential, is refused here (a {@link ModelSwitchRefusedError})
-   * exactly where Session creation would have failed. Returns the entry's context window
-   * (undefined when it configures none), which sizes the room the summary may take.
+   * exactly where Session creation would have failed.
    */
-  validate(ref: ModelRef): Promise<{ contextWindow: number | undefined }>;
+  validate(ref: ModelRef): Promise<void>;
   /**
    * Re-assembles the Session's not-yet-opened first context on `ref` — the switch of a Session
    * that never ran, which has no context to close. The Environment is re-equipped for it, and
@@ -242,15 +265,6 @@ function raceAbort<T>(
       },
     );
   });
-}
-
-/** Drives a generator to its end, holding what it yields in `held` instead of forwarding it, and returns its return value. */
-async function settle<T, R>(gen: AsyncGenerator<T, R>, held: T[]): Promise<R> {
-  for (;;) {
-    const res = await gen.next();
-    if (res.done) return res.value;
-    held.push(res.value);
-  }
 }
 
 /**
@@ -343,12 +357,11 @@ export class Session {
   /**
    * Engine dependencies, kept so ensureReady can construct the engine late — minus what only
    * that moment knows: the LLM and its records (the bootstrap provides them), and the first
-   * context's session_meta and image fold (the Session's own `meta` and `modelHasVision` as
-   * they stand then).
+   * context's session_meta (the Session's own `meta` as it stands then).
    */
   private readonly engineDeps: Omit<
     ConstructorParameters<typeof ContextEngine>[0],
-    "llm" | "toolList" | "bootstrapRecords" | "sessionMeta" | "foldInputImages"
+    "llm" | "toolList" | "bootstrapRecords" | "sessionMeta"
   >;
   private readonly environment: EnvironmentInterface;
   private readonly trace?: TraceSink;
@@ -361,6 +374,8 @@ export class Session {
   /** Whether the running context's model views images itself (see SessionConfig.modelHasVision); follows each context `openNextContext` opens. */
   private modelHasVision: boolean;
   private readonly modelSwitch: ModelSwitchSupport | undefined;
+  /** The model a switch in flight opens the next context on: what the opener is told (see `switchModel`). */
+  private switchTarget: ModelRef | undefined;
   /**
    * The hooks of the context that is running, and the spawner for a stop hook's subagent
    * answer: the first context's at construction, replaced whole by each context
@@ -428,22 +443,31 @@ export class Session {
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
       // Context compaction: the new-context factory + resolved settings; the engine writes the
       // context's session_meta (and tool_list_ready) at the start of the new Trace file after
-      // splitting. The factory is wrapped so the Session follows the opened context (see
-      // `adoptContext`), and hands the engine the image fold its vision answer calls for.
+      // splitting. The factory is wrapped so the opener is told the model a switch in flight is
+      // moving to, and the Session follows the opened context (see `adoptContext`).
       ...(config.openNextContext
         ? {
             openNextContext: async (opts: OpenContextOptions): Promise<OpenedContext> => {
-              const { hooks, modelHasVision, ...opened } = await config.openNextContext!(opts);
+              const { hooks, modelHasVision, ...opened } = await config.openNextContext!({
+                ...opts,
+                ...(this.switchTarget ? { modelRef: this.switchTarget } : {}),
+              });
               this.adoptContext(opened.sessionMeta, modelHasVision, hooks);
-              return modelHasVision === undefined
-                ? opened
-                : { ...opened, foldInputImages: modelHasVision ? null : this.foldImages };
+              return opened;
             },
           }
         : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
+      // The engine assembles one input of its own — a steering message with images — and folds
+      // it through the same converter `runTask` uses, failures included: a scratchpad that
+      // can't be written to ends the run rather than dropping the attachment and carrying on.
+      // The picture usually arrives BECAUSE the run is going the wrong way, so continuing
+      // without it spends the rest of the Task heading further that way. A model that takes
+      // images is answered `null` — the model can change with the context, so the question is
+      // asked each time.
+      foldInputImages: async (messages) => (this.modelHasVision ? null : this.foldImages(messages)),
       // Background completion notices: the engine pulls from the Session's queue at every
       // input-assembly boundary (see pendingNotices for the exactly-once contract). This is
       // the steering delivery path — the notice joins a Task that already exists — so the
@@ -824,13 +848,6 @@ export class Session {
       ...(trace !== undefined ? { trace } : {}),
       llm,
       sessionMeta: this.meta,
-      // The engine assembles one input of its own — a steering message with images — and folds
-      // it through the same converter `runTask` uses, failures included: a scratchpad that
-      // can't be written to ends the run rather than dropping the attachment and carrying on.
-      // The picture usually arrives BECAUSE the run is going the wrong way, so continuing
-      // without it spends the rest of the Task heading further that way. A vision model simply
-      // isn't given the function, which is all the engine needs to know about the subject.
-      ...(this.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       ...(toolsMsg !== undefined ? { toolList: toolsMsg } : {}),
       bootstrapRecords: connectRecords,
     });
@@ -920,13 +937,13 @@ export class Session {
    * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
    * (anything else thrown is a failure). A Session that never ran has no context to close:
    * its first context is re-assembled on the target, silently, and the first run opens it.
-   * One resumed after a restart builds its engine first, so the compaction folds the real
-   * conversation. What the engine then does is at `ContextEngine.switchModel`.
+   * One resumed after a restart builds its engine first, as `compact()` does. How the context
+   * is then closed and the next one opened is `ContextEngine.switchContext`; on which model,
+   * the opener is told here.
    *
    * Returns the terminal status: `completed` — the Session is on the target, and children
    * spawned from here inherit it; anything else — the switch was stopped or its compaction
-   * failed (the events say how) and the Session stays on the model it was on. Only a
-   * `completed` switch can end without an event: the no-op and the never-ran Session.
+   * failed (the events say how) and the Session stays on the model it was on.
    */
   async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<OmniMessage, StopReason> {
     const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
@@ -939,7 +956,7 @@ export class Session {
         "Switching the model is not available for this Session.",
       );
     }
-    const { contextWindow } = await this.modelSwitch.validate(target);
+    await this.modelSwitch.validate(target);
     if (!this.engine && !this.metaWritten) {
       // Never ran: no context to close and nothing recorded — the first context is simply
       // assembled again, on the target, and the first run writes that context's meta.
@@ -956,50 +973,21 @@ export class Session {
         "Context compaction is not configured for this Session, so its model cannot be switched.",
       );
     }
-    // A Session resumed after a restart has no engine yet; it is built here, as compact()
-    // builds it. With turns to summarize, its bootstrap streams as usual. With none, the
-    // context being left never ran in this process and is closed unused: its bootstrap is not
-    // news, and holding it back keeps the engine's own refusal (a held summary the target
-    // cannot take) ahead of any event. A bootstrap that is stopped is shown after all, like
-    // any stopped bootstrap — the switch never ends short of `completed` without an event.
-    const building = this.ensureEngine(opts.signal);
-    const held: OmniMessage[] = [];
-    const ready = this.compactability() === "ok" ? yield* building : await settle(building, held);
-    if (!ready) {
-      yield* held;
-      return "aborted";
+    if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
+    this.switchTarget = target;
+    try {
+      const status = yield* this.engine!.switchContext(opts.signal);
+      // Input an aborted bootstrap left with the Session rides on like the engine's pending
+      // input: its text alone, in memory (the original stays where the abort wrote it).
+      if (status === "completed") {
+        this.carryOverInput = this.carryOverInput.filter(
+          (m) => (m.payload as { type?: string }).type === "text",
+        );
+      }
+      return status;
+    } finally {
+      this.switchTarget = undefined;
     }
-    const room = await this.summaryRoom(contextWindow);
-    const status = yield* this.engine!.switchModel(
-      { ref: target, ...(room ? { summaryRoom: room } : {}) },
-      opts.signal,
-    );
-    // Input an aborted bootstrap left with the Session rides on like the engine's carry-over:
-    // its text alone, in memory (the original stays where the abort wrote it).
-    if (status === "completed") {
-      this.carryOverInput = this.carryOverInput.filter(
-        (m) => (m.payload as { type?: string }).type === "text",
-      );
-    }
-    return status;
-  }
-
-  /**
-   * The room a switch target's window leaves for the summary (see ModelSwitchTarget.summaryRoom):
-   * the window minus the running context's request prefix — its system prompt and toolset, a
-   * fair estimate of the next context's, which is assembled from the same Agent State — and the
-   * compaction headroom. Undefined when the target's window is not usable (unset or
-   * implausible), in which case nothing is guarded.
-   */
-  private async summaryRoom(
-    contextWindow: number | undefined,
-  ): Promise<ModelSwitchTarget["summaryRoom"]> {
-    const window = resolveContextWindow(contextWindow);
-    if (window === undefined) return undefined;
-    const prefix =
-      approximateTokens(this.meta.payload.system_prompt) +
-      approximateTokens(JSON.stringify(await this.environment.listTools()));
-    return { tokens: window - prefix - COMPACTION_HEADROOM, contextWindow: window };
   }
 
   /**

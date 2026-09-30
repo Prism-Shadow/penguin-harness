@@ -141,9 +141,9 @@ The model picker in an active conversation's toolbar switches the model inside t
 
 The compaction is an ordinary `manual` one: nothing on the `compaction_begin` / `compaction_end` pair names a model. A context that was just compacted records no second pair; its held summary heads the new file. A context with no completed turn (its first request failed or was stopped) is closed with a `discard` pair, and the summary it opened with, if any, is written again at the head of the new file; of its other pending input only the text rides on, in memory. A switch carries no image to the new context.
 
-The Session keeps its model when the compaction fails or is aborted, and when the summary does not fit the target model's context window: a summary the switch produced ends the compaction `fatal`, one already held refuses the switch before any event. The target must be in the Project configuration and constructible (credentials in place), or the switch is refused before any request. A Session that never ran has no context to compact: it switches directly and writes nothing.
+The Session keeps its model when the compaction fails or is aborted. The target must be in the Project configuration and constructible (credentials in place), or the switch is refused before any request. A Session that never ran has no context to compact: it switches directly and writes nothing.
 
-Resume reads the model from the latest file, so a Session restarted right after a switch runs on the new model with the summary pending. The summary is still known as the one that file opened with: another switch before the first turn completes writes it on to the next file, restart or not.
+Resume reads the model from the latest file, so a Session restarted right after a switch runs on the new model with the summary pending. The summary is still known as the one that file opened with: another switch before the first turn completes writes it on to the next file, restart or not. A switch that dies before its new file exists is lost, the summary is not: the Session resumes on the model it was on, with the summary pending.
 
 For how to use the picker, see [Switch the model](/chat#switch-the-model).
 

@@ -84,9 +84,6 @@ describe("getMessages", () => {
       for (const part of ["b (q)", "LIST-CMD", "ADD-CMD"]) expect(notConfigured).toContain(part);
       expect(m.switchModelUnavailable("b (q)", "no key")).toContain("no key");
       expect(m.switchModelUnavailable("b (q)", "")).not.toMatch(/[:：]$/);
-      const tooLarge = m.switchModelSummaryTooLarge("b (q)", "15000 > 8000");
-      for (const part of ["b (q)", "15000 > 8000"]) expect(tooLarge).toContain(part);
-      expect(m.switchModelSummaryTooLarge("b (q)", "")).not.toMatch(/\(\)|（）/);
       expect(m.switchModelBusy().length).toBeGreaterThan(0);
       expect(m.switchModelNoCompaction().length).toBeGreaterThan(0);
     }

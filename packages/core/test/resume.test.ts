@@ -551,7 +551,7 @@ describe("agent.resumeSession after an in-session model switch", () => {
         engineDeps: {
           initialState?: {
             pendingSummary?: OmniMessage;
-            contextSummary?: OmniMessage;
+            openingSummary?: OmniMessage;
             carryOver?: OmniMessage[];
             sessionTurns?: number;
             pendingTraceRotation?: boolean;
@@ -602,16 +602,16 @@ describe("agent.resumeSession after an in-session model switch", () => {
       expect((state?.carryOver ?? []).map((m) => (m.payload as { text: string }).text)).toEqual([
         SUMMARY,
       ]);
-      // …and it is known as the summary this context opened with, so another switch before the
-      // first turn writes it on to the next file.
-      expect(state?.contextSummary).toBe(state?.carryOver?.[0]);
+      // Already on the file, so pending input rather than a pending summary — and still named
+      // as the summary this context opened with.
+      expect(state?.openingSummary).toBe(state?.carryOver?.[0]);
       expect(session.compactability()).toBe("just_compacted");
     } finally {
       session.dispose();
     }
   });
 
-  it("a switch made right after the restart carries the summary on: the next file opens with it, and the bootstrap of the context being left stays off the stream", async () => {
+  it("a switch made right after the restart carries the summary on: the next file opens with it", async () => {
     const agent = await createAgent({});
     await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
     const leaving = await writeTraceFile(
@@ -633,10 +633,11 @@ describe("agent.resumeSession after an in-session model switch", () => {
       })) {
         streamed.push(msg);
       }
-      // The context on MODEL holds the summary and no completed turn: a discard pair closes
-      // it, then the target's own records and its meta. The context being left never ran in
-      // this process, and its bootstrap is not streamed.
+      // The engine is built first, so the bootstrap of the context being left streams. That
+      // context holds the summary and no completed turn: a discard pair closes it, then the
+      // target's own records and its meta.
       expect(streamed.map(kind)).toEqual([
+        "tool_list_ready",
         "compaction_begin",
         "compaction_end",
         "tool_list_ready",
@@ -654,9 +655,8 @@ describe("agent.resumeSession after an in-session model switch", () => {
       expect(opened.map(kind)).toEqual(["session_meta", "tool_list_ready", "text"]);
       expect((opened[0]!.payload as { model_id: string }).model_id).toBe(ORIGINAL.model_id);
       expect((opened[2]!.payload as { text: string }).text).toBe(SUMMARY);
-      // The file being left took its own first-run records ahead of the pair that closes it.
+      // The file being left is closed by the pair, and nothing else was added to it.
       expect((await readTrace(leaving)).map(kind).slice(3)).toEqual([
-        "tool_list_ready",
         "compaction_begin",
         "compaction_end",
       ]);

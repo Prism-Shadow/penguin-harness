@@ -1849,16 +1849,13 @@ export interface GoalResponse {
  *   `session_meta`: its `provider` / `model_id` name the model the Session now runs on, the
  *   Session reads report that pair from this record on, and `task_state` turns idle after it.
  *   A compaction that ends other than `completed` means no switch — no `session_meta` follows
- *   and the Session keeps its model (a summary that does not fit the target's window ends the
- *   pair `fatal`).
+ *   and the Session keeps its model.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.
  * - **409**, one code per refusal, before any event: `task_in_progress` / `compacting` (busy),
  *   `same_model`, `model_not_configured` (the target is not in the Project config),
- *   `model_unavailable` (its client cannot be constructed, e.g. no credential),
- *   `compaction_not_configured`, and `summary_too_large` (the Session holds a summary and has
- *   nothing to compact, and the target's context window cannot take that summary; the message
- *   names both sizes — the remedy is a target with a larger window).
+ *   `model_unavailable` (its client cannot be constructed, e.g. no credential), and
+ *   `compaction_not_configured`.
  */
 export interface SessionSwitchModelRequest {
   /** Provider group of the target model. */
