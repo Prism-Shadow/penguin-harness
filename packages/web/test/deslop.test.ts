@@ -122,7 +122,7 @@ const ALLOWLIST: DeslopAllowlist = {
     13: [1, "W7"],
     18: [1, "W7"],
   },
-  "features/chat/workspace-finder.tsx": { 12: [6, "W10"] },
+  "features/chat/workspace-finder.tsx": { 12: [5, "W10"] },
   "features/chat/workspace-tree-view.tsx": { 13: [1, "W7"] },
   "features/company/beta-badge.tsx": { 13: [1, "W4"] },
   "features/company/calendar-page.tsx": { 12: [3, "W4"], 13: [10, "W4"] },
