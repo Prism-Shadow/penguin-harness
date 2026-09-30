@@ -28,6 +28,7 @@ import {
   parsePluginTables,
   projectConfigPath,
   type PluginTable,
+  type PluginTables,
 } from "@prismshadow/penguin-core";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
@@ -49,6 +50,7 @@ import {
   type PluginAsk,
 } from "./activation.js";
 import { shippedNames, storeSources } from "./store.js";
+import { sweepPlugins, type PluginPin } from "./gc.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -115,11 +117,20 @@ async function readProjectPluginTable(
   projectId: string,
   machineId: string | null,
 ): Promise<PluginTable> {
+  const tables = await readProjectPluginTables(root, projectId);
+  return tables === undefined ? {} : effectivePluginTable(tables, machineId);
+}
+
+/** One Project's whole `[plugins]` key — the shared table and every machine's — or undefined. */
+async function readProjectPluginTables(
+  root: string,
+  projectId: string,
+): Promise<PluginTables | undefined> {
   let text: string;
   try {
     text = await fs.readFile(projectConfigPath(root, projectId), "utf8");
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     // A Project whose config cannot be read (permissions, a directory in its place) is a
     // configuration fault, but not this one's to fail the boot over: its models are just as
     // unreadable, and the deployment must still come up for every other Project. The list
@@ -127,7 +138,7 @@ async function readProjectPluginTable(
     console.warn(
       `[plugins] ${projectId}: .project_config.toml could not be read, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return {};
+    return undefined;
   }
   let parsed: unknown;
   try {
@@ -137,10 +148,37 @@ async function readProjectPluginTable(
     console.warn(
       `[plugins] ${projectId}: .project_config.toml is not valid TOML, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return {};
+    return undefined;
   }
-  const tables = parsePluginTables((parsed as { plugins?: unknown }).plugins);
-  return tables === undefined ? {} : effectivePluginTable(tables, machineId);
+  return parsePluginTables((parsed as { plugins?: unknown }).plugins);
+}
+
+/**
+ * Every content a Project pins, in any of its tables — the shared one or any machine's: what
+ * the sweep keeps in the store whatever this machine runs (plugin/gc.ts).
+ */
+export async function readPluginPins(root: string): Promise<PluginPin[]> {
+  const out: PluginPin[] = [];
+  for (const projectId of await listProjectIds(root)) {
+    const tables = await readProjectPluginTables(root, projectId);
+    if (tables === undefined) continue;
+    for (const table of [tables.all, ...Object.values(tables.machines)]) {
+      for (const [name, ask] of Object.entries(table)) {
+        if (ask.integrity !== undefined) out.push({ name, integrity: ask.integrity });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The roots this process has swept at its first activation, across every copy of this file a
+ * push loads — so "once at startup" means once per process, not once per bundle.
+ */
+const SWEPT = Symbol.for("penguin.plugins.swept");
+function sweptRoots(): Set<string> {
+  const g = globalThis as { [SWEPT]?: Set<string> };
+  return (g[SWEPT] ??= new Set());
 }
 
 /**
@@ -573,6 +611,15 @@ export async function loadPlugins(
     console.warn(
       `[plugins] activation failed, the current generation is kept: ${err instanceof Error ? err.message : String(err)}`,
     );
+  }
+  // The sweep follows the flip, in this boot — so on the assembly queue, never beside a
+  // generation being written — and runs once at the first activation of the process.
+  if (activation !== null) {
+    const first = !sweptRoots().has(root);
+    if (first || activation.current !== activation.previous) {
+      sweptRoots().add(root);
+      await sweepPlugins(root, { pins: await readPluginPins(root), assetsDir: pushedAssets });
+    }
   }
   const bases = pluginBases(root);
   // A stored plugin runs from its store entry; the host SDK it keeps external is lent to it.

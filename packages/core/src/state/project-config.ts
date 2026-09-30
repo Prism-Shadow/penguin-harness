@@ -700,10 +700,19 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
  * file — the same sharing rule as projectConfigFromTable, so the two paths can never
  * narrow the block differently.
  */
-/** What a Project asks of one plugin. `version` absent (or `"*"` in the file) means whatever the deployment ships. */
+/**
+ * What a Project asks of one plugin. `version` absent (or `"*"` in the file) means any; the
+ * machine takes the highest version it holds that satisfies it. `integrity` pins one content
+ * (`sha256-<64 hex digits>`, the plugin index's and the plugin store's key): that entry and
+ * no other.
+ */
 export interface PluginRequirement {
   version?: string;
+  integrity?: string;
 }
+
+/** A pinned content: `sha256-` and 64 lowercase hex digits. */
+export const PLUGIN_INTEGRITY = /^sha256-[0-9a-f]{64}$/;
 
 /** A plugin table: package name → what is asked of it, in the file's order. */
 export type PluginTable = Record<string, PluginRequirement>;
@@ -713,6 +722,8 @@ export type PluginTable = Record<string, PluginRequirement>;
  *
  *   [plugins]
  *   "@scope/everywhere" = "*"
+ *
+ *   "@scope/pinned" = { version = "1.2.3", integrity = "sha256-…" }
  *
  *   [plugins.Xk3v9Qa_bT2mLp0z]
  *   "@scope/only-there" = "*"
@@ -734,9 +745,9 @@ export const PLUGIN_MACHINE_ID = /^[A-Za-z0-9_-]{16}$/;
 
 /**
  * Whether a `[plugins]` member is a machine's table rather than a plugin's requirement: a
- * key shaped like a machine id whose value is a table without `version`. The writer below
- * spells every requirement without fields as `"*"`, so a table of that shape is never one of
- * its requirements.
+ * key shaped like a machine id whose value is a table without `version` or `integrity`. The
+ * writer below spells every requirement without fields as `"*"`, so a table of that shape is
+ * never one of its requirements.
  */
 function isMachineTable(key: string, value: unknown): boolean {
   return (
@@ -744,15 +755,19 @@ function isMachineTable(key: string, value: unknown): boolean {
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&
-    !("version" in value)
+    !("version" in value) &&
+    !("integrity" in value)
   );
 }
 
 /**
  * Leniently parses one plugin table. An entry's value is a version requirement string
- * (`"*"` for any) or a table with an optional `version`; an entry of any other shape is
- * dropped rather than failing the load — a config whose plugin table is malformed still has
- * to open, or a typo there would take the Project's models with it. Machine tables inside
+ * (`"*"` for any) or a table with an optional `version` and an optional `integrity`; an entry
+ * of any other shape is dropped rather than failing the load — a config whose plugin table is
+ * malformed still has to open, or a typo there would take the Project's models with it. A
+ * malformed `integrity` drops its entry rather than the pin: running whatever version fits
+ * in place of the content a Project pinned is the one reading that must not happen quietly,
+ * and a dropped entry is a plugin the list view reports missing. Machine tables inside
  * `[plugins]` are not entries of the shared table and are skipped (parsePluginTables reads
  * them). A value that is not a table at all (the list form this key had before it was a
  * table) reads as undefined: such a Project asks for no plugins until it is written again.
@@ -769,12 +784,20 @@ export function parsePluginTable(value: unknown): PluginTable | undefined {
       continue;
     }
     if (spec === null || typeof spec !== "object" || Array.isArray(spec)) continue;
-    const version = (spec as { version?: unknown }).version;
+    const { version, integrity } = spec as { version?: unknown; integrity?: unknown };
     if (version !== undefined && typeof version !== "string") continue;
-    out[name] =
-      version === undefined || version.trim() === "" || version.trim() === "*"
+    if (
+      integrity !== undefined &&
+      (typeof integrity !== "string" || !PLUGIN_INTEGRITY.test(integrity))
+    ) {
+      continue;
+    }
+    out[name] = {
+      ...(version === undefined || version.trim() === "" || version.trim() === "*"
         ? {}
-        : { version: version.trim() };
+        : { version: version.trim() }),
+      ...(integrity !== undefined ? { integrity } : {}),
+    };
   }
   return out;
 }
@@ -800,11 +823,24 @@ export function effectivePluginTable(tables: PluginTables, machineId: string | n
   return own === undefined ? { ...tables.all } : { ...tables.all, ...own };
 }
 
-/** A plugin table as it is written: the string form wherever only a version is asked. */
+/**
+ * A plugin table as it is written: the string form wherever only a version is asked, the
+ * table form `{ version, integrity }` for a pinned content.
+ */
 export function pluginTableToToml(
   table: PluginTable,
-): Record<string, string | { version?: string }> {
-  return Object.fromEntries(Object.entries(table).map(([name, req]) => [name, req.version ?? "*"]));
+): Record<string, string | { version?: string; integrity: string }> {
+  return Object.fromEntries(
+    Object.entries(table).map(([name, req]) => [
+      name,
+      req.integrity === undefined
+        ? (req.version ?? "*")
+        : {
+            ...(req.version !== undefined ? { version: req.version } : {}),
+            integrity: req.integrity,
+          },
+    ]),
+  );
 }
 
 /**

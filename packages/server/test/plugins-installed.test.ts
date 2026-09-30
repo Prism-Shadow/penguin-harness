@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parse as parseToml } from "smol-toml";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/api/types.js";
@@ -155,6 +156,65 @@ describe("installed plugins", () => {
       ).toBe(400);
     }
     expect(await view()).toMatchObject({ plugins: [] });
+  });
+
+  it("downloads only what the catalogue lists with an integrity, and writes nothing when it cannot", async () => {
+    // The test app reads no published index and ships nothing: a package that is not on the
+    // machine has no catalogue entry to be checked against, so npm is never asked for it.
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/unlisted@^1",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: {
+        code: "plugin_not_installable",
+        message: expect.stringMatching(/none of the plugin catalogue's sources/),
+      },
+    });
+    expect(await view()).toMatchObject({ plugins: [] });
+    const bad = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/unlisted",
+      integrity: "sha256-nothex",
+    });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({ error: { code: "bad_request" } });
+  });
+
+  it("pins a content: the table names its integrity, and activation takes that entry or none", async () => {
+    await ship({ name: "@acme/pinned", module: "Pinned" });
+    // Let a boot import the shipped package into the store, then read its key there.
+    await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/pinned"],
+    });
+    const stored = JSON.parse(
+      await fs.readFile(path.join(t.root, "plugin-store", "index.json"), "utf8"),
+    ) as { name: string; integrity: string }[];
+    const integrity = stored.find((e) => e.name === "@acme/pinned")!.integrity;
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/pinned",
+      integrity,
+    });
+    expect(res.status).toBe(200);
+    const written = parseToml(await fs.readFile(listFile(), "utf8")) as {
+      plugins: Record<string, unknown>;
+    };
+    expect(written.plugins["@acme/pinned"]).toEqual({ integrity });
+    expect((await view()).plugins[0]).toMatchObject({ specifier: "@acme/pinned", active: true });
+
+    // A pin no stored entry has is not quietly run as whatever version fits. (Another name
+    // joins the list so the rewrite re-assembles, which is when activation reads the pin.)
+    const other = `sha256-${"0".repeat(64)}`;
+    await ship({ name: "@acme/beside", module: "Beside" });
+    await fs.writeFile(
+      listFile(),
+      `models = []\n[plugins]\n"@acme/pinned" = { integrity = "${other}" }\n`,
+    );
+    await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/pinned", "@acme/beside"],
+    });
+    const after = (await view()).plugins.find((p) => p.specifier === "@acme/pinned")!;
+    expect(after.active).toBe(false);
+    expect(after.error).toMatch(/no stored '@acme\/pinned' satisfies sha256-0/);
   });
 
   it("drops a specifier from the list on delete", async () => {

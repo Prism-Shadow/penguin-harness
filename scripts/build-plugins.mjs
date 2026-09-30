@@ -25,6 +25,13 @@
  * The licenses of those third-party packages ship beside them as `THIRD-PARTY-NOTICES.md` at the
  * prefix's root (scripts/lib/third-party-notices.mjs); a package without license text fails it.
  *
+ * THE BUILTIN INDEX IS THE BUILD'S. Every package the prefix ships is also laid out as a
+ * store entry — `<name>/<version>/<hash16>/manifest.toml + package-lock.json + package/`, the
+ * shape of a machine's plugin store and of the index repository (scripts/plugin-entry.mjs) —
+ * in a tree beside the prefix, and `index.json` is rebuilt from that tree into the prefix. So
+ * the index travels with the build, each entry's `integrity` is the one a machine computes
+ * when it stores the shipped package, and nobody writes it by hand.
+ *
  * Cached by content: the hash over every plugin's `src/`, `package.json`, `README.md` and
  * `tsup.config.ts`, and over the lockfile entries the prefix is pinned to, names a directory
  * under `node_modules/.cache/penguin-plugins/`, and an unchanged set is not built, packed or
@@ -37,6 +44,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,13 +56,18 @@ import {
   readPnpmLock,
 } from "./lib/locked-prefix.mjs";
 import { readVendoredPackages, thirdPartyNotices } from "./lib/third-party-notices.mjs";
+import { INDEX_FILE, layOutEntry, entryDir, sortIndex } from "./plugin-entry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 14;
+const PACK_FORMAT = 15;
+// The server's own dependency: the store writes its manifests with the same library.
+const { stringify: stringifyToml } = createRequire(
+  path.join(ROOT, "packages", "server", "package.json"),
+)("smol-toml");
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -319,17 +332,56 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
           await fsp.chmod(path.join(out, rel), 0o755);
         }
       }
+      const index = await layOutTree(out, treeOf(out), plugins);
+      await fsp.writeFile(path.join(out, INDEX_FILE), `${JSON.stringify(index, null, 2)}\n`);
+      log(`${index.length} index entries: rebuilt from the tree`);
       await fsp.writeFile(path.join(out, COMPLETE), hash);
       log(`${plugins.length} builtin plugins: installed (${hash})`);
     } catch (err) {
       await fsp.rm(out, { recursive: true, force: true });
+      await fsp.rm(treeOf(out), { recursive: true, force: true });
       throw err;
     } finally {
       await fsp.rm(packed, { recursive: true, force: true });
     }
   }
   const files = (await walk(out)).filter((f) => f !== COMPLETE && !NOT_SHIPPED.has(f));
-  return { dir: out, files, plugins: plugins.map(({ name, version }) => ({ name, version })) };
+  return {
+    dir: out,
+    files,
+    plugins: plugins.map(({ name, version }) => ({ name, version })),
+    tree: treeOf(out),
+  };
+}
+
+/** The store-shaped tree of a prefix: beside it in the cache, never shipped. */
+function treeOf(prefix) {
+  return `${prefix}.tree`;
+}
+
+/**
+ * Lays every plugin the prefix ships out as a store entry under `tree` — the same module a
+ * machine's store writes its entries with — and answers the index rebuilt from the tree:
+ * each entry's `manifest.toml`, sorted as every index is.
+ */
+async function layOutTree(prefix, tree, plugins) {
+  await fsp.rm(tree, { recursive: true, force: true });
+  const stage = path.join(tree, ".staging");
+  const index = [];
+  for (const plugin of plugins) {
+    await fsp.rm(stage, { recursive: true, force: true });
+    await fsp.mkdir(stage, { recursive: true });
+    const pkgDir = path.join(prefix, "node_modules", ...plugin.name.split("/"));
+    const laid = await layOutEntry(stage, pkgDir, prefix, { stringifyToml });
+    const dest = entryDir(tree, laid.name, laid.version, laid.integrity);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await fsp.rename(stage, dest);
+    index.push(laid.manifest);
+  }
+  await fsp.rm(stage, { recursive: true, force: true });
+  const rebuilt = sortIndex(index);
+  await fsp.writeFile(path.join(tree, INDEX_FILE), `${JSON.stringify(rebuilt, null, 2)}\n`);
+  return rebuilt;
 }
 
 /** The prefix as a file map, relative to the prefix, each value an absolute source path. */

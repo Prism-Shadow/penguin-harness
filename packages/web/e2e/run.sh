@@ -59,6 +59,12 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
       --filter @prismshadow/penguin-web... \
       --filter @prismshadow/penguin-cli build \
       -r build)
+  # The builtin plugins and the index the build rebuilds from them, beside the program the way
+  # an installation ships them (`<program>/../plugins`): the catalogue's builtin rows come
+  # from there, and a server run from dist/ has none otherwise. Cached by content.
+  echo "== stage builtin plugins =="
+  (cd "$ROOT" && node scripts/build-plugins.mjs --out packages/server/plugins) \
+    || { echo "PLUGIN BUILD FAILED"; exit 1; }
 fi
 
 mkdir -p "$LOGS"
