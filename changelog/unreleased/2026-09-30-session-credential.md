@@ -24,5 +24,5 @@ A server-driven session's tool subprocesses no longer get the admin's authority 
 ## Compatibility
 
 - A command line that relied on the `api-token` file — the CLI outside a session, a script doing `$(cat <root>/api-token)` — gets `401` after the upgrade. Sign in once with `penguin auth login`, or `penguin auth token` on the machine that owns the data root (no password), or set `PENGUIN_API_TOKEN=$(penguin auth token)`.
-- A hot push takes the new rules at once: the file an older runtime wrote at its boot stops authenticating. The file itself is removed at the next restart.
+- A hot push takes the new rules at once: the file an older runtime wrote at its boot stops authenticating as a Bearer, but it is not spent. The boot token belongs to the runtime, which a hot push keeps, so the new build still derives its session-credential signing key from that same token — the one the older build also handed to every tool subprocess as `PENGUIN_API_TOKEN`. Until the next restart, whoever holds it can forge a session credential for any agent, session or organization. Only a restart replaces the key, and it removes the file.
 - An agent whose task reads other agents' sessions (`penguin ls` / `penguin logs` across the Project) now sees only its own agent's sessions.

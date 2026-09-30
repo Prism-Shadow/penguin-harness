@@ -24,5 +24,5 @@
 ## 兼容性
 
 - 依赖 `api-token` 文件的命令行——会话之外的 CLI、执行 `$(cat <root>/api-token)` 的脚本——升级后得到 `401`。用 `penguin auth login` 登录一次；在拥有数据根目录的机器上也可以用 `penguin auth token`（不需要密码），或设置 `PENGUIN_API_TOKEN=$(penguin auth token)`。
-- 热推送后新规则立即生效：旧运行时在启动时写下的文件不再能通过认证；文件本身在下次重启时删除。
+- 热推送后新规则立即生效：旧运行时在启动时写下的文件不再能作 Bearer 通过认证，但它并未失去作用。启动 token 属于运行时，热推送不会替换它，新构建签发会话凭据的密钥仍由这枚 token 派生——旧构建也把它作为 `PENGUIN_API_TOKEN` 交给过每一个工具子进程。下次重启之前，持有它的人仍能为任意 Agent、会话或组织伪造会话凭据。只有重启才会替换密钥，并删除该文件。
 - 任务需要读其他 Agent 会话的 Agent（在整个 Project 上跑 `penguin ls` / `penguin logs`），现在只看得到本 Agent 的会话。
