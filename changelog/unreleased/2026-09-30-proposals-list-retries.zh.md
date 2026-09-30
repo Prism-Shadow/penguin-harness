@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [Myriad-Dreamin/penguin-harness#131](https://github.com/Myriad-Dreamin/penguin-harness/pull/131)
 
 [English](2026-09-30-proposals-list-retries.md)
 
