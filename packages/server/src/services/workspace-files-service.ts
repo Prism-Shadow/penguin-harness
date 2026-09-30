@@ -560,15 +560,20 @@ export class WorkspaceFilesService implements WorkspaceFiles {
    * Missing parents are created the way a write creates them (resolveWriteParent), so a
    * symlinked ancestor pointing out of the Workspace is caught by the write path's own checks.
    * The entry itself is made by the primitive that fails rather than replaces: `O_CREAT |
-   * O_EXCL` for a file — which also refuses a symlink at the final segment instead of following
-   * it — and a non-recursive `mkdir` for a folder. Either way an occupied path is 409
-   * `target_exists` with nothing written, and there is no check-then-act window to lose to the
-   * Agent writing the same path.
+   * O_EXCL` for a file — which on POSIX also refuses a symlink at the final segment instead of
+   * following it (Windows gets an lstat first, below) — and a non-recursive `mkdir` for a folder.
+   * Either way an occupied path is 409 `target_exists` with nothing written, and on POSIX there
+   * is no check-then-act window to lose to the Agent writing the same path.
    */
   async create(workspace: string, rel: string, kind: "file" | "dir"): Promise<void> {
     if (rel === "" || rel.endsWith("/")) throw badRequest("path must name the new entry.");
     const { dir, name } = await this.resolveWriteParent(workspace, rel);
     const target = path.join(dir, name);
+    // Windows has no O_NOFOLLOW, and there O_EXCL alone does not refuse a final-segment link: the
+    // open follows it and creates whatever it points at, possibly outside the Workspace. So a link
+    // at the path is refused by lstat first, as assertNotSymlink refuses one for a write (best
+    // effort, the same window); POSIX keeps the atomic guarantee of the flags below.
+    if (process.platform === "win32" && (await occupied(target))) throw targetExists("create");
     try {
       if (kind === "dir") {
         await fs.mkdir(target);
