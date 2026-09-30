@@ -44,6 +44,7 @@ import type {
 import {
   CONFIG_GROUP,
   graphConfigOf,
+  remotesOf,
   testGroupsOf,
   undeclaredGroupsMessage,
   type GraphConfig,
@@ -53,6 +54,7 @@ import { readBaseFile } from "./files.js";
 import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
 import { pullKey } from "./pr-chain.js";
 import { PrGraphReader } from "./pr-graph.js";
+import { gitRunner, type RunGit } from "./workspace-remotes.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import {
   checkScope,
@@ -108,6 +110,8 @@ export interface ServiceDeps {
   now?: () => number;
   /** How the PR status lookup runs `gh`; the machine's own by default (a test feeds answers). */
   gh?: RunGh;
+  /** How the shared workspace's remotes are read; the machine's `git` by default (a test feeds answers). */
+  git?: RunGit;
 }
 
 /** One write's desk deliveries: the ledger a failed delivery is recorded in, and the reasons collected for the answer. */
@@ -131,7 +135,7 @@ const graphOff = (): ProposalError =>
   new ProposalError(
     409,
     "graph_not_configured",
-    "The PR graph has no delivery repository: an admin sets one under Settings → Plugins → Company proposals.",
+    "No delivery repository: none is set under Settings → Plugins → Company proposals and the shared workspace has no GitHub remote.",
   );
 
 /** Who acted, as a message names them: the employee's Agent id, else the person's user id. */
@@ -203,6 +207,58 @@ export class ProposalService {
       }
     }
     return config;
+  }
+
+  /**
+   * Where the PR graph reads from, settled: the settings where they are set, else the shared
+   * workspace's GitHub remotes — the delivery repository is the remote holding the most of the
+   * ledger's impl PRs (`origin` on a tie or when none does, else the first), its base the
+   * repository's default branch, the origins the other remotes. `repo` is null when neither
+   * names one; each fallback that could not be read is in `errors`.
+   */
+  private async deliveryRepo(
+    org: OrgView,
+    ledger: Ledger,
+    errors: string[],
+  ): Promise<{
+    repo: string | null;
+    base: string;
+    origins: Array<{ name: string; repo: string }>;
+  }> {
+    const config = this.graphConfig();
+    if (config.repo !== null) return config;
+    let remotes: Array<{ name: string; repo: string }> = [];
+    try {
+      remotes = remotesOf(await (this.deps.git ?? gitRunner())(org.workspace, ["remote", "-v"]));
+    } catch (err) {
+      errors.push(
+        `shared workspace ${org.workspace}: remotes not read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const held = (repo: string): number => {
+      const prefix = `${repo.toLowerCase()}#`;
+      return ledger
+        .proposals()
+        .filter((p) => (p.implPr === null ? "" : (pullKey(p.implPr.url) ?? "")).startsWith(prefix))
+        .length;
+    };
+    let picked = remotes.find((r) => r.name === "origin") ?? remotes[0];
+    for (const r of remotes)
+      if (picked !== undefined && held(r.repo) > held(picked.repo)) picked = r;
+    if (picked === undefined) {
+      errors.push(
+        `no delivery repository: none is set under Settings → Plugins → Company proposals and the shared workspace ${org.workspace} has no GitHub remote`,
+      );
+      return { repo: null, base: config.base, origins: config.origins };
+    }
+    const base = config.baseDeclared
+      ? config.base
+      : ((await this.prGraph.defaultBranch(picked.repo, errors)) ?? config.base);
+    const origins =
+      config.origins.length > 0
+        ? config.origins
+        : remotes.filter((r) => r.repo.toLowerCase() !== picked.repo.toLowerCase());
+    return { repo: picked.repo, base, origins };
   }
 
   /** The skipped lines last reported, so a bad line is logged once per change, not on every read. */
@@ -1265,7 +1321,7 @@ export class ProposalService {
   ): Promise<ProposalAdoptImplResponse> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     this.requirePerson(caller, "adopt impl PRs");
-    const repo = this.graphConfig().repo;
+    const { repo } = await this.deliveryRepo(org, ledger, []);
     if (repo === null) throw graphOff();
     const prefix = `${repo.toLowerCase()}#`;
     const taken = new Set(
@@ -1308,15 +1364,20 @@ export class ProposalService {
     return out;
   }
 
-  /** The PR graph of the delivery repository, annotated with the proposals and the origins. */
+  /**
+   * The PR graph of the delivery repository, annotated with the proposals and the origins.
+   * Always drawn: with no delivery repository at all it is the base branch alone, and
+   * `errors` says why.
+   */
   async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
-    const { ledger } = await this.open(projectId, orgId, actor);
-    const config = this.graphConfig();
-    if (config.repo === null) throw graphOff();
+    const { org, ledger } = await this.open(projectId, orgId, actor);
+    const errors: string[] = [];
+    const config = await this.deliveryRepo(org, ledger, errors);
     return this.prGraph.read({
-      repo: config.repo,
+      repo: config.repo ?? "",
       base: config.base,
       origins: config.origins,
+      errors,
       proposals: ledger.proposals().map((p) => ({
         number: p.number,
         title: p.title,

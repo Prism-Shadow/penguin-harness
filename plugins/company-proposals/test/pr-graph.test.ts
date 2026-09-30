@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { PrGraphReader, buildGraph, pullKey, type GraphProposal } from "../src/index.js";
+import { remotesOf } from "../src/config.js";
 import type { Comparison } from "../src/pr-chain.js";
 import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
 import type { RunGh } from "../src/pr-status.js";
@@ -247,5 +248,63 @@ describe("PrGraphReader", () => {
     expect(calls).toEqual([]);
     expect(g.nodes).toEqual([]);
     expect(g.errors[0]).toContain("not a GitHub repository name");
+  });
+
+  it("draws the base branch alone, unread, when there is no repository, and says why", async () => {
+    const { gh, calls } = fakeGitHub();
+    const g = await new PrGraphReader({ gh }).read({
+      ...config,
+      repo: "",
+      errors: ["no delivery repository"],
+    });
+    expect(calls).toEqual([]);
+    expect(g.base).toMatchObject({ branch: "dev", head: null });
+    expect(g.nodes).toEqual([]);
+    expect(g.errors).toEqual(["no delivery repository"]);
+  });
+
+  it("reads a repository's default branch once a minute and reports a failed read", async () => {
+    let now = 0;
+    const calls: string[] = [];
+    const gh: RunGh = async (args) => {
+      calls.push(args[1]!);
+      if (args[1] === "repos/acme/site") return JSON.stringify("main");
+      throw new Error("HTTP 404");
+    };
+    const reader = new PrGraphReader({ gh, now: () => now });
+    const errors: string[] = [];
+    expect(await reader.defaultBranch("acme/site", errors)).toBe("main");
+    expect(await reader.defaultBranch("acme/site", errors)).toBe("main");
+    expect(calls).toEqual(["repos/acme/site"]);
+    now = 61_000;
+    await reader.defaultBranch("acme/site", errors);
+    expect(calls.length).toBe(2);
+    expect(await reader.defaultBranch("acme/gone", errors)).toBeNull();
+    expect(errors).toEqual(["acme/gone: default branch not read: HTTP 404"]);
+    expect(await reader.defaultBranch("acme/site; rm", errors)).toBeNull();
+    expect(calls.length).toBe(3);
+  });
+});
+
+describe("remotesOf", () => {
+  it("keeps each GitHub fetch remote once, by name, in git's order", () => {
+    const out = [
+      "fork\thttps://github.com/Me/site.git (fetch)",
+      "fork\thttps://github.com/Me/site.git (push)",
+      "origin\thttps://github.com/Acme/site/ (fetch)",
+      "ssh\tgit@github.com:acme/tools.git (fetch)",
+      "url\tssh://git@github.com/acme/other (fetch)",
+      "tok\thttps://x-access-token@github.com/acme/tok.git (fetch)",
+      "lab\thttps://gitlab.com/acme/site.git (fetch)",
+      "Bad.Name\thttps://github.com/acme/site.git (fetch)",
+      "",
+    ].join("\n");
+    expect(remotesOf(out)).toEqual([
+      { name: "fork", repo: "Me/site" },
+      { name: "origin", repo: "Acme/site" },
+      { name: "ssh", repo: "acme/tools" },
+      { name: "url", repo: "acme/other" },
+      { name: "tok", repo: "acme/tok" },
+    ]);
   });
 });

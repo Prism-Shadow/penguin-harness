@@ -249,12 +249,17 @@ describe("ProposalService", () => {
             base: "dev",
           },
         ]);
-      if (p === "repos/acme/site/branches/dev") return JSON.stringify(D);
+      if (p === "repos/acme/site") return JSON.stringify("main");
+      if (p === "repos/acme/site/branches/dev" || p === "repos/acme/site/branches/main")
+        return JSON.stringify(D);
+      if (p.startsWith("repos/up/site/pulls?")) return JSON.stringify([]);
       if (p === `repos/acme/site/compare/${D}...${A}`)
         return JSON.stringify({ status: "ahead", ahead_by: 2, behind_by: 0 });
       return githubGh(args, { timeoutMs: 0, maxBytes: 0 });
     };
     let values: Record<string, unknown> = {};
+    let remotes = "";
+    const gitCalls: string[][] = [];
     service = new ProposalService({
       gateway,
       agents,
@@ -262,6 +267,10 @@ describe("ProposalService", () => {
       settings,
       log,
       gh,
+      git: async (cwd, args) => {
+        gitCalls.push([cwd, ...args]);
+        return remotes;
+      },
       pluginConfig: { get: () => values },
     });
     const first = await delegated();
@@ -297,8 +306,39 @@ describe("ProposalService", () => {
         .status,
     ).toBe(400);
 
-    // The graph is off until a delivery repository is set.
-    expect((await call("GET", "/graph")).status).toBe(409);
+    type Graph = {
+      repo: string;
+      base: { branch: string };
+      origins: Array<{ name: string; repo: string }>;
+      nodes: Array<{ number: number; proposal: { number: number } | null }>;
+      errors: string[];
+    };
+    // With nothing set and no GitHub remote in the workspace, the graph is the base branch alone.
+    const bare = await call("GET", "/graph");
+    expect(bare.status).toBe(200);
+    const alone = (await bare.json()) as Graph;
+    expect(alone).toMatchObject({ repo: "", base: { branch: "dev" }, nodes: [] });
+    expect(alone.errors[0]).toContain("no delivery repository");
+    expect(gitCalls).toEqual([[expect.stringMatching(/workspace$/), "remote", "-v"]]);
+
+    // Nothing set: the workspace remote holding the impl PR wins over `origin`, on the repository's
+    // default branch while the stack base is empty, and the other remote annotates the graph.
+    remotes = [
+      "origin\thttps://github.com/up/site.git (fetch)",
+      "mine\tgit@github.com:acme/site.git (fetch)",
+    ].join("\n");
+    values = { deliveryBase: "" };
+    const fallback = (await (await call("GET", "/graph")).json()) as Graph;
+    expect(fallback.repo).toBe("acme/site");
+    expect(fallback.base.branch).toBe("main");
+    expect(fallback.origins).toEqual([{ name: "origin", repo: "up/site" }]);
+    expect(fallback.nodes.map((n) => [n.number, n.proposal?.number])).toEqual([[11, first]]);
+    // A declared stack base is kept.
+    values = { deliveryBase: "dev" };
+    expect(((await (await call("GET", "/graph")).json()) as Graph).base.branch).toBe("dev");
+
+    // A set delivery repository is read as it is, without the workspace.
+    remotes = "";
     values = { deliveryRepo: "acme/site" };
     const graph = (await (await call("GET", "/graph")).json()) as {
       nodes: Array<{ number: number; proposal: { number: number } | null }>;

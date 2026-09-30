@@ -148,9 +148,9 @@ export const PAGE_ID = "company-proposals.page";
             title: "Delivery repository",
             titleZh: "交付仓库",
             description:
-              "`owner/repo` the impl PRs are opened on. The PR graph reads its open PRs; it is off while this is empty.",
+              "`owner/repo` the impl PRs are opened on. The PR graph reads its open PRs; while this is empty it reads the shared workspace's GitHub remote that holds the most impl PRs (`origin` otherwise), on the stack base below, or the repository's default branch when that is empty.",
             descriptionZh:
-              "impl PR 开在哪个仓库（`owner/repo`）。PR 关系图读它的 open PR；留空则关系图不可用。",
+              "impl PR 开在哪个仓库（`owner/repo`）。PR 关系图读它的 open PR；留空时改读共享工作区里登记 impl PR 最多的那个 GitHub remote（都没有则取 `origin`），基座取下面的栈底分支，栈底分支留空时取该仓库的默认分支。",
             placeholder: "owner/repo",
             default: "",
           },
@@ -167,9 +167,9 @@ export const PAGE_ID = "company-proposals.page";
             title: "Origins",
             titleZh: "各 origin",
             description:
-              "Other repositories the graph annotates, one per line as `name=owner/repo`: each node shows that repository's PR on the same branch and how its head stands.",
+              "Other repositories the graph annotates, one per line as `name=owner/repo`: each node shows that repository's PR on the same branch and how its head stands. While this is empty, the shared workspace's other GitHub remotes.",
             descriptionZh:
-              "关系图要标注的其他仓库，每行一个，写作 `name=owner/repo`：每个节点标出该仓库在同名分支上的 PR 及其 head 的关系。",
+              "关系图要标注的其他仓库，每行一个，写作 `name=owner/repo`：每个节点标出该仓库在同名分支上的 PR 及其 head 的关系。留空时取共享工作区的其余 GitHub remote。",
             pattern: "^[a-z0-9_-]{1,32}=[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
             patternErrorMessage: "lines must read `name=owner/repo`",
             default: [],

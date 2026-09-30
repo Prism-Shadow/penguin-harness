@@ -57,6 +57,7 @@ export interface PrGraphDeps {
 export class PrGraphReader {
   private readonly lists = new Map<string, Timed<OpenPull[]>>();
   private readonly tips = new Map<string, Timed<string>>();
+  private readonly defaults = new Map<string, Timed<string>>();
   private readonly shut = new Map<string, Timed<ShutPull | null>>();
   private readonly pulls = new Map<string, Timed<ImplPull>>();
   private readonly comparisons = new Map<string, Comparison>();
@@ -70,14 +71,30 @@ export class PrGraphReader {
     return this.deps.now?.() ?? Date.now();
   }
 
-  /** Reads what the graph needs from GitHub and lays it out. */
+  /**
+   * Reads what the graph needs from GitHub and lays it out. With no repository (`""`) the
+   * graph is the base branch alone, unread, and `errors` says why.
+   */
   async read(config: {
     repo: string;
     base: string;
     origins: Array<{ name: string; repo: string }>;
     proposals: GraphProposal[];
+    errors?: string[];
   }): Promise<ProposalGraphResponse> {
-    const errors: string[] = [];
+    const errors: string[] = [...(config.errors ?? [])];
+    if (config.repo === "") {
+      return buildGraph({
+        repo: "",
+        base: { branch: config.base, head: null },
+        pulls: [],
+        origins: config.origins.map((o) => ({ ...o, pulls: null })),
+        compare: () => undefined,
+        proposals: config.proposals,
+        errors,
+        checkedAt: new Date(this.now()).toISOString(),
+      });
+    }
     const [pulls, head, ...originPulls] = await Promise.all([
       this.openPulls(config.repo, errors),
       this.branchTip(config.repo, config.base, errors),
@@ -282,6 +299,26 @@ export class PrGraphReader {
     }
     this.lists.set(repo, { value: all, at: this.now() });
     return all;
+  }
+
+  /** The repository's default branch, kept like a branch tip; null when it cannot be read. */
+  async defaultBranch(repo: string, errors: string[]): Promise<string | null> {
+    const cached = this.defaults.get(repo);
+    if (cached !== undefined && this.now() - cached.at < STATUS_TTL_MS) return cached.value;
+    if (!GITHUB_REPO.test(repo)) return null;
+    try {
+      const branch = await this.gh<string>([
+        "api",
+        `repos/${repo}`,
+        "--jq",
+        ".default_branch | tojson",
+      ]);
+      this.defaults.set(repo, { value: branch, at: this.now() });
+      return branch;
+    } catch (err) {
+      errors.push(`${repo}: default branch not read: ${reason(err)}`);
+      return null;
+    }
   }
 
   private async branchTip(repo: string, branch: string, errors: string[]): Promise<string | null> {
