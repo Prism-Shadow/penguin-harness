@@ -524,12 +524,27 @@ export function isWholeOriginBlock(text: string): boolean {
 
 /**
  * Whether a message is a user text a hook put into the loop: a stop hook's `continue`
- * input, or a user_prompt hook's expansion context the host sent behind the user's message
- * (goal mode's round protocol) — the harness-stamped inputs that open a round of their own.
- * A background-task completion notice shares the stamp but is a report riding inside a
- * round, so it is excluded by its block.
+ * input, or a user_prompt hook's expansion context sent behind the user's message (goal
+ * mode's round-1 protocol among them). A background-task completion notice shares the stamp
+ * but is a report riding inside a round, so it is excluded by its block.
+ *
+ * Not every such message opens a round: an expansion context belongs to the Prompt it
+ * follows. A consumer counting rounds takes the first one of a run and, after that, only
+ * the ones a stop hook's `continue` event announced (see {@link isHookContinue}).
  */
 export function isHookInput(msg: OmniMessage): boolean {
   if (!isHarnessInput(msg)) return false;
   return parseBackgroundTaskDoneMessage((msg.payload as { text: string }).text) === null;
+}
+
+/**
+ * Whether a message is a main-session stop hook's `continue` event: the record the Session
+ * puts on the stream right before the input it injects for the next Task. What follows it
+ * is a round boundary; a harness-stamped input nothing announced is not.
+ */
+export function isHookContinue(msg: OmniMessage): boolean {
+  if (msg.origin && msg.origin.length > 0) return false;
+  if (msg.type !== "event_msg") return false;
+  const p = msg.payload as { type?: string; hook?: string; decision?: string };
+  return p.type === "hook" && p.hook === "stop" && p.decision === "continue";
 }

@@ -70,6 +70,7 @@ Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，�
 下面是一个示意性的 Trace 开头，每行一个 OmniMessage 信封。注意顺序：
 
 - 用户输入先写入，之后才是与它一起发送的 `request_begin`。
+- [User-prompt hook](/agent-loop#user-prompt-hook) 的回答紧跟在用户输入之后：每个 context 一条带 harness 标记的 user 文本，失败的钩子则是一条 `hook` 事件。
 - 首次运行时，工具集以 `tool_list_ready` 事件跟在输入之后；如果配置了 MCP Server，在这之前还有一对 `mcp_connect_begin` / `mcp_connect_end`。`session_meta` 不携带工具定义。
 
 ```jsonl

@@ -60,6 +60,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -142,6 +145,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -221,6 +227,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -487,9 +496,6 @@ importers:
       '@fontsource-variable/noto-sans-sc':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/commit-mono':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@fontsource/ibm-plex-sans-condensed':
         specifier: ^5.3.0
         version: 5.3.0
@@ -591,6 +597,9 @@ importers:
       '@xterm/xterm':
         specifier: ^5.5.0
         version: 5.5.0
+      copy-to-clipboard:
+        specifier: ^4.0.2
+        version: 4.0.2
       katex:
         specifier: ^0.16.47
         version: 0.16.47
@@ -664,6 +673,8 @@ importers:
   plugins/agent-development: {}
 
   plugins/agent-tuning: {}
+
+  plugins/browser-automation: {}
 
   plugins/continual-learning: {}
 
@@ -1308,9 +1319,6 @@ packages:
   '@fontsource-variable/noto-sans-sc@5.3.0':
     resolution: {integrity: sha512-lNar1dF7Ik/lHNPo/7JWG0TolXY29LtsqYgMvEysooZ5bsO9uH4shJmRrwyJ3PjyTPljhpMJEK0jDuLSU4vJ1w==}
 
-  '@fontsource/commit-mono@5.3.0':
-    resolution: {integrity: sha512-Bs+zlEWHDgk/cCVWEMJJaA7LbBU3Ixi5Zums+SSwMKdm2N7RJ4P7jCJTwsMHRt5WFiXYB0tu0q9HMfkn0YsLsQ==}
-
   '@fontsource/ibm-plex-sans-condensed@5.3.0':
     resolution: {integrity: sha512-fQyBpwbkguP4azjq7Cw8h/J3C/d8MFAzXOiSoFxyKCUK4x0XKrWEh3tGdTxhDM0HctVRQilQo1zGoyxDHLm5jQ==}
 
@@ -1612,6 +1620,9 @@ packages:
 
   '@penguinharness/agent-tuning@file:plugins/agent-tuning':
     resolution: {directory: plugins/agent-tuning, type: directory}
+
+  '@penguinharness/browser-automation@file:plugins/browser-automation':
+    resolution: {directory: plugins/browser-automation, type: directory}
 
   '@penguinharness/continual-learning@file:plugins/continual-learning':
     resolution: {directory: plugins/continual-learning, type: directory}
@@ -2597,6 +2608,9 @@ packages:
   cookie@0.7.2:
     resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
     engines: {node: '>= 0.6'}
+
+  copy-to-clipboard@4.0.2:
+    resolution: {integrity: sha512-gklSft7IuhriZKHKpuoA1fpJSLPNgvUMWMo5BlnzAJm0zNKnznoSv23IjtNqclx8eKi6ZcdvFFzYEER/+U1LoQ==}
 
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
@@ -5303,8 +5317,6 @@ snapshots:
 
   '@fontsource-variable/noto-sans-sc@5.3.0': {}
 
-  '@fontsource/commit-mono@5.3.0': {}
-
   '@fontsource/ibm-plex-sans-condensed@5.3.0': {}
 
   '@google/genai@1.52.0(supports-color@10.2.2)':
@@ -5535,6 +5547,8 @@ snapshots:
 
   '@penguinharness/agent-tuning@file:plugins/agent-tuning': {}
 
+  '@penguinharness/browser-automation@file:plugins/browser-automation': {}
+
   '@penguinharness/continual-learning@file:plugins/continual-learning': {}
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
@@ -5595,6 +5609,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5627,6 +5642,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5655,6 +5671,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -6712,6 +6729,8 @@ snapshots:
   cookie-signature@1.0.7: {}
 
   cookie@0.7.2: {}
+
+  copy-to-clipboard@4.0.2: {}
 
   core-util-is@1.0.3: {}
 

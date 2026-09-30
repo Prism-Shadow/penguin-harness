@@ -536,6 +536,32 @@ describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
     expect(seen!.workspaceDir).toBe(tmp);
   });
 
+  it("the Session's scratchpad rides beside the Workspace in the confiner's opts; without one there is no such key", async () => {
+    const scratchpadDir = path.join(tmp, "scratchpad", "session-1");
+    const seen: Array<{ cwd: string; workspaceDir: string; scratchpadDir?: string }> = [];
+    confiner = (_argv, opts) => {
+      seen.push({ ...opts });
+      return { argv: [process.execPath, "-e", "console.log('CONFINED')"] };
+    };
+    const withScratchpad = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      sessionScratchpadDir: scratchpadDir,
+      confineSpawn: () => confiner,
+    });
+    try {
+      const res = await runTool(withScratchpad, "exec_command", { cmd: "echo original" });
+      expect(res.output).toContain("CONFINED");
+    } finally {
+      withScratchpad.dispose();
+    }
+    await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(seen).toStrictEqual([
+      { cwd: tmp, workspaceDir: tmp, scratchpadDir },
+      { cwd: tmp, workspaceDir: tmp },
+    ]);
+  });
+
   it("a throwing confiner fails the spawn closed: reported as spawn error, nothing runs", async () => {
     confiner = () => {
       throw new Error('sandbox mode "workspace-write" requested but no backend is usable');

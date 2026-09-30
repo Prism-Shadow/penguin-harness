@@ -4,7 +4,8 @@
  * A session is a row in web.db, so minting opens the database and inserts one — no running
  * server, no owner token, no loopback. Reading the root already reaches every credential the
  * token could, so the write adds no authority; the row is a `cli` session the server honors
- * on its next request.
+ * on its next request, or a `desktop` one when the caller is the shell signing its own window
+ * in.
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -81,6 +82,34 @@ describe("minting an API session", () => {
       expect(r.outcome).toBe("minted");
       if (r.outcome !== "minted") return;
       expect(Date.parse(r.expiresAt)).toBe(now.getTime() + CLI_TOKEN_MAX_TTL_MS);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  /**
+   * The desktop shell mints with `via: "desktop"` when it signs its own window in against a
+   * server it did not spawn, and the session has to read back as that kind — it is what the
+   * App reads to leave the current-password field out of a form whose account has a password
+   * nobody was ever shown. A `cli` mint must keep reading back as an ordinary password
+   * session, which is what `penguin auth token` has always produced.
+   */
+  it("records how the session was established, defaulting to cli", async () => {
+    const root = await makeTempRoot();
+    const dbPath = path.join(root, "web.db");
+    const t = await createTestApp({ config: { root, dbPath } });
+    try {
+      const asCli = mintApiToken(root, { dbPath });
+      const asDesktop = mintApiToken(root, { dbPath, via: "desktop" });
+      expect(asCli.outcome).toBe("minted");
+      expect(asDesktop.outcome).toBe("minted");
+      if (asCli.outcome !== "minted" || asDesktop.outcome !== "minted") return;
+      const viaOf = async (token: string) => {
+        const res = await apiClient(t.app, `${SESSION_COOKIE}=${token}`).get("/api/me");
+        return ((await res.json()) as { sessionVia: string }).sessionVia;
+      };
+      expect(await viaOf(asCli.token)).toBe("password");
+      expect(await viaOf(asDesktop.token)).toBe("desktop");
     } finally {
       await t.cleanup();
     }

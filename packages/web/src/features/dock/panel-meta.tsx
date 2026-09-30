@@ -24,6 +24,8 @@ export function panelLabel(kind: PanelKind): string {
       return S.messaging.panelTitle;
     case "schedules":
       return S.schedule.panelTitle;
+    case "builtin-browser":
+      return S.builtinBrowser.panelTitle;
   }
 }
 
@@ -41,5 +43,7 @@ export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton)
       return <GlyphIcon d={ICONS.paperPlane} size={size} />;
     case "schedules":
       return <GlyphIcon d={ICONS.alarmClock} size={size} />;
+    case "builtin-browser":
+      return <GlyphIcon d={ICONS.globe} size={size} />;
   }
 }

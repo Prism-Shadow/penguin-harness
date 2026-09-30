@@ -75,6 +75,7 @@ export function SubagentsView({
   subagents,
   models,
   approvalMode,
+  approvalModes,
   onChangeApprovalMode,
   onChangeSandbox,
   modeSaving,
@@ -96,6 +97,8 @@ export function SubagentsView({
   models: ModelInfo[];
   /** The PARENT session's approval mode — child approvals are judged by it (the same value the main composer edits). */
   approvalMode: ApprovalMode;
+  /** The modes the picker lists for the PARENT session (the main composer's list). */
+  approvalModes: readonly ApprovalMode[];
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   /** Edits the PARENT session's sandbox policy — a child runs under its root's. */
   onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
@@ -296,6 +299,7 @@ export function SubagentsView({
             deliveredInputs={countDeliveredInputs(activeModel)}
             models={models}
             approvalMode={approvalMode}
+            approvalModes={approvalModes}
             onChangeApprovalMode={onChangeApprovalMode}
             sandbox={session.sandbox}
             onChangeSandbox={onChangeSandbox}
@@ -340,6 +344,7 @@ function SubagentComposer({
   deliveredInputs,
   models,
   approvalMode,
+  approvalModes,
   onChangeApprovalMode,
   sandbox,
   onChangeSandbox,
@@ -356,6 +361,7 @@ function SubagentComposer({
   deliveredInputs: number;
   models: ModelInfo[];
   approvalMode: ApprovalMode;
+  approvalModes: readonly ApprovalMode[];
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   /** The PARENT session's sandbox policy. */
   sandbox: SessionSandbox;
@@ -461,6 +467,7 @@ function SubagentComposer({
         contextNow={contextNow}
         vision={false}
         approvalMode={approvalMode}
+        approvalModes={approvalModes}
         onChangeApprovalMode={onChangeApprovalMode}
         sandbox={sandbox}
         onChangeSandbox={onChangeSandbox}

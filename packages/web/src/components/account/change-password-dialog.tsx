@@ -15,12 +15,12 @@ import { PasswordInput } from "../ui/password-input";
 import { Modal } from "../ui/modal";
 
 export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { refresh, sessionVia } = useAuth();
-  // Desktop and first-login sessions set the password without the old one — for them the
-  // current password is random and was never shown (see omitsOldPassword). Keyed on the
-  // session's origin, not desktopMode: a browser signed into the same server with a password
-  // must still prove it.
-  const noOldPassword = omitsOldPassword(sessionVia);
+  const { refresh, desktopMode, sessionVia } = useAuth();
+  // The shell's own window and a first-login session set the password without the old one —
+  // for them the current password is random and was never shown (see omitsOldPassword). Both
+  // fields are needed, not the session's origin alone: they are what the server's own gate
+  // reads, and a field it wants but the form leaves out fails the request.
+  const noOldPassword = omitsOldPassword({ desktopMode, sessionVia });
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

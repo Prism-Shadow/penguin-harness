@@ -2,8 +2,7 @@
  * Mirrors the licence text of every font package @prismshadow/penguin-ui depends on into
  * `src/fonts/LICENSES/<package>.txt` — verbatim except for whitespace: line endings become LF,
  * trailing spaces go and the file ends in one newline, because the repository stores text as LF
- * (.gitattributes) and a CRLF original (Commit Mono's) would otherwise read as drift after every
- * checkout.
+ * (.gitattributes) and a CRLF original would otherwise read as drift after every checkout.
  *
  * The texts are checked in so the licence a build ships is reviewable in the diff that changes a
  * font, and so the `penguinUi()` Vite plugin can emit them beside the fonts

@@ -241,11 +241,11 @@ describe("sandbox settings group", () => {
     expect(notices).toEqual([
       [
         "attention",
-        "The saved mode needs fs-write, and no usable backend implements it: every agent command is refused until one does.",
+        "The saved mode needs fs-write, and no usable backend implements it: every agent command and hook script is refused until one does.",
       ],
       [
         "attention",
-        "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command. other-platform is installed, but for another platform.",
+        "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command and hook script. other-platform is installed, but for another platform.",
       ],
       ["attention", "wrong-backend is not in use: 'bwrap' is missing"],
     ]);

@@ -5,7 +5,8 @@
  * A path typed out in a feature file is how one bin came to be drawn five ways and a redraw came to
  * reach one surface and not the others. So new glyphs go into the registry, named for what they
  * draw, and a feature file reads them from there. What feature files still hold is listed below per
- * file, with the wave that moves or rebuilds the file (`W1b+W4` splits an entry between two).
+ * file, with the wave that moves or rebuilds the file (`W1b+W4` splits an entry between two);
+ * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
  * `W1b` marks a near-copy of a registry glyph that differs from it by a grid unit or more — the
  * tapered bin, the feather and lucide pencils — and stays until someone decides to redraw it onto
  * the registry's. The counts are exact both ways, like the de-slop list: a new path fails as new,
@@ -40,18 +41,21 @@ const ALLOWLIST: Readonly<Record<string, readonly [number, string]>> = {
   "features/chat/subagents-view.tsx": [1, "W6"],
   "features/chat/task-stats-line.tsx": [1, "W6"],
   "features/chat/workspace-browser.tsx": [1, "W7"],
+  "features/chat/workspace-finder.tsx": [11, "W10"],
   "features/company/channel-header.tsx": [4, "W6"],
   "features/company/channel-sidebar.tsx": [2, "W4"],
   "features/company/channel-view.tsx": [1, "W6"],
   "features/company/finance-page.tsx": [2, "W1b+W4"],
   "features/company/handbook-explorer.tsx": [1, "W4"],
   "features/company/shared.tsx": [2, "W4"],
-  "features/dock/dock-panel.tsx": [1, "W7"],
+  "features/dock/dock-panel.tsx": [3, "W7+W10"],
   "features/models/models-page.tsx": [5, "W1b+W4"],
   "features/plugins/plugins-page.tsx": [2, "W4"],
   "features/schedules/schedule-panel.tsx": [3, "W4"],
   "features/schedules/schedule-suggestions.tsx": [3, "W4"],
   "features/semantic-id/semantic-id-field.tsx": [1, "W2"],
+  "features/settings/shortcuts-section.tsx": [1, "W10"],
+  "features/terminal/terminal-keybar.tsx": [3, "W10"],
   "features/traces/trace-event-row.tsx": [1, "W4"],
 };
 
