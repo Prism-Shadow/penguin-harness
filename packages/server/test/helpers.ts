@@ -80,6 +80,8 @@ import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/servi
 import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import type { Access } from "../src/mechanisms/projects.js";
+import { ProcessShellPort } from "../src/builtin-browser/module.js";
+import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -299,6 +301,8 @@ export interface TestAppOptions {
   orgService?: OrganizationService;
   /** Test double: the desktop reveal, so a test never opens a file manager. */
   reveal?: (filePath: string) => Promise<void>;
+  /** Test double: the desktop shell's port as the built-in browser reaches it (a fake shell). */
+  browserShellPort?: BrowserShellPort;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
   log?: (line: string) => void;
@@ -338,6 +342,10 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   }
   if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
   if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
+  if (o.browserShellPort) {
+    const port = o.browserShellPort;
+    out.push([ProcessShellPort, { current: () => port }]);
+  }
   if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
   if (o.telegramTransport)
     out.push([

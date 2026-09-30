@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import {
   isDesktopShellWindow,
   offersChangePassword,
+  nagsAboutInitialPassword,
   omitsOldPassword,
 } from "../src/lib/account-menu";
 
@@ -58,15 +59,37 @@ describe("offersChangePassword", () => {
   });
 });
 
+describe("nagsAboutInitialPassword", () => {
+  it("keeps quiet in any window the desktop shell signed in", () => {
+    // The trail asks its reader to change a password they hold; a shell-minted session holds
+    // none, and cannot set one on a server it only attached to. Both desktop cases are
+    // therefore silent, while a password session on either kind of server hears it.
+    expect(nagsAboutInitialPassword({ desktopMode: true, sessionVia: "desktop" })).toBe(false);
+    expect(nagsAboutInitialPassword({ desktopMode: false, sessionVia: "desktop" })).toBe(false);
+    expect(nagsAboutInitialPassword({ desktopMode: false, sessionVia: "password" })).toBe(true);
+    expect(nagsAboutInitialPassword({ desktopMode: false, sessionVia: "setup" })).toBe(true);
+  });
+});
+
 describe("omitsOldPassword", () => {
-  it("omits the current-password field for desktop and first-login sessions only", () => {
+  it("omits the current-password field for the shell's own window and first-login sessions", () => {
     // For both, the account's current password was hashed and discarded unseen — demanding
     // it would dead-end the flow: a first-login claimer would face a field nobody on earth
     // can fill. A password session must still prove the current password, mirroring
     // routes/me.ts.
-    expect(omitsOldPassword("desktop")).toBe(true);
-    expect(omitsOldPassword("setup")).toBe(true);
-    expect(omitsOldPassword("password")).toBe(false);
+    expect(omitsOldPassword({ desktopMode: true, sessionVia: "desktop" })).toBe(true);
+    expect(omitsOldPassword({ desktopMode: true, sessionVia: "setup" })).toBe(true);
+    expect(omitsOldPassword({ desktopMode: false, sessionVia: "setup" })).toBe(true);
+    expect(omitsOldPassword({ desktopMode: true, sessionVia: "password" })).toBe(false);
+  });
+
+  it("keeps the field for a desktop session against a server no shell spawned", () => {
+    // The shell mints one of these for itself when it attaches to a server it did not start
+    // (a `penguin web` instance on the same data root). The server's gate is the pair, so it
+    // still demands the old password there; a form that dropped the field would submit a
+    // request the server refuses. That account's password is recovered with `penguin server
+    // reset-admin-password`, not from this form.
+    expect(omitsOldPassword({ desktopMode: false, sessionVia: "desktop" })).toBe(false);
   });
 
   it("is hidden in exactly one of the four states", () => {

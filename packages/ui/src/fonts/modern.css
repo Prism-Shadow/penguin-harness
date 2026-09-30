@@ -7,8 +7,8 @@
  *   Font Intellectual Property License Agreement (`LICENSES/misans.txt`). The software must credit
  *   MiSans (the Web App does, in the account menu), may not adapt the font, and never offers it for
  *   download on its own.
- * - JetBrains Mono (mono): the variable face Primer also names, declared once in `github.css`, so
- *   Frost's mono adds no bytes.
+ * - JetBrains Mono (mono): the variable face Primer and Console also name, declared once in
+ *   `github.css`, so Frost's mono adds no bytes.
  *
  * Only `themes/modern.css` names MiSans, so only a Frost session downloads its slices, and only the
  * slices its text touches. Frost uses weights 400 and 500 alone; its theme turns weight synthesis

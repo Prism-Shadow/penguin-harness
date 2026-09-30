@@ -87,7 +87,7 @@
  * progress slot — and stays a plain row under Primer. Frost adds nothing around the row — no
  * fill, border, ring or halo, the way Codex and macOS show work in progress — and lets a soft
  * highlight in the accent's hue sweep across the label; at rest nothing is added. Console
- * renders a transcript: the label in the chrome face at the small rung, uppercase and tracked,
+ * renders a transcript: the label in the mono face at the small rung, uppercase and tracked,
  * muted once done and full ink while running, the detail muted, no box around the row and no
  * fill that moves between rest, hover, open and stuck (a hover changes the ink alone), and a
  * hatched block bar in the progress slot while the step runs; a step in a work group hangs off
@@ -99,7 +99,7 @@
  * components had one look. A notice names its tone; Primer keeps the host's own strip, Frost
  * floats a soft card on the overlay surface with the tone as one small dot of its ink, Console
  * prints a console status line — a bracketed tone tag (`[INFO]`, `[ OK ]`, `[WARN]`, `[FAIL]`,
- * `[NOTE]`) in the tone's ink and the chrome face, the message in the reading face, nothing
+ * `[NOTE]`) in the tone's ink and the mono face, the message in the reading face, nothing
  * round it. A chart names its parts;
  * Primer keeps the host's drawing, Frost draws soft low-chroma series, translucent bars with no
  * outline, round joins, caps and points and a fading area, Console draws thin solid

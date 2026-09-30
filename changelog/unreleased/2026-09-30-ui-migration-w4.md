@@ -21,6 +21,7 @@ W4 of the UI-package migration moves the Web App's page structure into `@prismsh
 - Page titles keep their size in every theme.
 - An indeterminate progress bar (the update dialog's install phase) pulses as a live signal in each theme's own way.
 - The package's accessibility fallbacks gain expand / collapse, more / fewer, previous / next and the page position.
+- The package's `FolderSection` takes a trailing action outside its toggle, which the company sidebar's Temporary group uses for "Close all".
 - The gallery gains Layout and Data pages, and its Notice, Loading and Badges pages show the new components.
 
 ## Visible changes in the default theme (Primer)
@@ -32,4 +33,5 @@ W4 of the UI-package migration moves the Web App's page structure into `@prismsh
 - The work group's title in the transcript is no longer uppercase.
 - Rails: inactive rows one step lighter; the Project settings glyphs 16 px in the subtle ink.
 - Finance tables, the calendar and ticket cards take the 12 px rung, token lines and a little more padding.
+- Model marks (default, vision, free, discount …) become 12 px on the model picker's rows as well, which share them with the models page's cards.
 - The benchmark case browser's tree is wider (380 px in English, 270 px in Chinese) so folder names fit.

@@ -7,11 +7,12 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ICONS } from "../src/components/icons/icons";
 import { SearchInput } from "../src/components/forms/search-input/search-input";
+import type { SearchInputProps } from "../src/components/forms/search-input/search-input";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
 
 const noop = () => {};
-const search = (props: Partial<Parameters<typeof SearchInput>[0]> = {}) =>
+const search = (props: Partial<SearchInputProps> = {}) =>
   renderStatic(
     createElement(SearchInput, { value: "", onChange: noop, "aria-label": "Search", ...props }),
   );

@@ -19,6 +19,7 @@ UI 包迁移的 W5 把 Web App 的内容渲染搬进 `@prismshadow/penguin-ui`�
 ## 细节
 
 - 包自带的无障碍兜底文案新增「复制代码」，由 Web App 按界面语言提供。
+- `Md` 可在共享管线之上追加 remark 插件与元素覆盖；公司频道的提及标签与工单的路径胶囊经由它们渲染。
 - 画廊的组件库新增「内容」页。
 - KaTeX、Shiki 与 remark / rehype 插件改由包依赖；Web App 只保留 `react-markdown`。
 

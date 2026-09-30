@@ -59,6 +59,28 @@ describe("penguin-bwrap profile", () => {
     },
   );
 
+  // skipIf(win32): as above, host path resolution would rewrite the POSIX literals.
+  it.skipIf(process.platform === "win32")(
+    "workspace-write binds the policy's further roots (the Session's scratchpad) writable; read-only ignores them",
+    () => {
+      const scratchpad = "/data/agent/scratchpad/session-1";
+      const args = bwrapProfileArgs({
+        mode: "workspace-write",
+        workspaceRoot: WS,
+        writableRoots: [scratchpad],
+      });
+      expect(args.join(" ")).toContain(`--bind ${WS} ${WS}`);
+      expect(args.join(" ")).toContain(`--bind ${scratchpad} ${scratchpad}`);
+
+      const readOnly = bwrapProfileArgs({
+        mode: "read-only",
+        workspaceRoot: WS,
+        writableRoots: [scratchpad],
+      });
+      expect(readOnly).toEqual(bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS }));
+    },
+  );
+
   it("read-only with writable temp: a tmpfs /tmp is the only writable place", () => {
     const args = bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, writableTemp: true });
     expect(args.join(" ")).toContain("--tmpfs /tmp");

@@ -14,6 +14,7 @@ UI 包迁移的 W3 把 Web App 的浮层搬进 `@prismshadow/penguin-ui`：菜�
 - **提示**：`Tooltip`、`TooltipLayer` 与 `TooltipPanel`，连同「文本已完整可见时不再显示提示」的规则。
 - **对话框**：Esc 层栈（`pushEscLayer`、`useDialogLayer`、`useEscLayer`）、`Modal`、`ConfirmModal`、`PagedDialog`、`Drawer`、`Sheet` 与 `Lightbox`，以及驱动其动画的弹簧与面板物理。
 - **Toast 与通知条**：`Toaster` 及其 store（`toastSuccess`、`toastInfo`、`toastAttention`、`toastError`）和 `NoticeStrip`。
+- **迁移期间 main 合入的代码**：`Modal` 保留 Workspace 查找器在手机上的全屏布局（`fullScreenOnPhone`）；Esc 层栈可报告是否有层打开（`hasEscLayers`），Web App 以此作为快捷键拦截条件，对话框或菜单打开时全局快捷键不在其背后触发；`FormPickerTrigger`（模型选择器与 Workspace 查找器的触发按钮）随 `FormPicker` 迁入；对话中的链接菜单、内置浏览器的溢出菜单与 Workspace 查找器的右键菜单改用 `Menu` 行。
 
 ## 细节
 

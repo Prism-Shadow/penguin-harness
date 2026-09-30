@@ -119,7 +119,7 @@ export function settleActiveTab(
  * The route that shows one workflow page as the whole app (no sidebar, no chat, no tab
  * strip): what `penguin web --app <project>/<agent>/<workflow>[/<tab>]` opens, and what a
  * tab's "fill the app" action navigates to. Without a tab key the workflow's first tab is
- * shown. The palette (Ctrl+P / Ctrl+Shift+P) is the way out.
+ * shown. The command palette is the way out.
  */
 export function workflowAppPath(
   projectId: string,

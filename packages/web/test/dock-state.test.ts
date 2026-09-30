@@ -68,6 +68,13 @@ describe("panel tabs", () => {
     expect(dock.dockActiveKey("right")).toBe("schedules");
   });
 
+  it("lists the built-in browser as a kind and opens it like any other", () => {
+    expect(dock.PANEL_KINDS).toContain("builtin-browser");
+    dock.openPanel("builtin-browser");
+    expect(dock.panelDock("builtin-browser")).toBe("right");
+    expect(dock.isTabShown("builtin-browser")).toBe(true);
+  });
+
   it("closing a panel tab removes it; closing the last one puts the dock away", () => {
     dock.openPanel("workspace", "right");
     dock.openPanel("memory", "right");
@@ -305,6 +312,17 @@ describe("persistence", () => {
     expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["schedules"]);
     expect(reloaded.dockActiveKey("right")).toBe("schedules");
     expect(reloaded.isDockVisible("right")).toBe(true);
+  });
+
+  it("reads a stored built-in browser tab back", async () => {
+    const scope = `scope-browser-${scopeSeq}`;
+    dock.setDockScope(scope);
+    dock.openPanel("builtin-browser", "bottom");
+    vi.resetModules();
+    const reloaded = await import("../src/features/dock/dock-state");
+    reloaded.setDockScope(scope);
+    expect(reloaded.panelDock("builtin-browser")).toBe("bottom");
+    expect(reloaded.dockActiveKey("bottom")).toBe("builtin-browser");
   });
 
   it("degrades a malformed stored entry to empty docks", async () => {
