@@ -64,6 +64,9 @@ describe("the library's topics", () => {
       "charts",
       "avatars",
       "files",
+      "content",
+      "layout",
+      "data",
     ]);
     const foundations = TOPIC_GROUPS.find((group) => group.id === "foundations")!.topics;
     expect(foundations.map((topic) => topic.id)).toEqual([
@@ -165,9 +168,10 @@ describe("the charts board", () => {
     expect(board).toMatch(/<ChartTokenTable \/>/);
   });
 
-  it("shows each primitive on its own, from the app's chart module", () => {
+  it("shows each primitive on its own, from the package and nothing from the app", () => {
     const stage = read("../src/library/boards/chart-primitives.tsx");
-    expect(stage).toMatch(/from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/components\/ui\/chart"/);
+    expect(stage).toMatch(/from "@prismshadow\/penguin-ui";/);
+    expect(stage).not.toMatch(/web\/src/);
     for (const primitive of [
       "ChartBar",
       "ChartLine",
@@ -221,32 +225,79 @@ describe("the charts board", () => {
     const board = read("../src/library/boards/charts.tsx");
     for (const chart of [
       "TokenDonut",
+      "Ring",
+      "Legend",
       "TrendChart",
       "TokenBarChart",
       "TokenLegend",
       "RequestsChart",
-      "ActivitySparkline",
-      "ScoreSparkline",
+      "Sparkline",
       "TimelineChart",
     ]) {
       expect(board).toMatch(new RegExp(`<${chart}[\\s/>]`));
     }
+    // The package's charts come from the package; the app's domain charts from the app.
+    expect(board).toMatch(/from "@prismshadow\/penguin-ui";/);
+    expect(board).not.toMatch(/token-donut"|-sparkline"/);
     expect(board).toMatch(
       /from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/features\/traces\/timeline-chart"/,
     );
   });
 });
 
+describe("the content board", () => {
+  it("shows every content component from the package, and nothing from the app", () => {
+    const board = read("../src/library/boards/content.tsx");
+    expect(board).toMatch(/from "@prismshadow\/penguin-ui";/);
+    expect(board).not.toMatch(/web\/src/);
+    for (const component of [
+      "Heading",
+      "Text",
+      "InlineCode",
+      "Prose",
+      "CodeBlock",
+      "CodeSurface",
+      "DiffViewer",
+    ]) {
+      expect(board).toMatch(new RegExp(`<${component}[\\s/>]`));
+    }
+    // Both densities of prose, both diff layouts and a patch.
+    expect(board).toMatch(/<Prose variant="compact"/);
+    expect(board).toMatch(/mode="split"/);
+    expect(board).toMatch(/<DiffViewer patch=\{PATCH\}/);
+  });
+
+  it("highlights through the app's highlighter, handed over by the frame", () => {
+    const entry = read("../src/library/main.tsx");
+    expect(entry).toMatch(/<CodeHighlighterProvider highlight=\{highlightCode\}>/);
+    expect(entry).toMatch(/from "\.\.\/\.\.\/\.\.\/web\/src\/features\/chat\/code-highlight"/);
+    // KaTeX's sheet comes with the package's Markdown; neither frame reaches into node_modules.
+    for (const frame of ["../src/library/main.tsx", "../src/app/main.tsx"]) {
+      expect(read(frame)).not.toMatch(/katex\.min\.css/);
+    }
+  });
+
+  it("names every text role in both dictionaries", () => {
+    for (const S of [zh, en]) {
+      const t = S.library.content;
+      for (const text of Object.values(t.samples)) expect(text.trim()).not.toBe("");
+      expect(Object.keys(t.samples).sort()).toEqual(
+        ["body", "caption", "eyebrow", "label", "mono", "small"].sort(),
+      );
+      expect(t.heading(2)).toContain("2");
+    }
+  });
+});
+
 describe("the streaming board", () => {
-  it("plays the streaming Session's answer through the app's reply body, on one seed, with a replay", () => {
+  it("plays the streaming Session's answer through the package's reply body, on one seed, with a replay", () => {
     const board = read("../src/library/boards/streaming.tsx");
-    expect(board).toMatch(
-      /import \{ AssistantReplyBody \} from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/features\/chat\/assistant-reply-body";/,
-    );
+    expect(board).toMatch(/import \{ AssistantText, [^}]*\} from "@prismshadow\/penguin-ui";/);
+    expect(board).not.toMatch(/web\/src\/features\/chat/);
     expect(board).toMatch(/streamScript\(text, BOARD_SEED\)/);
     expect(board).toMatch(/const answer = streamingAnswer\(state\.lang\);/);
     expect(board).toMatch(
-      /<AssistantReplyBody key=\{run\} text=\{stream\.text\} streaming=\{stream\.streaming\} \/>/,
+      /<AssistantText key=\{run\} text=\{stream\.text\} streaming=\{stream\.streaming\} \/>/,
     );
     expect(board).toMatch(/<ReplayButton onClick=\{\(\) => setRun\(\(n\) => n \+ 1\)\} \/>/);
   });
@@ -265,6 +316,50 @@ describe("the streaming board", () => {
         expect(text.trim()).not.toBe("");
       for (const text of Object.values(t.modes)) expect(text.trim()).not.toBe("");
     }
+  });
+});
+
+describe("the layout and data boards", () => {
+  it("show every layout and data component from the package, and nothing from the app", () => {
+    const boards = {
+      layout: [
+        "PageFrame",
+        "PageHeader",
+        "Card",
+        "CardHeader",
+        "RuledSection",
+        "CollapsibleSection",
+        "EntityHeader",
+        "NavList",
+        "NavRow",
+      ],
+      data: [
+        "Table",
+        "TableHead",
+        "TableHeaderCell",
+        "TableRow",
+        "TableCell",
+        "ListRow",
+        "KeyValue",
+        "KeyValueRow",
+        "LogView",
+      ],
+    };
+    for (const [topic, components] of Object.entries(boards)) {
+      const board = read(`../src/library/boards/${topic}.tsx`);
+      expect(board).toMatch(/from "@prismshadow\/penguin-ui";/);
+      expect(board).not.toMatch(/web\/src/);
+      for (const component of components) {
+        expect(board, `${topic}: ${component}`).toMatch(new RegExp(`<${component}[\\s/>]`));
+      }
+    }
+    // Both paddings of the card, a folded section, a bare table and a row that opens something.
+    const layout = read("../src/library/boards/layout.tsx");
+    expect(layout).toMatch(/<Card padding="none">/);
+    expect(layout).toMatch(/defaultOpen=\{false\}/);
+    const data = read("../src/library/boards/data.tsx");
+    expect(data).toMatch(/<Table framed=\{false\} size="sm">/);
+    expect(data).toMatch(/onClick=\{/);
   });
 });
 

@@ -20,7 +20,9 @@
  * to its own container is what keeps it off both, and its right edge is the chat column's
  * (the dock row's, while the dock is hidden). The position is written to the node directly
  * — a transform driven by two spring drivers — rather than through React state, because a
- * drag moves it every frame. The decisions live in dock-launcher-state.ts.
+ * drag moves it every frame. The decisions live in dock-launcher-state.ts; the ball and the
+ * fan are drawn by the UI package (`LauncherBall`, `LauncherFan`), and this container holds
+ * their motion, their gestures and what each entry opens.
  */
 import {
   useCallback,
@@ -31,7 +33,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import type {
-  CSSProperties,
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
@@ -40,17 +41,20 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  LauncherBall,
+  LauncherFan,
   SPRING_DEFAULT,
   SPRING_MOMENTUM,
   createSpringDriver,
   scrollMovesAnchor,
   toastInfo,
+  usePointerDrag,
   usePrefersReducedMotion,
 } from "@prismshadow/penguin-ui";
 import type { SpringDriver } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
 import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
 import { openTerminalInDock } from "./dock-terminal";
@@ -63,7 +67,6 @@ import {
   openPanel,
   subscribeDock,
 } from "./dock-state";
-import { usePointerDrag } from "./use-pointer-drag";
 import {
   FAN_ENTRY_SIZE,
   LAUNCHER_CAPTION_HEIGHT,
@@ -94,13 +97,6 @@ const EDGE_INSET = 32;
 const DRAG_THRESHOLD = 4;
 /** The fan's exit animation, after which its entries unmount (`.launcher-fan-out` in styles.css). */
 const FAN_EXIT_MS = 140;
-/**
- * Delay between one entry's entrance and the next, the topmost entry first (ms). Short
- * enough that the ring arrives as one shape rather than as a trickle of circles.
- */
-const FAN_STAGGER_MS = 16;
-/** Gap between the ball and its caption (px); the pill takes the rest of LAUNCHER_CAPTION_HEIGHT. */
-const CAPTION_GAP = 4;
 
 export interface DockLauncherProps {
   /** A pending approval inside a subagent: the amber dot rides the ball and the agents entry. */
@@ -122,7 +118,7 @@ export function DockLauncher({ agentsPending }: DockLauncherProps) {
   });
   if (!visible) return null;
   return (
-    <LauncherBall
+    <FloatingLauncher
       agentsPending={agentsPending}
       terminalSupported={terminalSupported}
       browserOffered={browserOffered}
@@ -149,23 +145,7 @@ interface FanEntry {
   choose: () => void;
 }
 
-// Every entry's box sits on the ball's centre; --fan-x / --fan-y carry it out to its place
-// on the arc, as both the resting transform and the entrance animation's end state.
-const ENTRY_CLASS =
-  "absolute flex items-center justify-center rounded-full border border-gray-200/80 bg-white/90 text-gray-600 shadow-[0_2px_8px_rgba(0,0,0,0.10)] backdrop-blur-md transition-colors duration-150 hover:bg-white hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:border-white/10 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
-
-/**
- * The one always-visible name, under the ball: a small pill on the same glass, with no
- * colour of its own, so it follows the ball's resting-to-hover ink. It reads out whichever
- * entry is hovered or focused, and the launcher's own caption the rest of the time.
- */
-const CAPTION_CLASS =
-  "pointer-events-none absolute whitespace-nowrap rounded-md border border-gray-200/80 bg-white/85 px-2 py-0.5 text-[13px] font-medium leading-5 shadow-[0_1px_4px_rgba(0,0,0,0.08)] backdrop-blur-md transition-colors duration-150 dark:border-white/10 dark:bg-gray-900/85";
-
-const BALL_CLASS =
-  "anim-pop relative flex touch-none select-none items-center justify-center rounded-full border border-gray-200/80 text-gray-500 shadow-[0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-md transition-[background-color,color,opacity,box-shadow] duration-150 hover:bg-white/95 hover:text-gray-800 hover:opacity-100 hover:shadow-[0_4px_16px_rgba(0,0,0,0.14)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:border-white/10 dark:text-gray-400 dark:hover:bg-gray-800/95 dark:hover:text-gray-100";
-
-function LauncherBall({
+function FloatingLauncher({
   agentsPending,
   terminalSupported,
   browserOffered,
@@ -508,65 +488,37 @@ function LauncherBall({
       style={{ right: EDGE_INSET, width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
     >
       {fan !== null && (
-        // A zero-size anchor on the ball's centre: the entries are placed by their own
-        // transforms, so nothing here may size or clip the arc.
-        <div
-          ref={fanRef}
-          role="group"
-          aria-label={S.dock.launcherPanels}
-          data-testid="dock-launcher-fan"
-          className="absolute left-1/2 top-1/2 h-0 w-0"
-        >
-          {entries.map((entry, index) => {
-            // One slot per entry by construction; the guard is only the index type's.
+        <LauncherFan
+          fanRef={fanRef}
+          label={S.dock.launcherPanels}
+          phase={fan.phase}
+          entrySize={FAN_ENTRY_SIZE}
+          // One slot per entry by construction; the guard is only the index type's.
+          entries={entries.flatMap((entry, index) => {
             const slot = slots[index];
-            if (slot === undefined) return null;
-            return (
-              <button
-                key={entry.key}
-                type="button"
-                data-testid={entry.testId}
-                // The glyph carries no text, so the name lives in the accessible name and in
-                // the caption under the ball, which reads out whatever is pointed at. No
-                // tooltip: it would only repeat the caption a few pixels away.
-                aria-label={entry.label}
-                onClick={entry.choose}
-                onMouseEnter={() => setHoveredKey(entry.key)}
-                onMouseLeave={() => setHoveredKey((key) => (key === entry.key ? null : key))}
-                onFocus={() => setHoveredKey(entry.key)}
-                onBlur={() => setHoveredKey((key) => (key === entry.key ? null : key))}
-                className={`${ENTRY_CLASS} ${
-                  fan.phase === "closing" ? "launcher-fan-out" : "launcher-fan-in"
-                }`}
-                style={
+            return slot === undefined
+              ? []
+              : [
                   {
-                    width: FAN_ENTRY_SIZE,
-                    height: FAN_ENTRY_SIZE,
-                    left: -FAN_ENTRY_SIZE / 2,
-                    top: -FAN_ENTRY_SIZE / 2,
-                    transform: "translate(var(--fan-x), var(--fan-y))",
-                    // Entrance runs down the arc from the top; the exit runs all at once.
-                    animationDelay: fan.phase === "closing" ? "0ms" : `${index * FAN_STAGGER_MS}ms`,
-                    "--fan-x": `${slot.x.toFixed(1)}px`,
-                    "--fan-y": `${slot.y.toFixed(1)}px`,
-                  } as CSSProperties
-                }
-              >
-                {entry.glyphAt(ICON_SIZE.launcherEntry)}
-                {entry.badge && (
-                  <span
-                    aria-hidden
-                    className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-white dark:ring-gray-950 ${toneDot.attention}`}
-                  />
-                )}
-              </button>
-            );
+                    key: entry.key,
+                    // The glyph carries no text, so the name lives in the accessible name and
+                    // in the caption under the ball, which reads out whatever is pointed at.
+                    label: entry.label,
+                    glyph: entry.glyphAt(ICON_SIZE.launcherEntry),
+                    badge: entry.badge,
+                    testId: entry.testId,
+                    x: slot.x,
+                    y: slot.y,
+                    onChoose: entry.choose,
+                  },
+                ];
           })}
-        </div>
+          onPoint={setHoveredKey}
+          onLeave={(left) => setHoveredKey((key) => (key === left ? null : key))}
+        />
       )}
-      <button
-        ref={ballRef}
-        type="button"
+      <LauncherBall
+        buttonRef={ballRef}
         {...dragProps}
         onClick={onBallClick}
         onMouseEnter={() => setBallActive(true)}
@@ -575,40 +527,20 @@ function LauncherBall({
         onBlur={() => setBallActive(false)}
         // No tooltip: the caption under the ball already says what it opens, and the drag is
         // discovered by dragging.
-        aria-label={label}
+        label={label}
         aria-expanded={fanOpen}
-        data-testid="dock-launcher-ball"
-        style={{ width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
-        className={`${BALL_CLASS} ${
-          fanOpen || dragging
-            ? "bg-white/95 text-gray-800 opacity-100 dark:bg-gray-800/95 dark:text-gray-100"
-            : "bg-white/75 opacity-80 dark:bg-gray-900/75"
-        } ${dragging ? "cursor-grabbing" : "cursor-pointer"}`}
-      >
-        {ballGlyph}
-        {/* The caption hangs below the ball's circle: the launcher's own word at rest, "open"
-            while the ball itself is pointed at, and the pointed-at entry's name while the fan
-            is open — the ball drawing that entry's mark meanwhile. It is the visible readout —
-            every button carries its own accessible name — so it is hidden from assistive
-            technology and never folded into the ball's. Its height is spelled from the
-            constant the vertical clamp reserves, so the two cannot drift apart. */}
-        <span
-          aria-hidden
-          className={`${CAPTION_CLASS} left-1/2 -translate-x-1/2`}
-          style={{
-            top: LAUNCHER_SIZE + CAPTION_GAP,
-            height: LAUNCHER_CAPTION_HEIGHT - CAPTION_GAP,
-          }}
-        >
-          {captionText}
-        </span>
-        {agentsPending && (
-          <span
-            aria-hidden
-            className={`absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-gray-950 ${toneDot.attention}`}
-          />
-        )}
-      </button>
+        size={LAUNCHER_SIZE}
+        // Spelled from the constant the vertical clamp reserves, so the two cannot drift apart.
+        captionHeight={LAUNCHER_CAPTION_HEIGHT}
+        glyph={ballGlyph}
+        // The launcher's own word at rest, "open" while the ball itself is pointed at, and the
+        // pointed-at entry's name while the fan is open — the ball drawing that entry's mark
+        // meanwhile.
+        caption={captionText}
+        lit={fanOpen || dragging}
+        dragging={dragging}
+        badge={agentsPending}
+      />
     </div>
   );
 }

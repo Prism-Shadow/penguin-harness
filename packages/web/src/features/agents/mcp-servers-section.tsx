@@ -27,6 +27,12 @@ import {
   OptionMenu,
   Segmented,
   SettingsEmpty,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
   Textarea,
   toastError,
   toastSuccess,
@@ -87,12 +93,12 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
   if (result === undefined) return null;
   if (result === "pending") {
     return (
-      <span className="text-[11px] whitespace-nowrap text-gray-400">{S.agent.mcpTestPending}</span>
+      <span className="text-xs whitespace-nowrap text-gray-400">{S.agent.mcpTestPending}</span>
     );
   }
   if (result.ok) {
     return (
-      <span className={`text-[11px] font-medium whitespace-nowrap ${toneInk.success}`}>
+      <span className={`text-xs font-medium whitespace-nowrap ${toneInk.success}`}>
         {S.agent.mcpTestBadge(result.tools?.length ?? 0, result.latencyMs)}
       </span>
     );
@@ -100,7 +106,7 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
   return (
     <span
       data-tooltip={result.error}
-      className={`text-[11px] font-medium whitespace-nowrap ${toneInk.danger}`}
+      className={`text-xs font-medium whitespace-nowrap ${toneInk.danger}`}
     >
       {S.agent.mcpTestBadgeFail}
     </span>
@@ -308,73 +314,62 @@ export function McpServersSection({
       {servers.length === 0 ? (
         <SettingsEmpty>{S.agent.mcpEmpty}</SettingsEmpty>
       ) : (
-        <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-          <table className="w-full min-w-[520px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                <th className="px-3 py-2.5">{S.agent.mcpName}</th>
-                <th className="px-3 py-2.5">{S.agent.mcpTransport}</th>
-                <th className="px-3 py-2.5">{S.agent.mcpPermission}</th>
-                <th className="px-3 py-2.5">{S.agent.mcpTarget}</th>
-                {/* Bulk-test badge column appears only once results exist (no headline). */}
-                {showBadges && <th className="px-3 py-2.5" />}
-                {/* Bulk test lives in the table's own header bar, over the actions column. */}
-                <th className="px-3 py-1 text-right font-normal whitespace-nowrap">
+        <Table tableClassName="min-w-[520px]">
+          <TableHead>
+            <TableHeaderCell>{S.agent.mcpName}</TableHeaderCell>
+            <TableHeaderCell>{S.agent.mcpTransport}</TableHeaderCell>
+            <TableHeaderCell>{S.agent.mcpPermission}</TableHeaderCell>
+            <TableHeaderCell>{S.agent.mcpTarget}</TableHeaderCell>
+            {/* Bulk-test badge column appears only once results exist (no headline). */}
+            {showBadges && <TableHeaderCell />}
+            {/* Bulk test lives in the table's own header bar, over the actions column: a
+                tighter cell than a column name's, so the button does not heighten the bar. */}
+            <th scope="col" className="px-3 py-1 text-right font-normal whitespace-nowrap">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy || testAllRunning}
+                onClick={() => setTestAllOpen(true)}
+              >
+                {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTest}
+              </Button>
+            </th>
+          </TableHead>
+          <TableBody>
+            {servers.map((entry, index) => (
+              <TableRow key={entry.name}>
+                <TableCell className="font-mono text-xs">{entry.name}</TableCell>
+                <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                  {transportOf(entry)}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                  {permissionOf(entry)}
+                </TableCell>
+                <TableCell className="max-w-[360px] truncate font-mono text-xs text-gray-500 dark:text-gray-400">
+                  {targetOf(entry)}
+                </TableCell>
+                {showBadges && (
+                  <TableCell align="right">
+                    <TestBadge result={rowResults.get(entry.name)} />
+                  </TableCell>
+                )}
+                <TableCell align="right" nowrap>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => openEdit(index)}>
+                    {S.common.edit}
+                  </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy || testAllRunning}
-                    onClick={() => setTestAllOpen(true)}
+                    disabled={busy}
+                    onClick={() => setDeleting(index)}
                   >
-                    {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTest}
+                    {S.agent.mcpRemove}
                   </Button>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {servers.map((entry, index) => (
-                <tr
-                  key={entry.name}
-                  className="border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
-                >
-                  <td className="px-3 py-2 font-mono text-xs">{entry.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
-                    {transportOf(entry)}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
-                    {permissionOf(entry)}
-                  </td>
-                  <td className="max-w-[360px] truncate px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
-                    {targetOf(entry)}
-                  </td>
-                  {showBadges && (
-                    <td className="px-3 py-2 text-right">
-                      <TestBadge result={rowResults.get(entry.name)} />
-                    </td>
-                  )}
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => openEdit(index)}
-                    >
-                      {S.common.edit}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => setDeleting(index)}
-                    >
-                      {S.agent.mcpRemove}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       <Button size="sm" variant="primary" disabled={busy} onClick={openAdd}>

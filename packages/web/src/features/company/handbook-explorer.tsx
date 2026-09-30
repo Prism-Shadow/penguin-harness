@@ -17,11 +17,11 @@
  * the page expands the ones above the selected document.
  */
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
+import { FileTree } from "@prismshadow/penguin-ui";
+import type { TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
 import type { Locale } from "../../state/locale";
-import { FileTree } from "../../components/ui/file-tree";
-import type { TreeToggle } from "../../components/ui/file-tree";
 import type { HandbookRow } from "./handbook-tree";
 
 /** Collapse-all mark (lucide chevrons-down-up): two chevrons closing on each other. */
@@ -65,7 +65,7 @@ export function HandbookExplorer({
       // Only the index overrides its name: every other row says on screen everything it means.
       rowLabel={(row) => (row.isIndex ? tooltip(row) : undefined)}
       rowTrailing={(row) => (
-        <span className="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
           {row.kind === "dir"
             ? row.docs
             : row.file === null

@@ -336,9 +336,10 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(9);
     // 215, plus the integration round's four (the emphasis ink and the switch's three), plus
     // the chart round's nine (two more series, the reference line, six geometry names), plus
-    // the bar outline's three, plus the knob's hairline edge, plus the streaming pair
-    // (2026-09-30), plus the update mark's fill (W1, the same day).
-    expect(TOKEN_NAMES.length).toBe(235);
+    // the bar outline's three, plus the knob's hairline edge (2026-09-30), plus the update
+    // mark's fill (W1, the same day), plus the streaming pair (the same day), plus the neutral
+    // fill of bubbles and chips (W6, the same day).
+    expect(TOKEN_NAMES.length).toBe(236);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -811,7 +812,6 @@ describe("the themes' own faces (round 6)", () => {
       .map((rule) => rule.selector);
     expect(mono).toEqual([
       ':root[data-theme="geek"] .ui-activity [data-slot="label"]',
-      ':root[data-theme="geek"] .ui-activity[data-state="running"] [data-slot="progress"]',
       ':root[data-theme="geek"] .ui-notice::before',
       ':root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"])',
     ]);
