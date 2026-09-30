@@ -12,12 +12,19 @@
 import { useState } from "react";
 import type { ReactNode, Ref } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  CloseIcon,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  Tooltip,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { Dropdown } from "../../components/ui/dropdown";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
-import { Tooltip } from "../../components/ui/tooltip";
 import { AddressBar } from "./address-bar";
 import type { BrowserActivity } from "./browser-state";
 
@@ -177,37 +184,38 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
           </ToolButton>
         }
       >
-        <button type="button" className={overflowMenuRowClass} onClick={item(props.onImport)}>
-          {overflowMenuGlyph(ICONS.download)}
-          {S.builtinBrowser.importAction}
-        </button>
-        <button type="button" className={overflowMenuRowClass} onClick={item(props.onClearData)}>
-          {overflowMenuGlyph(ICONS.trash)}
-          {S.builtinBrowser.clearDataAction}
-        </button>
-        <button type="button" className={overflowMenuRowClass} onClick={item(props.onSetHomepage)}>
-          {overflowMenuGlyph(ICONS.house)}
-          {S.builtinBrowser.setHomepageAction}
-        </button>
-        {(props.onOpenExternal !== null || props.hostsPage) && (
-          <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />
-        )}
-        {props.onOpenExternal !== null && (
-          <button
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={item(props.onOpenExternal)}
-          >
-            {overflowMenuGlyph(ICONS.externalLink)}
-            {S.builtinBrowser.openExternal}
-          </button>
-        )}
-        {props.hostsPage && (
-          <button type="button" className={overflowMenuRowClass} onClick={item(props.onDevTools)}>
-            {overflowMenuGlyph(ICONS.angleBrackets)}
-            {S.builtinBrowser.devTools}
-          </button>
-        )}
+        <Menu density="sm">
+          <MenuItem
+            glyph={ICONS.download}
+            label={S.builtinBrowser.importAction}
+            onSelect={item(props.onImport)}
+          />
+          <MenuItem
+            glyph={ICONS.trash}
+            label={S.builtinBrowser.clearDataAction}
+            onSelect={item(props.onClearData)}
+          />
+          <MenuItem
+            glyph={ICONS.house}
+            label={S.builtinBrowser.setHomepageAction}
+            onSelect={item(props.onSetHomepage)}
+          />
+          {(props.onOpenExternal !== null || props.hostsPage) && <MenuSeparator />}
+          {props.onOpenExternal !== null && (
+            <MenuItem
+              glyph={ICONS.externalLink}
+              label={S.builtinBrowser.openExternal}
+              onSelect={item(props.onOpenExternal)}
+            />
+          )}
+          {props.hostsPage && (
+            <MenuItem
+              glyph={ICONS.angleBrackets}
+              label={S.builtinBrowser.devTools}
+              onSelect={item(props.onDevTools)}
+            />
+          )}
+        </Menu>
       </Dropdown>
     </div>
   );

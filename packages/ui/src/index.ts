@@ -43,3 +43,57 @@ export * from "./components/actions/link/link";
 export * from "./components/actions/copy-button/copy-button";
 export * from "./components/actions/kbd/kbd";
 export * from "./components/actions/hidden-file-input/hidden-file-input";
+
+// W2-0 — menu panel: the panel, row states and check mark every picker and menu shares.
+export * from "./components/overlays/menu-panel/menu-panel";
+
+// W2-A — forms: the field scaffolding, the text controls and their search box, checkboxes and
+// radios.
+export * from "./components/forms/field/field";
+export * from "./components/forms/input/input";
+export * from "./components/forms/password-input/password-input";
+export * from "./components/forms/search-input/search-input";
+export * from "./components/forms/checkbox/checkbox";
+export * from "./components/forms/radio/radio";
+
+// W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
+// open (moved up from W3).
+export * from "./components/overlays/portal-panel/use-portal-panel";
+export * from "./components/overlays/info-popover/info-popover";
+export * from "./components/overlays/info-popover/help-fold";
+export * from "./components/forms/select/select";
+export * from "./components/forms/select/option-menu";
+export * from "./components/forms/picker-list/picker-list";
+export * from "./components/forms/switch/switch";
+export * from "./components/forms/toggle-row/toggle-row";
+export * from "./components/forms/segmented/segmented";
+export * from "./components/forms/swatch-picker/swatch-picker";
+export * from "./components/forms/pref-row/pref-row";
+
+// W3-A — menus and hints: the dropdown panel and the Menu rows it holds, the row context menu
+// (its hook and its pure gesture rules), the form-style picker built on the dropdown, and the
+// tooltip with its document-wide `data-tooltip` layer.
+export * from "./components/overlays/dropdown/dropdown";
+export * from "./components/overlays/menu/menu";
+export * from "./components/overlays/portal-panel/context-menu";
+export * from "./components/overlays/portal-panel/use-row-context-menu";
+export * from "./components/forms/select/form-picker";
+export * from "./components/overlays/tooltip/tooltip";
+
+// W3-B — dialogs: the Escape-layer stack and focus rules every overlay shares, the modal family,
+// the drawer and the spring sheet with their motion helpers, and the lightbox.
+export * from "./components/overlays/esc-layers/esc-layers";
+export * from "./components/overlays/modal/modal";
+export * from "./components/overlays/confirm-modal/confirm-modal";
+export * from "./components/overlays/paged-dialog/paged-dialog";
+export * from "./components/overlays/drawer/drawer";
+export * from "./components/overlays/drawer/sheet";
+export * from "./components/overlays/lightbox/lightbox";
+export * from "./motion/spring";
+export * from "./motion/sheet-physics";
+export * from "./motion/use-reduced-motion";
+
+// W3-C — notices: the notice strip, and the toast stack that renders its toasts through it
+// (with the `toast*` functions and their store).
+export * from "./components/feedback/notice/notice-strip";
+export * from "./components/overlays/toaster/toaster";

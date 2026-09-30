@@ -38,7 +38,7 @@ import {
 } from "react";
 import type { CSSProperties } from "react";
 import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
-import { toastAttention } from "../../components/ui/toast";
+import { toastAttention } from "@prismshadow/penguin-ui";
 import { toneInk } from "../../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../dock/dock-state";
 import { isBlankUrl } from "./address";

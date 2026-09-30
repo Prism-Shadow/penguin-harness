@@ -17,7 +17,7 @@
  * paced theme paces only what arrives next.
  */
 import { useEffect, useRef, useState } from "react";
-import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
+import { usePrefersReducedMotion } from "@prismshadow/penguin-ui";
 import { effectiveReveal, useStreamStyle } from "../../lib/stream-style";
 import {
   receiveText,

@@ -27,14 +27,20 @@
 import { useId, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
-import { Button, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  GlyphIcon,
+  ICON_SIZE,
+  Input,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { Input } from "../../components/ui/input";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { toastError } from "../../components/ui/toast";
 import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
 import type { IdSuggestNotice } from "./id-suggest-notice";
 
@@ -162,16 +168,12 @@ export function SemanticIdField({
         <Button
           size="sm"
           title={S.semanticId.generateId}
-          aria-busy={busy || undefined}
-          disabled={disabled || busy || !derivable || projectId === null}
+          loading={busy}
+          disabled={disabled || !derivable || projectId === null}
           onClick={() => void generate()}
           className="shrink-0 whitespace-nowrap"
+          leading={<GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.inlineGlyph} />}
         >
-          {busy ? (
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-          ) : (
-            <GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.inlineGlyph} />
-          )}
           {S.semanticId.generateIdLabel}
         </Button>
       </div>

@@ -18,9 +18,14 @@ import {
   AgentAvatar,
   Badge,
   Button,
+  FieldError,
+  FieldHint,
+  FieldLabel,
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
+  Input,
+  NoticeStrip,
 } from "@prismshadow/penguin-ui";
 import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -28,14 +33,11 @@ import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { Input } from "../../components/ui/input";
 import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Circled exclamation (lucide circle-alert): the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
 export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";

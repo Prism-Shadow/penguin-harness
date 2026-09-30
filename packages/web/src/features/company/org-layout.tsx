@@ -33,12 +33,12 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  InfoPopover,
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { InfoPopover } from "../../components/ui/info-popover";
 import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
 import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";
 import { ORG_EXAMPLES } from "./org-examples";

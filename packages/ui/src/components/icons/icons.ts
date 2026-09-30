@@ -229,6 +229,8 @@ export const ICONS = {
   rotateCw: "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10",
   /** A plus. `PlusIcon` (marks.tsx) draws this path with a stroke weight of its own. */
   plus: "M12 5v14M5 12h14",
+  /** A magnifier: a lens and its handle. The search box's leading mark and the toggle that opens one. */
+  search: "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z",
 
   // --- Direction ----------------------------------------------------------------------------
 
@@ -284,6 +286,9 @@ export const ICONS = {
 
   /** An info circle: the 9-radius status circle with a bar and a dot inside it. */
   info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01",
+  /** A question mark in the status circle: the "?" that discloses an explanation (InfoPopover). */
+  helpCircle:
+    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 0 1 4.9.8c0 1.7-2.5 2.5-2.5 2.5M12 16.8h.01",
   /** A triangle with an exclamation mark (lucide triangle-alert): a warning worth acting on. */
   triangleAlert:
     "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3zM12 9v4m0 4h.01",

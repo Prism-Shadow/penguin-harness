@@ -50,14 +50,28 @@ import {
   BackgroundTasksMark,
   Badge,
   Button,
-  CheckIcon,
   ChevronDown,
+  ConfirmModal,
+  Dropdown,
   ICONS,
   ICON_SIZE,
+  Input,
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuRadioItem,
+  MenuSeparator,
+  Modal,
   ScheduleMark,
+  SearchInput,
+  Segmented,
   SkeletonList,
   UpdateDot,
   UserAvatar,
+  toastError,
+  toastInfo,
+  toastSuccess,
+  useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -141,16 +155,11 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import { Dropdown, menuItemClass } from "../ui/dropdown";
-import { useRowContextMenu } from "../ui/context-menu";
 import {
   HOVER_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
   contextMenuActions,
-  overflowMenuDangerClass,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { NAV_ICONS } from "../../lib/nav-icons";
@@ -167,12 +176,8 @@ import {
   storeGroupMode,
 } from "../ui/group-list";
 import type { GroupMode } from "../ui/group-list";
-import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../ui/truncated";
-import { Modal } from "../ui/modal";
-import { ConfirmModal } from "../ui/confirm-modal";
-import { Input, noAutofill } from "../ui/input";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
@@ -189,7 +194,6 @@ import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
-import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
 import { BetaBadge } from "../../features/company/beta-badge";
@@ -219,14 +223,8 @@ function EllipsisGlyph({ size = 16 }: { size?: number }) {
   );
 }
 
-/** Magnifier (lucide search), the section header's search toggle. */
-const SEARCH_ICON = "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z";
-
 /** Horizontal sliders (lucide sliders-horizontal), the section header's list-settings menu. */
 const SLIDERS_ICON = "M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3M14 2v6M8 9v6M16 16v6";
-
-/** Close cross (the expanded search field's clear button). */
-const CLOSE_ICON = "M18 6L6 18M6 6l12 12";
 
 /**
  * Private drag payload type of a manual session reorder. Deliberately NOT `text/plain`:
@@ -285,10 +283,6 @@ const headerControlClass = (active: boolean) =>
       ? "bg-gray-200/70 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
       : "text-gray-400 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
   }`;
-
-/** Muted section label inside the list-settings menu (分组方式 / 排序方式), at the overflow menus' density. */
-const menuSectionClass =
-  "px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500";
 
 /**
  * Collapsed-group and pinned-group persistence (survives a refresh), one storage key
@@ -1857,46 +1851,39 @@ export function Sidebar({
               </button>
             }
           >
+            {/* Plain rows rather than a role="menu": the switcher's Project rows are named
+                like its trigger, and both are reached as buttons. */}
             {projects.map((p) => (
-              <button
+              <MenuRadioItem
                 key={p.projectId}
-                type="button"
-                onClick={() => {
+                label={<span className="font-sans">{projectDisplayName(p)}</span>}
+                trailing={<Badge>{p.role}</Badge>}
+                checked={p.projectId === currentProject?.projectId}
+                onSelect={() => {
                   setCurrentProjectId(p.projectId);
                   setProjectOpen(false);
                 }}
-                className={`flex w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  p.projectId === currentProject?.projectId ? "font-semibold" : ""
-                }`}
-              >
-                <span className="truncate font-sans">{projectDisplayName(p)}</span>
-                <Badge>{p.role}</Badge>
-              </button>
+              />
             ))}
-            <div className="mt-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
+            <MenuSeparator />
+            <MenuItem
+              glyph={ICONS.plus}
+              label={S.project.create}
+              onSelect={() => {
+                setProjectOpen(false);
+                setCreateProjectOpen(true);
+              }}
+            />
+            {currentProject && (
+              <MenuItem
+                glyph={ICONS.gear}
+                label={S.project.settings}
+                onSelect={() => {
                   setProjectOpen(false);
-                  setCreateProjectOpen(true);
+                  setProjectSettingsOpen(true);
                 }}
-              >
-                + {S.project.create}
-              </button>
-              {currentProject && (
-                <button
-                  type="button"
-                  className={menuItemClass}
-                  onClick={() => {
-                    setProjectOpen(false);
-                    setProjectSettingsOpen(true);
-                  }}
-                >
-                  {S.project.settings}
-                </button>
-              )}
-            </div>
+              />
+            )}
           </Dropdown>
         )}
       </div>
@@ -2110,39 +2097,22 @@ export function Sidebar({
               </span>
               <div className="flex min-w-0 items-center justify-end gap-0.5">
                 {searchOpen ? (
-                  /* Expanded field: leading magnifier glyph + input + clear ×, one bordered
+                  /* Expanded field: the magnifier, the input and the clear ×, one bordered
                  box filling the row (its width rides the column tween). Esc and × both
-                 collapse it and drop the filter. */
-                  <div className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-gray-300 bg-white px-1.5 transition-colors duration-150 focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-500">
-                    <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
-                      <Icon d={SEARCH_ICON} size={12} />
-                    </span>
-                    <input
-                      ref={searchInputRef}
-                      autoFocus
-                      value={searchQuery}
-                      placeholder={S.chat.searchSessionsPlaceholder}
-                      aria-label={S.chat.searchSessions}
-                      {...noAutofill}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          e.stopPropagation();
-                          closeSearch();
-                        }
-                      }}
-                      className="min-w-0 flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
-                    />
-                    <button
-                      type="button"
-                      data-tooltip={S.chat.searchClear}
-                      aria-label={S.chat.searchClear}
-                      onClick={closeSearch}
-                      className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
-                    >
-                      <Icon d={CLOSE_ICON} size={11} />
-                    </button>
-                  </div>
+                 collapse it and drop the filter, which is why the × stays while it is empty. */
+                  <SearchInput
+                    ref={searchInputRef}
+                    icon
+                    alwaysClearable
+                    autoFocus
+                    className="min-w-0 flex-1"
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    onClear={closeSearch}
+                    placeholder={S.chat.searchSessionsPlaceholder}
+                    aria-label={S.chat.searchSessions}
+                    clearLabel={S.chat.searchClear}
+                  />
                 ) : (
                   <button
                     type="button"
@@ -2151,7 +2121,7 @@ export function Sidebar({
                     onClick={() => setSearchOpen(true)}
                     className={headerControlClass(false)}
                   >
-                    <Icon d={SEARCH_ICON} size={14} />
+                    <Icon d={ICONS.search} size={14} />
                   </button>
                 )}
                 <Dropdown
@@ -2173,57 +2143,59 @@ export function Sidebar({
                     </button>
                   }
                 >
-                  <p className={menuSectionClass}>{S.chat.groupModeSection}</p>
-                  <MenuRadioRow
-                    icon={GROUP_MODE_ICONS.workspace}
-                    label={S.chat.groupByWorkspace}
-                    checked={groupMode === "workspace"}
-                    onSelect={() => {
-                      setGroupMode("workspace");
-                      setListSettingsOpen(false);
-                    }}
-                  />
-                  <MenuRadioRow
-                    icon={GROUP_MODE_ICONS.agent}
-                    label={S.chat.groupByAgent}
-                    checked={groupMode === "agent"}
-                    onSelect={() => {
-                      setGroupMode("agent");
-                      setListSettingsOpen(false);
-                    }}
-                  />
-                  <MenuRadioRow
-                    icon={GROUP_MODE_ICONS.time}
-                    label={S.chat.groupByTime}
-                    checked={groupMode === "time"}
-                    onSelect={() => {
-                      setGroupMode("time");
-                      setListSettingsOpen(false);
-                    }}
-                  />
-                  <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-                  <p className={menuSectionClass}>{S.chat.sortModeSection}</p>
-                  {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
-                  {canDrag && (
-                    <MenuRadioRow
-                      icon={SORT_MODE_ICONS.manual}
-                      label={S.chat.sortManual}
-                      checked={sortMode === "manual"}
+                  <Menu density="sm">
+                    <MenuLabel>{S.chat.groupModeSection}</MenuLabel>
+                    <MenuRadioItem
+                      glyph={GROUP_MODE_ICONS.workspace}
+                      label={S.chat.groupByWorkspace}
+                      checked={groupMode === "workspace"}
                       onSelect={() => {
-                        setSortMode("manual");
+                        setGroupMode("workspace");
                         setListSettingsOpen(false);
                       }}
                     />
-                  )}
-                  <MenuRadioRow
-                    icon={SORT_MODE_ICONS.recent}
-                    label={S.chat.sortRecent}
-                    checked={sortMode === "recent"}
-                    onSelect={() => {
-                      setSortMode("recent");
-                      setListSettingsOpen(false);
-                    }}
-                  />
+                    <MenuRadioItem
+                      glyph={GROUP_MODE_ICONS.agent}
+                      label={S.chat.groupByAgent}
+                      checked={groupMode === "agent"}
+                      onSelect={() => {
+                        setGroupMode("agent");
+                        setListSettingsOpen(false);
+                      }}
+                    />
+                    <MenuRadioItem
+                      glyph={GROUP_MODE_ICONS.time}
+                      label={S.chat.groupByTime}
+                      checked={groupMode === "time"}
+                      onSelect={() => {
+                        setGroupMode("time");
+                        setListSettingsOpen(false);
+                      }}
+                    />
+                    <MenuSeparator />
+                    <MenuLabel>{S.chat.sortModeSection}</MenuLabel>
+                    {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
+                    {canDrag && (
+                      <MenuRadioItem
+                        glyph={SORT_MODE_ICONS.manual}
+                        label={S.chat.sortManual}
+                        checked={sortMode === "manual"}
+                        onSelect={() => {
+                          setSortMode("manual");
+                          setListSettingsOpen(false);
+                        }}
+                      />
+                    )}
+                    <MenuRadioItem
+                      glyph={SORT_MODE_ICONS.recent}
+                      label={S.chat.sortRecent}
+                      checked={sortMode === "recent"}
+                      onSelect={() => {
+                        setSortMode("recent");
+                        setListSettingsOpen(false);
+                      }}
+                    />
+                  </Menu>
                 </Dropdown>
                 {/* Mode-dependent create — 具体新建的对象按分组方式决定, the icon following
                 suit (folder+ / robot+, a bottom-right plus badge on the entity's glyph):
@@ -2780,6 +2752,7 @@ export function Sidebar({
         open={deletingSession !== null}
         title={S.chat.deleteSession}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         busy={deletingBusy}
         onClose={() => (deletingBusy ? undefined : setDeletingSession(null))}
         onConfirm={() => void confirmDeleteSession()}
@@ -2798,6 +2771,7 @@ export function Sidebar({
         open={deletingWorkspace !== null}
         title={S.chat.deleteWorkspace}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         onClose={() => setDeletingWorkspace(null)}
         onConfirm={confirmDeleteWorkspace}
       >
@@ -2812,6 +2786,7 @@ export function Sidebar({
         open={deletingDraft !== null}
         title={S.chat.deleteDraft}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         onClose={() => setDeletingDraft(null)}
         onConfirm={confirmDeleteDraft}
       >
@@ -2870,7 +2845,7 @@ function DraftRow({
             data-tooltip={S.chat.deleteDraft}
             aria-label={S.chat.deleteDraft}
             onClick={onDelete}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-[opacity,background-color,color] duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
           >
             <Icon d={ICONS.trash} size={14} />
           </button>
@@ -2932,7 +2907,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
       aria-label={S.nav.pinGroup}
       aria-pressed={pinned}
       onClick={onToggle}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-[opacity,background-color,color] duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
         pinned
           ? "text-gray-500 dark:text-gray-400"
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
@@ -3244,7 +3219,7 @@ function SessionRow({
 
 /**
  * Registry-backed workspace group's overflow (… to the right of the header's "+"):
- * 重命名工作区 / 删除工作区 in the session-row menu's compact style. Sits among the
+ * 重命名工作区 / 删除工作区 as small Menu rows, like the session row's menu. Sits among the
  * header's action buttons — outside the header's collapse toggle, so opening it never
  * expands/collapses the group. Body-portaled like every menu inside the scroller.
  */
@@ -3282,53 +3257,15 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
         </button>
       }
     >
-      <button type="button" className={overflowMenuRowClass} onClick={item(onRename)}>
-        {overflowMenuGlyph(ICONS.pencil)}
-        {S.chat.renameWorkspace}
-      </button>
-      <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
-        <span className="shrink-0">
-          <Icon d={ICONS.trash} size={13} />
-        </span>
-        {S.chat.deleteWorkspace}
-      </button>
+      <Menu density="sm">
+        <MenuItem glyph={ICONS.pencil} label={S.chat.renameWorkspace} onSelect={item(onRename)} />
+        <MenuItem
+          glyph={ICONS.trash}
+          label={S.chat.deleteWorkspace}
+          danger
+          onSelect={item(onDelete)}
+        />
+      </Menu>
     </Dropdown>
-  );
-}
-
-/**
- * List-settings menu option: leading glyph + label, with a checkmark marking the active
- * choice (reference-style radio row; aria-pressed carries the state). Same type scale and
- * leading-glyph column as the session/workspace overflow menus (用户口径: 字体和 Session
- * 更多一样), so the two menus read as one family.
- *
- * The glyph is decorative — it names the option's subject (a folder for Workspace
- * grouping, a clock for recency) beside a label that is never dropped, so the row's
- * accessible name stays the label alone.
- */
-function MenuRadioRow({
-  icon,
-  label,
-  checked,
-  onSelect,
-}: {
-  icon: string;
-  label: string;
-  checked: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={checked}
-      onClick={onSelect}
-      className={`${overflowMenuRowClass} justify-between`}
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        {overflowMenuGlyph(icon)}
-        <span className="truncate">{label}</span>
-      </span>
-      {checked && <CheckIcon className="shrink-0 text-gray-500 dark:text-gray-400" />}
-    </button>
   );
 }

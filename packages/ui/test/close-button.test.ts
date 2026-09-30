@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { CloseButton } from "../src/components/actions/close-button/close-button";
-import { UiStringsProvider } from "../src/strings";
+import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
 
 const noop = () => {};
@@ -18,7 +18,7 @@ describe("CloseButton", () => {
   });
 
   it("takes the injected word, and a caller's label over both", () => {
-    const strings = { close: "关闭", copied: "已复制", loading: "加载中…" };
+    const strings = { ...DEFAULT_UI_STRINGS, close: "关闭", copied: "已复制", loading: "加载中…" };
     const injected = renderStatic(
       createElement(UiStringsProvider, { strings }, createElement(CloseButton, { onClose: noop })),
     );

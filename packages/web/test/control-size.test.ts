@@ -1,5 +1,6 @@
 /**
- * The form-control size scale (src/components/ui/input.tsx's `sizeTextClass`).
+ * The form-control size scale (the UI package's `sizeTextClass`, in
+ * packages/ui/src/components/forms/input/input.tsx).
  *
  * A control's font size comes from its `size` prop and nowhere else. A `text-*` in a caller's
  * `className` does not reliably override the component's own — both are single-class font-size
@@ -30,7 +31,23 @@ const CONTROLS = new Set([
   "OptionMenu",
   "PasswordInput",
   "FormPicker",
+  "SearchInput",
+  "Checkbox",
+  "Radio",
+  "RadioGroup",
 ]);
+
+/**
+ * The control family's modules by file name, each at the repo-relative id of its home. A module
+ * that moves changes its own entry here and nothing else in this file.
+ */
+const FAMILY: Record<string, string> = {
+  "input.tsx": "packages/ui/src/components/forms/input/input.tsx",
+  "select.tsx": "packages/ui/src/components/forms/select/select.tsx",
+  "option-menu.tsx": "packages/ui/src/components/forms/select/option-menu.tsx",
+  "form-picker.tsx": "packages/ui/src/components/forms/select/form-picker.tsx",
+  "search-input.tsx": "packages/ui/src/components/forms/search-input/search-input.tsx",
+};
 
 /**
  * Font-size utilities only. `text-gray-500`, `text-left` and `text-red-600` are colour and
@@ -135,8 +152,6 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/credits-section.tsx",
   "features/settings/general-section.tsx",
   "features/settings/proxy-section.tsx",
-  "features/settings/section-shell.tsx",
-  "features/settings/setting-row.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
@@ -207,9 +222,7 @@ function findSpelledSizes(): string[] {
 describe("control font size", () => {
   it("scans every source root, and finds the control family and its dialog bodies", () => {
     expectEveryRootScanned(SCAN);
-    for (const name of ["input.tsx", "select.tsx", "option-menu.tsx", "form-picker.tsx"]) {
-      expectSingleHome(SCAN, `packages/web/src/components/ui/${name}`);
-    }
+    for (const id of Object.values(FAMILY)) expectSingleHome(SCAN, id);
     // A listed module that was renamed or moved would silently drop out of the dialog-body rule.
     for (const rel of DIALOG_BODY_MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
   });
@@ -219,7 +232,7 @@ describe("control font size", () => {
       findSpelledSizes(),
       "A control's font size comes from its `size` prop (sm for a form field, base for a " +
         "standalone page like login). A text-* class beside it either does nothing or freezes " +
-        "the control against the user's font-size setting — see components/ui/input.tsx.",
+        "the control against the user's font-size setting — see the UI package's forms/input/input.tsx.",
     ).toEqual([]);
   });
 
@@ -271,7 +284,7 @@ describe("control font size", () => {
     expect(
       findLooseFooterButtons(),
       'A Button in a Modal footer passes size="sm", so the dialog\'s buttons read at the same ' +
-        "size as its fields (compare components/ui/confirm-modal.tsx).",
+        "size as its fields (compare the UI package's ConfirmModal).",
     ).toEqual([]);
   });
 
@@ -294,12 +307,12 @@ describe("control font size", () => {
     // same two rungs, which is how they drifted.
     //
     // text-[Npx] is fixed px: it ignores the root font size theme.tsx sets per tier, so a control
-    // carrying one stops responding to the user's font-size setting. `rowDescClass.sm` is the sole
-    // exception — an OptionMenu row's description has to sit one step under a text-xs title, and
-    // there is no rung below text-xs to step down to.
+    // carrying one stops responding to the user's font-size setting. There is no exception: an
+    // OptionMenu row's description at the sm tier shares the text-xs rung with its title (there is
+    // no rung below it) and stands apart by its muted ink.
     // String literals only: a comment naming the shape it forbids must not trip its own guard.
     const spelled = (name: string): string[] => {
-      const source = parse(sourceFile(SCAN, `packages/web/src/components/ui/${name}`));
+      const source = parse(sourceFile(SCAN, FAMILY[name]!));
       const found = new Set<string>();
       for (const chunk of literalChunks(source)) {
         for (const hit of chunk.matchAll(new RegExp(FONT_SIZE_CLASS, "g"))) found.add(hit[0]);
@@ -307,19 +320,15 @@ describe("control font size", () => {
       return [...found].sort();
     };
     expect(
-      Object.fromEntries(
-        ["input.tsx", "select.tsx", "option-menu.tsx", "form-picker.tsx"].map((name) => [
-          name,
-          spelled(name),
-        ]),
-      ),
+      Object.fromEntries(Object.keys(FAMILY).map((name) => [name, spelled(name)])),
       "A font size inside the control family lives in input.tsx's `sizeTextClass` or " +
         "option-menu.tsx's `rowDescClass`; a third copy is how the rungs drifted apart before.",
     ).toEqual({
       "input.tsx": ["text-base", "text-xs"], // sizeTextClass
-      "option-menu.tsx": ["text-[11px]", "text-xs"], // rowDescClass
+      "option-menu.tsx": ["text-xs"], // rowDescClass
       "select.tsx": [],
       "form-picker.tsx": [],
+      "search-input.tsx": [],
     });
   });
 });

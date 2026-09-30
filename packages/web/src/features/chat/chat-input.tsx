@@ -92,28 +92,33 @@ import {
   Button,
   CheckIcon,
   ChevronDown,
+  Dropdown,
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  MenuItem,
+  NoticeStrip,
+  PickerList,
   ProviderLogo,
+  ZoomableImage,
+  menuPanelClass,
+  noAutofill,
+  toastError,
+  toastInfo,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, humanizeTokens } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
-import { Dropdown } from "../../components/ui/dropdown";
 import { PermissionSelect } from "./permission-select";
-import { noAutofill } from "../../components/ui/input";
-import { toastError, toastInfo } from "../../components/ui/toast";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { SkillPickList } from "../skills/skill-pick-list";
 import { toggleSkillName } from "../skills/skill-selection";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { ModelSelect, PickerList, modelLabel } from "./model-select";
+import { ModelSelect, modelLabel } from "./model-select";
 import { ModelPickerModal } from "./model-picker-modal";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
@@ -137,8 +142,6 @@ import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
-import { NoticeStrip } from "../../components/ui/notice-strip";
-import { ChoiceCheck, menuPanelClass, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /**
  * Agent candidate panel for the `/agent` switch picker, on the shared PickerList (search, scroll
@@ -287,23 +290,19 @@ function ThinkingLevelSelect({
         {S.chat.thinkingLevel}
       </div>
       {SELECTABLE_THINKING_LEVELS.map((level) => (
-        <button
+        <MenuItem
           key={level}
-          type="button"
-          onClick={() => {
+          density="sm"
+          checked={level === value}
+          onSelect={() => {
             onChange(level);
             setOpen(false);
           }}
-          className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(level === value)}`}
-        >
-          {/* The one surface that annotates: a menu row is where the tier is CHOSEN, so it
-              names the wire value the pick will send. The trigger above stays the plain
-              name — in zh that is 低/中/高/极高/最高, in en the annotation is a no-op. */}
-          <span className="min-w-0 flex-1 truncate">
-            {S.chat.thinkingLevelMenuName(S.chat.thinkingLevelNames[level] ?? level, level)}
-          </span>
-          <ChoiceCheck on={level === value} />
-        </button>
+          // The one surface that annotates: a menu row is where the tier is CHOSEN, so it
+          // names the wire value the pick will send. The trigger above stays the plain
+          // name — in zh that is 低/中/高/极高/最高, in en the annotation is a no-op.
+          label={S.chat.thinkingLevelMenuName(S.chat.thinkingLevelNames[level] ?? level, level)}
+        />
       ))}
       {note && (
         <div className="max-w-56 border-t border-gray-100 px-3 pb-1 pt-1.5 text-[11px] leading-snug text-gray-400 dark:border-gray-800 dark:text-gray-500">
@@ -503,24 +502,25 @@ function PlusMenu({
       }
     >
       {items.map((item) => (
-        <button
+        <MenuItem
           key={item.key}
-          type="button"
+          density="sm"
           aria-pressed={item.active}
           disabled={item.disabled}
-          onClick={() => {
+          checked={item.active}
+          onSelect={() => {
             setOpen(false);
             item.onSelect();
           }}
-          className={`flex items-center gap-2 ${menuRowClass} text-xs disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent ${menuRowTone(item.active)}`}
-        >
-          <GlyphIcon d={item.icon} className="shrink-0 text-gray-400 dark:text-gray-500" />
-          <span className="shrink-0">{item.label}</span>
-          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-            {item.desc}
-          </span>
-          <ChoiceCheck on={item.active} />
-        </button>
+          glyph={item.icon}
+          // The description runs on after the name, muted, and is what gives way when the
+          // row runs out of room.
+          label={
+            <>
+              {item.label} <span className="text-gray-400 dark:text-gray-500">{item.desc}</span>
+            </>
+          }
+        />
       ))}
       {footer && (
         <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">{footer}</div>

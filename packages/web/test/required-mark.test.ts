@@ -1,7 +1,7 @@
 /**
- * The field-marker contract (src/components/ui/field.tsx): **a required field carries the red
- * "*", an optional field carries nothing at all, and no label or placeholder writes the word
- * "optional".**
+ * The field-marker contract (the UI package's forms/field/field.tsx): **a required field carries
+ * the red "*", an optional field carries nothing at all, and no label or placeholder writes the
+ * word "optional".**
  *
  * The absence of the mark is the whole signal, so it only reads if the mark is spelled one way
  * everywhere and never competes with a second, wordier convention — the same reason
@@ -14,8 +14,7 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
-import { Input } from "../src/components/ui/input";
-import { RequiredMark } from "../src/components/ui/field";
+import { Input, RequiredMark } from "@prismshadow/penguin-ui";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
@@ -23,7 +22,7 @@ import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers
 /** Web and the shared UI package: a hand-rolled mark is a second spelling on either side. */
 const SCAN = scanSources();
 /** The one place the mark is allowed to be spelled. */
-const FIELD = "packages/web/src/components/ui/field.tsx";
+const FIELD = "packages/ui/src/components/forms/field/field.tsx";
 
 /**
  * Every string literal reachable from a node, joined. `className` is written four ways here —
@@ -64,6 +63,9 @@ function childText(node: ts.JsxElement): string {
     .trim();
 }
 
+/** A red ink, as a palette class (the web app) or the danger tone's token (the package). */
+const RED_INK = /\btext-(?:red-|tone-danger-)/;
+
 /**
  * Every element that paints a lone "*" in a red ink class — i.e. a hand-rolled required mark — as
  * "id:line".
@@ -75,7 +77,7 @@ function marksIn(id: string, text: string): string[] {
     // The children test is cheap and rejects all but a handful of the tree's ~2200 elements,
     // so it runs before the attribute walk.
     if (ts.isJsxElement(node) && childText(node) === "*") {
-      if (classNameOf(node.openingElement).includes("text-red-")) {
+      if (RED_INK.test(classNameOf(node.openingElement))) {
         const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
         found.push(`${id}:${line}`);
       }
@@ -139,7 +141,7 @@ describe("required mark", () => {
       createElement(Input, { label: "Name", required: true, value: "", readOnly: true }),
     );
     expect(required).toContain("*");
-    expect(required).toContain("text-red-500");
+    expect(required).toContain("text-tone-danger-fg");
     // Decorative to assistive tech — aria-required on the control is what gets announced.
     expect(required).toMatch(/<span[^>]*aria-hidden[^>]*>\*<\/span>/);
     expect(required).toContain('aria-required="true"');
@@ -161,14 +163,14 @@ describe("required mark", () => {
     // Scoped to the mark's own shape: a bare `toContain("*")` over the markup would also trip
     // on a Tailwind `*:` variant landing in any class the control renders.
     expect(optional).not.toMatch(/<span[^>]*>\*<\/span>/);
-    expect(optional).not.toContain("text-red-");
+    expect(optional).not.toMatch(RED_INK);
     expect(optional).not.toContain("aria-required");
   });
 
   it("is spelled in exactly one place", () => {
     expect(
       handRolledMarks(),
-      "A red '*' belongs to RequiredMark (components/ui/field.tsx). Pass `required` to " +
+      "A red '*' belongs to RequiredMark (the UI package's forms/field). Pass `required` to " +
         "Field/Input/Textarea/Select/OptionMenu, use <FieldLabel required> for a custom label " +
         "row, or render <RequiredMark /> directly.",
     ).toEqual([]);
@@ -182,6 +184,7 @@ describe("required mark", () => {
       "const b = <span className={`ml-0.5 text-red-500`}>*</span>;",
       'const c = <span className={dim ? "text-red-500" : ""}>*</span>;',
       'const d = <span className="text-red-500">{"*"}</span>;',
+      'const e = <span className="ml-0.5 text-tone-danger-fg">*</span>;',
     ];
     expect(marksIn(probe, shapes.join("\n"))).toHaveLength(shapes.length);
     expect(marksIn(probe, '<span className="text-gray-500">*</span>')).toEqual([]);

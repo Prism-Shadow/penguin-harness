@@ -10,13 +10,12 @@
  * it does from the panel's list; the whole card hides when nothing survives.
  */
 import { useState } from "react";
-import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE, namedHint } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { PathLabel } from "./message-files-card";
 import { scopeGlyph } from "./memory-view";
-import { namedHint } from "../../components/ui/tooltip";
 
 const MAX_VISIBLE = 3;
 

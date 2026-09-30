@@ -50,15 +50,29 @@ import ReactMarkdown from "react-markdown";
 import {
   Button,
   CloseIcon,
+  ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
+  Dropdown,
   EmptyState,
   GlyphIcon,
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
+  Input,
+  SearchInput,
   SkeletonList,
+  Spinner,
+  Tooltip,
+  ZoomableImage,
+  isContextMenuKey,
+  isLongPressPointer,
+  noAutofill,
+  toastError,
+  toastInfo,
+  toastSuccess,
   useCopied,
+  useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
@@ -112,15 +126,7 @@ import {
   writeTreeWidth,
 } from "../../lib/workspace-tree";
 import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
-import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { Dropdown } from "../../components/ui/dropdown";
-import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 import { restoreSelection } from "../../components/ui/text-selection";
-import { Tooltip } from "../../components/ui/tooltip";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
@@ -1750,33 +1756,15 @@ export function WorkspaceBrowser({
           everything names the open file. Esc in a non-empty box clears it rather than reaching
           the dock or a dialog above, which is what that key means here. */}
       <div className="flex shrink-0 items-center gap-1 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
-        <div className="relative min-w-0 flex-1">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Escape" || query === "") return;
-              e.preventDefault();
-              e.stopPropagation();
-              setQuery("");
-            }}
-            placeholder={S.files.searchPlaceholder}
-            aria-label={S.files.searchPlaceholder}
-            {...noAutofill}
-            className={`${panelSearchClass} py-1 pl-2 pr-7`}
-          />
-          {query !== "" && (
-            <button
-              type="button"
-              aria-label={S.files.searchClear}
-              data-tooltip={S.files.searchClear}
-              onClick={() => setQuery("")}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            >
-              <CloseIcon size={12} />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          variant="panel"
+          className="min-w-0 flex-1"
+          value={query}
+          onChange={setQuery}
+          placeholder={S.files.searchPlaceholder}
+          aria-label={S.files.searchPlaceholder}
+          clearLabel={S.files.searchClear}
+        />
         <Tooltip label={S.files.refresh} placement="bottom" className="shrink-0">
           <button
             type="button"
@@ -1801,7 +1789,7 @@ export function WorkspaceBrowser({
               aria-label={uploadLabel}
             />
             {uploading !== null ? (
-              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              <Spinner size="sm" label={uploadLabel} />
             ) : (
               <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
             )}
@@ -2361,7 +2349,7 @@ export function WorkspaceBrowser({
             className={`${iconActionClass} disabled:opacity-40`}
           >
             {saving ? (
-              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              <Spinner size="sm" label={S.common.saving} />
             ) : (
               <GlyphIcon d={STAT_ICONS.check} size={ICON_SIZE.iconButton} />
             )}
@@ -2562,6 +2550,7 @@ export function WorkspaceBrowser({
         title={S.files.overwriteTitle}
         tone="primary"
         confirmLabel={S.files.upload}
+        cancelLabel={S.common.cancel}
         onClose={() => setPendingUpload(null)}
         onConfirm={() => {
           if (pendingUpload) void doUpload(pendingUpload.files, pendingUpload.dir);
@@ -2593,6 +2582,7 @@ export function WorkspaceBrowser({
         title={S.files.saveConfirmTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={saving}
         onClose={() => setSaveConfirm(false)}
         onConfirm={() => void save()}
@@ -2608,6 +2598,7 @@ export function WorkspaceBrowser({
         open={renameTarget !== null}
         title={S.files.renameTitle}
         confirmLabel={S.files.renameConfirm}
+        cancelLabel={S.common.cancel}
         confirmDisabled={renameTarget?.version == null || renameDraft.trim() === ""}
         busy={fileActionBusy}
         tone="primary"
@@ -2629,6 +2620,7 @@ export function WorkspaceBrowser({
         open={removeTarget !== null}
         title={S.files.deleteTitle}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         confirmDisabled={removeTarget?.version == null}
         busy={fileActionBusy}
         onClose={() => setRemoveTarget(null)}
@@ -2646,6 +2638,7 @@ export function WorkspaceBrowser({
         title={S.files.conflictTitle}
         tone="primary"
         confirmLabel={S.files.overwriteAnyway}
+        cancelLabel={S.common.cancel}
         onClose={() => setConflict(null)}
         onConfirm={() => void save({ overwrite: true })}
       >
@@ -2659,6 +2652,7 @@ export function WorkspaceBrowser({
         open={discardPrompt !== null}
         title={S.files.discardTitle}
         confirmLabel={S.files.discard}
+        cancelLabel={S.common.cancel}
         onClose={() => {
           discardPrompt?.resolve(false);
           setDiscardPrompt(null);

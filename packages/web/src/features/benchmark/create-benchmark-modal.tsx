@@ -8,17 +8,24 @@
  */
 import { useRef, useState } from "react";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { Button, GlyphIcon, ICONS, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  FieldLabel,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  InfoPopover,
+  Input,
+  Modal,
+  PlusIcon,
+  Textarea,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { FieldLabel } from "../../components/ui/field";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { toastSuccess } from "../../components/ui/toast";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { ID_PATTERN, caseId, isValidRuns } from "./benchmark-prompts";
 
@@ -214,7 +221,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
                     <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
                       {S.benchmark.caseHeading(i + 1)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-400">
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-400">
                       {dirName}
                     </span>
                     {cases.length > 1 && (

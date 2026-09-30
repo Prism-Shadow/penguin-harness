@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
-import { Badge, Button } from "@prismshadow/penguin-ui";
+import { Badge, Button, Input, Modal, PasswordInput } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -15,9 +15,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { USERNAME_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime } from "../../lib/format";
 import { useAuth } from "../../state/auth";
-import { Input } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Modal } from "../../components/ui/modal";
 
 export function AdminUsersSection() {
   const { user, desktopMode } = useAuth();
