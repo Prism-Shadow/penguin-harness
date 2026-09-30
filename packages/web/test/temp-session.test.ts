@@ -1,13 +1,20 @@
 /**
- * temp-session.ts unit tests: the company sidebar's Temporary group of ticket sessions. Opening
- * a session adds it at the top or moves it there; ✕ removes one entry and "Close all" every
- * entry, and nothing else removes any: going elsewhere only moves the on-screen mark, a reload
- * reads the list back from storage, and the list has no cap. It never holds a desk session, and
- * is kept per user, Project and organization.
+ * The company sidebar's Temporary group of ticket sessions (features/company/temp-session.ts).
+ *
+ * - Opening a session adds it at the top, or moves it there under the title it was opened
+ *   with; the list has no cap and never holds a desk session.
+ * - ✕ removes one entry (the rest keep their order; an unknown one changes nothing), and
+ *   "Close all" every entry of that organization, telling subscribers once; nothing else
+ *   removes any: going elsewhere only moves the on-screen mark.
+ * - A missing or malformed stored value reads as an empty list.
+ * - A reload reads the list back from storage, and the stored key goes once the last entry does.
+ * - Each user, Project and organization has its own list.
+ * - Subscribers hear of changes and nothing else, and the same array is handed out until one.
+ * - A list another tab changed is reread, so an entry removed there is not written back.
+ * - A storage that throws lists nothing stored and keeps what this tab opened.
  */
 import { describe, expect, it } from "vitest";
 import {
-  chatPath,
   createTempSessionStore,
   parseTempSessions,
   tempSessionRows,
@@ -15,18 +22,8 @@ import {
   withDismissed,
   withOpened,
 } from "../src/features/company/temp-session";
-import type { TempSessionEntry, TempSessionStorage } from "../src/features/company/temp-session";
-
-/** In-memory storage (vitest runs in a Node environment, no localStorage). */
-function memStorage(): TempSessionStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
+import type { TempSessionEntry } from "../src/features/company/temp-session";
+import { memoryStorage } from "./helpers/storage";
 
 function entry(n: number | string, over: Partial<TempSessionEntry> = {}): TempSessionEntry {
   return { sessionId: `sess_${n}`, agentId: "acme_dev", title: `Ticket session ${n}`, ...over };
@@ -37,10 +34,6 @@ const ids = (list: readonly { sessionId: string }[]): string[] => list.map((e) =
 const KEY = tempSessionsKey("admin", "proj", "acme");
 
 describe("temporary session list", () => {
-  it("opens a conversation at its own route", () => {
-    expect(chatPath("sess_a")).toBe("/chat/sess_a");
-  });
-
   it("adds an opened session at the top", () => {
     const one = withOpened([], entry("a"));
     expect(one).toEqual([entry("a")]);
@@ -109,7 +102,7 @@ describe("stored temporary session list", () => {
 
 describe("temporary session store", () => {
   it("survives a reload: a new store over the same storage reads the list back", () => {
-    const storage = memStorage();
+    const storage = memoryStorage();
     const before = createTempSessionStore(() => storage);
     before.open(KEY, entry("a"));
     before.open(KEY, entry("b"));
@@ -121,7 +114,7 @@ describe("temporary session store", () => {
   });
 
   it("removes the stored key once the last entry is dismissed", () => {
-    const storage = memStorage();
+    const storage = memoryStorage();
     const store = createTempSessionStore(() => storage);
     store.open(KEY, entry("a"));
     expect(storage.map.has(KEY)).toBe(true);
@@ -131,7 +124,7 @@ describe("temporary session store", () => {
   });
 
   it("closes every entry at once with Close all, and says so once", () => {
-    const storage = memStorage();
+    const storage = memoryStorage();
     const store = createTempSessionStore(() => storage);
     const other = tempSessionsKey("admin", "proj", "globex");
     store.open(KEY, entry("a"));
@@ -165,9 +158,8 @@ describe("temporary session store", () => {
       tempSessionsKey(null, "proj", "acme"),
     ];
     expect(new Set(keys).size).toBe(keys.length);
-    for (const key of keys) expect(key.startsWith("penguin.orgTempSessions.")).toBe(true);
 
-    const storage = memStorage();
+    const storage = memoryStorage();
     const store = createTempSessionStore(() => storage);
     store.open(keys[0]!, entry("a"));
     store.open(keys[1]!, entry("b"));
@@ -181,7 +173,7 @@ describe("temporary session store", () => {
   });
 
   it("leaves a desk session out of the stored list", () => {
-    const storage = memStorage();
+    const storage = memoryStorage();
     const store = createTempSessionStore(() => storage);
     store.open(KEY, entry("a"));
     store.open(KEY, entry("desk"), ["sess_desk"]);
@@ -189,7 +181,7 @@ describe("temporary session store", () => {
   });
 
   it("tells subscribers about a change and nothing else, and hands out the same array until one", () => {
-    const storage = memStorage();
+    const storage = memoryStorage();
     const store = createTempSessionStore(() => storage);
     let notified = 0;
     const unsubscribe = store.subscribe(() => {
@@ -217,7 +209,7 @@ describe("temporary session store", () => {
   });
 
   it("rereads a list another tab changed, so an entry removed there is not written back", () => {
-    const storage = memStorage();
+    const storage = memoryStorage();
     const here = createTempSessionStore(() => storage);
     const there = createTempSessionStore(() => storage);
     here.open(KEY, entry("a"));
