@@ -1,18 +1,41 @@
 /**
- * Model config integration tests: both a fresh Project and the admin-seeded default_project come
- * preloaded with the built-in model catalog (`provider` and `model_id` are **stored as separate
- * columns**; the (provider, model_id) pair is the unique key, ids are never concatenated, and the user
- * only adds an API key); credentials are inlined in the single config file `.project_config.toml`
- * (0600); GET models looks up the catalog by the paired ref to fill in displayName / envKey, taking
- * vision from the TOML annotation and falling back to the catalog default; PUT persists a custom
- * model's vision and an OPENAI_API_KEY fallback for client_type=openai; connectivity-test model refs
- * are given as a pair in the request body.
+ * A Project's model configuration: the built-in catalog as presets, one config file holding the
+ * credentials, rekeying, pricing fields, the connectivity test, and what a save does to loaded
+ * Sessions.
+ *
+ * - A new Project, and default_project when the seeded admin adopts it, is preset with every
+ *   built-in model (provider and model_id stored as separate fields, the pair the key) and the
+ *   default model, so a Session opens with no model ref; a default_project the CLI already
+ *   configured is left alone.
+ * - Credentials live inline in `.project_config.toml` (0600) and GET shows only a mask; the env
+ *   fallback is reported and masked only where the entry is allowed one, never leaking a value.
+ * - GET fills in display name and env key from the catalog; vision comes from the file, else the
+ *   catalog default; a pre-rename `client_type = "openai"` reads as openai-chat; a model the
+ *   catalog dropped still loads and stays usable; one model_id under two providers is two rows.
+ * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
+ *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
+ *   vendor group cannot route when the request introduces it, and stores or clears a discount.
+ * - renamedFrom (and a group change) migrates the credential, the config and the default and
+ *   vision pointers; without it a rekey is delete-then-create; an invalid one is 400. A
+ *   ModelScope settings save is serialized with a group credential write.
+ * - The display name is persisted only when it differs from the catalog's; an absent one
+ *   inherits, an empty one clears, and a cleared one is restorable.
+ * - A scheduled row answers both rates from its one price on disk; a hand-edited price and a
+ *   promotion apply in both tiers.
+ * - The connectivity test sends the entry's upstream model_id, no tools, works for saved and
+ *   draft models, converges to ok:false with no credential, tests the draft (clearApiKey) rather
+ *   than the stored key, and refuses a keyless gateway row or a Penguin Go probe without reaching
+ *   for vendor environment keys or the network.
+ * - A PUT invalidates the Project's cached Session runtimes (reads do not), tells the Project's
+ *   open Session channels only, and GET/PUT report the file's updatedAt.
+ *
+ * One app per describe; every case works in a Project of its own.
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MODEL_CATALOG,
   PENGUIN_GO_BASE_URL,
@@ -29,8 +52,9 @@ import type {
   SessionCreateResponse,
 } from "../src/api/types.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
+import { stubFetch } from "./fixtures/fetch.js";
+import { fakeSession, sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
@@ -51,17 +75,24 @@ describe("models preset & catalog enrichment", () => {
   let projectId: string;
   const url = () => `/api/projects/${projectId}/models`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "alice");
     api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await api.post("/api/projects", { projectId: "alice-preset", name: "Preset project" })
+      await api.post("/api/projects", {
+        projectId: `alice-preset_${projects}`,
+        name: "Preset project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("credentials are inlined in one file: the apiKey from PUT lands in .project_config.toml (0600), GET returns only a mask", async () => {
@@ -119,48 +150,42 @@ describe("models preset & catalog enrichment", () => {
     expect(retired.length).toBeGreaterThan(0);
     expect(body.models.map(pairKey).filter((key) => retired.includes(key))).toEqual([]);
 
+    // Every row reads its display name, context window, list price, vision and pinned
+    // protocol and endpoint off its catalog row; nothing of the vendor's is copied here.
+    for (const row of body.models) {
+      const entry = catalogEntryFor(row.provider, row.modelId)!;
+      const key = `${row.provider}/${row.modelId}`;
+      expect(row.displayName, key).toBe(entry.displayName);
+      expect(row.contextWindow, key).toBe(entry.contextWindow);
+      expect(row.vision, key).toBe(entry.supportsVision);
+      expect(row.clientType, key).toBe(entry.clientType);
+      expect(row.credential?.baseUrl, key).toBe(entry.baseUrl);
+      // A preset carries no secret.
+      expect(row.credential?.apiKeyMasked, key).toBeUndefined();
+    }
+
+    // A vendor's own row falls back to its client's environment variable; it has no stored
+    // credential and no client_type (AgentHub routes it by its upstream id).
     const sonnet = pick(body, "anthropic", "claude-sonnet-4-6");
     expect(sonnet.isDefault).toBe(false);
-    expect(sonnet.displayName).toBe("Claude Sonnet 4.6");
-    // Vision: not annotated in TOML (preset vision models aren't persisted), so GET falls back to the catalog annotation.
-    expect(sonnet.vision).toBe(true);
     expect(sonnet.envKey).toBe("ANTHROPIC_API_KEY");
-    expect(sonnet.contextWindow).toBe(1000000);
-    expect(sonnet.pricing).toEqual({ cacheRead: 0.3, cacheWrite: 3.75, output: 15 });
-    // Preset models have no credential and no client_type (AgentHub auto-routes by upstream id).
     expect(sonnet.credential).toBeUndefined();
     expect(sonnet.clientType).toBeUndefined();
-
-    const deepseek = pick(body, "deepseek", "deepseek-v4-pro");
-    expect(deepseek.vision).toBe(false);
-    expect(deepseek.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(pick(body, "deepseek", "deepseek-v4-pro").envKey).toBe("DEEPSEEK_API_KEY");
     expect(pick(body, "deepseek", "deepseek-flash").isDefault).toBe(true);
 
-    // OpenRouter gateway model: the upstream id contains `/`, but under column storage it's just a
-    // plain string; openai-responses protocol + a preset base URL inlined on the entry (no secret).
-    const mimo = pick(body, "openrouter", "xiaomi/mimo-v2.5");
-    expect(mimo.clientType).toBe("openai-responses");
-    expect(mimo.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
-    expect(mimo.credential?.apiKeyMasked).toBeUndefined();
-
-    // OpenCode Go pins each row's protocol and endpoint, so one group holds rows on different
-    // clients: a Messages row sits on the base without /v1, a Chat Completions row on the /v1
-    // base. Like every gateway's rows, neither falls back to its client's environment
-    // variable — that holds the user's vendor key, and the gateway is not the vendor.
+    // A gateway pins each row's protocol and endpoint, so one group can hold rows on different
+    // clients (OpenCode Go: a Messages row and a Chat Completions row). Like every gateway's
+    // rows, neither falls back to its client's environment variable — that holds the user's
+    // vendor key, and the gateway is not the vendor. An upstream id with a `/` is a plain
+    // string under column storage.
     const messagesRow = pick(body, "opencode-go", "qwen3.8-max");
-    expect(messagesRow).toMatchObject({
-      clientType: "ant-messages",
-      credential: { baseUrl: "https://opencode.ai/zen/go" },
-      vision: true,
-    });
-    expect(messagesRow.envKey).toBeUndefined();
     const chatRow = pick(body, "opencode-go", "glm-5.3");
-    expect(chatRow).toMatchObject({
-      clientType: "openai-chat",
-      credential: { baseUrl: "https://opencode.ai/zen/go/v1" },
-      vision: false,
-    });
+    expect(messagesRow.clientType).toBe("ant-messages");
+    expect(chatRow.clientType).toBe("openai-chat");
+    expect(messagesRow.envKey).toBeUndefined();
     expect(chatRow.envKey).toBeUndefined();
+    expect(pick(body, "openrouter", "xiaomi/mimo-v2.5").credential?.baseUrl).toBeDefined();
 
     // A catalog row on a promotion is preset at its LIST price like every other row, and the
     // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the
@@ -660,17 +685,24 @@ describe("model-reference rekeying and the connectivity test", () => {
   const url = () => `/api/projects/${projectId}/models`;
   const testUrl = () => `${url()}/test`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "carol");
     api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await api.post("/api/projects", { projectId: "carol-rename", name: "Rename project" })
+      await api.post("/api/projects", {
+        projectId: `carol-rename_${projects}`,
+        name: "Rename project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("renamedFrom migrates the credential and the config; the default / vision model pointers follow the rekey", async () => {
@@ -1185,12 +1217,9 @@ describe("model-reference rekeying and the connectivity test", () => {
     const saved = { openai: process.env.OPENAI_API_KEY, anthropic: process.env.ANTHROPIC_API_KEY };
     process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
     process.env.ANTHROPIC_API_KEY = "vendor-anthropic-must-not-cross";
-    const realFetch = globalThis.fetch;
-    let requests = 0;
-    globalThis.fetch = (async () => {
-      requests += 1;
+    const network = stubFetch(() => {
       throw new Error("no request may leave the process for a refused probe");
-    }) as typeof fetch;
+    });
     try {
       // A gateway preset: the group's endpoint, no key. Both OpenAI-protocol gateways and the
       // Messages-protocol custom preset (Atria — the path that carried the Anthropic key in the
@@ -1229,9 +1258,9 @@ describe("model-reference rekeying and the connectivity test", () => {
         outcome: "failed",
         message: expect.stringMatching(/has no API key/) as string,
       });
-      expect(requests).toBe(0);
+      expect(network.calls).toEqual([]);
     } finally {
-      globalThis.fetch = realFetch;
+      vi.unstubAllGlobals();
       for (const [key, value] of [
         ["OPENAI_API_KEY", saved.openai],
         ["ANTHROPIC_API_KEY", saved.anthropic],
@@ -1334,31 +1363,8 @@ describe("models update reaches loaded sessions (invalidation + live unlock)", (
   /** Loader call count: how many times the manager (re)built a runtime from the index. */
   let loads: number;
 
-  /** Minimal fake runtime Session (no LLM calls; mirrors vault.test.ts). */
-  const fakeRuntimeSession = (sessionId: string): RuntimeSession => ({
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run() {},
-    async *compact() {},
-  });
-
   const insertSession = (sessionId: string, project: string): void => {
-    t.deps.sessionsRepo.insert({
-      sessionId,
-      projectId: project,
-      agentId: "default_agent",
-      modelId: "m1",
-      provider: "custom",
-      workspace: t.root,
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    });
+    t.deps.sessionsRepo.insert(sessionRow(sessionId, { projectId: project, workspace: t.root }));
   };
 
   const putModels = (apiKey: string) =>
@@ -1367,25 +1373,33 @@ describe("models update reaches loaded sessions (invalidation + live unlock)", (
       models: [{ provider: "custom", modelId: "m-inv", apiKey }],
     });
 
-  beforeEach(async () => {
-    loads = 0;
+  beforeAll(async () => {
+    // Every runtime the manager builds from the index is an idle fake: no LLM call is made.
     t = await createTestApp({
       loader: {
         load: async (row) => {
           loads++;
-          return fakeRuntimeSession(row.sessionId);
+          return fakeSession(row.sessionId);
         },
       },
     });
     const { cookie } = await provisionUser(t.app, "inv_owner");
     api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  let projects = 0;
+  beforeEach(async () => {
+    loads = 0;
+    projects += 1;
     const created = (await (
-      await api.post("/api/projects", { projectId: "inv_owner-models", name: "invalidation" })
+      await api.post("/api/projects", {
+        projectId: `inv_owner-models_${projects}`,
+        name: "invalidation",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("PUT invalidates the Project's cached Session runtimes: the next Task re-resumes with the new key", async () => {

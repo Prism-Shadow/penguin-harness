@@ -1,17 +1,34 @@
 /**
- * Integration tests for the Memory routes (agent_state/memory/): the overview reports the
- * Agent-level switch and one entry per scope (user scope first), topic files can be listed /
- * read / deleted, deleting a file prunes its index lines, path traversal in a scope key or
- * file name is rejected, the switch round-trips through the Agent config without touching any
- * file, and non-members see 404.
+ * The Memory routes (agent_state/memory/).
  *
- * A second suite covers whole-scope transfer: what an export carries, each branch of the import
- * collision policy (skip / overwrite / replace, and when a confirmation is required), every
- * rejection on that untrusted write path, and the owner gate on import.
+ * Reading and curating:
+ * - The overview reports the Agent-level switch and one entry per scope, the user scope first
+ *   (created on demand for an Agent that predates Memory; a Workspace key with no directory is
+ *   still a 404), accepting a key that starts with an underscore.
+ * - Topic files are listed and read with their frontmatter (the `.workspace` marker and the
+ *   MEMORY.md index are not topic files, under any casing), a non-ASCII one included; deleting
+ *   one prunes its index lines and leaves the others; traversal, non-Markdown names, a symlinked
+ *   topic file or scope and an unknown Workspace are refused.
+ * - The switch and the memory prompts round-trip through the Agent config without touching a
+ *   file; a template missing the {{MEMORY}} placeholder is reported and fixed on request; the
+ *   Agent list counts memories across scopes minus the indexes.
+ * - A non-member gets 404 on every route.
+ *
+ * Moving a scope (export/import):
+ * - An export carries every topic file and the index as one attachment (the user scope too, with
+ *   no workspace path) and imports into another scope.
+ * - Import defaults to skip; overwrite and replace need confirmation that names what would be
+ *   lost, unless nothing would be; replace deletes what the document does not carry and prunes
+ *   the index.
+ * - The untrusted document is checked whole before anything is written: a path-like name, a
+ *   non-text entry, absurd counts or sizes, a foreign or future format; no temporary file stays.
+ * - Any member exports, only the owner imports, and a non-member learns nothing.
+ *
+ * One app per describe; every case works in a Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   MEMORY_INDEX_FILENAME,
   USER_SCOPE_KEY,
@@ -58,14 +75,26 @@ describe("memory api", () => {
   /** The Workspace Memory directory a Session would have created. */
   let wsDir: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const c = await provisionUser(t.app, "outsider_c");
     owner = apiClient(t.app, a.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case reads and writes the Memory of a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-memory", name: "memory project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_a-memory_${projects}`,
+        name: "memory project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     memoryPath = `/api/projects/${projectId}/agents/default_agent/memory`;
@@ -73,10 +102,6 @@ describe("memory api", () => {
     wsDir = memoryScopeDir(t.root, projectId, "default_agent", WORKSPACE_KEY);
     await fs.mkdir(wsDir, { recursive: true });
     await fs.writeFile(path.join(wsDir, ".workspace"), "/home/dev/my-app\n", "utf8");
-  });
-
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   const filesPath = (key = WORKSPACE_KEY) => `${memoryPath}/scopes/${key}/files`;
@@ -319,7 +344,7 @@ describe("memory scope export/import", () => {
   let memoryPath: string;
   let wsDir: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
@@ -327,8 +352,20 @@ describe("memory scope export/import", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case moves memories in and out of a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-transfer", name: "transfer" })
+      await owner.post("/api/projects", {
+        projectId: `owner_a-transfer_${projects}`,
+        name: "transfer",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     expect(
@@ -338,10 +375,6 @@ describe("memory scope export/import", () => {
     wsDir = memoryScopeDir(t.root, projectId, "default_agent", WORKSPACE_KEY);
     await fs.mkdir(wsDir, { recursive: true });
     await fs.writeFile(path.join(wsDir, ".workspace"), "/home/dev/my-app\n", "utf8");
-  });
-
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   const exportPath = (key = WORKSPACE_KEY) => `${memoryPath}/scopes/${key}/export`;

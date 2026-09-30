@@ -1,19 +1,23 @@
 /**
- * Benchmark API integration tests: benchmark_config.toml title/description, runs and status
- * pass-through (only a literal draft status locks a Benchmark; a directory without a config is
- * not listed), scoreboard.yaml v2's
- * evaluations[] (summary pass-through, the Agent each evaluation tested, model-written
- * Case/Evaluation averages and per-case runs arrays), rejection of legacy Scoreboard entries,
- * case count, empty when unconfigured, permissions (members can read, outsiders get 404), and
- * the owner-only create (the on-disk layout the Skills read) and delete routes.
+ * The Benchmark API.
  *
- * Benchmarks are Project-level, so a new Project arrives with default_agent's sample
- * Benchmark; setup deletes that one directory to isolate these cases, keeping `benchmarks/`
- * itself. Its own assertions live in builtin-agents.test.ts.
+ * - The list reads each benchmark_config.toml's title, description and status (only a literal
+ *   draft locks a Benchmark; draft and failed are themselves, anything else is published),
+ *   lists a Benchmark that never ran but not a directory without a config, and is empty when
+ *   nothing is configured.
+ * - scoreboard.yaml v2's evaluations pass through: the summary, the Agent each tested, the
+ *   model-written Case and Evaluation averages and the per-case runs; legacy Scoreboard entries
+ *   are neither migrated nor backfilled; the case count is reported.
+ * - Members read and outsiders get 404; only the owner creates (the server writes the layout
+ *   the Skills read, refusing malformed requests without writing) and deletes a Benchmark whole.
+ *
+ * Benchmarks are Project-level, so a new Project arrives with default_agent's sample Benchmark;
+ * setup deletes that directory (keeping `benchmarks/`), and builtin-agents.test.ts owns its
+ * assertions. One app for the file; every case works in a Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseToml } from "smol-toml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
@@ -39,7 +43,7 @@ describe("benchmarks api", () => {
   let projectId: string;
   let base: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
@@ -47,8 +51,20 @@ describe("benchmarks api", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-bench", name: "Bench project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_a-bench_${projects}`,
+        name: "Bench project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     // Creating the Project seeded default_agent's sample Benchmark at the Project level; these
@@ -62,9 +78,6 @@ describe("benchmarks api", () => {
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("returns an empty list when unconfigured", async () => {
