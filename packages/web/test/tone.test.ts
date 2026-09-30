@@ -24,6 +24,9 @@ const STATUS_FILES = [
   "packages/web/src/features/chat/step-banner.tsx",
   "packages/web/src/features/chat/goal-banner.tsx",
   "packages/web/src/features/chat/subagent-chip.tsx",
+  "packages/web/src/features/builtin-browser/browser-layer.tsx",
+  "packages/web/src/features/builtin-browser/browser-tab-strip.tsx",
+  "packages/web/src/features/builtin-browser/browser-toolbar.tsx",
 ];
 
 describe("tone tokens", () => {

@@ -79,8 +79,8 @@ export function JumpButton({
  * A title that opens what it names: the click target of a card or a row that has one. The
  * title is the one part of a surface that already says where a click would land, so it is the
  * link — a real button, focusable and underlined on hover — while the rest of the surface stays
- * inert (or, on the ticket board, stays the drag handle). Where a row has no natural title,
- * JumpButton is the way out instead.
+ * inert. Where a row has no natural title, JumpButton is the way out instead. (The ticket
+ * board's card is the one surface that is a button whole: see tickets-page.tsx.)
  *
  * The visible text is the accessible name; `title` carries the destination as the tooltip, so
  * the name is still the thing the reader sees.
@@ -115,6 +115,11 @@ function orgStatusLabel(kind: OrgStatusKind): string {
   return kind === "paused" ? S.company.statusPaused : S.company.statusActive;
 }
 
+/** An organization's headline state in words, for an accessible name that has to carry it. */
+export function orgStatusText(org: { status: OrgStatus; invalid?: string }): string {
+  return orgStatusLabel(orgStatusKind(org));
+}
+
 const ORG_STATUS_BADGE: Record<OrgStatusKind, BadgeTone> = {
   invalid: "red",
   paused: "amber",
@@ -134,7 +139,7 @@ export function OrgStatusPill({ org }: { org: { status: OrgStatus; invalid?: str
   );
 }
 
-/** The same state as a 6px dot (the switcher's trigger and rows), its name in the tooltip and sr text. */
+/** The same state as a 6px dot (the switcher's rows), its name in the tooltip and sr text. */
 export function OrgStatusDot({ org }: { org: { status: OrgStatus; invalid?: string } }) {
   const kind = orgStatusKind(org);
   const label = orgStatusLabel(kind);

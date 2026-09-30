@@ -1216,6 +1216,21 @@ describe("machines API", () => {
       expect(res.status).toBe(404);
     });
 
+    it("403s a directory the machine has but refuses to list, with its own code", async () => {
+      await boot({
+        runOn: async (_t, command) =>
+          command.includes("---penguin-dirs---")
+            ? { code: 4, stdout: "", stderr: "", timedOut: false }
+            : { code: 0, stdout: "", stderr: "", timedOut: false },
+      });
+      connectedMachine();
+      const res = await admin.get(`/api/projects/${PROJECT}/machines/${ID}/dirs?path=/root`);
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+        "dir_permission_denied",
+      );
+    });
+
     it("404s a machine that is not connected, and asks it nothing — a read never opens ssh", async () => {
       const asked: string[] = [];
       await boot({

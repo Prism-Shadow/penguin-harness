@@ -46,6 +46,7 @@ describe("utilityCompletionConfig", () => {
 
   it("still honours a per-model cap pinned below the budget, and the entry's protocol", () => {
     const config = utilityCompletionConfig("m-bench", {
+      api_key: "sk-1",
       max_tokens: 128,
       base_url: "https://example.test/v1",
       // The pre-0.4.2 spelling is normalized like everywhere else.
@@ -56,8 +57,22 @@ describe("utilityCompletionConfig", () => {
     expect(config.clientType).toBe("openai-chat");
   });
 
+  it("refuses a keyless entry whose endpoint is not the vendor's own (core's credential rule)", () => {
+    // completeOnce reports this as a failure; the environment's OPENAI_API_KEY is never
+    // borrowed for a third-party endpoint.
+    expect(() =>
+      utilityCompletionConfig("m-bench", {
+        provider: "custom",
+        base_url: "https://example.test/v1",
+        client_type: "openai",
+      }),
+    ).toThrow(/has no API key/);
+  });
+
   it("never tightens to an uncapped entry's -1", () => {
-    expect(utilityCompletionConfig("m-bench", { max_tokens: -1 }).maxTokens).toBe(300);
+    expect(utilityCompletionConfig("m-bench", { api_key: "sk-1", max_tokens: -1 }).maxTokens).toBe(
+      300,
+    );
   });
 });
 

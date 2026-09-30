@@ -77,6 +77,17 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
   notarize: true
+  # macOS guards Desktop, Documents, Downloads and removable/network volumes behind TCC, and it
+  # only ASKS the user on behalf of an app that says why it wants them: without these purpose
+  # strings a read is refused silently, so a Workspace chosen under ~/Downloads looks empty to
+  # every agent and nothing ever explains why. The server and the agents' shells run as
+  # descendants of this app, so the one prompt the user answers covers all of them.
+  extendInfo:
+    NSDesktopFolderUsageDescription: PenguinHarness needs access to your Desktop when an agent's workspace is a folder on it.
+    NSDocumentsFolderUsageDescription: PenguinHarness needs access to your Documents when an agent's workspace is a folder in it.
+    NSDownloadsFolderUsageDescription: PenguinHarness needs access to your Downloads when an agent's workspace is a folder in it.
+    NSRemovableVolumesUsageDescription: PenguinHarness needs access to removable volumes when an agent's workspace is on one.
+    NSNetworkVolumesUsageDescription: PenguinHarness needs access to network volumes when an agent's workspace is on one.
   # Version-less artifact names, following the CLI bundles (penguin-darwin-arm64.tar.gz):
   # the version lives in the Release tag and SHA256SUMS.desktop, so the download page and
   # the OSS mirror manifest can address every installer by a stable name — and GitHub's

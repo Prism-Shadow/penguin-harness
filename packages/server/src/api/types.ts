@@ -358,6 +358,20 @@ export interface DraftShortcut {
   prompt: string;
 }
 
+/**
+ * The account's keyboard shortcut overrides, one section per platform (the Web App's `Mod` token
+ * is ⌘ on macOS and Ctrl elsewhere, so a deliberate macOS-only binding must not leak to Windows).
+ * Each section maps a command id to a chord string ("Mod+Shift+KeyW") or null (explicitly
+ * unbound); only rows that differ from the Web App's default are present. Bounded on write by
+ * services/keybindings.ts.
+ */
+export interface StoredKeybindings {
+  v: 1;
+  mac?: Record<string, string | null>;
+  windows?: Record<string, string | null>;
+  linux?: Record<string, string | null>;
+}
+
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
 export interface UiPrefs {
   theme?: "light" | "dark";
@@ -381,6 +395,8 @@ export interface UiPrefs {
    * known key holding user-authored text rather than a flag or an id.
    */
   draftShortcuts?: DraftShortcut[];
+  /** Keyboard shortcut overrides, replaced whole on every write and validated by services/keybindings.ts. */
+  keybindings?: StoredKeybindings;
   /** Personal company-mode switch (default on): off only hides this user's mode switch; organizations keep running. */
   companyMode?: boolean;
   /** The work mode the user last chose in the shell: development (default) or company. */
@@ -523,14 +539,21 @@ export interface ModelInfo {
   pricing?: ModelPricingDto;
   /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
   discount?: number;
-  /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
+  /**
+   * Environment variable name the entry falls back to when api_key is empty (e.g.
+   * ANTHROPIC_API_KEY); unset when it gets no fallback — an id nothing routes, or an entry
+   * whose base URL is not the vendor's own official endpoint (a gateway preset, a custom /
+   * vLLM / user-created row with its own endpoint, a vendor row re-pointed at a proxy).
+   */
   envKey?: string;
   /**
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
-   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
-   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
-   * entry is not first-party.
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
+   * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
+   * own base URL is a vendor endpoint, or a keyless row in a vendor group or Penguin Go. Gateway
+   * rows never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
+   * although those do fall back. Absent = the variable is unset or empty, or the entry is not
+   * previewable.
    */
   envKeyMasked?: string;
   credential?: CredentialInfo;
@@ -1534,19 +1557,30 @@ export interface SessionsResponse {
   workspaceLatest?: Record<string, string>;
 }
 
-/** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
+/** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
-  /** Absolute path of this subdirectory (can be submitted directly as a Workspace). */
+  /** Absolute path of this entry (a folder's can be submitted directly as a Workspace). */
   path: string;
+  /**
+   * `file` for anything that is not a folder (a symlink counts as what it points to). Absent
+   * means a folder: a machine listed over ssh reports folders only.
+   */
+  kind?: "dir" | "file";
+  /** Last modification, epoch milliseconds; absent when unknown (listings over ssh, an entry stat could not reach). */
+  mtime?: number;
 }
 export interface DirListResponse {
   /** Absolute path of the current directory (realpath). */
   path: string;
   /** Absolute path of the parent directory; null when already at the root. */
   parent: string | null;
-  /** Subdirectory list (sorted by name, files excluded). */
+  /** Entries sorted by name, hidden ones included (the picker drops them). */
   entries: DirEntryInfo[];
+  /** The listed machine's `process.platform`; absent for a machine listed over ssh. */
+  platform?: string;
+  /** Windows only, on the home request (no `path`): the drive roots that exist. */
+  roots?: string[];
 }
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
@@ -2587,7 +2621,8 @@ export type ServerEvent =
     }
   | ScheduleServerEvent
   | GoalServerEvent
-  | CompanyServerEvent;
+  | CompanyServerEvent
+  | BuiltinBrowserServerEvent;
 
 /** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
 export type GoalServerEvent =
@@ -3910,6 +3945,62 @@ export interface DesktopTrayCommandMessage {
   locale?: DesktopTrayLocale;
 }
 
+// Desktop folder access (desktop mode, macOS)
+//
+// macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
+// volumes. It asks the user only on behalf of an app it holds responsible for a read, and lists
+// under Files and Folders only the apps it has asked about; any other read gets a silent EPERM.
+// The Workspace picker's "Allow access" therefore goes to the shell, over the same
+// utilityProcess message channel as the updater and tray above: its main process reads the
+// folder once in the app's own name and says whether it could, and once the app is allowed its
+// children (this server, the agents' shells) read too. The page can also have the shell open
+// the Privacy & Security pane to change it. What either outcome means for the user is the
+// page's to say; the shell only reports.
+
+/** What the shell's read of one folder came to. */
+export interface DesktopFolderAccessResult {
+  /** The folder could be read. Always true off macOS, where the shell reads nothing. */
+  granted: boolean;
+  /** The failed read's errno code (`EPERM`, `EACCES`, `ENOENT`, …); `EINVAL` for a path that is not absolute. */
+  code?: string;
+  /**
+   * Whether the app is a packaged build (Electron's `app.isPackaged`). An unpackaged one is a
+   * development instance started from a terminal, and macOS holds that terminal responsible
+   * for its reads rather than the app.
+   */
+  packaged: boolean;
+}
+
+/** Server → shell request over the utilityProcess message channel (relayed from POST /api/projects/:projectId/dirs/access). */
+export interface DesktopFolderAccessMessage {
+  type: "desktop-folder-access";
+  /** Pairs the reply with its request. */
+  id: string;
+  /** The folder to read, as an absolute path. */
+  path: string;
+}
+
+/** Shell → server reply to one {@link DesktopFolderAccessMessage}, carrying its `id`. */
+export interface DesktopFolderAccessResultMessage extends DesktopFolderAccessResult {
+  type: "desktop-folder-access-result";
+  id: string;
+}
+
+/** POST /api/projects/:projectId/dirs/access: the shell's answer, for the picker to act on. */
+export interface DirAccessResponse {
+  granted: boolean;
+  packaged: boolean;
+}
+
+/** The Privacy & Security panes the page may open: Files and Folders, and Full Disk Access. */
+export type DesktopPrivacyPane = "files" | "fullDisk";
+
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/privacy-settings). No reply. */
+export interface DesktopOpenPrivacySettingsMessage {
+  type: "desktop-open-privacy-settings";
+  pane: DesktopPrivacyPane;
+}
+
 /**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
@@ -5111,4 +5202,312 @@ export interface InstalledPluginsResponse {
   machineId: string;
   /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in Browser (desktop only): Electron <webview> guests in the persist:penguin-browser
+// partition, driven over CDP by the shell on the server's behalf. See builtin-browser/.
+// ---------------------------------------------------------------------------
+
+/** One guest page of the built-in browser; `id` is the guest's webContents id. */
+export interface BuiltinBrowserTab {
+  id: number;
+  url: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  favicon?: string;
+  /**
+   * Present while the page's renderer is gone, with Electron's reason (`crashed`, `oom`,
+   * `killed`, …): the panel shows the crash until the page is reloaded, and an agent action on
+   * the tab answers 409 `tab_crashed`.
+   */
+  crashed?: string;
+}
+
+/** Why the built-in browser cannot be driven: not under the desktop shell, a shell too old to host it, or no app window to host a new tab. */
+export type BuiltinBrowserUnavailableReason = "not_desktop" | "shell_unsupported" | "no_window";
+
+/** GET /api/builtin-browser/status. */
+export interface BuiltinBrowserStatus {
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+  /** The shell's latest measurement of the browser's load; absent before its first one. */
+  metrics?: BuiltinBrowserMetrics;
+}
+
+/** One tab's share of the built-in browser's load, as the shell last measured it. */
+export interface BuiltinBrowserTabMetrics {
+  tabId: number;
+  /** The memory held by the processes behind the page (its own and its cross-site frames'), KB. */
+  memoryKB: number;
+  /** Their CPU use since the previous measurement, in percent of one core. */
+  cpuPercent: number;
+}
+
+/** Why the built-in browser should be lighter. */
+export type BuiltinBrowserLoadWarning =
+  /** Its pages together hold more memory than they should. */
+  | "memory"
+  /** This computer is running out of memory. */
+  | "low_system_memory"
+  /** More tabs are open than the browser should hold. */
+  | "many_tabs";
+
+/**
+ * The built-in browser's load: GET /status's `metrics`, and the `builtin_browser_metrics` event
+ * after each of the shell's measurements (every ~10 s while tabs are open, and soon after one
+ * closes). The thresholds are the server's; the UI and the CLI only word what it concluded.
+ */
+export interface BuiltinBrowserMetrics {
+  /** When the server received the measurement (epoch ms). */
+  at: number;
+  tabs: BuiltinBrowserTabMetrics[];
+  /** All the pages' memory, a process two tabs share counted once, KB. */
+  totalKB: number;
+  /**
+   * This computer's memory, KB. Absent on macOS, whose free count leaves out the memory it would
+   * readily hand back, so that "free" there reads as nearly none on a healthy machine.
+   */
+  system?: { freeKB: number; totalKB: number };
+  /** What to warn about now; empty when all is well. */
+  warnings: BuiltinBrowserLoadWarning[];
+  /** While a memory warning stands: the tabs holding the most memory, heaviest first. */
+  heavyTabIds: number[];
+}
+
+/** GET /api/builtin-browser/tabs. */
+export interface BuiltinBrowserTabsResponse {
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/scan — GenericAgent's web_scan. */
+export interface BuiltinBrowserScanResult {
+  tab: BuiltinBrowserTab;
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+  /** Simplified HTML, or plain text with `textOnly`. */
+  content?: string;
+  truncated?: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/exec (and click / type) — GenericAgent's web_execute_js. */
+export interface BuiltinBrowserExecResult {
+  status: "success" | "failed";
+  tabId: number;
+  /** The script's JSON-safe return value. */
+  value?: unknown;
+  error?: string;
+  /** The page navigated or reloaded while the script ran. */
+  reloaded?: boolean;
+  /** Tabs opened while the call ran (popups, target=_blank). */
+  newTabs?: { id: number; url: string }[];
+  /** Text that appeared during the call and may be gone again (toasts, flashes). */
+  transients?: string[];
+  diff?: { changed: number; topChange?: string };
+  suggestion?: string;
+  /** click only: where the trusted click landed. */
+  clicked?: { x: number; y: number; tag?: string; text?: string };
+  /** The page's dialogs the call answered, in order (see BuiltinBrowserDialog). */
+  dialogs?: BuiltinBrowserDialog[];
+}
+
+/**
+ * A dialog the page opened during an exec, click or type, which the call answered so the page
+ * would not block: an alert is accepted, and a confirm, prompt or leave-page dialog dismissed
+ * unless the request said `acceptDialogs`.
+ */
+export interface BuiltinBrowserDialog {
+  type: "alert" | "confirm" | "prompt" | "beforeunload";
+  message: string;
+  accepted: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/screenshot. */
+export interface BuiltinBrowserScreenshot {
+  mime: "image/png";
+  /** Base64. */
+  data: string;
+}
+
+export type BuiltinBrowserImportBrowser =
+  "chrome" | "edge" | "brave" | "chromium" | "vivaldi" | "opera" | "arc" | "firefox";
+
+/** One profile of a system browser that can be imported from. */
+export interface BuiltinBrowserImportSource {
+  /** `<browser>:<profile dir>`, e.g. `chrome:Default`. */
+  id: string;
+  browser: BuiltinBrowserImportBrowser;
+  browserName: string;
+  /** The profile's directory name. */
+  profile: string;
+  /** The profile's display name. */
+  profileName: string;
+  hasCookies: boolean;
+  hasHistory: boolean;
+}
+
+export interface BuiltinBrowserImportSourcesResponse {
+  sources: BuiltinBrowserImportSource[];
+}
+
+/** POST /api/builtin-browser/import. */
+export interface BuiltinBrowserImportRequest {
+  sourceId: string;
+  cookies?: boolean;
+  history?: boolean;
+  /** Only cookies of these sites (a domain matches itself and its subdomains). */
+  domains?: string[];
+}
+
+export interface BuiltinBrowserImportResult {
+  sourceId: string;
+  cookies?: { found: number; imported: number; skipped: number; failed: number };
+  history?: { found: number; imported: number };
+  warnings: string[];
+}
+
+export interface BuiltinBrowserHistoryEntry {
+  url: string;
+  title: string;
+  visitCount: number;
+  /** Epoch ms. */
+  lastVisitAt: number;
+  /** `builtin` for pages visited in the built-in browser, else the browser it was imported from. */
+  source: string;
+}
+
+export interface BuiltinBrowserHistoryResponse {
+  entries: BuiltinBrowserHistoryEntry[];
+}
+
+/**
+ * GET / PUT /api/builtin-browser/settings: the browser's own settings, a file of the server's
+ * that is read and written without the desktop shell. PUT takes the whole object.
+ */
+export interface BuiltinBrowserSettings {
+  /**
+   * The page a new tab opens when it is given no address — the panel's "+", an agent's new tab
+   * — and the toolbar's Home button goes to: an http(s) address, or null for none (a new tab is
+   * then blank). PUT takes a bare host too and answers the address as stored.
+   */
+  homepage: string | null;
+}
+
+export type BuiltinBrowserAction =
+  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
+
+/** User-channel events of the built-in browser (admins only). */
+export type BuiltinBrowserServerEvent =
+  | { type: "builtin_browser_tabs"; tabs: BuiltinBrowserTab[]; activeTabId: number | null }
+  /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
+  | {
+      type: "builtin_browser_open";
+      requestId: string;
+      url: string;
+      activate: boolean;
+      openerTabId?: number;
+      sessionId?: string;
+    }
+  | { type: "builtin_browser_close"; tabId: number }
+  | {
+      type: "builtin_browser_activity";
+      tabId: number;
+      busy: boolean;
+      action: BuiltinBrowserAction;
+      sessionId?: string;
+    }
+  /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
+  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics };
+
+/** A cookie as the shell writes it (Electron's CookiesSetDetails). */
+export interface DesktopBrowserCookie {
+  url: string;
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  /** Unix seconds; absent = session cookie. */
+  expirationDate?: number;
+  sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
+}
+
+/** Server → shell: what the shell does with its guests. Mechanism only — the product logic stays on the server. */
+export type DesktopBrowserCommand =
+  /** Reply: `{ version: 1, partition: string }`. An older shell never answers. */
+  | { op: "hello" }
+  /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
+  | { op: "tabs" }
+  /**
+   * Reply: the CDP method's result object. `events` names the tab's CDP events the shell relays
+   * from then on, as `cdp-event`s: it replaces the list before (empty relays none), and is set
+   * before the command runs, so an event the command itself causes is not missed. Without it
+   * the list stays as it is.
+   */
+  | {
+      op: "cdp";
+      tabId: number;
+      method: string;
+      params?: Record<string, unknown>;
+      events?: string[];
+    }
+  /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
+  | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
+  /** Reply: `{}`. */
+  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[] }
+  /**
+   * Reply: `{}`. The tabs whose pages may be throttled while out of sight (Electron's background
+   * throttling, applied at once); every other tab runs at full speed. It replaces the list
+   * before. A tab is unthrottled until a command lists it, so a server that never sends one
+   * changes nothing. A shell older than this command answers `unknown_op`.
+   */
+  | { op: "throttle"; tabIds: number[] };
+
+export interface DesktopBrowserCommandMessage {
+  type: "desktop-browser-command";
+  id: string;
+  command: DesktopBrowserCommand;
+}
+
+export interface DesktopBrowserReplyMessage {
+  type: "desktop-browser-reply";
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+export type DesktopBrowserEvent =
+  | { kind: "tab"; tab: BuiltinBrowserTab }
+  | { kind: "tab-closed"; tabId: number }
+  /**
+   * window.open / target=_blank inside a guest (the shell denied it and asks for a tab instead),
+   * or the context menu's "Open link in new tab". `background`: the tab should open behind the
+   * current one, as a middle-click or that menu entry does in Chrome.
+   */
+  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean }
+  /** One of the tab's CDP events a `cdp` command's `events` asked for. */
+  | { kind: "cdp-event"; tabId: number; method: string; params: Record<string, unknown> }
+  /**
+   * The tab's renderer went away (Electron's render-process-gone reason and exit code). The tab
+   * stays; its `tab` events carry `crashed` until the page is reloaded, and the shell refuses
+   * CDP commands for it meanwhile (`tab_crashed`).
+   */
+  | { kind: "tab-crashed"; tabId: number; reason: string; exitCode: number }
+  /**
+   * The shell's measurement of its guests (every ~10 s while there are any, and once more
+   * shortly after one closes, empty after the last): each tab's memory and CPU, and the pages'
+   * memory together, a process shared by two tabs counted once.
+   */
+  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number };
+
+export interface DesktopBrowserEventMessage {
+  type: "desktop-browser-event";
+  event: DesktopBrowserEvent;
 }

@@ -117,7 +117,8 @@ export async function startEmbeddedServer(opts: {
   cliEntry: string | null;
   portFile: string;
   preferredPortFile: string;
-  log: (chunk: string) => void;
+  /** One chunk of the server's output, as it arrived on `stream`. */
+  log: (chunk: string, stream: "stdout" | "stderr") => void;
 }): Promise<EmbeddedServer> {
   const token = randomBytes(32).toString("base64url");
   fs.rmSync(opts.portFile, { force: true });
@@ -142,8 +143,8 @@ export async function startEmbeddedServer(opts: {
       PENGUIN_PORT_FILE: opts.portFile,
     },
   });
-  child.stdout?.on("data", (chunk: Buffer) => opts.log(String(chunk)));
-  child.stderr?.on("data", (chunk: Buffer) => opts.log(String(chunk)));
+  child.stdout?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stdout"));
+  child.stderr?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stderr"));
   let exited = false;
   child.on("exit", () => {
     exited = true;

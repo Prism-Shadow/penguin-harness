@@ -49,7 +49,7 @@ export type {
   TraceSink,
 } from "./engine/context-engine.js";
 export { Session } from "./session.js";
-export type { SessionConfig } from "./session.js";
+export type { SessionConfig, SessionOpenedContext } from "./session.js";
 export type { AgentAssembly, ModelRequestContext, PromptSection } from "./agent.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of
