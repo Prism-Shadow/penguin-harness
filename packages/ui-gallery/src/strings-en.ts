@@ -946,6 +946,8 @@ export const en: GalleryStrings = {
       uploadHere: "Upload here",
       rename: "Rename or move",
       delete: "Delete",
+      newTextFile: "New text file",
+      newFolder: "New folder",
       editor: "Editor",
       editorLabel: (name: string) => `Editing ${name}`,
       drop: "Drop feedback",

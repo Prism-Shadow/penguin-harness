@@ -1358,6 +1358,96 @@ export const deleteWorkspaceFile = (sessionId: string, path: string, ifVersion?:
 export const searchWorkspaceFiles = (sessionId: string, q: string) =>
   apiFetch<WorkspaceSearchResponse>(`/api/sessions/${sessionId}/files/search`, { query: { q } });
 
+// Workspace files by directory ----------------------------------------------------------------
+
+/**
+ * A directory the Files panel addresses by its absolute path rather than through a Session: the
+ * new-chat draft's chosen folder and a sidebar Workspace group, where no Session exists yet.
+ * Access is the Project's; the directory must exist. `machineId` is the machine it is on (null:
+ * this server) — a path names a directory only together with it.
+ */
+export interface WorkspaceDir {
+  projectId: string;
+  workspace: string;
+  machineId: string | null;
+}
+
+const workspaceDirBase = (dir: WorkspaceDir): string =>
+  `/api/projects/${encodeURIComponent(dir.projectId)}/workspace-files`;
+
+export const listWorkspaceDirFiles = (dir: WorkspaceDir, path: string) =>
+  apiFetch<WorkspaceFilesResponse>(workspaceDirBase(dir), {
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  });
+
+/** File content URL, as {@link workspaceFileUrl}; the machine's proxy prefix rides in the URL itself. */
+export const workspaceDirFileUrl = (dir: WorkspaceDir, path: string, download = false): string =>
+  apiUrl(
+    `${workspaceDirBase(dir)}/content?workspace=${encodeURIComponent(dir.workspace)}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`,
+    dir.machineId,
+  );
+
+/**
+ * "Open in a new tab" for an HTML file of a directory: the same-origin sandboxed preview, since
+ * the separate preview origin's tokens name a Session.
+ */
+export const workspaceDirPreviewUrl = (dir: WorkspaceDir, path: string): string =>
+  apiUrl(
+    `${workspaceDirBase(dir)}/content?workspace=${encodeURIComponent(dir.workspace)}&path=${encodeURIComponent(path)}&preview=1`,
+    dir.machineId,
+  );
+
+/** As {@link uploadWorkspaceFile}: resolves to the version written, or null when the server does not say. */
+export const writeWorkspaceDirFile = (
+  dir: WorkspaceDir,
+  path: string,
+  dataBase64: string,
+  ifVersion?: string,
+): Promise<string | null> =>
+  apiFetchWithMeta<void>(`${workspaceDirBase(dir)}/content`, {
+    method: "PUT",
+    body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  }).then((res) => res.etag);
+
+export const createWorkspaceDirEntry = (dir: WorkspaceDir, body: FilesCreateRequest) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/create`, {
+    method: "POST",
+    body,
+    query: { workspace: dir.workspace },
+    server: dir.machineId,
+  });
+
+export const moveWorkspaceDirFile = (dir: WorkspaceDir, body: FilesMoveRequest) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/move`, {
+    method: "POST",
+    body,
+    query: { workspace: dir.workspace },
+    server: dir.machineId,
+  });
+
+export const deleteWorkspaceDirFile = (dir: WorkspaceDir, path: string, ifVersion?: string) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/content`, {
+    method: "DELETE",
+    query: { workspace: dir.workspace, path, ifVersion },
+    server: dir.machineId,
+  });
+
+export const searchWorkspaceDirFiles = (dir: WorkspaceDir, q: string) =>
+  apiFetch<WorkspaceSearchResponse>(`${workspaceDirBase(dir)}/search`, {
+    query: { workspace: dir.workspace, q },
+    server: dir.machineId,
+  });
+
+export const revealWorkspaceDirFile = (dir: WorkspaceDir, path: string) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/reveal`, {
+    method: "POST",
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  });
+
 /** Batch file-existence check (message file cards): both out-of-bounds and missing paths simply don't appear in `existing`; always returns 200. */
 export const statSessionFiles = (sessionId: string, paths: string[]) =>
   apiFetch<FilesStatResponse>(`/api/sessions/${sessionId}/files/stat`, {

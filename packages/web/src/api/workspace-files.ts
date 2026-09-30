@@ -15,26 +15,15 @@
 import type {
   FilesCreateRequest,
   FilesMoveRequest,
-  FilesWriteRequest,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
-import { apiUrl } from "../lib/server-context";
-import { apiFetch, apiFetchWithMeta } from "./client";
 import * as api from "./endpoints";
+import type { WorkspaceDir } from "./endpoints";
 
 /** What the Files panel browses. */
 export type FilesScope =
-  | { kind: "session"; sessionId: string }
-  | {
-      kind: "workspace";
-      /** The Project the caller's access is checked against. */
-      projectId: string;
-      /** The directory's absolute path. */
-      workspace: string;
-      /** The machine the directory is on; null for this server. */
-      machineId: string | null;
-    };
+  { kind: "session"; sessionId: string } | ({ kind: "workspace" } & WorkspaceDir);
 
 /**
  * One string per scope, equal for equal scopes: what the panel starts over on when it changes,
@@ -64,60 +53,38 @@ export interface FilesApi {
   reveal(path: string): Promise<void>;
 }
 
-function sessionFiles(sessionId: string): FilesApi {
-  return {
-    list: (path) => api.listWorkspaceFiles(sessionId, path),
-    fileUrl: (path, download) => api.workspaceFileUrl(sessionId, path, download),
-    previewUrl: (path) => api.workspaceFilePreviewUrl(sessionId, path),
-    isolatablePreviews: true,
-    write: (path, data, ifVersion) => api.uploadWorkspaceFile(sessionId, path, data, ifVersion),
-    create: (body) => api.createWorkspaceEntry(sessionId, body),
-    move: (body) => api.moveWorkspaceFile(sessionId, body),
-    remove: (path, ifVersion) => api.deleteWorkspaceFile(sessionId, path, ifVersion),
-    search: (q) => api.searchWorkspaceFiles(sessionId, q),
-    reveal: (path) => api.revealWorkspaceFile(sessionId, path),
-  };
-}
-
-function directoryFiles(projectId: string, workspace: string, machineId: string | null): FilesApi {
-  const base = `/api/projects/${encodeURIComponent(projectId)}/workspace-files`;
-  const server = machineId;
-  /** A browser-followed URL carries the machine's proxy prefix itself: no fetch wrapper sees it. */
-  const url = (suffix: string, query: string): string =>
-    apiUrl(`${base}${suffix}?workspace=${encodeURIComponent(workspace)}${query}`, machineId);
-  return {
-    list: (path) => apiFetch<WorkspaceFilesResponse>(base, { query: { workspace, path }, server }),
-    fileUrl: (path, download) =>
-      url("/content", `&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`),
-    previewUrl: (path) => url("/content", `&path=${encodeURIComponent(path)}&preview=1`),
-    isolatablePreviews: false,
-    write: (path, dataBase64, ifVersion) =>
-      apiFetchWithMeta<void>(`${base}/content`, {
-        method: "PUT",
-        body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
-        query: { workspace, path },
-        server,
-      }).then((res) => res.etag),
-    create: (body) =>
-      apiFetch<void>(`${base}/create`, { method: "POST", body, query: { workspace }, server }),
-    move: (body) =>
-      apiFetch<void>(`${base}/move`, { method: "POST", body, query: { workspace }, server }),
-    remove: (path, ifVersion) =>
-      apiFetch<void>(`${base}/content`, {
-        method: "DELETE",
-        query: { workspace, path, ifVersion },
-        server,
-      }),
-    search: (q) =>
-      apiFetch<WorkspaceSearchResponse>(`${base}/search`, { query: { workspace, q }, server }),
-    reveal: (path) =>
-      apiFetch<void>(`${base}/reveal`, { method: "POST", query: { workspace, path }, server }),
-  };
-}
-
 /** The operations for `scope`. */
 export function filesApi(scope: FilesScope): FilesApi {
-  return scope.kind === "session"
-    ? sessionFiles(scope.sessionId)
-    : directoryFiles(scope.projectId, scope.workspace, scope.machineId);
+  if (scope.kind === "session") {
+    const id = scope.sessionId;
+    return {
+      list: (path) => api.listWorkspaceFiles(id, path),
+      fileUrl: (path, download) => api.workspaceFileUrl(id, path, download),
+      previewUrl: (path) => api.workspaceFilePreviewUrl(id, path),
+      isolatablePreviews: true,
+      write: (path, data, ifVersion) => api.uploadWorkspaceFile(id, path, data, ifVersion),
+      create: (body) => api.createWorkspaceEntry(id, body),
+      move: (body) => api.moveWorkspaceFile(id, body),
+      remove: (path, ifVersion) => api.deleteWorkspaceFile(id, path, ifVersion),
+      search: (q) => api.searchWorkspaceFiles(id, q),
+      reveal: (path) => api.revealWorkspaceFile(id, path),
+    };
+  }
+  const dir: WorkspaceDir = {
+    projectId: scope.projectId,
+    workspace: scope.workspace,
+    machineId: scope.machineId,
+  };
+  return {
+    list: (path) => api.listWorkspaceDirFiles(dir, path),
+    fileUrl: (path, download) => api.workspaceDirFileUrl(dir, path, download),
+    previewUrl: (path) => api.workspaceDirPreviewUrl(dir, path),
+    isolatablePreviews: false,
+    write: (path, data, ifVersion) => api.writeWorkspaceDirFile(dir, path, data, ifVersion),
+    create: (body) => api.createWorkspaceDirEntry(dir, body),
+    move: (body) => api.moveWorkspaceDirFile(dir, body),
+    remove: (path, ifVersion) => api.deleteWorkspaceDirFile(dir, path, ifVersion),
+    search: (q) => api.searchWorkspaceDirFiles(dir, q),
+    reveal: (path) => api.revealWorkspaceDirFile(dir, path),
+  };
 }
