@@ -21,7 +21,10 @@ import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } fro
 
 const SCAN = scanSources();
 
-const thinking = sourceFile(SCAN, "packages/web/src/features/chat/thinking-block.tsx").text;
+const thinking = sourceFile(
+  SCAN,
+  "packages/ui/src/components/chat/thinking-block/thinking-block.tsx",
+).text;
 const compaction = sourceFile(SCAN, "packages/web/src/features/chat/compaction-banner.tsx").text;
 
 /**

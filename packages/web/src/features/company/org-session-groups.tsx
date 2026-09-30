@@ -39,7 +39,10 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  NAV_FILL,
+  RailDivider,
   SkeletonList,
+  railItemClass,
   toastError,
   toastSuccess,
   useRowContextMenu,
@@ -81,7 +84,7 @@ import type { TempSessionRow } from "./temp-session";
  */
 const rowSurface = (active: boolean) =>
   `group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
-    active ? "bg-gray-200/70 dark:bg-gray-800" : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
+    active ? NAV_FILL.selected : NAV_FILL.hover
   }`;
 
 /** The row's own button, at the channel rows' density so the whole sidebar reads as one list. */
@@ -381,7 +384,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
   if (rows.length === 0) return null;
   return (
     <>
-      <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
+      <RailDivider />
       {rows.map((row) => {
         const entry = S.company.sessionList.temporaryEntry(row.title);
         const name = row.activity !== null ? `${entry} · ${S.company.sessionList.running}` : entry;
@@ -392,7 +395,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
             data-tooltip={name}
             aria-label={name}
             onClick={() => openSession(row.sessionId, row.agentId)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
+            className={railItemClass()}
           >
             <AgentAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
             {row.activity !== null && (
@@ -543,7 +546,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             aria-label={name}
             disabled={opening === d.agentId}
             onClick={() => void openDesk(d.agentId, d.sessionId)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 disabled:opacity-60 dark:hover:bg-gray-800"
+            className={`${railItemClass()} disabled:opacity-60`}
           >
             <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
             {running && (

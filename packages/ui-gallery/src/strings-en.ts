@@ -417,7 +417,8 @@ export const en: GalleryStrings = {
       },
       dialogs: {
         title: "Dialogs",
-        description: "Modal, confirmation, paged dialog, drawer, bottom sheet and lightbox.",
+        description:
+          "Modal, confirmation, paged dialog, drawer, bottom sheet, lightbox and command palette.",
       },
       tooltips: {
         title: "Tooltips",
@@ -446,13 +447,17 @@ export const en: GalleryStrings = {
       charts: {
         title: "Charts",
         description:
-          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, cost trend and token bars, requests and success rate, the activity and score sparklines, the Trace timeline.",
+          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
       },
       avatars: {
         title: "Avatars",
         description: "The user and agent avatars at their sizes, and a stack of them.",
       },
-      files: { title: "Files", description: "The file tree and the read-only file browser." },
+      files: {
+        title: "Files",
+        description:
+          "The file tree and the read-only file browser; the Files panel's tree and preview panes with the draggable split between them, the path strip, the file menu, the editor and the drop feedback.",
+      },
       content: {
         title: "Content",
         description:
@@ -689,6 +694,12 @@ export const en: GalleryStrings = {
       lightbox: "Lightbox",
       lightboxHint: "Click the thumbnail to zoom in; Esc or a click outside the image closes it.",
       lightboxAlt: "The Penguin logo",
+      palette: "Command palette",
+      paletteAside: "Type to filter; each action opens another dialog on this board.",
+      openPalette: "Open the command palette",
+      palettePlaceholder: "Type to filter commands…",
+      paletteEmpty: "No matching commands",
+      paletteHint: "↑↓ to select · Enter to run · Esc to close",
     },
     tooltips: {
       attribute: "The data-tooltip attribute",
@@ -854,6 +865,25 @@ export const en: GalleryStrings = {
       donut: "Token donut",
       donutHint:
         "Cache reads, cache writes and output; the ring's remainder warns as usage nears the limit.",
+      donutLabels: {
+        usage: "Context usage",
+        cacheRead: "Cache read",
+        cacheWrite: "Cache write",
+        output: "Output",
+      },
+      ring: "Ring gauge",
+      ringHint:
+        "One arc against a budget in the budget's tone (under, near, over); without a budget the track stands alone; several arcs split a whole into shares. The composer's context ring (ContextRing) stays in the muted ink to 80 %, turns to attention past it and to danger past 95 %.",
+      ringSpend: (percent) => `Spend at ${percent}% of the budget`,
+      ringNoBudget: "No budget set",
+      ringShares: "Shares of a whole",
+      ringContext: "Context ring",
+      ringContextAt: (percent) => `Context ${percent}% full`,
+      legend: "Legend",
+      legendHint:
+        "A row under a chart: pointing at one item fades the others, and an item that explains a line's shape stays out of it. A list legend prints each item's figures after its label and pins a row on click.",
+      legendHitRate: "Cache hit rate",
+      legendParts: ["System prompt", "Tool definitions", "Messages", "Tool results"],
       trend: "Cost trend",
       trendHint: "Fourteen days of cost as a line; hover a day.",
       tokens: "Token usage",
@@ -866,7 +896,8 @@ export const en: GalleryStrings = {
       activityHint:
         "The agent card's fourteen-day session count curve; relative ups and downs only.",
       sparkline: "Score sparkline",
-      sparklineHint: "One benchmark's scores over its runs, the newest marked.",
+      sparklineHint:
+        "One benchmark's scores over its runs, the newest marked; a single score is a lone point.",
       timeline: "Trace timeline",
       timelineHint:
         "One Task's model segments and tool calls: thinking, reply, tool-call generation, approval wait and execution, each in its lane.",
@@ -890,8 +921,37 @@ export const en: GalleryStrings = {
       header: "docs-expert",
       emptyPreview: "Pick a file on the left to preview it.",
       emptyDir: "Empty directory",
+      root: ".",
       readme:
         "# Docs Expert\n\nBuilds a BM25 index over `corpus/` and answers questions about the Claude Code docs.\n\n- `src/rag.ts` — retrieval\n- `test/` — cases",
+      truncated: "File too large; preview truncated, download for the full file",
+      unsupported: "Preview not supported for this type; download instead",
+      download: "Download",
+      panel: "Files panel",
+      panelHint:
+        "The tree beside the preview: the draggable split, the path strip and the actions over the preview",
+      search: "Search files",
+      treeWidth: "Resize the file tree",
+      selectFile: "Select a file to preview",
+      wrap: "Wrap lines",
+      crumbs: "Path strip",
+      crumbsHint:
+        "When the path does not fit, its leading parts fold into one “…”; the file name gives way last",
+      menu: "File menu",
+      menuFile: "File",
+      menuFolder: "Folder",
+      copyPath: "Copy relative path",
+      addToChat: "Add to conversation",
+      addSelection: "Add selection to conversation",
+      uploadHere: "Upload here",
+      rename: "Rename or move",
+      delete: "Delete",
+      editor: "Editor",
+      editorLabel: (name: string) => `Editing ${name}`,
+      drop: "Drop feedback",
+      dropAttach: "Drop files to attach",
+      dropAttachHint: "Images and files are added to the message draft",
+      dropUpload: (dir: string) => `Drop to upload into ${dir}`,
     },
     content: {
       headings: "Headings",

@@ -20,6 +20,7 @@ import {
   LANGUAGE_LOADERS,
   PLAIN_TEXT_LANGUAGE,
   languageForExtension,
+  languageForFileName,
   resolveLanguage,
 } from "../src/components/content/code-block/code-languages";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
@@ -126,6 +127,13 @@ describe("the language tables", () => {
     expect(resolveLanguage("cobol")).toBeUndefined();
     expect(languageForExtension("TSX")).toBe("tsx");
     expect(languageForExtension("unknown")).toBe(PLAIN_TEXT_LANGUAGE);
+  });
+
+  it("read a file's language from its name, or its whole name when it has no extension", () => {
+    expect(languageForFileName("src/rag.TS")).toBe(languageForExtension("ts"));
+    expect(languageForFileName("notes/build.sh")).toBe("shellscript");
+    expect(languageForFileName("Makefile")).toBe(languageForExtension("makefile"));
+    expect(languageForFileName("dir.d/README")).toBe(PLAIN_TEXT_LANGUAGE);
   });
 
   it("never resolve a prototype key", () => {

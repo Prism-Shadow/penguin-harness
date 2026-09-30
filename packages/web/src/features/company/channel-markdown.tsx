@@ -135,8 +135,8 @@ export function ChannelReaderProvider({
 /**
  * A mention as a chip: the resolved name after the `@`, the raw token in the tooltip;
  * attention-toned when it addresses the reader. The ordinary chip sits one step deeper than
- * the app's usual grey fill, because the bubble it is printed on is that grey (channel-view's
- * BUBBLE_SURFACE) and a chip the colour of its background is not a chip.
+ * the app's usual grey fill, because the bubble it is printed on is that grey (the neutral
+ * surface of the package's `ChannelBubble`) and a chip the colour of its background is not a chip.
  */
 export function MentionChip({ raw, label, me }: { raw: string; label: string; me: boolean }) {
   return (

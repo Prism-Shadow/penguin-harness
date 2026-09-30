@@ -11,11 +11,10 @@
  * warn-and-skip stance).
  */
 import { useState } from "react";
-import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
+import { Chevron, StatusIcon, StepBanner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/omni/stream-model";
-import { StepBanner } from "./step-banner";
 
 /**
  * Owner server of a prefixed tool name (`mcp__<server>__<tool>`), matched against the

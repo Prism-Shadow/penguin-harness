@@ -3565,11 +3565,13 @@ Benchmark：
     errorsColKind: "类型",
     errorsColMessage: "消息",
     errorsEmpty: "暂无异常",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `首次出现于 ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "较新",
     errorsOlder: "更早",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `第 ${page} / ${pages} 页 · 共 ${total} 条`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `第 ${page} / ${pages} 页 · 共 ${rows} 行`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "清空",
     errorsClearTitle: "清空错误记录",

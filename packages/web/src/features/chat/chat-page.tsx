@@ -41,6 +41,7 @@ import {
   Dropdown,
   EmptyState,
   GlyphIcon,
+  Heading,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
@@ -161,7 +162,7 @@ import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-l
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
-import { PanelsToolbar } from "./panels-toolbar";
+import { DockToggles } from "./dock-toggles";
 import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
@@ -2066,11 +2067,12 @@ export function ChatPage() {
       )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <h1 className="flex min-w-0 font-sans text-[15px] font-semibold">
+            {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
+            <Heading level={5} as="h1" className="flex min-w-0">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
-            </h1>
+            </Heading>
             {/* Session-level state: a turning hourglass while the run is active, and nothing at
                 all once it settles — the conversation on screen is by definition read, and the
                 unread dot is a sidebar affordance for the rows you are NOT looking at. The
@@ -2094,7 +2096,7 @@ export function ChatPage() {
               placement actions and pin toggles. Every entry is a dock tab (features/dock)
               — the toolbar reads and drives the dock store directly; this page only feeds
               the pending-approval dot. */}
-          <PanelsToolbar agentsPending={anySubagentPending} />
+          <DockToggles agentsPending={anySubagentPending} />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
               (phones without a hover pointer; a desktop window whose gutter a docked panel
@@ -2236,7 +2238,7 @@ export function ChatPage() {
                     from the usage fetch, so it can trail the live total mid-run and
                     reconciles on idle. No-cost sessions omit the cost bullet entirely, as
                     the chip does. */}
-                <ul className="list-inside list-disc space-y-0.5 font-mono text-xs">
+                <ul className="list-inside list-disc space-y-1 font-mono text-xs">
                   <li>
                     {S.chat.statTotalTokens} {hs.tokensText}
                     {cacheHitRate !== null &&
@@ -2298,7 +2300,7 @@ export function ChatPage() {
                         )}
                         <span className="min-w-0 flex-1">
                           <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
-                          <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                          <span className="block truncate text-xs text-gray-400 dark:text-gray-500">
                             {formatDateTime(p.startedAt)}
                             {p.pid !== null && ` · pid ${p.pid}`}
                             {/* Detected service URL (output scan or port probe), running rows
@@ -2333,7 +2335,7 @@ export function ChatPage() {
                           </button>
                         ) : (
                           <>
-                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                               {S.chat.processExited}
                             </span>
                             {/* The row is the only handle on that process's captured

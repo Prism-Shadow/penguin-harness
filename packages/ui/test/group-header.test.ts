@@ -52,6 +52,20 @@ describe("GroupHeader", () => {
     expect(classTokens(header(true, true))).not.toContain("uppercase");
     expect(classTokens(header(true, false))).not.toContain("ui-eyebrow");
   });
+
+  it("draws a registry glyph as the header's decorative mark, in the subtle ink", () => {
+    const html = inZh(
+      createElement(GroupHeader, {
+        open: true,
+        onToggle: () => {},
+        glyph: "M3 7h18",
+        label: "repo",
+      }),
+    );
+    expect(html).toMatch(
+      /<svg [^>]*class="block shrink-0 ui-icon-decor text-fg-subtle" data-role="group"/,
+    );
+  });
 });
 
 describe("FolderSection and MoreRow", () => {

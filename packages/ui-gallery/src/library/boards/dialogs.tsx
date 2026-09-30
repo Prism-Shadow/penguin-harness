@@ -1,10 +1,13 @@
 /**
- * 对话框: Modal, ConfirmModal in both tones, PagedDialog, Drawer, Sheet and the Lightbox, each
- * opened from a button (the lightbox from its thumbnail) and closed as the app closes it.
+ * 对话框: Modal, ConfirmModal in both tones, PagedDialog, Drawer, Sheet, the Lightbox and the
+ * CommandPalette, each opened from a button (the lightbox from its thumbnail) and closed as the app
+ * closes it. The palette's actions open the board's other dialogs, the way an app action opens its
+ * own overlay once the palette has gone.
  */
 import { useState } from "react";
 import {
   Button,
+  CommandPalette,
   ConfirmModal,
   Drawer,
   Input,
@@ -13,7 +16,7 @@ import {
   Sheet,
   ZoomableImage,
 } from "@prismshadow/penguin-ui";
-import type { PagedDialogGroup, SheetSnap } from "@prismshadow/penguin-ui";
+import type { PagedDialogGroup, PaletteAction, SheetSnap } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { BASE } from "../../lib/location";
 import { useGallery } from "../../state";
@@ -31,6 +34,7 @@ export function DialogsBoard() {
   const [drawer, setDrawer] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [snap, setSnap] = useState<SheetSnap>("half");
+  const [palette, setPalette] = useState(false);
   const [name, setName] = useState(t.modalTitle);
   const groups: PagedDialogGroup<Page>[] = [
     {
@@ -42,6 +46,12 @@ export function DialogsBoard() {
       ],
     },
     { key: "you", label: t.pagedGroups.you, items: [{ key: "account", label: t.pages.account }] },
+  ];
+  const actions: PaletteAction[] = [
+    { id: "modal", label: t.modalTitle, run: () => setModal(true) },
+    { id: "paged", label: t.openPaged, run: () => setPaged(true) },
+    { id: "drawer", label: t.openDrawer, run: () => setDrawer(true) },
+    { id: "sheet", label: t.openSheet, run: () => setSheet(true) },
   ];
   return (
     <div className="gf-board">
@@ -144,6 +154,20 @@ export function DialogsBoard() {
             className="h-16 w-16"
           />
         </div>
+      </BoardGroup>
+      <BoardGroup title={t.palette} aside={t.paletteAside}>
+        <div className="lib-row">
+          <Button onClick={() => setPalette(true)}>{t.openPalette}</Button>
+        </div>
+        <CommandPalette
+          open={palette}
+          onClose={() => setPalette(false)}
+          actions={actions}
+          title={t.palette}
+          placeholder={t.palettePlaceholder}
+          emptyText={t.paletteEmpty}
+          hint={t.paletteHint}
+        />
       </BoardGroup>
     </div>
   );

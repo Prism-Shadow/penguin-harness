@@ -9,7 +9,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 /** The element's initial render as an HTML string. */
 export function renderStatic(element: ReactElement): string {
-  return renderToStaticMarkup(element);
+  // React 19's server renderer prepends a preload hint for an eager image; it is the renderer's
+  // resource hint, not the component's markup, so the tests never see it.
+  return renderToStaticMarkup(element).replace(/^(?:<link rel="preload"[^>]*\/>)+/, "");
 }
 
 /**

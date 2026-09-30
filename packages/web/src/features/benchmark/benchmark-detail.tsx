@@ -15,10 +15,14 @@ import {
   AgentAvatar,
   Button,
   Card,
+  ChartFrame,
+  ChartLine,
+  ChartPoint,
   EmptyState,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Legend,
   Modal,
   Table,
   TableBody,
@@ -26,7 +30,11 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  makeRangeGeom,
+  segmentPoints,
+  useChartWidth,
 } from "@prismshadow/penguin-ui";
+import type { ChartPaint } from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -35,9 +43,6 @@ import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
-import { makeRangeGeom, segmentPoints } from "../usage/chart-geom";
-import { ChartLine, ChartPoint, ChartSwatch, type ChartPaint } from "../../components/ui/chart";
-import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 import { fetchBenchmarkCases } from "./benchmark-sources";
@@ -159,17 +164,16 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
         {S.benchmark.trendTitle(S.benchmark.colScore)}
       </p>
       {series.length >= 2 && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {series.map((s, i) => (
-            <span
-              key={s.unlabeled ? "unlabeled" : s.key}
-              className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-            >
-              <ChartSwatch paint={scoreSeriesPaint(s, i)} shape="block" />
-              <span className="font-mono">{labelOf(s)}</span>
-            </span>
-          ))}
-        </div>
+        <Legend
+          items={series.map((s, i) => ({
+            key: s.unlabeled ? "unlabeled" : s.key,
+            label: labelOf(s),
+            paint: scoreSeriesPaint(s, i),
+            shape: "block" as const,
+          }))}
+          mono
+          className="mb-1.5"
+        />
       )}
       <ScoreTrendChart evaluations={evaluations} series={series} />
     </div>

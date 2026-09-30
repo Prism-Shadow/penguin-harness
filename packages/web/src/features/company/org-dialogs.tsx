@@ -62,7 +62,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { ModelSelect, modelLabel } from "../chat/model-select";
+import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
@@ -125,8 +125,8 @@ function useProjectModels(projectId: string, open: boolean) {
 }
 
 /**
- * The model field: the App's own model picker (ModelSelect in its form shape — the same
- * searchable, grouped, key-configured-first panel the chat composer and the Project's
+ * The model field: the App's own model picker (ModelCatalogSelect in its form shape — the same
+ * searchable, grouped, key-configured-first dialog the chat composer and the Project's
  * default-model setting open), with this field's two extra states around it.
  *
  * Empty is a choice here, not a gap: it means "follow the Project's default", named after
@@ -169,7 +169,7 @@ function ModelField({
         <FieldLabel block={false}>{S.company.modelField}</FieldLabel>
         <InfoPopover label={S.company.modelField}>{S.company.modelInfo}</InfoPopover>
       </span>
-      <ModelSelect
+      <ModelCatalogSelect
         models={list}
         value={value}
         {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}

@@ -40,6 +40,7 @@ import {
   GlyphIcon,
   Skeleton,
   StatChip,
+  TokenDonut,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -57,7 +58,6 @@ import {
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { resolveContextWindow } from "../../lib/context";
 import { useTheme } from "../../state/theme";
-import { TokenDonut } from "../../components/ui/token-donut";
 import { TRACE_EVENT_PAGE_SIZE, loadTraceEventPages } from "./trace-events-loader";
 import { TimelineChart } from "./timeline-chart";
 import type { TraceHighlight } from "./timeline-chart";
@@ -641,6 +641,13 @@ export function TraceFileView({
                   output={ctx.output}
                   max={contextMax}
                   size={22}
+                  labels={{
+                    usage: S.chat.contextUsage,
+                    cacheRead: S.usage.colCacheRead,
+                    cacheWrite: S.usage.colCacheWrite,
+                    output: S.usage.colOutput,
+                  }}
+                  format={humanizeTokens}
                 />
               )}
             </button>

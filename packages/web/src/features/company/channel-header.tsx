@@ -24,6 +24,7 @@ import {
   ConfirmModal,
   Dropdown,
   GlyphIcon,
+  Heading,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
@@ -157,15 +158,16 @@ function MemberPopover({
                   <MemberAvatar member={m} size={ICON_SIZE.rowLead} />
                   <Truncated text={m.name} className="min-w-0 flex-1" />
                   {m.kind === "agent" && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="shrink-0"
                       disabled={openingDesk !== null}
                       onClick={() => onOpenDesk(m.principal)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} rounded px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+                      leading={<GlyphIcon d={DESK_ICON} size={ICON_SIZE.inlineGlyph} />}
                     >
-                      <GlyphIcon d={DESK_ICON} size={ICON_SIZE.inlineGlyph} />
                       {S.company.openDesk}
-                    </button>
+                    </Button>
                   )}
                 </div>
               ))
@@ -384,11 +386,14 @@ export function ChannelHeader({
         <div className="flex min-w-0 flex-1 items-baseline gap-x-3 gap-y-1">
           {/* The name is a direct child of the heading, with the "?" right after it — the
               anchoring every other title in the app uses (OrgPage's own header included), and
-              what test/disclosure-anchor.test.ts reads. The row clips rather than wraps: the
-              server caps a channel name at 100 characters and the tooltip carries it whole. */}
-          <h1
+              what test/disclosure-anchor.test.ts reads. The page's one h1, set on the h4 rung:
+              a header row's title, not a page's display title. The row clips rather than wraps:
+              the server caps a channel name at 100 characters and the tooltip carries it whole. */}
+          <Heading
+            level={4}
+            as="h1"
             data-tooltip={label}
-            className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row} text-[15px] font-semibold`}
+            className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row}`}
           >
             <span className="shrink-0 text-gray-400 dark:text-gray-500">
               <GlyphIcon d={channelGlyph(detail.channelId)} size={ICON_SIZE.rowLead} />
@@ -403,7 +408,7 @@ export function ChannelHeader({
               </span>
               <span className="mt-1.5 block">{S.company.channels.hopSummary}</span>
             </InfoPopover>
-          </h1>
+          </Heading>
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
           {purpose !== null && (
             <span
@@ -510,7 +515,7 @@ export function ChannelHeader({
                 missing. What that channel IS belongs to the header's "?", and repeating the
                 whole paragraph here made a menu out of an explanation. */}
             {allHands && detail.archived === false && (
-              <p className="px-2.5 py-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+              <p className="px-2.5 py-1.5 text-xs text-fg-subtle">
                 {S.company.channels.allHandsNoArchive}
               </p>
             )}

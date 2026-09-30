@@ -34,6 +34,7 @@ import {
   Select,
   Skeleton,
   SkeletonCard,
+  Sparkline,
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -56,7 +57,6 @@ import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompt
 import { benchmarkRoute } from "./benchmark-route";
 import { fetchBenchmarks } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
-import { ScoreSparkline } from "./score-sparkline";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
@@ -224,7 +224,15 @@ export function BenchmarkCard({
       <TestedAgents agentIds={benchmark.agentIds} nameOf={nameOf} />
       {series.length > 0 && (
         <div className="hidden shrink-0 md:block">
-          <ScoreSparkline values={series} label={S.benchmark.sparklineLabel(series.length)} />
+          {/* The scoreboard's Scores in order, the newest marked, on the observed range (the
+              sparkline's default 72×22 box and five-point floor), so a flat series draws a
+              level line through the middle rather than collapsing onto an edge. */}
+          <Sparkline
+            values={series}
+            label={S.benchmark.sparklineLabel(series.length)}
+            scale="range"
+            marker
+          />
         </div>
       )}
       {/* At least a score's width, and as wide as its label beyond that: the label is a phrase
