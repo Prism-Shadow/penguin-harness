@@ -287,8 +287,8 @@ If you use PenguinHarness in your research, please cite:
 
 This repo benefits from:
 
-- [GenericAgent](https://github.com/lsdefine/genericagent): built-in browser automation
 - [MinGit](https://github.com/git-for-windows/git): the POSIX shell and Git bundled on Windows
+- [GenericAgent](https://github.com/lsdefine/genericagent): built-in browser automation
 
 See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for their licenses.
 

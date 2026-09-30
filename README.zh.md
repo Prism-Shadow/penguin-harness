@@ -287,8 +287,8 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 
 本项目受益于：
 
-- [GenericAgent](https://github.com/lsdefine/genericagent)：内置浏览器自动化
 - [MinGit](https://github.com/git-for-windows/git)：Windows 版内置的 POSIX shell 与 Git
+- [GenericAgent](https://github.com/lsdefine/genericagent)：内置浏览器自动化
 
 许可证详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
