@@ -53,6 +53,11 @@ export function handleError(err: Error, c: Context): Response {
     }
     return c.json(errorBody(err.code, err.message), err.status as 400);
   }
+  // A linked Skill (core's SkillLinkedError, matched by name so this module stays free of core):
+  // every install path refuses to replace it, and the caller should hear why.
+  if (err.name === "SkillLinkedError") {
+    return c.json(errorBody("skill_linked", err.message), 409);
+  }
   // Unknown error: print the stack for diagnosis, but never expose details externally.
   console.error(`[server] Unhandled exception: ${err.stack ?? err.message}`);
   return c.json(errorBody("internal", "Internal server error."), 500);

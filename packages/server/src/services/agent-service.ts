@@ -21,6 +21,7 @@ import {
   createAgent as coreCreateAgent,
   installPlugin,
   installSkill,
+  isDirectoryEntry,
   listInstalledHooks,
   isValidId,
   loadAgentVault,
@@ -235,10 +236,12 @@ export class AgentService implements AgentLifecycle {
     } catch {
       // No skills/ directory: nothing installed.
     }
+    // A Skill linked in from a skill manager counts like a copied one (isDirectoryEntry).
+    const kept = await Promise.all(dirents.map((d) => isDirectoryEntry(base, d)));
     const skills = await Promise.all(
       dirents
         // Dot-prefixed directories are install staging, never a Skill (a Skill name has no dot).
-        .filter((d) => d.isDirectory() && !d.name.startsWith("."))
+        .filter((d, i) => kept[i] && !d.name.startsWith("."))
         .map(async (d) => {
           try {
             const head = await readHead(path.join(base, d.name, "SKILL.md"), SKILL_HEAD_BYTES);

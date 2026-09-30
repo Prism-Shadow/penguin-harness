@@ -18,6 +18,7 @@ import {
   installSkill,
   listInstalledSkills,
   removeSkill,
+  replaceSkillDirectory,
   skillMetadataSection,
   skillsDir,
 } from "../src/state/index.js";
@@ -249,5 +250,60 @@ describe("skillMetadataSection / assembleSystemPrompt injection", () => {
     const empty = assembleSystemPrompt(state);
     expect(empty).toBe(["before", "# Agent Rules", "", "after"].join("\n"));
     expect(empty).not.toContain(SKILL_METADATA_PLACEHOLDER);
+  });
+});
+
+/**
+ * Skills linked in from a skill manager, which keeps one copy of each Skill and links it into
+ * every tool's folder so an edit reaches all of them.
+ *
+ * - Given a Skill directory that is a symbolic link, it is listed like a copied one.
+ * - Given a dangling link, nothing is listed and nothing throws.
+ * - Given an install over a linked Skill, it is refused, the link stays, and the shared copy is
+ *   untouched.
+ * - Given an uninstall of a linked Skill, only the link goes; the shared copy stays.
+ */
+describe.skipIf(process.platform === "win32")("linked skills", () => {
+  const skills = () => skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+  let shared: string;
+
+  beforeEach(async () => {
+    shared = path.join(tmpRoot, "skill-manager", "review");
+    await fs.mkdir(shared, { recursive: true });
+    await fs.writeFile(
+      path.join(shared, "SKILL.md"),
+      "---\nname: review\ndescription: Review a diff\n---\nbody\n",
+    );
+    await fs.mkdir(skills(), { recursive: true });
+    await fs.symlink(shared, path.join(skills(), "review"), "dir");
+  });
+
+  it("a linked skill is listed like a copied one", async () => {
+    const listed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    expect(listed.map((s) => [s.name, s.description])).toEqual([["review", "Review a diff"]]);
+  });
+
+  it("a dangling link lists nothing and does not throw", async () => {
+    await fs.rm(shared, { recursive: true });
+    await expect(
+      listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+    ).resolves.toEqual([]);
+  });
+
+  it("an install over a linked skill is refused, and neither the link nor the shared copy changes", async () => {
+    await expect(install("review", "---\nname: review\n---\nnew\n")).rejects.toMatchObject({
+      name: "SkillLinkedError",
+    });
+    await expect(
+      replaceSkillDirectory(path.join(skills(), "review"), [["SKILL.md", "x"]]),
+    ).rejects.toMatchObject({ name: "SkillLinkedError" });
+    expect((await fs.lstat(path.join(skills(), "review"))).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(path.join(shared, "SKILL.md"), "utf8")).toContain("body");
+  });
+
+  it("an uninstall removes only the link, never the shared copy", async () => {
+    await removeSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, "review");
+    await expect(fs.lstat(path.join(skills(), "review"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await fs.readFile(path.join(shared, "SKILL.md"), "utf8")).toContain("body");
   });
 });

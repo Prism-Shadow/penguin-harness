@@ -12,6 +12,7 @@
  * come from `system_config.yaml`.
  */
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
@@ -536,6 +537,14 @@ export async function replaceSkillDirectory(
   dir: string,
   files: Iterable<[string, string | Uint8Array]>,
 ): Promise<void> {
+  // A linked Skill (a skill manager keeps one copy and links it into every tool) is the
+  // user's to update where it lives: replacing it here would turn the link into a private
+  // copy, and writing through it would change every tool that shares it.
+  const linked = await fs.lstat(dir).then(
+    (st) => st.isSymbolicLink(),
+    () => false,
+  );
+  if (linked) throw new SkillLinkedError(path.basename(dir), await fs.readlink(dir));
   const staging = `${path.join(path.dirname(dir), `.${path.basename(dir)}`)}.incoming`;
   await fs.rm(staging, { recursive: true, force: true });
   await fs.mkdir(staging, { recursive: true });
@@ -558,7 +567,34 @@ export async function replaceSkillDirectory(
   }
 }
 
-/** Uninstalls a Skill: deletes the entire `skills/<name>/` directory; idempotent, no error if it doesn't exist. */
+/** Refusal to overwrite a Skill directory that is a symbolic link (see replaceSkillDirectory). */
+export class SkillLinkedError extends Error {
+  constructor(
+    readonly skill: string,
+    readonly target: string,
+  ) {
+    super(
+      `Skill "${skill}" is a link to ${target}; update it there — installing here would replace the link.`,
+    );
+    this.name = "SkillLinkedError";
+  }
+}
+
+/**
+ * Whether a `skills/` (or `hooks/`) entry is a directory to read — a real one, or a symbolic
+ * link that resolves to one: skill managers keep a single copy of each Skill and link it into
+ * every tool's folder, so a linked Skill is as installed as a copied one. A dangling link is not.
+ */
+export async function isDirectoryEntry(dir: string, entry: Dirent): Promise<boolean> {
+  if (entry.isDirectory()) return true;
+  if (!entry.isSymbolicLink()) return false;
+  return fs.stat(path.join(dir, entry.name)).then(
+    (st) => st.isDirectory(),
+    () => false,
+  );
+}
+
+/** Uninstalls a Skill: deletes the entire `skills/<name>/` directory — or, for a linked Skill, only the link, never what it points at; idempotent, no error if it doesn't exist. */
 export async function removeSkill(
   root: string,
   projectId: string,
@@ -606,7 +642,7 @@ export async function listInstalledSkills(
   }
   const skills: InstalledSkill[] = [];
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!(await isDirectoryEntry(dir, entry))) continue;
     // A Skill name never starts with a dot (assertValidId), so a dot-prefixed directory is
     // this Agent's staging directory, mid-install or left behind by an interrupted one.
     if (entry.name.startsWith(".")) continue;
@@ -797,7 +833,7 @@ export async function listInstalledHooks(
   }
   const hooks: InstalledHook[] = [];
   for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith(".") || !(await isDirectoryEntry(base, entry))) continue;
     const dir = path.join(base, entry.name);
     const manifest = await readHookManifest(dir);
     if (manifest === null) continue;

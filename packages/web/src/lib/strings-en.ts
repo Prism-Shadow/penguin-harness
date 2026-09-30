@@ -4780,6 +4780,8 @@ Scenarios:
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
       dir_permission_denied: "Reading that directory is not allowed.",
+      skill_linked:
+        "This skill is a link to a shared copy (a skill manager's). Update it there; installing here would replace the link.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       reveal_failed: "Could not open the folder.",

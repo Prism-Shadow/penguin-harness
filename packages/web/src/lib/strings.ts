@@ -4794,6 +4794,8 @@ Benchmark：
       dir_not_absolute: "目录必须是绝对路径。",
       dir_not_found: "该目录不存在或不可访问。",
       dir_permission_denied: "没有读取该目录的权限。",
+      skill_linked:
+        "这个技能是指向共享副本的链接（由技能管理工具维护），请在原处更新；在这里安装会替换掉该链接。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       reveal_failed: "无法打开文件夹。",
