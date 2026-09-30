@@ -16,22 +16,23 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
+import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
+import type { RunState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
-import { Chevron } from "../../components/ui/chevron";
 import {
+  ActivityProgress,
   DISCLOSURE_OUTPUT_PRE_CLASS,
   DISCLOSURE_ROW_CLASS,
   DISCLOSURE_ROW_STICKY_CLASS,
+  activityState,
 } from "./disclosure-row";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { toneInk } from "../../lib/tone";
-import { StatusIcon } from "../../components/ui/status-icon";
-import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration, useElapsedPast } from "./live-duration";
 import { useTheme } from "../../state/theme";
@@ -414,8 +415,15 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           A pending call gets no "awaiting approval" text either: the approval block below is
           always on screen while one is pending — it names the tool, shows the arguments and
           carries the Allow/Deny buttons — so the row would only repeat it. The amber hourglass
-          StatusIcon (labeled) marks the wait, at every breakpoint. */}
-      <div className={`${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}>
+          StatusIcon (labeled) marks the wait, at every breakpoint.
+
+          ui-activity: the row is a work step, so a theme may render it running or settled its
+          own way; the tool name is its label and the subtitle and duration its details. */}
+      <div
+        className={`ui-activity ${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}
+        data-kind="tool"
+        data-state={activityState(state)}
+      >
         <button
           type="button"
           aria-expanded={open}
@@ -424,18 +432,26 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         >
           <StatusIcon state={state} label={stateLabel} />
           <span
-            title={nameTitle}
+            data-tooltip={nameTitle}
+            data-tooltip-content="code"
+            data-slot="label"
             className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300"
           >
             {displayName || S.chat.unknownTool}
           </span>
           {/* Human-readable subtitle: the model-written call description (command/subagent tools) or the file path (file tools). */}
           {subtitle && (
-            <span className="min-w-0 shrink truncate text-xs text-gray-500 dark:text-gray-400">
+            <span
+              data-slot="detail"
+              className="min-w-0 shrink truncate text-xs text-gray-500 dark:text-gray-400"
+            >
               {subtitle}
             </span>
           )}
-          <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">
+          <span
+            data-slot="detail"
+            className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400"
+          >
             {item.durationMs !== undefined ? (
               humanizeDuration(item.durationMs)
             ) : executing ? (
@@ -455,6 +471,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               )
             ) : null}
           </span>
+          <ActivityProgress running={state === "running"} />
           <span className="min-w-0 flex-1" />
         </button>
         {/* At the row's right end, on a call made with run_in_background or moved there: a
@@ -493,7 +510,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           ctx.onSendToBackground && (
             <button
               type="button"
-              title={S.chat.sendToBackgroundHint}
+              data-tooltip={S.chat.sendToBackgroundHint}
               onClick={() => void ctx.onSendToBackground?.(item.toolCallId)}
               className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
             >
@@ -525,7 +542,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               ≥sm the row stays one line (the desktop column is wide enough in practice). */}
           <div className="mb-2 flex items-start gap-2 sm:items-center">
             <span
-              title={nameTitle}
+              data-tooltip={nameTitle}
               className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300"
             >
               {displayName || S.chat.unknownTool}

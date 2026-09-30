@@ -16,27 +16,24 @@
  * rounded box the transcript uses for a quotation.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import {
   DISCLOSURE_BODY_MD_CLASS,
   DISCLOSURE_OUTPUT_PRE_CLASS,
 } from "../src/features/chat/disclosure-row";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
-const read = (rel: string) =>
-  readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), "utf8");
+const SCAN = scanSources();
 
-const styles = read("styles.css");
-const thinking = read("features/chat/thinking-block.tsx");
-const compaction = read("features/chat/compaction-banner.tsx");
+const thinking = sourceFile(SCAN, "packages/web/src/features/chat/thinking-block.tsx").text;
+const compaction = sourceFile(SCAN, "packages/web/src/features/chat/compaction-banner.tsx").text;
 
 /**
- * styles.css with every `@layer …{ }` block removed, i.e. only its unlayered rules.
+ * One stylesheet with every `@layer …{ }` block removed, i.e. only its unlayered rules.
  * Comments go first: one of them names `@layer utilities` in prose, and the scan below
  * would take that for the start of a block and swallow the rules after it.
  */
-const unlayered = (() => {
-  let css = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+const unlayeredRules = (sheet: string) => {
+  let css = sheet.replace(/\/\*[\s\S]*?\*\//g, "");
   for (;;) {
     const at = css.search(/@layer[^;{]*\{/);
     if (at === -1) return css;
@@ -49,13 +46,29 @@ const unlayered = (() => {
     }
     css = css.slice(0, at) + css.slice(end + 1);
   }
-})();
+};
+
+/**
+ * The unlayered rules of every stylesheet under the scanned roots — styles.css today, the shared
+ * package's component CSS once the Markdown body moves there — each file stripped on its own.
+ */
+const unlayered = SCAN.files
+  .filter((file) => file.name.endsWith(".css"))
+  .map((file) => unlayeredRules(file.text))
+  .join("\n");
+
+describe("the disclosure body's sources", () => {
+  it("scan every source root, and find the shared classes in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, "packages/web/src/features/chat/disclosure-row.tsx");
+  });
+});
 
 /** Class list as a set, so an assertion does not depend on the order Prettier settles on. */
 const classes = (value: string) => new Set(value.split(" "));
 
 describe("the disclosure body's end margins", () => {
-  it("are reset by an unlayered rule in styles.css", () => {
+  it("are reset by an unlayered rule in a stylesheet", () => {
     expect(classes(DISCLOSURE_BODY_MD_CLASS)).toContain("md-body-flush");
     // Written without whitespace so reformatting the stylesheet cannot break the match.
     const rules = unlayered.replace(/\s+/g, "");

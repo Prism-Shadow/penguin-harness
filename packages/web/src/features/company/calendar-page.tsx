@@ -26,27 +26,31 @@ import type {
   OrgCalendarOutcome,
   OrgChartResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  CloseIcon,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Button } from "../../components/ui/button";
 import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
 import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { toastAttention, toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
@@ -67,9 +71,7 @@ import {
 } from "./calendar-geom";
 import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
-
-const PREV_ICON = "M15 18 9 12l6-6";
-const NEXT_ICON = "m9 18 6-6-6-6";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",
@@ -81,8 +83,8 @@ const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
 
 /** The mark a recorded outcome leaves on its instance: a check, an hourglass, a pause, a cross, an alert. */
 const OUTCOME_ICON: Record<OrgCalendarOutcome, string> = {
-  fired: "M5 13l4 4L19 7",
-  queued: "M6 3h12M6 21h12M8 3v3.5L12 10l4-3.5V3M8 21v-3.5L12 14l4 3.5V21",
+  fired: ICONS.check,
+  queued: ICONS.hourglass,
   paused: "M9 5v14M15 5v14",
   missed: "M18 6 6 18M6 6l12 12",
   error: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01",
@@ -104,9 +106,6 @@ const MONTH_CELL_CHIPS = 3;
  */
 const DAY_PANEL_WIDTH = 240;
 
-/** The plus that leads the "new event" hint an empty slot spells out while the pointer is on it. */
-const PLUS_ICON = "M12 5v14M5 12h14";
-
 /**
  * The create control that fills an empty calendar slot — a month cell, an hour row of the week
  * and day columns. It is a real button, so it takes focus and the keyboard, and it lies *under*
@@ -122,7 +121,7 @@ const PLUS_ICON = "M12 5v14M5 12h14";
  * hour row), and so is where the hint sits inside it.
  */
 const CREATE_SLOT_CLASS =
-  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-[var(--accent-bg)]/[0.07] hover:ring-1 hover:ring-inset hover:ring-[var(--accent-bg)]/25 focus-visible:bg-[var(--accent-bg)]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent-bg)]/40 disabled:pointer-events-none";
+  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-accent/[0.07] hover:ring-1 hover:ring-inset hover:ring-accent/25 focus-visible:bg-accent/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 disabled:pointer-events-none";
 
 /**
  * What the slot under the pointer would do, spelled out inside it: a plus and 「新建日程」. It is
@@ -144,7 +143,7 @@ function CreateSlotHint({ className = "" }: { className?: string }) {
     <span
       className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-[10px] leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
     >
-      <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.inlineGlyph} />
+      <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
       {S.company.calendar.create}
     </span>
   );
@@ -410,7 +409,7 @@ export function CalendarPage() {
       <button
         key={i.key}
         type="button"
-        title={title}
+        data-tooltip={title}
         onClick={() => {
           opts.onOpen?.();
           openEdit(i.event);
@@ -491,7 +490,7 @@ export function CalendarPage() {
       >
         <button
           type="button"
-          title={createLabel}
+          data-tooltip={createLabel}
           aria-label={createLabel}
           disabled={employees.length === 0}
           onClick={() => openCreate(createMs)}
@@ -506,7 +505,7 @@ export function CalendarPage() {
             <span
               className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums ${
                 isToday
-                  ? "bg-[var(--accent-bg)] font-semibold text-[var(--accent-fg)]"
+                  ? "bg-accent font-semibold text-accent-fg"
                   : day.inMonth
                     ? "text-gray-600 dark:text-gray-300"
                     : "text-gray-400 dark:text-gray-600"
@@ -557,7 +556,7 @@ export function CalendarPage() {
       <div
         key={day.key}
         className={`relative border-l border-gray-100 dark:border-gray-800 ${
-          isToday ? "bg-[var(--accent-bg)]/[0.03]" : ""
+          isToday ? "bg-accent/[0.03]" : ""
         }`}
         style={{ height: HOUR_PX * 24 }}
       >
@@ -567,7 +566,7 @@ export function CalendarPage() {
             <button
               key={h}
               type="button"
-              title={createLabel}
+              data-tooltip={createLabel}
               aria-label={createLabel}
               disabled={employees.length === 0}
               className={`${CREATE_SLOT_CLASS} inset-x-0 flex items-center justify-center border-t border-gray-100 dark:border-gray-800`}
@@ -586,8 +585,8 @@ export function CalendarPage() {
             className="pointer-events-none absolute inset-x-0 z-10 flex items-center"
             style={{ top: dayFraction(now) * HOUR_PX * 24 - 1 }}
           >
-            <span className="-ml-1 h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
-            <span className="h-0.5 flex-1 bg-[var(--accent-bg)]" />
+            <span className="-ml-1 h-2 w-2 rounded-full bg-accent" />
+            <span className="h-0.5 flex-1 bg-accent" />
           </div>
         )}
         {slots.map(({ item, lane, lanes }) => (
@@ -633,7 +632,7 @@ export function CalendarPage() {
                   {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
                   <span
                     className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
-                      isToday ? "bg-[var(--accent-bg)] text-[var(--accent-fg)]" : ""
+                      isToday ? "bg-accent text-accent-fg" : ""
                     }`}
                   >
                     {d.getDate()}
@@ -712,7 +711,7 @@ export function CalendarPage() {
           aria-label={S.company.calendar.prev}
           onClick={() => setAnchor((a) => shiftAnchor(a, view, -1))}
         >
-          <GlyphIcon d={PREV_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
         </Button>
         <Button size="sm" onClick={() => setAnchor(Date.now())}>
           {S.company.calendar.today}
@@ -724,7 +723,7 @@ export function CalendarPage() {
           aria-label={S.company.calendar.next}
           onClick={() => setAnchor((a) => shiftAnchor(a, view, 1))}
         >
-          <GlyphIcon d={NEXT_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.chevronRight} size={ICON_SIZE.iconButton} />
         </Button>
         <span className="text-sm font-semibold tabular-nums">{heading}</span>
         <div className="ml-auto w-48">
@@ -762,7 +761,7 @@ export function CalendarPage() {
               <button
                 key={e.agentId}
                 type="button"
-                title={
+                data-tooltip={
                   active ? S.company.calendar.allEmployees : S.company.calendar.legendFilter(e.name)
                 }
                 aria-pressed={active}
@@ -785,7 +784,8 @@ export function CalendarPage() {
                 </span>
                 <span
                   className={`truncate ${struck ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
-                  title={cadences.join(" · ")}
+                  data-tooltip={cadences.join(" · ")}
+                  data-tooltip-content="text"
                 >
                   {cadences.length === 0
                     ? S.company.calendar.legendEmpty
@@ -798,19 +798,21 @@ export function CalendarPage() {
       )}
 
       {error !== null && (
-        <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+        <NoticeStrip
+          tone="danger"
+          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
         >
           <span>{S.company.calendar.loadFailed(error)}</span>
           <Button size="sm" onClick={() => void load()}>
             {S.common.retry}
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {events !== null && events.length === 0 && invalidFiles.length === 0 && !hintDismissed && (
-        <div
-          className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+        <NoticeStrip
+          tone="muted"
+          className="mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs"
         >
           <span className="min-w-0 flex-1">{S.company.calendar.emptyHint}</span>
           <Button
@@ -826,13 +828,13 @@ export function CalendarPage() {
           >
             <CloseIcon />
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {events === null && error === null ? <CalendarSkeleton view={view} /> : grid}
 
       {invalidFiles.length > 0 && (
-        <div className={`mt-4 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
+        <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-xs">
           <p className="mb-1 font-medium">{S.company.calendar.invalidFiles}</p>
           <ul className="space-y-0.5 font-mono">
             {invalidFiles.map((f) => (
@@ -841,7 +843,7 @@ export function CalendarPage() {
               </li>
             ))}
           </ul>
-        </div>
+        </NoticeStrip>
       )}
 
       {/* Create / edit dialog: the scheduled-task form minus its target, the employee as a select. */}
@@ -1080,7 +1082,7 @@ function DayOverflow({
       <button
         ref={triggerRef}
         type="button"
-        title={label}
+        data-tooltip={label}
         aria-label={label}
         aria-expanded={open}
         aria-controls={panelId}

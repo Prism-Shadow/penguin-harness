@@ -43,9 +43,8 @@ import type {
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { Button, ICON_GAP } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { noAutofill } from "../../components/ui/input";
 import { PrincipalChip } from "./shared";
@@ -79,9 +78,9 @@ import type { DraftClip, DraftHistory, MentionDraft } from "./mention-draft";
 /**
  * The box grows with the draft up to this many pixels, then scrolls inside — the same cap the
  * development-mode composer sets in chat-input.tsx, and deliberately a pixel count rather than
- * `max-h-40`: the root font is the reader's own (16 / 18 / 20px, theme.tsx FONT_PX), so a rem
- * cap would let the box eat a different share of the stream at each scale. `max-h-40` is only
- * the outer guard; this is the one that binds.
+ * `max-h-40`: the root font is the reader's own (14 to 20px, `TEXT_SIZE_PX` in
+ * @prismshadow/penguin-ui/boot), so a rem cap would let the box eat a different share of the
+ * stream at each scale. `max-h-40` is only the outer guard; this is the one that binds.
  */
 const MAX_BOX_PX = 160;
 

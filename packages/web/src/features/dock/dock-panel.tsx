@@ -32,19 +32,14 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
+import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import {
-  CloseIcon,
-  NAV_ICONS,
-  PANEL_BOTTOM_ICON,
-  PANEL_RIGHT_ICON,
-} from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Kbd } from "../../components/ui/kbd";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import { ChordKbd } from "../../components/ui/chord-kbd";
 import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { toneDot } from "../../lib/tone";
 import { useTerminalChrome } from "../terminal/terminal-appearance";
 import {
@@ -98,8 +93,9 @@ import {
 } from "../chat/use-panel-width";
 import { usePointerDrag } from "./use-pointer-drag";
 
-/** Plus: the add-tab trigger. */
-const ADD_ICON = "M12 5v14M5 12h14";
+/** Four corners pushed outward / pulled inward: the touch height toggle (see maximize). */
+const MAXIMIZE_ICON = "M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5";
+const RESTORE_ICON = "M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5";
 /** Box with an arrow escaping to the top right: detach to its own window. */
 const DETACH_ICON = "M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5";
 
@@ -110,14 +106,17 @@ function DockButton(props: {
   onClick: () => void;
   children: ReactNode;
 }) {
+  // A 24px box is a comfortable mouse target and a poor finger one; the glyph inside keeps
+  // its size either way, so only the box a finger has to land in grows.
+  const coarsePointer = useCoarsePointer();
   return (
     <button
       type="button"
-      title={props.label}
+      data-tooltip={props.label}
       aria-label={props.label}
       data-testid={props.testId}
       onClick={props.onClick}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      className={`flex ${coarsePointer ? "h-8 w-8" : "h-6 w-6"} shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
     >
       {props.children}
     </button>
@@ -147,13 +146,14 @@ function DockTabButton(props: {
   /** Terminal tabs keep their id on the node for tests and the strip's drag targeting. */
   terminalId?: string;
 }) {
+  const coarsePointer = useCoarsePointer();
   return (
     <div
       data-testid="dock-tab"
       data-tab-id={props.tabId}
       {...(props.terminalId !== undefined ? { "data-terminal-id": props.terminalId } : {})}
       data-active={props.active}
-      className={`flex h-6 max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
+      className={`flex ${coarsePointer ? "h-8" : "h-6"} max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
         props.active
           ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
           : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
@@ -161,7 +161,7 @@ function DockTabButton(props: {
     >
       <button
         type="button"
-        title={props.title}
+        data-tooltip={props.title}
         onClick={props.onSelect}
         className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1 text-left text-xs"
       >
@@ -175,7 +175,7 @@ function DockTabButton(props: {
       </button>
       <button
         type="button"
-        title={
+        data-tooltip={
           props.closeShortcut !== undefined
             ? `${props.closeLabel} (${props.closeShortcut})`
             : props.closeLabel
@@ -183,7 +183,7 @@ function DockTabButton(props: {
         aria-label={`${props.closeLabel}: ${props.label}`}
         data-testid="dock-tab-close"
         onClick={props.onClose}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+        className={`flex ${coarsePointer ? "h-6 w-6" : "h-4 w-4"} shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200`}
       >
         <CloseIcon size={10} />
       </button>
@@ -292,7 +292,7 @@ function DockPicker({
             </span>
             <span className="min-w-0 flex-1 truncate">{S.terminal.title}</span>
             {toggleChord !== null && (
-              <Kbd chord={toggleChord} className="shrink-0 text-gray-400 dark:text-gray-500" />
+              <ChordKbd chord={toggleChord} className="text-gray-400 dark:text-gray-500" />
             )}
           </button>
         )}
@@ -561,6 +561,27 @@ export function DockPanel({
     [horizontal],
   );
 
+  // ------------------------------------------------------------------- touch height toggle
+
+  // The bottom dock's height is set by dragging its top boundary — a 4px line, which is a
+  // mouse target and not a finger one. On touch the same two heights a user actually wants
+  // (as much as the dock can take, and back to where it was) get a button. The remembered
+  // height is per mount on purpose: the ratio itself is persisted, so a dock left maximised
+  // restores to the shared default rather than to a height from another session.
+  const coarsePointer = useCoarsePointer();
+  const restoreRatio = useRef<number | null>(null);
+  const maximized = bottomRatio() >= DOCK_RATIO_MAX;
+  const toggleMaximized = useCallback(() => {
+    if (bottomRatio() >= DOCK_RATIO_MAX) {
+      const previous = restoreRatio.current;
+      if (previous === null) resetBottomRatio();
+      else setBottomRatio(previous);
+      return;
+    }
+    restoreRatio.current = bottomRatio();
+    setBottomRatio(DOCK_RATIO_MAX);
+  }, []);
+
   // ------------------------------------------------------------------------------ add menu
 
   const openPanelHere = (kind: PanelKind): void => {
@@ -583,7 +604,7 @@ export function DockPanel({
       menuClass="w-56"
       button={
         <DockButton label={S.dock.addTab} testId="dock-add" onClick={() => setAddOpen(!addOpen)}>
-          <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
         </DockButton>
       }
     >
@@ -612,7 +633,7 @@ export function DockPanel({
             className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             <span className="shrink-0 text-gray-500 dark:text-gray-400">
-              <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
             </span>
             <span className="min-w-0 truncate">{S.terminal.newShell}</span>
           </button>
@@ -778,9 +799,18 @@ export function DockPanel({
             onClick={() => moveDock(position, other)}
           >
             <GlyphIcon
-              d={position === "right" ? PANEL_BOTTOM_ICON : PANEL_RIGHT_ICON}
+              d={position === "right" ? ICONS.panelBottom : ICONS.panelRight}
               size={ICON_SIZE.rowLead}
             />
+          </DockButton>
+        )}
+        {horizontal && coarsePointer && tabs.length > 0 && (
+          <DockButton
+            label={maximized ? S.dock.restore : S.dock.maximize}
+            testId="dock-maximize"
+            onClick={toggleMaximized}
+          >
+            <GlyphIcon d={maximized ? RESTORE_ICON : MAXIMIZE_ICON} size={ICON_SIZE.rowLead} />
           </DockButton>
         )}
         <DockButton label={S.dock.hideDock} testId="dock-close" onClick={hide}>
@@ -863,7 +893,7 @@ export function DockPanel({
             role="separator"
             aria-orientation="horizontal"
             aria-label={S.dock.resize}
-            title={S.dock.resize}
+            data-tooltip={S.dock.resize}
             {...resizerDragProps}
             onDoubleClick={onResizerDoubleClick}
             className={`absolute -top-[3px] left-0 right-0 z-20 h-1.5 cursor-ns-resize transition-colors duration-150 ${
@@ -895,7 +925,7 @@ export function DockPanel({
           role="separator"
           aria-orientation="vertical"
           aria-label={S.dock.resize}
-          title={S.dock.resize}
+          data-tooltip={S.dock.resize}
           {...resizerDragProps}
           onDoubleClick={onResizerDoubleClick}
           className={`w-1.5 shrink-0 cursor-col-resize transition-colors duration-150 ${

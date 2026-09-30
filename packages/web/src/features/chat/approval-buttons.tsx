@@ -4,8 +4,8 @@
  * is submitted via POST /api/sessions/:s/approvals/:toolCallId.
  */
 import { useState } from "react";
+import { Button } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 
 export function ApprovalButtons({
   onDecide,

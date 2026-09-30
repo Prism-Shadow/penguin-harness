@@ -13,16 +13,10 @@
  * The rows reuse the session row menu's compact styling (see its module header, which already
  * declares itself shared beyond that row), so every overflow menu in the app reads the same.
  */
+import { ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import {
-  ADD_TO_CHAT_ICON,
-  DOWNLOAD_ICON,
-  FILE_EDIT_ICON,
-  UPLOAD_ICON,
-} from "../../components/ui/icons";
-import {
-  TRASH_ICON,
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
@@ -78,12 +72,12 @@ export function WorkspaceFileMenuRows({
         {S.files.copyPath}
       </button>
       <button type="button" className={overflowMenuRowClass} onClick={() => onAddToChat(target)}>
-        {overflowMenuGlyph(ADD_TO_CHAT_ICON)}
+        {overflowMenuGlyph(ICONS.messagePlus)}
         {S.files.addToChat}
       </button>
       {onAddSelection !== undefined && (
         <button type="button" className={overflowMenuRowClass} onClick={onAddSelection}>
-          {overflowMenuGlyph(ADD_TO_CHAT_ICON)}
+          {overflowMenuGlyph(ICONS.messagePlus)}
           {S.files.addSelectionToChat}
         </button>
       )}
@@ -93,7 +87,7 @@ export function WorkspaceFileMenuRows({
           className={overflowMenuRowClass}
           onClick={() => onUploadInto(target.path)}
         >
-          {overflowMenuGlyph(UPLOAD_ICON)}
+          {overflowMenuGlyph(ICONS.upload)}
           {S.files.uploadHere}
         </button>
       ) : (
@@ -104,7 +98,7 @@ export function WorkspaceFileMenuRows({
             onClick={onClose}
             className={overflowMenuRowClass}
           >
-            {overflowMenuGlyph(DOWNLOAD_ICON)}
+            {overflowMenuGlyph(ICONS.download)}
             {S.files.download}
           </a>
           {/* The two that change the Workspace come last, after everything that only reads it,
@@ -112,7 +106,7 @@ export function WorkspaceFileMenuRows({
               lands, in the red every other overflow menu gives a delete. */}
           {onRename !== undefined && (
             <button type="button" className={overflowMenuRowClass} onClick={() => onRename(target)}>
-              {overflowMenuGlyph(FILE_EDIT_ICON)}
+              {overflowMenuGlyph(ICONS.penLine)}
               {S.files.renameTitle}
             </button>
           )}
@@ -122,7 +116,7 @@ export function WorkspaceFileMenuRows({
               className={overflowMenuDangerClass}
               onClick={() => onDelete(target)}
             >
-              {overflowMenuGlyph(TRASH_ICON)}
+              {overflowMenuGlyph(ICONS.trash)}
               {S.common.delete}
             </button>
           )}

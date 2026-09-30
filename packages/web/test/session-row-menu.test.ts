@@ -14,30 +14,33 @@
  * the exported manifests and label helpers rather than a rendered DOM
  * (title-reveal.test.ts convention).
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { ICONS } from "@prismshadow/penguin-ui";
 import {
-  ARCHIVE_ICON,
   HOVER_ROW_ACTIONS,
-  PENCIL_ICON,
-  PIN_ICON,
-  TRASH_ICON,
-  UNARCHIVE_ICON,
   contextMenuActions,
   sessionRowMenuItem,
 } from "../src/components/ui/session-row-menu";
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
-import { MESSAGING_RELAY_ICON } from "../src/components/ui/icons";
 import { STAT_ICONS } from "../src/lib/stat-icons";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+
+const SCAN = scanSources();
+const ROW_MENU = "packages/web/src/components/ui/session-row-menu.tsx";
 
 /** Every test that switches locale puts the default (zh) back. */
 afterEach(() => setActiveStrings(zh));
 
 const RESTING = { archived: false, pinned: false };
+
+describe("the row menu's sources", () => {
+  it("scan every source root, and find the row menu in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, ROW_MENU);
+  });
+});
 
 describe("HOVER_ROW_ACTIONS", () => {
   it("is archive alone — the ellipsis beside it is the menu's pointer entry, not an action", () => {
@@ -98,10 +101,7 @@ describe("the hover buttons' CSS contract", () => {
   // Node-only suite, so this is asserted against the source text (title-reveal.test.ts
   // convention). It is worth pinning: an invisible button still takes taps, and these are
   // invisible for the whole of every touch session, delete included.
-  const source = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/ui/session-row-menu.tsx"),
-    "utf8",
-  );
+  const source = sourceFile(SCAN, ROW_MENU).text;
 
   it("gates pointer events on the same conditions as visibility, leaving no phantom tap target", () => {
     expect(source).toContain("pointer-events-none");
@@ -121,7 +121,7 @@ describe("the hover buttons' CSS contract", () => {
     // The menu's discoverable pointer entry: a real button that reports it opens a menu
     // and anchors the panel at its own rect (not the pointer position).
     expect(source).toContain('aria-haspopup="menu"');
-    expect(source).toContain("ELLIPSIS_ICON");
+    expect(source).toContain("ICONS.ellipsis");
     expect(source).toContain("getBoundingClientRect");
   });
 });
@@ -145,24 +145,24 @@ describe("sessionRowMenuItem", () => {
     // Remote control wears the same paper plane the session row flies while it is relaying:
     // the action and the mark it produces are one feature.
     expect(icons).toEqual([
-      PIN_ICON,
-      PENCIL_ICON,
-      MESSAGING_RELAY_ICON,
-      ARCHIVE_ICON,
+      ICONS.pin,
+      ICONS.pencil,
+      ICONS.paperPlane,
+      ICONS.archive,
       // The same glyph the details card's copy button shows, so one value has one mark.
       STAT_ICONS.copy,
-      TRASH_ICON,
+      ICONS.trash,
     ]);
   });
 
   it("flips archive's label and glyph on an archived row", () => {
     expect(sessionRowMenuItem("archive", { archived: false, pinned: false })).toMatchObject({
       label: zh.chat.archiveSession,
-      icon: ARCHIVE_ICON,
+      icon: ICONS.archive,
     });
     expect(sessionRowMenuItem("archive", { archived: true, pinned: false })).toMatchObject({
       label: zh.chat.unarchiveSession,
-      icon: UNARCHIVE_ICON,
+      icon: ICONS.archiveRestore,
     });
   });
 
@@ -173,7 +173,7 @@ describe("sessionRowMenuItem", () => {
     expect(sessionRowMenuItem("pin", { archived: false, pinned: true }).label).toBe(
       zh.chat.unpinSession,
     );
-    expect(sessionRowMenuItem("pin", { archived: false, pinned: true }).icon).toBe(PIN_ICON);
+    expect(sessionRowMenuItem("pin", { archived: false, pinned: true }).icon).toBe(ICONS.pin);
   });
 
   it("reads the active dictionary, so both locales name every action", () => {

@@ -20,22 +20,28 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  GlyphIcon,
+  HiddenFileInput,
+  IconButton,
+  SettingsEmpty,
+  SkeletonList,
+  buttonClass,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button, labelButtonClass } from "../../components/ui/button";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { DownloadIcon } from "../../components/ui/icons";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
@@ -46,7 +52,7 @@ import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
 
 /** The Button look on the upload `<label>`; the Hooks tab's upload label borrows it. */
-export const UPLOAD_LABEL_CLASS = labelButtonClass("secondary", "sm");
+export const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 
 /** Delete (trash can) icon path — the same glyph as the agents page card delete; the Hooks tab's row delete borrows it. */
 export const TRASH_ICON =
@@ -263,14 +269,16 @@ export function SkillsTab({
               <div className="min-w-0 flex-1">
                 <span
                   className="block truncate font-mono text-[13px] font-semibold"
-                  title={skill.name}
+                  data-tooltip={skill.name}
+                  data-tooltip-content="code"
                 >
                   {skill.name}
                 </span>
                 {/* Short description truncates to one line (full description goes into title for hover reading). */}
                 <p
                   className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                  title={skill.description}
+                  data-tooltip={skill.description}
+                  data-tooltip-content="text"
                 >
                   {localizedShortText(locale, skill)}
                 </p>
@@ -278,7 +286,7 @@ export function SkillsTab({
               {metaLine(skill) !== "" && (
                 <span
                   className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                  title={metaLine(skill)}
+                  data-tooltip={metaLine(skill)}
                 >
                   {metaLine(skill)}
                 </span>
@@ -286,25 +294,23 @@ export function SkillsTab({
               {/* Icon-only row actions (same affordance as the agents page cards: neutral
                   bordered icon for export, danger variant with red text/hover for delete);
                   the tooltip + aria-label carry the wording. */}
-              <Button
-                size="icon"
+              <IconButton
+                label={`${S.skills.exportSkill} ${skill.name}`}
                 title={S.skills.exportSkill}
-                aria-label={`${S.skills.exportSkill} ${skill.name}`}
                 disabled={busy}
                 onClick={() => void exportSkill(skill.name)}
               >
                 <DownloadIcon size={14} className="text-gray-600 dark:text-gray-300" />
-              </Button>
-              <Button
-                size="icon"
+              </IconButton>
+              <IconButton
                 variant="danger"
+                label={`${S.skills.uninstall} ${skill.name}`}
                 title={S.skills.uninstall}
-                aria-label={`${S.skills.uninstall} ${skill.name}`}
                 disabled={busy}
                 onClick={() => setRemoving(skill.name)}
               >
                 <GlyphIcon d={TRASH_ICON} size={14} />
-              </Button>
+              </IconButton>
             </div>
           ))}
         </div>

@@ -42,21 +42,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
 import { useOrg } from "./org-layout";
@@ -91,6 +94,7 @@ import {
 } from "./channel-stream";
 import type { BubbleShape, ChannelDay, StreamItem } from "./channel-stream";
 import { parsePrincipal } from "./principals";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
@@ -110,7 +114,7 @@ const RUN_AVATAR_PX = 28;
  * The two bubble surfaces. The reader's own takes the app's brand blue rather than a tone from
  * lib/tone.ts: which side of a conversation wrote a message is an identity, not a judgement,
  * and a status hue would announce a state the message does not have. It is also the only tint
- * that stays clearly apart from the neutral bubble under every accent — `--accent-bg` is grey
+ * that stays clearly apart from the neutral bubble under every accent — `--ui-accent` is grey
  * in the default neutral theme, where a wash of it is the neutral bubble again.
  */
 const BUBBLE_SURFACE = {
@@ -530,7 +534,7 @@ export function ChannelView() {
       return (
         <div key={m.id} id={m.id} className="my-2 flex justify-center">
           <p
-            title={formatDateTime(m.time)}
+            data-tooltip={formatDateTime(m.time)}
             className="max-w-[85%] rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-center text-xs leading-relaxed text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
           >
             <span className="sr-only">{S.company.channels.systemMessage} </span>
@@ -597,7 +601,7 @@ export function ChannelView() {
                   "hop 3" alone tells a reader nothing about why a message arrived. */}
               {hopChipShown(item.hop) && (
                 <span
-                  title={S.company.channels.hopInfo}
+                  data-tooltip={S.company.channels.hopInfo}
                   className="text-gray-500 dark:text-gray-400"
                 >
                   {S.company.channels.hop(item.hop)}
@@ -628,7 +632,7 @@ export function ChannelView() {
                     {renderRefs(m)}
                   </div>
                   <span
-                    title={at}
+                    data-tooltip={at}
                     className="shrink-0 text-[11px] tabular-nums text-gray-600 dark:text-gray-400"
                   >
                     <span className="sr-only">{S.company.channels.sentAt(at)}</span>
@@ -661,9 +665,9 @@ export function ChannelView() {
           }}
         />
         {detailError !== null && detail === null && (
-          <p role="alert" className={`border-b px-4 py-1.5 text-xs ${toneStrip.danger}`}>
+          <NoticeStrip tone="danger" as="p" role="alert" className="border-b px-4 py-1.5 text-xs">
             {S.company.channels.channelLoadFailed} · {detailError}
-          </p>
+          </NoticeStrip>
         )}
         <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
           <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
@@ -721,7 +725,7 @@ export function ChannelView() {
               <button
                 type="button"
                 aria-label={S.chat.jumpToLatest}
-                title={S.chat.jumpToLatest}
+                data-tooltip={S.chat.jumpToLatest}
                 onClick={jumpToLatest}
                 className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-full border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
               >
@@ -734,15 +738,18 @@ export function ChannelView() {
             {canPost ? (
               <ChannelComposer candidates={candidates} names={names} onSend={send} />
             ) : detail !== null && detail.archived ? (
-              <p
-                className={`mt-3 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+              <NoticeStrip
+                tone="muted"
+                as="p"
+                className="mt-3 rounded-md border px-3 py-2 text-xs"
                 role="status"
               >
                 {S.company.channels.archivedNotice}
-              </p>
+              </NoticeStrip>
             ) : detail !== null ? (
-              <div
-                className={`mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
+              <NoticeStrip
+                tone="attention"
+                className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs"
               >
                 <span>{S.company.channels.notMemberNotice}</span>
                 <Button
@@ -753,7 +760,7 @@ export function ChannelView() {
                 >
                   {joining ? S.company.channels.joining : S.company.channels.join}
                 </Button>
-              </div>
+              </NoticeStrip>
             ) : null}
           </div>
         </div>
@@ -788,7 +795,7 @@ function RefChip({
   return (
     <button
       type="button"
-      title={title}
+      data-tooltip={title}
       onClick={onClick}
       className={`inline-flex items-center ${ICON_GAP.tight} rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
     >

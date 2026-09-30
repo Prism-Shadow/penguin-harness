@@ -77,7 +77,7 @@ describe("HandbookExplorer rows", () => {
   it("keeps the index's reason for being pinned out of the row and in its tooltip and name", () => {
     const [index] = rows();
     const expected = `${HANDBOOK_INDEX} · ${zh.company.handbook.indexLabel} · ${updatedAt(512)}`;
-    expect(attr(index!, "title")).toBe(expected);
+    expect(attr(index!, "data-tooltip")).toBe(expected);
     expect(attr(index!, "aria-label")).toBe(expected);
     expect(visible(index!)).toContain(HANDBOOK_INDEX);
     expect(visible(index!)).not.toContain(zh.company.handbook.indexLabel);
@@ -89,14 +89,14 @@ describe("HandbookExplorer rows", () => {
 
   it("gives a document row its path and write time, and no accessible name of its own", () => {
     const row = rows().find((r) => attr(r, "data-tree-path") === "conventions.md");
-    expect(attr(row!, "title")).toBe(`conventions.md · ${updatedAt(40)}`);
+    expect(attr(row!, "data-tooltip")).toBe(`conventions.md · ${updatedAt(40)}`);
     expect(attr(row!, "aria-label")).toBeNull();
     expect(visible(row!)).toBe(`conventions.md${formatRelativeShort(UPDATED, "zh")}`);
   });
 
   it("gives a folder row its path and how many documents it holds", () => {
     const row = rows().find((r) => attr(r, "aria-expanded") !== null);
-    expect(attr(row!, "title")).toBe(`roles · ${zh.company.handbook.documentsInFolder(2)}`);
+    expect(attr(row!, "data-tooltip")).toBe(`roles · ${zh.company.handbook.documentsInFolder(2)}`);
     expect(attr(row!, "aria-label")).toBeNull();
     expect(visible(row!)).toBe("roles2");
   });

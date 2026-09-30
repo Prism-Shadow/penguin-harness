@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
+import { Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -42,7 +43,6 @@ import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
-import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
@@ -282,7 +282,7 @@ export function UsagePage() {
       <div className="mx-auto max-w-5xl space-y-4">
         {/* Top filters: controls have no external title (the explanation is written into the "all …" option), so they're baseline-centered with the page title */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">{S.usage.title}</h1>
+          <h1 className="ui-display text-xl font-semibold">{S.usage.title}</h1>
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-32">
               <Select

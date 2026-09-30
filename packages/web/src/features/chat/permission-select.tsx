@@ -16,9 +16,9 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
@@ -27,6 +27,7 @@ import {
 } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
 import { SettingsDialog } from "../settings/settings-dialog";
+import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
@@ -34,7 +35,7 @@ const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
 /** A section's small heading inside the panel. */
 function Heading({ children }: { children: ReactNode }) {
   return (
-    <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">
+    <div className="px-3 pt-2 pb-1 text-xs font-medium text-gray-400 dark:text-gray-500">
       {children}
     </div>
   );
@@ -63,21 +64,15 @@ function Choice({
       aria-checked={selected}
       aria-disabled={off || undefined}
       disabled={off}
-      title={unavailable}
+      data-tooltip={unavailable}
       onClick={onPick}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 ${
-        off
-          ? "cursor-not-allowed text-gray-400 dark:text-gray-600"
-          : `hover:bg-gray-100 dark:hover:bg-gray-800 ${
-              selected
-                ? "font-medium text-gray-900 dark:text-gray-100"
-                : "text-gray-600 dark:text-gray-400"
-            }`
+      className={`flex items-center gap-2 ${menuRowClass} text-xs ${
+        off ? "cursor-not-allowed text-gray-400 dark:text-gray-600" : menuRowTone(selected)
       }`}
     >
       <span className="min-w-0 flex-1 truncate whitespace-nowrap">{label}</span>
-      {off && <span className="shrink-0 text-[10px]">{S.chat.permission.unsupported}</span>}
-      <span className="w-3 shrink-0 text-center">{selected ? "✓" : ""}</span>
+      {off && <span className="shrink-0 text-xs">{S.chat.permission.unsupported}</span>}
+      <ChoiceCheck on={selected} />
     </button>
   );
 }
@@ -152,7 +147,7 @@ export function PermissionSelect({
           <button
             type="button"
             aria-label={`${P.label}: ${levelName}`}
-            title={`${P.label}：${levelName}\n${summary}`}
+            data-tooltip={`${P.label}：${levelName}\n${summary}`}
             data-level={level}
             disabled={disabled}
             onClick={() => setOpen((v) => !v)}
@@ -227,7 +222,7 @@ export function PermissionSelect({
                   setOpen(false);
                   setSettingsOpen(true);
                 }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone()}`}
               >
                 <span className="min-w-0 flex-1 truncate whitespace-nowrap">{P.more}</span>
               </button>

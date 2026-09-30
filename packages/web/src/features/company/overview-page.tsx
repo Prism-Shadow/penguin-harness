@@ -30,24 +30,27 @@ import type {
   OrgTicketStatus,
   OrganizationDetail,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  Chevron,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatRelativeShort } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { Chevron } from "../../components/ui/chevron";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -112,7 +115,7 @@ const rowClass = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-lef
 /** A small tone-marked count: the dot, the label, the number. */
 function ToneCount({ tone, label, value }: { tone: Tone; label: string; value: number }) {
   return (
-    <span className={`inline-flex items-center ${ICON_GAP.tight}`} title={label}>
+    <span className={`inline-flex items-center ${ICON_GAP.tight}`} data-tooltip={label}>
       <span className={`block h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
       <span>{label}</span>
       <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">{value}</span>
@@ -240,7 +243,7 @@ function MissionFold({ mission }: { mission: string }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            title={toggle}
+            data-tooltip={toggle}
             aria-expanded={expanded}
             aria-controls={bodyId}
             className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} rounded text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
@@ -554,7 +557,7 @@ export function OverviewPage() {
                   .map((seg) => (
                     <span
                       key={seg.status}
-                      title={`${S.company.tickets.columns[seg.status] ?? seg.status} ${seg.count}`}
+                      data-tooltip={`${S.company.tickets.columns[seg.status] ?? seg.status} ${seg.count}`}
                       className={`block h-full ${BOARD_FILL[seg.status]}`}
                       style={{ width: `${seg.share * 100}%` }}
                     />
@@ -568,7 +571,7 @@ export function OverviewPage() {
                   <button
                     key={seg.status}
                     type="button"
-                    title={S.company.overview.openColumn(
+                    data-tooltip={S.company.overview.openColumn(
                       S.company.tickets.columns[seg.status] ?? seg.status,
                     )}
                     onClick={() => page("tickets", `?column=${seg.status}`)}
@@ -588,7 +591,7 @@ export function OverviewPage() {
                     beside the five column counts and has to weigh the same as they do. */}
                 <button
                   type="button"
-                  title={S.company.overview.openColumn(S.company.overview.blocked)}
+                  data-tooltip={S.company.overview.openColumn(S.company.overview.blocked)}
                   onClick={() => page("tickets", "?blocked=1")}
                   className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
                 >
@@ -746,7 +749,7 @@ export function OverviewPage() {
                     )}
                     <span
                       className="w-20 shrink-0 text-right text-xs tabular-nums text-gray-400 dark:text-gray-500"
-                      {...(row.time !== null ? { title: formatDateTime(row.time) } : {})}
+                      {...(row.time !== null ? { "data-tooltip": formatDateTime(row.time) } : {})}
                     >
                       {row.time === null ? "—" : formatRelativeShort(row.time, locale)}
                     </span>
@@ -822,9 +825,9 @@ export function OverviewPage() {
                       <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
                     </TitleButton>
                     {a.pausedAt !== undefined ? (
-                      <Badge tone="red">{S.company.finance.paused}</Badge>
+                      <Badge tone="danger">{S.company.finance.paused}</Badge>
                     ) : (
-                      <Badge tone="amber">{S.company.finance.warned}</Badge>
+                      <Badge tone="attention">{S.company.finance.warned}</Badge>
                     )}
                     <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                       {formatRelativeShort(a.pausedAt ?? a.warnedAt ?? "", locale)}

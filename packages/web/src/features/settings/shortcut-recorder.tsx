@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
-import { Kbd } from "../../components/ui/kbd";
+import { ChordKbd } from "../../components/ui/chord-kbd";
 import { isModifierCode } from "../../lib/shortcuts/chord";
 import { formatChord } from "../../lib/shortcuts/format";
 import { currentPlatform } from "../../lib/shortcuts/platform";
@@ -76,7 +76,7 @@ export function ShortcutRecorder({
         S.shortcuts.record
       );
   } else if (chord !== null) {
-    content = <Kbd chord={chord} size="control" />;
+    content = <ChordKbd chord={chord} />;
   } else {
     content = <span className="text-gray-400 dark:text-gray-500">{S.shortcuts.unbound}</span>;
   }
@@ -86,7 +86,7 @@ export function ShortcutRecorder({
       <button
         ref={buttonRef}
         type="button"
-        title={S.shortcuts.rebind}
+        data-tooltip={S.shortcuts.rebind}
         aria-pressed={recording}
         onClick={() => {
           if (!recording) update(recorderStart());

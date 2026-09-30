@@ -38,9 +38,9 @@ Rules:
 - **Never make colour the only carrier.** Every status mark also names its state in an accessible
   name or in adjacent text.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
-  surfaces marks actually sit on — white and gray-50 in light, and the values this app *overrides*
-  in `styles.css` for dark (gray-950 is `#000000`, gray-900 is `#0d0d0d`, not Tailwind's stock
-  values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
+  surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
+  *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
+  `#0d0d0d`, not Tailwind's stock values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
   allowed below it because its meaning is always already in text.
 - **What is out of scope**, and must not be folded in: categorical palettes where colour is an
   identity rather than a judgement (`category-colors.ts`, `token-colors.ts`, the timeline phase
@@ -107,17 +107,21 @@ which is why the control needs an id. `test/info-popover.test.ts` guards this.
 
 ## Icons
 
-One renderer: `components/ui/glyph-icon.tsx`. A 24×24 path, `strokeWidth` 1.7, `stroke="currentColor"`,
-`fill="none"` (or `filled` for an "on" state). Do not hand-write an `<svg>` for a line icon — put the
-path in the module that owns it (`lib/stat-icons.ts`, `components/ui/icons.tsx`, `group-list.tsx`,
-`session-row-menu.tsx`) and render it through `GlyphIcon`.
+One renderer: `GlyphIcon` from `@prismshadow/penguin-ui`. A 24×24 path stroked at the theme's
+`--ui-icon-stroke` (1.7 in Primer), `stroke="currentColor"`, `fill="none"` (or `filled` for an "on"
+state); pass `decor="nav|group|menu|empty"` only where a label beside it already says what it says.
+Do not hand-write an `<svg>` or a `const *_ICON = "M…"` for a line icon — the paths live in one
+registry, `ICONS` (`packages/ui/src/components/icons/icons.ts`), keyed by the drawing (`robot`,
+`alarmClock`), and the app's manifests say which drawing stands for what (`lib/nav-icons.ts`,
+`lib/stat-icons.ts`, `GROUP_MODE_ICONS`). A new glyph is a registry entry; `test/icon-registry.test.ts`
+holds the feature files' leftovers to a shrinking list.
 
 Two marks deliberately live off that grid, because a two-stroke mark aliases when its grid and its
 render size disagree: `ChevronDown` (12×12, stroke 1.5) and `CloseIcon` (14×14, stroke 1.5). Charts,
 sparklines, the topology view, the ring gauges and the login background draw their own geometry and
 are outside the family entirely.
 
-Sizes come from `src/lib/icon-scale.ts`, named by role, not by number — `inlineGlyph` 13,
+Sizes come from `ICON_SIZE` (`packages/ui/src/icon-scale.ts`), named by role, not by number — `inlineGlyph` 13,
 `rowLead` 14, `iconButton` / `groupHeaderGlyph` 15, `navRow` / `groupHeaderAction` 16,
 `groupHeaderAvatar` / `sectionMark` 18, `chevron` 14 / `chevronDense` 12, `caret` 12 /
 `caretDense` 10. Pick the rung whose role matches; if none does, the honest move is to add a rung
@@ -137,8 +141,9 @@ One record: `sizeTextClass` in `components/ui/input.tsx`. Two rungs — `sm` is 
 `text-base` — and `sizeClass` pairs each with its padding. `Select`'s menu rows, `OptionMenu`'s row
 titles, `Textarea` and `FormPicker` all read it, so a rung moves the whole family at once.
 
-The rungs are **relative, not the pixel values their names suggest**. `theme.tsx`'s `FONT_PX` sets
-the root font size per tier (16/18/20px, default 18) and `styles.css` overrides no `--text-*`, so
+The rungs are **relative, not the pixel values their names suggest**. `FONT_SCALE_PX` (in
+`@prismshadow/penguin-ui/boot`, applied before first paint and by `theme.tsx`) sets the root font
+size per tier (16/18/20px, default 18) and no stylesheet overrides a `--text-*`, so
 `text-xs` is 13.5px at the default tier rather than 12px, and every rung tracks the user's setting.
 
 **A call site passes `size`; it never spells a `text-*` class.** The caller's class and the

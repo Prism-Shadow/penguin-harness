@@ -22,24 +22,29 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { HookItem } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  SettingsEmpty,
+  SkeletonList,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HelpFold } from "../../components/ui/help-fold";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { DownloadIcon, HOOK_ICON } from "../../components/ui/icons";
 import { Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
@@ -259,7 +264,7 @@ export function HooksTab({
                 <SkillTile
                   icon={hook.icon}
                   name={hook.name}
-                  fallback={HOOK_ICON}
+                  fallback={ICONS.fishHook}
                   size={36}
                   glyph={20}
                 />
@@ -269,7 +274,8 @@ export function HooksTab({
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                     <span
                       className="max-w-full truncate font-mono text-[13px] font-semibold"
-                      title={hook.name}
+                      data-tooltip={hook.name}
+                      data-tooltip-content="code"
                     >
                       {hook.name}
                     </span>
@@ -280,7 +286,8 @@ export function HooksTab({
                   {/* Description truncates to one line (the full text goes into title for hover reading). */}
                   <p
                     className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                    title={description}
+                    data-tooltip={description}
+                    data-tooltip-content="text"
                   >
                     {description}
                   </p>
@@ -288,7 +295,7 @@ export function HooksTab({
                 {hook.version !== "" && (
                   <span
                     className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                    title={hook.version}
+                    data-tooltip={hook.version}
                   >
                     {hook.version}
                   </span>

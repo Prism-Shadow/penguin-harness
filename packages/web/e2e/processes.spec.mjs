@@ -55,8 +55,8 @@ test("background process appears in the details card and can be stopped", async 
 
   // The turn finishes with the command promoted to background: the stats trigger (far
   // right; it doubles as the "Session 信息" details button) gains the background-task count.
-  const detailsBtn = page.locator('button[title="Session 信息"]');
-  await expect(detailsBtn.locator('span[title="1 个后台任务"]')).toBeVisible({
+  const detailsBtn = page.locator('button[data-tooltip="Session 信息"]');
+  await expect(detailsBtn.locator('span[data-tooltip="1 个后台任务"]')).toBeVisible({
     timeout: 30_000,
   });
 
@@ -82,7 +82,7 @@ test("background process appears in the details card and can be stopped", async 
   // The kill drops the process from the registry: the row disappears on the follow-up
   // refresh and the header count goes with it.
   await expect(page.getByText("会话进程")).toHaveCount(0, { timeout: 10_000 });
-  await expect(detailsBtn.locator('span[title="1 个后台任务"]')).toHaveCount(0);
+  await expect(detailsBtn.locator('span[data-tooltip="1 个后台任务"]')).toHaveCount(0);
 
   // The server-side list agrees (the registry entry is gone, not merely marked exited).
   const procs = await (
@@ -133,7 +133,7 @@ test("an exited process can be removed from the list", async ({ page }) => {
   // Open the details card. The exited row keeps its 已退出 label and gains a remove
   // button (#312); running rows are the only ones with 停止. The generous timeout rides
   // out one 15s poll interval in case the idle refresh still saw the process alive.
-  await page.locator('button[title="Session 信息"]').click();
+  await page.locator('button[data-tooltip="Session 信息"]').click();
   await expect(page.getByText("会话进程")).toBeVisible();
   const row = page.locator("li", { hasText: "sleep 0.5" }).first();
   await expect(row.getByText("已退出")).toBeVisible({ timeout: 30_000 });
@@ -188,7 +188,7 @@ test("clear exited removes every exited process and leaves the running one", asy
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText(/Command finished/).first()).toBeVisible({ timeout: 30_000 });
 
-  await page.locator('button[title="Session 信息"]').click();
+  await page.locator('button[data-tooltip="Session 信息"]').click();
   await expect(page.getByText("会话进程")).toBeVisible();
   const running = page.locator("li", { hasText: "sleep 600" }).first();
   const exited = page.locator("li", { hasText: "sleep 0.5" }).first();

@@ -11,10 +11,9 @@
  * warn-and-skip stance).
  */
 import { useState } from "react";
+import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { Chevron } from "../../components/ui/chevron";
-import { StatusIcon } from "../../components/ui/status-icon";
 import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/omni/stream-model";
 import { StepBanner } from "./step-banner";
 
@@ -41,7 +40,7 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
 
   const row = (
     <>
-      <StatusIcon state={failed ? "failed" : "done"} size={11} />
+      <StatusIcon state={failed ? "failed" : "done"} size="sm" />
       <code className="shrink-0 font-mono text-xs text-gray-700 dark:text-gray-300">
         {outcome.server}
       </code>
@@ -87,7 +86,8 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
                 </code>
                 {tool.description !== undefined && (
                   <span
-                    title={tool.description}
+                    data-tooltip={tool.description}
+                    data-tooltip-content="text"
                     className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500"
                   >
                     {tool.description}

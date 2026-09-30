@@ -89,26 +89,25 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
 
   // --- Details card Session id + copy ---
   // The id is selectable mono text with the copy button beside it (not inside it); the
-  // copied feedback is the button's own icon flipping to the check + its tooltip flipping
-  // to "已复制" — NO "已复制" text is rendered (#312), and the "Session id" label is untouched.
+  // copied feedback is the button's own icon flipping to the check — NO text changes: no
+  // "已复制" label, the tooltip keeps naming the action (#312), and "Session id" is untouched.
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  await page.locator('button[title="Session 信息"]').click();
+  await page.locator('button[data-tooltip="Session 信息"]').click();
   await expect(page.getByText(sessionId, { exact: true }).first()).toBeVisible();
   const copyBtn = page.getByRole("button", { name: "复制 Session ID" });
   await copyBtn.click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(sessionId);
-  // Feedback at the button: tooltip flips while copied; the accessible name (aria-label)
-  // and the icon-only content stay — no transient text label anywhere.
-  await expect(copyBtn).toHaveAttribute("title", "已复制");
+  // Feedback at the button: the tooltip, the accessible name (aria-label) and the icon-only
+  // content all stay — no transient text anywhere.
+  await expect(copyBtn).toHaveAttribute("data-tooltip", "复制 Session ID");
   await expect(copyBtn).toHaveText("");
   // An icon swap is silent, so the confirmation ALSO lands in a visually hidden live
   // region beside the button — present in the DOM (that is what a screen reader reads)
   // while the button itself stays icon-only, as asserted right above.
   await expect(page.getByText("已复制", { exact: true })).toHaveCount(1);
-  // …and both halves clear once the copied flash ends (1.5s).
-  await expect(copyBtn).toHaveAttribute("title", "复制 Session ID", { timeout: 5_000 });
-  await expect(page.getByText("已复制", { exact: true })).toHaveCount(0);
+  // …and the announcement clears once the copied flash ends (1.5s).
+  await expect(page.getByText("已复制", { exact: true })).toHaveCount(0, { timeout: 5_000 });
   // The section label above the id is not the feedback target — it stays "Session id".
   await expect(page.getByText("Session id", { exact: true })).toBeVisible();
 });

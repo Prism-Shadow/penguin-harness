@@ -1,0 +1,267 @@
+{
+  "$comment": "Importer rewrites for the UI package migration, read by scripts/ui-migrate.mjs. waves.<wave>.<web module, repo-relative, no extension> is a list of rules: names that left that module for `target` (the package, or a web module that took them over), defined in `dest`. A name is `Name`, `Old→New` (renamed) or `OLD→OBJECT.key` (became a member of a registry object). A rule applies once the web module no longer exports the name and `dest` exports what it maps to; delete a wave's block once the wave is on main.",
+  "waves": {
+    "W1": {
+      "packages/web/src/lib/icon-scale": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/icon-scale.ts",
+          "names": ["ICON_SIZE", "ICON_GAP"]
+        }
+      ],
+      "packages/web/src/components/ui/glyph-icon": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/glyph-icon/glyph-icon.tsx",
+          "names": ["GlyphIcon"]
+        }
+      ],
+      "packages/web/src/components/ui/chevron": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/chevron/chevron.tsx",
+          "names": ["Chevron"]
+        }
+      ],
+      "packages/web/src/components/ui/icons": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/marks/marks.tsx",
+          "names": [
+            "ChevronDown",
+            "CheckIcon",
+            "PlusIcon",
+            "DownloadIcon",
+            "UploadIcon",
+            "CloseIcon"
+          ]
+        },
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/close-button/close-button.tsx",
+          "names": ["CloseButton"]
+        },
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/icons.ts",
+          "names": [
+            "INFO_ICON→ICONS.info",
+            "QUOTE_ICON→ICONS.quote",
+            "EXTERNAL_LINK_ICON→ICONS.externalLink",
+            "PANEL_BOTTOM_ICON→ICONS.panelBottom",
+            "PANEL_RIGHT_ICON→ICONS.panelRight",
+            "WORKBENCH_ICON→ICONS.tiles",
+            "EXPAND_ICON→ICONS.cornersOut",
+            "COLLAPSE_ICON→ICONS.cornersIn",
+            "AGENTS_PAIR_ICON→ICONS.robotPair",
+            "MEMORY_ICON→ICONS.brain",
+            "HIDDEN_ICON→ICONS.eyeOff",
+            "FILE_ICON→ICONS.file",
+            "FILE_WRITE_ICON→ICONS.filePlus",
+            "FILE_EDIT_ICON→ICONS.penLine",
+            "UPLOAD_ICON→ICONS.upload",
+            "DOWNLOAD_ICON→ICONS.download",
+            "REFRESH_ICON→ICONS.refresh",
+            "WRAP_TEXT_ICON→ICONS.wrapText",
+            "BACKGROUND_TASKS_ICON→ICONS.pulse",
+            "ADD_TO_CHAT_ICON→ICONS.messagePlus",
+            "MESSAGING_RELAY_ICON→ICONS.paperPlane",
+            "GEAR_ICON→ICONS.gear",
+            "HOOK_ICON→ICONS.fishHook",
+            "PLUGIN_ICON→ICONS.puzzle",
+            "MAGIC_WAND_ICON→ICONS.wand",
+            "HAND_ICON→ICONS.hand",
+            "SCHEDULE_ICON→ICONS.alarmClock",
+            "COMPANY_MODE_ICON→ICONS.building",
+            "ADD_ICON→ICONS.plus",
+            "WARNING_ICON→ICONS.triangleAlert",
+            "GLOBE_ICON→ICONS.globe",
+            "ARROW_BACK_ICON→ICONS.arrowLeftCentered",
+            "ARROW_FORWARD_ICON→ICONS.arrowRightCentered",
+            "CODE_ICON→ICONS.angleBrackets",
+            "HOME_ICON→ICONS.house",
+            "LINK_ICON→ICONS.chainLink"
+          ]
+        },
+        {
+          "owner": "WP-A",
+          "target": "packages/web/src/lib/nav-icons",
+          "dest": "packages/web/src/lib/nav-icons.ts",
+          "names": ["NAV_ICONS"]
+        }
+      ],
+      "packages/web/src/components/ui/group-list": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/icons.ts",
+          "names": [
+            "FOLDER_ICON→ICONS.folder",
+            "FOLDER_OPEN_ICON→ICONS.folderOpen",
+            "AGENT_GROUP_ICON→ICONS.robot",
+            "CLOCK_ICON→ICONS.clock",
+            "CALENDAR_ICON→ICONS.calendar",
+            "REORDER_ICON→ICONS.arrowUpDown"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/session-row-menu": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/icons.ts",
+          "names": [
+            "PIN_ICON→ICONS.pin",
+            "PENCIL_ICON→ICONS.pencil",
+            "ARCHIVE_ICON→ICONS.archive",
+            "UNARCHIVE_ICON→ICONS.archiveRestore",
+            "TRASH_ICON→ICONS.trash",
+            "ELLIPSIS_ICON→ICONS.ellipsis"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/agent-avatar": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/avatars/agent-avatar.tsx",
+          "names": ["AgentAvatar"]
+        }
+      ],
+      "packages/web/src/components/ui/user-avatar": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/avatars/user-avatar.tsx",
+          "names": ["UserAvatar", "USER_AVATAR_SIZE"]
+        }
+      ],
+      "packages/web/src/lib/avatar": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/avatars/avatar.ts",
+          "names": ["avatarHue", "avatarTile", "avatarInitial"]
+        }
+      ],
+      "packages/web/src/components/ui/provider-logo": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/logos/provider-logo.tsx",
+          "names": ["ProviderLogo"]
+        }
+      ],
+      "packages/web/src/components/ui/penguin-logo": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/logos/penguin-logo.tsx",
+          "names": ["PenguinLogo"]
+        }
+      ],
+      "packages/web/src/components/ui/status-icon": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/status-icon/status-icon.tsx",
+          "names": ["StatusIcon", "RunState"]
+        }
+      ],
+      "packages/web/src/components/ui/session-activity-icon": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/activity-icon/activity-icon.tsx",
+          "names": ["SessionActivityIcon→ActivityIcon", "BackgroundTasksMark", "ScheduleMark"]
+        },
+        {
+          "owner": "WP-B",
+          "target": "packages/web/src/lib/session-activity",
+          "dest": "packages/web/src/lib/session-activity.ts",
+          "names": ["sessionActivityLabel"]
+        }
+      ],
+      "packages/web/src/components/ui/update-dot": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/update-dot/update-dot.tsx",
+          "names": ["UpdateDot", "UpdatePill", "UPDATE_DOT_INLINE", "UpdateDotSize"]
+        }
+      ],
+      "packages/web/src/components/ui/badge": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/badge/badge.tsx",
+          "names": ["Badge"]
+        },
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/tokens.ts",
+          "names": ["BadgeTone→ToneName"]
+        },
+        {
+          "owner": "WP-B",
+          "target": "packages/web/src/lib/stop-reason-tone",
+          "dest": "packages/web/src/lib/stop-reason-tone.ts",
+          "names": ["stopReasonTone"]
+        }
+      ],
+      "packages/web/src/components/ui/skeleton": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/skeleton/skeleton.tsx",
+          "names": ["Skeleton", "SkeletonList", "SkeletonCard"]
+        }
+      ],
+      "packages/web/src/components/ui/empty-state": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/empty-state/empty-state.tsx",
+          "names": ["EmptyState", "SettingsEmpty"]
+        }
+      ],
+      "packages/web/src/components/ui/button": [
+        {
+          "owner": "WP-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/button/button.tsx",
+          "names": ["Button", "ButtonProps", "labelButtonClass→buttonClass"]
+        }
+      ],
+      "packages/web/src/components/ui/copy-button": [
+        {
+          "owner": "WP-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/copy-button/copy-button.tsx",
+          "names": ["CopyButton", "useCopied", "CopiedStatus", "CopyCheckGlyph"]
+        },
+        {
+          "owner": "WP-C",
+          "target": "packages/web/src/lib/clipboard",
+          "dest": "packages/web/src/lib/clipboard.ts",
+          "names": ["writeClipboard"]
+        }
+      ],
+      "packages/web/src/components/ui/hidden-file-input": [
+        {
+          "owner": "WP-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/hidden-file-input/hidden-file-input.tsx",
+          "names": ["HiddenFileInput"]
+        }
+      ]
+    }
+  }
+}

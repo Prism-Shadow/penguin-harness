@@ -10,15 +10,13 @@
  * it does from the panel's list; the whole card hides when nothing survives.
  */
 import { useState } from "react";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Chevron } from "../../components/ui/chevron";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { PathLabel } from "./message-files-card";
-import { FILE_EDIT_ICON, FILE_WRITE_ICON, MEMORY_ICON } from "../../components/ui/icons";
 import { scopeGlyph } from "./memory-view";
+import { namedHint } from "../../components/ui/tooltip";
 
 const MAX_VISIBLE = 3;
 
@@ -47,18 +45,18 @@ export function MemoryChangesCard({
     const glyph = scopeGlyph(row.scope, row.scopeKey);
     return (
       <>
-        <span title={glyph.title} className="shrink-0 text-gray-400">
+        <span data-tooltip={glyph.title} className="shrink-0 text-gray-400">
           <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
           <span className="sr-only">{glyph.title}</span>
         </span>
         <PathLabel path={row.file} />
         <span className="min-w-0 flex-1" />
         <span
-          title={row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit}
+          {...namedHint(row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit)}
           className="shrink-0 text-gray-400"
         >
           <GlyphIcon
-            d={row.op === "write" ? FILE_WRITE_ICON : FILE_EDIT_ICON}
+            d={row.op === "write" ? ICONS.filePlus : ICONS.penLine}
             size={ICON_SIZE.inlineGlyph}
           />
         </span>
@@ -73,7 +71,7 @@ export function MemoryChangesCard({
           The action is words, in the rows' own "View content" hint style: a brain glyph here
           would only repeat the card's own mark beside it, and say nothing of where it leads. */}
       <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-800/40">
-        <GlyphIcon d={MEMORY_ICON} size={ICON_SIZE.rowLead} className="shrink-0 text-gray-400" />
+        <GlyphIcon d={ICONS.brain} size={ICON_SIZE.rowLead} className="shrink-0 text-gray-400" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {S.chat.memoryChangesTitle(alive.length)}
         </span>
@@ -94,7 +92,7 @@ export function MemoryChangesCard({
             <button
               key={key}
               type="button"
-              title={S.chat.memoryRowOpen}
+              data-tooltip={S.chat.memoryRowOpen}
               onClick={() => onLocateChange(row)}
               className="group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
             >

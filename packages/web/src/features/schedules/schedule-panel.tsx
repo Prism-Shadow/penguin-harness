@@ -21,31 +21,30 @@ import type {
   ScheduleItem,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  SettingsEmpty,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Badge } from "../../components/ui/badge";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Icon } from "../../components/ui/group-list";
-import { INFO_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";
 import {
-  ELLIPSIS_ICON,
-  PENCIL_ICON,
-  TRASH_ICON,
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../../components/ui/session-row-menu";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { CreateButtons } from "../ai-create";
@@ -84,9 +83,9 @@ function StateGlyph({ item }: { item: ScheduleItem }) {
         ? PAUSE_ICON
         : glyph === "check"
           ? CHECK_ICON
-          : INFO_ICON;
+          : ICONS.info;
   return (
-    <span className={`shrink-0 ${tone}`} title={item.invalidReason ?? name}>
+    <span className={`shrink-0 ${tone}`} data-tooltip={item.invalidReason ?? name}>
       <GlyphIcon d={d} size={ICON_SIZE.rowLead} filled={glyph === "play"} />
       <span className="sr-only">{name}</span>
     </span>
@@ -109,25 +108,25 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
       button={
         <button
           type="button"
-          title={S.schedule.rowActions}
+          data-tooltip={S.schedule.rowActions}
           aria-label={S.schedule.rowActions}
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.rowLead} filled />
+          <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} filled />
         </button>
       }
     >
       <button type="button" className={overflowMenuRowClass} onClick={item(onEdit)}>
-        {overflowMenuGlyph(PENCIL_ICON)}
+        {overflowMenuGlyph(ICONS.pencil)}
         {S.common.edit}
       </button>
       <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
         {/* The glyph inherits the row's red. */}
         <span className="shrink-0">
-          <Icon d={TRASH_ICON} size={13} />
+          <Icon d={ICONS.trash} size={13} />
         </span>
         {S.common.delete}
       </button>
@@ -298,15 +297,17 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                         // The name leads the tooltip, not just the prompt: a task name is a
                         // file name and truncates in a dock this narrow, and the panel would
                         // otherwise be the one surface that cannot show it in full.
-                        title={`${item.name}\n${item.prompt}`}
+                        data-tooltip={`${item.name}\n${item.prompt}`}
+                        data-tooltip-content="text"
                       >
                         {item.name}
                       </span>
-                      {item.queued && <Badge tone="brand">{S.schedule.queued}</Badge>}
+                      {item.queued && <Badge variant="solid">{S.schedule.queued}</Badge>}
                     </div>
                     <div
                       className="truncate text-xs text-gray-500 dark:text-gray-400"
-                      title={item.invalidReason ?? line}
+                      data-tooltip={item.invalidReason ?? line}
+                      data-tooltip-content="text"
                     >
                       {line}
                     </div>

@@ -7,51 +7,14 @@
  * vocabulary kept in one file rather than a contract between two.
  */
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { SessionSortMode } from "../../lib/session-order";
-import { Chevron } from "./chevron";
-import { GlyphIcon } from "./glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** The grouped lists' line icon: GlyphIcon at the nav-row rung, which is what these rows are. */
 export function Icon({ d, size = ICON_SIZE.navRow }: { d: string; size?: number }) {
   return <GlyphIcon d={d} size={size} />;
 }
-
-/** Folder outline, closed (same glyph as the draft page's Workspace pill); collapsed workspace groups and the grouping toggle use it. */
-export const FOLDER_ICON =
-  "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z";
-
-/** Folder outline, open (lucide folder-open: back panel + tilted front flap); expanded workspace groups use it. */
-export const FOLDER_OPEN_ICON =
-  "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2";
-
-/**
- * Agent glyph (the grouping toggle's "by Agent" option; also NAV_ICONS.agents in the sidebar
- * nav): a robot head with an antenna, two ears, two eyes and a smile — lucide's `bot` with the
- * mouth added. The face is the point: an Agent is the thing in this product a person talks to,
- * and the friendliest mark on the rail should be the one that stands for it.
- *
- * The landing page draws the same Agent from its own copy of this string (`BotIcon` in
- * packages/landing/src/components/icons.tsx — it carries no icon dependency to share one
- * with); redraw this and redraw that. Its agent-glyph-sync test fails if only one moves.
- */
-export const AGENT_GROUP_ICON =
-  "M12 8V4H8M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM2 14h2M20 14h2M9 13h.01M15 13h.01M10 16.5s.8 1 2 1 2-1 2-1";
-
-/** Clock (lucide clock, drawn as one path), the "most recent" sort option. */
-export const CLOCK_ICON = "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2";
-
-/**
- * Calendar (lucide calendar), the "by time" grouping option. Deliberately not the clock:
- * that glyph already names the recency SORT one section below in the same menu, and two
- * rows wearing one mark would read as one setting.
- */
-export const CALENDAR_ICON =
-  "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z";
-
-/** Opposed up/down arrows (lucide arrow-up-down), the drag-reordered "manual order" sort option. */
-export const REORDER_ICON = "m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16";
 
 /** Grouping mode of a Session list (persisted; Workspace is the default). */
 export type GroupMode = "workspace" | "agent" | "time";
@@ -60,22 +23,24 @@ export type GroupMode = "workspace" | "agent" | "time";
  * Leading glyph per grouping mode — the one place these are chosen, read by both the
  * two-icon toggle below and the sidebar's list-options menu, so a row and its toggle can
  * never end up wearing different icons for the same mode. Each glyph names the thing the
- * list is grouped *into*: a folder for Workspaces, the Agent glyph for Agents.
+ * list is grouped *into*: a folder for Workspaces, the agent glyph for Agents. Time uses the
+ * calendar, deliberately not the clock: that glyph already names the recency SORT one section
+ * below in the same menu, and two rows wearing one mark would read as one setting.
  */
 export const GROUP_MODE_ICONS: Record<GroupMode, string> = {
-  workspace: FOLDER_ICON,
-  agent: AGENT_GROUP_ICON,
-  time: CALENDAR_ICON,
+  workspace: ICONS.folder,
+  agent: ICONS.robot,
+  time: ICONS.calendar,
 };
 
 /**
  * Leading glyph per sort mode, distinguishing what actually decides the order rather than
- * decorating the rows: a clock for recency, and the reorder arrows of the drag that
+ * decorating the rows: a clock for recency, and the opposed arrows of the drag that
  * produces a manual order.
  */
 export const SORT_MODE_ICONS: Record<SessionSortMode, string> = {
-  recent: CLOCK_ICON,
-  manual: REORDER_ICON,
+  recent: ICONS.clock,
+  manual: ICONS.arrowUpDown,
 };
 
 /**
@@ -151,10 +116,6 @@ export function MoreRow({
   );
 }
 
-/** Chevrons of the group pager's step buttons (lucide chevron-left / chevron-right). */
-const PAGER_PREV_ICON = "M15 18 9 12l6-6";
-const PAGER_NEXT_ICON = "m9 18 6-6-6-6";
-
 /**
  * Page stepper of a grouped list whose groups are paginated (the sidebar renders at most
  * SIDEBAR_GROUP_PAGE_SIZE groups per page): two flat chevron buttons around the "2/5"
@@ -183,13 +144,13 @@ export function GroupPager({
     <div className="mt-1 flex items-center justify-center gap-1.5 px-1.5 py-0.5">
       <button
         type="button"
-        title={S.chat.prevGroupPage}
+        data-tooltip={S.chat.prevGroupPage}
         aria-label={S.chat.prevGroupPage}
         disabled={page <= 0}
         onClick={() => step(-1)}
         className={buttonClass}
       >
-        <Icon d={PAGER_PREV_ICON} size={12} />
+        <Icon d={ICONS.chevronLeft} size={12} />
       </button>
       {/* The position doubles as the control's status: announced on change so a step is
           audible without counting the rows that swapped underneath it. */}
@@ -202,13 +163,13 @@ export function GroupPager({
       </span>
       <button
         type="button"
-        title={S.chat.nextGroupPage}
+        data-tooltip={S.chat.nextGroupPage}
         aria-label={S.chat.nextGroupPage}
         disabled={page >= pageCount - 1}
         onClick={() => step(1)}
         className={buttonClass}
       >
-        <Icon d={PAGER_NEXT_ICON} size={12} />
+        <Icon d={ICONS.chevronRight} size={12} />
       </button>
     </div>
   );
@@ -351,7 +312,9 @@ export function GroupHeader({
       // cursor-grab while the header is a handle — the SessionRow treatment one axis up.
       // Groups have no sort toggle by design, so the cursor is the only thing on screen
       // that says this row can be dragged at all.
-      className={`group/header flex items-center gap-0.5 px-1 pb-0.5${
+      // min-w-0: the row never asks for more than its column; the title button is the part
+      // that gives way (it truncates), the actions after it keep their size.
+      className={`group/header flex min-w-0 items-center gap-0.5 px-1 pb-0.5${
         draggable ? " cursor-grab" : ""
       }`}
       {...(draggable
@@ -363,7 +326,7 @@ export function GroupHeader({
         onClick={onToggle}
         aria-expanded={open}
         aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
-        {...(title !== undefined ? { title } : {})}
+        {...(title !== undefined ? { "data-tooltip": title } : {})}
         className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
       >
         {icon}

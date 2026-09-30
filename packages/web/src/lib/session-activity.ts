@@ -1,6 +1,7 @@
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { isSessionUnread } from "./session-seen";
 import type { SessionSeenState } from "./session-seen";
+import { S } from "./strings";
 
 /**
  * Visual state carried by a Session row / chat header. Three states, and `null` for "say
@@ -38,6 +39,17 @@ export function sessionActivity(
   if (status === "compacting") return "compacting";
   if (!hasTrace) return null;
   return unread ? "completedUnread" : null;
+}
+
+/**
+ * The state's words, for the activity glyph's accessible name and tooltip: the glyph carries no
+ * text of its own, so each state needs a different name. Read at render time — `S` is a live
+ * binding swapped per interface language.
+ */
+export function sessionActivityLabel(activity: Exclude<SessionActivity, null>): string {
+  if (activity === "running") return S.chat.statusRunning;
+  if (activity === "compacting") return S.chat.statusCompacting;
+  return S.chat.statusCompletedUnread;
 }
 
 /**

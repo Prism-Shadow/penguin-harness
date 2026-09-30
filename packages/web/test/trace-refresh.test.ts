@@ -178,7 +178,7 @@ describe("what a settled-turn refresh must leave alone", () => {
     // whole file view below them — collapsed rounds, pinned row and scroll position included.
     expect(listingFailure).not.toContain("setFiles");
     expect(listingFailure).toContain("setError(");
-    expect(panel).toMatch(/\{error !== null && \([\s\S]{0,200}toneStrip\.danger/);
+    expect(panel).toMatch(/\{error !== null && \([\s\S]{0,200}<NoticeStrip tone="danger"/);
   });
 
   it("gives the panel over to the failure only when there is nothing to keep", () => {

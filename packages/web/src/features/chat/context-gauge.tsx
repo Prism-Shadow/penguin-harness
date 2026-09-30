@@ -260,7 +260,7 @@ export function ContextGauge({
 
   if (sessionId === undefined) {
     return (
-      <span title={usageText} aria-label={usageText} role="img" className={shell}>
+      <span data-tooltip={usageText} aria-label={usageText} role="img" className={shell}>
         {gauge}
       </span>
     );
@@ -272,7 +272,7 @@ export function ContextGauge({
       <button
         ref={triggerRef}
         type="button"
-        title={usageText}
+        data-tooltip={usageText}
         aria-label={usageText}
         aria-expanded={open}
         aria-controls={panelId}
@@ -472,7 +472,7 @@ function ContextPanel({
             <div aria-hidden className="absolute inset-0 bg-gray-200 dark:bg-gray-800">
               {beyondFraction !== null && beyondFraction < 1 && (
                 <div
-                  title={S.chat.contextBeyondThreshold}
+                  data-tooltip={S.chat.contextBeyondThreshold}
                   className="context-hatch absolute inset-y-0 right-0"
                   style={{ left: `${beyondFraction * 100}%` }}
                 />
@@ -485,7 +485,7 @@ function ContextPanel({
                   p.tokens > 0 ? (
                     <span
                       key={p.key}
-                      title={`${PART_LABELS[p.key]()} ~${humanizeTokens(p.tokens)} · ${p.percent}%`}
+                      data-tooltip={`${PART_LABELS[p.key]()} ~${humanizeTokens(p.tokens)} · ${p.percent}%`}
                       onMouseEnter={() => setHovered(p.key)}
                       onMouseLeave={() => setHovered(null)}
                       onClick={() => togglePinned(p.key)}
@@ -547,9 +547,10 @@ function ContextPanel({
                   keeps the switch, so the Files view can say so itself. */}
               <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-100 pt-1.5 dark:border-gray-800">
                 <p
-                  title={
+                  data-tooltip={
                     ranking === "tools" ? S.chat.contextTopToolsHint : S.chat.contextTopFilesHint
                   }
+                  data-tooltip-content="text"
                   className="min-w-0 truncate text-gray-400 dark:text-gray-500"
                 >
                   {ranking === "tools" ? S.chat.contextTopTools : S.chat.contextTopFiles}
@@ -729,7 +730,7 @@ function ThresholdCutter({
           aria-valuemax={Math.max(windowTokens, shown)}
           aria-valuenow={shown}
           aria-valuetext={humanizeTokens(shown)}
-          title={S.chat.contextThresholdHover(humanizeTokens(shown))}
+          data-tooltip={S.chat.contextThresholdHover(humanizeTokens(shown))}
           onFocus={() => setFocused(true)}
           onBlur={() => {
             setFocused(false);
@@ -747,7 +748,7 @@ function ThresholdCutter({
         // decorative, naming the threshold on hover, and nothing to focus.
         <div
           aria-hidden
-          title={S.chat.contextThresholdHover(humanizeTokens(shown))}
+          data-tooltip={S.chat.contextThresholdHover(humanizeTokens(shown))}
           style={box}
           className="absolute flex justify-center"
         >
@@ -892,7 +893,8 @@ function ShareRow({
         <span aria-hidden className={`h-2 w-2 shrink-0 rounded-[2px] ${swatch}`} />
       )}
       <span
-        title={title ?? label}
+        data-tooltip={title ?? label}
+        data-tooltip-content="code"
         className={`min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300 ${mono ? "font-mono" : ""}`}
       >
         {label}

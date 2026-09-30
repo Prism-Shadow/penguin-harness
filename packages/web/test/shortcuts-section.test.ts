@@ -81,14 +81,14 @@ describe("ShortcutsSection", () => {
 
   it("offers the per-row reset only on an overridden row, and Reset all only when something is", () => {
     const clean = render();
-    expect(count(clean, `title="${S.shortcuts.resetRow}"`)).toBe(0);
+    expect(count(clean, `data-tooltip="${S.shortcuts.resetRow}"`)).toBe(0);
     expect(clean).toMatch(/<button[^>]* disabled=""[^>]*>[^<]*全部恢复默认/);
 
     configureKeybindingsStoreForTests({
       storage: memStorage({ v: 1, linux: { "editor.save": null } }),
     });
     const one = render();
-    expect(count(one, `title="${S.shortcuts.resetRow}"`)).toBe(1);
+    expect(count(one, `data-tooltip="${S.shortcuts.resetRow}"`)).toBe(1);
     expect(one).toContain(S.shortcuts.unbound);
     expect(one).not.toMatch(/<button[^>]* disabled=""[^>]*>[^<]*全部恢复默认/);
   });

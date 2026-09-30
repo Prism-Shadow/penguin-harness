@@ -6,11 +6,11 @@
  * them.
  */
 import type { ReactNode } from "react";
+import { ICON_GAP } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { ACCENT_SWATCHES } from "../../state/theme";
-import type { Accent } from "../../state/theme";
+import { accentSwatches, useTheme } from "../../state/theme";
+import type { Accent, ThemeId } from "../../state/theme";
 
 export function PrefRow({
   label,
@@ -30,8 +30,10 @@ export function PrefRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
-      <div className="min-w-0">
+    // ui-field: a theme may lay the label and the control out its own way (stacked, or as a
+    // table row); the hint rides inside the label slot, under the label, in every theme.
+    <div className="ui-field flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
+      <div data-slot="label" className="min-w-0">
         <p className={`flex items-center ${ICON_GAP.row} text-sm font-medium`}>
           {label}
           {info !== undefined && <InfoPopover label={label}>{info}</InfoPopover>}
@@ -40,26 +42,35 @@ export function PrefRow({
           <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
         )}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div data-slot="control" className="shrink-0">
+        {children}
+      </div>
     </div>
   );
 }
 
-/** Accent color picker: a row of swatches, with a ring on the selected one. */
+/**
+ * Accent color picker: a row of swatches — the theme's own accent, then the active theme's
+ * presets — with a ring on the one in effect.
+ */
 export function AccentPicker({
+  themeId,
   value,
   onChange,
 }: {
+  themeId: ThemeId;
+  /** The accent in effect under `themeId`, not merely the stored one. */
   value: Accent;
   onChange: (a: Accent) => void;
 }) {
+  const { dark } = useTheme();
   return (
     <div className="flex items-center gap-1.5">
-      {ACCENT_SWATCHES.map((s) => (
+      {accentSwatches(themeId, dark).map((s) => (
         <button
           key={s.value}
           type="button"
-          title={S.settings.accentNames[s.value]}
+          data-tooltip={S.settings.accentNames[s.value]}
           aria-label={S.settings.accentNames[s.value]}
           aria-pressed={value === s.value}
           onClick={() => onChange(s.value)}

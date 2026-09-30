@@ -6,7 +6,7 @@
  *
  * - **Rows** read as the provider's logo, the model's name and its marks (pickerRowTags: the
  *   models page's default / vision / fast / free / discount pills), then the no-key glyph and
- *   the ✓. The upstream id is not printed; it is the row's tooltip, which also tells apart two
+ *   Select's check. The upstream id is not printed; it is the row's tooltip, which also tells apart two
  *   groups' models of the same name.
  * - **Opens on the current model**: its group is active and its row highlighted and scrolled
  *   into view. With nothing chosen, the first group with a configured key is active.
@@ -32,13 +32,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
+import { CloseButton, GlyphIcon, ICONS, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseButton } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ProviderLogo } from "../../components/ui/provider-logo";
+import { ChoiceCheck } from "../../components/ui/field";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { TAG_SHAPE } from "../models/model-tags";
@@ -56,13 +54,6 @@ import {
   stepIndex,
 } from "./model-picker-logic";
 import type { PickerGroup, PickerNavKey, PickerRegion } from "./model-picker-logic";
-
-/**
- * "No key" marker for key-less rows: a key struck through by a prohibition slash (24x24 line
- * art, grayscale via currentColor, matching the approval-mode icon style).
- */
-const NO_KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
 
 const NAV_KEYS: Record<string, PickerNavKey> = {
   ArrowUp: "up",
@@ -98,7 +89,7 @@ export function ModelPickerModal({ open, onClose, title, ...body }: ModelPickerM
       headerless
       bare
       // Sized to its rows — a logo, a name and a few pills on one line — so the list does not
-      // open an empty band between a name and its ✓. Full screen on a phone: the rail needs a
+      // open an empty band between a name and its check. Full screen on a phone: the rail needs a
       // strip of its own above the list, and a bottom sheet leaves too little height for both.
       widthClass="sm:max-w-xl max-sm:rounded-none max-sm:border-0"
     >
@@ -260,7 +251,7 @@ function ModelPickerBody({
         <button
           type="button"
           tabIndex={-1}
-          title={label === m.modelId ? label : `${label} · ${m.modelId}`}
+          data-tooltip={label === m.modelId ? label : `${label} · ${m.modelId}`}
           // Mouse movement, not mouseenter: rows scrolling under a resting pointer while the
           // keyboard drives the list must not steal the highlight.
           onMouseMove={isHighlighted ? undefined : onHover}
@@ -279,7 +270,7 @@ function ModelPickerBody({
             {pickerRowTags(m, defaultModel, now).map((tag) => (
               <span
                 key={tag.key}
-                title={tag.title}
+                data-tooltip={tag.title}
                 className={`${TAG_SHAPE} shrink-0 ${tag.className}`}
               >
                 {tag.label}
@@ -289,14 +280,14 @@ function ModelPickerBody({
           {!hasConfiguredKey(m) && (
             <span
               role="img"
-              title={S.models.noKey}
+              data-tooltip={S.models.noKey}
               aria-label={S.models.noKey}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <GlyphIcon d={NO_KEY_ICON} size={ICON_SIZE.inlineGlyph} />
+              <GlyphIcon d={ICONS.keyOff} size={ICON_SIZE.inlineGlyph} />
             </span>
           )}
-          <span className="w-3 shrink-0 text-center text-xs">{current ? "✓" : ""}</span>
+          <ChoiceCheck on={current} />
         </button>
       </li>
     );
@@ -356,7 +347,7 @@ function ModelPickerBody({
                 type="button"
                 tabIndex={-1}
                 aria-current={active ? "true" : undefined}
-                title={i < 9 ? `${g.provider.label} · ${mod}${i + 1}` : g.provider.label}
+                data-tooltip={i < 9 ? `${g.provider.label} · ${mod}${i + 1}` : g.provider.label}
                 onClick={() => activateGroup(i, "rail")}
                 className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-sm transition-colors duration-150 sm:w-full sm:rounded-md sm:border-transparent sm:py-1.5 sm:dark:border-transparent ${
                   active

@@ -15,22 +15,20 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
+import { Button, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
-import { toneStrip } from "../../lib/tone";
 import { AiCreateModal, CreateButtons } from "../ai-create";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -290,9 +288,9 @@ export function VaultTab({
         onClose={() => setAiAdding(false)}
         title={S.vault.aiAddTitle}
         intro={
-          <div className={`rounded-md border px-2.5 py-1.5 ${toneStrip.attention}`}>
+          <NoticeStrip tone="attention" className="rounded-md border px-2.5 py-1.5">
             {S.vault.aiAddIntro}
-          </div>
+          </NoticeStrip>
         }
         placeholder={S.vault.aiAddPlaceholder}
         examples={S.vault.aiAddExamples}

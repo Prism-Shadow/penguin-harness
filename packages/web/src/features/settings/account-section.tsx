@@ -5,8 +5,8 @@
  * offersChangePassword for the full rule).
  */
 import { useState } from "react";
+import { Button } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 import { ChangePasswordDialog } from "../../components/account/change-password-dialog";
 import { PrefRow } from "./setting-row";
 

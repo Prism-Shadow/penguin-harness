@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { CloseButton } from "./icons";
+import { CloseButton } from "@prismshadow/penguin-ui";
 import { isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
 
 export interface DrawerProps {
@@ -44,7 +44,11 @@ export function Drawer({ open, side = "left", title, onClose, children, widthCla
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50">
-      <div className="anim-fade absolute inset-0 bg-black/45" onMouseDown={onClose} />
+      <div
+        // ui-scrim: the dimmed layer behind the drawer; a theme may blur the page through it.
+        className="ui-scrim anim-fade absolute inset-0 bg-[var(--ui-overlay-backdrop)]"
+        onMouseDown={onClose}
+      />
       <div
         className={`absolute inset-y-0 flex w-[80vw] flex-col bg-white shadow-xl dark:bg-gray-900 ${widthClass ?? "max-w-xs"} ${
           side === "left"
