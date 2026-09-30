@@ -397,7 +397,7 @@
     --ui-accent: #4aa45c;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 90%, #000000);
-    --ui-accent-fg: #0f0e0d;
+    --ui-accent-fg: #111214;
     --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 18%, transparent);
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 45%, transparent);
 
@@ -626,17 +626,6 @@
   :root[data-theme="modern"] .ui-shell > [data-slot="main"] + [data-slot="dock"] {
     margin-inline-start: 0;
   }
-  /* At phone width — below the breakpoint where the navigation column becomes a drawer — the
-     sheet is the screen: no field showing round it, no corner, no shadow. */
-  @media (width < 48rem) {
-    :root[data-theme="modern"] .ui-shell > [data-slot="main"],
-    :root[data-theme="modern"] .ui-shell > [data-slot="dock"] {
-      margin: 0;
-      border-radius: 0;
-      box-shadow: none;
-    }
-  }
-
   /* Decorative icons are drawn in the muted ink, as the reference's sidebar draws its glyphs —
      quiet, one colour, beside labels in the body ink; a menu row's icon keeps the row's own ink
      (a danger row's stays as red as its label). Ink only: no tinted chip behind an icon. */
@@ -794,8 +783,9 @@
     fill: var(--ui-chart-axis);
     font-family: var(--ui-font-sans);
   }
+  /* The stroke width is the --ui-chart-line-width token, which the chart writes itself; the
+     recipe owns only the joins and caps. */
   :root[data-theme="modern"] .ui-chart :is(path, polyline)[data-part="series"] {
-    stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
   }
