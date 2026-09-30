@@ -42,6 +42,7 @@
  * from traffic, and traffic is what re-derives it.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** The platform's fixed entry host: the QR calls, and the default API base before a scan names one. */
@@ -271,14 +272,27 @@ export interface WeChatTransport {
  * The code the platform answers with when the bot token is stale or revoked. It arrives with
  * an HTTP 200 and a non-zero envelope, so it is the one business-level code that has to be
  * read as an authentication failure rather than as one of the call behind it.
+ *
+ * What it asks of a client is to wait, though: its errmsg is "session timeout", and Tencent's
+ * own plugin (see the module doc) answers it by pausing the account for an hour and then
+ * resuming, never by asking for a new scan. So it fails the credential probe while it lasts,
+ * and still counts as a failure that recovers (see WeChatApiError).
  */
 export const WECHAT_STALE_TOKEN_CODE = -14;
 
 /**
  * A call the platform answered with a failure of its own, as opposed to one that never
  * arrived. `ret` is the protocol's numeric code where it returned one.
+ *
+ * `recovers` is set where the failure is read (see `post` and checkEnvelope). A request that
+ * never completed, an HTTP 408/429/5xx, and every refusal the envelope carries — the session
+ * pause of WECHAT_STALE_TOKEN_CODE, and whatever the platform declines behind a credential it
+ * accepted, such as a send's "prepare failed" — go through on a later attempt with nothing
+ * changed: this channel has no permission and no console setting a person could fix them
+ * with. An HTTP refusal of the credential (401/403), a wrong host (404) and a body this client
+ * cannot read do not.
  */
-export class WeChatApiError extends Error {
+export class WeChatApiError extends MessagingChannelError {
   /**
    * The request was ACCEPTED — it authenticated, and the failure came from the call behind
    * the credential rather than from the credential.
@@ -299,9 +313,9 @@ export class WeChatApiError extends Error {
   constructor(
     readonly ret: number | undefined,
     message: string,
-    flags: { authenticated?: boolean; timedOut?: boolean } = {},
+    flags: { authenticated?: boolean; timedOut?: boolean; recovers?: boolean } = {},
   ) {
-    super(message);
+    super(message, flags.recovers ?? false);
     this.name = "WeChatApiError";
     this.authenticated = flags.authenticated ?? false;
     this.timedOut = flags.timedOut ?? false;
@@ -382,6 +396,7 @@ function checkEnvelope(label: string, status: number, raw: string): Record<strin
     // being the one code that says otherwise.
     throw new WeChatApiError(code, `${label} failed: ${env.errmsg ?? `code ${code}`}`, {
       authenticated: code !== WECHAT_STALE_TOKEN_CODE,
+      recovers: true,
     });
   }
   return body;
@@ -568,6 +583,7 @@ export function createWeChatTransport(): WeChatTransport {
             `${opts.label} failed: ${wechatFetchErrorText(err)}`,
             {
               timedOut: isAbortLike(err),
+              recovers: true,
             },
           );
         }
@@ -580,6 +596,7 @@ export function createWeChatTransport(): WeChatTransport {
           throw new WeChatApiError(
             undefined,
             `${opts.label} failed: HTTP ${res.status}${raw === "" ? "" : ` ${raw.slice(0, 300)}`}`,
+            { recovers: httpStatusRecovers(res.status) },
           );
         }
         return checkEnvelope(opts.label, res.status, raw);
