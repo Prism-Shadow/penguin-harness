@@ -14,6 +14,7 @@ A round of fixes to the Frost and Console themes, plus one change for every them
   - Frost puts the chevron right after the row's words.
   - Console drops the chevron: the leading status mark is the fold, ▸ closed and ▾ open, in the row's state colour. A running row keeps its spinner.
   - Primer keeps the chevron at the row's far edge.
+- **Console running rows:** the hatched block progress bar is gone. The spinner and the ticking duration show that a step is running.
 - **Banners:** in Frost, an edge-to-edge notice such as the initial-password banner is drawn as a card set in from the column's edges, so its rounded corners no longer butt against the edges and the header.
 - **Tabs:** Frost and Console show only their own marker under the selected tab. The agent settings tabs no longer show a second, dark underline.
 - **Streaming:** Frost's fade-in veil covers only about the newest line and a half, washes more lightly, and glows without colour. Text already received always reads at full ink.
