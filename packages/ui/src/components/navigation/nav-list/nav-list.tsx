@@ -19,6 +19,11 @@
  * A row on the app's navigation column (`surface="muted"`) sits on the muted surface, where a
  * surface step would not show: its hover and its selection are thin washes of the ink instead
  * ({@link NAV_FILL}), which every other row on that column reads too.
+ *
+ * A row may share its box with a control laid over its end (the sidebar's pin toggle): then its
+ * hover answers to the enclosing `group` (`groupHover`), so the fill holds while the pointer is on
+ * the control, and a row whose whole box is a drag handle keeps its link from starting a drag of
+ * its own address (`draggable={false}`).
  */
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
@@ -40,10 +45,12 @@ export type NavSurface = "default" | "muted";
  * The fills of a row on the navigation column's muted surface: a wash of the ink under the
  * pointer and a slightly heavier one on the selected row. The column's page rows, its
  * conversation rows, the rail's entries and the column's own controls all take these two, so one
- * hover and one selection hold across the column.
+ * hover and one selection hold across the column. `groupHover` is the same hover wash for a row
+ * whose hover answers to its enclosing `group`.
  */
 export const NAV_FILL = {
   hover: "hover:bg-fg/5",
+  groupHover: "group-hover:bg-fg/5",
   selected: "bg-fg/7",
 } as const;
 
@@ -88,15 +95,20 @@ const GLYPH_SIZE: Record<NavRowDensity, number> = {
   sm: ICON_SIZE.inlineGlyph,
 };
 
-/** The selected and resting looks, per surface. */
-const STATE: Record<NavSurface, { active: string; rest: string }> = {
+/**
+ * The selected and resting looks, per surface. `groupRest` is the resting look of a row whose
+ * hover answers to its enclosing `group`; a selected row keeps its own fill under the pointer.
+ */
+const STATE: Record<NavSurface, { active: string; rest: string; groupRest: string }> = {
   default: {
     active: "bg-line-muted font-medium text-fg",
     rest: "text-fg-muted hover:bg-surface-muted hover:text-fg",
+    groupRest: "text-fg-muted group-hover:bg-surface-muted group-hover:text-fg",
   },
   muted: {
     active: `${NAV_FILL.selected} font-medium text-fg`,
     rest: `text-fg-muted ${NAV_FILL.hover} hover:text-fg`,
+    groupRest: `text-fg-muted ${NAV_FILL.groupHover} group-hover:text-fg`,
   },
 };
 
@@ -111,19 +123,24 @@ export function navRowClass({
   density = "md",
   orientation = "vertical",
   surface = "default",
+  groupHover = false,
 }: {
   active?: boolean;
   disabled?: boolean;
   density?: NavRowDensity;
   orientation?: NavListOrientation;
   surface?: NavSurface;
+  /** The hover answers to the enclosing `group` rather than to the row alone. */
+  groupHover?: boolean;
 } = {}): string {
   const width = orientation === "responsive" ? "shrink-0 sm:w-full" : "w-full";
   const state = disabled
     ? "cursor-not-allowed text-fg-subtle"
     : active
       ? STATE[surface].active
-      : STATE[surface].rest;
+      : groupHover
+        ? STATE[surface].groupRest
+        : STATE[surface].rest;
   return `flex ${width} items-center whitespace-nowrap rounded-md text-left transition-colors duration-150 ${DENSITY[density]} ${state}`;
 }
 
@@ -137,6 +154,8 @@ export interface NavRowLinkProps {
   "aria-current"?: "page";
   "aria-label"?: string;
   "data-tooltip"?: string;
+  /** `false`: the link starts no drag of its own address (the row around it is the handle). */
+  draggable?: false;
   onClick?: () => void;
   children: ReactNode;
 }
@@ -154,6 +173,16 @@ export interface NavRowProps {
   density?: NavRowDensity;
   /** The surface the row sits on: `muted` on the app's navigation column. */
   surface?: NavSurface;
+  /**
+   * The hover answers to the enclosing `group`: for a row sharing its box with a control laid over
+   * its end, whose hover must not drop the row's fill.
+   */
+  groupHover?: boolean;
+  /**
+   * `false`: a link starts no drag of its own address, for a row inside an element that is itself
+   * the drag handle — the whole row moves instead.
+   */
+  draggable?: false;
   /** Renders a link to this address instead of a button. */
   href?: string;
   /** With `href`: draws the link through the caller's own element (a router's) instead of `<a>`. */
@@ -174,6 +203,8 @@ export function NavRow({
   disabled = false,
   density = "md",
   surface = "default",
+  groupHover = false,
+  draggable,
   href,
   renderLink,
   onClick,
@@ -182,12 +213,13 @@ export function NavRow({
   className = "",
 }: NavRowProps) {
   const orientation = useContext(NavOrientationContext);
-  const classes = `${navRowClass({ active, disabled, density, orientation, surface })} ${className}`;
+  const classes = `${navRowClass({ active, disabled, density, orientation, surface, groupHover })} ${className}`;
   const current = active && !disabled ? ("page" as const) : undefined;
   const named = {
     ...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {}),
     ...(tooltip !== undefined ? { "data-tooltip": tooltip } : {}),
   };
+  const dragless = draggable === false ? { draggable: false as const } : {};
   const content = (
     <>
       {glyph !== undefined && (
@@ -216,6 +248,7 @@ export function NavRow({
             className: classes,
             ...(current !== undefined ? { "aria-current": current } : {}),
             ...named,
+            ...dragless,
             ...(onClick !== undefined ? { onClick } : {}),
             children: content,
           })}
@@ -223,7 +256,14 @@ export function NavRow({
       );
     }
     return (
-      <a href={href} aria-current={current} onClick={onClick} {...named} className={classes}>
+      <a
+        href={href}
+        aria-current={current}
+        onClick={onClick}
+        {...named}
+        {...dragless}
+        className={classes}
+      >
         {content}
       </a>
     );
