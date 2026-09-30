@@ -1,12 +1,17 @@
 /**
- * Draft cache parsing/validation and storage access (the auto-cache
- * foundation for draft-view):
- * - parseDraft validates field by field — localStorage may be corrupted by
- *   external code, so bad JSON / non-object / invalid fields are always
- *   discarded instead of crashing the page;
- * - load/save/clear are isolated by "user x Project/Session" (#68: switching
- *   accounts in the same browser must not leak drafts across users); storage
- *   errors (quota/private mode) are swallowed silently.
+ * The composer's draft cache (features/chat/draft-cache.ts), kept in localStorage per user
+ * and Project or Session.
+ *
+ * - A stored draft is validated field by field: bad JSON or a non-object reads as an empty
+ *   draft, wrongly typed, unknown or half fields are dropped and the rest kept (the permission
+ *   picks, the paired model references, the AI-prefill mark only as true, the approval mode's
+ *   four values, the skills list); a legacy string model id is always dropped.
+ * - Saved drafts read back equal; Project and Session drafts, and two users' drafts of the
+ *   same Project, never read or overwrite each other (#68); a cleared draft reads as empty.
+ * - Dropping the model pin keeps everything else; dropping the `[default_chat]`-seeded
+ *   selections keeps user content and the model pin, and changes nothing without them.
+ * - A storage that throws (quota, private mode) never escapes: saving and clearing are
+ *   no-ops and loading is empty.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -19,18 +24,7 @@ import {
   saveDraft,
   sessionDraftKey,
 } from "../src/features/chat/draft-cache";
-import type { DraftStorage } from "../src/features/chat/draft-cache";
-
-/** In-memory storage (vitest runs in a Node environment, no localStorage). */
-function memStorage(): DraftStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 describe("parseDraft (field-by-field validation)", () => {
   it("keeps the permission picks it recognizes and drops the rest", () => {
@@ -153,7 +147,7 @@ describe("parseDraft (field-by-field validation)", () => {
 
 describe("load / save / clear (key isolation, errors silenced)", () => {
   it("saved drafts read back equal; Project and Session drafts do not affect each other", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(
       draftKey("user-a1", "project-a"),
       {
@@ -182,7 +176,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
   });
 
   it("drafts for the same Project/Session are isolated per user: neither reads nor overwrites the other (#68)", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(draftKey("user-a1", "project-a"), { text: "A's secret draft" }, s);
     saveDraft(sessionDraftKey("user-a1", "session-1"), { text: "A's session draft" }, s);
     // Switch accounts (same browser): B reading the same Project/Session only gets an empty draft.
@@ -195,7 +189,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
   });
 
   it("reads back an empty draft after clear", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(draftKey("user-a1", "project-a"), { text: "to be cleared" }, s);
     clearDraft(draftKey("user-a1", "project-a"), s);
     expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({});
@@ -205,7 +199,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
   it("clearDraftModelRef drops only the model pin, keeping everything else (default-model change follow-through)", () => {
     // Shared by the models page and the project-settings default-model control: after the
     // Project default changes, the draft must follow it instead of pinning the old pick.
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(
       draftKey("user-a1", "project-a"),
       {
@@ -244,7 +238,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     // reseed Agent / Workspace / approval mode from the fresh defaults, while typed text,
     // staged skills, the handoff/switch chips and the switch-becomes-default model
     // carry-over (released only by clearDraftModelRef) all survive.
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(
       draftKey("user-a1", "project-a"),
       {
@@ -270,7 +264,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
   });
 
   it('clearDraftChatDefaults strips any subset of the three fields (a cached "" workspace counts) and is otherwise a no-op', () => {
-    const s = memStorage();
+    const s = memoryStorage();
     // A single seeded field is enough to rewrite; "" workspace is an explicit "auto temp"
     // pin and must be stripped like any other value (undefined-check, not truthiness).
     saveDraft(draftKey("user-a1", "project-a"), { text: "t", workspace: "" }, s);
@@ -287,17 +281,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
   });
 
   it("storage throwing (quota/private mode): save does not throw, load yields an empty draft", () => {
-    const broken: DraftStorage = {
-      getItem: () => {
-        throw new Error("SecurityError");
-      },
-      setItem: () => {
-        throw new Error("QuotaExceededError");
-      },
-      removeItem: () => {
-        throw new Error("SecurityError");
-      },
-    };
+    const broken = blockedStorage();
     expect(() => saveDraft(draftKey("u", "p"), { text: "x" }, broken)).not.toThrow();
     expect(() => clearDraft(draftKey("u", "p"), broken)).not.toThrow();
     expect(loadDraft(draftKey("u", "p"), broken)).toEqual({});

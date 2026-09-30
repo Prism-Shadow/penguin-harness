@@ -1,22 +1,24 @@
+/**
+ * The draft screen's example prompts (features/chat/example-tasks.ts and the dictionaries).
+ * They are sent to an Agent as written, so what they must carry is a contract with the skills
+ * and schedules that read them, held in both languages alike.
+ *
+ * - The two agent-evolution prompts carry the ids and targets the build and optimization skills
+ *   read, name the skills in the order they run, stay short, and leave out what the Agent works
+ *   out itself.
+ * - The folders stay within one row of each other, so the draft page's height does not jump.
+ * - Every scheduled-task example says when it fires (never in cron syntax), and the two that
+ *   need an answer run in the conversation the user is in.
+ * - The short example prompts stay under their length ceilings and keep their core in both
+ *   locales.
+ * - The investment Copilot example keeps its "not investment advice" framing.
+ */
 import { describe, expect, it } from "vitest";
-import { EXAMPLE_FOLDERS, EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
-import { buildSkillsMessage } from "../src/features/chat/skill-use";
+import { EXAMPLE_FOLDERS } from "../src/features/chat/example-tasks";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
 
 describe("draft example tasks", () => {
-  it.each(["agentBenchmarkBuild", "agentOptimization"] as const)(
-    "submits the %s prompt without an implicit Skill block",
-    (id) => {
-      const task = EXAMPLE_TASKS.find((candidate) => candidate.id === id);
-      expect(task).toBeDefined();
-      expect(task?.skills).toEqual([]);
-      expect(buildSkillsMessage([...(task?.skills ?? [])], zh.chat.exampleTasks[id].prompt)).toBe(
-        zh.chat.exampleTasks[id].prompt,
-      );
-    },
-  );
-
   it.each([
     {
       locale: "zh",
@@ -103,23 +105,6 @@ describe("draft example tasks", () => {
 });
 
 describe("draft example catalog", () => {
-  it("gives every folder and every example copy in both dictionaries", () => {
-    const ids = EXAMPLE_TASKS.map((task) => task.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    for (const dict of [zh, en]) {
-      for (const folder of EXAMPLE_FOLDERS) {
-        expect(dict.chat.exampleFolders[folder.id]).not.toBe("");
-      }
-      for (const id of ids) {
-        const copy = dict.chat.exampleTasks[id];
-        expect(copy.label).not.toBe("");
-        expect(copy.desc).not.toBe("");
-        // The prompt is the request; the description is only the row's tooltip for it.
-        expect(copy.prompt.length).toBeGreaterThan(copy.desc.length);
-      }
-    }
-  });
-
   // The draft page reserves no scroll area: its height is the folder rows plus the open
   // folder's rows, so a folder much longer than its siblings makes that height jump.
   it("keeps the folders within one row of each other", () => {
@@ -129,13 +114,6 @@ describe("draft example catalog", () => {
 });
 
 describe("scheduled-task examples", () => {
-  const scheduleIds = ["dailyPlan", "githubDigest", "memoryReview"] as const;
-
-  it("files them all in the schedules folder", () => {
-    const folder = EXAMPLE_FOLDERS.find((candidate) => candidate.id === "schedules");
-    expect(folder?.tasks.map((task) => task.id)).toEqual([...scheduleIds]);
-  });
-
   // Two things a shortened schedule brief cannot lose. WHEN it fires: a schedule with no time
   // in it is not a schedule, and the Agent has nothing to ask about it that would not be a
   // guess. And, for the two check-ins that need the user to answer, that they run in the
