@@ -72,6 +72,7 @@ export function FolderSection({
   label,
   open,
   onToggle,
+  action,
   more = false,
   moreLabel,
   pending = false,
@@ -83,6 +84,11 @@ export function FolderSection({
   label: string;
   open: boolean;
   onToggle: () => void;
+  /**
+   * A flat action at the right end of the folder's row, outside its toggle, so a click on it
+   * never folds the folder (the company sidebar's Temporary "Close all").
+   */
+  action?: ReactNode;
   /** Show the folder's own "more" row (its share is not fully loaded and there is more to fetch). */
   more?: boolean;
   /**
@@ -100,12 +106,27 @@ export function FolderSection({
   children?: ReactNode;
 }) {
   const strings = useUiStrings();
+  const toggle = (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={action === undefined ? FOLDER_ROW_CLASS : `${FOLDER_ROW_CLASS} min-w-0 flex-1`}
+    >
+      <Chevron open={open} size={ICON_SIZE.chevronDense} />
+      {label}
+    </button>
+  );
   return (
     <div className="mt-1">
-      <button type="button" onClick={onToggle} aria-expanded={open} className={FOLDER_ROW_CLASS}>
-        <Chevron open={open} size={ICON_SIZE.chevronDense} />
-        {label}
-      </button>
+      {action === undefined ? (
+        toggle
+      ) : (
+        <div className="flex items-center gap-1">
+          {toggle}
+          {action}
+        </div>
+      )}
       {open && children}
       {open && more && (
         <MoreRow

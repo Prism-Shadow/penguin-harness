@@ -55,6 +55,12 @@ export const en: GalleryStrings = {
         "A Task mid-run: the model is thinking; the thinking row shows the running state and the text keeps growing.",
       how: "Sidebar › a session row with the running mark.",
     },
+    "chat-streaming": {
+      title: "Chat · streaming",
+      description:
+        "A Task mid-run: the answer is streaming in and reveals the way the current theme does it; once done it holds for a moment and streams again, on a loop.",
+      how: "Sidebar › a session row with the running mark.",
+    },
     "chat-approval": {
       title: "Chat · awaiting approval",
       description:
@@ -328,6 +334,7 @@ export const en: GalleryStrings = {
         "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
+      "ui-stream": "a reply that is still streaming: each theme decides how new text appears",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -430,6 +437,11 @@ export const en: GalleryStrings = {
       loading: {
         title: "Loading",
         description: "The spinner, the skeletons and the progress bar.",
+      },
+      streaming: {
+        title: "Streaming",
+        description:
+          "How an assistant reply reveals as it streams in: Primer shows it at once, Frost fades it in word by word with a soft glow, Console types it out.",
       },
       charts: {
         title: "Charts",
@@ -762,6 +774,19 @@ export const en: GalleryStrings = {
       progressLabel: "Download progress",
       progressOver: "Over the limit",
       progressIndeterminate: "Indeterminate",
+    },
+    streaming: {
+      reply: "Assistant reply",
+      receiving: "Receiving…",
+      received: "All received",
+      modes: {
+        instant: "shows text the moment it arrives, with no motion",
+        fade: "fades in word by word, the last lines rising out of a softly glowing accent veil",
+        typewriter: "types out character by character behind a solid block caret",
+      },
+      unset: "treated as instant",
+      rate: (perSecond) => `about ${Math.round(perSecond)} characters a second`,
+      reduced: "reduced motion is on, so the reply shows as it arrives",
     },
     charts: {
       parts: {

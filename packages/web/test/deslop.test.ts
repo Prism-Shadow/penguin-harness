@@ -3,8 +3,8 @@
  *
  * The same checks the package holds itself to (`packages/ui/src/testing/deslop.ts`, run over
  * `packages/ui/src` by `packages/ui/test/deslop.test.ts`), run over the web app, where the tells
- * K-redesign §1.5 counts still stand: `transition-all`, a hover scale, pings and pulses on things
- * that are not live, thirteen hand-drawn spinners, one-hue notice boxes, 10–11 px text, uppercase
+ * K-redesign §1.5 counts still stand: size and transform tweens off their homes, a hover scale,
+ * pulses on things that are not live, one-hue notice boxes, 10–11 px text, uppercase
  * micro-titles. Each of those is in {@link ALLOWLIST} — per file, per rule, how many and the wave
  * that removes them — and nothing else may appear. The counts are exact both ways: a new hit fails
  * as new slop, and a hit that goes away fails until its entry shrinks, so the list only tightens and
@@ -50,64 +50,59 @@ const POLICY: DeslopPolicy = {
 /**
  * What the web app still holds, seeded from K-redesign §1.5, by path under `packages/web/src`:
  * `{ rule: [count, wave] }`. The wave is the one whose PR rewrites those lines — where §1.5 names
- * it (`transition-all`, spinners, pings → W1b; the hover scale → W2's SwatchPicker; one-hue boxes →
- * W4's Notice), that wave; otherwise the wave that moves or rebuilds the file (A-architecture §7:
- * W1 marks and actions, W2 forms, W3 overlays, W4 layout, navigation, notices and data display, W5
- * content, W6 chat, W7 files, shell and dock, W8 charts). `W1b+W7` splits an entry between two.
+ * it (the hover scale → W2's SwatchPicker; one-hue boxes → W4's Notice), that wave; otherwise the
+ * wave that moves or rebuilds the file (A-architecture §7: W1 marks and actions, W2 forms, W3
+ * overlays, W4 layout, navigation, notices and data display, W5 content, W6 chat, W7 files, shell
+ * and dock, W8 charts). `Wn+Wm` splits an entry between two.
+ * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
  */
 const ALLOWLIST: DeslopAllowlist = {
-  "components/account/update-modal.tsx": { 11: [2, "W1b"] },
-  "components/account/update-row.tsx": { 11: [2, "W1b"] },
   "components/layout/app-layout.tsx": { 1: [1, "W7"] },
-  "components/layout/sidebar.tsx": {
-    1: [5, "W1b+W7"],
-    12: [5, "W7"],
-    13: [2, "W7"],
-    14: [2, "W7"],
-  },
-  "components/ui/session-row-menu.tsx": { 1: [1, "W1b"] },
+  "components/layout/sidebar.tsx": { 1: [3, "W7"], 12: [5, "W7"], 13: [2, "W7"], 14: [2, "W7"] },
+  "features/builtin-browser/browser-tab-strip.tsx": { 12: [2, "W10"] },
   "features/chat/agent-topology-view.tsx": { 12: [1, "W6"], 13: [3, "W6"] },
   "features/chat/chat-input.tsx": { 7: [1, "W6"], 12: [7, "W6"], 13: [5, "W6"] },
-  "features/chat/chat-page.tsx": { 6: [1, "W1b"], 12: [2, "W6"], 13: [3, "W6"] },
+  "features/chat/chat-page.tsx": { 12: [2, "W6"], 13: [3, "W6"] },
   "features/chat/context-gauge.tsx": { 12: [5, "W8"] },
-  "features/chat/conversation-outline.tsx": { 1: [1, "W1b"], 6: [2, "W1b"], 12: [1, "W6"] },
+  "features/chat/conversation-outline.tsx": { 12: [1, "W6"] },
   "features/chat/draft-view.tsx": { 12: [1, "W6"], 13: [1, "W6"] },
   "features/chat/drop-zone.tsx": { 18: [1, "W7"] },
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
-  "features/chat/message-item.tsx": { 4: [2, "W6"], 6: [1, "W6"], 13: [3, "W6"] },
-  "features/chat/message-stream.tsx": { 11: [2, "W1b"] },
+  "features/chat/message-item.tsx": { 4: [2, "W6"], 13: [3, "W6"] },
+  "features/chat/model-picker-modal.tsx": { 12: [1, "W10"] },
   "features/chat/shortcuts-folder.tsx": { 12: [1, "W7"] },
   "features/chat/step-banner.tsx": { 13: [1, "W6"], 14: [2, "W6"] },
-  "features/chat/subagent-chip.tsx": { 11: [2, "W1b"], 13: [1, "W6"] },
+  "features/chat/subagent-chip.tsx": { 13: [1, "W6"] },
   "features/chat/subagents-view.tsx": { 13: [2, "W6"], 14: [2, "W6"] },
-  "features/chat/task-stats-line.tsx": { 6: [1, "W1b"], 13: [1, "W6"] },
+  "features/chat/task-stats-line.tsx": { 13: [1, "W6"] },
   "features/chat/tool-call-card.tsx": { 6: [2, "W6"] },
   "features/chat/work-group.tsx": { 13: [1, "W6"] },
   "features/chat/workspace-browser.tsx": {
     1: [1, "W7"],
-    11: [4, "W1b"],
     12: [3, "W7"],
     13: [1, "W7"],
     18: [1, "W7"],
   },
+  "features/chat/workspace-finder.tsx": { 12: [6, "W10"] },
   "features/chat/workspace-tree-view.tsx": { 13: [1, "W7"] },
   "features/company/channel-composer.tsx": { 13: [2, "W6"] },
   "features/company/channel-header.tsx": { 13: [3, "W6"] },
   "features/company/channel-view.tsx": { 12: [1, "W6"], 13: [6, "W6"] },
-  "features/company/chart-card.tsx": { 6: [1, "W1b"], 12: [1, "W8"], 13: [5, "W8"] },
+  "features/company/chart-card.tsx": { 12: [1, "W8"], 13: [5, "W8"] },
   "features/company/finance-gauge.tsx": { 13: [1, "W8"] },
   "features/dock/dock-drag.tsx": { 3: [1, "W7"], 12: [1, "W7"] },
   "features/dock/dock-launcher.tsx": { 13: [1, "W7"], 18: [3, "W7"], 19: [4, "W7"] },
-  "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"], 13: [1, "W7"] },
-  "features/models/models-page.tsx": { 11: [8, "W1b"] },
-  "features/models/protocol-suffix.tsx": { 11: [2, "W1b"] },
-  "features/semantic-id/semantic-id-field.tsx": { 11: [2, "W1b"] },
+  "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"] },
+  "features/settings/shortcut-recorder.tsx": { 12: [1, "W10"], 13: [1, "W10"] },
+  "features/settings/shortcuts-section.tsx": { 13: [1, "W10"] },
+  "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
+  "features/terminal/terminal-keybar.tsx": { 12: [1, "W10"] },
   "features/traces/timeline-chart.tsx": { 6: [2, "W8"], 13: [10, "W8"] },
   "features/usage/usage-charts.tsx": { 13: [3, "W8"] },
   "features/usage/usage-page.tsx": { 12: [1, "W8"] },
 };
 
-const WAVES = /^W(?:1a?|1b|[2-9])(?:\+W(?:1a?|1b|[2-9]))*$/;
+const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;
 const relOf = (id: string) => id.slice("packages/web/src/".length);
 
 describe("de-slop rules over packages/web/src", () => {

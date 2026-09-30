@@ -6,7 +6,7 @@
  * a time.
  */
 import { describe, expect, it } from "vitest";
-import { isTopEscLayer, popEscLayer, pushEscLayer } from "@prismshadow/penguin-ui";
+import { hasEscLayers, isTopEscLayer, popEscLayer, pushEscLayer } from "@prismshadow/penguin-ui";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 describe("esc layer sources", () => {
@@ -21,6 +21,8 @@ describe("esc layer stack", () => {
   it("only the topmost layer may act; popping restores the one below", () => {
     const modal = pushEscLayer();
     expect(isTopEscLayer(modal)).toBe(true);
+    // An open layer is what holds the app's global shortcuts back.
+    expect(hasEscLayers()).toBe(true);
     // A menu opened inside the modal stacks above it: the first Escape belongs to the menu.
     const menu = pushEscLayer();
     expect(isTopEscLayer(menu)).toBe(true);
@@ -29,6 +31,7 @@ describe("esc layer stack", () => {
     expect(isTopEscLayer(modal)).toBe(true);
     popEscLayer(modal);
     expect(isTopEscLayer(modal)).toBe(false);
+    expect(hasEscLayers()).toBe(false);
   });
 
   it("tolerates out-of-order removal (an outer layer unmounting first)", () => {

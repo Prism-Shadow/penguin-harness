@@ -41,6 +41,10 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
+import { isShortcut } from "../../lib/shortcuts/match";
+import { currentPlatform } from "../../lib/shortcuts/platform";
+import { keymap } from "../../lib/shortcuts/store";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import type { TreeToggle } from "../../components/ui/file-tree";
@@ -244,11 +248,13 @@ export function HandbookPage() {
   };
 
   const onEditorKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+    if (isShortcut(e.nativeEvent, keymap(), "editor.save", currentPlatform())) {
+      // A held chord repeats: every repeat is kept from the browser (Save Page), one save runs.
       e.preventDefault();
-      void save();
+      if (!e.repeat) void save();
     }
   };
+  const saveShortcut = useShortcutLabel("editor.save");
 
   const tree = useMemo(() => (files === null ? null : buildHandbookTree(files)), [files]);
   const rows = useMemo(
@@ -366,7 +372,7 @@ export function HandbookPage() {
               {editing ? (
                 <>
                   <span className="hidden text-xs text-gray-400 sm:inline dark:text-gray-500">
-                    {S.company.handbook.editorHint}
+                    {S.company.handbook.editorHint(saveShortcut)}
                   </span>
                   <Button size="sm" disabled={saving} onClick={() => setEditing(false)}>
                     {S.common.cancel}

@@ -66,6 +66,24 @@ describe("bwrapArgs", () => {
     expect(bind).toBeGreaterThan(mnt);
   });
 
+  it("workspace-write binds the policy's further roots (the Session's scratchpad) writable at their distro path; read-only ignores them", () => {
+    const scratchpad = "C:\\Users\\k\\.penguin\\data\\p\\a\\scratchpad\\session-1";
+    const linux = "/mnt/c/Users/k/.penguin/data/p/a/scratchpad/session-1";
+    const args = bwrapArgs(
+      { mode: "workspace-write", workspaceRoot: WS, writableRoots: [scratchpad] },
+      HOST,
+    );
+    const bind = args.indexOf(linux);
+    expect(args.slice(bind - 1, bind + 2)).toEqual(["--bind", linux, linux]);
+    // Under the tmpfs over /mnt, and before it is sealed read-only.
+    expect(bind).toBeGreaterThan(args.indexOf("/mnt"));
+    expect(bind).toBeLessThan(args.indexOf("--remount-ro"));
+
+    expect(
+      bwrapArgs({ mode: "read-only", workspaceRoot: WS, writableRoots: [scratchpad] }, HOST),
+    ).toEqual(bwrapArgs({ mode: "read-only", workspaceRoot: WS }, HOST));
+  });
+
   it("read-only binds the Workspace read-only; network none drops --share-net", () => {
     const args = bwrapArgs({ mode: "read-only", workspaceRoot: WS, network: "none" }, HOST);
     expect(args).not.toContain("--share-net");

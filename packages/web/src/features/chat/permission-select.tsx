@@ -7,6 +7,9 @@
  * Filesystem and Network edit the Session's own sandbox policy: a Session keeps the policy it
  * was created with, so the Settings page only decides what NEW Sessions start from.
  *
+ * Approval lists the modes the composer passes in (see approval-mode.ts): an organization's
+ * Session is not offered `always-ask` unless it is the current value.
+ *
  * Popup direction depends on context: the draft card has room below and opens downward; the
  * chat input docked at the bottom of the screen opens upward.
  */
@@ -31,7 +34,6 @@ import {
 import { useAuth } from "../../state/auth";
 import { SettingsDialog } from "../settings/settings-dialog";
 
-const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
 
@@ -71,6 +73,7 @@ interface PendingPick {
 
 export function PermissionSelect({
   approvalMode: savedApprovalMode,
+  approvalModes,
   sandbox: savedSandbox,
   onChangeApprovalMode,
   onChangeSandbox,
@@ -78,6 +81,8 @@ export function PermissionSelect({
   direction = "up",
 }: {
   approvalMode: ApprovalMode;
+  /** The modes the Approval section lists, in order (`approvalModeChoices`). */
+  approvalModes: readonly ApprovalMode[];
   sandbox: SessionSandbox;
   /** A save that returns a promise keeps the pick on screen until it settles. */
   onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
@@ -181,7 +186,7 @@ export function PermissionSelect({
             />
           ))}
           <MenuLabel>{P.approval}</MenuLabel>
-          {APPROVAL_MODES.map((mode) => (
+          {approvalModes.map((mode) => (
             <Choice
               key={mode}
               label={S.chat.approvalModes[mode] ?? mode}

@@ -19,9 +19,15 @@
  * GET /api/desktop/update or /api/desktop/tray and writes back a command that is
  * forwarded to the shell. The window itself stays a plain browser — every capability
  * flows through this HTTP surface, never a renderer IPC bridge.
+ *
+ * The same channel carries the Workspace picker's macOS folder access: a request the shell
+ * answers (its main process reads a folder in the app's own name), and a command that opens
+ * System Settings at a privacy pane.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type {
+  DesktopFolderAccessResult,
+  DesktopPrivacyPane,
   DesktopTrayPatch,
   DesktopTrayStatus,
   DesktopUpdateStatus,
@@ -121,4 +127,38 @@ export class DesktopService {
     this.trayCommandSender(patch);
     return true;
   }
+
+  // --- macOS folder-access relay ----------------------------------------------
+
+  private folderAccessSender: FolderAccessSender | null = null;
+  private privacySettingsSender: ((pane: DesktopPrivacyPane) => void) | null = null;
+
+  /** index.ts registers the message-port request; absent outside a shell-forked process. */
+  onFolderAccessRequest(sender: FolderAccessSender): void {
+    this.folderAccessSender = sender;
+  }
+
+  /**
+   * Invoked by the dirs access route: has the shell read `path` in the app's own name. Null
+   * when no shell port is wired (tests, plain runs); the promise resolves null when the shell
+   * does not answer in time.
+   */
+  requestFolderAccess(path: string): Promise<DesktopFolderAccessResult | null> | null {
+    return this.folderAccessSender?.(path) ?? null;
+  }
+
+  /** index.ts registers the message-port sender; absent outside a shell-forked process. */
+  onPrivacySettingsCommand(sender: (pane: DesktopPrivacyPane) => void): void {
+    this.privacySettingsSender = sender;
+  }
+
+  /** Invoked by the privacy-settings route; false when no shell port is wired (tests, plain runs). */
+  requestPrivacySettings(pane: DesktopPrivacyPane): boolean {
+    if (!this.privacySettingsSender) return false;
+    this.privacySettingsSender(pane);
+    return true;
+  }
 }
+
+/** Asks the shell to read one folder; resolves with its answer, or null when none came in time. */
+export type FolderAccessSender = (path: string) => Promise<DesktopFolderAccessResult | null>;

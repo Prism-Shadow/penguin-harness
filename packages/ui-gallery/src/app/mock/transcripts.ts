@@ -6,6 +6,7 @@
  *
  * - a tool call with no `tool_call_output` yet is a running tool (the card's timer ticks);
  * - an open `partial_thinking` fragment, carried as the live tail, is running thinking;
+ * - an open `partial_text` fragment, carried the same way, is a reply streaming in;
  * - a tool call the stream has escalated with `approval_request` is waiting on a human.
  */
 import { IDS } from "./ids";
@@ -50,8 +51,11 @@ export const meta = (
 export const userText = (ms: number, text: string): OmniMessage =>
   model(ms, { type: "text", role: "user", text });
 
-export const assistantText = (ms: number, text: string): OmniMessage =>
-  model(ms, { type: "text", role: "assistant", text, stop_reason: "completed" });
+export const assistantText = (
+  ms: number,
+  text: string,
+  stopReason: "completed" | "aborted" = "completed",
+): OmniMessage => model(ms, { type: "text", role: "assistant", text, stop_reason: stopReason });
 
 export const thinking = (ms: number, text: string): OmniMessage =>
   model(ms, { type: "thinking", role: "assistant", thinking: text, stop_reason: "completed" });
@@ -157,6 +161,8 @@ interface Copy {
   runningTool: { prompt: string; thinking: string; readOutput: string; title: string };
   thinking: { prompt: string; sentences: string[]; title: string };
   approval: { prompt: string; thinking: string; title: string; allowed: string; denied: string };
+  /** The streaming Session's turn; the library's streaming board plays its answer too. */
+  streaming: { prompt: string; thinking: string; title: string; answer: string };
   reply: { thinking: string; text: string[]; title: string };
   older: Record<string, { prompt: string; answer: string }>;
 }
@@ -217,6 +223,24 @@ Nothing else in the corpus changed, so the index rebuild took 12.4 ms [1].
         "Published `@penguinharness/docs-expert@2026.9.14.1`. The registry lists the new version and the tarball is 48.2 KB.",
       denied:
         "Not published. The package is built and ready in `dist/`; run the publish yourself when you want it out.",
+    },
+    streaming: {
+      title: "Explain the citation guard",
+      prompt: "Walk me through how the retriever decides what it may cite.",
+      thinking:
+        "I read src/rag.ts earlier in this session, so I can answer from it: the ranking, then the existence check that guards every citation.",
+      answer: `The retriever answers in two passes: it ranks the corpus with BM25, then drops every hit whose source file no longer exists, so a citation always opens a real file.
+
+- **Walk**: \`buildIndex\` reads every Markdown file under \`corpus/\`.
+- **Rank**: \`rank\` keeps the six best matches for the question.
+- **Guard**: a hit is cited only if \`fs.existsSync\` finds its file.
+
+\`\`\`ts
+const hits = rank("How do I configure hooks?", index);
+const cited = hits.filter((hit) => fs.existsSync(hit.source));
+\`\`\`
+
+To change what comes first, tune \`k1\` and \`b\` in \`src/rag.ts\`; the guard stays as it is.`,
     },
     reply: {
       title: "A question about the corpus",
@@ -328,6 +352,24 @@ rank("如何配置 hooks？", index)[0].source;
         "已发布 `@penguinharness/docs-expert@2026.9.14.1`。注册表已列出新版本，压缩包 48.2 KB。",
       denied: "没有发布。包已经构建好放在 `dist/`，需要时自行运行发布命令即可。",
     },
+    streaming: {
+      title: "讲解引用校验",
+      prompt: "讲讲检索模块是怎么决定哪些内容可以引用的。",
+      thinking:
+        "这个会话前面读过 src/rag.ts，可以直接据此回答：先是排序，再是守住每条引用的存在性校验。",
+      answer: `检索分两步回答：先用 BM25 给语料库排序，再丢掉源文件已经不存在的命中，所以每条引用都能打开一个真实文件。
+
+- **扫描**：\`buildIndex\` 读取 \`corpus/\` 下的每个 Markdown 文件。
+- **排序**：\`rank\` 为问题保留最匹配的六条。
+- **校验**：只有 \`fs.existsSync\` 找得到文件的命中才会被引用。
+
+\`\`\`ts
+const hits = rank("如何配置 hooks？", index);
+const cited = hits.filter((hit) => fs.existsSync(hit.source));
+\`\`\`
+
+想调整排在前面的结果，就改 \`src/rag.ts\` 里的 \`k1\` 和 \`b\`；校验这一步保持不变。`,
+    },
     reply: {
       title: "关于语料库的一个问题",
       thinking: "答案在语料库里。打开检索模块，引用原文里的规则，而不是转述。",
@@ -405,6 +447,8 @@ export interface Transcript {
   history: OmniMessage[];
   /** An open thinking fragment the live tail carries (running thinking). */
   openThinking?: { startedAt: number; text: string };
+  /** An open text fragment the live tail carries (a reply streaming in). */
+  openText?: { startedAt: number; text: string };
   /** A tool call awaiting a human decision. */
   pendingApproval?: ToolCallMessage;
   running: boolean;
@@ -493,6 +537,25 @@ export function thinkingTranscript(lang: Lang, now: number, ref: ModelRef): Tran
         "# Changelog\n\n## Unreleased\n\n41 entries in changelog/unreleased/ …",
       ),
       requestBegin(s(4)),
+    ],
+  };
+}
+
+/**
+ * A Task mid-run whose reply is streaming: the prompt and the settled thinking are history; the
+ * answer itself is played by the store, in a loop, while the Session is watched.
+ */
+export function streamingTranscript(lang: Lang, now: number, ref: ModelRef): Transcript {
+  const c = COPY[lang].streaming;
+  const t0 = now - 20_000;
+  const s = (sec: number) => t0 + sec * 1000;
+  return {
+    running: true,
+    history: [
+      meta(s(0), IDS.sessions.streaming, ref, IDS.workspace),
+      userText(s(0), c.prompt),
+      requestBegin(s(0.3)),
+      thinking(s(5), c.thinking),
     ],
   };
 }
@@ -658,6 +721,9 @@ export function approvalOutcome(
       }
     : { output: "Tool call denied by user.", text: c.denied };
 }
+
+/** The Markdown answer the streaming Session streams, and the library's streaming board plays. */
+export const streamingAnswer = (lang: Lang): string => COPY[lang].streaming.answer;
 
 /** The sentences the thinking session keeps adding, one per beat, cycling. */
 export const thinkingBeats = (lang: Lang): readonly string[] => COPY[lang].thinking.sentences;

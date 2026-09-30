@@ -15,9 +15,9 @@
  * Escape in a non-empty box clears it and goes no further, so one press empties the search rather
  * than also closing the dialog, dock or menu around it; in an empty box Escape passes through.
  * The right side always reserves the clear button's room, so the text never shifts when it
- * appears.
+ * appears. A ref reaches the `<input>` itself, so a caller can put the caret back into the box.
  */
-import { useRef } from "react";
+import { forwardRef, useCallback, useRef } from "react";
 import type { InputHTMLAttributes, KeyboardEvent } from "react";
 import { useUiStrings } from "../../../strings";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
@@ -98,22 +98,34 @@ const GEOMETRY: Record<
 
 const MARK_SIZE: Record<ControlSize, number> = { sm: 12, base: 14 };
 
-export function SearchInput({
-  value,
-  onChange,
-  variant = "field",
-  size = "sm",
-  clearLabel,
-  onClear,
-  alwaysClearable = false,
-  icon = false,
-  className = "",
-  onKeyDown,
-  title,
-  ...rest
-}: SearchInputProps) {
+export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
+  {
+    value,
+    onChange,
+    variant = "field",
+    size = "sm",
+    clearLabel,
+    onClear,
+    alwaysClearable = false,
+    icon = false,
+    className = "",
+    onKeyDown,
+    title,
+    ...rest
+  },
+  ref,
+) {
   const strings = useUiStrings();
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement | null>(null);
+  // The box keeps its own handle (clearing puts the caret back) and hands the same element on.
+  const setInput = useCallback(
+    (element: HTMLInputElement | null) => {
+      input.current = element;
+      if (typeof ref === "function") ref(element);
+      else if (ref !== null) ref.current = element;
+    },
+    [ref],
+  );
   const clearName = clearLabel ?? strings.clearSearch;
   const clearable = value !== "" || alwaysClearable;
   const geometry = GEOMETRY[variant === "menu" ? "menu" : "box"][size];
@@ -144,7 +156,7 @@ export function SearchInput({
         />
       )}
       <input
-        ref={input}
+        ref={setInput}
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -171,4 +183,4 @@ export function SearchInput({
       )}
     </div>
   );
-}
+});

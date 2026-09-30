@@ -3,7 +3,8 @@
  * list's organization filter (session-grouping): a desk row per employee in chart order
  * whether or not a desk exists, the session list's live status winning over both snapshots,
  * the messaging mark read from the sessions route and patched by a bind or an unbind,
- * the glyph a row draws, an employee's own state read from every Session the organization
+ * the titles the route gives the ticket sessions the Temporary group lists, the glyph a row
+ * draws, an employee's own state read from every Session the organization
  * attributes to it — its ticket sessions included, though no list shows them as a group —
  * and the render-time guard that keeps an organization's row out of the development list when
  * one still reaches it (the server leaves them out of the list's own fetches; see
@@ -19,6 +20,7 @@ import {
   deskRows,
   liveEmployeeStates,
   orgRowActivity,
+  ticketSessionTitles,
   withDeskMessagingChannel,
 } from "../src/features/company/org-sessions";
 import { isOrgSession, withoutOrgSessions } from "../src/lib/session-grouping";
@@ -199,6 +201,21 @@ describe("the desk row's messaging mark", () => {
     expect(withDeskMessagingChannel(bound, "s-t1", "telegram")).toBe(bound);
     expect(withDeskMessagingChannel(bound, "s-ceo", "telegram")).toBe(bound);
     expect(withDeskMessagingChannel(bound, "s-pm", null)).toBe(bound);
+  });
+});
+
+describe("ticketSessionTitles", () => {
+  it("names the ticket sessions the route gave a title, across every ticket", () => {
+    const titles = ticketSessionTitles(sessions);
+    expect(titles.get("s-t2")).toBe("Write docs");
+    expect(titles.get("s-t3")).toBe("Build the site");
+    // Untitled yet, and a desk: neither is named, so the Temporary row keeps its own title.
+    expect(titles.has("s-t1")).toBe(false);
+    expect(titles.has("s-ceo")).toBe(false);
+  });
+
+  it("names nothing while the route has not been read", () => {
+    expect(ticketSessionTitles(undefined).size).toBe(0);
   });
 });
 

@@ -61,6 +61,14 @@ export interface SandboxPolicy {
   /** Absolute root directory `workspace-write` may write under. */
   workspaceRoot: string;
   /**
+   * Further absolute directories `workspace-write` may write under, beside the workspace:
+   * the Session's scratchpad, where the plan file, a goal's state file and the
+   * attachments live. Meaningless under `read-only`. A backend that does not implement
+   * the field confines more narrowly than asked, never more widely, so no dimension
+   * guards it.
+   */
+  writableRoots?: readonly string[];
+  /**
    * `network`: "none" = the confined process gets no network at all (dimension `network`);
    * "local" = it reaches the host's localhost and nothing else (dimension `network-local`).
    */
