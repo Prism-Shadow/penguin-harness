@@ -43,3 +43,6 @@ export * from "./components/actions/link/link";
 export * from "./components/actions/copy-button/copy-button";
 export * from "./components/actions/kbd/kbd";
 export * from "./components/actions/hidden-file-input/hidden-file-input";
+
+// W2-0 — menu panel: the panel, row states and check mark every picker and menu shares.
+export * from "./components/overlays/menu-panel/menu-panel";

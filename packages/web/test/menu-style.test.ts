@@ -1,19 +1,31 @@
 /**
- * One look for every picker and menu: Select's panel, row states and check mark
- * (components/ui/field.tsx: `menuPanelClass`, `menuRowTone`, `ChoiceCheck`), shared by Select,
- * OptionMenu, Dropdown and the pickers built on Dropdown. Checked as source, because the web
- * suite renders no DOM.
+ * One look for every picker and menu: Select's panel, row states and check mark, which the UI
+ * package owns (`menuPanelClass`, `menuRowClass`, `menuRowTone`, `ChoiceCheck` in
+ * components/overlays/menu-panel/menu-panel.tsx), shared by Select, OptionMenu, Dropdown and the
+ * pickers built on Dropdown. The pieces themselves are tested in the package; this suite checks
+ * how the app uses them, as source, because the web suite renders no DOM.
  */
-import { renderToStaticMarkup } from "react-dom/server";
-import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { ChoiceCheck, menuRowTone } from "../src/components/ui/field";
-import { scanSources, sourceFile } from "./helpers/roots";
+import { expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
 const text = (id: string) => sourceFile(SCAN, `packages/web/src/${id}`).text;
+const MENU_PANEL = "packages/ui/src/components/overlays/menu-panel/menu-panel.tsx";
 
 describe("menus and pickers", () => {
+  it("take the panel, rows and check from the UI package, never a second copy", () => {
+    expectSingleHome(SCAN, MENU_PANEL);
+    const copies = SCAN.files
+      .filter((file) => file.id !== MENU_PANEL)
+      .filter((file) =>
+        /\b(?:const|function)\s+(?:menuPanelClass|menuRowClass|menuRowTone|ChoiceCheck)\b/.test(
+          file.text,
+        ),
+      )
+      .map((file) => file.id);
+    expect(copies).toEqual([]);
+  });
+
   it("open Select's panel", () => {
     for (const id of [
       "components/ui/select.tsx",
@@ -30,13 +42,5 @@ describe("menus and pickers", () => {
       .filter((file) => /["'`]✓["'`]/.test(file.text))
       .map((file) => file.id);
     expect(typed).toEqual([]);
-    expect(renderToStaticMarkup(createElement(ChoiceCheck, { on: true }))).toContain("<svg");
-    expect(renderToStaticMarkup(createElement(ChoiceCheck, { on: false }))).not.toContain("<svg");
-  });
-
-  it("fill the current choice and only hover the rest", () => {
-    expect(menuRowTone(true)).toContain("font-medium");
-    expect(menuRowTone(true)).not.toContain("hover:");
-    expect(menuRowTone(false)).toContain("hover:bg-gray-100");
   });
 });

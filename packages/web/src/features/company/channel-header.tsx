@@ -26,6 +26,9 @@ import {
   ICON_GAP,
   ICON_SIZE,
   UserAvatar,
+  menuPanelClass,
+  menuRowClass,
+  menuRowTone,
 } from "@prismshadow/penguin-ui";
 import type { AvatarStackItem } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -45,7 +48,6 @@ import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
 import type { InviteCandidate } from "./channel-list";
 import { parsePrincipal } from "./principals";
-import { menuPanelClass, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Invite (lucide user-plus): the header's "add somebody to this channel" action. */
 const INVITE_ICON =

@@ -93,11 +93,15 @@ import {
   Button,
   CheckIcon,
   ChevronDown,
+  ChoiceCheck,
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   ProviderLogo,
+  menuPanelClass,
+  menuRowClass,
+  menuRowTone,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, humanizeTokens } from "../../lib/format";
@@ -138,7 +142,6 @@ import { splitBySize } from "../../lib/upload-limits";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
 import { NoticeStrip } from "../../components/ui/notice-strip";
-import { ChoiceCheck, menuPanelClass, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /**
  * Agent candidate panel for the `/agent` switch picker — the agent-side counterpart of

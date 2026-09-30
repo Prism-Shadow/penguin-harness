@@ -248,6 +248,16 @@
           "names": ["HiddenFileInput"]
         }
       ]
+    },
+    "W2": {
+      "packages/web/src/components/ui/field": [
+        {
+          "owner": "W2-0",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/menu-panel/menu-panel.tsx",
+          "names": ["menuPanelClass", "menuRowClass", "menuRowTone", "ChoiceCheck"]
+        }
+      ]
     }
   }
 }

@@ -27,17 +27,16 @@
  */
 import { useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown } from "@prismshadow/penguin-ui";
-import { errorClass, sizeClass, sizeTextClass } from "./input";
-import type { ControlSize } from "./input";
 import {
+  ChevronDown,
   ChoiceCheck,
-  Field,
-  controlBase,
   menuPanelClass,
   menuRowClass,
   menuRowTone,
-} from "./field";
+} from "@prismshadow/penguin-ui";
+import { errorClass, sizeClass, sizeTextClass } from "./input";
+import type { ControlSize } from "./input";
+import { Field, controlBase } from "./field";
 import { usePortalPanel } from "./use-portal-panel";
 
 export interface OptionMenuChoice<T extends string> {

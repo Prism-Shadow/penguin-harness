@@ -18,13 +18,12 @@
  */
 import { useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
-import { ICON_SIZE } from "@prismshadow/penguin-ui";
+import { ChoiceCheck, ICON_SIZE, menuRowClass, menuRowTone } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { filterSkills, localizedShortText } from "../chat/skill-use";
 import { SkillIcon } from "./skill-icon-view";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** A bulk-row action: a plain text button, sized to sit inside the panel's chrome without competing with the rows. */
 const bulkActionClass =

@@ -16,7 +16,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { DirListResponse } from "@prismshadow/penguin-server/api";
-import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Chevron,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  menuRowClass,
+  menuRowTone,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -26,7 +33,6 @@ import { noAutofill } from "../../components/ui/input";
 import { toastError } from "../../components/ui/toast";
 import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
-import { menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
 export const pillClass =

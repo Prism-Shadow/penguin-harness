@@ -18,11 +18,10 @@
  * off the row entirely.
  */
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ICONS, menuRowClass, menuRowTone } from "@prismshadow/penguin-ui";
 import type { AnchorRect } from "../../lib/context-menu";
 import { S } from "../../lib/strings";
 import { Icon } from "./group-list";
-import { menuRowClass, menuRowTone } from "./field";
 
 /** Compact overflow-menu row (session row menu + workspace group menu): small text, leading thin-line glyph. */
 export const overflowMenuRowClass = `flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone()}`;

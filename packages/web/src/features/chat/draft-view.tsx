@@ -51,7 +51,16 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, Chevron, ICONS, ICON_GAP, PenguinLogo } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  Chevron,
+  ChoiceCheck,
+  ICONS,
+  ICON_GAP,
+  PenguinLogo,
+  menuRowClass,
+  menuRowTone,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { UNCONFINED } from "../../lib/permission-level";
@@ -93,7 +102,6 @@ import { newChatAgentId } from "./new-chat";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;

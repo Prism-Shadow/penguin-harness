@@ -15,10 +15,13 @@ import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
   Badge,
   ChevronDown,
+  ChoiceCheck,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   ProviderLogo,
+  menuRowClass,
+  menuRowTone,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
@@ -32,7 +35,6 @@ import {
 } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { useProject } from "../../state/project";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is
