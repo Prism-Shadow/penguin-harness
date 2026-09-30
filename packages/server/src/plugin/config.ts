@@ -110,7 +110,10 @@ function parseTable(
     if (typeof c.name !== "string" || !FIELD_NAME.test(c.name)) {
       throw new Error(`${at}.name is not a valid name`);
     }
-    if (typeof c.type !== "string" || !COLUMN_TYPES.has(c.type as PluginConfigTableColumn["type"])) {
+    if (
+      typeof c.type !== "string" ||
+      !COLUMN_TYPES.has(c.type as PluginConfigTableColumn["type"])
+    ) {
       throw new Error(`${at}.type must be one of ${[...COLUMN_TYPES].join(", ")}`);
     }
     if (typeof c.title !== "string" || c.title === "") throw new Error(`${at}.title is required`);
@@ -153,10 +156,7 @@ function parseTable(
       row.valuesZh = r.valuesZh as Record<string, string>;
     }
     if (r.locked !== undefined) {
-      if (
-        !Array.isArray(r.locked) ||
-        !r.locked.every((n) => columns.some((c) => c.name === n))
-      ) {
+      if (!Array.isArray(r.locked) || !r.locked.every((n) => columns.some((c) => c.name === n))) {
         throw new Error(`${at}.locked must list columns of the table`);
       }
       row.locked = r.locked as string[];
@@ -180,7 +180,9 @@ export function resolveTable(field: PluginConfigField, stored: unknown): PluginC
       const v = own[column.name];
       if (v !== undefined && cellFits(column, v)) values[column.name] = v as string | boolean;
     }
-    const zh = Object.entries(row.valuesZh ?? {}).filter(([name]) => values[name] === row.values[name]);
+    const zh = Object.entries(row.valuesZh ?? {}).filter(
+      ([name]) => values[name] === row.values[name],
+    );
     const { valuesZh: _declared, ...rest } = row;
     return { ...rest, values, ...(zh.length > 0 ? { valuesZh: Object.fromEntries(zh) } : {}) };
   });
@@ -800,7 +802,10 @@ export class PluginConfigPage {
             );
             if (row !== undefined) {
               const at = `${u.field}.${row[0]}.${u.column}`;
-              throw new PluginConfigError(u.field, `"${at}" cannot be "${u.value}" here: ${u.reason}`);
+              throw new PluginConfigError(
+                u.field,
+                `"${at}" cannot be "${u.value}" here: ${u.reason}`,
+              );
             }
             continue;
           }

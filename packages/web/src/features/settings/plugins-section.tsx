@@ -406,7 +406,9 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         return (
           <div key={name} className="space-y-1.5">
             <p className="text-sm font-medium">{label}</p>
-            {hint !== undefined && <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+            {hint !== undefined && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[36rem] border-collapse text-sm">
                 <thead>

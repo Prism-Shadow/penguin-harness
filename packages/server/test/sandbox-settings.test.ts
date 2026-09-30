@@ -150,7 +150,9 @@ describe("sandbox settings group", () => {
     const { t, admin, sandbox } = await appWith([]);
     apps.push(t);
     const policy = { mode: "workspace-write", network: "none", maskPaths: ["/secret"] };
-    expect((await admin.put("/api/admin/plugin-config", { name: "sandbox", values: policy })).status).toBe(200);
+    expect(
+      (await admin.put("/api/admin/plugin-config", { name: "sandbox", values: policy })).status,
+    ).toBe(200);
     const without = sandbox.currentSettings();
     const saved = await admin.put("/api/admin/plugin-config", {
       name: "sandbox",

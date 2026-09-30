@@ -187,7 +187,8 @@ export function matchPreset(
 ): SessionSandboxPreset | null {
   return (
     presets.find(
-      (p) => p.approvalMode === approval && p.mode === sandbox.mode && p.network === sandbox.network,
+      (p) =>
+        p.approvalMode === approval && p.mode === sandbox.mode && p.network === sandbox.network,
     ) ?? null
   );
 }
@@ -235,7 +236,9 @@ export type PresetEffect =
   | "reads-unasked";
 
 /** What a preset blocks and what it allows, from its three values, for the hover text. */
-export function presetEffects(preset: Pick<SessionSandboxPreset, "mode" | "network" | "approvalMode">): {
+export function presetEffects(
+  preset: Pick<SessionSandboxPreset, "mode" | "network" | "approvalMode">,
+): {
   blocks: PresetEffect[];
   allows: PresetEffect[];
 } {

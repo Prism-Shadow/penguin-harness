@@ -353,25 +353,26 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
   });
 
   it("carries the Sandbox card's presets, read back after a save, and says when the policy is advanced", async () => {
-    const { apiClient, createTestApp, loginAdmin } = await import("./helpers.js");
+    const { apiClient, createTestApp, loginAdmin, provisionUser } = await import("./helpers.js");
     const t = await createTestApp();
     try {
       const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      const owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
       const project = (await (
-        await admin.post("/api/projects", { projectId: "admin-presets", name: "project" })
+        await owner.post("/api/projects", { projectId: "owner-presets", name: "project" })
       ).json()) as { project: { projectId: string } };
       const projectId = project.project.projectId;
-      await admin.put(`/api/projects/${projectId}/models`, {
+      await owner.put(`/api/projects/${projectId}/models`, {
         defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
         models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
       });
       type Created = { session: { sessionId: string; sandbox: SessionSandbox } };
       const create = async () =>
         (await (
-          await admin.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
+          await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
         ).json()) as Created;
       const read = async (id: string) =>
-        ((await (await admin.get(`/api/sessions/${id}`)).json()) as Created).session.sandbox;
+        ((await (await owner.get(`/api/sessions/${id}`)).json()) as Created).session.sandbox;
 
       const first = await create();
       expect(first.session.sandbox.presets).toEqual(DEFAULT_PRESETS);
@@ -402,7 +403,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       expect(presets.find((p) => p.id === "denied-all")?.enabled).toBe(true);
       // The chat defaults a draft reads carry the same table.
       const defaults = (await (
-        await admin.get(`/api/projects/${projectId}/chat-defaults`)
+        await owner.get(`/api/projects/${projectId}/chat-defaults`)
       ).json()) as { sandbox: SessionSandbox };
       expect(defaults.sandbox.presets).toEqual(presets);
 

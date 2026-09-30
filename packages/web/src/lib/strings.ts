@@ -2944,8 +2944,7 @@ Benchmark：
       approval: "审批",
       custom: "自定义",
       advancedActive: "高级设置生效中",
-      advancedHint:
-        "本会话另有屏蔽路径或只读的临时目录，来自沙盒卡片；选择预设会保留它们。",
+      advancedHint: "本会话另有屏蔽路径或只读的临时目录，来自沙盒卡片；选择预设会保留它们。",
       blocks: "封住",
       allows: "放开",
       nothing: "无",
