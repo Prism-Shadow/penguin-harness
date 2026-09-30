@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [Myriad-Dreamin/penguin-harness#133](https://github.com/Myriad-Dreamin/penguin-harness/pull/133)
 
 [English](2026-09-30-machine-events-attach-a-machine-connected-later.md)
 
