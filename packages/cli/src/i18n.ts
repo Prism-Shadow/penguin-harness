@@ -210,6 +210,40 @@ export interface Messages {
     colCost(): string;
     colGroup(dimension: string): string;
   };
+  /** `penguin telemetry`: the server's in-memory telemetry readings (PRFC-0008), admin only. */
+  telemetry: {
+    desc: string;
+    by: string;
+    samples: string;
+    probe: string;
+    session: string;
+    all: string;
+    limit: string;
+    onDesc: string;
+    offDesc: string;
+    clearDesc: string;
+    byInvalid(value: string): string;
+    limitInvalid(value: string): string;
+    /** The switch is off on the server: nothing is recorded. */
+    off(): string;
+    turnedOn(): string;
+    turnedOff(): string;
+    cleared(): string;
+    empty(): string;
+    /** Printed above the table when the view was narrowed to the calling session by default. */
+    scopedTo(session: string): string;
+    colProbe(): string;
+    colCount(): string;
+    colP50(): string;
+    colP95(): string;
+    colMax(): string;
+    colBytes(): string;
+    colSession(): string;
+    colTime(): string;
+    colDuration(): string;
+    colStatus(): string;
+    colDetail(): string;
+  };
   /** `penguin schedule`: scheduled-task listing and management (a validated writer over the schedules API; the TOML file stays the single source of truth). */
   schedule: {
     desc: string;
@@ -1454,6 +1488,37 @@ const en: Messages = {
     colRequests: () => "REQUESTS",
     colCost: () => "COST",
     colGroup: (dimension) => dimension.toUpperCase(),
+  },
+  telemetry: {
+    desc: "Show the server's telemetry readings (admin only; in-memory, off by default)",
+    by: "Summary view: probe (default) or session",
+    samples: "List the samples themselves instead of a summary",
+    probe: "Only this probe (e.g. http.request, boot.module, session.messages)",
+    session: "Only this session's samples",
+    all: "Inside a session, show every session's samples, not just this one's",
+    limit: "With --samples: only the newest n",
+    onDesc: "Turn telemetry on (system setting, takes effect at once)",
+    offDesc: "Turn telemetry off and drop the buffer",
+    clearDesc: "Empty the telemetry buffer",
+    byInvalid: (value) => `Invalid --by value "${value}": expected probe or session.`,
+    limitInvalid: (value) => `Invalid --limit value "${value}": expected a positive integer.`,
+    off: () => "Telemetry is off on this server; turn it on with `penguin telemetry on`.",
+    turnedOn: () => "Telemetry is on.",
+    turnedOff: () => "Telemetry is off.",
+    cleared: () => "Telemetry buffer cleared.",
+    empty: () => "No samples.",
+    scopedTo: (session) => `Session ${session} only (--all for every session).`,
+    colProbe: () => "PROBE",
+    colCount: () => "COUNT",
+    colP50: () => "P50",
+    colP95: () => "P95",
+    colMax: () => "MAX",
+    colBytes: () => "BYTES",
+    colSession: () => "SESSION",
+    colTime: () => "TIME",
+    colDuration: () => "DURATION",
+    colStatus: () => "STATUS",
+    colDetail: () => "DETAIL",
   },
   schedule: {
     desc: "Manage scheduled tasks",
@@ -2722,6 +2787,37 @@ const zh: Messages = {
     colRequests: () => "请求数",
     colCost: () => "成本",
     colGroup: (dimension) => dimension.toUpperCase(),
+  },
+  telemetry: {
+    desc: "查看服务端的遥测读数（仅管理员；只在内存里，默认关）",
+    by: "汇总视图：probe（默认，按采集点）或 session",
+    samples: "列出样本本身，而不是汇总",
+    probe: "只看这个采集点（如 http.request、boot.module、session.messages）",
+    session: "只看这个会话的样本",
+    all: "在会话里运行时也列出所有会话的样本，不只本会话",
+    limit: "配合 --samples：只列最新的 n 条",
+    onDesc: "打开遥测（系统设置，即时生效）",
+    offDesc: "关闭遥测并丢弃缓冲",
+    clearDesc: "清空遥测缓冲",
+    byInvalid: (value) => `无效的 --by 值 "${value}"：应为 probe 或 session。`,
+    limitInvalid: (value) => `无效的 --limit 值 "${value}"：应为正整数。`,
+    off: () => "这台服务端的遥测是关着的；用 `penguin telemetry on` 打开。",
+    turnedOn: () => "遥测已打开。",
+    turnedOff: () => "遥测已关闭。",
+    cleared: () => "遥测缓冲已清空。",
+    empty: () => "没有样本。",
+    scopedTo: (session) => `只显示会话 ${session}（--all 显示全部会话）。`,
+    colProbe: () => "采集点",
+    colCount: () => "次数",
+    colP50: () => "P50",
+    colP95: () => "P95",
+    colMax: () => "最大",
+    colBytes: () => "字节",
+    colSession: () => "会话",
+    colTime: () => "时刻",
+    colDuration: () => "用时",
+    colStatus: () => "状态",
+    colDetail: () => "详情",
   },
   schedule: {
     desc: "管理定时任务",

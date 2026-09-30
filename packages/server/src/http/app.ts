@@ -7,12 +7,18 @@ import type { MiddlewareHandler } from "hono";
 import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "../auth/middleware.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
-import { declined } from "../hmr/hono-seam.js";
+import { declined, isDeclined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "../mechanisms/identity.js";
 import type { SessionVia } from "../auth/service.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
+import { randomUUID } from "node:crypto";
+
+/** The request id header (PRFC-0008): answered on every sampled request, and reused when a request arrives carrying one — the machine proxy forwards it, so both servers' samples share the id. */
+export const REQUEST_ID_HEADER = "x-penguin-request-id";
+const REQUEST_ID_SHAPE = /^[\w.:-]{1,64}$/;
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.
@@ -61,6 +67,7 @@ export class HttpModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly access!: Access;
   @Use() private readonly users!: Users;
+  @Use() private readonly telemetry?: Telemetry;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
     const routes = [...(contributions.routes ?? [])]
@@ -155,6 +162,57 @@ export class HttpModule {
         this.log.line(
           `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
         );
+      });
+    }
+    // Telemetry's http.request (PRFC-0008), on both surfaces — the cookie one writes no request
+    // line, but its requests are the App's all the same. While the switch is off this is one
+    // boolean check; no id is minted and nothing is wrapped.
+    const telemetry = this.telemetry;
+    if (telemetry !== undefined) {
+      app.use("*", async (c, next) => {
+        if (!telemetry.on()) return next();
+        const incoming = c.req.header(REQUEST_ID_HEADER);
+        const request =
+          incoming !== undefined && REQUEST_ID_SHAPE.test(incoming) ? incoming : randomUUID();
+        const start = performance.now();
+        await telemetry.within({ request }, () => next());
+        const res = c.res;
+        // Left to the static tail behind the seam: not an answer of this surface.
+        if (isDeclined(res)) return;
+        const durMs = performance.now() - start;
+        const requestLength = Number(c.req.header("content-length"));
+        const responseLength = res.headers.get("content-length");
+        const params: Record<string, string | undefined> = c.req.param();
+        const session = params.sessionId;
+        const sample = telemetry.record({
+          probe: "http.request",
+          durMs,
+          ...(responseLength !== null ? { bytes: Number(responseLength) } : {}),
+          status: res.status >= 500 ? "error" : "ok",
+          keys: { request, ...(session !== undefined ? { session } : {}) },
+          attrs: {
+            method: c.req.method,
+            // The registered pattern, never the path: ids and query values stay out.
+            route: c.req.routePath,
+            code: res.status,
+            ...(Number.isFinite(requestLength) ? { requestBytes: requestLength } : {}),
+          },
+        });
+        // A body of unknown length (a JSON answer, a stream) is counted as it is written, so a
+        // stream that ends later still reports what it delivered.
+        if (sample !== null && responseLength === null && res.body !== null) {
+          sample.bytes = 0;
+          const counted = res.body.pipeThrough(
+            new TransformStream<Uint8Array, Uint8Array>({
+              transform(chunk, controller) {
+                sample.bytes = (sample.bytes ?? 0) + chunk.byteLength;
+                controller.enqueue(chunk);
+              },
+            }),
+          );
+          c.res = new Response(counted, res);
+        }
+        c.header(REQUEST_ID_HEADER, request);
       });
     }
     // No request body size cap: a size refusal here could only ever fire on a request the

@@ -35,6 +35,7 @@ import {
 } from "../validate.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Traces } from "../../mechanisms/traces.js";
+import { redactValue } from "../../services/redact.js";
 import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
@@ -91,8 +92,12 @@ export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const index = positiveIntParam(c, "index");
     const { offset, limit } = paginationQuery(c);
+    // Raw content: credential-shaped fields and values are redacted before they leave. The
+    // download below stays verbatim — it is the file itself, for re-import.
     return c.json(
-      await deps.traceService.readEvents(projectId, agentId, sessionId, index, offset, limit),
+      redactValue(
+        await deps.traceService.readEvents(projectId, agentId, sessionId, index, offset, limit),
+      ),
     );
   });
 

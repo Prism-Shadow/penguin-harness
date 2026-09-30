@@ -3,8 +3,9 @@
  * GET|PUT /api/admin/settings — the server-global settings stored in server_settings:
  * the proxy settings (the "application uses the proxy" and "agent environment uses the
  * proxy" switches and their shared explicit address), the upload policy (the automatic
- * image-compression switch and the size above which it applies), the company-mode switch, and
- * the switch that lets users drive their own Chrome through the extension.
+ * image-compression switch and the size above which it applies), the company-mode switch, the
+ * switch that lets users drive their own Chrome through the extension, and the telemetry master
+ * switch (PRFC-0008; applied through the Telemetry node, which holds its value in memory).
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
  * rebuilt so new outbound connections follow the change without a restart (the agent
@@ -31,6 +32,8 @@ import type { ProxyControl } from "../../hmr/capabilities.js";
 export interface AdminSettingsRouteDeps {
   proxyControl: ProxyControl;
   serverSettingsRepo: Settings;
+  /** The telemetry switch lives with the other system settings, but its value is held (and applied) by the Telemetry node. */
+  telemetry: Telemetry;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
 import {
@@ -43,6 +46,7 @@ import {
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { Telemetry } from "../../mechanisms/telemetry.js";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -100,6 +104,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       ...deps.serverSettingsRepo.getImageCompressionSettings(),
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
       browserExtensionsEnabled: deps.serverSettingsRepo.getBrowserExtensionsEnabled(),
+      telemetry: deps.telemetry.on(),
     },
   });
 
@@ -113,6 +118,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     const proxyForAgent = optionalBoolean(body, "proxyForAgent");
     const companyMode = optionalBoolean(body, "companyMode");
     const browserExtensionsEnabled = optionalBoolean(body, "browserExtensionsEnabled");
+    const telemetry = optionalBoolean(body, "telemetry");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const imageCompression = optionalBoolean(body, "imageCompression");
@@ -123,6 +129,8 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     // Read per tick by the organization scheduler and per request by the organization routes, so
     // flipping it needs no restart: off holds every automatic trigger and 404s the routes.
     if (companyMode !== undefined) deps.serverSettingsRepo.setCompanyMode(companyMode);
+    // Stored and applied in one step: the next request is sampled (or not) without a restart.
+    if (telemetry !== undefined) deps.telemetry.setEnabled(telemetry);
     // A GitHub token is write-only: the response says whether one is stored, never what it
     // is, and an empty string clears it.
     const githubToken = body.githubToken;

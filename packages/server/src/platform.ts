@@ -191,6 +191,9 @@ import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache, OrgGateway } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
+import { Telemetry } from "./mechanisms/telemetry.js";
+import { TelemetryService } from "./telemetry/service.js";
+import { TelemetryRoutes } from "./telemetry/routes.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
 import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 
@@ -216,6 +219,7 @@ export class Startup {
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
+  @Use() private readonly telemetry?: Telemetry;
 
   async setup() {
     // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
@@ -225,7 +229,8 @@ export class Startup {
     await this.orgScheduler.start();
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
-    void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
+    const startedAt = performance.now();
+    const adoption = this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
     });
     // Machines, in one sweep (machines/service.ts start()): a push here is a push everywhere,
@@ -235,9 +240,17 @@ export class Startup {
     // restart leaves each machine disconnected until someone connects it by hand.
     // Fire-and-forget for the same reason as the adoption sweep: a host that is slow to
     // answer must not hold up the App that serves everything else.
-    void this.machines.start().catch((err: unknown) => {
+    const machines = this.machines.start().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "machines_reconnect_failed" });
     });
+    // "Quiet": both sweeps have settled. Telemetry's boot.quiet, measured from here (the
+    // awaited half of this setup is the Startup node's own boot.module sample).
+    if (this.telemetry?.on() === true) {
+      const telemetry = this.telemetry;
+      void Promise.all([adoption, machines]).then(() => {
+        telemetry.record({ probe: "boot.quiet", durMs: performance.now() - startedAt });
+      });
+    }
   }
 }
 
@@ -397,6 +410,13 @@ export class PluginConfigModule {}
 })
 export class SandboxSettingsModule {}
 
+/** Telemetry (PRFC-0008): the switch, the in-memory sample buffer and its admin read route. */
+@Module({
+  children: [TelemetryService, TelemetryRoutes],
+  exports: [Telemetry],
+})
+export class TelemetryModule {}
+
 @Module({
   children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
   exports: [ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries],
@@ -500,6 +520,7 @@ export class PackagesModule {}
   children: [
     RuntimeModule,
     SettingsModule,
+    TelemetryModule,
     PluginConfigModule,
     IdentityModule,
     ProjectsModule,
