@@ -6,7 +6,7 @@
  * every id passes the server's grammar.
  */
 import { describe, expect, it } from "vitest";
-import { hasModifierOrFKey, parseChord } from "../src/lib/shortcuts/chord";
+import { isBindableChord, parseChord } from "../src/lib/shortcuts/chord";
 import { findConflicts } from "../src/lib/shortcuts/conflicts";
 import {
   SHORTCUT_COMMANDS,
@@ -20,8 +20,8 @@ import { en } from "../src/lib/strings-en";
 import type { Chord, CommandId, Platform } from "../src/lib/shortcuts/types";
 
 const PLATFORMS: readonly Platform[] = ["mac", "windows", "linux"];
-/** The id grammar the server enforces on `ui_prefs.keybindings`. */
-const ID_RE = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$/;
+/** The id grammar the server enforces on `ui_prefs.keybindings` (services/keybindings.ts). */
+const ID_RE = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/;
 
 function defaultsFor(platform: Platform): Map<CommandId, Chord | null> {
   return new Map(SHORTCUT_COMMANDS.map((cmd) => [cmd.id, defaultChord(cmd, platform)]));
@@ -37,11 +37,12 @@ describe("registry defaults", () => {
     }
   });
 
-  it("no default is a bare key: a modifier or an F key, so nothing steals typing from an input", () => {
+  it("every default is bindable: a real modifier or an F key, so nothing steals typing from an input", () => {
     for (const cmd of SHORTCUT_COMMANDS) {
       for (const platform of PLATFORMS) {
         const chord = defaultChord(cmd, platform);
-        if (chord !== null) expect(hasModifierOrFKey(chord), `${cmd.id} on ${platform}`).toBe(true);
+        if (chord !== null)
+          expect(isBindableChord(chord, platform), `${cmd.id} on ${platform}`).toBe(true);
       }
     }
   });
@@ -61,7 +62,7 @@ describe("registry defaults", () => {
         (text) => typeof text === "string" && text.includes("Ctrl+"),
       ),
     ).map((cmd) => cmd.id);
-    expect(literalCtrl).toEqual(["terminal.toggle", "terminal.close"]);
+    expect(literalCtrl).toEqual(["terminal.toggle", "terminal.new", "terminal.close"]);
   });
 
   it("puts no default on a browser-reserved chord", () => {
@@ -75,9 +76,10 @@ describe("registry defaults", () => {
   });
 
   it("names every default that shares a chord with a browser function", () => {
-    // Save takes the browser's Save Page on purpose; on macOS Chrome binds ⌥⌘P to Page Setup.
+    // Save takes the browser's Save Page on purpose; on macOS Chrome binds ⌥⌘P to Page Setup
+    // and ⌥⌘N to split view.
     const expected: Record<Platform, CommandId[]> = {
-      mac: ["palette.toggle", "editor.save"],
+      mac: ["palette.toggle", "chat.new", "editor.save"],
       windows: ["editor.save"],
       linux: ["editor.save"],
     };

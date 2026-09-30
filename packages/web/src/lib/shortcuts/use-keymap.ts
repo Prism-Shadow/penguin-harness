@@ -36,3 +36,9 @@ export function useShortcutLabel(id: CommandId): string | null {
     ? null
     : formatChord(chord, currentPlatform(), keyboardLayout() ?? undefined);
 }
+
+/** A control's tooltip naming the command's chord after its label — "Search sessions (⌥⌘S)" — or the label alone. */
+export function useShortcutTitle(label: string, id: CommandId): string {
+  const chord = useShortcutLabel(id);
+  return chord === null ? label : `${label} (${chord})`;
+}

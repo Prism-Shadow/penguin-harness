@@ -170,3 +170,82 @@ describe("layout relocation", () => {
     expect(relocateChord(parseChord("F5")!, dvorak).code).toBe("F5");
   });
 });
+
+describe("the six panel and navigation commands", () => {
+  const cases: Array<[CommandId, Partial<KeyLike> & { code: string }]> = [
+    ["sessions.search", { code: "KeyS", altKey: true }],
+    ["chat.new", { code: "KeyN", altKey: true }],
+    ["sidebar.toggle", { code: "Digit1", altKey: true }],
+    ["dock.toggleRight", { code: "Digit2", altKey: true }],
+    ["dock.toggleBottom", { code: "Digit3", altKey: true }],
+  ];
+
+  it("bind with Mod+Alt: ⌥⌘ on a Mac, Ctrl+Alt elsewhere", () => {
+    for (const [id, init] of cases) {
+      expect(matchShortcut(key({ ...init, metaKey: true }), defaults("mac"), ALL, "mac"), id).toBe(
+        id,
+      );
+      expect(
+        matchShortcut(key({ ...init, ctrlKey: true }), defaults("mac"), ALL, "mac"),
+        id,
+      ).toBeNull();
+      expect(
+        matchShortcut(key({ ...init, ctrlKey: true }), defaults("windows"), ALL, "windows"),
+        id,
+      ).toBe(id);
+      expect(
+        matchShortcut(key({ ...init, ctrlKey: true }), defaults("linux"), ALL, "linux"),
+        id,
+      ).toBe(id);
+    }
+  });
+
+  it("reads an AltGr character as typing, not as Mod+Alt: `ś` stays typable on Polish Windows", () => {
+    const altGr = key({ code: "KeyS", key: "ś", ctrlKey: true, altKey: true, altGraph: true });
+    expect(matchShortcut(altGr, defaults("windows"), ALL, "windows")).toBeNull();
+    expect(
+      matchShortcut(
+        key({
+          code: "KeyS",
+          key: "ś",
+          ctrlKey: true,
+          altKey: true,
+          getModifierState: (k) => k === "AltGraph",
+        }),
+        defaults("windows"),
+        ALL,
+        "windows",
+      ),
+    ).toBeNull();
+    // A real Ctrl+Alt+S still is the chord.
+    expect(
+      matchShortcut(
+        key({ code: "KeyS", ctrlKey: true, altKey: true }),
+        defaults("windows"),
+        ALL,
+        "windows",
+      ),
+    ).toBe("sessions.search");
+  });
+
+  it("opens a new terminal on Ctrl+Shift+` on every platform, like the toggle", () => {
+    for (const platform of ["mac", "windows", "linux"] as const) {
+      expect(
+        matchShortcut(
+          key({ code: "Backquote", ctrlKey: true, shiftKey: true }),
+          defaults(platform),
+          ALL,
+          platform,
+        ),
+      ).toBe("terminal.new");
+    }
+    expect(
+      matchShortcut(
+        key({ code: "Backquote", metaKey: true, shiftKey: true }),
+        defaults("mac"),
+        ALL,
+        "mac",
+      ),
+    ).toBeNull();
+  });
+});

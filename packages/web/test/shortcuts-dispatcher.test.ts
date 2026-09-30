@@ -10,6 +10,7 @@ import {
   hasCommandHandler,
   onCommand,
   runCommand,
+  setShortcutBlocker,
 } from "../src/lib/shortcuts/dispatcher";
 import { setPlatformForTests } from "../src/lib/shortcuts/platform";
 import { configureKeybindingsStoreForTests } from "../src/lib/shortcuts/store";
@@ -45,6 +46,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const off of unregisters.splice(0)) off();
+  setShortcutBlocker(null);
   setPlatformForTests(null);
   configureKeybindingsStoreForTests({ storage: null, layout: null });
 });
@@ -112,5 +114,17 @@ describe("the window listener", () => {
     unregisters.push(onCommand("terminal.toggle", () => void toggled++));
     fire({ code: "Backquote", key: "`", ctrlKey: true, defaultPrevented: true });
     expect(toggled).toBe(0);
+  });
+
+  it("leaves every key alone while a dialog or menu is open", () => {
+    let toggled = 0;
+    unregisters.push(onCommand("terminal.toggle", () => void toggled++));
+    let open = true;
+    setShortcutBlocker(() => open);
+    expect(fire({ code: "Backquote", key: "`", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(toggled).toBe(0);
+    open = false;
+    expect(fire({ code: "Backquote", key: "`", ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(toggled).toBe(1);
   });
 });

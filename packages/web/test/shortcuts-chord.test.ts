@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   chordOf,
   codeFromKey,
-  hasModifierOrFKey,
+  isBindableChord,
   normalizeChord,
   parseChord,
   serializeChord,
@@ -155,12 +155,23 @@ describe("codeFromKey", () => {
   });
 });
 
-describe("hasModifierOrFKey", () => {
-  it("accepts a modifier chord or a bare function key and refuses a bare letter", () => {
-    expect(hasModifierOrFKey(parseChord("Mod+KeyW")!)).toBe(true);
-    expect(hasModifierOrFKey(parseChord("F5")!)).toBe(true);
-    expect(hasModifierOrFKey(parseChord("F24")!)).toBe(true);
-    expect(hasModifierOrFKey(parseChord("KeyW")!)).toBe(false);
-    expect(hasModifierOrFKey(parseChord("F25")!)).toBe(false);
+describe("isBindableChord", () => {
+  it("accepts Mod, literal Ctrl, Alt off a Mac, and a bare function key", () => {
+    expect(isBindableChord(parseChord("Mod+KeyW")!, "mac")).toBe(true);
+    expect(isBindableChord(parseChord("Ctrl+Backquote")!, "mac")).toBe(true);
+    expect(isBindableChord(parseChord("Alt+KeyW")!, "linux")).toBe(true);
+    expect(isBindableChord(parseChord("Alt+KeyW")!, "windows")).toBe(true);
+    expect(isBindableChord(parseChord("F5")!, "linux")).toBe(true);
+    expect(isBindableChord(parseChord("F24")!, "mac")).toBe(true);
+    expect(isBindableChord(parseChord("Mod+Shift+KeyO")!, "linux")).toBe(true);
+  });
+
+  it("refuses typing: a bare key, Shift alone, and Option alone on a Mac", () => {
+    expect(isBindableChord(parseChord("KeyW")!, "linux")).toBe(false);
+    expect(isBindableChord(parseChord("F25")!, "linux")).toBe(false);
+    expect(isBindableChord(parseChord("Shift+KeyB")!, "linux")).toBe(false);
+    expect(isBindableChord(parseChord("Shift+Enter")!, "mac")).toBe(false);
+    expect(isBindableChord(parseChord("Alt+KeyE")!, "mac")).toBe(false);
+    expect(isBindableChord(parseChord("Alt+Shift+KeyE")!, "mac")).toBe(false);
   });
 });

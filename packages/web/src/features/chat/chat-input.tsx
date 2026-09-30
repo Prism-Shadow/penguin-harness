@@ -722,6 +722,7 @@ export function ChatInput({
   sessionId,
   vision,
   approvalMode,
+  approvalModes,
   onChangeApprovalMode,
   sandbox,
   onChangeSandbox,
@@ -889,6 +890,12 @@ export function ChatInput({
   /** Whether the current model supports image input (models config's vision; assumed supported by default). */
   vision: boolean;
   approvalMode: ApprovalMode;
+  /**
+   * The modes the permission button's Approval section lists, in order (`approvalModeChoices`):
+   * all four, except that an organization's Session leaves out `always-ask` unless it is the
+   * current value. The button's level and title follow `approvalMode` whatever the list holds.
+   */
+  approvalModes: readonly ApprovalMode[];
   /** A returned promise keeps the permission button's pick on screen until the save settles. */
   onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
   /** The Session's own sandbox policy (the draft's pick before there is a Session). */
@@ -2614,6 +2621,7 @@ export function ChatInput({
               )}
               <PermissionSelect
                 approvalMode={approvalMode}
+                approvalModes={approvalModes}
                 sandbox={sandbox}
                 onChangeApprovalMode={onChangeApprovalMode}
                 onChangeSandbox={onChangeSandbox}

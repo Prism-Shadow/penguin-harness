@@ -17,9 +17,11 @@ import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-
 import {
   addTerminalTab,
   currentDockScope,
+  docksOnScreen,
   removeTab,
   restoreTerminalTab,
   showTerminal,
+  toggleDock,
   toggleTerminalDocks,
   unownedTerminals,
   type DockPosition,
@@ -188,4 +190,21 @@ export { showTerminal };
 // window dispatcher matches it and calls this handler.
 onCommand("terminal.toggle", () => {
   toggleTerminal();
+});
+// The other dock commands live here for the same reason: the store (dock-state.ts) stays
+// free of the dispatcher, and this module is evaluated wherever the docks can appear. Each
+// declines on a page without docks (the browser's own key then runs): a toggle there would
+// flip nothing visible, and a new terminal would spawn a server shell into the placeholder
+// arrangement the next conversation inherits.
+onCommand("terminal.new", () => {
+  if (!docksOnScreen()) return false;
+  void createShellInDock();
+});
+onCommand("dock.toggleRight", () => {
+  if (!docksOnScreen()) return false;
+  toggleDock("right");
+});
+onCommand("dock.toggleBottom", () => {
+  if (!docksOnScreen()) return false;
+  toggleDock("bottom");
 });

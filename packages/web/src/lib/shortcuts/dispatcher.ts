@@ -48,13 +48,28 @@ export function runCommand(id: CommandId): boolean {
   return false;
 }
 
+let blocker: (() => boolean) | null = null;
+
+/**
+ * Installs the predicate that suspends global commands: while a dialog or a menu is open (the
+ * Esc-layer stack in components/ui/modal.tsx), a command must not run behind it — ⌥⌘S would open
+ * the sidebar search under the overlay and pull focus out of the dialog. The store stays free of
+ * React, so the layer owner installs the predicate itself at module scope.
+ */
+export function setShortcutBlocker(fn: (() => boolean) | null): void {
+  blocker = fn;
+}
+
 /**
  * The window's keydown listener. A held chord auto-repeats: a repeat of a command that has a
  * handler is kept from the browser's own action (a binding on ⌘P would print from the first
- * repeat on) but does not run the command again, so a held ⌥⌘1 toggles the sidebar once.
+ * repeat on) but does not run the command again, so a held ⌥⌘1 toggles the sidebar once. Behind
+ * an open dialog every key is left alone, so the dialog's own keys (and the browser's) work as if
+ * nothing were bound.
  */
 export function handleShortcutKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return;
+  if (blocker?.() === true) return;
   const id = matchShortcut(event, keymap(), ["global"], currentPlatform());
   if (id === null) return;
   if (event.repeat) {

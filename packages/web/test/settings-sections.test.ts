@@ -55,6 +55,7 @@ describe("visibleSettingsSections", () => {
       "profile",
       "general",
       "appearance",
+      "shortcuts",
       "account",
       "proxy",
       "uploads",
@@ -69,7 +70,13 @@ describe("visibleSettingsSections", () => {
     // switch and user management are admin surfaces, and the whole point of dropping them is that a non-admin is never
     // told they exist. Updating is not among them either way: it lives in the sidebar user
     // menu, outside this dialog, for every account.
-    expect(plain.map((s) => s.key)).toEqual(["profile", "general", "appearance", "account"]);
+    expect(plain.map((s) => s.key)).toEqual([
+      "profile",
+      "general",
+      "appearance",
+      "shortcuts",
+      "account",
+    ]);
   });
 
   it("strips the desktop shell's window down to what a token session can use", () => {
@@ -80,6 +87,7 @@ describe("visibleSettingsSections", () => {
       "profile",
       "general",
       "appearance",
+      "shortcuts",
       "proxy",
       "uploads",
       "company",
@@ -94,6 +102,7 @@ describe("visibleSettingsSections", () => {
       "profile",
       "general",
       "appearance",
+      "shortcuts",
       "account",
       "proxy",
       "uploads",

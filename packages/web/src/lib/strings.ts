@@ -164,7 +164,13 @@ export const zh = {
   shortcuts: {
     commands: {
       "palette.toggle": "命令面板",
+      "sessions.search": "搜索会话",
+      "chat.new": "新建对话",
+      "sidebar.toggle": "显示或隐藏侧栏",
+      "dock.toggleRight": "显示或隐藏右侧栏",
+      "dock.toggleBottom": "显示或隐藏下侧栏",
       "terminal.toggle": "显示或隐藏终端",
+      "terminal.new": "新建终端",
       "terminal.close": "关闭当前终端",
       "editor.save": "保存",
     },
@@ -174,6 +180,27 @@ export const zh = {
       terminal: "终端",
       editor: "编辑器",
     },
+    /** Where a focus-scoped command wins, for the shadowed-conflict hint. */
+    scopes: {
+      terminal: "终端",
+      editor: "编辑器",
+    },
+    unbound: "未设置",
+    /** The recorder button's tooltip. */
+    rebind: "更改快捷键",
+    record: "按下新的快捷键…",
+    recordHint: "Esc 取消 · Backspace 清除",
+    needsModifier: "需要配合 Ctrl 或 Alt（macOS 为 ⌘ 或 ⌃），Shift 只能与它们一起使用；或使用 F 键",
+    resetRow: "恢复默认",
+    resetAll: "全部恢复默认",
+    resetAllBody: (n: number): string => `将 ${n} 条快捷键恢复为默认值？`,
+    conflictSame: (other: string): string => `与「${other}」使用同一个快捷键，只有排在前面的生效`,
+    conflictShadowed: (other: string, surface: string): string =>
+      `在${surface}里会被「${other}」抢先`,
+    browserReserved: "浏览器保留了这个组合，只在桌面应用里生效",
+    browserCommon: "浏览器本身也用这个组合，在浏览器里会取代它的那个功能",
+    desktopMenuReserved: "会覆盖桌面应用菜单里使用同一组合的快捷键",
+    saveFailed: "快捷键未能保存到账号",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
@@ -382,6 +409,10 @@ export const zh = {
     profile: "个人资料",
     generalTitle: "通用",
     appearanceTitle: "外观",
+    shortcutsTitle: "快捷键",
+    /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
+    shortcutsInfo:
+      "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效；浏览器本身也用的组合（如打印的 Ctrl+P / ⌘P）在浏览器标签页里会取代它的那个功能。两者都在列表中标出。",
     accountTitle: "账户",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "导入 Trace",
@@ -4006,6 +4037,11 @@ Benchmark：
     /** Principals as the chat and tickets name them. */
     principalSystem: "系统",
     principalAll: "所有人",
+    /** A data path in a ticket drawn as a capsule: the hover names the whole path, a click copies it. */
+    pathCapsule: {
+      hint: (path: string): string => `${path}\n点击复制完整路径`,
+      copy: (path: string): string => `复制路径 ${path}`,
+    },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "不限",
@@ -4024,6 +4060,13 @@ Benchmark：
       noEmployees: "这个组织还没有员工",
       untitledSession: "未命名会话",
       loadFailed: "员工列表加载失败",
+      /** The group below the desks listing the ticket sessions opened from a ticket, each kept until removed. */
+      temporary: (n: number): string => `临时（${n}）`,
+      /** A Temporary entry's name on the collapsed rail, where no group header says where it belongs. */
+      temporaryEntry: (title: string): string => `临时 · ${title}`,
+      closeTemporary: "从「临时」中移除",
+      /** The Temporary group header's action: removes every entry at once; the sessions themselves are kept. */
+      closeAllTemporary: "全部关闭",
     },
     overview: {
       title: "概览",
@@ -4255,7 +4298,7 @@ Benchmark：
     },
     tickets: {
       title: "工单",
-      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。拖拽卡片移列，点卡片标题在原地弹出详情窗口；被阻塞的工单留在原列并带角标。工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
+      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。点卡片在原地弹出详情窗口，把卡片拖到另一列即可移列（触屏上先长按卡片再拖）；被阻塞的工单留在原列并带角标。工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
       columns: {
         proposed: "提议",
         in_progress: "进行中",

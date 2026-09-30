@@ -22,11 +22,53 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     defaults: { default: "Mod+Alt+KeyP" },
   },
   {
+    id: "sessions.search",
+    scope: "global",
+    group: "general",
+    // Mod+K is the browser's web search.
+    defaults: { default: "Mod+Alt+KeyS" },
+  },
+  {
+    id: "chat.new",
+    scope: "global",
+    group: "general",
+    // Mod+N opens a browser window. On macOS this takes over Chrome's ⌥⌘N (split view).
+    defaults: { default: "Mod+Alt+KeyN" },
+  },
+  {
+    id: "sidebar.toggle",
+    scope: "global",
+    group: "panels",
+    // Mod+B is Firefox's bookmarks sidebar; the three panel toggles count Mod+Alt+1 to 3.
+    defaults: { default: "Mod+Alt+Digit1" },
+  },
+  {
+    id: "dock.toggleRight",
+    scope: "global",
+    group: "panels",
+    // Mod+Alt+B is Chrome's bookmark manager on macOS.
+    defaults: { default: "Mod+Alt+Digit2" },
+  },
+  {
+    id: "dock.toggleBottom",
+    scope: "global",
+    group: "panels",
+    // Mod+J opens the browser's downloads.
+    defaults: { default: "Mod+Alt+Digit3" },
+  },
+  {
     id: "terminal.toggle",
     scope: "global",
     group: "terminal",
     // ⌃` on macOS too: ⌘` is macOS's own window cycling, and VS Code and Codex use ⌃` there.
     defaults: { default: "Ctrl+Backquote" },
+  },
+  {
+    id: "terminal.new",
+    scope: "global",
+    group: "terminal",
+    // VS Code's new-terminal chord, literal Control for the same reason as the toggle.
+    defaults: { default: "Ctrl+Shift+Backquote" },
   },
   {
     id: "terminal.close",
