@@ -143,7 +143,22 @@ export type LedgerEntry =
    * The discussion's conclusion, written once it reached the owner's desk — so a line here
    * means it was delivered, and a delivery that failed leaves the discussion open.
    */
-  | { kind: "discussion_concluded"; number: number; sessionId: string; text: string; by: string };
+  | { kind: "discussion_concluded"; number: number; sessionId: string; text: string; by: string }
+  /**
+   * A penguin server put on the organization's registry (servers.ts): the PR graph shows the
+   * commit it runs. About no proposal, so it carries no `number` — a build that predates the
+   * kind skips it like any line about a proposal it has not got.
+   */
+  | { kind: "server"; name: string; url: string; installId: string; by: string };
+
+/** A server on the registry, as its `server` line wrote it. */
+export interface RegisteredServer {
+  name: string;
+  url: string;
+  installId: string;
+  at: string;
+  by: string;
+}
 
 /** A proposal as the fold produces it: every fact the ledger holds about it, before any caller-specific view. */
 export interface Proposal {
@@ -182,16 +197,23 @@ export interface Proposal {
 /** The fold of a whole ledger: its proposals by number, and the last `seq` written. */
 export interface LedgerState {
   proposals: Map<number, Proposal>;
+  /** The registered servers, in the order they were registered. */
+  servers: RegisteredServer[];
   lastSeq: number;
 }
 
 function emptyState(): LedgerState {
-  return { proposals: new Map(), lastSeq: 0 };
+  return { proposals: new Map(), servers: [], lastSeq: 0 };
 }
 
 /** Applies one line to the state; a line about a proposal the state has not got is skipped (a truncated file, never a crash). */
 export function applyLine(state: LedgerState, line: LedgerLine): void {
   state.lastSeq = Math.max(state.lastSeq, line.seq);
+  if (line.kind === "server") {
+    const { name, url, installId, by } = line;
+    state.servers.push({ name, url, installId, at: line.at, by });
+    return;
+  }
   if (line.kind === "created") {
     // Lines written before principals were recorded carry a bare user id.
     const delegatedBy = line.delegatedBy.includes(":")
@@ -538,23 +560,45 @@ export class Ledger {
     return this.state.lastSeq;
   }
 
+  servers(): RegisteredServer[] {
+    return [...this.state.servers];
+  }
+
+  /**
+   * Appends `entry` only if `check` — run inside the write chain, after every earlier append
+   * has landed and in the same step as the write — does not throw: a check-then-write that no
+   * concurrent write can slip between.
+   */
+  appendChecked(check: () => void, entry: LedgerEntry): Promise<LedgerLine> {
+    return this.enqueue(async () => {
+      check();
+      return this.write(entry);
+    });
+  }
+
   /** Appends one line — assigned the next `seq` and the current time — and applies it once written. */
   append(entry: LedgerEntry): Promise<LedgerLine> {
-    const run = this.chain.then(async () => {
-      const line: LedgerLine = {
-        seq: this.state.lastSeq + 1,
-        at: new Date(this.now()).toISOString(),
-        ...entry,
-      };
-      await fs.mkdir(path.dirname(this.file), { recursive: true });
-      await fs.appendFile(this.file, `${JSON.stringify(line)}\n`, "utf8");
-      applyLine(this.state, line);
-      return line;
-    });
+    return this.enqueue(() => this.write(entry));
+  }
+
+  private enqueue(step: () => Promise<LedgerLine>): Promise<LedgerLine> {
+    const run = this.chain.then(step);
     this.chain = run.then(
       () => undefined,
       () => undefined,
     );
     return run;
+  }
+
+  private async write(entry: LedgerEntry): Promise<LedgerLine> {
+    const line: LedgerLine = {
+      seq: this.state.lastSeq + 1,
+      at: new Date(this.now()).toISOString(),
+      ...entry,
+    };
+    await fs.mkdir(path.dirname(this.file), { recursive: true });
+    await fs.appendFile(this.file, `${JSON.stringify(line)}\n`, "utf8");
+    applyLine(this.state, line);
+    return line;
   }
 }

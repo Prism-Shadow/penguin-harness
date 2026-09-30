@@ -198,7 +198,11 @@ router
     store.signedIn = false;
     return empty();
   })
-  .get("/api/install", (): InstallResponse => ({ installId: "gallery-demo" }))
+  .get("/api/install", (): InstallResponse => ({
+    installId: "gallery-demo",
+    commit: null,
+    describe: null,
+  }))
   .get("/api/me", ({ store }): MeResponse => ({ user: store.f.user, ...store.f.me }))
   .put("/api/me/password", () => empty())
   .put("/api/me/profile", ({ store, body }): UpdateProfileResponse => {

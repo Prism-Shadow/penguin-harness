@@ -35,6 +35,8 @@ import type {
   ProposalMaterial,
   ProposalRevision,
   ProposalRevisionsResponse,
+  ProposalServerRegisterRequest,
+  ProposalServersResponse,
   ProposalMaterialKind,
   ProposalPluginEvent,
   ProposalStatus,
@@ -55,6 +57,17 @@ import { readBaseFile } from "./files.js";
 import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
 import { pullKey } from "./pr-chain.js";
 import { PrGraphReader } from "./pr-graph.js";
+import {
+  fetchProbe,
+  normalizeServerUrl,
+  readServers,
+  registryOf,
+  requireUnregistered,
+  SELF_NAME,
+  serverNameOf,
+  ServerRegistryError,
+  type ProbeServer,
+} from "./servers.js";
 import { gitRunner, type RunGit } from "./workspace-remotes.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import type { DeployScope } from "./deploy.js";
@@ -114,6 +127,8 @@ export interface ServiceDeps {
   gh?: RunGh;
   /** How the shared workspace's remotes are read; the machine's `git` by default (a test feeds answers). */
   git?: RunGit;
+  /** How a server's `/api/install` is read (servers.ts); the machine's `fetch` by default. */
+  probe?: ProbeServer;
 }
 
 /** One write's desk deliveries: the ledger a failed delivery is recorded in, and the reasons collected for the answer. */
@@ -1453,19 +1468,105 @@ export class ProposalService {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // Servers (servers.ts)
+  // ---------------------------------------------------------------------------
+
+  private probe(): ProbeServer {
+    return this.deps.probe ?? fetchProbe();
+  }
+
+  /** The answering server's install id over `selfUrl`; null when it cannot be read (then only name and address guard a repeat of it). */
+  private async selfInstallId(selfUrl: string): Promise<string | null> {
+    try {
+      return (await this.probe()(selfUrl)).installId;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The registry: `this` first, then every registered server. */
+  async servers(
+    projectId: string,
+    orgId: string,
+    selfUrl: string,
+    actor: OrgActor,
+  ): Promise<ProposalServersResponse> {
+    const { ledger } = await this.open(projectId, orgId, actor);
+    const installId = await this.selfInstallId(selfUrl);
+    return { servers: registryOf(ledger.servers(), { installId }) };
+  }
+
+  /**
+   * Registers a server, anyone in the organization: refused when it repeats `this` or a
+   * registered server by name, address or install id (read from the address now).
+   */
+  async registerServer(
+    projectId: string,
+    orgId: string,
+    req: ProposalServerRegisterRequest,
+    selfUrl: string,
+    actor: OrgActor,
+  ): Promise<ProposalServersResponse> {
+    const { ledger, caller } = await this.open(projectId, orgId, actor);
+    try {
+      const name = serverNameOf(typeof req.name === "string" ? req.name : "");
+      const url = normalizeServerUrl(typeof req.url === "string" ? req.url : "");
+      if (url === normalizeServerUrl(selfUrl)) {
+        throw new ServerRegistryError(
+          409,
+          "server_registered",
+          `${url} is the server answering this request ("${SELF_NAME}"); it is registered already.`,
+        );
+      }
+      let identity;
+      try {
+        identity = await this.probe()(url);
+      } catch (err) {
+        throw new ServerRegistryError(
+          422,
+          "server_unreachable",
+          `${url} was not read as a penguin server: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      const self = { installId: await this.selfInstallId(selfUrl) };
+      const candidate = { name, url, installId: identity.installId };
+      await ledger.appendChecked(() => requireUnregistered(ledger.servers(), self, candidate), {
+        kind: "server",
+        ...candidate,
+        by: caller.principal,
+      });
+      return { servers: registryOf(ledger.servers(), self) };
+    } catch (err) {
+      if (err instanceof ServerRegistryError) {
+        throw new ProposalError(err.status, err.code, err.message);
+      }
+      throw err;
+    }
+  }
+
   /**
    * The PR graph of the delivery repository, annotated with the proposals and the origins.
    * Always drawn: with no delivery repository at all it is the base branch alone, and
    * `errors` says why.
    */
-  async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
+  async graph(
+    projectId: string,
+    orgId: string,
+    selfUrl: string,
+    actor: OrgActor,
+  ): Promise<ProposalGraphResponse> {
     const { org, ledger } = await this.open(projectId, orgId, actor);
     const errors: string[] = [];
-    const config = await this.deliveryRepo(org, ledger, errors);
+    const [config, servers] = await Promise.all([
+      this.deliveryRepo(org, ledger, errors),
+      readServers(ledger.servers(), selfUrl, this.probe()),
+    ]);
     return this.prGraph.read({
       repo: config.repo ?? "",
       base: config.base,
       origins: config.origins,
+      servers: servers.readings,
       errors,
       proposals: ledger.proposals().map((p) => ({
         number: p.number,

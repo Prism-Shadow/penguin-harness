@@ -14,6 +14,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InstallResponse } from "../src/api/types.js";
 import { ensureInstallId, installIdPath, readInstallId } from "../src/install-id.js";
+import { runningCommit, versionReport } from "../src/version-report.js";
 import { createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -119,6 +120,15 @@ describe("GET /api/install", () => {
     expect(((await res.json()) as InstallResponse).installId).toBe(stored);
   });
 
+  it("reports the commit this server runs, the same one its version report names", async () => {
+    const res = await t.app.request("/api/install");
+    const body = (await res.json()) as InstallResponse;
+    expect(body).toEqual({
+      installId: readInstallId(t.root),
+      ...runningCommit(await versionReport(t.root)),
+    });
+  });
+
   it("answers without a session — the sweep runs before anyone is signed in", async () => {
     // No cookie, no Bearer: a just-wiped root has nobody to sign in as, and the browser
     // must still be able to recognise it as a different root.
@@ -173,5 +183,39 @@ describe("GET /api/install", () => {
     const after = ((await res.json()) as InstallResponse).installId;
     expect(after).not.toBeNull();
     expect(after).not.toBe(before);
+  });
+});
+
+describe("runningCommit", () => {
+  const build = {
+    version: "0.2.13",
+    describe: "v0.2.13-5-gabc1234",
+    channel: "source" as const,
+    buildDate: null,
+    commit: "abc1234000000000000000000000000000000000",
+    branch: null,
+    dirty: false,
+    runtime: { node: "24.0.0", platform: "linux", arch: "x64" },
+  };
+  const pushed = (revision: string) => ({
+    ...build,
+    harness: {
+      source: { repo: "x", revision },
+      pushedAt: null,
+      bundles: { platform: null, cli: null, web: null },
+    },
+  });
+
+  it("names the pushed harness's commit when a hot update put one here", () => {
+    expect(runningCommit(pushed("v0.2.13-466-gE5FB8F261-dirty"))).toEqual({
+      commit: "e5fb8f261",
+      describe: "v0.2.13-466-gE5FB8F261-dirty",
+    });
+  });
+
+  it("falls back to the build's commit when nothing was pushed or the revision names no commit", () => {
+    const own = { commit: build.commit, describe: build.describe };
+    expect(runningCommit({ ...build, harness: null })).toEqual(own);
+    expect(runningCommit(pushed("v0.2.13"))).toEqual(own);
   });
 });

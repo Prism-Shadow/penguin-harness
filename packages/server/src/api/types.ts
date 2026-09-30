@@ -123,6 +123,15 @@ export interface InstallResponse {
    * nothing on it — never treat it as a new install.
    */
   installId: string | null;
+  /**
+   * The commit this server runs: the pushed harness's source revision when a hot update put
+   * one here (the sha of its `g<sha>`, as short as the pusher's describe spelt it), else the
+   * build's own commit; null when neither is known. Public with the id: it names a commit
+   * and nothing about the machine (company-proposals reads it to place the server on the PR graph).
+   */
+  commit: string | null;
+  /** The describe that commit came from (the harness revision, else the build's). */
+  describe: string | null;
 }
 
 export interface MeResponse {
@@ -6990,6 +6999,49 @@ export interface ProposalGraphResponse {
   /** What could not be read from GitHub; the graph is partial when present. */
   errors: string[];
   checkedAt: string;
+  /** Every registered server (this one first) with the commit it runs and the layer that commit sits on. */
+  servers: ProposalGraphServer[];
+}
+
+/**
+ * A registered penguin server as the graph places it. `at` is the node whose head the
+ * server's commit is (`relation: "same"`) or contains (`"ahead"`, `ahead` commits past it);
+ * 0 is the base branch; null when the commit is unknown or compares with no layer.
+ */
+export interface ProposalGraphServer {
+  name: string;
+  /** Null for the server that answers (it is read in place, not over a registered address). */
+  url: string | null;
+  self: boolean;
+  commit: string | null;
+  describe: string | null;
+  at: number | null;
+  relation: "same" | "ahead" | null;
+  ahead: number | null;
+  /** Why the commit could not be read, when it could not. */
+  error: string | null;
+}
+
+/** A server on the organization's registry; the answering server is always the first, named `this`. */
+export interface ProposalServer {
+  name: string;
+  url: string | null;
+  self: boolean;
+  installId: string | null;
+  /** Null for `this`, which is never registered. */
+  registeredAt: string | null;
+  by: string | null;
+}
+
+/** GET …/proposals/servers, and the answer to POST …/proposals/servers. */
+export interface ProposalServersResponse {
+  servers: ProposalServer[];
+}
+
+/** POST …/proposals/servers: register one server by a name and its address. */
+export interface ProposalServerRegisterRequest {
+  name: string;
+  url: string;
 }
 
 /**

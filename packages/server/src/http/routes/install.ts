@@ -1,11 +1,14 @@
 /**
- * Install-identity route: `GET /api/install -> { installId }`.
+ * Install-identity route: `GET /api/install -> { installId, commit, describe }`.
  *
  * PUBLIC (no login required), and that is a requirement rather than a convenience: the web
  * app compares this id against the one in `localStorage` before React mounts, which is
  * before it knows whether anyone is signed in — and the case this whole mechanism exists
  * for, a wiped data root, is precisely the case where nobody is. See install-id.ts for why
- * publishing the id discloses nothing.
+ * publishing the id discloses nothing. The commit beside it names the code this server runs
+ * (version-report.ts `runningCommit`) and nothing about the machine; company-proposals reads
+ * it from each registered server to place that server on the PR graph, a read that has no
+ * credential for the other server and so needs the route to be public.
  *
  * Mounted in the PLATFORM, above its auth gate (http/app.ts's HttpModule). A hot push carries
  * platform + cli + web dist as one version and never the runtime, so putting the route where
@@ -29,6 +32,7 @@ export interface InstallRouteDeps {
   config: ServerConfig;
 }
 import { ensureInstallId } from "../../install-id.js";
+import { runningCommit, versionReport } from "../../version-report.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config } from "../../hmr/capabilities.js";
@@ -36,8 +40,12 @@ import { Config } from "../../hmr/capabilities.js";
 export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  app.get("/", (c) => {
-    return c.json({ installId: ensureInstallId(deps.config.root) } satisfies InstallResponse);
+  app.get("/", async (c) => {
+    const running = runningCommit(await versionReport(deps.config.root));
+    return c.json({
+      installId: ensureInstallId(deps.config.root),
+      ...running,
+    } satisfies InstallResponse);
   });
 
   return app;
