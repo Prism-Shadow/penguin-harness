@@ -5,10 +5,11 @@
  * A path typed out in a feature file is how one bin came to be drawn five ways and a redraw came to
  * reach one surface and not the others. So new glyphs go into the registry, named for what they
  * draw, and a feature file reads them from there. What feature files still hold is listed below per
- * file, with the wave that removes it — `W1` where the path duplicates a registry glyph and is
- * collapsed onto it, otherwise the wave that moves or rebuilds the file (`W1+W7` splits an entry
- * between two). The counts are exact both ways, like the de-slop list: a new path fails as new, and
- * one that goes away fails until its entry shrinks, so the list only tightens.
+ * file, with the wave that moves or rebuilds the file (`W1b+W4` splits an entry between two).
+ * `W1b` marks a near-copy of a registry glyph that differs from it by a grid unit or more — the
+ * tapered bin, the feather and lucide pencils — and stays until someone decides to redraw it onto
+ * the registry's. The counts are exact both ways, like the de-slop list: a new path fails as new,
+ * and one that goes away fails until its entry shrinks, so the list only tightens.
  *
  * Two shapes are counted: a `const *_ICON` whose value is path data, and a literal `d="M…"` on an
  * element. A computed path (a chart's line, a sparkline, the topology view's edges) is not a
@@ -24,38 +25,30 @@ const WEB = SCAN.files.filter((file) => file.root === "web");
 /** Glyph paths outside the registry, by path under `packages/web/src`: `[count, wave]`. */
 const ALLOWLIST: Readonly<Record<string, readonly [number, string]>> = {
   "components/layout/app-layout.tsx": [3, "W7"],
-  "components/layout/sidebar.tsx": [9, "W1+W7"],
-  "components/ui/group-list.tsx": [2, "W4"],
+  "components/layout/sidebar.tsx": [6, "W7"],
   "components/ui/info-popover.tsx": [1, "W3"],
-  "features/agents/agent-settings-page.tsx": [2, "W1"],
-  "features/agents/memory-tab.tsx": [4, "W1"],
-  "features/agents/skills-tab.tsx": [1, "W1"],
-  "features/benchmark/benchmark-detail-page.tsx": [1, "W1"],
-  "features/benchmark/benchmark-page.tsx": [1, "W1"],
+  "features/agents/memory-tab.tsx": [2, "W1b"],
+  "features/agents/skills-tab.tsx": [1, "W1b"],
+  "features/benchmark/benchmark-page.tsx": [1, "W1b"],
   "features/chat/attached-files-banner.tsx": [1, "W6"],
-  "features/chat/chat-input.tsx": [6, "W1+W6"],
+  "features/chat/chat-input.tsx": [5, "W6"],
   "features/chat/conversation-outline.tsx": [1, "W6"],
   "features/chat/goal-use.ts": [1, "W6"],
-  "features/chat/memory-view.tsx": [4, "W1+W6"],
+  "features/chat/memory-view.tsx": [4, "W6"],
   "features/chat/message-item.tsx": [1, "W6"],
   "features/chat/message-stream.tsx": [1, "W6"],
-  "features/chat/model-select.tsx": [1, "W1"],
-  "features/chat/skill-use.ts": [1, "W1"],
   "features/chat/subagents-view.tsx": [1, "W6"],
   "features/chat/task-stats-line.tsx": [1, "W6"],
-  "features/chat/workspace-browser.tsx": [2, "W1+W7"],
-  "features/company/calendar-page.tsx": [3, "W1+W4"],
+  "features/chat/workspace-browser.tsx": [1, "W7"],
   "features/company/channel-header.tsx": [4, "W6"],
   "features/company/channel-sidebar.tsx": [2, "W4"],
   "features/company/channel-view.tsx": [1, "W6"],
-  "features/company/finance-page.tsx": [2, "W1+W4"],
+  "features/company/finance-page.tsx": [2, "W1b+W4"],
   "features/company/handbook-explorer.tsx": [1, "W4"],
   "features/company/shared.tsx": [2, "W4"],
-  "features/company/tickets-page.tsx": [1, "W1"],
-  "features/dock/dock-panel.tsx": [2, "W1+W7"],
-  "features/models/models-page.tsx": [8, "W1+W4"],
-  "features/plugins/plugin-detail-page.tsx": [1, "W1"],
-  "features/plugins/plugins-page.tsx": [4, "W1+W4"],
+  "features/dock/dock-panel.tsx": [1, "W7"],
+  "features/models/models-page.tsx": [5, "W1b+W4"],
+  "features/plugins/plugins-page.tsx": [2, "W4"],
   "features/schedules/schedule-panel.tsx": [3, "W4"],
   "features/schedules/schedule-suggestions.tsx": [3, "W4"],
   "features/semantic-id/semantic-id-field.tsx": [1, "W2"],

@@ -26,14 +26,19 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, Outlet, useNavigate, useParams } from "react-router";
 import type { OrganizationSummary } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { Skeleton } from "../../components/ui/skeleton";
 import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
 import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";
 import { ORG_EXAMPLES } from "./org-examples";

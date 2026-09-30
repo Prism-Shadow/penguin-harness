@@ -22,7 +22,16 @@ import type {
   AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
 import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
-import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CopyButton,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  ICON_SIZE,
+  Skeleton,
+  UpdateDot,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -30,16 +39,11 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
-import { Button } from "../../components/ui/button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { Skeleton } from "../../components/ui/skeleton";
-import { UpdateDot } from "../../components/ui/update-dot";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";
 import { MemoryTab } from "./memory-tab";
@@ -260,7 +264,7 @@ export function AgentSettingsPage() {
           onClick={() => navigate("/agents")}
           className="-ml-2 mb-3 text-gray-500 dark:text-gray-400"
         >
-          <GlyphIcon d="M15 18l-6-6 6-6M9 12h12" size={ICON_SIZE.rowLead} />
+          <GlyphIcon d={ICONS.arrowLeft} size={ICON_SIZE.rowLead} />
           {S.agent.backToList}
         </Button>
         <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
@@ -311,9 +315,6 @@ export function AgentSettingsPage() {
 }
 
 type SaveFn = (update: AgentConfigUpdateRequest) => Promise<void>;
-
-/** Kernel-outdated hint icon (rotate-cw, 24×24 line path — the skill library's update glyph). */
-const KERNEL_UPDATE_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
 
 function OverviewTab({
   data,
@@ -504,7 +505,8 @@ function OverviewTab({
               <CopyButton
                 text={data.stateDir}
                 label={S.agent.copyStateDir}
-                className={ROW_COPY_CLASS}
+                size="sm"
+                className="shrink-0"
               />
             </div>
           </div>
@@ -577,7 +579,7 @@ function OverviewTab({
                 aria-label={S.agent.kernelOutdatedHint}
                 className="self-center text-gray-500 dark:text-gray-400"
               >
-                <GlyphIcon d={KERNEL_UPDATE_ICON} size={12} />
+                <GlyphIcon d={ICONS.rotateCw} size={12} />
               </span>
             </>
           ) : (

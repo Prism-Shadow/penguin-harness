@@ -14,6 +14,7 @@
  * The flow and the actions live in `use-update-flow.ts`; this file only renders.
  */
 import type { ReactNode } from "react";
+import { Button, Link } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { toneInk } from "../../lib/tone";
@@ -26,7 +27,6 @@ import {
   useUpdateFlow,
   useUpdateFlowOwner,
 } from "../../lib/use-update-flow";
-import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 
 const RELEASES_URL = "https://github.com/Prism-Shadow/penguin-harness/releases";
@@ -249,14 +249,9 @@ function Line({ spinner, children }: { spinner?: boolean; children: ReactNode })
 function ReleasesLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <p>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-sm text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-      >
+      <Link href={href} external variant="standalone" className="text-sm">
         {children}
-      </a>
+      </Link>
     </p>
   );
 }

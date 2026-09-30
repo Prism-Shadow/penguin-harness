@@ -1,7 +1,6 @@
 /** 选择器: the app's Select, Segmented, Switch, OptionMenu and Dropdown, each holding its own choice. */
 import { useState } from "react";
-import { ChevronDown } from "@prismshadow/penguin-ui";
-import { Button } from "../../../../web/src/components/ui/button";
+import { Button, ChevronDown } from "@prismshadow/penguin-ui";
 import { Dropdown, menuItemClass } from "../../../../web/src/components/ui/dropdown";
 import { OptionMenu } from "../../../../web/src/components/ui/option-menu";
 import { Segmented } from "../../../../web/src/components/ui/segmented";

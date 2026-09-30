@@ -86,7 +86,8 @@
     /* ---- Colour — semantic tones ----
        Ink on a tint and a solid fill's label clear 4.5:1 (badge text is the 700 step, as the app's
        tinted pills draw it); fg on the page surfaces clears 3:1. `neutral` ink is the muted pill's
-       gray-600. Nothing in the app reads these yet — its tones still come from tone.ts classes. */
+       gray-600. The package's badges, dots and status marks read these; the app's own call sites
+       still take their tones from tone.ts classes until their components move. */
     --ui-tone-success-fg: oklch(50.8% 0.118 165.612); /* emerald-700 */
     --ui-tone-success-bg: oklch(97.9% 0.021 166.113); /* emerald-50 */
     --ui-tone-success-line: oklch(84.5% 0.143 164.978); /* emerald-300 */
@@ -117,6 +118,10 @@
     --ui-tone-info-line: oklch(82.8% 0.111 230.318); /* sky-300 */
     --ui-tone-info-emphasis: oklch(50% 0.134 242.749); /* sky-700 */
     --ui-tone-info-emphasis-fg: #ffffff;
+
+    /* ---- Colour — marks: the update dot's notification red, the pale rung so it reads as news
+       rather than as an alarm; the app's value, one in both modes ---- */
+    --ui-mark-new: oklch(70.4% 0.191 22.216); /* red-400 */
 
     /* ---- Charts: the series palette in its roles (violet, amber, sky, rose, emerald, fuchsia,
        then teal and orange from the employee palette). Amber, sky, emerald, teal and orange sit

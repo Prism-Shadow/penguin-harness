@@ -24,7 +24,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { ICONS } from "@prismshadow/penguin-ui";
+import { ICONS, writeClipboard } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { contextMenuAnchor, isContextMenuKey } from "../../lib/context-menu";
@@ -37,7 +37,6 @@ import {
 } from "../../lib/selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
 import { restoreSelection } from "../../components/ui/text-selection";

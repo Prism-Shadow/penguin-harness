@@ -21,8 +21,8 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { CopyButton } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { CopyButton } from "../../components/ui/copy-button";
 
 /**
  * The highlighted code, with no box around it.

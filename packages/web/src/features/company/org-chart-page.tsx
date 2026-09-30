@@ -28,7 +28,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router";
 import type { OrgChartResponse, OrgEmployeeItem } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Button, EmptyState, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -37,9 +37,7 @@ import { toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { EmptyState } from "../../components/ui/empty-state";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   overflowMenuDangerClass,
@@ -73,14 +71,14 @@ import { NoticeStrip } from "../../components/ui/notice-strip";
 const MENU_ICONS = {
   openDesk: DESK_ICON,
   hire: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6",
-  budget: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6",
+  budget: ICONS.dollarCircle,
   reportsTo: "M4 17V7l4 4 4-4v10M16 7h4v4m0-4-6 6",
   renewDesk: "M21 12a9 9 0 1 1-3-6.7M21 3v6h-6",
   leave: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
 } as const;
 
 /** The header's zoom buttons (24x24 line paths): a minus and a plus. */
-const ZOOM_ICONS = { out: "M5 12h14", in: "M12 5v14M5 12h14" } as const;
+const ZOOM_ICONS = { out: "M5 12h14", in: ICONS.plus } as const;
 
 /** The canvas never collapses below this, however little of the window the rows above it leave. */
 const CANVAS_MIN_H = 240;

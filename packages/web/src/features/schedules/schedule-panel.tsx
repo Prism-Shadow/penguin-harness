@@ -21,17 +21,22 @@ import type {
   ScheduleItem,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  SettingsEmpty,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Badge } from "../../components/ui/badge";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
-import { SettingsEmpty } from "../../components/ui/empty-state";
 import { Icon } from "../../components/ui/group-list";
 import { Input } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";
@@ -40,7 +45,6 @@ import {
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../../components/ui/session-row-menu";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { CreateButtons } from "../ai-create";
@@ -298,7 +302,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                       >
                         {item.name}
                       </span>
-                      {item.queued && <Badge tone="brand">{S.schedule.queued}</Badge>}
+                      {item.queued && <Badge variant="solid">{S.schedule.queued}</Badge>}
                     </div>
                     <div
                       className="truncate text-xs text-gray-500 dark:text-gray-400"

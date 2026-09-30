@@ -90,9 +90,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  Button,
   CheckIcon,
   ChevronDown,
   GlyphIcon,
+  ICONS,
   ICON_GAP,
   ICON_SIZE,
   ProviderLogo,
@@ -102,7 +104,6 @@ import { formatBytes, humanizeTokens } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { PermissionSelect } from "./permission-select";
 import { noAutofill } from "../../components/ui/input";
@@ -497,7 +498,7 @@ function PlusMenu({
           onClick={() => setOpen(!open)}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d="M12 5v14M5 12h14" size={15} className="shrink-0" />
+          <GlyphIcon d={ICONS.plus} size={15} className="shrink-0" />
         </button>
       }
     >

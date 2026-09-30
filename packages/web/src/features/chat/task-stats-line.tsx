@@ -28,7 +28,7 @@
  */
 import { useState } from "react";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
+import { CopyButton, GlyphIcon } from "@prismshadow/penguin-ui";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -41,7 +41,6 @@ import {
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CopyButton } from "../../components/ui/copy-button";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
@@ -186,11 +185,7 @@ export function TaskStatsLine({
         )}
       </span>
       {/* Pinned at the row's end, outside the scrollable stats span. */}
-      <CopyButton
-        text={copyText}
-        label={S.chat.copyReply}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-      />
+      <CopyButton text={copyText} label={S.chat.copyReply} size="sm" className="shrink-0" />
       {/* Fork sits to the RIGHT of copy (review request): copy is the frequent action and
           keeps its accustomed spot; the click only opens the confirmation below — the fork
           request fires on Confirm, never directly. */}

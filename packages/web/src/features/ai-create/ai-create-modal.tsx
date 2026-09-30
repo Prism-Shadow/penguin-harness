@@ -6,9 +6,8 @@
  * dialog starts from `initialValue` again.
  */
 import { useState } from "react";
-import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import { Button, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { useAiBridge } from "./ai-bridge";
 import { AiCreatePanel } from "./ai-create-panel";

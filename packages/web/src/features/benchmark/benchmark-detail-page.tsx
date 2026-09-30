@@ -8,7 +8,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CopyButton,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
@@ -17,17 +25,10 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { Skeleton } from "../../components/ui/skeleton";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { fetchBenchmarks } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
-
-/** Back to the list: the arrow-left every detail page's back button carries. */
-const BACK_ICON = "M15 18l-6-6 6-6M9 12h12";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
@@ -152,7 +153,7 @@ export function BenchmarkDetailPage() {
           onClick={() => navigate("/benchmark")}
           className="-ml-2 mb-3 text-gray-500 dark:text-gray-400"
         >
-          <GlyphIcon d={BACK_ICON} size={ICON_SIZE.rowLead} />
+          <GlyphIcon d={ICONS.arrowLeft} size={ICON_SIZE.rowLead} />
           {S.benchmark.backToList}
         </Button>
         {/* The Benchmark's name, the directory its files live in, and the Use entry point. The
@@ -179,7 +180,8 @@ export function BenchmarkDetailPage() {
                 <CopyButton
                   text={benchmarkPath(benchmark.id)}
                   label={S.benchmark.copyPath}
-                  className={ROW_COPY_CLASS}
+                  size="sm"
+                  className="shrink-0"
                 />
               </span>
               {!masked && (

@@ -12,9 +12,15 @@
 import { useMemo, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
-import { ChevronDown, GlyphIcon, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  ChevronDown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  ProviderLogo,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Badge } from "../../components/ui/badge";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FormPicker } from "../../components/ui/form-picker";
 import { menuSearchClass, noAutofill } from "../../components/ui/input";
@@ -36,13 +42,6 @@ import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/fiel
 export function modelLabel(m: ModelInfo): string {
   return m.displayName?.trim() || m.modelId;
 }
-
-/**
- * "No key" marker for the model dropdown's key-less rows: a key struck through by a prohibition
- * slash (24x24 line art, grayscale via currentColor, matching the approval-mode icon style).
- */
-const NO_KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
 
 /**
  * Candidate panel shared by every picker of this family (the model dropdown / `/model` switch
@@ -164,8 +163,8 @@ export function PickerList<T>({
  * always visible even without a key; a muted bottom row reveals the remaining key-less models
  * (marked by a struck-through key icon, with the "no key" text in its title) without closing
  * the menu or changing the selection — when no model has a key at all, everything is listed
- * directly. Rows carry the provider logo, the light-yellow "Free" badge for zero-cost models
- * (same as the model library card), the project-default marker, and the selected checkmark.
+ * directly. Rows carry the provider logo, the "Free" badge for zero-cost models, the
+ * project-default marker, and the selected checkmark.
  */
 export function ModelMenuList({
   models,
@@ -223,11 +222,11 @@ export function ModelMenuList({
         <>
           <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
-          {/* Zero-cost rows (all three price buckets 0): same light-yellow "Free" badge as
-              the model library card, so free models stand out while picking. */}
+          {/* Zero-cost rows (all three price buckets 0): a "Free" badge, so free models stand
+              out while picking — in the info tone: a price is a fact, not a warning. */}
           {isFreeModel(m.pricing) && (
             <span className="shrink-0">
-              <Badge tone="yellow">{S.models.freeBadge}</Badge>
+              <Badge tone="info">{S.models.freeBadge}</Badge>
             </span>
           )}
           {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
@@ -239,7 +238,7 @@ export function ModelMenuList({
               aria-label={S.models.noKey}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <GlyphIcon d={NO_KEY_ICON} size={13} />
+              <GlyphIcon d={ICONS.keyOff} size={13} />
             </span>
           )}
           {sameModelRef(m, defaultModel) && (

@@ -22,23 +22,29 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { HookItem } from "@prismshadow/penguin-server/api";
-import { DownloadIcon, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  Button,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  SettingsEmpty,
+  SkeletonList,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { SettingsEmpty } from "../../components/ui/empty-state";
 import { HelpFold } from "../../components/ui/help-fold";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";

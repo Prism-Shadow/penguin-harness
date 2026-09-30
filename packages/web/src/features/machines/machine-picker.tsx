@@ -8,8 +8,7 @@
  * in-place panel.
  */
 import { useState } from "react";
-import { ChevronDown } from "@prismshadow/penguin-ui";
-import { Button } from "../../components/ui/button";
+import { Button, ChevronDown } from "@prismshadow/penguin-ui";
 import { Dropdown } from "../../components/ui/dropdown";
 import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 

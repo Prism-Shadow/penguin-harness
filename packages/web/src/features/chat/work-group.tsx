@@ -19,7 +19,7 @@
  * group away from the end, or the Task has actually finished.
  */
 import { useEffect, useRef, useState } from "react";
-import { Chevron } from "@prismshadow/penguin-ui";
+import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import {
@@ -29,7 +29,6 @@ import {
   DISCLOSURE_HEADER_STICKY_CLASS,
   DISCLOSURE_HEADER_TITLE_CLASS,
 } from "./disclosure-row";
-import { StatusIcon } from "../../components/ui/status-icon";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import { LiveDuration } from "./live-duration";

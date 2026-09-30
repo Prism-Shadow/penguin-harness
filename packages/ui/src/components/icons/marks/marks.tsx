@@ -5,6 +5,7 @@
  * render size disagree. The rotating collapse chevron is a different glyph and lives in
  * `chevron.tsx`.
  */
+import { ICONS } from "../icons";
 
 /** The downward caret on a select, an option menu or a dropdown trigger. Colour follows currentColor. */
 export function ChevronDown({ size = 12, className = "" }: { size?: number; className?: string }) {
@@ -40,7 +41,7 @@ export function CheckIcon({ size = 13, className = "" }: { size?: number; classN
   );
 }
 
-/** The "add" plus of create buttons and new-row affordances. */
+/** The "add" plus of create buttons and new-row affordances: `ICONS.plus` at its own stroke. */
 export function PlusIcon({
   size = 14,
   strokeWidth = 1.7,
@@ -60,12 +61,7 @@ export function PlusIcon({
       aria-hidden
       className={`shrink-0 ${className}`}
     >
-      <path
-        d="M12 5v14M5 12h14"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d={ICONS.plus} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

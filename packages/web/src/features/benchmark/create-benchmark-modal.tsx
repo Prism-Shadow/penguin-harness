@@ -8,13 +8,12 @@
  */
 import { useRef, useState } from "react";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICONS, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
+import { Button, GlyphIcon, ICONS, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Input, Textarea } from "../../components/ui/input";

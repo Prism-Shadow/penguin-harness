@@ -16,16 +16,21 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICON_GAP, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  PlusIcon,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Button } from "../../components/ui/button";
 import { FolderSection, Icon } from "../../components/ui/group-list";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "./company-nav";

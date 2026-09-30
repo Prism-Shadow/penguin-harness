@@ -24,16 +24,14 @@ import type {
   SchedulesResponse,
   ScheduleStatus,
 } from "@prismshadow/penguin-server/api";
+import { Badge, Button, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
+import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
-import { Badge, type BadgeTone } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
@@ -42,14 +40,14 @@ import { toggleBody } from "../schedules/schedule-upsert";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
 
-/** Display status → badge tone. */
-const STATUS_TONE: Record<ScheduleStatus, BadgeTone> = {
-  active: "green",
-  disabled: "gray",
-  expired: "amber",
-  done: "brand",
-  missed: "amber",
-  invalid: "red",
+/** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
+const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
+  active: { tone: "success" },
+  disabled: { tone: "neutral" },
+  expired: { tone: "attention" },
+  done: { tone: "neutral", variant: "solid" },
+  missed: { tone: "attention" },
+  invalid: { tone: "danger" },
 };
 
 export function SchedulesTab({
@@ -208,7 +206,7 @@ export function SchedulesTab({
                   <td className="whitespace-nowrap px-3 py-2">
                     {/* invalid reason is folded into the hover title. */}
                     <span data-tooltip={item.invalidReason}>
-                      <Badge tone={STATUS_TONE[item.status]}>
+                      <Badge {...STATUS_BADGE[item.status]}>
                         {S.schedule.statusNames[item.status] ?? item.status}
                       </Badge>
                     </span>
@@ -242,7 +240,7 @@ export function SchedulesTab({
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    {item.queued && <Badge tone="brand">{S.schedule.queued}</Badge>}
+                    {item.queued && <Badge variant="solid">{S.schedule.queued}</Badge>}
                   </td>
                   {isOwner && (
                     <td className="whitespace-nowrap px-3 py-2 text-right">

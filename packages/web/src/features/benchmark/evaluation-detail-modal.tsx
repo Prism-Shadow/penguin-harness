@@ -12,6 +12,7 @@ import { useState } from "react";
 import type { BenchmarkCaseScore, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  Button,
   Chevron,
   GlyphIcon,
   ICONS,
@@ -21,7 +22,6 @@ import {
 import { S } from "../../lib/strings";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import type { Currency } from "../../state/theme";
-import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";

@@ -1,21 +1,27 @@
-/** 徽标与状态: Badge in every tone, StatusIcon in every run state, the session activity marks, and the update dot and pill. */
-import { ICON_SIZE } from "@prismshadow/penguin-ui";
-import { Badge } from "../../../../web/src/components/ui/badge";
-import type { BadgeTone } from "../../../../web/src/components/ui/badge";
+/**
+ * 徽标与状态: Badge in every tone and weight, the count, the state dot, StatusIcon in every run
+ * state, the session activity marks, and the update dot and pill.
+ */
 import {
+  ActivityIcon,
   BackgroundTasksMark,
+  Badge,
+  Count,
+  Dot,
+  ICON_SIZE,
   ScheduleMark,
-  SessionActivityIcon,
-} from "../../../../web/src/components/ui/session-activity-icon";
-import { StatusIcon } from "../../../../web/src/components/ui/status-icon";
-import type { RunState } from "../../../../web/src/components/ui/status-icon";
-import { UpdateDot, UpdatePill } from "../../../../web/src/components/ui/update-dot";
+  StatusIcon,
+  TONES,
+  UpdateDot,
+  UpdatePill,
+} from "@prismshadow/penguin-ui";
+import type { ActivityIconState, BadgeVariant, RunState } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
-const BADGE_TONES: readonly BadgeTone[] = ["gray", "brand", "green", "yellow", "amber", "red"];
+const BADGE_VARIANTS: readonly BadgeVariant[] = ["soft", "outline", "solid"];
 const RUN_STATES: readonly RunState[] = ["running", "waiting", "done", "failed", "stopped"];
-const ACTIVITIES = ["running", "compacting", "completedUnread"] as const;
+const ACTIVITIES: readonly ActivityIconState[] = ["running", "compacting", "completedUnread"];
 
 export function BadgesBoard() {
   const { S } = useGallery();
@@ -23,19 +29,45 @@ export function BadgesBoard() {
   return (
     <div className="gf-board">
       <BoardGroup title={t.badges}>
-        <div className="lib-row">
-          {BADGE_TONES.map((tone) => (
-            <Badge key={tone} tone={tone}>
-              {t.tones[tone]}
-            </Badge>
+        <div className="lib-stack lib-stack-wide">
+          {BADGE_VARIANTS.map((variant) => (
+            <div key={variant} className="lib-row">
+              {TONES.map((tone) => (
+                <Badge key={tone} tone={tone} variant={variant}>
+                  {t.tones[tone]}
+                </Badge>
+              ))}
+              <span className="lib-caption">{t.variants[variant]}</span>
+            </div>
           ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.count}>
+        <div className="lib-row">
+          <Count n={3} />
+          <Count n={42} />
+          <Count n={120} max={99} />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.dots} aside={t.dotsHint}>
+        <div className="lib-row">
+          {TONES.map((tone) => (
+            <span key={tone} className="lib-cell">
+              <Dot tone={tone} size="md" />
+              <code className="lib-caption">{tone}</code>
+            </span>
+          ))}
+          <span className="lib-cell">
+            <Dot tone="success" size="md" pulse label={t.live} />
+            <span className="lib-caption">{t.live}</span>
+          </span>
         </div>
       </BoardGroup>
       <BoardGroup title={t.status}>
         <div className="lib-row">
           {RUN_STATES.map((state) => (
             <span key={state} className="lib-cell">
-              <StatusIcon state={state} size={16} label={t.states[state]} />
+              <StatusIcon state={state} label={t.states[state]} />
               <span className="lib-caption">{t.states[state]}</span>
             </span>
           ))}
@@ -45,7 +77,7 @@ export function BadgesBoard() {
         <div className="lib-row">
           {ACTIVITIES.map((activity) => (
             <span key={activity} className="lib-cell">
-              <SessionActivityIcon activity={activity} />
+              <ActivityIcon activity={activity} label={t.activities[activity]} />
               <span className="lib-caption">{t.activities[activity]}</span>
             </span>
           ))}
@@ -58,7 +90,7 @@ export function BadgesBoard() {
             <span className="lib-caption">{t.background}</span>
           </span>
           <span className="lib-cell">
-            <ScheduleMark size={ICON_SIZE.rowMark} />
+            <ScheduleMark label={t.schedule} size={ICON_SIZE.rowMark} />
             <span className="lib-caption">{t.schedule}</span>
           </span>
           <span className="lib-cell">

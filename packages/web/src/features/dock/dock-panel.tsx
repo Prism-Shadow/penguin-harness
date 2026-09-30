@@ -89,8 +89,6 @@ import {
 } from "../chat/use-panel-width";
 import { usePointerDrag } from "./use-pointer-drag";
 
-/** Plus: the add-tab trigger. */
-const ADD_ICON = "M12 5v14M5 12h14";
 /** Box with an arrow escaping to the top right: detach to its own window. */
 const DETACH_ICON = "M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5";
 
@@ -567,7 +565,7 @@ export function DockPanel({
       menuClass="w-56"
       button={
         <DockButton label={S.dock.addTab} testId="dock-add" onClick={() => setAddOpen(!addOpen)}>
-          <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
         </DockButton>
       }
     >
@@ -596,7 +594,7 @@ export function DockPanel({
             className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             <span className="shrink-0 text-gray-500 dark:text-gray-400">
-              <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
             </span>
             <span className="min-w-0 truncate">{S.terminal.newShell}</span>
           </button>

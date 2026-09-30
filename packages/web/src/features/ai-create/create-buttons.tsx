@@ -5,9 +5,8 @@
  * one inside the first. The wand button always carries the accent and the hand button never
  * does, so the pair reads the same on every page.
  */
-import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import { Button, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 
 export interface CreateButtonsProps {
   onAi: () => void;

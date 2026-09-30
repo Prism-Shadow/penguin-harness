@@ -14,7 +14,7 @@
  */
 import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ICON_SIZE, SkeletonList } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeDate } from "../../lib/format";
@@ -22,7 +22,6 @@ import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
 import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { useLocale } from "../../state/locale";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { Md } from "./md";
 import { buildMemoryList, memoryNavBack, memoryNavForRequest } from "./memory-nav";
 import type { MemoryNavMode, ScopeFiles } from "./memory-nav";

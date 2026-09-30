@@ -13,6 +13,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
+  Badge,
+  Button,
   CheckIcon,
   ChevronDown,
   GlyphIcon,
@@ -20,15 +22,13 @@ import {
   ICON_GAP,
   ICON_SIZE,
   PlusIcon,
+  SkeletonList,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Dropdown } from "../../components/ui/dropdown";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
 import {
   CreateOrganizationDialog,
@@ -166,9 +166,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                   <OrgStatusDot org={o} />
                   <span className="min-w-0 flex-1 truncate">{o.name}</span>
                   {o.invalid !== undefined ? (
-                    <Badge tone="red">{S.company.orgInvalid}</Badge>
+                    <Badge tone="danger">{S.company.orgInvalid}</Badge>
                   ) : o.status === "paused" ? (
-                    <Badge tone="amber">{S.company.orgPaused}</Badge>
+                    <Badge tone="attention">{S.company.orgPaused}</Badge>
                   ) : null}
                   {active && (
                     <span className="shrink-0 text-gray-500 dark:text-gray-400">

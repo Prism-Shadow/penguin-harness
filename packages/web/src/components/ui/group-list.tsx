@@ -116,10 +116,6 @@ export function MoreRow({
   );
 }
 
-/** Chevrons of the group pager's step buttons (lucide chevron-left / chevron-right). */
-const PAGER_PREV_ICON = "M15 18 9 12l6-6";
-const PAGER_NEXT_ICON = "m9 18 6-6-6-6";
-
 /**
  * Page stepper of a grouped list whose groups are paginated (the sidebar renders at most
  * SIDEBAR_GROUP_PAGE_SIZE groups per page): two flat chevron buttons around the "2/5"
@@ -154,7 +150,7 @@ export function GroupPager({
         onClick={() => step(-1)}
         className={buttonClass}
       >
-        <Icon d={PAGER_PREV_ICON} size={12} />
+        <Icon d={ICONS.chevronLeft} size={12} />
       </button>
       {/* The position doubles as the control's status: announced on change so a step is
           audible without counting the rows that swapped underneath it. */}
@@ -173,7 +169,7 @@ export function GroupPager({
         onClick={() => step(1)}
         className={buttonClass}
       >
-        <Icon d={PAGER_NEXT_ICON} size={12} />
+        <Icon d={ICONS.chevronRight} size={12} />
       </button>
     </div>
   );

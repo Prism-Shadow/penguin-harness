@@ -5,7 +5,7 @@
  * stats lines. Items have a light entrance animation.
  */
 import { useEffect, useState } from "react";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
+import { CopyButton, GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
@@ -13,7 +13,6 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { splitAttachments } from "../../lib/attachments";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
 import { Md } from "./md";
-import { CopyButton } from "../../components/ui/copy-button";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";

@@ -96,6 +96,15 @@ export const ICONS = {
   pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z",
   /** A wrench. */
   wrench: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
+  /** A key: a round bow, the shaft and two teeth (feather key). */
+  key:
+    "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
+  /**
+   * The same key struck through corner to corner, like `eyeOff`. Spelled out rather than composed
+   * from `key`: a fragment equal to a whole entry would name one path twice. Redraw both together.
+   */
+  keyOff:
+    "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20",
   /** Stacked cylinders: a database. */
   database:
     "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
@@ -204,6 +213,28 @@ export const ICONS = {
    */
   refresh:
     "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5",
+  /**
+   * One arc turning clockwise into an arrowhead (feather rotate-cw) — a single arc where `refresh`
+   * has two. The head reaches x=23, past the other glyphs' margin, as drawn upstream.
+   */
+  rotateCw: "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10",
+  /** A plus. `PlusIcon` (marks.tsx) draws this path with a stroke weight of its own. */
+  plus: "M12 5v14M5 12h14",
+
+  // --- Direction ----------------------------------------------------------------------------
+
+  /**
+   * An arrow pointing left. The head sits left of centre and the shaft runs out to the right
+   * edge, as the detail pages' back buttons have always drawn it.
+   */
+  arrowLeft: "M15 18l-6-6 6-6M9 12h12",
+  /**
+   * A chevron pointing left: back one level, the previous page. A still mark — the collapse
+   * indicator that turns is the `Chevron` component, a different drawing.
+   */
+  chevronLeft: "M15 18l-6-6 6-6",
+  /** The same chevron pointing right: the next page. */
+  chevronRight: "M9 18l6-6-6-6",
 
   // --- Layout -------------------------------------------------------------------------------
 

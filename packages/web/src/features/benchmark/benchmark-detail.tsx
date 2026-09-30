@@ -11,7 +11,14 @@
  */
 import { useEffect, useState } from "react";
 import type { BenchmarkCaseSummary, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -19,8 +26,6 @@ import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../.
 import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
 import { Modal } from "../../components/ui/modal";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import { makeRangeGeom, segmentPoints } from "../usage/chart-geom";

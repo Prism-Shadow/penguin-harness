@@ -6,11 +6,10 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { KeyAuthEndpoints } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
-import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { Spinner } from "@prismshadow/penguin-ui";
+import { Button, Spinner } from "@prismshadow/penguin-ui";
 
 const POLL_MS = 3_000;
 

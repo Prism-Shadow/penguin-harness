@@ -6,7 +6,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
-import { CloseIcon, GlyphIcon, ICONS, UserAvatar } from "@prismshadow/penguin-ui";
+import { CloseIcon, GlyphIcon, ICONS, UpdateDot, UserAvatar } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
@@ -18,7 +18,6 @@ import { useCompletionNotifications } from "../../state/use-completion-notificat
 import { useTrayLocale } from "../../state/use-tray-locale";
 import { Drawer } from "../ui/drawer";
 import { Tooltip } from "../ui/tooltip";
-import { UpdateDot } from "../ui/update-dot";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";

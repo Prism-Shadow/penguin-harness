@@ -30,7 +30,15 @@ import type {
   OrgTicketStatus,
   OrganizationDetail,
 } from "@prismshadow/penguin-server/api";
-import { Chevron, GlyphIcon, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  Button,
+  Chevron,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -42,9 +50,6 @@ import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { EmptyState } from "../../components/ui/empty-state";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError } from "../../components/ui/toast";
@@ -820,9 +825,9 @@ export function OverviewPage() {
                       <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
                     </TitleButton>
                     {a.pausedAt !== undefined ? (
-                      <Badge tone="red">{S.company.finance.paused}</Badge>
+                      <Badge tone="danger">{S.company.finance.paused}</Badge>
                     ) : (
-                      <Badge tone="amber">{S.company.finance.warned}</Badge>
+                      <Badge tone="attention">{S.company.finance.warned}</Badge>
                     )}
                     <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                       {formatRelativeShort(a.pausedAt ?? a.warnedAt ?? "", locale)}

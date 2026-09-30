@@ -18,16 +18,15 @@
  */
 import { useState } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
+import { Button, SettingsEmpty } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { McpServerTestResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { SettingsEmpty } from "../../components/ui/empty-state";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError, toastSuccess } from "../../components/ui/toast";

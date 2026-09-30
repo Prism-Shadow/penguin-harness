@@ -20,6 +20,7 @@ import type { OrgChannelDetail, OrgChannelMember } from "@prismshadow/penguin-se
 import {
   AgentAvatar,
   AvatarStack,
+  Button,
   GlyphIcon,
   ICONS,
   ICON_GAP,
@@ -31,7 +32,6 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
 import { InfoPopover } from "../../components/ui/info-popover";

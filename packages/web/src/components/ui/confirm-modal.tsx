@@ -17,8 +17,8 @@
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Button } from "@prismshadow/penguin-ui";
 import { Modal } from "./modal";
-import { Button } from "./button";
 import { S } from "../../lib/strings";
 
 /** Tinted icon badge per tone: warning triangle on red for danger, pencil-on-gray for confirmations that overwrite/save. */

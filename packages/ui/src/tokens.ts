@@ -243,6 +243,14 @@ export const TOKEN_GROUPS = [
     ],
   },
   {
+    id: "color-marks",
+    title: "Colour — marks",
+    // A mark that is deliberately not a tone: `new` is the update dot's fill — "there is something
+    // new down this path", neither a fault nor unfinished work. It never carries the meaning alone
+    // (its anchor names what is new), so it has no contrast floor and a theme may keep it pale.
+    names: ["--ui-mark-new"],
+  },
+  {
     id: "chart",
     title: "Charts — series colours and geometry",
     // The categorical palette has fixed roles across themes — 1 violet, 2 amber, 3 sky, 4 rose,

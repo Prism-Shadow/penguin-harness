@@ -47,7 +47,20 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
-import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CloseIcon,
+  CopiedStatus,
+  CopyCheckGlyph,
+  EmptyState,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  ICON_SIZE,
+  SkeletonList,
+  useCopied,
+  writeClipboard,
+} from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -99,21 +112,11 @@ import {
 } from "../../lib/workspace-tree";
 import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import {
-  CopiedStatus,
-  CopyCheckGlyph,
-  useCopied,
-  writeClipboard,
-} from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
-import { EmptyState } from "../../components/ui/empty-state";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -146,8 +149,6 @@ const SNIFF_BYTES = 8 * 1024;
 const SEARCH_DEBOUNCE_MS = 250;
 /** Window with a left pane: the tree toggle. */
 const PANEL_LEFT_ICON = "M4 5h16v14H4zM10 5v14";
-/** Left-pointing chevron: the narrow layout's back-to-tree button. */
-const BACK_ICON = "M15 18l-6-6 6-6";
 
 /** An external reference with a scheme (http(s)/mailto/data, etc.), passed through as-is in the md rendered view. */
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
@@ -577,7 +578,7 @@ export function WorkspaceBrowser({
   /**
    * The preview header's copy action. Driven by the hook rather than a plain CopyButton
    * because the tooltip is a Tooltip panel here, not a `title`, and a trigger may carry only
-   * one of the two — the glyph swap and the live region are the ones copy-button.tsx owns.
+   * one of the two — the glyph swap and the live region are the ones CopyButton uses.
    */
   const { copied, flash: flashCopy } = useCopied();
   const [width, setWidth] = useState(0);
@@ -2433,7 +2434,7 @@ export function WorkspaceBrowser({
               onClick={backToTree}
               className={iconActionClass}
             >
-              <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}

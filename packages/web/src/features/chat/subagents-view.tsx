@@ -33,7 +33,7 @@ import type {
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { AgentAvatar, EmptyState, GlyphIcon, ICON_SIZE, StatusIcon } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
 import { toastError } from "../../components/ui/toast";
@@ -42,8 +42,6 @@ import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import { EmptyState } from "../../components/ui/empty-state";
-import { StatusIcon } from "../../components/ui/status-icon";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -256,7 +254,7 @@ export function SubagentsView({
               {shortSessionId(active.sessionId)}
             </span>
             {activeRunning && (
-              <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
+              <StatusIcon state="running" size="xs" label={S.chat.subagentRunning} />
             )}
             <span className="min-w-0 flex-1" />
             {/* Jump out of the panel: the child conversation as a full Session. */}

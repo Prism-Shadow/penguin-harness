@@ -25,27 +25,33 @@
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { AgentAvatar, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  ActivityIcon,
+  AgentAvatar,
+  Button,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  SkeletonList,
+  writeClipboard,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { sessionActivityLabel } from "../../lib/session-activity";
 import { apiErrorText } from "../../lib/api-error";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
-import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FolderSection, Icon } from "../../components/ui/group-list";
-import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
 } from "../../components/ui/session-row-menu";
 import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
@@ -208,7 +214,9 @@ function DeskRow({
               <span className="sr-only">{S.messaging.enabledIndicator[messagingChannel]}</span>
             </span>
           )}
-          {activity !== null && <SessionActivityIcon activity={activity} />}
+          {activity !== null && (
+            <ActivityIcon activity={activity} label={sessionActivityLabel(activity)} />
+          )}
         </button>
         {/* The menu affordance's slot, laid out rather than overlaid and reserved on every row
             — including a desk that does not exist yet — so the names line up down the group

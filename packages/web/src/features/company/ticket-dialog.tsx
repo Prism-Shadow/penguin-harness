@@ -33,7 +33,15 @@ import type {
   OrgTicketUpdateRequest,
 } from "@prismshadow/penguin-server/api";
 import type { ReactNode } from "react";
-import { Chevron, CloseButton, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Chevron,
+  CloseButton,
+  CopyButton,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -42,15 +50,12 @@ import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Segmented } from "../../components/ui/segmented";
 import { FieldLabel } from "../../components/ui/field";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Modal } from "../../components/ui/modal";
-import { Skeleton } from "../../components/ui/skeleton";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { OrgSection } from "./org-layout";
@@ -464,7 +469,8 @@ function TicketDialog({
                   <CopyButton
                     text={detail.ticketId}
                     label={S.company.tickets.copyId}
-                    className={ROW_COPY_CLASS}
+                    size="sm"
+                    className="shrink-0"
                   />
                 </span>
                 <span className="ml-auto tabular-nums">

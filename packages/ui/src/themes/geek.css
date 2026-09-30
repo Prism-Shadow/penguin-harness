@@ -144,6 +144,10 @@
     --ui-tone-info-emphasis: var(--ui-tone-info-fg);
     --ui-tone-info-emphasis-fg: #ffffff;
 
+    /* Colour — marks: the update dot in the bright terminal red of the dark page's danger ink,
+       one value on paper and on black */
+    --ui-mark-new: #ff5252;
+
     /* Charts: terminal hues in the roles (indigo, ochre, cobalt, crimson, phosphor, magenta,
        cyan, orange — the presets' own hues, deep enough for paper), the reference curve in the
        muted ink, the token-kind blues, and a plotter's geometry — thin solid bars with square

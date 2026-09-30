@@ -9,7 +9,7 @@
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chevron } from "@prismshadow/penguin-ui";
-import type { RunState } from "../../components/ui/status-icon";
+import type { RunState } from "@prismshadow/penguin-ui";
 
 /**
  * The row itself (collapsed and expanded state share it; the hover tone is the "open or

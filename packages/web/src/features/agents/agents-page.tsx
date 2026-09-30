@@ -26,7 +26,20 @@ import type {
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  Badge,
+  Button,
+  CloseIcon,
+  EmptyState,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  ICON_SIZE,
+  Skeleton,
+  SkeletonCard,
+  UpdatePill,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -39,17 +52,12 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { FormPicker } from "../../components/ui/form-picker";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { Badge } from "../../components/ui/badge";
-import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
-import { EmptyState } from "../../components/ui/empty-state";
-import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -62,7 +70,6 @@ import {
   agentIdFromSnapshotName,
   fileToBase64,
 } from "./snapshot-file";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
@@ -78,21 +85,21 @@ const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
   /** New chat (plus sign) */
-  newChat: "M12 5v14M5 12h14",
+  newChat: ICONS.plus,
   /** Delete (trash can) */
   trash:
     "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6",
   /** Total session count (chat bubble) */
   sessions: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** Vault key count (key: bow + teeth) */
-  vaultKeys: "M15.5 7.5l3 3L22 7l-3-3M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z",
+  vaultKeys: ICONS.key,
   /** Schedule count: the alarm clock every scheduled-task surface wears. */
   schedules: ICONS.alarmClock,
   /** Installed skill count (open book, same family as the plugin library) */
   skills:
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
-  usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  usage: ICONS.barChart,
   /** Memory count: the brain every Memory surface wears; opens the settings tab. */
   memory: ICONS.brain,
 } as const;
@@ -578,7 +585,7 @@ export function AgentsPage() {
                       <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
                         {a.agentId}
                       </span>
-                      <Badge tone="gray">v{a.version}</Badge>
+                      <Badge>v{a.version}</Badge>
                       {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                           names the state in words rather than as another bare dot — a capsule in
                           the version badge's own geometry, tinted the same pale red the dots on

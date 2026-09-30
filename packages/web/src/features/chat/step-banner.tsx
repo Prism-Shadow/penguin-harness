@@ -17,10 +17,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Chevron } from "@prismshadow/penguin-ui";
+import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
+import type { RunState } from "@prismshadow/penguin-ui";
 import { humanizeDuration } from "../../lib/format";
-import { StatusIcon } from "../../components/ui/status-icon";
-import type { RunState } from "../../components/ui/status-icon";
 import { LiveDuration } from "./live-duration";
 import { toneInk } from "../../lib/tone";
 

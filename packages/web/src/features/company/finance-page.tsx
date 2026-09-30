@@ -35,8 +35,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  Badge,
+  Button,
   Chevron,
   CloseIcon,
+  EmptyState,
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
@@ -52,9 +55,6 @@ import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { noAutofill } from "../../components/ui/input";
@@ -579,7 +579,7 @@ export function FinancePage() {
                             </span>
                             {employee.reportsTo === null &&
                               employee.title.trim().toLowerCase() !== "ceo" && (
-                                <Badge tone="gray">{S.company.ceo}</Badge>
+                                <Badge>{S.company.ceo}</Badge>
                               )}
                             <span className="truncate text-gray-400 dark:text-gray-500">
                               {employee.title}
