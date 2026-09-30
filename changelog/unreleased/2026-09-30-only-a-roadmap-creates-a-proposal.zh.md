@@ -3,7 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feat
 - **Scope:** `plugins`, `cli`
-- **PR:** PR_LINK
+- **PR:** [Myriad-Dreamin/penguin-harness#135](https://github.com/Myriad-Dreamin/penguin-harness/pull/135)
 - **Breaking:** an employee's `penguin org proposal create` is refused; company-roadmaps needs company-proposals installed beside it
 
 [English](2026-09-30-only-a-roadmap-creates-a-proposal.md)
