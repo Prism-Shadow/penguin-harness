@@ -1782,7 +1782,7 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     });
   });
 
-  it("OpenCode gets the session header, and only when there is a session id to put in it", () => {
+  it("OpenCode always gets the session header: the Session's id, or a fresh random one", () => {
     const sessionId = "session-2026-09-14-10-30-00-a1b2c3d4";
     expect(attributionHeaders("https://opencode.ai/zen/v1", sessionId)).toEqual({
       "x-opencode-session": sessionId,
@@ -1791,10 +1791,15 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     expect(attributionHeaders("https://api.opencode.ai/v1", sessionId)).toEqual({
       "x-opencode-session": sessionId,
     });
-    // No id, no header. A stand-in constant would file every conversation at the gateway
-    // under one session, which serves it worse than naming none.
-    expect(attributionHeaders("https://opencode.ai/zen/v1")).toBeUndefined();
-    expect(attributionHeaders("https://opencode.ai/zen/v1", "")).toBeUndefined();
+    // No id — a connectivity test, a vision probe — still names a conversation, since the
+    // gateway refuses a request that names none: a fresh random id each time, never one
+    // constant that would file every such request under a single session.
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    const first = attributionHeaders("https://opencode.ai/zen/v1")?.["x-opencode-session"];
+    const second = attributionHeaders("https://opencode.ai/zen/v1", "")?.["x-opencode-session"];
+    expect(first).toMatch(uuid);
+    expect(second).toMatch(uuid);
+    expect(first).not.toBe(second);
     // A host outside the scheme gets nothing, whatever path it serves: third-party mirrors of
     // a gateway are not part of the built-in attribution, and naming one here would put it in
     // the repository just as surely as listing it would.
@@ -1835,10 +1840,12 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
       } else if (m.provider === "tokendance") {
         expect(headers?.["X-App-URL"], m.modelId).toBe("https://penguin.ooo/");
       } else if (m.provider === "opencode-go") {
-        // Both OpenCode Go bases, Messages included, name the Session they are serving.
+        // Both OpenCode Go bases, Messages included, name the Session they are serving, and
+        // name a conversation of their own outside one.
         expect(attributionHeaders(m.baseUrl, sessionId), m.modelId).toEqual({
           "x-opencode-session": sessionId,
         });
+        expect(headers?.["x-opencode-session"], m.modelId).toBeTruthy();
       } else {
         expect(headers, `${m.provider}/${m.modelId}`).toBeUndefined();
       }

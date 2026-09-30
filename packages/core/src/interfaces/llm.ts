@@ -75,10 +75,8 @@ export interface GenerativeModelConfig {
    * The Session's id, for endpoints whose attribution scheme identifies the conversation
    * rather than the app (OpenCode's `x-opencode-session`; see state/model-catalog.ts
    * `attributionHeaders`). Unset — a request outside any Session: a connectivity test, a
-   * vision probe, a one-off utility completion — the instance names itself with a fresh id,
-   * so its requests are a conversation of their own. Never a shared placeholder: that would
-   * file every such request at the gateway under one session. Naming none is not an option
-   * either — OpenCode refuses such a request outright.
+   * vision probe, a one-off utility completion — attributionHeaders mints a fresh id, which
+   * the instance then keeps for all of its requests, so they are a conversation of their own.
    */
   sessionId?: string;
   /**

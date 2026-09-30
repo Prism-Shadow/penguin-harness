@@ -1873,8 +1873,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // glm-*, kimi-k3, kimi-k2.6, deepseek-v4* and minimax-m3 would reach their first-party
   // clients, and the other ids would not route at all. The gateway refuses a request that does
   // not name its conversation (400 "Request is missing x-opencode-session"), which
-  // attributionHeaders does for this host: a Session's requests carry its id, and a request
-  // outside any Session — a connectivity test, a vision probe — one of its own (GenerativeModel).
+  // attributionHeaders does for this host on every request: a Session's requests carry its id,
+  // and a request outside any Session — a connectivity test, a vision probe — a fresh one.
   //
   // Vision: from models.dev, and checked live on 2026-09-17 and 2026-09-18 by sending an image
   // of a number. Every vision row that could be reached read it back, and the text-only rows
@@ -3505,12 +3505,13 @@ function hostMatches(host: string, domain: string): boolean {
  *   other tools, so the per-request value is the accurate one.
  * - OpenCode (https://opencode.ai): `x-opencode-session` alone, and it names the conversation
  *   rather than the app — the gateway keys its routing and prompt caching on it, so the value
- *   has to hold still across a conversation's requests and differ between conversations, and
- *   it refuses a request that names none (400 "Request is missing x-opencode-session"). The
- *   caller supplies the id: a Session's requests pass the Session's, and GenerativeModel gives
- *   an instance built outside any Session a fresh one of its own. Given none, this returns
- *   nothing for the host rather than inventing a value — a stand-in constant here would file
- *   every such request under one session.
+ *   has to hold still across a conversation's requests and differ between conversations. It
+ *   is **always** sent: the gateway refuses a request that names none (400 "Request is missing
+ *   x-opencode-session"). A Session's requests carry the Session's id; a request with none (a
+ *   connectivity test, a vision probe) gets a fresh random id, making it a conversation of its
+ *   own — never a shared constant, which would file every such request under one session. A
+ *   caller that sends several requests without a Session computes the headers once and
+ *   reuses them (GenerativeModel does, per instance), so they share that one id.
  */
 export function attributionHeaders(
   baseUrl: string | undefined,
@@ -3526,6 +3527,9 @@ export function attributionHeaders(
     };
   }
   if (hostMatches(host, "tokendance.space")) return { "X-App-URL": APP_URL };
-  if (hostMatches(host, "opencode.ai") && sessionId) return { "x-opencode-session": sessionId };
+  if (hostMatches(host, "opencode.ai")) {
+    // The global Web Crypto rather than node:crypto: this module is bundled into the web app too.
+    return { "x-opencode-session": sessionId || globalThis.crypto.randomUUID() };
+  }
   return undefined;
 }
