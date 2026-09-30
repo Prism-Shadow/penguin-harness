@@ -1,29 +1,38 @@
 /**
- * Local API token: minted per boot, persisted at <root>/api-token (0600), and accepted
- * by authMiddleware as `Authorization: Bearer` — authenticating as the built-in admin on
- * every protected route, SSE endpoints included (the CLI consumes SSE via fetch with
+ * The local API token: minted per boot, persisted at <root>/api-token (owner-only), and
+ * accepted by authMiddleware as `Authorization: Bearer` — authenticating as the built-in admin
+ * on every protected route, SSE endpoints included (the CLI consumes SSE via fetch with
  * headers, so header auth must reach them).
+ *
+ * - A boot persists the token at <root>/api-token with owner-only permissions.
+ * - A valid Bearer authenticates as the admin (sessionVia "token") with no cookie at all.
+ * - A wrong Bearer is 401, even beside a valid cookie: no silent fallback to the cookie.
+ * - A Bearer works on writes (the JSON-only CSRF guard still applies) and on SSE streams.
+ * - The hot-update APIs take the Bearer as the admin credential.
+ * - The next boot's token overwrites the file atomically, owner-only, leaving no temp file.
+ * - An absent or empty token file reads as no token.
+ * - The comparison is constant-time and length-aware, and only a Bearer header shape parses.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { MeResponse, SessionCreateResponse } from "../src/api/types.js";
 import { apiTokenPath, readApiToken, storeApiToken, tokensEqual } from "../src/auth/api-token.js";
 import { bearerToken } from "../src/auth/middleware.js";
-import { createTestApp } from "./helpers.js";
+import { createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 describe("local API token", () => {
   let t: TestApp;
   let token: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const stored = readApiToken(t.root);
     expect(stored).not.toBeNull();
     token = stored!;
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
   });
 
@@ -56,7 +65,6 @@ describe("local API token", () => {
 
   it("a wrong Bearer is 401 — even alongside a valid cookie (no silent fallback)", async () => {
     expect((await bearer("not-the-token")).status).toBe(401);
-    const { loginAdmin } = await import("./helpers.js");
     const { cookie } = await loginAdmin(t.app);
     const res = await t.app.request("/api/me", {
       headers: { authorization: "Bearer not-the-token", cookie },
@@ -123,16 +131,20 @@ describe("local API token", () => {
     expect(res.status).not.toBe(403);
   });
 
-  it("storeApiToken overwrites the previous boot's file (per-boot rotation)", () => {
-    storeApiToken(t.root, "next-boot-token");
-    expect(readApiToken(t.root)).toBe("next-boot-token");
-    if (process.platform !== "win32") {
-      const mode = fs.statSync(apiTokenPath(t.root)).mode & 0o777;
-      expect(mode).toBe(0o600);
+  it("overwrites the previous boot's file on the next boot, atomically", async () => {
+    const root = await makeTempRoot();
+    try {
+      storeApiToken(root, "first-boot-token");
+      storeApiToken(root, "next-boot-token");
+      expect(readApiToken(root)).toBe("next-boot-token");
+      if (process.platform !== "win32") {
+        expect(fs.statSync(apiTokenPath(root)).mode & 0o777).toBe(0o600);
+      }
+      // No tmp file left behind by the atomic write.
+      expect(fs.readdirSync(root).filter((f) => f.startsWith("api-token."))).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
-    // No tmp file left behind by the atomic write.
-    const leftovers = fs.readdirSync(t.root).filter((f) => f.startsWith("api-token."));
-    expect(leftovers).toEqual([]);
   });
 
   it("tokensEqual: constant-time compare semantics (equal / different / different length)", () => {
@@ -151,9 +163,14 @@ describe("local API token", () => {
     expect(bearerToken("Bearer")).toBeNull();
   });
 
-  it("readApiToken: absent or empty file reads as null", () => {
+  it("reads an absent or empty token file as no token", async () => {
     expect(readApiToken(path.join(t.root, "no-such-subdir"))).toBeNull();
-    fs.writeFileSync(apiTokenPath(t.root), "\n");
-    expect(readApiToken(t.root)).toBeNull();
+    const root = await makeTempRoot();
+    try {
+      fs.writeFileSync(apiTokenPath(root), "\n");
+      expect(readApiToken(root)).toBeNull();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

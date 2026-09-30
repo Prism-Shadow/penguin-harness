@@ -1,3 +1,21 @@
+/**
+ * Penguin Go key delivery: the platform's device authorization, as the models page drives it
+ * through /api/projects/:p/platform-auth, and the catalog sync that follows.
+ *
+ * - A delivery is accepted only for this client with a connection API key; its models are
+ *   normalized to their list price with the promotion stored beside it, and a delivery with a
+ *   malformed model (no output length, a negative or non-USD price) is refused.
+ * - Given a Project whose Penguin Go group has no key, the owner's authorization writes the
+ *   delivered key and catalog into it (a member is refused, and a sync before any key asks for
+ *   reauthorization); nothing of the account or the key itself is ever answered back.
+ * - A later sync applies the platform's repricing, a promotion-only change (web.db alone), and
+ *   a newly listed model, reporting what it added and updated.
+ * - The platform's start backoff reaches the caller as a 429 with Retry-After.
+ * - A stored key the platform rejects asks for reauthorization and applies nothing.
+ * - A failed write retries with the key already claimed, without polling the platform again.
+ * - A rate-limited poll stays pending and polls again only after the platform's backoff.
+ * - A flow the user cancels while a poll is in flight applies nothing.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ModelsResponse,
@@ -7,15 +25,11 @@ import type {
   ProjectCreateResponse,
 } from "../src/api/types.js";
 import { PlatformAuthService, platformConnection } from "../src/services/platform-auth-service.js";
+import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
+const json = (status: number, body: unknown): Response => jsonResponse(body, status);
 
 const deliveryBody = {
   status: "claimed",
@@ -198,37 +212,31 @@ describe("Penguin Go key authorization routes", () => {
 
     pollCount = 0;
     currentCatalogModels = [...deliveryBody.connection.models];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-        if (url.pathname === "/api/auth/desktop/start") {
-          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          expect(body.client).toEqual({ id: "penguin-harness" });
-          expect(String(body.code)).toMatch(/^[A-Za-z0-9_-]{43}$/);
-          expect(String(body.deviceSecret)).toMatch(/^[A-Za-z0-9_-]{43}$/);
-          return json(201, { expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() });
-        }
-        if (url.pathname === "/api/auth/desktop/poll") {
-          pollCount += 1;
-          return pollCount === 1
-            ? json(200, { status: "pending", expiresInSeconds: 500 })
-            : json(200, deliveryBody);
-        }
-        if (url.pathname === "/api/client/models") {
-          expect(new Headers(init?.headers).get("authorization")).toBe(
-            "Bearer sk-penguin-go-secret-0001",
-          );
-          return json(200, syncCatalog(currentCatalogModels));
-        }
-        throw new Error(`Unexpected platform request: ${url.pathname}`);
-      }),
-    );
+    stubFetch((call) => {
+      const { pathname } = new URL(call.url);
+      if (pathname === "/api/auth/desktop/start") {
+        const body = JSON.parse(call.body) as Record<string, unknown>;
+        expect(body.client).toEqual({ id: "penguin-harness" });
+        expect(String(body.code)).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(String(body.deviceSecret)).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        return json(201, { expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() });
+      }
+      if (pathname === "/api/auth/desktop/poll") {
+        pollCount += 1;
+        return pollCount === 1
+          ? json(200, { status: "pending", expiresInSeconds: 500 })
+          : json(200, deliveryBody);
+      }
+      if (pathname === "/api/client/models") {
+        expect(call.headers.get("authorization")).toBe("Bearer sk-penguin-go-secret-0001");
+        return json(200, syncCatalog(currentCatalogModels));
+      }
+      throw new Error(`Unexpected platform request: ${pathname}`);
+    });
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    vi.restoreAllMocks();
     await t.cleanup();
   });
 
@@ -240,17 +248,13 @@ describe("Penguin Go key authorization routes", () => {
     const initialPenguinGoModels = initial.models.filter(
       (model) => model.provider === "penguin-go",
     );
-    expect(initialPenguinGoModels.map((model) => model.modelId)).toEqual([
-      "gemini-3.8-flash",
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
-      "gemini-3.5-flash",
-      "gemini-3.5-flash-lite",
-      "gemini-3.1-flash-lite",
-      "gemini-3.1-pro-preview",
-      "deepseek-flash",
-      "deepseek-v4-pro",
-    ]);
+    // The preset group is there before any authorization, keyless, on the platform's endpoint.
+    // The delivery lands on top of it: the group ends up with the preset's models and the
+    // delivered ones, whichever the preset already carried.
+    const deliveredCount = new Set([
+      ...initialPenguinGoModels.map((model) => model.modelId),
+      ...deliveryBody.connection.models.map((model) => model.modelId),
+    ]).size;
     expect(
       initialPenguinGoModels.every(
         (model) => model.credential?.baseUrl === "https://token.penguin.ooo/api",
@@ -282,14 +286,14 @@ describe("Penguin Go key authorization routes", () => {
     const done = (await (
       await owner.get(`${base}/${started.flowId}/status`)
     ).json()) as PlatformAuthFlowStatusResponse;
-    expect(done).toEqual({ status: "completed", applied: 10 });
+    expect(done).toEqual({ status: "completed", applied: deliveredCount });
     expect(JSON.stringify(done)).not.toContain("sk-penguin");
 
     const models = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
     const penguinGoModels = models.models.filter((model) => model.provider === "penguin-go");
-    expect(penguinGoModels).toHaveLength(10);
+    expect(penguinGoModels).toHaveLength(deliveredCount);
     const deepseekFuture = penguinGoModels.find((model) => model.modelId === "deepseek-future");
     expect(deepseekFuture).toMatchObject({
       displayName: "DeepSeek Future",
@@ -343,7 +347,9 @@ describe("Penguin Go key authorization routes", () => {
     ).json()) as PlatformModelSyncResponse;
     expect(synced).toMatchObject({ added: 0, updated: 0 });
     expect(synced.updatedAt).toBe(models.updatedAt);
-    expect(synced.models.filter((model) => model.provider === "penguin-go")).toHaveLength(10);
+    expect(synced.models.filter((model) => model.provider === "penguin-go")).toHaveLength(
+      deliveredCount,
+    );
 
     const patchGemini = (patch: Record<string, unknown>) => {
       currentCatalogModels = currentCatalogModels.map((model) =>
@@ -434,10 +440,7 @@ describe("Penguin Go key authorization routes", () => {
   });
 
   it("preserves the platform start backoff as HTTP 429 with Retry-After", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => json(429, { error: "rate_limited", retryAfterSeconds: 7 })),
-    );
+    stubFetch(() => json(429, { error: "rate_limited", retryAfterSeconds: 7 }));
 
     const response = await owner.post(`/api/projects/${projectId}/platform-auth/start`, {});
     expect(response.status).toBe(429);
@@ -453,7 +456,7 @@ describe("single-delivery local retry", () => {
       origin: "https://token.penguin.ooo",
       getKey: async () => "revoked-key",
       applyCatalog,
-      fetchImpl: async () => json(401, { error: "Invalid API key" }),
+      fetchImpl: fakeFetch(() => json(401, { error: "Invalid API key" })).fetch,
     });
 
     await expect(service.sync("p1")).rejects.toMatchObject({
@@ -463,9 +466,24 @@ describe("single-delivery local retry", () => {
     expect(applyCatalog).not.toHaveBeenCalled();
   });
 
+  /** The platform's two device-flow endpoints: `start` succeeds, `poll` answers as told. */
+  const platform = (poll: (n: number) => Response | Promise<Response>, now = () => Date.now()) => {
+    let polls = 0;
+    const fake = fakeFetch((call) => {
+      if (new URL(call.url).pathname.endsWith("/start")) {
+        return json(201, { expiresAt: new Date(now() + 60_000).toISOString() });
+      }
+      // The claim is read from the answer itself: a redirect must never be followed to it.
+      expect(call.init?.redirect).toBe("manual");
+      polls += 1;
+      return poll(polls);
+    });
+    return { fetch: fake.fetch, polls: () => polls };
+  };
+
   it("reuses the key after a failed write without polling the platform again", async () => {
     let applies = 0;
-    let polls = 0;
+    const flow = platform(() => json(200, deliveryBody));
     const service = new PlatformAuthService({
       origin: "https://token.penguin.ooo",
       getKey: async () => undefined,
@@ -474,15 +492,7 @@ describe("single-delivery local retry", () => {
         if (applies === 1) throw new Error("disk busy");
         return { added: 0, updated: 0, applied: 5 };
       },
-      fetchImpl: async (input, init) => {
-        const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-        if (url.pathname.endsWith("/start")) {
-          return json(201, { expiresAt: new Date(Date.now() + 60_000).toISOString() });
-        }
-        expect(init?.redirect).toBe("manual");
-        polls += 1;
-        return json(200, deliveryBody);
-      },
+      fetchImpl: flow.fetch,
     });
     const started = await service.start({ projectId: "p1", userId: "u1" });
     expect(
@@ -491,28 +501,25 @@ describe("single-delivery local retry", () => {
     expect(
       await service.retryApply({ flowId: started.flowId, projectId: "p1", userId: "u1" }),
     ).toMatchObject({ status: "completed", applied: 5, changed: true });
-    expect(polls).toBe(1);
+    expect(flow.polls()).toBe(1);
     expect(applies).toBe(2);
   });
 
   it("keeps a rate-limited poll pending and retries after the platform backoff", async () => {
     let now = 1_000;
-    let polls = 0;
+    const flow = platform(
+      (n) =>
+        n === 1
+          ? json(429, { error: "rate_limited", retryAfterSeconds: 2 })
+          : json(200, deliveryBody),
+      () => now,
+    );
     const service = new PlatformAuthService({
       origin: "https://token.penguin.ooo",
       now: () => now,
       getKey: async () => undefined,
       applyCatalog: async () => ({ added: 0, updated: 0, applied: 5 }),
-      fetchImpl: async (input) => {
-        const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-        if (url.pathname.endsWith("/start")) {
-          return json(201, { expiresAt: new Date(now + 60_000).toISOString() });
-        }
-        polls += 1;
-        return polls === 1
-          ? json(429, { error: "rate_limited", retryAfterSeconds: 2 })
-          : json(200, deliveryBody);
-      },
+      fetchImpl: flow.fetch,
     });
     const started = await service.start({ projectId: "p1", userId: "u1" });
 
@@ -523,13 +530,13 @@ describe("single-delivery local retry", () => {
     expect(await service.status({ flowId: started.flowId, projectId: "p1", userId: "u1" })).toEqual(
       { status: "pending" },
     );
-    expect(polls).toBe(1);
+    expect(flow.polls()).toBe(1);
 
     now += 1;
     expect(
       await service.status({ flowId: started.flowId, projectId: "p1", userId: "u1" }),
     ).toMatchObject({ status: "completed", applied: 5, changed: true });
-    expect(polls).toBe(2);
+    expect(flow.polls()).toBe(2);
   });
 
   it("does not apply a claimed key when the user cancels while polling", async () => {
@@ -543,16 +550,12 @@ describe("single-delivery local retry", () => {
       origin: "https://token.penguin.ooo",
       getKey: async () => undefined,
       applyCatalog,
-      fetchImpl: async (input) => {
-        const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-        if (url.pathname.endsWith("/start")) {
-          return json(201, { expiresAt: new Date(Date.now() + 60_000).toISOString() });
-        }
+      fetchImpl: platform(() => {
         markPollStarted();
         return new Promise<Response>((resolve) => {
           releasePoll = resolve;
         });
-      },
+      }).fetch,
     });
     const started = await service.start({ projectId: "p1", userId: "u1" });
     const status = service.status({ flowId: started.flowId, projectId: "p1", userId: "u1" });
