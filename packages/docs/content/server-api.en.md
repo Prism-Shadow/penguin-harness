@@ -604,6 +604,7 @@ The plugins in this section are packages installed on the server: modules the se
 | GET | `/api/plugins/registry` | The merged plugin index: `PluginIndexEntry[]` |
 | GET | `/api/plugins/registry/readme?name=…` | One listed entry's readme: `{name, readme}` |
 | GET | `/api/plugins/registry/archive?name=…` | One listed package on this server, as a zip |
+| GET | `/api/plugins/registry/contents?name=…` | Every content listed under one name, highest version first, each with whether this machine's store holds it and the current generation links it: `{name, contents: [{version, integrity?, stored, linked}]}` |
 | GET | `/api/projects/:projectId/plugins/installed` | The plugins this Project asks for, joined with what the process runs: `{plugins, shipped, file, restartPending}` |
 | POST | `/api/projects/:projectId/plugins/installed` | Admin only. Installs a plugin by npm name or https link: `{specifier, machineId?}` |
 | POST | `/api/projects/:projectId/plugins/installed/archive` | Admin only. Installs a plugin from a zip: `{dataBase64, overwrite?}` |

@@ -10,6 +10,10 @@ export declare const INTEGRITY: RegExp;
 export declare const KEY_LENGTH: number;
 
 export declare function entryKey(integrity: string): string | null;
+export declare const PACKAGES_DIR: string;
+export declare function bucketOf(name: string): string[];
+export declare function nameSegments(name: string): string[];
+export declare function treeNames(root: string): Promise<Array<{ name: string; dir: string }>>;
 export declare function entryDir(
   root: string,
   name: string,

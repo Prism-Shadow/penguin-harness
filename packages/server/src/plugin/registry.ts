@@ -25,7 +25,6 @@ import type { PluginPackageFields } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 import { readShippedIndex, readStore } from "./store.js";
-import { compareVersions, satisfies } from "./activation.js";
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
@@ -438,43 +437,4 @@ export async function mergeIndexes(
     if (!merged.has(key)) merged.set(key, entry);
   }
   return [...merged.values()];
-}
-
-/**
- * The entry an install of `name` takes, or why there is none: with `integrity`, that content;
- * otherwise the highest version `version` admits, the earlier source first among equal
- * versions (`entries` is in precedence order, so a copy already on this machine wins). An
- * entry without an integrity is never taken — a fetched copy could not be checked — and is
- * named when it is all there is.
- */
-export function pickIndexEntry(
-  entries: readonly PluginIndexEntry[],
-  name: string,
-  ask: { version?: string; integrity?: string },
-): PluginIndexEntry | { refused: string } {
-  const listed = entries.filter((e) => e.name === name);
-  if (listed.length === 0) {
-    return { refused: `'${name}' is in none of the plugin index's sources` };
-  }
-  const fits = listed.filter(
-    (e) =>
-      satisfies(e.version, ask.version) &&
-      (ask.integrity === undefined || e.integrity === ask.integrity),
-  );
-  const wanted = ask.integrity ?? ask.version ?? "*";
-  if (fits.length === 0) {
-    return {
-      refused: `no listed '${name}' satisfies ${wanted} (listed: ${listed.map((e) => e.version).join(", ")})`,
-    };
-  }
-  // Array.prototype.sort is stable: among equal versions the earlier source stays first.
-  const best = fits
-    .filter((e) => e.integrity !== undefined)
-    .sort((a, b) => compareVersions(b.version, a.version))[0];
-  if (best === undefined) {
-    return {
-      refused: `'${name}' ${wanted} is listed without an integrity, so a fetched copy could not be checked: it cannot be installed`,
-    };
-  }
-  return best;
 }

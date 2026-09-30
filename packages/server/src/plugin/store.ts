@@ -3,15 +3,17 @@
  * received is kept, keyed by its content.
  *
  * `<root>/plugin-store/` has the shape of the tree the build lays out (scripts/build-plugins.mjs)
- * and of the index repository's (penguin-plugins): one entry per
- * `<npm name>/<version>/<first 16 hex digits of integrity>/`, holding
+ * and of the index repository's (penguin-plugins), one path rule for all three
+ * (scripts/plugin-entry.mjs): beside `.staging/` there is only `packages/`, and one entry per
+ * `packages/[<@scope>/]<bucket>/<name>/<version>/<first 16 hex digits of integrity>/`, holding
  *
  *   manifest.toml      the index manifest (the repository's fields, `integrity` required)
  *   package/           the unpacked package, its dependencies inside its own `node_modules`
  *   .stored            the completion marker, written LAST; its mtime is when it was stored
  *
  * An entry without `.stored` does not exist: it is a write that did not finish, and the next
- * write of the same content replaces it.
+ * write of the same content replaces it. Nothing outside `packages/` is read: a directory an
+ * earlier layout left at the top is neither an entry nor linked.
  *
  * THE KEY IS THE CONTENT. `integrity` is `sha256-<hex>` over `package/` archived by the
  * deterministic ustar archiver of scripts/plugin-entry.mjs — the index repository's algorithm,
@@ -52,6 +54,7 @@ import {
   PACKAGE_DIR,
   readPackageJson,
   sortIndex,
+  treeNames,
 } from "../../../../scripts/plugin-entry.mjs";
 import type { EntryManifest } from "../../../../scripts/plugin-entry.mjs";
 
@@ -99,7 +102,7 @@ export function pluginStoreDir(root: string): string {
   return path.join(root, PLUGIN_STORE_DIR);
 }
 
-/** An entry's directory: `<store>/<name>/<version>/<first 16 hex digits>`. */
+/** An entry's directory: `<store>/packages/…/<name>/<version>/<first 16 hex digits>`. */
 export function storeEntryDir(
   root: string,
   name: string,
@@ -248,17 +251,8 @@ async function subdirs(dir: string): Promise<string[]> {
 export async function storeEntryDirs(
   root: string,
 ): Promise<Array<{ name: string; version: string; key: string; dir: string }>> {
-  const store = pluginStoreDir(root);
-  const names: string[] = [];
-  // `<name>` is one directory, or two for a scoped one (`@scope/name`).
-  for (const top of await subdirs(store)) {
-    if (top.startsWith("@")) {
-      for (const sub of await subdirs(path.join(store, top))) names.push(`${top}/${sub}`);
-    } else names.push(top);
-  }
   const out: Array<{ name: string; version: string; key: string; dir: string }> = [];
-  for (const name of names) {
-    const nameDir = path.join(store, ...name.split("/"));
+  for (const { name, dir: nameDir } of await treeNames(pluginStoreDir(root))) {
     for (const version of await subdirs(nameDir)) {
       for (const key of await subdirs(path.join(nameDir, version))) {
         out.push({ name, version, key, dir: path.join(nameDir, version, key) });

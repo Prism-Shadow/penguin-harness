@@ -17,6 +17,7 @@ import type {
   PluginIndexEntry,
   PluginItem,
 } from "@prismshadow/penguin-server/api";
+import { pickIndexEntry } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { localizedText } from "../chat/skill-use";
 import { PLUGIN_STATUSES, type ModuleState, type PluginStatus } from "./plugin-status";
@@ -111,10 +112,8 @@ export function indexEntryOf(
   index: readonly PluginIndexEntry[],
   name: string,
 ): PluginIndexEntry | undefined {
-  return (
-    index.find((e) => e.name === name && e.integrity !== undefined) ??
-    index.find((e) => e.name === name)
-  );
+  const pick = pickIndexEntry(index, name, {});
+  return "refused" in pick ? index.find((e) => e.name === name) : pick;
 }
 
 export function moduleParts(

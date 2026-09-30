@@ -43,10 +43,15 @@ import { linkSegments } from "../../lib/link-segments";
 import { apiErrorText } from "../../lib/api-error";
 import { baseName } from "../../lib/workspace-tree";
 import { useLocale } from "../../state/locale";
-import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../api/endpoints";
+import {
+  getLibraryPluginReadme,
+  getPluginContents,
+  getPluginFiles,
+  getPluginReadme,
+} from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { SkillTile } from "../skills/skill-icon-view";
-import type { PluginItem } from "@prismshadow/penguin-server/api";
+import type { PluginContent, PluginItem } from "@prismshadow/penguin-server/api";
 import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";
 import type { PluginStatus } from "./plugin-status";
@@ -331,6 +336,8 @@ export function PluginDetailSections({
         )}
       </RuledSection>
 
+      {row.module !== undefined && <PluginContents name={row.module.specifier} />}
+
       {row.library !== undefined && row.library.mcpServers.length > 0 && (
         <PluginMcpSection servers={row.library.mcpServers} />
       )}
@@ -612,5 +619,60 @@ function PluginFiles({ plugin }: { plugin: PluginItem }) {
       onToggleDir={toggleDir}
       onOpenFile={setSelected}
     />
+  );
+}
+
+/** Contents are independent of the README and files: a failed lookup hides only this section. */
+function PluginContents({ name }: { name: string }) {
+  const [contents, setContents] = useState<PluginContent[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setContents(null);
+    getPluginContents(name).then(
+      (res) => {
+        if (!cancelled) setContents(res.contents);
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
+  return contents !== null && contents.length > 0 ? <Contents contents={contents} /> : null;
+}
+
+function Contents({ contents }: { contents: PluginContent[] }) {
+  const mark = (on: boolean) => (on ? S.pluginRegistry.yes : "—");
+  return (
+    <section className="mt-6 border-t border-gray-200 pt-5 dark:border-gray-800">
+      <h2 className="text-sm font-semibold">{S.pluginRegistry.contents}</h2>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        {S.pluginRegistry.contentsHint}
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="text-gray-400 dark:text-gray-500">
+            <tr>
+              <th className="py-1 pr-4 font-normal">{S.pluginRegistry.contentVersion}</th>
+              <th className="py-1 pr-4 font-normal">{S.pluginRegistry.contentIntegrity}</th>
+              <th className="py-1 pr-4 font-normal">{S.pluginRegistry.contentStored}</th>
+              <th className="py-1 font-normal">{S.pluginRegistry.contentLinked}</th>
+            </tr>
+          </thead>
+          <tbody className="text-gray-600 dark:text-gray-300">
+            {contents.map((c, i) => (
+              <tr key={`${c.version}#${c.integrity ?? i}`}>
+                <td className="py-1 pr-4 font-mono">{c.version}</td>
+                <td className="py-1 pr-4 font-mono">
+                  {c.integrity?.slice(7, 23) ?? S.pluginRegistry.contentNoIntegrity}
+                </td>
+                <td className="py-1 pr-4">{mark(c.stored)}</td>
+                <td className="py-1">{mark(c.linked)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

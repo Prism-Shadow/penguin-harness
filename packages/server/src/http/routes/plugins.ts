@@ -8,6 +8,7 @@
  *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries, the published ones, and the server modules an admin installed from a link or a zip
  *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
  *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
+ *   GET    /api/plugins/registry/contents?name=…          # every content listed under one name, for its detail page
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
  *   GET    /api/projects/:p/agents/:a/mcp-servers         # the Agent's MCP servers: target, provenance, what keeps each from connecting (any member)
  *   DELETE /api/projects/:p/agents/:a/mcp-servers/:name   # remove one MCP server entry, whoever added it (any member)
@@ -53,6 +54,7 @@ import type {
   AgentMcpServersResponse,
   AgentPluginsInstallResponse,
   PluginFilesResponse,
+  PluginContentsResponse,
   PluginIndexEntry,
   PluginLibraryResponse,
   PluginReadmeResponse,
@@ -83,6 +85,9 @@ import {
   shippedBases,
   resolvePluginPackage,
 } from "../../plugin/loader.js";
+import { currentGeneration, readGeneration } from "../../plugin/activation.js";
+import { readStore } from "../../plugin/store.js";
+import { compareVersions } from "../../api/plugin-pick.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
 import {
@@ -437,7 +442,47 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     const zip = await zipPluginPackage(found.dir, unscopedName(name));
     return pluginArchiveResponse(zip, name, version);
   });
+
+  app.get("/contents", async (c) => {
+    const name = c.req.query("name");
+    if (name === undefined || name === "") {
+      return c.json({ error: { code: "bad_request", message: "name is required" } }, 400);
+    }
+    // Only a name this deployment lists, like the readme: not a probe of what exists.
+    const listed = (await listing()).filter((e) => e.name === name);
+    if (!PACKAGE_NAME.test(name) || listed.length === 0) {
+      return c.json({ error: { code: "not_found", message: "no such plugin" } }, 404);
+    }
+    const { stored, linked } = await onThisMachine(options.root);
+    const contents = listed
+      .map((e) => ({
+        version: e.version,
+        ...(e.integrity !== undefined ? { integrity: e.integrity } : {}),
+        stored: e.integrity !== undefined && stored.has(e.integrity),
+        linked: e.integrity !== undefined && linked.has(e.integrity),
+      }))
+      // Stable: among equal versions the merged index's order (the build's first) stays.
+      .sort((a, b) => compareVersions(b.version, a.version));
+    const body: PluginContentsResponse = { name, contents };
+    return c.json(body);
+  });
   return app;
+}
+
+/** The integrities this machine's store holds and its current generation links. */
+async function onThisMachine(
+  root: string | undefined,
+): Promise<{ stored: Set<string>; linked: Set<string> }> {
+  if (root === undefined) return { stored: new Set(), linked: new Set() };
+  const gen = currentGeneration(root);
+  const [inStore, inGeneration] = await Promise.all([
+    readStore(root),
+    gen === null ? Promise.resolve(null) : readGeneration(root, gen),
+  ]);
+  return {
+    stored: new Set(inStore.map((e) => e.integrity)),
+    linked: new Set((inGeneration ?? []).map((e) => e.integrity)),
+  };
 }
 
 /** The index's sources, in precedence order: the build, the store, the published index. */

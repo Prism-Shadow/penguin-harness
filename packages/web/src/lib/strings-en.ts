@@ -3107,6 +3107,17 @@ export const en: Strings = {
     empty: "No plugins yet",
     specifierHint: "Package name, as a Project's plugin list names it",
     copySpecifier: "Copy specifier",
+    installHint:
+      "Install from the Plugins page: the row's Install button asks the current Project for it.",
+    contents: "All contents",
+    contentsHint:
+      "Every content listed under this name. The Plugins page shows one row: the one an install takes.",
+    contentVersion: "Version",
+    contentIntegrity: "Integrity (first 16)",
+    contentStored: "In this machine's store",
+    contentLinked: "Linked by the current generation",
+    contentNoIntegrity: "none",
+    yes: "Yes",
   },
 
   skills: {

@@ -1,6 +1,7 @@
 /**
  * The plugin store (src/plugin/store.ts): one content-addressed entry per packed plugin under
- * `<root>/plugin-store/<name>/<version>/<hash16>/`, complete only once `.stored` is written.
+ * `<root>/plugin-store/packages/[<@scope>/]<bucket>/<name>/<version>/<hash16>/`, complete only
+ * once `.stored` is written.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -14,7 +15,12 @@ import {
   readStore,
   storePackage,
 } from "../src/plugin/store.js";
-import { archiveIntegrity, packageIntegrity } from "../../../scripts/plugin-entry.mjs";
+import {
+  archiveIntegrity,
+  entryDir,
+  nameSegments,
+  packageIntegrity,
+} from "../../../scripts/plugin-entry.mjs";
 
 let dir: string;
 let root: string;
@@ -113,7 +119,16 @@ describe("plugin store", () => {
   it("stores a package as one entry keyed by its content, its dependencies inside it", async () => {
     const entry = await store(path.join(dir, "a"));
     expect(entry.dir).toBe(
-      path.join(pluginStoreDir(root), "@acme", "sandbox-x", "1.0.0", entry.integrity.slice(7, 23)),
+      path.join(
+        pluginStoreDir(root),
+        "packages",
+        "@acme",
+        "sa",
+        "nd",
+        "sandbox-x",
+        "1.0.0",
+        entry.integrity.slice(7, 23),
+      ),
     );
     const pkg = path.join(entry.dir, "package");
     expect(await exists(path.join(pkg, "node_modules", "native", "index.js"))).toBe(true);
@@ -129,6 +144,40 @@ describe("plugin store", () => {
     await store(path.join(dir, "c"), { body: "x" });
     await store(path.join(dir, "d"), { version: "1.1.0" });
     expect((await readStore(root)).map((r) => r.version)).toEqual(["1.0.0", "1.0.0", "1.1.0"]);
+  });
+
+  it("files a name under packages/, in the bucket its name spells", () => {
+    // The same vectors run in the index repository's tests: one rule, two copies.
+    const vectors: Array<[string, string]> = [
+      ["a", "packages/1/a"],
+      ["ab", "packages/2/ab"],
+      ["abc", "packages/3/a/abc"],
+      ["abcd", "packages/ab/cd/abcd"],
+      ["Sandbox-Bwrap", "packages/sa/nd/Sandbox-Bwrap"],
+      ["@penguinharness/x", "packages/@penguinharness/1/x"],
+      ["@penguinharness/fs", "packages/@penguinharness/2/fs"],
+      ["@penguinharness/git", "packages/@penguinharness/3/g/git"],
+      ["@penguinharness/sandbox-bwrap", "packages/@penguinharness/sa/nd/sandbox-bwrap"],
+    ];
+    for (const [name, want] of vectors) expect(nameSegments(name).join("/")).toBe(want);
+    const integrity = `sha256-${"ab".repeat(32)}`;
+    expect(entryDir("/t", "@penguinharness/sandbox-bwrap", "0.2.2", integrity)).toBe(
+      path.join("/t", "packages/@penguinharness/sa/nd/sandbox-bwrap/0.2.2", "ab".repeat(8)),
+    );
+  });
+
+  it("reads entries under packages/ alone: one elsewhere, or in the wrong bucket, is not an entry", async () => {
+    const entry = await store(path.join(dir, "a"));
+    const key = path.basename(entry.dir);
+    // An earlier layout's copy at the top of the store, and a copy filed in a bucket its name
+    // does not spell: both complete, neither read.
+    const storeDir = pluginStoreDir(root);
+    const elsewhere = [
+      path.join(storeDir, "@acme", "sandbox-x", "1.0.0", key),
+      path.join(storeDir, "packages", "@acme", "zz", "zz", "sandbox-x", "1.0.0", key),
+    ];
+    for (const copy of elsewhere) await fs.cp(entry.dir, copy, { recursive: true });
+    expect((await readStore(root)).map((e) => e.integrity)).toEqual([entry.integrity]);
   });
 
   it("an entry without its completion marker does not exist, and the next write replaces it", async () => {

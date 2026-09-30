@@ -2,9 +2,16 @@
  * One plugin entry — one package at one version with one content — as the build, a machine's
  * plugin store and the index repository (Prism-Shadow/penguin-plugins) all lay it out:
  *
- *   <npm name>/<version>/<first 16 hex digits of its integrity>/
+ *   packages/[<@scope>/]<bucket>/<name>/<version>/<first 16 hex digits of its integrity>/
  *     manifest.toml      the index manifest, `integrity` required
  *     package/           the package, every dependency it needs inside its own node_modules
+ *
+ * The bucket keeps every directory narrow however many plugins there are. It is read off the
+ * name without its scope, lower-cased, the way the crates.io index files a crate: a name of 1
+ * or 2 characters sits in `1` or `2`, one of 3 in `3/<first character>`, a longer one in
+ * `<characters 1–2>/<characters 3–4>` — `@penguinharness/sandbox-bwrap` is under
+ * `packages/@penguinharness/sa/nd/sandbox-bwrap/`. The index repository has a line-for-line
+ * copy of this rule (`plugin-index/src/entry.ts`); both test the same path vectors.
  *
  * The index repository's entries also carry a `package-lock.json`; nothing on a machine reads
  * one, so neither the build nor the store writes it.
@@ -52,11 +59,74 @@ export function entryKey(integrity) {
   return INTEGRITY.exec(integrity)?.[1]?.slice(0, KEY_LENGTH) ?? null;
 }
 
-/** An entry's directory under a tree root: `<root>/<name>/<version>/<key>`. */
+/** The directory under a tree root that holds every entry: `<root>/packages`. */
+export const PACKAGES_DIR = "packages";
+
+/** The bucket directories of a package name, as path segments (see the header). */
+export function bucketOf(name) {
+  const bare = (name.startsWith("@") ? name.slice(name.indexOf("/") + 1) : name).toLowerCase();
+  if (bare.length <= 2) return [String(bare.length)];
+  if (bare.length === 3) return ["3", bare[0]];
+  return [bare.slice(0, 2), bare.slice(2, 4)];
+}
+
+/** Where a package name's entries sit under a tree root, as posix segments: `packages/…/<name>`. */
+export function nameSegments(name) {
+  const parts = name.split("/");
+  const bare = parts[parts.length - 1];
+  const scope = parts.length === 2 ? [parts[0]] : [];
+  return [PACKAGES_DIR, ...scope, ...bucketOf(name), bare];
+}
+
+/** An entry's directory under a tree root: `<root>/packages/…/<name>/<version>/<key>`. */
 export function entryDir(root, name, version, integrity) {
   const key = entryKey(integrity);
   if (key === null) throw new Error(`'${integrity}' is not a sha256 integrity`);
-  return path.join(root, ...name.split("/"), version, key);
+  return path.join(root, ...nameSegments(name), version, key);
+}
+
+/** The subdirectories of `dir` whose names do not start with a dot; empty when it cannot be read. */
+async function subdirs(dir) {
+  try {
+    return (await fsp.readdir(dir, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => e.name)
+      .sort(byCodeUnit);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Every package name a tree root files entries under, with its directory, sorted. A directory
+ * whose place does not spell its name's bucket is not a name (the path is the entry): it is
+ * left out, as is anything outside `packages/`.
+ */
+export async function treeNames(root) {
+  const packages = path.join(root, PACKAGES_DIR);
+  const out = [];
+  const containers = [{ scope: null, dir: packages }];
+  for (const top of await subdirs(packages)) {
+    if (top.startsWith("@")) containers.push({ scope: top, dir: path.join(packages, top) });
+  }
+  for (const { scope, dir } of containers) {
+    for (const b1 of await subdirs(dir)) {
+      if (b1.startsWith("@")) continue;
+      // `1` and `2` hold names directly; `3` and a two-character bucket have a second level.
+      const levels =
+        b1 === "1" || b1 === "2"
+          ? [[b1]]
+          : (await subdirs(path.join(dir, b1))).map((b2) => [b1, b2]);
+      for (const bucket of levels) {
+        for (const bare of await subdirs(path.join(dir, ...bucket))) {
+          const name = scope === null ? bare : `${scope}/${bare}`;
+          if (bucketOf(name).join("/") !== bucket.join("/")) continue;
+          out.push({ name, dir: path.join(dir, ...bucket, bare) });
+        }
+      }
+    }
+  }
+  return out.sort((a, b) => byCodeUnit(a.name, b.name));
 }
 
 // ---------------------------------------------------------------------------

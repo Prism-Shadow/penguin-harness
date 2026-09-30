@@ -11,7 +11,9 @@
  * A package the build ships but no kept generation links goes like any other: the next
  * activation stores it again from the shipped prefix. An entry without `.stored` is a write
  * that did not finish, and goes once it is a day old; so does anything under `.staging/`. A
- * `<version>/` or `<name>/` directory goes with its last entry. Every other generation goes.
+ * `<version>/`, `<name>/` or bucket directory goes with its last entry. Every other generation
+ * goes. Nothing outside the store's `packages/` is an entry, so an earlier layout's directories
+ * are neither kept nor removed here.
  *
  * WHEN. The loader sweeps right after an activation that flipped `current`, and once per
  * process at the first activation — always after the pointer is written, never while a
@@ -107,7 +109,7 @@ async function sweepStore(
       report.failures.push(`${name}/${key}: ${reason(err)}`);
     }
   }
-  // `<version>/`, `<name>/` and a scope's directory, each once it is empty.
+  // `<version>/`, `<name>/`, its buckets and a scope's directory, each once it is empty.
   const store = pluginStoreDir(root);
   const removed = (dir: string) =>
     fsp.rmdir(dir).then(

@@ -95,7 +95,7 @@ describe("loadPluginHost", () => {
       const first = await loadPluginHost(resources, root, assets);
       const held = first.entries().get("@acme/real");
       expect(held?.file).toMatch(
-        /plugin-store[\\/]@acme[\\/]real[\\/]1\.0\.0[\\/][0-9a-f]{16}[\\/]package[\\/]index\.js$/,
+        /plugin-store[\\/]packages[\\/]@acme[\\/]re[\\/]al[\\/]real[\\/]1\.0\.0[\\/][0-9a-f]{16}[\\/]package[\\/]index\.js$/,
       );
 
       // Same file behind the name: the same object, not a second import.

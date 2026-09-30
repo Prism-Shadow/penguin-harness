@@ -12,7 +12,7 @@
 
 ## 插件仓
 
-- 仓与索引仓库 penguin-plugins 的 `plugins/` 子树同构。`<npm 名>/<版本>/<integrity 前 16 位十六进制>/` 一个条目，内含 `manifest.toml`（索引清单，含 `integrity`）、`package/`（解开的包，依赖放在它自己的 `node_modules` 里）与空的完成标记 `.stored`，其 mtime 即入仓时间。索引仓的条目另带 `package-lock.json`，插件仓不写。
+- 插件仓、构建产出的树与索引仓库 penguin-plugins 用同一条路径规则排布条目。仓根下除 `.staging/` 外只有 `packages/`，一个条目在 `packages/[<@scope>/]<桶>/<名>/<版本>/<integrity 前 16 位十六进制>/`。桶取不带作用域的名字，与 crates.io 索引同一规则：1、2 个字符的名字落在 `1`、`2`，3 个字符的落在 `3/<首字符>`，更长的落在 `<第 1–2 个字符>/<第 3–4 个字符>`，例如 `@penguinharness/sandbox-bwrap` 在 `packages/@penguinharness/sa/nd/sandbox-bwrap/` 下。任何一层目录都不随插件数增长。一个条目内含 `manifest.toml`（索引清单，含 `integrity`）、`package/`（解开的包，依赖放在它自己的 `node_modules` 里）与空的完成标记 `.stored`，其 mtime 即入仓时间。索引仓的条目另带 `package-lock.json`，插件仓不写。
 - `.stored` 最后写。没有它的条目视为不存在，同一内容下一次写入时替换它。
 - `integrity` 为 `sha256-` 加 64 位十六进制，取包的确定性归档计算。归档器是 `scripts/plugin-entry.mjs`，与索引仓的算法逐行一致，因此索引条目写的哈希就是机器对现取包算出的那个。构建与仓都用这一个模块排布条目。同一内容只存一份；同名不同版本、同版本不同内容各占一个条目。
 - 只有两个来源写仓：
@@ -41,6 +41,7 @@
 - server 原来手写内嵌的索引（`builtin-index.json`）已删除。`scripts/build-plugins.mjs` 把它打出的每个包排成仓条目，并从这棵树重建 `index.json`、放进发布的 prefix，索引随构建走：在推送的 `plugins/` 里、在桌面构建里、在发行版安装里。从源码运行的 server 不带 prefix，不列内置条目。
 - 条目的元数据取自包自己的 package.json。`plugins/` 下的代码插件声明 `author` 与顶层 `categories`，插件页按它分组。
 - `GET /api/plugins/registry` 返回一个扁平的索引条目数组，按构建的索引、本机插件仓、发布的索引依次合并：每份内容一个条目，保留第一个来源的，yanked 的条目不列。响应不再带 `failures`：读不到的来源记入服务端日志，只让列表变短。
+- 插件页一个名字一行，行上显示安装会取的那一个条目，与服务端安装的选行是同一个规则：web 现从 `@prismshadow/penguin-server/api` 引入 `pickIndexEntry`。插件的详情页列出这个名字下的全部内容：每一份的版本、integrity、是否在本机仓、当前这一代是否链接它，数据来自新增的 `GET /api/plugins/registry/contents?name=…`。
 - 没有 integrity 的条目照列但不可安装，插件页上它那一行说明原因并禁用「安装」。某个来源无法访问时，插件页不再显示提示。
 
 ## 安装与移除
@@ -57,7 +58,7 @@
   - 被保留的某一代链接；
   - 被任何 Project 的表钉住，不论共享表还是任何一台机器的表；
   - 入仓不满一天。
-- 没有 `.stored` 的条目是没写完的写入，与 `plugin-store/.staging/` 下的目录一样满一天删除。空的 `<版本>/` 与 `<名>/` 目录随最后一个条目一起删除。
+- 没有 `.stored` 的条目是没写完的写入，与 `plugin-store/.staging/` 下的目录一样满一天删除。空的 `<版本>/`、`<名>/` 与桶目录随最后一个条目一起删除。
 - 保留的两代之外的代都删除。
 - 保留的某一代读不出来时，这一次清扫不删任何仓条目；旧的代与过期的暂存目录照删。
 - 构建自带、但没有任何一代链接的包，与其他条目一样会被清扫。下一次激活会从随包的 prefix 重新入仓，Project 要它时它就在。

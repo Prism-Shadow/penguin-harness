@@ -12,7 +12,7 @@ Every server plugin a machine receives is kept in `<data root>/plugin-store/`, f
 
 ## The store
 
-- The store has the same shape as the `plugins/` tree of the penguin-plugins index repository. One entry per `<npm name>/<version>/<first 16 hex digits of integrity>/`, holding `manifest.toml` (the index manifest, `integrity` included), `package/` (the unpacked package with its dependencies inside its own `node_modules`) and the empty marker `.stored`, whose mtime is when the entry was stored. The index repository's entries also carry a `package-lock.json`; the store does not write one.
+- The store, the tree the build lays out and the penguin-plugins index repository file entries by one path rule. Beside `.staging/`, the store holds only `packages/`, and one entry per `packages/[<@scope>/]<bucket>/<name>/<version>/<first 16 hex digits of integrity>/`. The bucket is read off the name without its scope, the way the crates.io index files a crate: `1` or `2` for a name of that length, `3/<first character>` for three characters, and `<characters 1–2>/<characters 3–4>` otherwise, so `@penguinharness/sandbox-bwrap` is under `packages/@penguinharness/sa/nd/sandbox-bwrap/`. No directory grows with the number of plugins. An entry holds `manifest.toml` (the index manifest, `integrity` included), `package/` (the unpacked package with its dependencies inside its own `node_modules`) and the empty marker `.stored`, whose mtime is when the entry was stored. The index repository's entries also carry a `package-lock.json`; the store does not write one.
 - `.stored` is written last. An entry without it does not exist, and the next write of the same content replaces it.
 - `integrity` is `sha256-` and 64 hex digits over the package's deterministic archive. The archiver is `scripts/plugin-entry.mjs`, the index repository's algorithm line for line, so the hash an index entry names is the one a machine computes over the package it fetched. The build and the store lay entries out with this one module. One content is stored once; two versions of a name, or two contents of one version, are two entries.
 - Two sources write the store, and nothing else does:
@@ -41,6 +41,7 @@ Every server plugin a machine receives is kept in `<data root>/plugin-store/`, f
 - The index the server embedded by hand (`builtin-index.json`) is gone. `scripts/build-plugins.mjs` lays every package it ships out as a store entry and rebuilds `index.json` from that tree into the shipped prefix, so the index travels with the build: in a push's `plugins/`, in the desktop build and in a release install. A server run from source ships no prefix and lists no builtin entries.
 - An entry's metadata is its package.json's. The code plugins in `plugins/` declare `author` and a top-level `categories`, which the Plugins page groups by.
 - `GET /api/plugins/registry` returns a flat array of index entries, merged from the build's index, this machine's store and the published index in that order: one entry per content, the first source's kept, a yanked entry left out. It no longer carries `failures`: a source that cannot be read is logged on the server and shortens the listing.
+- The Plugins page shows a name as one row, by the entry an install of it takes: the same rule the server installs by, which the web now imports from `@prismshadow/penguin-server/api` (`pickIndexEntry`). A plugin's detail page lists every content under its name, with each one's version, integrity, whether this machine's store holds it and whether the current generation links it, from the new `GET /api/plugins/registry/contents?name=…`.
 - An entry without an integrity is listed and cannot be installed; its row on the Plugins page says why and disables Install. The page no longer shows a notice when a source could not be reached.
 
 ## Installing and removing
@@ -57,7 +58,7 @@ Every server plugin a machine receives is kept in `<data root>/plugin-store/`, f
   - a kept generation links it;
   - any Project's table pins it, in the shared table or in any machine's;
   - it was stored less than a day ago.
-- An entry without `.stored` is a write that never finished, and is removed once it is a day old, like a directory under `plugin-store/.staging/`. A `<version>/` or `<name>/` directory goes with its last entry.
+- An entry without `.stored` is a write that never finished, and is removed once it is a day old, like a directory under `plugin-store/.staging/`. A `<version>/`, `<name>/` or bucket directory goes with its last entry.
 - Every generation other than the two kept ones is removed.
 - When a kept generation cannot be read, that sweep removes no store entry. It still removes old generations and old staging directories.
 - A package the build ships but no generation links is swept like any other entry. The next activation stores it again from the shipped prefix, so it is there when a Project asks for it.

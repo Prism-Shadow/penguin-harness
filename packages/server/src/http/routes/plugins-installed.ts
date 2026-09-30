@@ -95,8 +95,8 @@ import {
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginIntegrityMismatch, PluginStoreError, readStore } from "../../plugin/store.js";
-import { satisfies } from "../../plugin/activation.js";
-import { INTEGRITY, mergeIndexes, pickIndexEntry } from "../../plugin/registry.js";
+import { pickIndexEntry, satisfies } from "../../api/plugin-pick.js";
+import { INTEGRITY, mergeIndexes } from "../../plugin/registry.js";
 import { resolveRegistries } from "./plugins.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";

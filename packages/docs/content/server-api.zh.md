@@ -604,6 +604,7 @@ interface AgentApiKeyInfo {
 | GET | `/api/plugins/registry` | 合并后的插件索引：`PluginIndexEntry[]` |
 | GET | `/api/plugins/registry/readme?name=…` | 索引中一个条目的说明文档：`{name, readme}` |
 | GET | `/api/plugins/registry/archive?name=…` | 将本机上一个已列出的包导出为 zip |
+| GET | `/api/plugins/registry/contents?name=…` | 一个名字下列出的全部内容，高版本在前，每份带是否在本机仓、当前这一代是否链接：`{name, contents: [{version, integrity?, stored, linked}]}` |
 | GET | `/api/projects/:projectId/plugins/installed` | 该 Project 要求的插件，连同进程的实际运行情况：`{plugins, shipped, file, restartPending}` |
 | POST | `/api/projects/:projectId/plugins/installed` | 仅管理员。按 npm 包名或 https 链接安装插件：`{specifier, machineId?}` |
 | POST | `/api/projects/:projectId/plugins/installed/archive` | 仅管理员。从 zip 安装插件：`{dataBase64, overwrite?}` |

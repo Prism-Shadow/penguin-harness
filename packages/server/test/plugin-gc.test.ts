@@ -77,8 +77,9 @@ describe("the store", () => {
       expect(await exists(e.dir), e.name).toBe(true);
     }
     expect(report.entries).toBe(1);
-    // The name's directory goes with its last entry.
-    expect(await exists(path.join(pluginStoreDir(root), "@acme", "stale"))).toBe(false);
+    // The name's directory and the buckets it alone filled go with its last entry.
+    expect(await exists(path.join(pluginStoreDir(root), "packages", "@acme", "st"))).toBe(false);
+    expect(await exists(path.join(pluginStoreDir(root), "packages", "@acme", "cu"))).toBe(true);
     expect(await exists(stale.dir)).toBe(false);
   });
 

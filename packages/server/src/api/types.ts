@@ -4869,6 +4869,27 @@ export interface PluginReadmeResponse {
   readme: string | null;
 }
 
+/** One content of a plugin name, as its detail page lists it. */
+export interface PluginContent {
+  version: string;
+  /** `sha256-<hex>`; absent for an index entry that names none. */
+  integrity?: string;
+  /** In this machine's plugin store. */
+  stored: boolean;
+  /** Linked by the current generation, i.e. what this machine runs under the name. */
+  linked: boolean;
+}
+
+/**
+ * GET /api/plugins/registry/contents?name=… — every content the merged index lists under one
+ * name, highest version first. The Plugins page shows a name as one row; this is where the
+ * contents behind it are listed.
+ */
+export interface PluginContentsResponse {
+  name: string;
+  contents: PluginContent[];
+}
+
 // ---------------------------------------------------------------------------
 // Plugin-contributed languages
 // ---------------------------------------------------------------------------
@@ -8729,3 +8750,6 @@ export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";
   event: DesktopBrowserEvent;
 }
+
+// The rule an install picks an index entry by, shared with the Plugins page (see plugin-pick.ts).
+export { compareVersions, pickIndexEntry, satisfies } from "./plugin-pick.js";

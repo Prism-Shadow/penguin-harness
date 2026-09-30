@@ -37,11 +37,12 @@ import {
   mergeIndexes,
   localPluginDisplay,
   parsePluginIndex,
-  pickIndexEntry,
   storePluginRegistry,
 } from "../src/plugin/registry.js";
+import { pickIndexEntry } from "../src/api/plugin-pick.js";
 import type { PluginRegistry } from "../src/plugin/registry.js";
 import { storePackage } from "../src/plugin/store.js";
+import { activatePlugins } from "../src/plugin/activation.js";
 import { resolveServerConfig } from "../src/config.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
 import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
@@ -650,6 +651,52 @@ describe("the route's own merge", () => {
       ],
     });
     expect(await (await routes.request("/")).json()).toEqual([VALID_ENTRY, published]);
+  });
+
+  it("lists every content under one name, and which this machine stores and runs", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-registry-contents-"));
+    try {
+      const root = path.join(dir, "root");
+      const prefix = path.join(dir, "prefix");
+      const pkg = path.join(prefix, "node_modules", "@acme", "x");
+      await mkdir(pkg, { recursive: true });
+      await writeFile(path.join(prefix, "package.json"), '{"dependencies":{"@acme/x":"1.0.0"}}');
+      await writeFile(
+        path.join(pkg, "package.json"),
+        JSON.stringify({ name: "@acme/x", version: "1.0.0", description: "X", license: "MIT" }),
+      );
+      const stored = await storePackage(root, pkg, prefix);
+      await activatePlugins(root, new Map([["@acme/x", [{}]]]), null);
+
+      const bare: PluginIndexEntry = { ...VALID_ENTRY };
+      delete bare.integrity;
+      const x = (version: string, integrity?: string): PluginIndexEntry => ({
+        ...bare,
+        name: "@acme/x",
+        version,
+        ...(integrity !== undefined ? { integrity } : {}),
+      });
+      const routes = pluginRegistryRoutes({
+        root,
+        registries: [
+          stubRegistry("builtin", [x("1.0.0", hash("b"))]).registry,
+          storePluginRegistry(root),
+          stubRegistry("published", [x("2.0.0"), x("1.0.0", hash("b"))]).registry,
+        ],
+      });
+      const res = await routes.request(`/contents?name=${encodeURIComponent("@acme/x")}`);
+      expect(await res.json()).toEqual({
+        name: "@acme/x",
+        contents: [
+          { version: "2.0.0", stored: false, linked: false },
+          { version: "1.0.0", integrity: hash("b"), stored: false, linked: false },
+          { version: "1.0.0", integrity: stored.integrity, stored: true, linked: true },
+        ],
+      });
+      expect((await routes.request("/contents?name=%40acme%2Fnot-listed")).status).toBe(404);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

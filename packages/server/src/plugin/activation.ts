@@ -43,6 +43,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PACKAGE_DIR, pluginStoreDir, readStore, storeEntryDir, syncPluginStore } from "./store.js";
 import type { StoreIndexEntry } from "./store.js";
+import { compareVersions, satisfies } from "../api/plugin-pick.js";
 
 /** `<root>/plugins`: the activation directory. */
 export const PLUGINS_DIR = "plugins";
@@ -187,72 +188,6 @@ export async function pointCurrent(root: string, gen: string | null): Promise<vo
   const tmp = `${file}.${process.pid}.tmp`;
   await fsp.writeFile(tmp, `${gen}\n`);
   await fsp.rename(tmp, file);
-}
-
-/** `1.2.3-rc.1` as numbers and a prerelease tag; null when it is not a version. */
-function parseVersion(v: string): { nums: [number, number, number]; pre: string } | null {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v.trim());
-  if (m === null) return null;
-  return { nums: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] ?? "" };
-}
-
-/** Semver order; a version that does not parse sorts below every one that does. */
-export function compareVersions(a: string, b: string): number {
-  const pa = parseVersion(a);
-  const pb = parseVersion(b);
-  if (pa === null || pb === null) return pa === null ? (pb === null ? byCodeUnit(a, b) : -1) : 1;
-  for (let i = 0; i < 3; i++) {
-    if (pa.nums[i] !== pb.nums[i]) return pa.nums[i]! - pb.nums[i]!;
-  }
-  if (pa.pre === pb.pre) return 0;
-  if (pa.pre === "") return 1;
-  if (pb.pre === "") return -1;
-  return byCodeUnit(pa.pre, pb.pre);
-}
-
-/**
- * Whether `version` satisfies `range`: `*` / empty / `latest`, an exact version, `^`, `~`, the
- * comparators `>=` `>` `<=` `<` `=`, and space-separated conjunctions of those. A range outside
- * that grammar satisfies nothing, which the resolution reports rather than guesses at.
- */
-export function satisfies(version: string, range: string | undefined): boolean {
-  const r = (range ?? "*").trim();
-  if (r === "" || r === "*" || r === "latest" || r === "x") return true;
-  const v = parseVersion(version);
-  if (v === null) return false;
-  return r.split(/\s+/).every((part) => {
-    const m = /^(\^|~|>=|<=|>|<|=)?(.+)$/.exec(part);
-    if (m === null) return false;
-    const op = m[1] ?? "=";
-    const base = parseVersion(m[2]!);
-    if (base === null) return false;
-    const cmp = compareVersions(version, m[2]!);
-    // A prerelease satisfies only a range that names a prerelease of the same version.
-    if (v.pre !== "" && (base.pre === "" || v.nums.join(".") !== base.nums.join("."))) return false;
-    switch (op) {
-      case "=":
-        return cmp === 0;
-      case ">=":
-        return cmp >= 0;
-      case ">":
-        return cmp > 0;
-      case "<=":
-        return cmp <= 0;
-      case "<":
-        return cmp < 0;
-      case "~":
-        return cmp >= 0 && v.nums[0] === base.nums[0] && v.nums[1] === base.nums[1];
-      case "^": {
-        if (cmp < 0) return false;
-        const [M, m2] = base.nums;
-        if (M !== 0) return v.nums[0] === M;
-        if (m2 !== 0) return v.nums[0] === 0 && v.nums[1] === m2;
-        return v.nums.join(".") === base.nums.join(".");
-      }
-      default:
-        return false;
-    }
-  });
 }
 
 /**

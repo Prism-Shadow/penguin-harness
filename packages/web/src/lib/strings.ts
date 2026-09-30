@@ -3257,6 +3257,16 @@ export const zh = {
     /** Card metadata: the entry's package specifier doubles as the install string. */
     specifierHint: "包名，即 Project 插件列表里写的那串",
     copySpecifier: "复制包名",
+    installHint: "在插件市场页安装：该行的「安装」按钮会为当前 Project 要求它。",
+    /** The contents listed under one name: the list shows only the one an install takes. */
+    contents: "全部内容",
+    contentsHint: "这个名字下列出的每一份内容。插件市场只显示一行，即安装会取的那一份。",
+    contentVersion: "版本",
+    contentIntegrity: "integrity（前 16 位）",
+    contentStored: "在本机仓",
+    contentLinked: "当前这一代链接",
+    contentNoIntegrity: "无",
+    yes: "是",
   },
 
   skills: {
