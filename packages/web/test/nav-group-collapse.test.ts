@@ -17,6 +17,7 @@ import {
   NAV_PINNED_KEY,
   initialNavGroupCollapsed,
   initialNavPinOverrides,
+  isNavPinnable,
   isNavPinned,
   navEntryKeysFor,
   navKeysFor,
@@ -197,12 +198,16 @@ describe("pinned vs. collapsible", () => {
     expect(withNavPinned(overrides, "usage", false)).toBe(overrides);
   });
 
-  it("New chat can be made collapsible: it heads the collapsible area", () => {
-    const overrides = withNavPinned({}, "newChat", false);
-    expect(splitNavEntries(navEntryKeysFor(true), overrides)).toEqual({
-      pinned: ["agents", "models", "plugins"],
-      collapsible: ["newChat", "machines", "usage", "benchmark"],
-    });
+  it("New chat is always pinned: no choice moves it, and a stored one is ignored", () => {
+    expect(isNavPinnable("newChat")).toBe(false);
+    expect(isNavPinnable("usage")).toBe(true);
+    const overrides: NavPinOverrides = {};
+    expect(withNavPinned(overrides, "newChat", false)).toBe(overrides);
+    expect(isNavPinned("newChat", { newChat: false })).toBe(true);
+    expect(splitNavEntries(navEntryKeysFor(true), { newChat: false }).pinned[0]).toBe("newChat");
+    const storage = memStorage();
+    storage.setItem(NAV_PINNED_KEY, JSON.stringify({ newChat: false, usage: true }));
+    expect(initialNavPinOverrides(storage)).toEqual({ usage: true });
   });
 
   it("everything pinned leaves the collapsible area empty, so folding hides nothing", () => {
@@ -214,11 +219,11 @@ describe("pinned vs. collapsible", () => {
     expect(visibleNavKeys(true, true, overrides)).toEqual(navEntryKeysFor(true));
   });
 
-  it("everything collapsible leaves the pinned area empty", () => {
+  it("everything collapsible still leaves New chat pinned, and folding shows only it", () => {
     let overrides: NavPinOverrides = {};
     for (const key of navEntryKeysFor(true)) overrides = withNavPinned(overrides, key, false);
-    expect(splitNavEntries(navEntryKeysFor(true), overrides).pinned).toEqual([]);
-    expect(visibleNavKeys(true, true, overrides)).toEqual([]);
+    expect(splitNavEntries(navEntryKeysFor(true), overrides).pinned).toEqual(["newChat"]);
+    expect(visibleNavKeys(true, true, overrides)).toEqual(["newChat"]);
   });
 
   it("the pin toggle's accessible names exist in both languages, pin and unpin distinct", () => {

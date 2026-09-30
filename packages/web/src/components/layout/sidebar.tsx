@@ -89,6 +89,7 @@ import { nameOnMachine } from "../../lib/workspace-machines";
 import {
   initialNavGroupCollapsed,
   initialNavPinOverrides,
+  isNavPinnable,
   isNavPinned,
   navEntryKeysFor,
   splitNavEntries,
@@ -1991,14 +1992,16 @@ export function Sidebar({
       );
     }
     const pinned = entry !== undefined && isNavPinned(entry, navPins);
+    // New chat always stays in view: it has neither a pin toggle nor a drag handle.
+    const pinnable = entry !== undefined && isNavPinnable(entry);
     return (
       <div
         key={key}
         className="group relative flex items-center"
-        {...(entry === undefined ? {} : navRowDragProps(entry))}
+        {...(pinnable ? navRowDragProps(entry) : {})}
       >
         {row}
-        {entry !== undefined && (
+        {pinnable && (
           <span className="peer absolute right-1 top-1/2 flex -translate-y-1/2">
             <NavPinButton
               pinned={pinned}

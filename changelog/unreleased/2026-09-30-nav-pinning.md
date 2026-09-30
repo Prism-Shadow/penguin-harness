@@ -7,9 +7,9 @@
 
 [中文版](2026-09-30-nav-pinning.zh.md)
 
-The sidebar's nav entries got one set of names and one order in both languages. Every entry,
-New chat included, became either pinned or collapsible, and the chevron under the nav folds only
-the collapsible ones.
+The sidebar's nav entries got one set of names and one order in both languages. Every page entry
+became either pinned or collapsible, and the chevron under the nav folds only the collapsible ones.
+New chat is the exception: it is always pinned.
 
 ## Names and order
 
@@ -30,8 +30,7 @@ the collapsible ones.
 - A pin button appears at the end of a row on hover or keyboard focus, and always on touch
   screens. It is filled while the entry is pinned, and its tooltip reads **Pin** or **Unpin**.
   Dragging a row into or out of the collapsible area does the same.
-- A pinned New chat keeps its fixed slot above the scroll area. A collapsible one moves to the top
-  of the collapsible area.
+- New chat keeps its fixed slot above the scroll area; it has no pin button and cannot be dragged.
 - The choices are saved per browser in `penguin.sidebarNavPinned`, as the entries whose state
   differs from the default. A key the manifest does not know is ignored, so a page with no stored
   choice takes its default. A folded state already stored in `penguin.sidebarNavGroupCollapsed`

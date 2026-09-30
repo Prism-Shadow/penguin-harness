@@ -66,7 +66,8 @@ export function navKeysFor(isAdmin: boolean): readonly NavGroupKey[] {
 
 /**
  * A development-mode nav entry: New chat or a page. New chat opens a draft rather than a
- * route, so it is not in the manifest, but it is pinned or collapsible like any page.
+ * route, so it is not in the manifest; it is the one entry that is always pinned (see
+ * isNavPinnable), while every page is pinned or collapsible at the user's choice.
  */
 export type NavEntryKey = "newChat" | NavGroupKey;
 
@@ -90,7 +91,13 @@ export const DEFAULT_PINNED_NAV_KEYS: ReadonlySet<NavEntryKey> = new Set<NavEntr
  */
 export type NavPinOverrides = Readonly<Partial<Record<NavEntryKey, boolean>>>;
 
+/** Whether the user may move an entry between the areas: every page may; New chat never folds away. */
+export function isNavPinnable(key: NavEntryKey): boolean {
+  return key !== "newChat";
+}
+
 export function isNavPinned(key: NavEntryKey, overrides: NavPinOverrides): boolean {
+  if (!isNavPinnable(key)) return true;
   return overrides[key] ?? DEFAULT_PINNED_NAV_KEYS.has(key);
 }
 
@@ -119,7 +126,7 @@ export function withNavPinned(
   key: NavEntryKey,
   pinned: boolean,
 ): NavPinOverrides {
-  if (isNavPinned(key, overrides) === pinned) return overrides;
+  if (!isNavPinnable(key) || isNavPinned(key, overrides) === pinned) return overrides;
   const next: Partial<Record<NavEntryKey, boolean>> = { ...overrides };
   if (pinned === DEFAULT_PINNED_NAV_KEYS.has(key)) delete next[key];
   else next[key] = pinned;
@@ -181,8 +188,8 @@ export function storeNavGroupCollapsed(collapsed: boolean, storage?: NavCollapse
 /** The pin choices' single global key; holds NavPinOverrides as a JSON object. */
 export const NAV_PINNED_KEY = "penguin.sidebarNavPinned";
 
-/** Keys a stored choice may name: New chat and the whole manifest, pages this user is not offered included. */
-const NAV_ENTRY_KEYS: ReadonlySet<string> = new Set<string>(["newChat", ...NAV_GROUP_KEYS]);
+/** Keys a stored choice may name: the whole manifest, pages this user is not offered included (New chat is never a choice). */
+const NAV_ENTRY_KEYS: ReadonlySet<string> = new Set<string>(NAV_GROUP_KEYS);
 
 /**
  * Reads the stored choices. Only a boolean under a key the manifest knows is kept, so a key

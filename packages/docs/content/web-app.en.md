@@ -106,7 +106,7 @@ From top to bottom, the sidebar holds:
 
 ### Pinned and collapsible entries
 
-**New chat**, **Agents**, **Models** and **Plugins** are pinned: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
+**New chat** is always pinned. **Agents**, **Models** and **Plugins** are pinned by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
 
 To change which entries are pinned:
 
