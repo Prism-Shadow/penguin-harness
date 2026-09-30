@@ -26,8 +26,8 @@ Retry.
 ## Details
 
 - `POST /api/projects/:projectId/dirs/access` (`{path}` → `{granted, packaged}`) has the desktop
-  shell read one folder in the app's own name, and waits for the user's answer to macOS. It
-  returns `503` `shell_unreachable` when the server has no desktop shell to ask, and `504`
+  shell read one folder in the app's own name, and waits for the user's answer to macOS. Only
+  the desktop app's own window may call it (`403` `desktop_shell_only` otherwise). It returns `503` `shell_unreachable` when the server has no desktop shell to ask, and `504`
   `timeout` after 120 seconds without an answer.
 - `POST /api/desktop/privacy-settings` (`{pane}`, `files` or `fullDisk`) has the shell open that
   Privacy & Security pane. Like the other page-facing desktop routes, it answers only the shell's

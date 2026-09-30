@@ -13,7 +13,7 @@
 
 ## 细节
 
-- `POST /api/projects/:projectId/dirs/access`（`{path}` → `{granted, packaged}`）请桌面 shell 以应用自身的身份读一次该目录，并等待用户对 macOS 询问的回答。服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`，120 秒内没有应答时返回 `504` `timeout`。
+- `POST /api/projects/:projectId/dirs/access`（`{path}` → `{granted, packaged}`）请桌面 shell 以应用自身的身份读一次该目录，并等待用户对 macOS 询问的回答；只有桌面应用自己的窗口可以调用（否则 `403` `desktop_shell_only`）。服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`，120 秒内没有应答时返回 `504` `timeout`。
 - `POST /api/desktop/privacy-settings`（`{pane}`，取 `files` 或 `fullDisk`）请 shell 打开「隐私与安全性」的对应面板。与其他面向页面的桌面路由一样，它只响应 shell 自己的窗口。
 - shell 与服务端经 utilityProcess 端口新增三种帧：`desktop-folder-access`、它的回复 `desktop-folder-access-result`，以及 `desktop-open-privacy-settings`。非 macOS 平台上 shell 不读取也不打开任何东西。
 - Web App 为错误码 `shell_unreachable` 与 `timeout` 提供了本地化文案。

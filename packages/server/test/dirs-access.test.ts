@@ -144,17 +144,36 @@ describe("POST /api/projects/:projectId/dirs/access", () => {
     }
   });
 
-  it("answers 503 shell_unreachable with no shell to ask", async () => {
-    // A plain server: no desktop shell at all.
+  it("is refused to anything but the desktop app's own window", async () => {
+    // A plain server's password session: no window of the shell's at all.
     const plain = await createTestApp();
     try {
       const admin = await loginAdmin(plain.app);
       const res = await apiClient(plain.app, admin.cookie).post(ACCESS, { path: DOWNLOADS });
-      expect(res.status).toBe(503);
-      expect(await errorCode(res)).toBe("shell_unreachable");
+      expect(res.status).toBe(403);
+      expect(await errorCode(res)).toBe("desktop_shell_only");
     } finally {
       await plain.cleanup();
     }
+    // A browser tab signed in with the password on the desktop app's own server.
+    const t = await createDesktopApp();
+    try {
+      let asked = 0;
+      t.deps.desktop!.onFolderAccessRequest(async () => {
+        asked += 1;
+        return { granted: true, packaged: true };
+      });
+      const admin = await loginAdmin(t.app);
+      const res = await apiClient(t.app, admin.cookie).post(ACCESS, { path: DOWNLOADS });
+      expect(res.status).toBe(403);
+      expect(await errorCode(res)).toBe("desktop_shell_only");
+      expect(asked).toBe(0);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("answers 503 shell_unreachable with no shell to ask", async () => {
     // Desktop mode, but no port wired.
     const t = await createDesktopApp();
     try {

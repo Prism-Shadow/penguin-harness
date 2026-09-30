@@ -80,13 +80,22 @@ export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
    * reads it once in the app's own name, which is what makes macOS ask the user — a read from
    * this server, the shell's child, has been seen to fail silently instead. Once the app is
    * allowed, this server reads the folder too. Only this server's own shell can be asked, so
-   * the route has no machine form. Without a shell there is nothing to ask (503
+   * the route has no machine form, and only the desktop app's own window may call it (403
+   * `desktop_shell_only`, like the reveal route): a browser tab on the same server has no shell
+   * of its own to ask on the user's behalf. Without a shell there is nothing to ask (503
    * `shell_unreachable`); a shell that has not answered within FOLDER_ACCESS_TIMEOUT_MS is a
    * 504 `timeout`. The member is optional: a layer older than the picker's box has none.
    */
   app.post("/access", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    if (c.var.sessionVia !== "desktop") {
+      throw new HttpError(
+        403,
+        "desktop_shell_only",
+        "Asking macOS for a folder is available from the desktop app's own window.",
+      );
+    }
     const body = (await c.req.json().catch(() => null)) as { path?: unknown } | null;
     const target = typeof body?.path === "string" ? body.path.trim() : "";
     if (!path.isAbsolute(target)) {

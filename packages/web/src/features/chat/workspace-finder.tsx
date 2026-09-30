@@ -468,7 +468,11 @@ export function WorkspaceFinder({
       })
       .catch((err: unknown) => {
         settle(null);
-        if (err instanceof ApiError && err.code === "shell_unreachable") setShellUnreachable(true);
+        if (
+          err instanceof ApiError &&
+          (err.code === "shell_unreachable" || err.code === "desktop_shell_only")
+        )
+          setShellUnreachable(true);
         else toastError(apiErrorText(err));
       });
   };
