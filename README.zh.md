@@ -285,7 +285,9 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 
 ## 致谢
 
-内置浏览器的自动化改编自 [GenericAgent](https://github.com/lsdefine/genericagent)（MIT 协议），包括它的 DOM 简化（simphtml）以及 web_scan / web_execute_js 的设计。详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+本项目受益于：
+
+- [GenericAgent](https://github.com/lsdefine/genericagent)：内置浏览器自动化
 
 ## 协议
 

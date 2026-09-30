@@ -285,7 +285,9 @@ If you use PenguinHarness in your research, please cite:
 
 ## Acknowledgements
 
-The built-in browser's automation is adapted from [GenericAgent](https://github.com/lsdefine/genericagent) (MIT): its DOM simplification (simphtml) and its web_scan / web_execute_js design. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+This repo benefits from:
+
+- [GenericAgent](https://github.com/lsdefine/genericagent): built-in browser automation
 
 ## License
 
