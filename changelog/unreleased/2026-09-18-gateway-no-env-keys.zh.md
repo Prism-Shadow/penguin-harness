@@ -39,7 +39,7 @@ PenguinHarness 自己在构建任何客户端之前判定没有 key 的条目能
   DeepSeek、GLM、Kimi 客户端在自家变量未设置时把 undefined 的 key 交给 OpenAI SDK，SDK 从
   `OPENAI_API_KEY` 补上；Anthropic 客户端让其 SDK 附带环境里的 `ANTHROPIC_AUTH_TOKEN`（Bedrock 上还有
   `ANTHROPIC_API_KEY`），即使行上已有自己的 key。
-- `agent-development` 插件的 `penguin-sdk` Skill 写明该规则（插件 `2026.09.18.1`）。
+- `agent-development` 插件的 `penguin-sdk` Skill 写明该规则（插件 `2026.09.30.1`）。
 - 协议检测与新增分组的端点列举按同一口径把协议变量借给裸端点：只借给厂商自己的 URL。网关或私有服务器
   一律匿名探测（协议格式的 401 照样能识别路由），没有可用 key 的列举在构建客户端之前即被拒绝。
 - `custom` 分组的预置模型 Atria Dawn Preview 此前读取 `ANTHROPIC_API_KEY`，现在与其他 custom 条目一样

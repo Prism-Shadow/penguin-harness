@@ -49,7 +49,7 @@ group's name: environment keys are for official endpoints only.
   clients hand the OpenAI SDK an undefined key when their own variable is unset, and the SDK
   fills it from `OPENAI_API_KEY`; and the Anthropic client lets its SDK attach the environment's
   `ANTHROPIC_AUTH_TOKEN` (and, on Bedrock, `ANTHROPIC_API_KEY`) even beside a row's own key.
-- The `agent-development` plugin's `penguin-sdk` skill states the rule (plugin `2026.09.18.1`).
+- The `agent-development` plugin's `penguin-sdk` skill states the rule (plugin `2026.09.30.1`).
 - Protocol detection and the add-group listing lend a bare endpoint the protocol's variable on
   the same terms: the vendor's own URL only. A gateway or a private
   server is probed anonymously (a protocol-shaped 401 still identifies the route), and a listing

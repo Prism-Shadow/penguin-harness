@@ -59,11 +59,13 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
+import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
+import { GEAR_ICON, NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { TRASH_ICON } from "../../components/ui/session-row-menu";
 import { StatusIcon } from "../../components/ui/status-icon";
@@ -77,6 +79,7 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { PluginDetailModal } from "./plugin-detail";
+import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -225,6 +228,7 @@ export function PluginsPage() {
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
+  const [settingsOpen, setSettingsOpen] = useState(false);
   /** Free text over name, specifier and description. */
   const [query, setQuery] = useState("");
   /** The filter column's choices: a row shows when it carries one selected category and every selected tag. */
@@ -242,6 +246,53 @@ export function PluginsPage() {
     api.getInstalledPlugins(projectId).then(setDeployment, () => setDeployment(null));
   }, [projectId]);
   useEffect(reloadDeployment, [reloadDeployment]);
+
+  const { machineIds, machineLabels } = useSessions();
+  /** The machine the page shows and edits: null for all machines, or a machine's own id. */
+  const [viewMachine, setViewMachine] = useState<string | null>(null);
+  useEffect(() => setViewMachine(null), [projectId]);
+  const selfId = deployment?.machineId;
+  /** What the viewed machine answered itself — or why it could not — when it is not this server. */
+  const [remote, setRemote] = useState<
+    | { machineId: string; res: InstalledPluginsResponse }
+    | { machineId: string; error: string }
+    | null
+  >(null);
+  // Read again after every change of the list: the machine is handed its part in the
+  // background, so a row reads "not on that machine yet" until it has answered with it.
+  useEffect(() => {
+    setRemote(null);
+    if (projectId === null || viewMachine === null || viewMachine === selfId) return;
+    let cancelled = false;
+    api.getInstalledPlugins(projectId, viewMachine).then(
+      (res) => !cancelled && setRemote({ machineId: viewMachine, res }),
+      (e: unknown) => !cancelled && setRemote({ machineId: viewMachine, error: apiErrorText(e) }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, viewMachine, selfId, deployment]);
+  const nameOf = (machineId: string) =>
+    machineId === selfId ? S.plugins.thisServer : (machineLabels.get(machineId) ?? machineId);
+  const view: PluginView = {
+    machineId: viewMachine,
+    remote: remote !== null && "res" in remote ? remote.res : null,
+    nameOf,
+  };
+  /** Whether the machine in view is this server itself, or every machine including it. */
+  const viewIncludesHere = viewMachine === null || viewMachine === selfId;
+  // The picker offers the machines this Project reaches and any a table names; a deployment
+  // with neither has one machine, and no picker.
+  const otherMachines = [
+    ...new Set([...machineIds, ...(deployment?.plugins ?? []).flatMap((p) => p.machines ?? [])]),
+  ].filter((id) => id !== selfId);
+  const machineChoices: MachineChoice[] = [
+    { value: ALL_MACHINES_CHOICE, label: S.plugins.allMachines },
+    ...(selfId === undefined ? [] : [selfId, ...otherMachines]).map((id) => ({
+      value: id,
+      label: nameOf(id),
+    })),
+  ];
 
   // The registry, fetched once on page entry.
   useEffect(() => {
@@ -278,8 +329,8 @@ export function PluginsPage() {
     setPendingSpecifier(specifier);
     try {
       const next = install
-        ? await api.installPlugin(projectId, specifier)
-        : await api.uninstallPlugin(projectId, specifier);
+        ? await api.installPlugin(projectId, specifier, viewMachine)
+        : await api.uninstallPlugin(projectId, specifier, viewMachine);
       setDeployment(next);
       const row = next.plugins.find((p) => p.specifier === specifier);
       if (install && row?.error !== undefined) {
@@ -526,8 +577,8 @@ export function PluginsPage() {
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };
 
-  const allInstalled = installedPluginRows(groups ?? [], locale, deployment, index ?? []);
-  const allAvailable = availablePluginRows(deployment, index ?? []);
+  const allInstalled = installedPluginRows(groups ?? [], locale, deployment, index ?? [], view);
+  const allAvailable = availablePluginRows(deployment, index ?? [], view);
   const facets = pluginFacets([...allInstalled, ...allAvailable]);
   const picked = { categories: pickedCategories, kinds: pickedKinds, states: pickedStates };
   const filtering =
@@ -555,7 +606,38 @@ export function PluginsPage() {
             {S.plugins.pageTitle}
             <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
           </h1>
+          {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
+              admin's page; this opens the dialog there rather than sending anyone through the
+              user menu to find it. */}
+          {isAdmin && (
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Which machine's plugins the rows show, and which table an install or a
+                  removal edits: the shared one, or that machine's own. */}
+              {otherMachines.length > 0 && (
+                <MachinePicker
+                  aria-label={S.plugins.viewMachine}
+                  choices={machineChoices}
+                  value={viewMachine ?? ALL_MACHINES_CHOICE}
+                  onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
+                />
+              )}
+              <Button
+                size="sm"
+                className="h-8 w-8 shrink-0 justify-center p-0"
+                aria-label={S.plugins.openSettings}
+                title={S.plugins.openSettings}
+                onClick={() => setSettingsOpen(true)}
+              >
+                <GlyphIcon d={GEAR_ICON} size={ICON_SIZE.iconButton} />
+              </Button>
+            </div>
+          )}
         </div>
+        <SettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          section="plugins"
+        />
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody
@@ -573,7 +655,12 @@ export function PluginsPage() {
           />
         )}
 
-        {deployment !== null && deployment.restartPending && (
+        {remote !== null && "error" in remote && remote.machineId === viewMachine && (
+          <div className={`mt-4 rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+            {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
+          </div>
+        )}
+        {deployment !== null && viewIncludesHere && deployment.restartPending && (
           <div className={`mt-4 rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
             {S.plugins.restartPending}
           </div>
@@ -635,6 +722,8 @@ export function PluginsPage() {
                       state={row.state}
                       error={row.error}
                       shipped={row.shipped}
+                      onlyOn={row.onlyOn}
+                      removeBlocked={row.removeBlocked}
                       busy={pendingSpecifier === row.specifier}
                       blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
                       onInstall={null}
@@ -756,13 +845,64 @@ interface ModulePluginRow {
   /** Why the process could not load it, when `state` is `failed`. */
   error?: string;
   shipped: boolean;
+  /** The machines it is listed for, by name, when the shared table does not list it. */
+  onlyOn?: string[];
+  /** Why Remove is unavailable in this view, when it is. */
+  removeBlocked?: string;
 }
 /**
- * What a listed module plugin is here: running; waiting for a runtime that can re-assemble
- * (`pending`); or FAILED — the process tried and could not load it, for the reason the
- * server sends, which no restart would change.
+ * What a listed module plugin is on the machine in view: running; waiting for a runtime that
+ * can re-assemble (`pending`); FAILED — the process tried and could not load it, for the
+ * reason the server sends, which no restart would change; `elsewhere` — the all-machines view
+ * of a plugin listed only for other machines, which this server neither installs nor loads;
+ * or `unsynced` — listed for a machine that has not reported running it.
  */
-type ModuleState = "none" | "pending" | "active" | "failed";
+type ModuleState = "none" | "pending" | "active" | "failed" | "elsewhere" | "unsynced";
+
+/**
+ * Which machine the page shows: `machineId` null for all machines (the shared table), or a
+ * machine's own id. `remote` is that machine's own answer when it is not this server — what
+ * it actually runs — and null when it is this server or could not be read.
+ */
+export interface PluginView {
+  machineId: string | null;
+  remote: InstalledPluginsResponse | null;
+  /** A machine's display name, by its own id. */
+  nameOf: (machineId: string) => string;
+}
+
+/** The picker's value for all machines: a machine id is never this short. */
+const ALL_MACHINES_CHOICE = "*";
+
+const ALL_MACHINES: PluginView = { machineId: null, remote: null, nameOf: (id) => id };
+
+/** Whether a listed plugin belongs in the view: shared, or listed for the machine in view. */
+function inView(listed: InstalledPluginsResponse["plugins"][number], view: PluginView): boolean {
+  return (
+    view.machineId === null ||
+    listed.everywhere !== false ||
+    (listed.machines ?? []).includes(view.machineId)
+  );
+}
+
+/** A listed plugin's state as the machine in view has it. */
+function stateIn(
+  listed: InstalledPluginsResponse["plugins"][number],
+  view: PluginView,
+  selfId: string | undefined,
+): { state: ModuleState; error?: string } {
+  const local = (row: InstalledPluginsResponse["plugins"][number]) =>
+    row.active
+      ? { state: "active" as const }
+      : row.error !== undefined
+        ? { state: "failed" as const, error: row.error }
+        : { state: "pending" as const };
+  if (view.machineId === null)
+    return listed.here === false ? { state: "elsewhere" } : local(listed);
+  if (view.machineId === selfId) return local(listed);
+  const there = view.remote?.plugins.find((p) => p.specifier === listed.specifier);
+  return there === undefined ? { state: "unsynced" } : local(there);
+}
 
 /**
  * What is installed, in one list: the library's plugins — they ship with the build, so
@@ -775,6 +915,7 @@ export function installedPluginRows(
   locale: Parameters<typeof localizedText>[0],
   deployment: InstalledPluginsResponse | null,
   index: readonly PluginIndexEntry[],
+  view: PluginView = ALL_MACHINES,
 ): PluginRow[] {
   const rows: PluginRow[] = [];
   for (const group of groups) {
@@ -782,13 +923,21 @@ export function installedPluginRows(
     for (const plugin of group.plugins) rows.push({ kind: "library", plugin, category });
   }
   for (const listed of deployment?.plugins ?? []) {
+    if (!inView(listed, view)) continue;
+    const shared = listed.everywhere !== false;
+    const ownTable = view.machineId !== null && (listed.machines ?? []).includes(view.machineId);
     rows.push({
       kind: "module",
       specifier: listed.specifier,
       entry: index.find((e) => e.name === listed.specifier),
-      state: listed.active ? "active" : listed.error !== undefined ? "failed" : "pending",
-      ...(listed.error !== undefined ? { error: listed.error } : {}),
-      shipped: listed.builtin || deployment?.shipped.includes(listed.specifier) === true,
+      ...stateIn(listed, view, deployment?.machineId),
+      shipped:
+        listed.builtin || (view.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
+      ...(shared ? {} : { onlyOn: (listed.machines ?? []).map(view.nameOf) }),
+      // A machine's view edits that machine's own table; a shared entry is not in it.
+      ...(view.machineId !== null && shared && !ownTable
+        ? { removeBlocked: S.plugins.sharedCannotRemove }
+        : {}),
     });
   }
   return rows;
@@ -802,8 +951,17 @@ export function installedPluginRows(
 export function availablePluginRows(
   deployment: InstalledPluginsResponse | null,
   index: readonly PluginIndexEntry[],
+  view: PluginView = ALL_MACHINES,
 ): ModulePluginRow[] {
-  const listed = new Set((deployment?.plugins ?? []).map((p) => p.specifier));
+  // What the machine in view does not run yet: in the all-machines view, anything the shared
+  // table lacks — a plugin listed for some machines is still offered for all of them.
+  const listed = new Set(
+    (deployment?.plugins ?? [])
+      .filter((p) => (view.machineId === null ? p.everywhere !== false : inView(p, view)))
+      .map((p) => p.specifier),
+  );
+  // What the machine in view ships, when it answered; this server's otherwise.
+  const shippedList = (view.remote ?? deployment)?.shipped ?? [];
   const seen = new Set<string>();
   const rows: ModulePluginRow[] = [];
   for (const entry of index) {
@@ -814,10 +972,10 @@ export function availablePluginRows(
       specifier: entry.name,
       entry,
       state: "none",
-      shipped: deployment?.shipped.includes(entry.name) === true,
+      shipped: shippedList.includes(entry.name),
     });
   }
-  for (const name of deployment?.shipped ?? []) {
+  for (const name of shippedList) {
     if (listed.has(name) || seen.has(name)) continue;
     seen.add(name);
     rows.push({ kind: "module", specifier: name, entry: undefined, state: "none", shipped: true });
@@ -899,7 +1057,9 @@ export function rowFacets(row: PluginRow): {
         ? ["installed", "restart"]
         : row.state === "failed"
           ? ["installed", "failed"]
-          : ["available"];
+          : row.state === "none"
+            ? ["available"]
+            : ["installed"];
   return { categories: row.entry?.categories ?? [], kinds: ["modules"], states };
 }
 
@@ -1406,6 +1566,8 @@ function ModuleRow({
   state,
   error,
   shipped,
+  onlyOn,
+  removeBlocked,
   busy,
   blocked,
   onInstall,
@@ -1418,6 +1580,10 @@ function ModuleRow({
   error?: string;
   /** The build carries this one: installing it copies nothing over the network. */
   shipped: boolean;
+  /** The machines it is listed for, by name, when not every machine runs it. */
+  onlyOn?: string[];
+  /** Why Remove is unavailable in this view, when it is. */
+  removeBlocked?: string;
   /** This row's own install or removal is running. */
   busy: boolean;
   /** Another row's is: one at a time, so the rest are held rather than queued. */
@@ -1433,7 +1599,11 @@ function ModuleRow({
         ? S.plugins.installedRestart
         : state === "failed"
           ? S.plugins.stateFailed
-          : S.plugins.notInstalled;
+          : state === "unsynced"
+            ? S.plugins.notSynced
+            : state === "elsewhere"
+              ? S.plugins.notHere
+              : S.plugins.notInstalled;
   // Metadata line, the library card's shape: version · updated · what it is here.
   const updated =
     entry?.updatedAt === undefined
@@ -1472,7 +1642,7 @@ function ModuleRow({
           className={
             state === "active"
               ? toneInk.success
-              : state === "pending"
+              : state === "pending" || state === "unsynced"
                 ? toneInk.attention
                 : state === "failed"
                   ? toneInk.danger
@@ -1491,6 +1661,7 @@ function ModuleRow({
         {(entry?.categories ?? []).map((category) => (
           <Tag key={category}>{category}</Tag>
         ))}
+        {onlyOn !== undefined && <Tag>{S.plugins.onlyOn(onlyOn.join(", "))}</Tag>}
         {shipped && <Tag title={S.plugins.builtinHint}>{S.plugins.builtin}</Tag>}
         {(entry?.keywords ?? []).map((keyword) => (
           <Tag key={keyword} mono>
@@ -1536,8 +1707,8 @@ function ModuleRow({
                 className="h-8 w-8 shrink-0 justify-center p-0"
                 aria-label={`${S.plugins.uninstall} ${specifier}`}
                 aria-busy={busy}
-                title={S.plugins.uninstall}
-                disabled={busy || blocked}
+                title={removeBlocked ?? S.plugins.uninstall}
+                disabled={busy || blocked || removeBlocked !== undefined}
                 onClick={onRemove}
               >
                 {busy ? (

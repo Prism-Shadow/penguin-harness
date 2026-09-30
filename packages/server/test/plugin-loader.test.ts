@@ -125,6 +125,19 @@ describe("plugin list", () => {
     expect(await readProjectPluginList(root, "p1")).toEqual(["ok", "pinned", "tabled"]);
   });
 
+  it("a machine runs the shared table plus its own, and no other machine's", async () => {
+    // Keyed by the machine's own id, never an alias: a plugin listed for one machine is not
+    // in any other machine's closure, so it is neither loaded nor installed there.
+    await writeProject(
+      "p1",
+      'models = []\n[plugins]\nshared = "*"\n\n[plugins.Mine000000000000]\nmine = "*"\n\n[plugins.Other00000000000]\nother = "*"\n',
+    );
+    expect(await readProjectPluginList(root, "p1", "Mine000000000000")).toEqual(["shared", "mine"]);
+    expect(await readPluginClosure(root, "Other00000000000")).toEqual(["shared", "other"]);
+    // A machine whose id is not known reads the shared table alone.
+    expect(await readPluginClosure(root)).toEqual(["shared"]);
+  });
+
   it("the list form this key once had is not read: such a Project asks for none", async () => {
     // Deliberately no compatibility (PRFC-0010): a table replaced the list before release,
     // and a file still carrying the list starts with no plugins until it is written again.

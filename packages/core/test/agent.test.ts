@@ -17,7 +17,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
-import { agentsMdPath, projectConfigPath, systemConfigPath } from "../src/state/paths.js";
+import {
+  agentsMdPath,
+  hooksDir,
+  projectConfigPath,
+  skillsDir,
+  systemConfigPath,
+} from "../src/state/paths.js";
 import {
   MODEL_CATALOG,
   addModel,
@@ -1003,6 +1009,67 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       expect(toolNames((records[0]!.payload as { tools: { name: string }[] }).tools)).toEqual(
         toolNames(after.tools),
       );
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a Skill and a hook package written during the old context are the next context's", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-authored");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    const skillDir = path.join(
+      skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      "clock-reading",
+    );
+    const hookDir = path.join(hooksDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "flow");
+    try {
+      await bootstrapped(session);
+
+      // Written as plain files, the way a model working on its own configuration does it:
+      // no installer, and a manifest that lists only the point it uses. The command is
+      // host-triggered so the Session can be asked for it by name.
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, "SKILL.md"),
+        "---\nname: clock-reading\ndescription: Reads analog clocks.\n---\n\nLook at the hands.\n",
+      );
+      await fs.mkdir(hookDir, { recursive: true });
+      await fs.writeFile(
+        path.join(hookDir, "hooks.json"),
+        JSON.stringify({ user_prompt: [{ command: "start.mjs", trigger: "host" }] }),
+      );
+      await fs.writeFile(
+        path.join(hookDir, "start.mjs"),
+        'process.stdout.write(JSON.stringify({ context: "started" }));\n',
+      );
+
+      // Nothing changes in the middle of a context.
+      expect(promptOf(session)).not.toContain("clock-reading");
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+
+      await openNext(session);
+      expect(promptOf(session)).toContain("`clock-reading` — Reads analog clocks.");
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+
+      // The one switch over every package is read on the same schedule…
+      await patchSystemConfig((cfg) => {
+        cfg.hooks = { enabled: false };
+      });
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+
+      // …and so is a package's removal.
+      await patchSystemConfig((cfg) => {
+        cfg.hooks = { enabled: true };
+      });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+      await fs.rm(hookDir, { recursive: true, force: true });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
     } finally {
       session.dispose();
     }

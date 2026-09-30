@@ -30,7 +30,9 @@ import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
-import { buildBuiltinPlugins, prefixLayout } from "./build-plugins.mjs";
+import { buildBuiltinPlugins } from "./build-plugins.mjs";
+import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
+import { typescriptPayload } from "./typescript-payload.mjs";
 import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
@@ -64,6 +66,7 @@ function usage(problem) {
   console.error(
     `${problem}\n\n` +
       "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build]\n" +
+      "       PENGUIN_API_TOKEN=$(cat <root>/api-token) node scripts/deploy.mjs <port|url>\n" +
       "  <port>  a port on this machine (an ssh -L tunnel to the target runtime, or a local server)\n" +
       "  <url>   a full origin, when the target is not reached over loopback\n",
   );
@@ -74,8 +77,15 @@ const args = process.argv.slice(2);
 const skipWebBuild = args.includes("--skip-web-build");
 const target = args.find((a) => !a.startsWith("--"));
 if (target === undefined) usage("[deploy] no target given.");
+// Two credentials, either one: the admin password (exchanged for a cookie), or the
+// runtime's own local API token (`<root>/api-token`, admin-equivalent — see
+// server/src/auth/api-token.ts), sent as a Bearer. A local push needs no password.
 const ADMIN_PASSWORD = process.env.PENGUIN_ADMIN_PASSWORD;
-if (!ADMIN_PASSWORD) usage("[deploy] PENGUIN_ADMIN_PASSWORD is not set.");
+const API_TOKEN = process.env.PENGUIN_API_TOKEN;
+if (!ADMIN_PASSWORD && !API_TOKEN)
+  usage(
+    "[deploy] set PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN (the runtime's <root>/api-token).",
+  );
 
 /** A bare port means this machine's loopback (typically an ssh -L tunnel to the real target). */
 const baseUrl = /^\d+$/.test(target) ? `http://127.0.0.1:${target}` : target.replace(/\/+$/, "");
@@ -122,6 +132,12 @@ function request(urlStr, { method = "GET", headers = {}, body } = {}) {
     if (body !== undefined) req.write(body);
     req.end();
   });
+}
+
+/** The request headers that authenticate as admin: a Bearer token, or a cookie from a password login. */
+async function authHeaders() {
+  if (API_TOKEN) return { authorization: `Bearer ${API_TOKEN}` };
+  return { cookie: await login() };
 }
 
 /** Signs in as `admin` and returns the session cookie. */
@@ -226,19 +242,32 @@ async function readNativeAssets() {
       rel.startsWith("lib/") ||
       rel.startsWith("build/Release/") ||
       rel.startsWith("prebuilds/"));
+  const pty = [];
   for (const entry of await fsp.readdir(ptyDir, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
     const rel = path.relative(ptyDir, abs).split(path.sep).join("/");
     if (!wanted(rel)) continue;
-    const target = `node_modules/node-pty/${rel}`;
-    files[target] = await fsp.readFile(abs);
-    // node-pty ships its prebuilt spawn-helper as 0644; the runtime restores the bit from
-    // this list, so push it regardless of how it looks on this machine.
-    if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
-      exec.push(target);
-    }
+    // node-pty ships its prebuilt spawn-helper as 0644; the archive records it executable
+    // regardless of how it looks on this machine.
+    const executable = rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0;
+    pty.push({ rel: `node_modules/node-pty/${rel}`, abs, exec: executable });
   }
+  // Every package travels as ONE archive (scripts/asset-archives.mjs): a push of hundreds of
+  // small files is hundreds of blobs, probes and transfers, and stalls. The platform unpacks
+  // `archives/*.tgz` before resolving anything from its assets (hmr/asset-archives.ts).
+  files[`archives/${archiveName("", "node-pty")}`] = await packArchive(pty);
+  // The compiler plugin interfaces and workflows are checked with: the target's program may
+  // predate it being a dependency (or be a desktop bundle with no node_modules), and a
+  // platform that cannot find it compares no plugin interface and loads no workflow.
+  // Content-addressed like everything here, so it crosses once.
+  files[`archives/${archiveName("", "typescript")}`] = await packArchive(
+    typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+      rel: `node_modules/typescript/${rel}`,
+      abs,
+      exec: false,
+    })),
+  );
   // The scripts that run on the FAR side — the release installers a remote install feeds
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot
@@ -247,12 +276,13 @@ async function readNativeAssets() {
     files[name] = await fsp.readFile(path.join(ROOT, from));
   }
   // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
-  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs): the packages as npm
-  // publishes them, installed by npm, from cache when unchanged — so a push carries the
-  // plugins of the revision it was built from.
+  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs), from cache when
+  // unchanged — one archive per package, so an unchanged plugin is an unchanged blob.
   const built = await buildBuiltinPlugins({ log });
-  for (const [rel, source] of prefixLayout(built)) {
-    files[`plugins/${rel}`] = await fsp.readFile(source.path);
+  const { byPackage, loose } = await prefixPackages(built.dir, built.files, "plugins");
+  files["archives/plugins.tgz"] = await packArchive(loose);
+  for (const [pkg, entries] of byPackage) {
+    files[`archives/${archiveName("plugins.", pkg)}`] = await packArchive(entries);
   }
   return { files, exec };
 }
@@ -279,7 +309,7 @@ async function main() {
   const assets = await readNativeAssets();
   const source = pushSource();
 
-  const cookie = await login();
+  const auth = await authHeaders();
   const platform = await fsp.readFile(PLATFORM_BUNDLE);
   const cli = await fsp.readFile(CLI_BUNDLE);
   const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
@@ -301,7 +331,7 @@ async function main() {
   });
   const probe = await request(`${baseUrl}/api/hmr/assets/probe`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", ...auth },
     body: JSON.stringify({ hashes: [...blobs.keys()] }),
   });
   if (probe.status === 200) {
@@ -311,7 +341,7 @@ async function main() {
       if (bytes === undefined) continue;
       const put = await request(`${baseUrl}/api/hmr/blobs/${sha}`, {
         method: "PUT",
-        headers: { "content-type": "application/octet-stream", cookie },
+        headers: { "content-type": "application/octet-stream", ...auth },
         body: bytes,
       });
       if (put.status !== 200) {
@@ -333,7 +363,7 @@ async function main() {
   const started = Date.now();
   const res = await request(`${baseUrl}/api/hmr/upgrade`, {
     method: "POST",
-    headers: { "content-type": "application/gzip", cookie },
+    headers: { "content-type": "application/gzip", ...auth },
     body: gz,
   });
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
