@@ -24,7 +24,8 @@
  *   non-text entry, absurd counts or sizes, a foreign or future format; no temporary file stays.
  * - Any member exports, only the owner imports, and a non-member learns nothing.
  *
- * One app per describe; every case works in a Project of its own.
+ * One app for the file and one Project per describe; every case works in a plain Agent of its
+ * own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -65,41 +66,49 @@ updated_at: 2026-08-07
 - Integration tests talk to a real database.
 `;
 
+/** The file's app and its three users; each describe below works in a Project of its own. */
+let t: TestApp;
+let owner: ReturnType<typeof apiClient>;
+let member: ReturnType<typeof apiClient>;
+let outsider: ReturnType<typeof apiClient>;
+
+beforeAll(async () => {
+  t = await createTestApp();
+  const a = await provisionUser(t.app, "owner_a");
+  const b = await provisionUser(t.app, "member_b");
+  const c = await provisionUser(t.app, "outsider_c");
+  owner = apiClient(t.app, a.cookie);
+  member = apiClient(t.app, b.cookie);
+  outsider = apiClient(t.app, c.cookie);
+});
+afterAll(async () => {
+  await t.cleanup();
+});
+
 describe("memory api", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   let memoryPath: string;
   let configPath: string;
   /** The Workspace Memory directory a Session would have created. */
   let wsDir: string;
 
+  // Every case reads and writes the Memory of a plain Agent of its own, in the one Project.
+  let agentId: string;
+  let agents = 0;
   beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_a");
-    const c = await provisionUser(t.app, "outsider_c");
-    owner = apiClient(t.app, a.cookie);
-    outsider = apiClient(t.app, c.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
-  });
-
-  // Every case reads and writes the Memory of a Project of its own.
-  let projects = 0;
-  beforeEach(async () => {
-    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", {
-        projectId: `owner_a-memory_${projects}`,
-        name: "memory project",
-      })
+      await owner.post("/api/projects", { projectId: "owner_a-memory", name: "memory project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-    memoryPath = `/api/projects/${projectId}/agents/default_agent/memory`;
-    configPath = `/api/projects/${projectId}/agents/default_agent/config`;
-    wsDir = memoryScopeDir(t.root, projectId, "default_agent", WORKSPACE_KEY);
+  });
+  beforeEach(async () => {
+    agents += 1;
+    agentId = `memory_${agents}`;
+    const made = await owner.post(`/api/projects/${projectId}/agents`, { agentId });
+    expect(made.status, await made.text()).toBe(201);
+    memoryPath = `/api/projects/${projectId}/agents/${agentId}/memory`;
+    configPath = `/api/projects/${projectId}/agents/${agentId}/config`;
+    wsDir = memoryScopeDir(t.root, projectId, agentId, WORKSPACE_KEY);
     await fs.mkdir(wsDir, { recursive: true });
     await fs.writeFile(path.join(wsDir, ".workspace"), "/home/dev/my-app\n", "utf8");
   });
@@ -113,9 +122,9 @@ describe("memory api", () => {
     expect(body.enabled).toBe(true);
     // A freshly created Agent gets the current default template, which carries {{MEMORY}}.
     expect(body.templateHasMemory).toBe(true);
-    expect(body.memoryDir).toBe(memoryDir(t.root, projectId, "default_agent"));
+    expect(body.memoryDir).toBe(memoryDir(t.root, projectId, agentId));
     expect(body.scopes).toHaveLength(2);
-    // The user scope leads the list (default_agent was initialized with it on disk).
+    // The user scope leads the list (the Agent was initialized with it on disk).
     expect(body.scopes[0]).toMatchObject({
       scopeKey: USER_SCOPE_KEY,
       kind: "user",
@@ -145,7 +154,7 @@ describe("memory api", () => {
 
   it("accepts a workspace key starting with an underscore, as core generates for _site-style directories", async () => {
     const key = "_site-1a2b3c4d";
-    const dir = memoryScopeDir(t.root, projectId, "default_agent", key);
+    const dir = memoryScopeDir(t.root, projectId, agentId, key);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "notes.md"), "---\nname: n\n---\nbody\n", "utf8");
     const list = (await (await owner.get(filesPath(key))).json()) as MemoryFilesResponse;
@@ -164,7 +173,7 @@ describe("memory api", () => {
   });
 
   itWithSymlinks("neither lists nor follows a symlinked topic file", async () => {
-    const outside = path.join(t.root, "outside-secret.txt");
+    const outside = path.join(t.root, `${agentId}-outside-secret.txt`);
     await fs.writeFile(outside, "secret", "utf8");
     await fs.symlink(outside, path.join(wsDir, "leak.md"));
     const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
@@ -174,23 +183,23 @@ describe("memory api", () => {
   });
 
   itWithSymlinks("404s a scope directory smuggled in as a symlink", async () => {
-    const outside = path.join(t.root, "outside-dir");
+    const outside = path.join(t.root, `${agentId}-outside-dir`);
     await fs.mkdir(outside, { recursive: true });
     await fs.writeFile(path.join(outside, "loot.md"), "---\nname: l\n---\nx\n", "utf8");
-    await fs.symlink(outside, memoryScopeDir(t.root, projectId, "default_agent", "evil-12345678"));
+    await fs.symlink(outside, memoryScopeDir(t.root, projectId, agentId, "evil-12345678"));
     expect((await owner.get(filesPath("evil-12345678"))).status).toBe(404);
   });
 
   it("lists the user scope of an Agent that predates Memory, creating it on demand", async () => {
     // A Workspace directory comes from a Session, but the user scope belongs to the Agent.
-    await fs.rm(memoryScopeDir(t.root, projectId, "default_agent", USER_SCOPE_KEY), {
+    await fs.rm(memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY), {
       recursive: true,
       force: true,
     });
     const list = (await (await owner.get(filesPath(USER_SCOPE_KEY))).json()) as MemoryFilesResponse;
     expect(list.files).toHaveLength(0);
     await expect(
-      fs.stat(memoryScopeDir(t.root, projectId, "default_agent", USER_SCOPE_KEY)),
+      fs.stat(memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY)),
     ).resolves.toBeTruthy();
   });
 
@@ -315,14 +324,14 @@ describe("memory api", () => {
   it("reports the memory count on the Agent list, summed across scopes minus the indexes", async () => {
     await fs.writeFile(path.join(wsDir, "testing-conventions.md"), TOPIC, "utf8");
     await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [t](t.md) — hook\n", "utf8");
-    const userDir = memoryScopeDir(t.root, projectId, "default_agent", USER_SCOPE_KEY);
+    const userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
     await fs.mkdir(userDir, { recursive: true });
     await fs.writeFile(path.join(userDir, "prefers-pnpm.md"), "---\nname: p\n---\nx\n", "utf8");
 
     const body = (await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as {
       agents: { agentId: string; memoryCount: number }[];
     };
-    const agent = body.agents.find((a) => a.agentId === "default_agent");
+    const agent = body.agents.find((a) => a.agentId === agentId);
     expect(agent?.memoryCount).toBe(2);
   });
 
@@ -336,43 +345,29 @@ describe("memory api", () => {
 });
 
 describe("memory scope export/import", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let member: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   let memoryPath: string;
   let wsDir: string;
 
+  // Every case moves memories in and out of a plain Agent of its own, in the one Project.
+  let agentId: string;
+  let agents = 0;
   beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_a");
-    const b = await provisionUser(t.app, "member_b");
-    const c = await provisionUser(t.app, "outsider_c");
-    owner = apiClient(t.app, a.cookie);
-    member = apiClient(t.app, b.cookie);
-    outsider = apiClient(t.app, c.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
-  });
-
-  // Every case moves memories in and out of a Project of its own.
-  let projects = 0;
-  beforeEach(async () => {
-    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", {
-        projectId: `owner_a-transfer_${projects}`,
-        name: "transfer",
-      })
+      await owner.post("/api/projects", { projectId: "owner_a-transfer", name: "transfer" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-    memoryPath = `/api/projects/${projectId}/agents/default_agent/memory`;
-    wsDir = memoryScopeDir(t.root, projectId, "default_agent", WORKSPACE_KEY);
+  });
+  beforeEach(async () => {
+    agents += 1;
+    agentId = `transfer_${agents}`;
+    const made = await owner.post(`/api/projects/${projectId}/agents`, { agentId });
+    expect(made.status, await made.text()).toBe(201);
+    memoryPath = `/api/projects/${projectId}/agents/${agentId}/memory`;
+    wsDir = memoryScopeDir(t.root, projectId, agentId, WORKSPACE_KEY);
     await fs.mkdir(wsDir, { recursive: true });
     await fs.writeFile(path.join(wsDir, ".workspace"), "/home/dev/my-app\n", "utf8");
   });
@@ -425,7 +420,7 @@ describe("memory scope export/import", () => {
     const res = await owner.get(exportPath());
     expect(res.status).toBe(200);
     expect(res.headers.get("content-disposition")).toMatch(
-      new RegExp(`filename="default_agent-${WORKSPACE_KEY}-memory-\\d{8}-\\d{4}\\.json"`),
+      new RegExp(`filename="${agentId}-${WORKSPACE_KEY}-memory-\\d{8}-\\d{4}\\.json"`),
     );
     const doc = (await res.json()) as MemoryScopeExport;
     expect(doc.format).toBe("penguin-memory-scope");
@@ -465,7 +460,7 @@ describe("memory scope export/import", () => {
       added: ["testing-conventions.md"],
       indexWritten: true,
     });
-    const userDir = memoryScopeDir(t.root, projectId, "default_agent", USER_SCOPE_KEY);
+    const userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
     expect(await fs.readFile(path.join(userDir, "testing-conventions.md"), "utf8")).toBe(TOPIC);
     expect(await fs.readFile(path.join(userDir, MEMORY_INDEX_FILENAME), "utf8")).toBe(
       "- [T](testing-conventions.md)\n",
@@ -596,7 +591,7 @@ describe("memory scope export/import", () => {
   };
 
   it("rejects a name that is a path, climbs out, or is not a topic file", async () => {
-    const outside = path.join(t.root, "outside-target.md");
+    const outside = path.join(t.root, `${agentId}-outside-target.md`);
     await rejects([topic("../escape.md", "x")], "parent traversal");
     await rejects([topic("..\\escape.md", "x")], "windows traversal");
     await rejects([topic("sub/notes.md", "x")], "nested path");
@@ -662,7 +657,7 @@ describe("memory scope export/import", () => {
   itWithSymlinks(
     "replaces a symlink standing at a memory's name instead of writing through it",
     async () => {
-      const outside = path.join(t.root, "outside-secret.md");
+      const outside = path.join(t.root, `${agentId}-outside-secret.md`);
       await fs.writeFile(outside, "secret\n", "utf8");
       await fs.symlink(outside, path.join(wsDir, "leak.md"));
 
@@ -692,12 +687,9 @@ describe("memory scope export/import", () => {
       expect((await owner.get(exportPath("never-run-0badc0de"))).status).toBe(404);
       expect((await runImport(document([]), { key: "never-run-0badc0de" })).status).toBe(404);
 
-      const outside = path.join(t.root, "outside-dir");
+      const outside = path.join(t.root, `${agentId}-outside-dir`);
       await fs.mkdir(outside, { recursive: true });
-      await fs.symlink(
-        outside,
-        memoryScopeDir(t.root, projectId, "default_agent", "evil-12345678"),
-      );
+      await fs.symlink(outside, memoryScopeDir(t.root, projectId, agentId, "evil-12345678"));
       expect((await owner.get(exportPath("evil-12345678"))).status).toBe(404);
       expect(
         (await runImport(document([topic("a.md", "x")]), { key: "evil-12345678" })).status,
