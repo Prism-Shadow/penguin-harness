@@ -1,8 +1,8 @@
 /**
- * The focused terminal's key decision (src/lib/shortcuts/terminal-keys.ts) as a table: the Mac
- * behaviour change (⌘W closes, Ctrl+W reaches readline), the shell keeping every key xterm
- * sends (Ctrl+B, Ctrl+K, Ctrl+J stay the shell's even when bound), the missing-close fallback,
- * and the repeat.
+ * The focused terminal's key decision (src/lib/shortcuts/terminal-keys.ts) as a table: the close
+ * chord (⌃⌥` on a Mac, Ctrl+Alt+` elsewhere) closing while Ctrl+W reaches readline everywhere, the
+ * shell keeping every key xterm sends (Ctrl+B, Ctrl+K, Ctrl+J stay the shell's even when bound),
+ * the missing-close fallback, and the repeat.
  */
 import { describe, expect, it } from "vitest";
 import { SHORTCUT_COMMANDS, defaultChord } from "../src/lib/shortcuts/registry";
@@ -24,10 +24,50 @@ const host = (overrides: Partial<TerminalKeyHost> = {}): TerminalKeyHost => ({
 
 describe("terminalKeyAction", () => {
   const table: Array<[string, Platform, KeyLike, TerminalKeyHost, string]> = [
-    ["⌘W closes on a Mac", "mac", key({ code: "KeyW", metaKey: true }), host(), "close"],
+    [
+      "⌃⌥` closes on a Mac",
+      "mac",
+      key({ code: "Backquote", ctrlKey: true, altKey: true }),
+      host(),
+      "close",
+    ],
+    [
+      "Ctrl+Alt+` closes off a Mac",
+      "linux",
+      key({ code: "Backquote", ctrlKey: true, altKey: true }),
+      host(),
+      "close",
+    ],
+    [
+      "Ctrl+Alt+` closes on Windows",
+      "windows",
+      key({ code: "Backquote", ctrlKey: true, altKey: true }),
+      host(),
+      "close",
+    ],
+    [
+      "⌥⌘` is not the close: the chord is literal Control on a Mac too",
+      "mac",
+      key({ code: "Backquote", metaKey: true, altKey: true }),
+      host(),
+      "shell",
+    ],
     ["Ctrl+W is readline's on a Mac", "mac", key({ code: "KeyW", ctrlKey: true }), host(), "shell"],
-    ["Ctrl+W closes off a Mac", "linux", key({ code: "KeyW", ctrlKey: true }), host(), "close"],
-    ["Ctrl+W closes on Windows", "windows", key({ code: "KeyW", ctrlKey: true }), host(), "close"],
+    [
+      "Ctrl+W is readline's off a Mac",
+      "linux",
+      key({ code: "KeyW", ctrlKey: true }),
+      host(),
+      "shell",
+    ],
+    [
+      "Ctrl+W is readline's on Windows",
+      "windows",
+      key({ code: "KeyW", ctrlKey: true }),
+      host(),
+      "shell",
+    ],
+    ["⌘W is not the close on a Mac", "mac", key({ code: "KeyW", metaKey: true }), host(), "shell"],
     // The shell keeps the control characters an app command is bound to; the page never
     // takes them from a focused terminal.
     [
@@ -69,9 +109,9 @@ describe("terminalKeyAction", () => {
     ],
     ["⌘B likewise on a Mac", "mac", key({ code: "KeyB", metaKey: true }), host(), "shell"],
     [
-      "an unanswered chord is the shell's (Ctrl+P before the palette)",
+      "an unanswered chord is the shell's (Ctrl+Alt+P before the palette)",
       "linux",
-      key({ code: "KeyP", ctrlKey: true }),
+      key({ code: "KeyP", ctrlKey: true, altKey: true }),
       host(),
       "shell",
     ],
@@ -86,14 +126,14 @@ describe("terminalKeyAction", () => {
     [
       "with no close on offer the chord goes to the shell",
       "linux",
-      key({ code: "KeyW", ctrlKey: true }),
+      key({ code: "Backquote", ctrlKey: true, altKey: true }),
       host({ canClose: false }),
       "shell",
     ],
     [
       "a held close chord is consumed, not re-run",
       "mac",
-      key({ code: "KeyW", metaKey: true, repeat: true }),
+      key({ code: "Backquote", ctrlKey: true, altKey: true, repeat: true }),
       host(),
       "consume",
     ],

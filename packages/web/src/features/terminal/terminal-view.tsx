@@ -184,7 +184,7 @@ export interface TerminalViewProps {
   /** OSC window-title changes, parsed by this client's own xterm from the byte stream. */
   onTitle?: (title: string) => void;
   /**
-   * The `terminal.close` shortcut (⌘W / Ctrl+W by default) pressed inside this terminal. The
+   * The `terminal.close` shortcut (⌃⌥` / Ctrl+Alt+` by default) pressed inside this terminal. The
    * host decides what a close is — the dock tab's confirm-then-kill, the standalone page's
    * kill-then-close-window; with no handler the key goes to the shell like any other.
    */
@@ -364,13 +364,12 @@ export function TerminalView({
        *    skip xterm's own key handling, keep the browser default — is the whole
        *    implementation, and calling the async clipboard API as well would double-paste.
        * 2. The keymap (lib/shortcuts/terminal-keys.ts decides). The terminal-scope command
-       *    (`terminal.close`, ⌘W / Ctrl+W by default) is consumed here so it never reaches the
-       *    shell, where it is readline's delete-word; browsers keep that chord for closing the
-       *    browser tab and act first, the desktop shell delivers it. Everything else is xterm's:
-       *    the shell keeps every key xterm would send it (Ctrl+B, Ctrl+K, Ctrl+J stay a tmux
-       *    prefix, kill-line and newline even when an app command is bound to them), and the
-       *    chords xterm sends nothing for — Ctrl+`, Ctrl+Shift+`, every ⌘ chord — are left
-       *    un-prevented and bubble to the window dispatcher that owns them.
+       *    (`terminal.close`, ⌃⌥` / Ctrl+Alt+` by default) is consumed here so it never
+       *    reaches the shell. Everything else is xterm's: the shell keeps every key xterm would
+       *    send it (Ctrl+B, Ctrl+K, Ctrl+J stay a tmux prefix, kill-line and newline even when
+       *    an app command is bound to them), and the chords xterm sends nothing for — Ctrl+`,
+       *    Ctrl+Shift+`, every ⌘ chord — are left un-prevented and bubble to the window
+       *    dispatcher that owns them.
        */
       const platform = currentPlatform();
       term.attachCustomKeyEventHandler((event) => {

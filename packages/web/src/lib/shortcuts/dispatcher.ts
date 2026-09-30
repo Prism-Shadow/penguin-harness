@@ -62,9 +62,10 @@ export function setShortcutBlocker(fn: (() => boolean) | null): void {
 
 /**
  * The window's keydown listener. A held chord auto-repeats: a repeat of a command that has a
- * handler is kept from the browser's own action (Print, Downloads, address-bar search) but does
- * not run the command again, so a held ⌘B toggles the sidebar once. Behind an open dialog every
- * key is left alone, so the dialog's own keys (and the browser's) work as if nothing were bound.
+ * handler is kept from the browser's own action (a binding on ⌘P would print from the first
+ * repeat on) but does not run the command again, so a held ⌥⌘1 toggles the sidebar once. Behind
+ * an open dialog every key is left alone, so the dialog's own keys (and the browser's) work as if
+ * nothing were bound.
  */
 export function handleShortcutKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return;

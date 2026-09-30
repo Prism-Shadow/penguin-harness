@@ -6,7 +6,9 @@
  *
  * Defaults are written with `Mod`, which resolves to ⌘ on macOS and Ctrl elsewhere. A literal
  * `Ctrl+` token is reserved for the case where the macOS binding must NOT follow ⌘, and the
- * registry test holds that line.
+ * registry test holds that line. Defaults also stay off the browsers' own shortcuts
+ * (reserved.ts), which is why most sit on Mod+Alt — ⌥⌘ on macOS, Ctrl+Alt elsewhere; the registry
+ * test holds that line too, and names the defaults that still share a chord with a browser.
  */
 import { normalizeChord, parseChord } from "./chord";
 import type { Chord, CommandId, Platform, ShortcutCommand, ShortcutGroup } from "./types";
@@ -16,7 +18,8 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     id: "palette.toggle",
     scope: "global",
     group: "general",
-    defaults: { default: "Mod+KeyP" },
+    // Mod+P is the browser's Print. On macOS this takes over Chrome's ⌥⌘P (Page Setup).
+    defaults: { default: "Mod+Alt+KeyP" },
   },
   {
     id: "sessions.search",
@@ -67,12 +70,14 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     id: "terminal.close",
     scope: "terminal",
     group: "terminal",
-    defaults: { default: "Mod+KeyW" },
+    // Mod+W closes the browser tab. The toggle's key plus Alt, literal Control like the toggle.
+    defaults: { default: "Ctrl+Alt+Backquote" },
   },
   {
     id: "editor.save",
     scope: "editor",
     group: "editor",
+    // Every editor's save chord: the editors take it from the browser's Save Page on purpose.
     defaults: { default: "Mod+KeyS" },
   },
 ];

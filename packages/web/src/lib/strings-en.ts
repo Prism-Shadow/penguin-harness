@@ -113,7 +113,10 @@ export const en: Strings = {
       `Shares its shortcut with "${other}"; only the first in the list fires`,
     conflictShadowed: (other: string, surface: string): string =>
       `In ${surface}, "${other}" takes this shortcut first`,
-    browserReserved: "The browser reserves this combination; it works in the desktop app only",
+    browserReserved:
+      "The browser keeps this combination for itself; it only works in the desktop app",
+    browserCommon:
+      "The browser also uses this combination; in a browser tab it takes over that browser function",
     desktopMenuReserved: "Overrides the desktop app's menu shortcut of the same keys",
     saveFailed: "Shortcuts could not be saved to the account",
   },
@@ -187,7 +190,7 @@ export const en: Strings = {
     shortcutsTitle: "Keyboard shortcuts",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
-      "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example); those work in the desktop app and are marked in the list.",
+      "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example), so those work in the desktop app only; a chord the browser also uses (Ctrl+P / ⌘P prints) takes over that browser function in a browser tab. The list marks both.",
     accountTitle: "Account",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "Import Trace",

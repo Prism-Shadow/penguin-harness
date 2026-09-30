@@ -94,14 +94,16 @@ describe("the window listener", () => {
     expect(toggled).toBe(1);
     expect(repeat.defaultPrevented).toBe(true);
     // A repeat of a chord nothing answers is left to the browser, like its first press.
-    expect(fire({ code: "KeyP", key: "p", ctrlKey: true, repeat: true }).defaultPrevented).toBe(
-      false,
-    );
+    expect(
+      fire({ code: "KeyP", key: "p", ctrlKey: true, altKey: true, repeat: true }).defaultPrevented,
+    ).toBe(false);
   });
 
   it("leaves a chord with no handler, a focus-scoped chord and an already-prevented event to their defaults", () => {
-    // palette.toggle is bound to Ctrl+P but nothing answers it yet.
-    expect(fire({ code: "KeyP", key: "p", ctrlKey: true }).defaultPrevented).toBe(false);
+    // palette.toggle is bound to Ctrl+Alt+P but nothing answers it yet.
+    expect(fire({ code: "KeyP", key: "p", ctrlKey: true, altKey: true }).defaultPrevented).toBe(
+      false,
+    );
     // editor.save is editor-scoped: the editor's own handler decides it, never the window.
     let saved = 0;
     unregisters.push(onCommand("editor.save", () => void saved++));

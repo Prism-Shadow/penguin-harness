@@ -34,7 +34,7 @@ export function detectPlatform(nav: NavigatorLike | undefined): Platform {
   return "linux";
 }
 
-/** The desktop shell is Electron, which names itself in the user agent. Only the reserved-chord notice reads this. */
+/** The desktop shell is Electron, which names itself in the user agent. Tooltips and the desktop-menu notice read this. */
 export function detectHost(nav: NavigatorLike | undefined): HostKind {
   return /Electron\//.test(nav?.userAgent ?? "") ? "desktop" : "browser";
 }
