@@ -134,21 +134,6 @@ unmodified out of the `@fontsource/ibm-plex-sans-condensed` npm package.
 Source: <https://fontsource.org/fonts/ibm-plex-sans-condensed> — the
 `@fontsource/ibm-plex-sans-condensed` version resolved in `pnpm-lock.yaml`.
 
-## Commit Mono fonts — `commit-mono-*.woff2` in the web assets
-
-Present wherever the Web App ships: every release archive, the desktop application, the assets the
-server serves, and the npm server package's `web-dist/`.
-
-Commit Mono at weights 400 and 700, one latin file each. The web build copies the files unmodified
-out of the `@fontsource/commit-mono` npm package.
-
-**License: SIL Open Font License 1.1.** The full text ships in every build as
-`fonts-licenses/commit-mono.txt`, mirrored from the package's `LICENSE` into
-`packages/ui/src/fonts/LICENSES/commit-mono.txt`.
-
-Source: <https://fontsource.org/fonts/commit-mono> — the `@fontsource/commit-mono` version resolved
-in `pnpm-lock.yaml`.
-
 ## Noto Sans SC fonts — `noto-sans-sc-*.woff2` in the web assets
 
 Present wherever the Web App ships: every release archive, the desktop application, the assets the
