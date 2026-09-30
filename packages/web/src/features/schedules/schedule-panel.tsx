@@ -86,7 +86,7 @@ function StateGlyph({ item }: { item: ScheduleItem }) {
           ? CHECK_ICON
           : INFO_ICON;
   return (
-    <span className={`shrink-0 ${tone}`} title={item.invalidReason ?? name}>
+    <span className={`shrink-0 ${tone}`} data-tooltip={item.invalidReason ?? name}>
       <GlyphIcon d={d} size={ICON_SIZE.rowLead} filled={glyph === "play"} />
       <span className="sr-only">{name}</span>
     </span>
@@ -109,7 +109,7 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
       button={
         <button
           type="button"
-          title={S.schedule.rowActions}
+          data-tooltip={S.schedule.rowActions}
           aria-label={S.schedule.rowActions}
           aria-haspopup="menu"
           aria-expanded={open}
@@ -298,7 +298,8 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                         // The name leads the tooltip, not just the prompt: a task name is a
                         // file name and truncates in a dock this narrow, and the panel would
                         // otherwise be the one surface that cannot show it in full.
-                        title={`${item.name}\n${item.prompt}`}
+                        data-tooltip={`${item.name}\n${item.prompt}`}
+                        data-tooltip-content="text"
                       >
                         {item.name}
                       </span>
@@ -306,7 +307,8 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                     </div>
                     <div
                       className="truncate text-xs text-gray-500 dark:text-gray-400"
-                      title={item.invalidReason ?? line}
+                      data-tooltip={item.invalidReason ?? line}
+                      data-tooltip-content="text"
                     >
                       {line}
                     </div>

@@ -143,6 +143,7 @@ export function CloseIcon({ size = 14, className = "" }: { size?: number; classN
 export function CloseButton({
   onClose,
   className = "",
+  title,
   ...rest
 }: { onClose: () => void; className?: string } & Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
@@ -154,12 +155,16 @@ export function CloseButton({
       aria-label={S.common.close}
       onClick={onClose}
       className={`rounded-md p-1.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 ${className}`}
+      data-tooltip={title}
       {...rest}
     >
       <CloseIcon />
     </button>
   );
 }
+
+/** Plus: "add one of these" — the dock's add-tab trigger, the terminal page's new shell. */
+export const ADD_ICON = "M12 5v14M5 12h14";
 
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";

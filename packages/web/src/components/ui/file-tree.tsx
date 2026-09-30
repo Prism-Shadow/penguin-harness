@@ -234,7 +234,7 @@ export function FileTree<Row extends FileTreeRow>({
         // A retained row carries no path: rowElement() and a caller's pointer hit test both
         // resolve a row by this attribute, and neither may land on one that is on its way out.
         {...(retained ? {} : { "data-tree-path": row.path, "data-tree-kind": row.kind })}
-        title={rowTitle?.(row) ?? row.path}
+        data-tooltip={rowTitle?.(row) ?? row.path}
         aria-label={rowLabel?.(row)}
         {...(retained ? {} : { onClick: () => activate(row), onFocus: () => setFocused(row.path) })}
         style={{ paddingLeft: TREE_PAD_PX + row.depth * TREE_INDENT_PX }}

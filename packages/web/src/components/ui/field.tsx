@@ -7,6 +7,7 @@
  */
 import type { ReactNode } from "react";
 import { InfoPopover } from "./info-popover";
+import { CheckIcon } from "./icons";
 
 /**
  * The control "look" shared by Input, Select and OptionMenu: rounded box, gray
@@ -23,6 +24,38 @@ export const controlBase =
 
 /** Base padding/alignment/transition for a menu row (Select, OptionMenu, and the chat composer menus); callers add flex/block and the hover/selected colors. */
 export const menuRowClass = "w-full px-3 py-1.5 text-left transition-colors duration-150";
+
+/**
+ * The floating panel every picker and menu opens — Select's surface: a hairline box on the
+ * overlay layer, one shadow step, a little padding above the first row and below the last.
+ * Callers add position, width, z-layer and max height, and the `ui-glass` hook in the
+ * component that opens the panel (a hook belongs to its host component, not to a string).
+ */
+export const menuPanelClass =
+  "anim-pop overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900";
+
+/**
+ * A menu row's ink and fill: an action row, or a choice that is not the current one, fills on
+ * hover; the current choice is filled and set in the medium weight (and carries ChoiceCheck).
+ * The same two states in every picker, so a choice reads the same wherever it is made.
+ */
+export function menuRowTone(selected = false): string {
+  return selected
+    ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+    : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800";
+}
+
+/**
+ * The current choice's mark, Select's check. It sits in a fixed slot at the row's end, so the
+ * rows of one list align whether or not they carry it.
+ */
+export function ChoiceCheck({ on }: { on: boolean }) {
+  return (
+    <span aria-hidden className="flex w-3 shrink-0 justify-center">
+      {on && <CheckIcon className="text-gray-500 dark:text-gray-400" />}
+    </span>
+  );
+}
 
 /**
  * The red "*" that marks a field as required, and the only place it is spelled. A field is

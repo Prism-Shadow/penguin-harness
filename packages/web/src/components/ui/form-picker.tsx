@@ -60,7 +60,7 @@ export function FormPickerTrigger({
   return (
     <button
       type="button"
-      title={title}
+      data-tooltip={title}
       aria-label={ariaLabel}
       aria-haspopup={ariaHaspopup}
       aria-expanded={expanded}

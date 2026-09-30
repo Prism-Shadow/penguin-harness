@@ -153,7 +153,7 @@ export function ChartCard({
       {/* The tooltip carries what the two truncating lines may have cut, and nothing else:
           the face has no click of its own, so it must not promise one either. */}
       <div
-        title={
+        data-tooltip={
           flag !== undefined ? `${employee.name} · ${flag}` : `${employee.name} · ${employee.title}`
         }
         className={`absolute inset-0 flex flex-col rounded-lg border bg-white px-3 py-2.5 shadow-sm dark:bg-gray-900 ${
@@ -180,7 +180,7 @@ export function ChartCard({
           <ChartStateDot state={state} />
           <span
             className="flex min-w-0 flex-1 items-center gap-1 font-mono text-[10px] text-gray-400 dark:text-gray-500"
-            title={flag ?? employee.resolvedWorkspace ?? employee.workspace}
+            data-tooltip={flag ?? employee.resolvedWorkspace ?? employee.workspace}
           >
             {flag !== undefined ? (
               <span className={toneInk.danger}>
@@ -195,7 +195,7 @@ export function ChartCard({
             className={`shrink-0 tabular-nums ${
               tone === "attention" || tone === "danger" ? `font-medium ${toneInk[tone]}` : ""
             }`}
-            title={spendTitle}
+            data-tooltip={spendTitle}
           >
             {spend}
           </span>
@@ -229,7 +229,7 @@ export function ChartCard({
           button={
             <button
               type="button"
-              title={S.company.chart.nodeMenu}
+              data-tooltip={S.company.chart.nodeMenu}
               aria-label={`${employee.name} · ${S.company.chart.nodeMenu}`}
               aria-haspopup="menu"
               aria-expanded={ctx.open}

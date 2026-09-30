@@ -1,0 +1,524 @@
+/**
+ * The theme foundation every consumer imports right after `@import "tailwindcss"`:
+ *
+ *   @import "tailwindcss";
+ *   @import "@prismshadow/penguin-ui/theme.css";
+ *   @import "@prismshadow/penguin-ui/themes/github.css";   (then modern.css, geek.css)
+ *   @import "@prismshadow/penguin-ui/fonts.css";
+ *
+ * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge
+ * from the `--ui-*` token contract (tokens.ts) to Tailwind utilities, the base rules that read
+ * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
+ * `data-layout-motion` attributes, and the depth ladder the `ui-tree` recipes measure with. Token
+ * VALUES live only in `themes/*.css`, and so do the user's accent presets: each theme lists its
+ * own, in `@layer ui-accent`, scoped to that theme (tokens.ts, `ACCENT_PRESETS`).
+ *
+ * Attributes on <html>: `class="dark"` (mode), `data-theme` (absent = github), `data-accent`
+ * (absent = the theme's own accent; an id the active theme does not list paints nothing, which
+ * is the same), `data-font-latin` / `data-font-cjk` (absent = the theme's own faces; the `ui-font`
+ * layer at the end resolves a chosen face), `data-motion="reduced"` (the gallery's switch; the
+ * app answers the media query instead). The pre-paint script in boot.ts sets all but the last
+ * before the first frame, and the root font-size with them; the app's theme provider keeps them
+ * in sync afterwards.
+ */
+
+/* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Appended after Tailwind's own `theme, base, components, utilities`. A theme's blocks live in
+   ui-theme and its accent presets in ui-accent, so a preset beats the theme's `.dark` block by
+   layer order alone — `:root[data-theme="x"].dark` would otherwise tie with
+   `:root[data-theme="x"][data-accent="blue"]` on specificity and win by coming later. The token
+   blocks and the presets declare custom properties only, so sitting after `utilities` never lets
+   them override a utility's declaration. The one thing in ui-theme that does override utilities
+   is a theme's style-hook recipes (hooks.ts), and they sit there for exactly that: `.ui-live`
+   re-times its host's `animate-spin`, `.ui-glass` replaces its host's opaque fill, `.ui-shell`
+   re-paints its host's columns, `.ui-field` re-lays its host's row. The user's font pairing
+   lives in ui-font, last: a chosen face must beat every theme rule, the dark one included,
+   whatever its specificity, and a layer after the theme's does that without a selector race. */
+@layer ui-theme, ui-accent, ui-font;
+
+/*
+ * The bridge. `inline` makes each utility reference `var(--ui-*)` directly instead of the
+ * Tailwind theme variable, so a `[data-theme]` or `.dark` set on a subtree resolves at the element
+ * rather than being frozen at :root.
+ *
+ * Caveats, written down where they bite:
+ * 1. Tailwind emits only the theme variables some utility uses, so bridging an unused scale step
+ *    costs nothing.
+ * 2. `rounded` (bare) and `rounded-full` are literals (`0.25rem`, `calc(infinity * 1px)`), not
+ *    theme variables, so neither follows the theme. Components use `rounded-sm` (same 0.25rem) and
+ *    `rounded-[var(--ui-radius-pill)]` for pills, and keep `rounded-full` for state dots and the
+ *    switch knob — which is how a square theme keeps round dots.
+ * 3. Bare `border` is a literal 1px; thinner-looking lines come from `--ui-line` alpha, not width.
+ * 4. Shadows bridged here lose Tailwind's `--tw-shadow-color` hook (`shadow-lg shadow-black/20`);
+ *    no call site combines the two today.
+ * 5. `--ui-inset` is aliased as `surface-inset`, not `inset`: a `--color-inset` would make
+ *    Tailwind read the existing static `ring-inset` utility as a ring COLOUR as well, and emit both.
+ * 6. `--spacing` is Tailwind v4's one spacing multiplier: every spacing and size utility is
+ *    `calc(var(--spacing) * n)` (`h-8`, `px-2`, `gap-3`, `size-4`, `w-64`, `leading-5`, …), so
+ *    pointing it at `--ui-space-unit` scales all of them per theme. Primer's unit is Tailwind's
+ *    stock 0.25rem, so Primer moves no pixel; Frost's is larger and Console's smaller. Literal
+ *    lengths (`w-[24rem]`, `max-w-2xl`) do not follow it, by design.
+ * 7. `text-xs` and `text-sm` read the small and body rungs (size and line-height). Primer's rungs
+ *    equal Tailwind's stock values, so again nothing moves there; the other themes set their own.
+ *    `text-base` and up keep Tailwind's scale: no rung token names them.
+ */
+@theme inline {
+  /* Surfaces */
+  --color-canvas: var(--ui-canvas);
+  --color-surface: var(--ui-surface);
+  --color-surface-muted: var(--ui-surface-muted);
+  --color-surface-inset: var(--ui-inset);
+  --color-overlay: var(--ui-overlay);
+
+  /* Text */
+  --color-fg: var(--ui-fg);
+  --color-fg-emphasis: var(--ui-fg-emphasis);
+  --color-fg-muted: var(--ui-fg-muted);
+  --color-fg-subtle: var(--ui-fg-subtle);
+  --color-link: var(--ui-fg-link);
+  --color-link-hover: var(--ui-fg-link-hover);
+
+  /* Lines */
+  --color-line: var(--ui-line);
+  --color-line-muted: var(--ui-line-muted);
+  --color-line-emphasis: var(--ui-line-emphasis);
+  --color-divider: var(--ui-divider);
+
+  /* Accent */
+  --color-accent: var(--ui-accent);
+  --color-accent-hover: var(--ui-accent-hover);
+  --color-accent-active: var(--ui-accent-active);
+  --color-accent-fg: var(--ui-accent-fg);
+  --color-accent-muted: var(--ui-accent-muted);
+  --color-accent-line: var(--ui-accent-line);
+
+  /* The switch: bg-switch-track (off), bg-switch-knob (the knob on it), bg-switch-knob-on (the
+     knob on the accent), border-switch-knob-line (the knob's hairline edge). */
+  --color-switch-track: var(--ui-switch-track);
+  --color-switch-knob: var(--ui-switch-knob);
+  --color-switch-knob-on: var(--ui-switch-knob-on);
+  --color-switch-knob-line: var(--ui-switch-knob-line);
+
+  /* Semantic tones: text-tone-danger-fg, bg-tone-success-bg, border-tone-attention-line, … */
+  --color-tone-success-fg: var(--ui-tone-success-fg);
+  --color-tone-success-bg: var(--ui-tone-success-bg);
+  --color-tone-success-line: var(--ui-tone-success-line);
+  --color-tone-success-emphasis: var(--ui-tone-success-emphasis);
+  --color-tone-success-emphasis-fg: var(--ui-tone-success-emphasis-fg);
+  --color-tone-attention-fg: var(--ui-tone-attention-fg);
+  --color-tone-attention-bg: var(--ui-tone-attention-bg);
+  --color-tone-attention-line: var(--ui-tone-attention-line);
+  --color-tone-attention-emphasis: var(--ui-tone-attention-emphasis);
+  --color-tone-attention-emphasis-fg: var(--ui-tone-attention-emphasis-fg);
+  --color-tone-danger-fg: var(--ui-tone-danger-fg);
+  --color-tone-danger-bg: var(--ui-tone-danger-bg);
+  --color-tone-danger-line: var(--ui-tone-danger-line);
+  --color-tone-danger-emphasis: var(--ui-tone-danger-emphasis);
+  --color-tone-danger-emphasis-fg: var(--ui-tone-danger-emphasis-fg);
+  --color-tone-done-fg: var(--ui-tone-done-fg);
+  --color-tone-done-bg: var(--ui-tone-done-bg);
+  --color-tone-done-line: var(--ui-tone-done-line);
+  --color-tone-done-emphasis: var(--ui-tone-done-emphasis);
+  --color-tone-done-emphasis-fg: var(--ui-tone-done-emphasis-fg);
+  --color-tone-neutral-fg: var(--ui-tone-neutral-fg);
+  --color-tone-neutral-bg: var(--ui-tone-neutral-bg);
+  --color-tone-neutral-line: var(--ui-tone-neutral-line);
+  --color-tone-neutral-emphasis: var(--ui-tone-neutral-emphasis);
+  --color-tone-neutral-emphasis-fg: var(--ui-tone-neutral-emphasis-fg);
+  --color-tone-info-fg: var(--ui-tone-info-fg);
+  --color-tone-info-bg: var(--ui-tone-info-bg);
+  --color-tone-info-line: var(--ui-tone-info-line);
+  --color-tone-info-emphasis: var(--ui-tone-info-emphasis);
+  --color-tone-info-emphasis-fg: var(--ui-tone-info-emphasis-fg);
+
+  /* Charts: identity colours, not judgement */
+  --color-chart-1: var(--ui-chart-1);
+  --color-chart-2: var(--ui-chart-2);
+  --color-chart-3: var(--ui-chart-3);
+  --color-chart-4: var(--ui-chart-4);
+  --color-chart-5: var(--ui-chart-5);
+  --color-chart-6: var(--ui-chart-6);
+  --color-chart-7: var(--ui-chart-7);
+  --color-chart-8: var(--ui-chart-8);
+  --color-chart-ref: var(--ui-chart-ref);
+  --color-chart-cache-read: var(--ui-chart-cache-read);
+  --color-chart-cache-write: var(--ui-chart-cache-write);
+  --color-chart-output: var(--ui-chart-output);
+  --color-chart-grid: var(--ui-chart-grid);
+  --color-chart-axis: var(--ui-chart-axis);
+
+  /* Tailwind's own namespaces follow the theme, so existing classes need no edits. `font-sans` is
+     the reading face a bubble or a prose block opts into; `font-ui` the chrome's, which `body`
+     already sets and a component names only to opt back out of a reading surface. */
+  --font-sans: var(--ui-font-sans);
+  --font-ui: var(--ui-font-ui);
+  --font-mono: var(--ui-font-mono);
+  --font-display: var(--ui-font-display);
+
+  /* Density: caveat 6. */
+  --spacing: var(--ui-space-unit);
+
+  /* Type rungs: caveat 7. */
+  --text-xs: var(--ui-text-small-size);
+  --text-xs--line-height: var(--ui-text-small-lh);
+  --text-sm: var(--ui-text-body-size);
+  --text-sm--line-height: var(--ui-text-body-lh);
+
+  --radius-xs: var(--ui-radius-xs);
+  --radius-sm: var(--ui-radius-sm);
+  --radius-md: var(--ui-radius-md);
+  --radius-lg: var(--ui-radius-lg);
+  --radius-xl: var(--ui-radius-xl);
+  /* The contract stops at xl; the two larger steps the app uses (the mobile sheet's 2xl, one 3xl)
+     keep Tailwind's stock ratios to xl — 1rem and 1.5rem against 0.75rem — so they follow a
+     theme's radius, including all the way down to 0. */
+  --radius-2xl: calc(var(--ui-radius-xl) * 4 / 3);
+  --radius-3xl: calc(var(--ui-radius-xl) * 2);
+  /* The pressable control's shape (Button, IconButton, Segmented, the Switch track, SendButton):
+     `rounded-control`. Its own token because a theme's controls and boxes differ in kind, not in
+     scale step — Frost's controls are pills while its boxes stay on the scale. */
+  --radius-control: var(--ui-radius-control);
+
+  --shadow-sm: var(--ui-shadow-raised);
+  --shadow-lg: var(--ui-shadow-overlay);
+  --shadow-xl: var(--ui-shadow-modal);
+  --shadow-2xl: var(--ui-shadow-drawer);
+
+  --default-transition-duration: var(--ui-dur-fast);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Kept for one wave so branches still spelling `var(--accent-bg)` keep rendering; new code
+       writes `bg-accent` / `text-accent-fg`. Delete once no source reads them. */
+    --accent-bg: var(--ui-accent);
+    --accent-fg: var(--ui-accent-fg);
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  body {
+    background-color: var(--ui-canvas);
+    color: var(--ui-fg);
+    font-family: var(--ui-font-ui);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  code,
+  pre,
+  kbd {
+    font-family: var(--ui-font-mono);
+  }
+  /* What a pressable element may animate: colour, lines, opacity and the focus/elevation shadow,
+     never geometry (no radius, size or position easing on hover). Only the property list is set
+     here, so nothing animates until a component adds a duration (`duration-150`), and any
+     `transition-*` utility replaces the list. `:where()` keeps the rule at zero specificity. */
+  :where(button, a, [role="button"], [role="tab"]) {
+    transition-property: color, background-color, border-color, opacity, box-shadow;
+  }
+  /* Keyboard focus for buttons and links; text controls draw their own ring and do not stack this one. */
+  button:focus-visible,
+  a:focus-visible,
+  [role="tab"]:focus-visible,
+  summary:focus-visible {
+    outline: var(--ui-focus-ring);
+    outline-offset: var(--ui-focus-ring-offset);
+  }
+  ::selection {
+    background: var(--ui-selection-bg);
+  }
+  * {
+    scrollbar-width: var(--ui-scrollbar-w);
+    scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track);
+  }
+
+  /*
+   * Motion. A component never writes a duration, an easing, a keyframe or a transform for these:
+   * it sets one attribute and the active theme's motion tokens decide how the change looks —
+   * Primer a quick fade with a few px of slide, Frost a soft spring with a scale-up and a blur-in,
+   * Console a `steps()` jump. Every rule reads tokens only, and every one is switched off further
+   * down under `data-motion="reduced"` and the reduced-motion media query.
+   *
+   * - `data-presence="enter" | "exit"` on a transient layer (menu, popover, tooltip, dialog card,
+   *   toast, dock panel), with `data-side` naming the edge it comes from: `top` (a menu under its
+   *   trigger), `bottom` (a toast), `left` / `right` (a dock), `center` (a dialog). The `exit`
+   *   state stays mounted until `animationend`; with `animation-name: none` (reduced motion, or a
+   *   theme that jumps) the owner unmounts at once.
+   * - `data-backdrop="enter" | "exit"`: the dialog's scrim, opacity only.
+   * - `data-reveal`: content that just appeared inside a settled surface — a streamed chunk of
+   *   text, a new tool row — fades (and de-blurs) in once; put it on the appended element only.
+   * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
+   *   disclosure's `grid-template-rows: 0fr ↔ 1fr`; the theme sets the duration and the curve.
+   *
+   * The presence keyframes move the element through the individual `translate` and `scale`
+   * properties, never `transform`, so a layer that positions itself with a `transform` keeps it
+   * while it animates; Tailwind v4's `translate-*` and `scale-*` utilities set the SAME individual
+   * properties and would be overridden for the animation's duration, so a presence box carries
+   * neither. Fill modes matter for the glass inside: an entrance fills `backwards` and a reveal
+   * too, so once they finish no animated `filter` (not even `blur(0)`) stays on the box — a held
+   * filter would make the box a backdrop root and the `.ui-glass` panel inside it would blur
+   * nothing; only the exit fills `forwards`, holding its end state until the owner unmounts it.
+   * `--_shift-x` / `--_shift-y` are private to these rules (not tokens).
+   */
+  [data-presence] {
+    --_shift-x: 0px;
+    --_shift-y: 0px;
+    transform-origin: center;
+  }
+  [data-presence][data-side="top"] {
+    --_shift-y: calc(-1 * var(--ui-enter-shift));
+    transform-origin: top center;
+  }
+  [data-presence][data-side="bottom"] {
+    --_shift-y: var(--ui-enter-shift);
+    transform-origin: bottom center;
+  }
+  [data-presence][data-side="left"] {
+    --_shift-x: calc(-1 * var(--ui-enter-shift));
+    transform-origin: left center;
+  }
+  [data-presence][data-side="right"] {
+    --_shift-x: var(--ui-enter-shift);
+    transform-origin: right center;
+  }
+  [data-presence="enter"] {
+    animation: ui-presence-enter var(--ui-dur-enter) var(--ui-ease-enter) backwards;
+  }
+  [data-presence="exit"] {
+    animation: ui-presence-exit var(--ui-dur-exit) var(--ui-ease-exit) forwards;
+    pointer-events: none;
+  }
+  @keyframes ui-presence-enter {
+    from {
+      opacity: 0;
+      translate: var(--_shift-x) var(--_shift-y);
+      scale: var(--ui-enter-scale);
+      filter: blur(var(--ui-enter-blur));
+    }
+  }
+  @keyframes ui-presence-exit {
+    to {
+      opacity: 0;
+      translate: var(--_shift-x) var(--_shift-y);
+      scale: var(--ui-enter-scale);
+      filter: blur(var(--ui-enter-blur));
+    }
+  }
+
+  [data-backdrop="enter"] {
+    animation: ui-backdrop-enter var(--ui-dur-enter) var(--ui-ease-overlay-in) backwards;
+  }
+  [data-backdrop="exit"] {
+    animation: ui-backdrop-exit var(--ui-dur-exit) var(--ui-ease-overlay-out) forwards;
+    pointer-events: none;
+  }
+  @keyframes ui-backdrop-enter {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes ui-backdrop-exit {
+    to {
+      opacity: 0;
+    }
+  }
+
+  [data-reveal] {
+    animation: ui-reveal var(--ui-dur-reveal) var(--ui-ease-out) backwards;
+  }
+  @keyframes ui-reveal {
+    from {
+      opacity: 0;
+      filter: blur(var(--ui-reveal-blur));
+    }
+  }
+
+  [data-layout-motion] {
+    transition-property:
+      width, height, min-width, max-width, flex-basis, grid-template-rows, grid-template-columns;
+    transition-duration: var(--ui-dur-layout);
+    transition-timing-function: var(--ui-ease-layout);
+  }
+}
+
+/* No motion: the gallery's switch on the root, then the user's system preference. Live signals
+   go still as well (a static caret block, an arc that does not turn), so a reduced page has no
+   movement at all. Nothing is left at a zero duration or paused on a first frame (an entrance
+   paused on its first frame would be invisible): each attribute computes to `animation-name:
+   none`, the element shows its end state at once, and that is what the presence owner checks
+   before unmounting an exit without waiting. These rules sit in no layer on purpose: an unlayered
+   declaration beats every layer, so they also silence a theme's own `.ui-live` recipes in
+   `ui-theme`, which would otherwise out-rank a rule in `base` whatever its specificity. */
+:root[data-motion="reduced"] :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
+  animation: none;
+}
+:root[data-motion="reduced"] [data-layout-motion] {
+  transition: none;
+}
+/* The `ui-activity` recipes animate the running row (Frost's halo), a slot inside it (Frost's
+   label highlight) and a slot's pseudo-elements (Console's block bar), so all three are named:
+   each holds its declared, unanimated state instead — a still halo, plain ink, one fill. */
+:root[data-motion="reduced"] :is(.ui-activity, .ui-activity *),
+:root[data-motion="reduced"] :is(.ui-activity, .ui-activity *)::before,
+:root[data-motion="reduced"] :is(.ui-activity, .ui-activity *)::after {
+  animation: none;
+}
+/* The `ui-stream` recipes animate the stream's caret (Console's stepped blink; Primer's is the
+   host's own pulse) and ease a layer drawn on the host itself (Frost's veil leaving on `done`),
+   so both are named: the caret holds still and a layer goes at once. The reveal's pace is the
+   app's, which shows the whole text under either signal; Frost also draws no veil then. */
+:root[data-motion="reduced"] .ui-stream [data-slot="caret"],
+:root[data-motion="reduced"] .ui-stream::before,
+:root[data-motion="reduced"] .ui-stream::after,
+:root[data-motion="reduced"] .ui-stream li::after {
+  animation: none;
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
+    animation: none;
+  }
+  [data-layout-motion] {
+    transition: none;
+  }
+  :is(.ui-activity, .ui-activity *),
+  :is(.ui-activity, .ui-activity *)::before,
+  :is(.ui-activity, .ui-activity *)::after {
+    animation: none;
+  }
+  .ui-stream [data-slot="caret"],
+  .ui-stream::before,
+  .ui-stream::after,
+  .ui-stream li::after {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* The `ui-tree` depth ladder, shared by the themes' recipes: a row or a branch carrying
+   `data-depth` gets its depth as a number a recipe can multiply — CSS cannot read an attribute as
+   a number, so the eight levels the product nests to are spelled out, and anything deeper draws as
+   the eighth. This sets no length: a host indents its own rows by
+   `calc(var(--ui-tree-inset) + var(--ui-tree-indent) * depth)`, and a theme's recipe draws its
+   rules on the columns that formula gives. `--_depth` is private to the recipes (not a token). It
+   sits in ui-theme so a theme's own `.ui-tree` rules, which come later in the layer, may read or
+   override it; Primer, with no tree recipe, is untouched by it.
+
+   Two recipes are the same in every theme and so live here once, reading tokens: the eyebrow is
+   the h6 rung (a theme says what the rung is — Primer's small tracked capitals, Frost's
+   sentence case, Console's tracked capitals — and may add its ink in its own rule), and
+   the display title takes the emphasis ink, the near-white a dark theme keeps for its headings
+   over a calmer body ink. A theme file's own `.ui-eyebrow` / `.ui-display` rules come later in
+   the layer and add to these. */
+@layer ui-theme {
+  .ui-eyebrow {
+    font-family: var(--ui-h6-font);
+    font-size: var(--ui-h6-size);
+    line-height: var(--ui-h6-lh);
+    font-weight: var(--ui-h6-weight);
+    letter-spacing: var(--ui-h6-tracking);
+    text-transform: var(--ui-h6-transform);
+  }
+  .ui-display {
+    color: var(--ui-fg-emphasis);
+  }
+
+  /* A notice's tone as one ink every theme's recipe reads: the tone tokens keyed by the hook's
+     five tone names (`warning` is the attention tone), mapped here once so no theme restates
+     it. `--_tone-fg` is private to the recipes (not a token). */
+  .ui-notice[data-tone="info"] {
+    --_tone-fg: var(--ui-tone-info-fg);
+  }
+  .ui-notice[data-tone="success"] {
+    --_tone-fg: var(--ui-tone-success-fg);
+  }
+  .ui-notice[data-tone="warning"] {
+    --_tone-fg: var(--ui-tone-attention-fg);
+  }
+  .ui-notice[data-tone="danger"] {
+    --_tone-fg: var(--ui-tone-danger-fg);
+  }
+  .ui-notice[data-tone="neutral"] {
+    --_tone-fg: var(--ui-tone-neutral-fg);
+  }
+
+  /* Where a tree's levels start. A tree with roots (a file tree) indents from the tree inset;
+     a tree with no depth-0 rows hangs off its container's own head (a work group's steps under
+     its header), so its first level is the head's level: a recipe that indents by
+     `--_lead + indent × (depth − base)` sets that level flush with the head and only indents
+     deeper ones. Console reads `--_depth` alone, because its elbows hang the first level off
+     the head on purpose. Both are private to the recipes (not tokens). */
+  .ui-tree {
+    --_base: 0;
+    --_lead: var(--ui-tree-inset);
+  }
+  .ui-tree:not(:has([data-depth="0"])) {
+    --_base: 1;
+    --_lead: 0px;
+  }
+  .ui-tree [data-depth] {
+    --_depth: 8;
+  }
+  .ui-tree [data-depth="0"] {
+    --_depth: 0;
+  }
+  .ui-tree [data-depth="1"] {
+    --_depth: 1;
+  }
+  .ui-tree [data-depth="2"] {
+    --_depth: 2;
+  }
+  .ui-tree [data-depth="3"] {
+    --_depth: 3;
+  }
+  .ui-tree [data-depth="4"] {
+    --_depth: 4;
+  }
+  .ui-tree [data-depth="5"] {
+    --_depth: 5;
+  }
+  .ui-tree [data-depth="6"] {
+    --_depth: 6;
+  }
+  .ui-tree [data-depth="7"] {
+    --_depth: 7;
+  }
+}
+
+/* The user's font pairing (boot.ts, `FONT_LATIN_OPTIONS` / `FONT_CJK_OPTIONS`): a chosen Latin
+   face replaces the sans — every theme's chrome face (`--ui-font-ui`) reads it, and the mono
+   face, which no pairing touches, stays — and a chosen CJK face replaces `--ui-font-cjk`, which
+   every theme's sans stack reads for Han (the mono stacks that read it follow too: Han inside
+   code takes the chosen face, the Latin code face stays). No attribute is
+   the theme's own choice, declared in its theme file. Only faces the app bundles are listed, so
+   a choice never names a family the page cannot load; the Latin stacks keep the CJK face ahead
+   of the generic fallbacks, and a Latin face first, so ASCII always renders in the chosen face.
+   The system CJK stack names the platform faces the themes already fall back on. */
+@layer ui-font {
+  :root[data-font-latin="system"] {
+    --ui-font-sans:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, var(--ui-font-cjk), sans-serif;
+  }
+  :root[data-font-latin="mona-sans"] {
+    --ui-font-sans: "Mona Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root[data-font-latin="ibm-plex-sans"] {
+    --ui-font-sans:
+      "IBM Plex Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root[data-font-latin="misans"] {
+    --ui-font-sans: "MiSans", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root[data-font-cjk="system"] {
+    --ui-font-cjk: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC";
+  }
+  :root[data-font-cjk="noto-sans-sc"] {
+    --ui-font-cjk: "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
+  }
+  :root[data-font-cjk="misans"] {
+    --ui-font-cjk: "MiSans", "PingFang SC", "Microsoft YaHei";
+  }
+}

@@ -26,6 +26,7 @@ import type {
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { writeClipboard } from "../../lib/clipboard";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
@@ -33,14 +34,13 @@ import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { formatDateTime } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { toneStrip } from "../../lib/tone";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
 import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CLOCK_ICON, FOLDER_ICON, FOLDER_OPEN_ICON } from "../../components/ui/group-list";
@@ -551,8 +551,7 @@ export function WorkspaceFinder({
       case "copyPath":
         // A menu row cannot show the copy button's own feedback — the panel closes out from
         // under it — so a toast confirms, as the Files panel's copy-path row does.
-        writeClipboard(target.path);
-        toastSuccess(S.common.copied);
+        void writeClipboard(target.path).then((ok) => ok && toastSuccess(S.common.copied));
         break;
       case "refresh":
         refresh();
@@ -795,7 +794,7 @@ export function WorkspaceFinder({
     >
       <button
         type="button"
-        title={fullTitle}
+        data-tooltip={fullTitle}
         disabled={disabled}
         aria-current={active ? "location" : undefined}
         data-finder-focus
@@ -821,7 +820,7 @@ export function WorkspaceFinder({
         <button
           type="button"
           aria-label={f.removeNamed(label)}
-          title={f.removeFromQuickAccess}
+          data-tooltip={f.removeFromQuickAccess}
           onClick={onRemove}
           className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 opacity-0 transition-opacity duration-150 hover:text-gray-800 focus-visible:opacity-100 group-hover:opacity-100 dark:text-gray-500 dark:hover:text-gray-200"
         >
@@ -863,7 +862,7 @@ export function WorkspaceFinder({
               <button
                 type="button"
                 aria-label={f.addCurrentToQuickAccess}
-                title={f.addCurrentToQuickAccess}
+                data-tooltip={f.addCurrentToQuickAccess}
                 onClick={() => editQuickAccess(currentFolder, machine, true)}
                 className="rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-800 dark:text-gray-500 dark:hover:text-gray-200"
               >
@@ -1014,7 +1013,7 @@ export function WorkspaceFinder({
           <button
             type="button"
             aria-label={f.editPath}
-            title={`${f.editPath} (${editChord})`}
+            data-tooltip={`${f.editPath} (${editChord})`}
             onClick={editAddress}
             className="flex h-full shrink-0 items-center pl-2.5 pr-1 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
           >
@@ -1041,7 +1040,10 @@ export function WorkspaceFinder({
                       // path instead, like the rest of the bar.
                       onClick={last ? editAddress : () => load(crumb.path)}
                       {...(last
-                        ? { "aria-current": "page" as const, title: `${f.editPath} (${editChord})` }
+                        ? {
+                            "aria-current": "page" as const,
+                            "data-tooltip": `${f.editPath} (${editChord})`,
+                          }
                         : {})}
                       className={`rounded px-1 py-0.5 transition-colors duration-150 ${
                         last
@@ -1061,7 +1063,7 @@ export function WorkspaceFinder({
               keyboard, and ⌘⇧G / Ctrl+Shift+G reaches it from anywhere. */}
           <div
             aria-hidden
-            title={`${f.editPath} (${editChord})`}
+            data-tooltip={`${f.editPath} (${editChord})`}
             onClick={editAddress}
             className="h-full min-w-6 flex-1 cursor-text"
           />
@@ -1086,7 +1088,7 @@ export function WorkspaceFinder({
           type="button"
           className={navButtonClass}
           disabled={!canGoBack(history)}
-          title={`${f.back} (${shortcut("⌘[", "Ctrl+[")})`}
+          data-tooltip={`${f.back} (${shortcut("⌘[", "Ctrl+[")})`}
           aria-label={f.back}
           onClick={() => step(-1)}
         >
@@ -1096,7 +1098,7 @@ export function WorkspaceFinder({
           type="button"
           className={navButtonClass}
           disabled={!canGoForward(history)}
-          title={`${f.forward} (${shortcut("⌘]", "Ctrl+]")})`}
+          data-tooltip={`${f.forward} (${shortcut("⌘]", "Ctrl+]")})`}
           aria-label={f.forward}
           onClick={() => step(1)}
         >
@@ -1106,7 +1108,7 @@ export function WorkspaceFinder({
           type="button"
           className={navButtonClass}
           disabled={parentPath === null}
-          title={`${f.up} (${shortcut("⌘↑", "Alt+↑")})`}
+          data-tooltip={`${f.up} (${shortcut("⌘↑", "Alt+↑")})`}
           aria-label={f.up}
           onClick={goParent}
         >
@@ -1117,7 +1119,7 @@ export function WorkspaceFinder({
           type="button"
           className={`${navButtonClass} hidden sm:block`}
           disabled={currentFolder === null && view.error === null}
-          title={f.refresh}
+          data-tooltip={f.refresh}
           aria-label={f.refresh}
           onClick={refresh}
         >
@@ -1171,8 +1173,9 @@ export function WorkspaceFinder({
     const settingsPane = denied?.settings ?? null;
     body = (
       <div className="p-4">
-        <div
-          className={`rounded-md border px-3 py-2.5 text-sm ${toneStrip[denied !== null ? "attention" : "danger"]}`}
+        <NoticeStrip
+          tone={denied !== null ? "attention" : "danger"}
+          className="rounded-md border px-3 py-2.5 text-sm"
         >
           <p className="font-medium">{denied !== null ? f.deniedTitle : f.loadFailed}</p>
           <p className="mt-1 text-xs leading-5">
@@ -1205,7 +1208,7 @@ export function WorkspaceFinder({
               </Button>
             )}
           </div>
-        </div>
+        </NoticeStrip>
       </div>
     );
   } else if (view.listing === null) {
@@ -1230,7 +1233,7 @@ export function WorkspaceFinder({
           aria-label={entry.name}
           aria-selected={isSel}
           aria-disabled={folder ? undefined : true}
-          title={folder ? entry.path : f.fileNotSelectable}
+          data-tooltip={folder ? entry.path : f.fileNotSelectable}
           data-finder-path={entry.path}
           data-finder-kind={folder ? "folder" : "file"}
           onClick={() => {
@@ -1244,7 +1247,7 @@ export function WorkspaceFinder({
               ? "cursor-default text-gray-400 dark:text-gray-600"
               : isSel
                 ? listFocused
-                  ? "bg-[var(--accent-bg)] text-[var(--accent-fg)]"
+                  ? "bg-accent text-accent-fg"
                   : "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100"
                 : "cursor-default text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800/60"
           }`}
@@ -1268,7 +1271,7 @@ export function WorkspaceFinder({
               type="button"
               tabIndex={-1}
               aria-label={f.openFolder(entry.name)}
-              title={f.open}
+              data-tooltip={f.open}
               onClick={(e) => {
                 e.stopPropagation();
                 openEntry(entry.path);

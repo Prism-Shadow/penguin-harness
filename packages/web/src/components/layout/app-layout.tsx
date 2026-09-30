@@ -46,7 +46,7 @@ import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
-import { toneStrip } from "../../lib/tone";
+import { NoticeStrip } from "../ui/notice-strip";
 
 /**
  * "Last conversation" glyph, used only by the rail: lucide's history mark — a clock read
@@ -468,7 +468,9 @@ export function AppLayout() {
   }, [collapsed, inCompany, newChat]);
 
   return (
-    <div className="flex h-full">
+    // ui-shell: the app window. A theme may paint a field behind it, float the main column as a
+    // sheet or rule the columns apart; the navigation column is `nav`, the page column `main`.
+    <div className="ui-shell flex h-full">
       {/* Desktop: single-column sidebar (collapsible to a narrow rail).
           Collapsing animates the WIDTH, which is the one animation here that transform cannot
           carry: the sidebar is in flow, so the main content reflows beside it rather than
@@ -482,6 +484,7 @@ export function AppLayout() {
           rail sits at its final 48px from the first frame while the box closes around it, and
           the pinned sidebar is uncovered left to right instead of reflowing on every frame. */}
       <aside
+        data-slot="nav"
         className={`hidden shrink-0 overflow-hidden border-r border-gray-200 bg-gray-50 transition-[width] duration-200 ease-out md:block dark:border-gray-800 dark:bg-gray-900 ${
           collapsed ? "w-12" : "w-64 lg:w-72"
         }`}
@@ -506,7 +509,7 @@ export function AppLayout() {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         {/* Mobile: top thin bar (hamburger + brand) */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-2 md:hidden dark:border-gray-800 dark:bg-gray-950">
           {/* The outermost menu on a phone: it carries a dot for EITHER trail, so its wording
@@ -516,7 +519,7 @@ export function AppLayout() {
           <button
             type="button"
             aria-label={badges.note !== null ? `${drawerName} · ${badges.note}` : drawerName}
-            {...(badges.note !== null ? { title: badges.note } : {})}
+            {...(badges.note !== null ? { "data-tooltip": badges.note } : {})}
             onClick={() => setDrawerOpen(true)}
             className="relative flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
@@ -542,8 +545,9 @@ export function AppLayout() {
             Permanently dismissible via the X on the right (per-user ui_prefs); only rendered once
             hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
         {passwordBannerRelevant && passwordBannerDismissed === false && (
-          <div
-            className={`relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs ${toneStrip.attention}`}
+          <NoticeStrip
+            tone="attention"
+            className="relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs"
           >
             <span>{S.account.initialPasswordBanner}</span>
             <button
@@ -562,13 +566,13 @@ export function AppLayout() {
             <button
               type="button"
               aria-label={S.common.close}
-              title={S.common.close}
+              data-tooltip={S.common.close}
               onClick={dismissPasswordBanner}
               className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
             >
               <CloseIcon size={12} />
             </button>
-          </div>
+          </NoticeStrip>
         )}
 
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">

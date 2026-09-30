@@ -1,7 +1,8 @@
 /**
- * Cost Center chart pure-function unit tests (chart-geom.ts): coordinate mapping, SVG path
- * assembly (straight paths through the points given — every line on the page is straight
- * segments, nothing is smoothed), container-fitting bar width (charts never scroll), stacked-bar
+ * Cost Center chart pure-function unit tests (chart-geom.ts, and the bar width and path the
+ * chart primitives take from components/ui/chart/geom.ts): coordinate mapping, SVG path
+ * assembly (straight paths through the points given in the default theme), container-fitting
+ * bar width (charts never scroll), stacked-bar
  * segment geometry and per-segment hit bands, and hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit rate
  * shown in the cacheRead bubble is lib/format's shared cacheHitRate, tested in
  * format.test.ts). Component interaction isn't covered here (vitest runs in a node
@@ -16,15 +17,12 @@ import { describe, expect, it } from "vitest";
 import {
   makeGeom,
   makeRangeGeom,
-  linePath,
-  areaPath,
   segmentPath,
+  seriesPoints,
   sparseLabelIdx,
   autoLabelIdx,
   bubblePosition,
-  fitBarWidth,
   barSegments,
-  BAR_W,
   BUBBLE_OFFSET,
   CHART_H,
   MIN_HIT_H,
@@ -32,6 +30,7 @@ import {
   PAD_R,
   PAD_R_AXIS,
 } from "../src/features/usage/chart-geom";
+import { BAR_W, curvePath, fitBarWidth } from "../src/components/ui/chart/geom";
 
 describe("makeGeom", () => {
   it("x takes each slot's midpoint; y runs top-down with max as full scale", () => {
@@ -68,19 +67,15 @@ describe("makeGeom", () => {
   });
 });
 
-describe("linePath / areaPath", () => {
+describe("seriesPoints + curvePath", () => {
   const g = makeGeom(2, 100, 640);
 
   it("line: M start + L per point (byte-identical to the old cost line)", () => {
-    expect(linePath(g, [100, 0])).toBe("M192.5,10 L485.5,178");
-  });
-
-  it("area: the line's end drops to the baseline and closes back at the start", () => {
-    expect(areaPath(g, [100, 0])).toBe("M192.5,10 L485.5,178 L485.5,178 L192.5,178 Z");
+    expect(curvePath(seriesPoints(g, [100, 0]))).toBe("M192.5,10 L485.5,178");
   });
 
   it("an empty series returns an empty string", () => {
-    expect(areaPath(g, [])).toBe("");
+    expect(curvePath(seriesPoints(g, []))).toBe("");
   });
 });
 

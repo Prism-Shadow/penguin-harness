@@ -57,6 +57,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -76,6 +77,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "credits",
     ]);
   });
 
@@ -88,6 +90,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -104,6 +107,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -163,6 +167,22 @@ describe("the Settings dialog", () => {
     // the raw registry and rendered the admin rows to everyone.
     expect(source).toContain("visibleSettingsSections({");
     expect(source).not.toContain("SECTION_RULES");
+  });
+
+  it("renders the credits page, which lists the bundled fonts and nothing before them", () => {
+    // MiSans's licence asks the app to credit it wherever it runs, so the page is visible to
+    // every viewer (pinned above); the list is the whole page.
+    expect(source).toContain('{current === "credits" && <CreditsSection />}');
+    const credits = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "../src/features/settings/credits-section.tsx",
+      ),
+      "utf8",
+    );
+    expect(credits).not.toContain("S.settings.fontCredit");
+    expect(credits).toContain("FONT_CREDITS.map");
+    expect(credits).toContain("aria-controls={panelId}");
   });
 
   it("resolves the page it renders through the same gate on every render", () => {

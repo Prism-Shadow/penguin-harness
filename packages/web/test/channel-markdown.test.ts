@@ -59,14 +59,14 @@ describe("channel message Markdown", () => {
 describe("mentions inside a message body", () => {
   it("resolves an employee's name and keeps the raw token in the tooltip", () => {
     const html = render("@ceo 先看一下");
-    expect(html).toContain('title="@ceo"');
+    expect(html).toContain('data-tooltip="@ceo"');
     expect(html).toContain("@Ada CEO");
     expect(html).not.toContain(zh.company.channels.mentionsYou);
   });
 
   it("marks a mention that addresses the reader", () => {
     const html = render("@user:alice 这条是给你的");
-    expect(html).toContain('title="@user:alice"');
+    expect(html).toContain('data-tooltip="@user:alice"');
     expect(html).toContain(zh.company.channels.mentionsYou);
   });
 

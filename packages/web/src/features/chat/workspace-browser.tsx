@@ -57,6 +57,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { joinWorkspacePath } from "../../lib/file-path";
+import { writeClipboard } from "../../lib/clipboard";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
 import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
@@ -102,12 +103,7 @@ import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import {
-  CopiedStatus,
-  CopyCheckGlyph,
-  useCopied,
-  writeClipboard,
-} from "../../components/ui/copy-button";
+import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -1505,9 +1501,9 @@ export function WorkspaceBrowser({
   const copyPath = (target: FileMenuTarget): void => {
     // A menu row cannot carry the copy button's own at-the-control feedback: the row acts and
     // the panel closes out from under it. A toast is the confirmation that survives that, and
-    // it says the same word (sidebar.tsx's copy-id row does the same).
-    writeClipboard(target.path);
-    toastSuccess(S.common.copied);
+    // it says the same word (sidebar.tsx's copy-id row does the same) — only once the write
+    // has landed.
+    void writeClipboard(target.path).then((ok) => ok && toastSuccess(S.common.copied));
   };
 
   const addToChat = (target: FileMenuTarget): void => {
@@ -1779,7 +1775,7 @@ export function WorkspaceBrowser({
             <button
               type="button"
               aria-label={S.files.searchClear}
-              title={S.files.searchClear}
+              data-tooltip={S.files.searchClear}
               onClick={() => setQuery("")}
               className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             >
@@ -1913,7 +1909,7 @@ export function WorkspaceBrowser({
       // Before the first measurement there is no ceiling yet (clampTreeWidth applies none),
       // so the current width is the honest maximum for that frame.
       aria-valuemax={Math.max(maxTreeWidth(width), treeWidth)}
-      title={S.files.treeWidth}
+      data-tooltip={S.files.treeWidth}
       tabIndex={0}
       {...treeResizeProps}
       onKeyDown={onDividerKey}
@@ -1989,11 +1985,7 @@ export function WorkspaceBrowser({
         {/* Copies the text that was read, which is all of the file unless the preview was cut off. */}
         {sourceShown && preview.content !== undefined && (
           <>
-            <Tooltip
-              label={copied ? S.common.copied : S.chat.copyCode}
-              placement="bottom"
-              className="shrink-0"
-            >
+            <Tooltip label={S.chat.copyCode} placement="bottom" className="shrink-0">
               <button
                 type="button"
                 aria-label={S.chat.copyCode}
@@ -2335,7 +2327,7 @@ export function WorkspaceBrowser({
         {editor.changedOnDisk === true && (
           <span
             className={`shrink-0 text-xs ${toneInk.attention}`}
-            title={S.files.changedOnDiskHint}
+            data-tooltip={S.files.changedOnDiskHint}
           >
             {S.files.changedOnDisk}
           </span>
@@ -2465,7 +2457,7 @@ export function WorkspaceBrowser({
           <button
             type="button"
             aria-pressed={treeVisible}
-            title={treeVisible ? S.files.hideTree : S.files.showTree}
+            data-tooltip={treeVisible ? S.files.hideTree : S.files.showTree}
             aria-label={S.files.showTree}
             onClick={() => setTree(!treeVisible)}
             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150 ${
@@ -2482,7 +2474,7 @@ export function WorkspaceBrowser({
             unsaved-changes guard. */}
         <div
           ref={crumbsRef}
-          title={crumbPath}
+          data-tooltip={crumbPath}
           className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden px-1 text-sm"
         >
           {crumbFit.collapsed && (
@@ -2588,7 +2580,12 @@ export function WorkspaceBrowser({
           </p>
           <ul className="max-h-40 overflow-y-auto rounded-md border border-gray-200 px-3 py-1.5 dark:border-gray-800">
             {(pendingUpload?.clashes ?? []).map((name) => (
-              <li key={name} className="truncate py-0.5 font-mono text-xs" title={name}>
+              <li
+                key={name}
+                className="truncate py-0.5 font-mono text-xs"
+                data-tooltip={name}
+                data-tooltip-content="code"
+              >
                 {name}
               </li>
             ))}

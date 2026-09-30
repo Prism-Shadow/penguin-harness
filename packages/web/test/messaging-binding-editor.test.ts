@@ -158,7 +158,7 @@ describe("MessagingBindingBody", () => {
     // reading "enable connection" does not say. It is semantics, so it is disclosed: on the
     // control, where nothing below has to move to make room for it.
     const html = render(stateOf("feishu"));
-    expect(html).toContain(`title="${S.messaging.bindByEnableHint}"`);
+    expect(html).toContain(`data-tooltip="${S.messaging.bindByEnableHint}"`);
     expect(html).not.toContain(`>${S.messaging.bindByEnableHint}<`);
   });
 
@@ -186,7 +186,7 @@ describe("MessagingBindingBody", () => {
     expect(html.slice(rowAt, html.indexOf(lastError, rowAt))).toContain("</div>");
     // Bounded so an error still cannot push the probes far, with the whole text on hover.
     expect(html).toContain("line-clamp-2");
-    expect(html).toContain(`title="${lastError}"`);
+    expect(html).toContain(`data-tooltip="${lastError}"`);
   });
 
   it('closes the form with the delivery options, each explanation behind its label\'s "?"', () => {
@@ -337,7 +337,7 @@ describe("MessagingBindingBody", () => {
     // record on a later success, so a rights problem fixed three days ago would otherwise
     // read as live — and a hover-only title is unreachable on a touch screen.
     expect(failed).toContain(`>${S.messaging.deliveryFailedSend(formatDateTime(at), detail)}</p>`);
-    expect(failed).toContain(`title="${detail}"`);
+    expect(failed).toContain(`data-tooltip="${detail}"`);
     // Arrival is still reported: a send failure is not a delivery failure.
     expect(failed).toContain(S.messaging.inboundLastAt(formatDateTime("2026-08-26T09:30:00.000Z")));
   });

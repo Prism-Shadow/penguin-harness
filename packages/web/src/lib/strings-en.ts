@@ -211,6 +211,21 @@ export const en: Strings = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `exit code ${code}`,
+    touchKeys: {
+      label: "Terminal keys",
+      esc: "Escape",
+      tab: "Tab",
+      ctrl: "Ctrl (tap, then the next character)",
+      alt: "Alt (tap, then the next character)",
+      up: "Arrow up",
+      down: "Arrow down",
+      left: "Arrow left",
+      right: "Arrow right",
+      interrupt: "Interrupt (Ctrl+C)",
+      paste: "Paste",
+      hideKeyboard: "Dismiss the keyboard",
+      showKeyboard: "Show the keyboard",
+    },
   },
 
   dock: {
@@ -234,6 +249,8 @@ export const en: Strings = {
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
+    maximize: "Fill the screen",
+    restore: "Restore the height",
   },
 
   builtinBrowser: {
@@ -347,6 +364,13 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
+    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
+    creditsTitle: "Credits",
+    creditsThemes: "Used by",
+    creditsNoTheme: "Not a theme's default",
+    creditsLicense: "License",
+    creditsSource: "Source",
+    creditsLicenseText: "Full license text",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -433,7 +457,11 @@ export const en: Strings = {
       `inline image enters the conversation and the Trace, where its size is paid again on ` +
       `every history page and resume.`,
     theme: "Theme",
-    themeInfo: "Light or dark look of the app.",
+    themeInfo:
+      "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    colorMode: "Mode",
+    colorModeInfo: "Light or dark look of the app.",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
@@ -444,11 +472,17 @@ export const en: Strings = {
     langEn: "English",
     fontSize: "Font size",
     fontSizeInfo: "Overall interface font size.",
-    fontSmall: "S",
-    fontMedium: "M",
-    fontLarge: "L",
+    textSizeNames: { xs: "XS", s: "S", m: "M", l: "L", xl: "XL" },
+    fonts: "Fonts",
+    fontsInfo:
+      "The face for Latin text and the face for CJK text, each following the theme by default. Code and other monospaced text always keep the theme's monospaced face.",
+    fontLatin: "Latin",
+    fontCjk: "CJK",
+    fontFollowTheme: "Theme's own",
+    fontSystem: "System font",
     accent: "Accent",
-    accentInfo: "Interface accent color.",
+    accentInfo:
+      "Interface accent color. Each theme offers its own set; after a theme change, a color the new theme does not offer shows as the theme's own until you return.",
     launcher: "Shortcuts launcher",
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
@@ -477,12 +511,23 @@ export const en: Strings = {
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
     accentNames: {
-      neutral: "Neutral",
+      neutral: "Theme's own",
       blue: "Blue",
       green: "Green",
       violet: "Violet",
       rose: "Rose",
       amber: "Amber",
+      ocean: "Ocean",
+      clay: "Clay",
+      plum: "Plum",
+      honey: "Honey",
+      slate: "Slate",
+      phosphor: "Phosphor",
+      cyan: "Cyan",
+      magenta: "Magenta",
+      gold: "Gold",
+      cobalt: "Cobalt",
+      orange: "Orange",
     } as Record<string, string>,
   },
 
@@ -4026,6 +4071,13 @@ Scenarios:
     statusPaused: "Paused",
     pause: "Pause organization",
     resume: "Resume organization",
+    deleteOrg: "Delete organization",
+    deleteOrgDesc:
+      "Moves the organization to the Project's trash. Its employees stay as Agents and its conversations are kept.",
+    deleteOrgConfirm:
+      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. Its employees remain Agents of the Project; its desk and ticket conversations are kept, but with the organization gone no page lists them any more. Its id can be reused only after the old CEO's Agent is deleted. To stop an organization without losing anything, pause it instead.",
+    deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
+    deleted: (orgId: string) => `Organization ${orgId} deleted`,
     pauseInfo:
       "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",

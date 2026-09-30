@@ -45,6 +45,7 @@ import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
 import type { InviteCandidate } from "./channel-list";
 import { parsePrincipal } from "./principals";
+import { menuPanelClass, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Invite (lucide user-plus): the header's "add somebody to this channel" action. */
 const INVITE_ICON =
@@ -108,7 +109,7 @@ function MemberPopover({
       <button
         ref={triggerRef}
         type="button"
-        title={label}
+        data-tooltip={label}
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -142,7 +143,7 @@ function MemberPopover({
               left: position.left,
               width: PANEL_WIDTH,
             }}
-            className="z-[60] max-h-[60vh] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className={`${menuPanelClass} z-[60] max-h-[60vh]`}
           >
             {members.length === 0 ? (
               <p className="px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
@@ -235,7 +236,7 @@ function InvitePicker({
                   onQuery("");
                   onPick(c);
                 }}
-                className={`flex w-full items-center justify-between gap-3 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800`}
+                className={`flex items-center justify-between gap-3 ${menuRowClass} text-xs disabled:opacity-60 ${menuRowTone()}`}
               >
                 <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                   <MemberAvatar
@@ -391,7 +392,7 @@ export function ChannelHeader({
               what test/disclosure-anchor.test.ts reads. The row clips rather than wraps: the
               server caps a channel name at 100 characters and the tooltip carries it whole. */}
           <h1
-            title={label}
+            data-tooltip={label}
             className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row} text-[15px] font-semibold`}
           >
             <span className="shrink-0 text-gray-400 dark:text-gray-500">
@@ -411,7 +412,8 @@ export function ChannelHeader({
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
           {purpose !== null && (
             <span
-              title={purpose}
+              data-tooltip={purpose}
+              data-tooltip-content="text"
               className="hidden min-w-0 flex-1 truncate text-xs text-gray-500 sm:block dark:text-gray-400"
             >
               {purpose}
@@ -454,7 +456,7 @@ export function ChannelHeader({
             button={
               <button
                 type="button"
-                title={S.company.channels.channelMenu}
+                data-tooltip={S.company.channels.channelMenu}
                 aria-label={`${S.company.channels.channelMenu}: ${label}`}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}

@@ -39,7 +39,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -79,6 +79,7 @@ import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
@@ -93,7 +94,7 @@ const DUE_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2";
  */
 const COLUMN_BAR: Record<OrgTicketStatus, string> = {
   proposed: "bg-gray-300 dark:bg-gray-600",
-  in_progress: "bg-[var(--accent-bg)]",
+  in_progress: "bg-accent",
   review: toneDot.attention,
   done: toneDot.success,
   rejected: toneDot.danger,
@@ -243,7 +244,7 @@ export function TicketsPage() {
             <PriorityBadge priority={t.priority} />
           </span>
           {t.invalid !== undefined && (
-            <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} title={t.invalid}>
+            <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} data-tooltip={t.invalid}>
               <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
               <span className="sr-only">{S.company.tickets.invalid}</span>
             </span>
@@ -256,7 +257,9 @@ export function TicketsPage() {
             {t.due !== undefined && (
               <span
                 className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
-                title={overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due}
+                data-tooltip={
+                  overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due
+                }
               >
                 <GlyphIcon d={DUE_ICON} size={ICON_SIZE.inlineGlyph} />
                 {t.due}
@@ -276,7 +279,8 @@ export function TicketsPage() {
         {t.parent !== undefined && (
           <span
             className="mt-2 block truncate text-[11px] text-gray-400 dark:text-gray-500"
-            title={t.parent}
+            data-tooltip={t.parent}
+            data-tooltip-content="text"
           >
             {S.company.tickets.parentLine(titles.get(t.parent) ?? t.parent)}
           </span>
@@ -284,7 +288,7 @@ export function TicketsPage() {
         <span className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
           <span
             className="flex min-w-0 text-gray-700 dark:text-gray-200"
-            title={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
+            data-tooltip={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
           >
             <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
           </span>
@@ -311,7 +315,7 @@ export function TicketsPage() {
       key={t.ticketId}
       type="button"
       data-ticket-card={t.ticketId}
-      title={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
+      data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
       {...drag.cardProps(t)}
       className={`${cardFrame(t)} cursor-pointer select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
         lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
@@ -359,22 +363,24 @@ export function TicketsPage() {
       }
     >
       {error !== null && (
-        <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+        <NoticeStrip
+          tone="danger"
+          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
         >
           <span>{S.company.tickets.loadFailed(error)}</span>
           <Button size="sm" onClick={() => void load()}>
             {S.common.retry}
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {board !== null &&
         allTickets(board).length === 0 &&
         board.invalidFiles.length === 0 &&
         !hintDismissed && (
-          <div
-            className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+          <NoticeStrip
+            tone="muted"
+            className="mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs"
           >
             <span className="min-w-0 flex-1">{S.company.tickets.emptyHint}</span>
             <Button
@@ -390,7 +396,7 @@ export function TicketsPage() {
             >
               <CloseIcon />
             </Button>
-          </div>
+          </NoticeStrip>
         )}
 
       <div ref={drag.boardRef} className="overflow-x-auto pb-2">
@@ -405,7 +411,7 @@ export function TicketsPage() {
                   {...{ [TICKET_COLUMN_ATTR]: col.status }}
                   className={`${columnClass} ${
                     dropOver === col.status
-                      ? "border-[var(--accent-bg)] ring-1 ring-[var(--accent-bg)]"
+                      ? "border-accent ring-1 ring-accent"
                       : highlightColumn === col.status && isTicketStatus(highlightColumn)
                         ? "border-gray-400 dark:border-gray-600"
                         : ""
@@ -426,7 +432,7 @@ export function TicketsPage() {
                       <div
                         className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-[11px] ${
                           dropOver === col.status
-                            ? "border-[var(--accent-bg)] text-gray-600 dark:text-gray-300"
+                            ? "border-accent text-gray-600 dark:text-gray-300"
                             : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"
                         }`}
                       >
@@ -444,11 +450,13 @@ export function TicketsPage() {
       </div>
 
       {(invalids.length > 0 || (board !== null && board.invalidFiles.length > 0)) && (
-        <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
+        <NoticeStrip tone="danger" className="mt-2 rounded-md border px-3 py-2 text-xs">
           {invalids.length > 0 && (
             <>
               <p className="mb-1 flex items-center gap-1.5 font-medium">
-                <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                <span data-slot="icon" className="shrink-0">
+                  <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                </span>
                 {S.company.tickets.invalidTickets}
               </p>
               <ul className="mb-2 space-y-0.5">
@@ -470,7 +478,9 @@ export function TicketsPage() {
           {board !== null && board.invalidFiles.length > 0 && (
             <>
               <p className="mb-1 flex items-center gap-1.5 font-medium">
-                <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                <span data-slot="icon" className="shrink-0">
+                  <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                </span>
                 {S.company.tickets.invalidFiles}
               </p>
               <ul className="space-y-0.5 font-mono">
@@ -482,7 +492,7 @@ export function TicketsPage() {
               </ul>
             </>
           )}
-        </div>
+        </NoticeStrip>
       )}
 
       {/* The lifted card's ghost: the card's own face at its own width, following the
@@ -496,9 +506,7 @@ export function TicketsPage() {
             style={{ width: lifted.width, transform: drag.ghostTransform() }}
             className="pointer-events-none fixed left-0 top-0 z-[60]"
           >
-            <div
-              className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-[var(--accent-bg)]`}
-            >
+            <div className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-accent`}>
               {cardBody(lifted.ticket)}
             </div>
           </div>,
