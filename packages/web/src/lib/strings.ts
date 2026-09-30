@@ -387,6 +387,7 @@ export const zh = {
       magenta: "品红",
       gold: "金",
       cobalt: "钴蓝",
+      orange: "橙红",
     } as Record<string, string>,
   },
 

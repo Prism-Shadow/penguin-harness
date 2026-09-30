@@ -121,11 +121,12 @@
     --ui-tone-info-emphasis-fg: #ffffff;
 
     /* Charts: soft. A low-chroma palette in the roles (heather, ochre, dusk blue, rose, sage,
-       mauve, teal, clay), each just clearing 3:1 on the canvas so a line, a point and a bar's
-       edge read; the bars themselves are pale — the fill at under half opacity, edged 1px in
-       the full series colour — so a chart never glares. The reference curve in the muted ink,
-       the token-kind blues softened, and a soft geometry: bars a little over half their band
-       with rounded tops, a 2px smooth curve, round points, a light wash under a line. */
+       mauve, teal, clay), each just clearing 3:1 on the canvas so a line and a point read; the
+       bars are the same colours let through at seven tenths (a little more in dark) with no
+       outline — a first pass edged them in their own colour and the owner preferred them plain
+       — so a chart never glares. The reference curve in the muted ink, the token-kind blues
+       softened, and a soft geometry: bars a little over half their band with rounded tops, a
+       2px smooth curve, round points, a light wash under a line. */
     --ui-chart-1: #8b7cc4;
     --ui-chart-2: #a8863a;
     --ui-chart-3: #6590c2;
@@ -146,9 +147,9 @@
     --ui-chart-point-radius: 3px;
     --ui-chart-curve: smooth;
     --ui-chart-area-opacity: 0.12;
-    --ui-chart-bar-stroke: 1px;
+    --ui-chart-bar-stroke: 0px;
     --ui-chart-bar-stroke-color: series;
-    --ui-chart-bar-opacity: 0.45;
+    --ui-chart-bar-opacity: 0.7;
 
     /* Colour — code */
     --ui-code-bg: #f5f6f7;
@@ -437,7 +438,7 @@
     --ui-chart-cache-read: #c5d8ee;
     --ui-chart-cache-write: #8fb1dc;
     --ui-chart-output: #6a8fc0;
-    --ui-chart-bar-opacity: 0.55;
+    --ui-chart-bar-opacity: 0.78;
     --ui-chart-grid: rgb(255 255 255 / 0.06);
     --ui-chart-axis: var(--color-gray-500);
 

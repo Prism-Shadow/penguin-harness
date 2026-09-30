@@ -237,6 +237,23 @@ describe("the charts board", () => {
 });
 
 describe("the library frame's sizing", () => {
+  it("measures what is painted, overlays included, and swallows the resizes it asks for", () => {
+    const page = read("../src/library/page.tsx");
+    expect(page).toMatch(/measureFrameHeight\(document, main, root\)/);
+    expect(page).toMatch(
+      /mutations\.observe\(document\.body, \{\s*childList: true,\s*subtree: true,/,
+    );
+    expect(page).toMatch(/if \(height !== window\.innerHeight\) expectSelfResize\(\);/);
+    const entry = read("../src/library/main.tsx");
+    // The guard is installed ahead of the app's own resize listeners.
+    expect(entry.indexOf("installSelfResizeGuard(window)")).toBeLessThan(
+      entry.indexOf("createRoot("),
+    );
+    // No per-topic reserve remains: the measurement is the only sizing.
+    expect(read("../src/library/topics.ts")).not.toMatch(/room/);
+    expect(read("../src/chrome/library-frame.tsx")).not.toMatch(/room/);
+  });
+
   it("never shows a scrollbar: the framed document cannot scroll, the frame is hidden until sized and never animates", () => {
     expect(read("../src/library/main.tsx")).toMatch(
       /document\.documentElement\.dataset\.framed = "1";/,

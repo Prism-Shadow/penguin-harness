@@ -4,8 +4,8 @@
  * read it under Node; the titles live in the dictionaries, keyed by these ids.
  *
  * Each topic renders in its own framed document (`lib.html`, src/library/main.tsx) under the
- * page's theme, mode, size and fonts; `room` is the height a frame keeps under a short board
- * whose controls open panels or dialogs inside it, so nothing is cut off at the frame's edge.
+ * page's theme, mode, size and fonts, in a frame sized to what the board paints, overlays
+ * included (src/library/frame-height.ts).
  */
 
 export const TOPIC_GROUP_IDS = ["components", "foundations"] as const;
@@ -40,25 +40,19 @@ export type TopicId = (typeof TOPIC_IDS)[number];
 export interface Topic {
   id: TopicId;
   group: TopicGroupId;
-  /** The frame's minimum height in px, for a board whose panels open inside it. */
-  room?: number;
 }
 
-const component = (id: TopicId, room?: number): Topic => ({
-  id,
-  group: "components",
-  ...(room === undefined ? {} : { room }),
-});
+const component = (id: TopicId): Topic => ({ id, group: "components" });
 const foundation = (id: TopicId): Topic => ({ id, group: "foundations" });
 
 export const TOPICS: readonly Topic[] = [
   component("buttons"),
   component("inputs"),
-  component("pickers", 560),
-  component("toasts", 360),
+  component("pickers"),
+  component("toasts"),
   component("notices"),
-  component("dialogs", 560),
-  component("tooltips", 320),
+  component("dialogs"),
+  component("tooltips"),
   component("tabs"),
   component("badges"),
   component("empty"),

@@ -356,6 +356,7 @@ export const en: Strings = {
       magenta: "Magenta",
       gold: "Gold",
       cobalt: "Cobalt",
+      orange: "Orange",
     } as Record<string, string>,
   },
 

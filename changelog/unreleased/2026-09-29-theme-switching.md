@@ -12,7 +12,7 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 ## Appearance settings
 
 - **Theme** picks Primer, Frost or Console; **Mode** keeps light, dark and follow-system.
-- **Accent** lists the active theme's own presets after "Theme's own". A preset another theme lists is kept: it shows as the theme's own accent until a theme that lists it is active again.
+- **Accent** lists the active theme's own presets after "Theme's own". A preset another theme lists is kept: it shows as the theme's own accent until a theme that lists it is active again. "Theme's own" is painted in the colour it resolves to; Console's own accent is black and white (near-black in light, near-white in dark), with its former orange-red kept as a preset.
 - **Font size** has five steps — XS 14px, S 15px, M 16px (the new default), L 18px (the old default) and XL 20px. A size chosen in an earlier release carries over by pixels; see [backward compatibility](2026-09-29-backward-compatibility.md).
 - **Fonts** picks the Latin face and the CJK face separately, each defaulting to the theme's own; the monospaced face always stays the theme's.
 - A new **Credits** page, last in the Personal group and open to every account (the desktop window included), lists each bundled font — its family, the themes that use it, its license, and the full license text on request. The MiSans credit moved there from the account menu, as MiSans's entry in the list.
@@ -32,7 +32,7 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 ## Charts follow the theme
 
 - Every chart draws through one shared set of chart parts — bars, lines, the fill under a line, points, grid and axis labels, and the Trace timeline's bars: the cost center's requests, Token and cost charts, the context donut, the Evaluation Center's score chart and sparkline, the agents' activity sparkline and the Trace timeline. The theme decides how each part looks: its palette, bar width, corners, outline and fill, line width and curve, point shape and the fill under a line.
-- Frost draws soft, low-glare pastels with rounded bars, smooth curves and a faint grid; Console draws thin, solid bars with a 1px outline, stepped 1px lines, square points and a dashed grid. Primer draws them as before, except that the Trace timeline now uses the same palette shades as the other charts — in dark mode its bars are one step deeper, and the approval-wait bar is a slightly deeper rose in both modes.
+- Frost draws soft, low-glare pastels — pale, borderless, rounded bars, smooth curves and a faint grid; Console draws thin, solid bars with a 1px outline, stepped 1px lines, square points and a dashed grid. Primer draws them as before, except that the Trace timeline now uses the same palette shades as the other charts — in dark mode its bars are one step deeper, and the approval-wait bar is a slightly deeper rose in both modes.
 
 ## Frost and Console, refined
 

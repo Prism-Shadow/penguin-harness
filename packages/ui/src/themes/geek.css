@@ -2,8 +2,9 @@
  * Console (`geek`) — mono chrome, as plain as a terminal. Navigation, controls, labels,
  * headings, badges and tables are set in Commit Mono; only reading text (message bubbles,
  * assistant prose, the composer's input) stays in IBM Plex Sans. Paper-white light and warm
- * near-black dark with no fill on a card or a row (a card is the page), one interface orange,
- * square corners everywhere, no shadow anywhere, hairlines only where they carry structure, a
+ * near-black dark with no fill on a card or a row (a card is the page), one accent — black and
+ * white by default, the interface orange and five terminal hues as presets — square corners
+ * everywhere, no shadow anywhere, hairlines only where they carry structure, a
  * ruled full-bleed window, a standalone frame a plain hairline box, the selected navigation row
  * set in the bold cut, a block caret, motion that jumps in steps, and the agent's work rendered
  * as a transcript — `└` steps, mono capitals, a hatched block bar. References: opencode.ai (the
@@ -18,9 +19,12 @@
  *   near-black (`#131010`) with the same steps upward, and its ink set calm but not dim
  *   (2026-09-29): the body at about 12:1 on the canvas, the near-white kept for headings, the
  *   muted ink about 6.2:1 and the subtle 4.7:1 on the muted surface — a first pass at
- *   opencode's `rgb(184 178 178)` (8.7:1) read too dim to the owner. The accent is E2B's orange; in dark it takes black ink, as every dark fill
- *   here does, and the rest of the family derives from it (hover and active shaded, the wash and
- *   the line at an alpha), so a preset sets the one value per mode.
+ *   opencode's `rgb(184 178 178)` (8.7:1) read too dim to the owner. The theme's own accent is
+ *   monochrome (owner's call, 2026-09-30): the ink in light under a white label, a warm
+ *   near-white in dark under black ink, as every dark fill here takes; E2B's orange, the accent
+ *   the theme shipped with, stays as its first preset. The rest of the family derives from
+ *   `--ui-accent` (hover and active shaded, the wash and the line at an alpha), so a preset sets
+ *   the one value per mode.
  * - Semantic tones are a hairline and its ink on E2B's code hues, with no tint (a badge is a
  *   ruled word, never a coloured shape), tuned so every tone reads at 4.5:1 as text on the page
  *   and 3:1 as a mark on every surface; the line and the solid fill of a tone are its ink,
@@ -78,13 +82,14 @@
     --ui-overlay: var(--ui-canvas);
     --ui-overlay-backdrop: rgb(19 16 16 / 0.28);
 
-    /* Colour — text. A link is the ink, underlined by the markup; it turns orange on hover. */
+    /* Colour — text. A link is the ink, underlined by the markup; it takes the accent on hover
+       (under the black-and-white default that is the ink again — the underline is the link). */
     --ui-fg: #1d1d1f;
     --ui-fg-emphasis: var(--ui-fg);
     --ui-fg-muted: #5f5c5c;
     --ui-fg-subtle: #8f8b8b;
     --ui-fg-link: var(--ui-fg);
-    --ui-fg-link-hover: #e32a01;
+    --ui-fg-link-hover: var(--ui-accent);
 
     /* Colour — lines */
     --ui-line: #e6e3e3;
@@ -92,11 +97,13 @@
     --ui-line-emphasis: #bdb8b8;
     --ui-divider: #efeded;
 
-    /* Colour — accent: interface orange, white on it just clearing 4.5:1. The family derives
-       from it: hover and active shade toward black (away from the white label, so they only
-       gain contrast), the wash and the line are the accent at an alpha. A preset sets
-       `--ui-accent` alone; its label ink is the theme's for the mode. */
-    --ui-accent: #e32a01;
+    /* Colour — accent: the ink itself under a white label — the default is black and white,
+       and a hue is a preset. The family derives from it: hover and active shade toward black
+       (away from the white label, so they only gain contrast; on the ink the step is slight,
+       and a fill that barely moves is this theme's way), the wash and the line are the accent
+       at an alpha. A preset sets `--ui-accent` alone; its label ink is the theme's for the
+       mode. */
+    --ui-accent: #1d1d1f;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
     --ui-accent-fg: #ffffff;
@@ -170,7 +177,7 @@
     --ui-code-bg: #f4f2f2;
     --ui-code-line: #e6e3e3;
     --ui-code-gutter: #8f8b8b;
-    --ui-code-selection: rgb(227 42 1 / 0.14);
+    --ui-code-selection: color-mix(in srgb, var(--ui-accent) 14%, transparent);
     --ui-diff-add-bg: rgb(77 96 0 / 0.08);
     --ui-diff-add-word: rgb(77 96 0 / 0.2);
     --ui-diff-del-bg: rgb(173 32 0 / 0.07);
@@ -360,7 +367,7 @@
     --ui-focus-ring: 1px solid var(--ui-accent);
     --ui-focus-ring-offset: 2px;
     --ui-focus-ring-input: inset 0 0 0 1px var(--ui-accent);
-    --ui-selection-bg: rgb(227 42 1 / 0.18);
+    --ui-selection-bg: color-mix(in srgb, var(--ui-accent) 18%, transparent);
     --ui-scrollbar-w: thin;
     --ui-scrollbar-thumb: #d3cfcf;
     --ui-scrollbar-thumb-hover: #bdb8b8;
@@ -399,7 +406,6 @@
     --ui-fg-muted: var(--color-gray-400);
     --ui-fg-subtle: var(--color-gray-500);
     --ui-fg-link: var(--ui-fg-emphasis);
-    --ui-fg-link-hover: #ff5029;
 
     /* Colour — lines */
     --ui-line: #2f2b2b;
@@ -407,9 +413,10 @@
     --ui-line-emphasis: #5a5453;
     --ui-divider: #242020;
 
-    /* Colour — accent: the same orange with black ink, as every dark fill here (4.6:1), so
+    /* Colour — accent: a warm near-white with black ink, as every dark fill here takes, so
        hover shades toward white and active toward black — away from the ink, as in light — and
        the wash and the line strengthen a step on the dark page. */
+    --ui-accent: #f4f2f2;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 90%, #000000);
     --ui-accent-fg: #000000;
@@ -449,7 +456,7 @@
     --ui-code-bg: #0d0b0b;
     --ui-code-line: #2f2b2b;
     --ui-code-gutter: var(--color-gray-500);
-    --ui-code-selection: rgb(227 42 1 / 0.28);
+    --ui-code-selection: color-mix(in srgb, var(--ui-accent) 28%, transparent);
     --ui-diff-add-bg: rgb(157 194 12 / 0.1);
     --ui-diff-add-word: rgb(157 194 12 / 0.28);
     --ui-diff-del-bg: rgb(255 82 82 / 0.1);
@@ -464,7 +471,7 @@
     --ui-switch-knob: var(--ui-fg);
 
     /* Focus, selection and scrollbar */
-    --ui-selection-bg: rgb(227 42 1 / 0.32);
+    --ui-selection-bg: color-mix(in srgb, var(--ui-accent) 32%, transparent);
     --ui-scrollbar-thumb: #2f2b2b;
     --ui-scrollbar-thumb-hover: #5a5453;
     --ui-scrollbar-track: #0d0b0b;
@@ -837,15 +844,19 @@
 }
 
 /*
- * The user's accent presets (tokens.ts, `ACCENT_PRESETS.geek`): five terminal hues beside
- * Console's own orange — phosphor green, cyan, magenta, gold, cobalt — each deep in light for
- * the theme's white label and bright in dark for its black ink, the way the theme's dark fills
- * are. A preset sets `--ui-accent` and nothing else — hover, active, wash and line derive from
- * it in the theme's rules above, and the label ink is the theme's for the mode — so each preset
- * is one value per mode. The selectors match only Console's root, so a preset another theme
- * lists paints nothing here.
+ * The user's accent presets (tokens.ts, `ACCENT_PRESETS.geek`): E2B's orange, the accent the
+ * theme shipped with before its own went black and white, then five terminal hues — phosphor
+ * green, cyan, magenta, gold, cobalt — each deep in light for the theme's white label and bright
+ * in dark for its black ink, the way the theme's dark fills are. A preset sets `--ui-accent` and
+ * nothing else — hover, active, wash and line derive from it in the theme's rules above, and the
+ * label ink is the theme's for the mode — so each preset is one value per mode; the orange holds
+ * across modes (black ink on it clears 4.5:1 in dark) and has no dark rule. The selectors match
+ * only Console's root, so a preset another theme lists paints nothing here.
  */
 @layer ui-accent {
+  :root[data-theme="geek"][data-accent="orange"] {
+    --ui-accent: #e32a01;
+  }
   :root[data-theme="geek"][data-accent="phosphor"] {
     --ui-accent: #1f7a1f;
   }

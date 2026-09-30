@@ -22,6 +22,7 @@ import { installFetchShim } from "../app/mock/fetch-shim";
 import { getStore } from "../app/mock/store";
 import { GalleryProvider } from "../state";
 import { parseLibraryParams } from "./frame";
+import { installSelfResizeGuard } from "./frame-resize";
 import { LibraryBoardPage } from "./page";
 
 const params = parseLibraryParams(window.location.search);
@@ -33,6 +34,8 @@ installFetchShim();
 // the page around the frame (see src/app/main.tsx).
 if (window.parent !== window) {
   document.documentElement.dataset.framed = "1";
+  // Before the app mounts, so the guard's listener runs ahead of the app's own.
+  installSelfResizeGuard(window);
   const focus = HTMLElement.prototype.focus;
   HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
     focus.call(this, { ...options, preventScroll: true });

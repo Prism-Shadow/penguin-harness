@@ -24,5 +24,6 @@ The gallery used to rebuild the app's screens from stand-in compositions, which 
 
 ## Details
 
+- A Foundations frame grows to hold whatever is open in it — a select panel, a menu, a tooltip, a toast or a dialog — and shrinks back when it closes, so nothing is clipped.
 - The stand-in modules, screens, hero and fixtures in `packages/ui` are removed, along with the gallery's `/embed` and `/screens` routes; the Foundations boards and the fonts page stay.
 - The Web App gained two small seams for this: `App` takes an optional initial route, and the Settings dialog can be opened on a given page by request.

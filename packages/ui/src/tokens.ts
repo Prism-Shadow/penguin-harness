@@ -82,8 +82,9 @@ export interface AccentPresetSpec {
  * id, a theme's preset rules match only their own theme, so a preset the active theme does not
  * list paints nothing (the theme's own accent shows, as `neutral` would) and comes back when the
  * user returns to a theme that lists it. Primer keeps the five ids and values the Web App has
- * always had, so nothing there moves; Frost's five are warm and muted, Console's five are terminal
- * hues.
+ * always had, so nothing there moves; Frost's five are warm and muted; Console's six are the
+ * orange it shipped with and five terminal hues — its own accent went black and white
+ * (2026-09-30), so the orange became a preset.
  */
 export const ACCENT_PRESETS = {
   github: [
@@ -101,6 +102,7 @@ export const ACCENT_PRESETS = {
     { id: "slate", swatch: "#5c6470" },
   ],
   geek: [
+    { id: "orange", swatch: "#e32a01" },
     { id: "phosphor", swatch: "#1f7a1f" },
     { id: "cyan", swatch: "#0e7490" },
     { id: "magenta", swatch: "#b0177e" },
@@ -123,6 +125,20 @@ export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPrese
 export const ACCENT_PRESET_IDS: readonly AccentPreset[] = [
   ...new Set(THEME_IDS.flatMap((id) => THEME_ACCENT_PRESETS[id])),
 ];
+
+/**
+ * The accent a theme paints when no preset is chosen (`neutral`): its own `--ui-accent` per
+ * mode, spelled as the theme file spells it, so a picker can paint the "theme's own" swatch
+ * without a stylesheet probe (a test holds each value equal to the CSS). Primer's and Console's
+ * are monochrome — the ink in light, a near-white in dark — so that swatch shows black or white
+ * rather than a hue; Frost's is its green.
+ */
+export const THEME_OWN_ACCENTS: OwnAccents = {
+  github: { light: "#111827", dark: "#f3f4f6" },
+  modern: { light: "#006838", dark: "#4aa45c" },
+  geek: { light: "#1d1d1f", dark: "#f4f2f2" },
+};
+type OwnAccents = Readonly<Record<ThemeId, Readonly<Record<ThemeModeName, string>>>>;
 
 /**
  * What a stored choice paints under a theme: the preset when the theme lists it, otherwise

@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { ICON_GAP } from "../../lib/icon-scale";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { accentSwatches } from "../../state/theme";
+import { accentSwatches, useTheme } from "../../state/theme";
 import type { Accent, ThemeId } from "../../state/theme";
 
 export function PrefRow({
@@ -63,9 +63,10 @@ export function AccentPicker({
   value: Accent;
   onChange: (a: Accent) => void;
 }) {
+  const { dark } = useTheme();
   return (
     <div className="flex items-center gap-1.5">
-      {accentSwatches(themeId).map((s) => (
+      {accentSwatches(themeId, dark).map((s) => (
         <button
           key={s.value}
           type="button"

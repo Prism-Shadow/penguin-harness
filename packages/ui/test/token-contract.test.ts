@@ -29,6 +29,7 @@ import {
   THEME_ACCENT_PRESETS,
   THEME_IDS,
   THEME_MODES,
+  THEME_OWN_ACCENTS,
   TOKEN_GROUPS,
   TOKEN_NAMES,
 } from "../src/tokens";
@@ -213,10 +214,25 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     }
   });
 
-  it("gives every theme its own five, with no id shared between two themes", () => {
+  it("gives every theme its own list (Console's has six), with no id shared between two themes", () => {
     const all = THEME_IDS.flatMap((id) => THEME_ACCENT_PRESETS[id]);
     expect(all.length).toBe(new Set(all).size);
-    for (const id of THEME_IDS) expect(THEME_ACCENT_PRESETS[id].length).toBe(5);
+    // Console's own accent went black and white (2026-09-30); the orange it had is now its first
+    // preset, so its list is one longer.
+    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 5, geek: 6 };
+    for (const id of THEME_IDS) expect(THEME_ACCENT_PRESETS[id].length, id).toBe(listed[id]);
+    expect(THEME_ACCENT_PRESETS.geek[0]).toBe("orange");
+  });
+
+  it("spells each theme's own accent (the neutral choice) in tokens.ts as the CSS does", () => {
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      for (const mode of THEME_MODES) {
+        expect(theme.analysis.modes[mode].get("--ui-accent"), `${theme.id} ${mode}`).toBe(
+          THEME_OWN_ACCENTS[theme.id][mode],
+        );
+      }
+    }
   });
 
   it("no longer lives in theme.css, and theme.css still declares the ui-accent layer after ui-theme", () => {
@@ -234,7 +250,11 @@ describe("the accent presets, per theme (2026-09-19)", () => {
       if (theme.status !== "filled" || theme.id === DEFAULT_THEME_ID) continue;
       for (const [id, rules] of theme.analysis.accents) {
         expect([...rules.light.keys()], `${theme.id} ${id} light`).toEqual(["--ui-accent"]);
-        expect([...rules.dark.keys()], `${theme.id} ${id} dark`).toEqual(["--ui-accent"]);
+        // A dark rule lifts the accent and nothing else; a preset that holds across modes
+        // (Console's orange takes black ink in dark) has none.
+        expect(["", "--ui-accent"], `${theme.id} ${id} dark`).toContain(
+          [...rules.dark.keys()].join(","),
+        );
       }
       for (const mode of THEME_MODES) {
         const values = theme.analysis.modes[mode];

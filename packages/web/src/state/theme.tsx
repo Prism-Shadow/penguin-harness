@@ -26,7 +26,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { ACCENT_PRESETS } from "@prismshadow/penguin-ui";
+import { ACCENT_PRESETS, THEME_OWN_ACCENTS } from "@prismshadow/penguin-ui";
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
@@ -253,9 +253,15 @@ export function useTheme(): ThemeContextValue {
  * plain gray because it is the absence of a choice, not a hue), then the theme's own presets in
  * its own order, painted in their light values.
  */
-export function accentSwatches(themeId: ThemeId): ReadonlyArray<{ value: Accent; color: string }> {
+export function accentSwatches(
+  themeId: ThemeId,
+  dark = false,
+): ReadonlyArray<{ value: Accent; color: string }> {
+  // "Theme's own" paints the accent that choice resolves to — Console's and Primer's are black
+  // (white in dark), Frost's its green — rather than a stand-in grey.
+  const own = THEME_OWN_ACCENTS[themeId];
   return [
-    { value: "neutral", color: "#6b7280" },
+    { value: "neutral", color: dark ? own.dark : own.light },
     ...ACCENT_PRESETS[themeId].map((preset) => ({ value: preset.id, color: preset.swatch })),
   ];
 }
