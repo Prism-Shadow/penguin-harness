@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [Myriad-Dreamin/penguin-harness#107](https://github.com/Myriad-Dreamin/penguin-harness/pull/107)
 
 [中文版](2026-09-30-claude-code-open-and-idle.zh.md)
 
