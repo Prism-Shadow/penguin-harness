@@ -41,7 +41,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
@@ -79,6 +79,7 @@ import {
 } from "./ticket-board";
 import { ticketHistoryRows, ticketSummaryCounts } from "./ticket-history";
 import { dayKey } from "./calendar-geom";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 import { orgKey } from "./company-nav";
 import { deskRows } from "./org-sessions";
 import { chatPath, openTempSession } from "./temp-session";
@@ -451,14 +452,15 @@ function TicketDialog({
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
           {error !== null && detail === null ? (
-            <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+            <NoticeStrip
+              tone="danger"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
             >
               <span>{error}</span>
               <Button size="sm" onClick={() => void load()}>
                 {S.common.retry}
               </Button>
-            </div>
+            </NoticeStrip>
           ) : detail === null || !contextReady ? (
             <div className="space-y-5">
               <div className="flex gap-2">
@@ -502,13 +504,14 @@ function TicketDialog({
                 </span>
               </div>
               {detail.invalid !== undefined && (
-                <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
+                <NoticeStrip tone="danger" className="rounded-md border px-3 py-2 text-xs">
                   {detail.invalid}
-                </div>
+                </NoticeStrip>
               )}
               {blocked && (
-                <div
-                  className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
+                <NoticeStrip
+                  tone="attention"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-xs"
                 >
                   <span>
                     <span className="font-medium">{S.company.tickets.blockedReason}:</span>{" "}
@@ -520,7 +523,7 @@ function TicketDialog({
                       <PrincipalChip principal={detail.blockedBy} names={names} />
                     </span>
                   )}
-                </div>
+                </NoticeStrip>
               )}
 
               {/* Summary: the header fields as a definition list, a form while editing. */}
@@ -752,7 +755,7 @@ function TicketDialog({
                         {"cost" in c && (
                           <span
                             className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500"
-                            title={S.company.tickets.cost}
+                            data-tooltip={S.company.tickets.cost}
                           >
                             {formatMoney(c.cost, currency)}
                           </span>
@@ -789,7 +792,8 @@ function TicketDialog({
                             // becomes a Temporary entry.
                             <span
                               className="truncate text-gray-400 dark:text-gray-500"
-                              title={s.sessionId}
+                              data-tooltip={s.sessionId}
+                              data-tooltip-content="text"
                             >
                               {s.title ?? s.sessionId}
                             </span>
@@ -835,7 +839,7 @@ function TicketDialog({
                               <span
                                 key="at"
                                 className="shrink-0 font-mono tabular-nums text-gray-400 dark:text-gray-500"
-                                title={h.at}
+                                data-tooltip={h.at}
                               >
                                 {formatDateTime(h.at)}
                               </span>,

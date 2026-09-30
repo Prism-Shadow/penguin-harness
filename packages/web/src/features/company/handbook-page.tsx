@@ -301,7 +301,7 @@ export function HandbookPage() {
             <>
               <button
                 type="button"
-                title={S.company.handbook.collapseAll}
+                data-tooltip={S.company.handbook.collapseAll}
                 aria-label={S.company.handbook.collapseAll}
                 disabled={expanded.size === 0}
                 onClick={() => {
@@ -352,7 +352,7 @@ export function HandbookPage() {
               {selectedFile !== null && (
                 <span
                   className="hidden shrink-0 text-[11px] text-gray-400 sm:inline dark:text-gray-500"
-                  title={S.company.handbook.updatedAt(
+                  data-tooltip={S.company.handbook.updatedAt(
                     formatDateTime(selectedFile.updatedAt),
                     formatBytes(selectedFile.size),
                   )}

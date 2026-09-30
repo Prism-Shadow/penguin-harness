@@ -141,7 +141,7 @@ export function ChannelReaderProvider({
 export function MentionChip({ raw, label, me }: { raw: string; label: string; me: boolean }) {
   return (
     <span
-      title={raw}
+      data-tooltip={raw}
       className={`rounded px-1 ${
         me
           ? `font-semibold ${toneSurface.attention}`

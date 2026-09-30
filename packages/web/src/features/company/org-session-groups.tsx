@@ -195,7 +195,7 @@ function DeskRow({
           type="button"
           aria-current={active ? "true" : undefined}
           disabled={opening}
-          title={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
+          data-tooltip={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
           aria-label={label}
           // A press-and-hold that opened the menu must not also open the desk: touch screens
           // replay the held press as a click once the finger lifts.
@@ -216,7 +216,7 @@ function DeskRow({
               channel, the channel named in the tooltip and the screen-reader text. */}
           {messagingChannel !== undefined && (
             <span
-              title={S.messaging.enabledIndicator[messagingChannel]}
+              data-tooltip={S.messaging.enabledIndicator[messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
               <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
@@ -327,7 +327,7 @@ function TempRow({
         <button
           type="button"
           aria-current={row.active ? "true" : undefined}
-          title={`${row.name} · ${row.title}`}
+          data-tooltip={`${row.name} · ${row.title}`}
           aria-label={label}
           onClick={onOpen}
           className={rowButton(row.active)}
@@ -345,7 +345,7 @@ function TempRow({
             across the two groups. */}
         <button
           type="button"
-          title={remove}
+          data-tooltip={remove}
           aria-label={remove}
           onClick={onDismiss}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
@@ -378,7 +378,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
           <button
             key={row.sessionId}
             type="button"
-            title={name}
+            data-tooltip={name}
             aria-label={name}
             onClick={() => openSession(row.sessionId, row.agentId)}
             className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
@@ -528,7 +528,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
           <button
             key={d.agentId}
             type="button"
-            title={name}
+            data-tooltip={name}
             aria-label={name}
             disabled={opening === d.agentId}
             onClick={() => void openDesk(d.agentId, d.sessionId)}

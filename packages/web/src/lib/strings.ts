@@ -427,6 +427,13 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
+    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
+    creditsTitle: "版权信息",
+    creditsThemes: "用于",
+    creditsNoTheme: "没有主题默认使用",
+    creditsLicense: "许可",
+    creditsSource: "来源",
+    creditsLicenseText: "许可全文",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -507,7 +514,11 @@ export const zh = {
       `一条消息最多 ${count} 个附件；对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——` +
       `图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
-    themeInfo: "应用的明暗外观。",
+    themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
+    /** Display names of the three themes; the ids stay github / modern / geek. */
+    themeNames: { github: "通用", modern: "白领", geek: "极客" },
+    colorMode: "明暗",
+    colorModeInfo: "应用的明暗外观。",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
@@ -518,11 +529,16 @@ export const zh = {
     langEn: "English",
     fontSize: "字号",
     fontSizeInfo: "界面整体字号。",
-    fontSmall: "小",
-    fontMedium: "中",
-    fontLarge: "大",
-    accent: "主题色",
-    accentInfo: "界面强调色。",
+    textSizeNames: { xs: "特小", s: "小", m: "中", l: "大", xl: "特大" },
+    fonts: "字体",
+    fontsInfo: "英文与中文各自的字体，默认随主题；代码与等宽文字始终使用主题的等宽字体。",
+    fontLatin: "英文",
+    fontCjk: "中文",
+    fontFollowTheme: "随主题",
+    fontSystem: "系统字体",
+    accent: "强调色",
+    accentInfo:
+      "界面强调色。每个主题有自己的一组强调色，换主题后不在新主题里的颜色会暂时按「随主题」显示。",
     launcher: "快捷方式悬浮球",
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
@@ -551,12 +567,23 @@ export const zh = {
     companyModeServerInfo:
       "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。内测功能：可能有不稳定的现象，遇到问题请反馈。",
     accentNames: {
-      neutral: "灰白",
+      neutral: "随主题",
       blue: "蓝",
       green: "绿",
       violet: "紫",
       rose: "红",
       amber: "橙",
+      ocean: "海蓝",
+      clay: "陶土",
+      plum: "梅紫",
+      honey: "蜂蜜",
+      slate: "石板灰",
+      phosphor: "荧光绿",
+      cyan: "青",
+      magenta: "品红",
+      gold: "金",
+      cobalt: "钴蓝",
+      orange: "橙红",
     } as Record<string, string>,
   },
 

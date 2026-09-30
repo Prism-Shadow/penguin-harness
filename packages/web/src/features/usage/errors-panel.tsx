@@ -319,7 +319,8 @@ export function ErrorsPanel({
                       {/* One line by default; click to expand to the full message (wrapping), click again to collapse. */}
                       <button
                         type="button"
-                        title={e.message}
+                        data-tooltip={e.message}
+                        data-tooltip-content="text"
                         onClick={() => toggle(i)}
                         className={`block w-full cursor-pointer text-left transition-colors hover:text-gray-700 dark:hover:text-gray-300 ${
                           expanded.has(i) ? "whitespace-pre-wrap break-words" : "truncate"

@@ -168,7 +168,7 @@ const PROCESS_POLL_MS = 15_000;
 function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
   return (
     <span
-      title={label}
+      data-tooltip={label}
       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
     >
       <GlyphIcon d={icon} />
@@ -2164,7 +2164,10 @@ export function ChatPage() {
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
     // ratio all measure this column (dock-drag.tsx / dock-panel.tsx).
-    <div data-dock-host className="relative flex h-full flex-col bg-white dark:bg-gray-950">
+    // bg-canvas: the chat column is the page, so it takes the theme's page colour — white and
+    // gray-950 in Primer, exactly what it painted before; paper in Console, the sheet in Frost —
+    // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
+    <div data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workflow tabs: the Agent's own pages beside the chat. A workflow tab covers the
           chat (which stays mounted, so its state survives a look at the page) below the
           strip; the strip is absent when the Agent has no workflow with a UI. */}
@@ -2195,7 +2198,7 @@ export function ChatPage() {
       {selected && (
         <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <h1 className="flex min-w-0 text-[15px] font-semibold">
+            <h1 className="flex min-w-0 font-sans text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
             {/* Session-level state: a turning hourglass while the run is active, and nothing at
@@ -2205,7 +2208,7 @@ export function ChatPage() {
                 Below sm only the glyph remains so the title keeps its room. */}
             {headerActivity === "running" && (
               <span
-                title={sessionActivityLabel(headerActivity)}
+                data-tooltip={sessionActivityLabel(headerActivity)}
                 className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
               >
                 <SessionActivityIcon activity={headerActivity} />
@@ -2244,7 +2247,7 @@ export function ChatPage() {
             button={
               <button
                 type="button"
-                title={S.chat.infoPanel}
+                data-tooltip={S.chat.infoPanel}
                 aria-label={S.chat.infoPanel}
                 aria-expanded={infoOpen}
                 onClick={() => setInfoOpen(!infoOpen)}
@@ -2288,7 +2291,7 @@ export function ChatPage() {
                       wherever they appear; the title still names the count in words. */}
                   {backgroundCount > 0 && (
                     <span
-                      title={S.chat.backgroundTasks(backgroundCount)}
+                      data-tooltip={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
                       <GlyphIcon d={BACKGROUND_TASKS_ICON} />
@@ -2399,7 +2402,7 @@ export function ChatPage() {
                     {exitedIds.length > 0 && (
                       <button
                         type="button"
-                        title={S.chat.processClearExitedHint}
+                        data-tooltip={S.chat.processClearExitedHint}
                         disabled={procBusy !== null}
                         onClick={() => void onClearExitedProcesses()}
                         className="shrink-0 cursor-pointer text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
@@ -2434,7 +2437,7 @@ export function ChatPage() {
                                   href={p.serviceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  title={p.serviceUrl}
+                                  data-tooltip={p.serviceUrl}
                                   className="text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:decoration-gray-500 dark:text-gray-400 dark:decoration-gray-600 dark:hover:text-gray-200"
                                 >
                                   {p.serviceUrl.replace(/^https?:\/\//i, "")}
@@ -2467,7 +2470,7 @@ export function ChatPage() {
                                 says what leaves with it. */}
                             <button
                               type="button"
-                              title={S.chat.processRemoveHint}
+                              data-tooltip={S.chat.processRemoveHint}
                               disabled={procBusy !== null}
                               onClick={() => void onRemoveProcess(p.processId)}
                               className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
@@ -2589,7 +2592,7 @@ export function ChatPage() {
                           while that dock is hidden, and opens its panels in one click. */}
                       <DockLauncher agentsPending={anySubagentPending} />
                     </div>
-                    <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
+                    <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
                       <div className="mx-auto max-w-3xl">
                         {/* Goal banner docked above the composer: an in-flight goal's progress
                             (restored on load while still active), or the terminal state reached

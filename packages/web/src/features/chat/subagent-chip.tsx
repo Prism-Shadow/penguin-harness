@@ -47,7 +47,7 @@ export function SubagentChip({
     <button
       type="button"
       aria-label={name}
-      title={name}
+      data-tooltip={name}
       onClick={() => ctx.onOpenSubagent?.(sessionId, ctx.origin)}
       className="flex w-full items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
     >

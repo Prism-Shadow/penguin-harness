@@ -2,8 +2,13 @@
  * Router (react-router v7 declarative style): /login is public; all other routes go through
  * the RequireAuth guard (redirects to /login when not authenticated) and are wrapped in
  * ProjectProvider + AppLayout.
+ *
+ * The app normally routes on the browser's address bar. A host that mounts it inside another
+ * document (the component gallery frames it against a mocked API) passes `initialPath`
+ * instead: the router then runs in memory from that path, so the app navigates without
+ * touching the host document's URL — the only seam the app needs to be mounted elsewhere.
  */
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from "react-router";
 import { useAuth } from "./state/auth";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
@@ -95,25 +100,22 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-export function AppRouter() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginRoute />} />
-        <Route
-          path="/terminal"
-          element={
-            <RequireAuthBare>
-              <TerminalPage />
-            </RequireAuthBare>
-          }
-        />
-        {/* One workflow's page as the whole app: outside the shell, like the terminal; the
-            command palette it mounts is the way back. */}
-        {[
-          "/app/:projectId/:agentId/:workflowId",
-          "/app/:projectId/:agentId/:workflowId/:tabKey",
-        ].map((appPath) => (
+export function AppRouter({ initialPath }: { initialPath?: string } = {}) {
+  const routes = (
+    <Routes>
+      <Route path="/login" element={<LoginRoute />} />
+      <Route
+        path="/terminal"
+        element={
+          <RequireAuthBare>
+            <TerminalPage />
+          </RequireAuthBare>
+        }
+      />
+      {/* One workflow's page as the whole app: outside the shell, like the terminal; the
+          command palette it mounts is the way back. */}
+      {["/app/:projectId/:agentId/:workflowId", "/app/:projectId/:agentId/:workflowId/:tabKey"].map(
+        (appPath) => (
           <Route
             key={appPath}
             path={appPath}
@@ -123,36 +125,41 @@ export function AppRouter() {
               </RequireAuthBare>
             }
           />
+        ),
+      )}
+      <Route element={<RequireAuth />}>
+        <Route index element={<Navigate to="/chat" replace />} />
+        {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
+            server-side (403); the sidebar hides their row, so a member only ever reaches
+            one by typing the URL. */}
+        {PAGES.map((page) => (
+          <Route key={page.id} path={page.path} element={renderPage(page)} />
         ))}
-        <Route element={<RequireAuth />}>
-          <Route index element={<Navigate to="/chat" replace />} />
-          {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
-              server-side (403); the sidebar hides their row, so a member only ever reaches
-              one by typing the URL. */}
-          {PAGES.map((page) => (
-            <Route key={page.id} path={page.path} element={renderPage(page)} />
-          ))}
-          {/* Company mode: /org resolves to an organization (or the empty landing), and an
-              organization opens on its overview — the page that says what the whole
-              organization is doing; its channels are the sidebar's own list beside it. Both
-              fall back to /chat while company mode is unavailable (see OrgLayout). */}
-          <Route path="/org" element={<OrgIndexRedirect />} />
-          <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<OverviewPage />} />
-            <Route path="chart" element={<OrgChartPage />} />
-            <Route path="calendar" element={<CalendarPage />} />
-            <Route path="tickets" element={<TicketsPage />} />
-            <Route path="finance" element={<FinancePage />} />
-            <Route path="handbook" element={<HandbookPage />} />
-            <Route path="channels/:channelId" element={<ChannelView />} />
-            <Route path="*" element={<Navigate to="overview" replace />} />
-          </Route>
-          {/* Settings and user management live in the settings dialog now (see
-              SettingsDialog); their old routes fall through to the catch-all. */}
-          <Route path="*" element={<Navigate to="/chat" replace />} />
+        {/* Company mode: /org resolves to an organization (or the empty landing), and an
+            organization opens on its overview — the page that says what the whole
+            organization is doing; its channels are the sidebar's own list beside it. Both
+            fall back to /chat while company mode is unavailable (see OrgLayout). */}
+        <Route path="/org" element={<OrgIndexRedirect />} />
+        <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
+          <Route index element={<Navigate to="overview" replace />} />
+          <Route path="overview" element={<OverviewPage />} />
+          <Route path="chart" element={<OrgChartPage />} />
+          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="tickets" element={<TicketsPage />} />
+          <Route path="finance" element={<FinancePage />} />
+          <Route path="handbook" element={<HandbookPage />} />
+          <Route path="channels/:channelId" element={<ChannelView />} />
+          <Route path="*" element={<Navigate to="overview" replace />} />
         </Route>
-      </Routes>
-    </BrowserRouter>
+        {/* Settings and user management live in the settings dialog now (see
+            SettingsDialog); their old routes fall through to the catch-all. */}
+        <Route path="*" element={<Navigate to="/chat" replace />} />
+      </Route>
+    </Routes>
+  );
+  return initialPath === undefined ? (
+    <BrowserRouter>{routes}</BrowserRouter>
+  ) : (
+    <MemoryRouter initialEntries={[initialPath]}>{routes}</MemoryRouter>
   );
 }

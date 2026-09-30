@@ -101,19 +101,21 @@ export function WorkspaceLinksProvider({
  * a Workspace file opens in the Files panel, an `#anchor` scrolls within the page, and a
  * relative href with nowhere to go stays put — a relative href resolves against the SPA's own
  * route, so a new tab on it is a second copy of the App on a page that does not exist.
- * All other anchor props react-markdown supplies (`href`, `title` from `[text](url "title")`,
- * ...) are forwarded as-is — only its non-DOM `node` prop is stripped — and the behaviour sits
- * after the spread so it always wins. Long-URL wrapping is CSS (`.md-body a` in styles.css).
+ * All other anchor props react-markdown supplies (`href`, ...) are forwarded as-is — only its
+ * non-DOM `node` prop is stripped — and the behaviour sits after the spread so it always wins.
+ * A link title (`[text](url "title")`) becomes the shared tooltip's text rather than a native
+ * `title`, like every other hover hint in the app. Long-URL wrapping is CSS (`.md-body a` in styles.css).
  */
 function MdLink({
   node: _node,
   children,
+  title,
   ...anchorProps
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) {
   const links = useContext(WorkspaceLinksContext);
   const behavior = links === null ? NEW_TAB : replyLinkBehavior(anchorProps.href, links);
   return (
-    <a {...anchorProps} {...behavior}>
+    <a {...anchorProps} data-tooltip={title} {...behavior}>
       {children}
     </a>
   );

@@ -42,7 +42,7 @@ export function StatusIcon({
     return (
       <span
         {...(label
-          ? { title: label, "aria-label": label, role: "status" }
+          ? { "data-tooltip": label, "aria-label": label, role: "status" }
           : { "aria-hidden": true })}
         style={{ width: size, height: size }}
         className={`inline-block shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent ${TONE.running}`}
@@ -62,10 +62,11 @@ export function StatusIcon({
       // Without a label, this icon is decorative (the status is already conveyed by
       // adjacent text): it must not have role="img" without an accessible name, or
       // a screen reader would announce it as an anonymous image.
-      {...(label ? { role: "img" as const, "aria-label": label } : { "aria-hidden": true })}
+      {...(label
+        ? { role: "img" as const, "aria-label": label, "data-tooltip": label }
+        : { "aria-hidden": true })}
       className={`block shrink-0 ${TONE[state]}`}
     >
-      {label && <title>{label}</title>}
       <path d={GLYPH[state]} />
     </svg>
   );

@@ -205,8 +205,9 @@ export function TerminalPage() {
           data-testid="terminal-status"
           data-status={status}
           // The dot is the whole mark on a phone, so the sentence it stands for has to
-          // reach a screen reader from somewhere: the title carries it either way.
-          title={statusText}
+          // reach a screen reader from somewhere: the sr-only copy carries it, and the
+          // tooltip shows it on hover either way.
+          data-tooltip={statusText}
           className={`flex shrink-0 items-center gap-1 ${
             status === "ready"
               ? chrome.success
@@ -224,7 +225,7 @@ export function TerminalPage() {
           data-testid="terminal-new-shell"
           onClick={restart}
           aria-label={S.terminal.newShell}
-          title={S.terminal.newShell}
+          data-tooltip={S.terminal.newShell}
           className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1 ${chrome.outlineButton}`}
         >
           <GlyphIcon d={ADD_ICON} size={ICON_SIZE.rowLead} />

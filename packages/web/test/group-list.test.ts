@@ -13,9 +13,6 @@
  * its glyphs from the same map the two-icon header toggle uses, so a mode cannot end up
  * wearing one icon in the toggle and another in the menu.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_GROUP_ICON,
@@ -31,6 +28,16 @@ import type { GroupMode } from "../src/components/ui/group-list";
 import type { SessionSortMode } from "../src/lib/session-order";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+
+const SCAN = scanSources();
+
+describe("the group list's sources", () => {
+  it("scan every source root, and find the group list in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, "packages/web/src/components/ui/group-list.tsx");
+  });
+});
 
 describe("newEntityForGroupMode", () => {
   it("agent grouping creates an Agent; workspace grouping (the default) creates a Workspace", () => {
@@ -61,9 +68,7 @@ describe("list-options glyphs", () => {
     // The claim worth pinning is not the map's contents but that nothing re-picks an icon
     // beside it: a hardcoded glyph at a call site is how a row and the mode it names would
     // drift apart. Node-only suite, so this reads the sources (title-reveal.test.ts).
-    const read = (p: string) =>
-      readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), p), "utf8");
-    const sidebar = read("../src/components/layout/sidebar.tsx");
+    const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
     for (const mode of ["workspace", "agent", "time"] satisfies GroupMode[])
       expect(sidebar).toContain(`icon={GROUP_MODE_ICONS.${mode}}`);
     for (const mode of ["recent", "manual"] satisfies SessionSortMode[])

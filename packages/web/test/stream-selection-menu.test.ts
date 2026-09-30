@@ -154,7 +154,7 @@ describe("Add to conversation", () => {
     );
     const name = excerptLabel(EXCERPT);
     expect(name.endsWith("…")).toBe(true);
-    expect(chip).toContain(`title="${EXCERPT}"`);
+    expect(chip).toContain(`data-tooltip="${EXCERPT}"`);
     expect(chip).toContain(`>${name}</span>`);
     expect(chip).toContain(`d="${QUOTE_ICON}"`);
     expect(chip).toContain(`aria-label="${S.files.removeReference} ${name}"`);

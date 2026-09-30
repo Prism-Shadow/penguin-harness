@@ -125,7 +125,7 @@ export function MessageFilesCard({
           <button
             key={path}
             type="button"
-            title={path}
+            data-tooltip={path}
             onClick={() => onOpenFile(path)}
             className="group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
           >

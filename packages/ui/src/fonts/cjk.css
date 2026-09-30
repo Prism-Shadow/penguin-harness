@@ -1,0 +1,11 @@
+/**
+ * Console's CJK face, and Primer's from W1a (Frost's is MiSans, and Primer stays on the system CJK
+ * stack until W1a): Noto Sans SC, variable `wght` 100–900, OFL-1.1 — fontsource's own stylesheet
+ * imported as-is. It declares the family "Noto Sans SC Variable" as 101 `unicode-range` slices (97
+ * Han / punctuation / symbol slices plus latin, latin-ext, cyrillic and vietnamese), about 4.5 MB
+ * in all; a page whose theme names the family downloads only the slices its text touches.
+ *
+ * A stack that names Noto names a Latin face first, so ASCII never reaches Noto's latin slice;
+ * that slice and the cyrillic / vietnamese ones only answer text the Latin face cannot.
+ */
+@import "@fontsource-variable/noto-sans-sc/index.css";

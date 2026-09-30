@@ -8,14 +8,14 @@
  * supply one). If all three buckets are 0, only the base ring is drawn; when
  * usage exceeds the limit, the ring is filled proportionally to usage and
  * colored by threshold (>80% amber / >95% red) to signal approaching/exceeding
- * the limit; exact values are given via a `<title>` hover.
- * Segments use the site-wide TOKEN_COLORS (works in both light/dark); the base
+ * the limit; exact values show in the shared tooltip on hover.
+ * Segments use the theme's Token-kind colours (useChartStyle); the base
  * ring uses a currentColor gray.
  * The context usage under the chat page's input box is a **single-color,
  * single-value** ring (total only), custom-drawn in context-gauge — it doesn't
  * use this component.
  */
-import { TOKEN_COLORS } from "../../lib/token-colors";
+import { ChartArc } from "./chart";
 import { humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -56,16 +56,16 @@ export function TokenDonut({
     {
       key: "cacheRead",
       value: cacheRead,
-      color: TOKEN_COLORS.cacheRead,
+      role: "cacheRead" as const,
       label: S.usage.colCacheRead,
     },
     {
       key: "cacheWrite",
       value: cacheWrite,
-      color: TOKEN_COLORS.cacheWrite,
+      role: "cacheWrite" as const,
       label: S.usage.colCacheWrite,
     },
-    { key: "output", value: output, color: TOKEN_COLORS.output, label: S.usage.colOutput },
+    { key: "output", value: output, role: "output" as const, label: S.usage.colOutput },
   ];
   const title =
     `${S.chat.contextUsage} ${humanizeTokens(total)}/${humanizeTokens(max)}` +
@@ -76,39 +76,38 @@ export function TokenDonut({
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
-      className={`block shrink-0 ${ringTone}`}
+      // ui-chart: a theme may redraw the parts (the track as the grid, each arc a series).
+      className={`ui-chart block shrink-0 ${ringTone}`}
       role="img"
       aria-label={title}
+      data-tooltip={title}
     >
-      <title>{title}</title>
-      {/* Base ring (empty ring / remainder) */}
-      <circle
+      {/* Base ring (empty ring / remainder), in the svg's own ink: the near-limit tone above. */}
+      <ChartArc
         cx={center}
         cy={center}
         r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.35}
-        strokeWidth={strokeWidth}
+        width={strokeWidth}
+        paint={{ ink: "" }}
+        track
+        trackOpacity={0.35}
       />
-      {/* Three arc segments: clockwise, starting at 12 o'clock (rotate -90), positioned via cumulative dashoffset per segment. */}
+      {/* Three arc segments: clockwise, starting at 12 o'clock, each placed by the cumulative offset. */}
       {segs.map((seg) => {
         if (seg.value <= 0) return null;
         const len = (seg.value / denom) * c;
         const offset = -(acc / denom) * c;
         acc += seg.value;
         return (
-          <circle
+          <ChartArc
             key={seg.key}
             cx={center}
             cy={center}
             r={r}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={`${len} ${c}`}
-            strokeDashoffset={offset}
-            transform={`rotate(-90 ${center} ${center})`}
+            width={strokeWidth}
+            paint={{ role: seg.role }}
+            length={len}
+            offset={offset}
           />
         );
       })}

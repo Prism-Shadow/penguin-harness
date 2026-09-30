@@ -186,4 +186,10 @@ describe("the account menu", () => {
     expect(source).not.toContain("ServerUpdateRow");
     expect(source).not.toContain("DesktopUpdateRow");
   });
+
+  it("leaves the font credit to the Settings dialog's credits page", () => {
+    // The MiSans credit moved to Settings → Credits, which every account can open; the menu
+    // keeps no second copy of it.
+    expect(source).not.toContain("fontCredit");
+  });
 });

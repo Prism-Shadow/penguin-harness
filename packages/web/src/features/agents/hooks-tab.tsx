@@ -269,7 +269,8 @@ export function HooksTab({
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                     <span
                       className="max-w-full truncate font-mono text-[13px] font-semibold"
-                      title={hook.name}
+                      data-tooltip={hook.name}
+                      data-tooltip-content="code"
                     >
                       {hook.name}
                     </span>
@@ -280,7 +281,8 @@ export function HooksTab({
                   {/* Description truncates to one line (the full text goes into title for hover reading). */}
                   <p
                     className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                    title={description}
+                    data-tooltip={description}
+                    data-tooltip-content="text"
                   >
                     {description}
                   </p>
@@ -288,7 +290,7 @@ export function HooksTab({
                 {hook.version !== "" && (
                   <span
                     className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                    title={hook.version}
+                    data-tooltip={hook.version}
                   >
                     {hook.version}
                   </span>
