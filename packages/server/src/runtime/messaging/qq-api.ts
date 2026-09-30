@@ -32,6 +32,7 @@
  * that is a budget — see qq-connector.ts, which owns the accounting.
  */
 import { WebSocket } from "undici";
+import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 
 /**
  * QQ bot OpenAPI host — both the token endpoint and the resource endpoints. Deliberately
@@ -222,7 +223,9 @@ function closeCodeIsFatal(code: number): boolean {
  * so the next HELLO replays from `seq` and no inbound event is missed. 4900-4913 is the
  * platform's own internal-error band, whose documented handling is the fresh identify this
  * session already performs; nothing an operator holds could have prevented it or can speed it
- * up.
+ * up. The transport's own closes join them: 1006 is the socket dropping with no close frame at
+ * all — the network, not the platform — and 1001 and 1011-1014 are a server or a proxy going
+ * away, failing, restarting or losing its upstream. None of those ask anything of anyone.
  *
  * Deliberately narrower than "reconnects": nearly every close reconnects here, including the
  * ones that will never come up again. A rejected token (4004), an intent the bot was never
@@ -233,16 +236,22 @@ function closeCodeIsFatal(code: number): boolean {
  * repeating, points at this client's own sequence bookkeeping.
  */
 function closeCodeIsRoutine(code: number): boolean {
-  return code === 4009 || (code >= 4900 && code <= 4913);
+  return (
+    code === 4009 ||
+    (code >= 4900 && code <= 4913) ||
+    code === 1001 ||
+    code === 1006 ||
+    (code >= 1011 && code <= 1014)
+  );
 }
 
 /**
  * A connection the platform itself closed, carrying the code it closed with.
  *
- * Its own class so the error recorder can tell a socket the gateway cycled from one that is
- * down until someone acts, WITHOUT reading the message text: a wording match would tie the
- * dashboard's "needs a human" count to how a platform phrases itself. error-kind.ts reads
- * `recovers` and nothing else.
+ * The gateway's own kind of MessagingChannelError, so the error recorder can tell a socket the
+ * gateway cycled from one that is down until someone acts, WITHOUT reading the message text: a
+ * wording match would tie the dashboard's "needs a human" count to how a platform phrases
+ * itself. error-kind.ts reads `recovers` and nothing else.
  *
  * `recovers` carries the answer rather than the raw code because the reconnect decision is
  * protocol state this file already owns and nothing above it holds (see GatewaySession). It
@@ -255,15 +264,15 @@ function closeCodeIsRoutine(code: number): boolean {
  * vendor SDK's own reconnect loop and surfaces a plain failure, and Telegram's transport is a
  * long poll with no connection to close.
  */
-export class MessagingConnectionClosedError extends Error {
+export class MessagingConnectionClosedError extends MessagingChannelError {
   constructor(
     message: string,
     /** The platform's own WebSocket close code. */
     readonly closeCode: number,
     /** Whether the next handshake brings the connection back with nothing changed. */
-    readonly recovers: boolean,
+    recovers: boolean,
   ) {
-    super(message);
+    super(message, recovers);
     this.name = "MessagingConnectionClosedError";
   }
 }
@@ -363,15 +372,19 @@ export function qqSendErrorText(errCode: number | undefined, message: string): s
  * request that never completed are the same outcome and opposite facts. The platform
  * answered, so nothing was delivered and the same message may safely be sent again in
  * another form — which is what the markdown-to-text fallback does. A timeout or a reset
- * carries no code, stays a plain Error, and must never be retried: it may already have been
+ * carries no code, stays out of this class, and must never be retried: it may already have been
  * delivered, and on this channel a retry also spends another slot of a four-reply budget.
+ *
+ * `recovers` is read off the HTTP status the refusal came with (see httpStatusRecovers): the
+ * platform's own codes name rules and budgets, not whether the next send meets the same no.
  */
-export class QQApiError extends Error {
+export class QQApiError extends MessagingChannelError {
   constructor(
     message: string,
     readonly code: number | undefined,
+    recovers = false,
   ) {
-    super(message);
+    super(message, recovers);
     this.name = "QQApiError";
   }
 }
@@ -406,14 +419,16 @@ function tokenCacheOf(creds: QQCredentials): TokenCache {
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });
     } catch (err) {
-      throw new Error(`Token exchange failed: ${fetchErrorText(err)}`);
+      // The exchange never completed, so nothing was refused: the next one may well go through.
+      throw new MessagingChannelError(`Token exchange failed: ${fetchErrorText(err)}`, true);
     }
     const body = (await res.json().catch(() => null)) as (QQAppAccessToken & QQErrorBody) | null;
     if (body === null || typeof body.access_token !== "string" || body.access_token === "") {
       const detail = body?.message ?? `HTTP ${res.status}`;
       const code = body?.code ?? body?.err_code;
-      throw new Error(
+      throw new MessagingChannelError(
         `Token exchange failed: ${detail}${code !== undefined ? ` (code ${code})` : ""}`,
+        httpStatusRecovers(res.status),
       );
     }
     const ttl = Number(body.expires_in);
@@ -460,7 +475,7 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });
     } catch (err) {
-      throw new Error(`Message send failed: ${fetchErrorText(err)}`);
+      throw new MessagingChannelError(`Message send failed: ${fetchErrorText(err)}`, true);
     }
     if (res.status >= 200 && res.status < 300) return;
     const body = (await res.json().catch(() => null)) as QQErrorBody | null;
@@ -478,6 +493,7 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
     throw new QQApiError(
       `Message send failed: ${detail}${errCode !== undefined ? ` (code ${errCode})` : ""}`,
       errCode,
+      httpStatusRecovers(res.status),
     );
   };
 
@@ -579,11 +595,12 @@ class GatewaySession {
    * What this outage has already reported; the retries stay quiet until a handshake succeeds.
    *
    * One report per outage is what keeps a backoff loop from filling the error table. A routine
-   * close is now filed `expected`, though, so letting it claim the slot outright would silence
-   * the outage behind it: a socket the platform expires at 4009 followed by an auth refusal on
-   * every retry would leave the dashboard reading zero defects for a binding that is down until
-   * a person acts. So a routine report is spent once more — by the first failure that is not
-   * routine — and only then does the outage go quiet.
+   * failure — one whose MessagingChannelError says it recovers — is filed `expected`, though, so
+   * letting it claim the slot outright would silence the outage behind it: a socket the platform
+   * expires at 4009 followed by an auth refusal on every retry would leave the dashboard reading
+   * zero defects for a binding that is down until a person acts. So a routine report is spent
+   * once more — by the first failure that is not routine — and only then does the outage go
+   * quiet.
    */
   private reported: "none" | "routine" | "defect" = "none";
 
@@ -637,11 +654,14 @@ class GatewaySession {
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });
     } catch (err) {
-      throw new Error(`Gateway lookup failed: ${fetchErrorText(err)}`);
+      throw new MessagingChannelError(`Gateway lookup failed: ${fetchErrorText(err)}`, true);
     }
     const body = (await res.json().catch(() => null)) as (QQGatewayInfo & QQErrorBody) | null;
     if (body === null || typeof body.url !== "string" || body.url === "") {
-      throw new Error(`Gateway lookup failed: ${body?.message ?? `HTTP ${res.status}`}`);
+      throw new MessagingChannelError(
+        `Gateway lookup failed: ${body?.message ?? `HTTP ${res.status}`}`,
+        httpStatusRecovers(res.status),
+      );
     }
     return body.url;
   }
@@ -653,7 +673,7 @@ class GatewaySession {
     // it to prove it, and it covers both silences: no HELLO, and an IDENTIFY nobody answers.
     this.handshakeTimer = setTimeout(() => {
       this.handshakeTimer = null;
-      this.dropSocket(ws, new Error("gateway handshake did not complete"));
+      this.dropSocket(ws, new MessagingChannelError("gateway handshake did not complete", true));
     }, this.opts.handshakeMs);
     this.handshakeTimer.unref?.();
     ws.addEventListener("message", (evt) => {
@@ -736,10 +756,16 @@ class GatewaySession {
         this.seq = null;
         this.ws?.close();
         return;
-      case OP.RECONNECT:
-        // Politely asked to reconnect; the session stays resumable.
-        this.ws?.close();
+      case OP.RECONNECT: {
+        // Politely asked to reconnect; the session stays resumable. The drop is driven from
+        // here, with its reason, because the `close` the request leads to carries no code
+        // that says it was asked for — the refused resume above closes the same way.
+        const ws = this.ws;
+        if (ws !== null) {
+          this.dropSocket(ws, new MessagingChannelError("gateway asked to reconnect", true));
+        }
         return;
+      }
       case OP.HEARTBEAT_ACK:
         // The one frame that proves the socket is still a round trip rather than a write
         // into a dead pipe. startHeartbeat measures its silence.
@@ -785,7 +811,8 @@ class GatewaySession {
    * The `close` handler is not enough on its own here: the failure both watchdogs cover is
    * a socket that never fires `close`, and asking a half-open one to close is a request the
    * far end may never answer. Detaching first makes the `close` that may eventually arrive
-   * a no-op (every listener is gated on `this.ws === ws`).
+   * a no-op (every listener is gated on `this.ws === ws`). A RECONNECT takes the same path,
+   * so the failure it reports is the reason it was asked for rather than a bare close code.
    */
   private dropSocket(ws: QQSocket, err: Error): void {
     if (this.ws !== ws) return;
@@ -813,7 +840,10 @@ class GatewaySession {
       // still writable but no longer answering is a dead pipe rather than a slow one. One
       // interval would be a lost ack; two is an outage.
       if (Date.now() - this.lastAckAt > intervalMs * 2) {
-        this.dropSocket(ws, new Error("gateway stopped acknowledging heartbeats"));
+        this.dropSocket(
+          ws,
+          new MessagingChannelError("gateway stopped acknowledging heartbeats", true),
+        );
         return;
       }
       this.send({ op: OP.HEARTBEAT, d: this.seq });
@@ -838,13 +868,13 @@ class GatewaySession {
 
   /**
    * One report per outage, then retry with backoff — the Telegram poll loop's contract, with
-   * the one exception `reported` documents: a routine close does not get to be the whole story
-   * of an outage that turns out to need a person.
+   * the one exception `reported` documents: a routine failure does not get to be the whole
+   * story of an outage that turns out to need a person.
    */
   private fail(err: unknown): void {
     if (this.closed) return;
     this.failures += 1;
-    const routine = err instanceof MessagingConnectionClosedError && err.recovers;
+    const routine = err instanceof MessagingChannelError && err.recovers;
     if (this.reported === "none" || (this.reported === "routine" && !routine)) {
       this.reported = routine ? "routine" : "defect";
       this.handlers.onError?.(err);

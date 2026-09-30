@@ -17,6 +17,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
 import { ErrorsPanel, errorsClearScopeText } from "../src/features/usage/errors-panel";
 import type { ErrorsFilters } from "../src/features/usage/errors-panel";
+import { formatDateTime } from "../src/lib/format";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -28,14 +29,18 @@ const item = (code: string): UsageErrorItem => ({
   code,
   kind: "unexpected",
   message: `${code} went wrong`,
+  count: 1,
+  firstTs: "2026-08-27T10:00:00.000Z",
 });
 
 function errorsOf(items: UsageErrorItem[]): UsageErrors {
+  const total = items.reduce((sum, e) => sum + e.count, 0);
   return {
-    total: items.length,
-    unexpected: items.length,
+    total,
+    unexpected: total,
     topCode: null,
     recent: items,
+    rows: items.length,
   };
 }
 
@@ -84,6 +89,44 @@ describe("ErrorsPanel clear action", () => {
     const onePage = render({ items: [item("internal")] });
     expect(onePage).toContain(S.usage.errorsClear);
     expect(onePage).not.toContain(S.usage.errorsOlder);
+  });
+});
+
+describe("ErrorsPanel rows", () => {
+  it("a row standing for several records says how many after its message, and when the first was", () => {
+    const folded: UsageErrorItem = {
+      ...item("messaging_connect_failed"),
+      message: "gateway stopped acknowledging heartbeats",
+      count: 3,
+      firstTs: "2026-08-27T06:00:00.000Z",
+    };
+    const html = render({ items: [folded] });
+    expect(html).toContain("×3");
+    expect(html).toContain(`title="${S.usage.errorsFirstAt(formatDateTime(folded.firstTs))}"`);
+    // The time shown is the latest one.
+    expect(html).toContain(formatDateTime(folded.ts));
+  });
+
+  it("a single record says nothing more than it did", () => {
+    const html = render({ items: [item("internal")] });
+    expect(html).not.toContain("×1");
+    expect(html).not.toContain(S.usage.errorsFirstAt(formatDateTime(item("internal").ts)));
+  });
+
+  it("pages by rows, while the stats above count records", () => {
+    // Ten rows on this page out of 25, standing for 40 records.
+    const recent = Array.from({ length: 10 }, (_, i) => item(`code_${i}`));
+    const html = renderToStaticMarkup(
+      createElement(ErrorsPanel, {
+        errors: { total: 40, unexpected: 40, topCode: null, recent, rows: 25 },
+        projectId: "p1",
+        filters: FILTERS,
+        canClear: true,
+        onCleared: () => {},
+      }),
+    );
+    expect(html).toContain(S.usage.errorsPageOf(1, 3, 25));
+    expect(html).toContain(">40<");
   });
 });
 
