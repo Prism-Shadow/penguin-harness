@@ -39,6 +39,7 @@ import type {
   SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
+  SessionSandbox,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
@@ -49,7 +50,7 @@ import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { HttpError } from "../errors.js";
-import { sseEndpoint } from "../sse.js";
+import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
   optionalEnum,
@@ -80,6 +81,8 @@ export interface SessionsRouteDeps {
   previewTokens: PreviewTokenSigner;
   projectConfigService: ProjectConfigStore;
   access: Access;
+  /** Tells everyone who can see the Project about a change the list could not otherwise learn of. */
+  projectEvents: ProjectEvents;
   serverSettingsRepo: Settings;
   sessionService: SessionService;
   sessionSources: SessionOrigins;
@@ -90,6 +93,10 @@ export interface SessionsRouteDeps {
   desktopMode: boolean;
   /** Opens a Workspace file's directory in the machine's file manager (the reveal route). */
   fileReveal: FileReveal;
+  /** The registry that ends a Session stream when the session behind it is revoked. */
+  liveStreams: LiveStreams;
+  /** Re-validates the session behind an open stream, once per heartbeat. */
+  auth: Auth;
 }
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
 import {
@@ -118,12 +125,19 @@ import { vaultRoutes } from "./vault.js";
 import { modelsRoutes } from "./models.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
 import { platformAuthRoutes } from "./platform-auth.js";
+import { modelScopeAuthRoutes } from "./modelscope-auth.js";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
 import { PreviewTokens } from "./preview.js";
-import type { Access, ModelOAuth, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type {
+  Access,
+  ModelOAuth,
+  ProjectConfigStore,
+  ProjectEvents,
+} from "../../mechanisms/projects.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
+import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
 import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
@@ -131,6 +145,8 @@ import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { LiveStreams } from "../../auth/live-streams.js";
+import type { Auth } from "../../mechanisms/identity.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -138,6 +154,32 @@ const SESSION_TITLE_MAX = 120;
 /** Max path count and per-path length for a single files/stat check (message file-card candidates never exceed this scale). */
 const STAT_MAX_PATHS = 100;
 const STAT_MAX_PATH_LEN = 512;
+
+/** The composer's sandbox picks from a request body: absent, or a checked partial. */
+function parseSandboxPick(body: unknown): Partial<SessionSandbox> | undefined {
+  const raw = (body as Record<string, unknown>).sandbox;
+  if (raw === undefined) return undefined;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw badRequest("sandbox must be an object with mode and/or network.");
+  }
+  const pick: Partial<SessionSandbox> = {};
+  const mode = optionalEnum(raw as Record<string, unknown>, "mode", [
+    "read-only",
+    "workspace-write",
+    "danger-full-access",
+  ] as const);
+  const network = optionalEnum(raw as Record<string, unknown>, "network", [
+    "open",
+    "local",
+    "none",
+  ] as const);
+  if (mode !== undefined) pick.mode = mode;
+  if (network !== undefined) pick.network = network;
+  if (mode === undefined && network === undefined) {
+    throw badRequest("sandbox must set mode and/or network.");
+  }
+  return pick;
+}
 
 /** The four approval modes (shared with the chat-defaults route's validation). */
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
@@ -543,6 +585,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       );
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    const sandbox = parseSandboxPick(body);
     // Creating-client hint stored on the row ("cli" from the CLI; default "web").
     // Informational provenance only — lists serve every row regardless.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
@@ -561,6 +604,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
+      ...(sandbox !== undefined ? { sandbox, isAdmin: c.var.user.isAdmin } : {}),
       ...(client !== undefined ? { client } : {}),
       ...(source !== undefined ? { source } : {}),
     });
@@ -615,6 +659,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVEL_NAMES);
+    const sandbox = parseSandboxPick(body);
     const archivedRaw = (body as Record<string, unknown>).archived;
     const archived = typeof archivedRaw === "boolean" ? archivedRaw : undefined;
     const titleRaw = (body as Record<string, unknown>).title;
@@ -634,6 +679,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     if (
       approvalMode === undefined &&
+      sandbox === undefined &&
       thinkingLevel === undefined &&
       archived === undefined &&
       title === undefined
@@ -641,7 +687,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         400,
         "no_update",
-        "No updatable field provided (approvalMode / thinkingLevel / archived / title).",
+        "No updatable field provided (approvalMode / sandbox / thinkingLevel / archived / title).",
       );
     }
     let updated: SessionRow = { ...row };
@@ -649,11 +695,24 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
       deps.sessionsRepo.updateTitle(row.sessionId, title);
       updated = { ...updated, title };
+      // The list learns of a rename it did not make — the CLI's `--title`, another tab —
+      // the same way it learns of a generated one: the generator publishes this exact
+      // event, and the row handler is already listening for it.
+      deps.projectEvents.notifyProjectUsers(row.projectId, {
+        type: "session_title",
+        sessionId: row.sessionId,
+        title,
+      });
     }
     if (approvalMode !== undefined) {
       // Takes effect immediately: a running approve callback re-reads the DB on every decision.
       deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
       updated = { ...updated, approvalMode };
+    }
+    if (sandbox !== undefined) {
+      // Takes effect at the Session's next command: its confiner reads the row at every spawn.
+      const next = deps.sessionService.updateSandbox(row, sandbox, c.var.user.isAdmin);
+      updated = { ...updated, sandbox: next };
     }
     if (thinkingLevel !== undefined) {
       // The row is what the loader applies at load; a runtime already loaded is assigned
@@ -711,6 +770,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
+      // A fork carries the source's policy on, as it carries its approval mode.
+      sandbox: row.sandbox ?? null,
       // insertFork replaces this with the source's current title plus its persistent number.
       title: null,
       client: "web",
@@ -944,7 +1005,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         ...(p.origin !== undefined ? { origin: p.origin } : {}),
       })),
     ];
-    return sseEndpoint(c, channel, { initialEvents });
+    return sseEndpoint(c, channel, {
+      initialEvents,
+      revocation: streamRevocation(c, c.var.user, deps),
+    });
   });
 
   app.post("/:sessionId/tasks", async (c) => {
@@ -1607,6 +1671,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 115,
       },
       {
+        id: "session-api.modelscope-auth",
+        prefix: "/api/projects/:projectId/modelscope-auth",
+        auth: "user",
+        order: 116,
+      },
+      {
         id: "session-api.chat-defaults",
         prefix: "/api/projects/:projectId/chat-defaults",
         auth: "user",
@@ -1668,9 +1738,11 @@ export class SessionApiRoutes {
   @Use() private readonly messaging!: Messaging;
   @Use() private readonly schedulesRepo!: Schedules;
   @Use() private readonly access!: Access;
+  @Use() private readonly projectEvents!: ProjectEvents;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly modelOAuth!: ModelOAuth;
   @Use() private readonly platformAuth!: PlatformAuth;
+  @Use() private readonly modelScopeAuth!: ModelScopeAuth;
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
@@ -1682,10 +1754,13 @@ export class SessionApiRoutes {
   @Use() private readonly sources!: SessionOrigins;
   @Use() private readonly errorsRepo!: ErrorLog;
   @Use() private readonly usage!: UsageQueries;
+  @Use() private readonly liveStreams!: LiveStreams;
+  @Use() private readonly auth!: Auth;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
   @Bind("session-api.platform-auth") platformAuthRoutes!: Hono<AppEnv>;
+  @Bind("session-api.modelscope-auth") modelScopeAuthRoutes!: Hono<AppEnv>;
   @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
   @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
   @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
@@ -1711,6 +1786,7 @@ export class SessionApiRoutes {
       previewTokens: this.previewTokens as PreviewTokenSigner,
       projectConfigService,
       access,
+      projectEvents: this.projectEvents,
       serverSettingsRepo: this.settings,
       sessionService,
       sessionSources: this.sources,
@@ -1721,6 +1797,8 @@ export class SessionApiRoutes {
       // this process or it did not, and that cannot change under a running server.
       desktopMode: this.desktop.current() !== null,
       fileReveal: this.fileReveal,
+      liveStreams: this.liveStreams,
+      auth: this.auth,
     };
     const modelOAuthDeps = {
       config: this.config,
@@ -1744,10 +1822,15 @@ export class SessionApiRoutes {
     this.modelsRoutes = modelsRoutes(modelDeps);
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
+    this.modelScopeAuthRoutes = modelScopeAuthRoutes({
+      ...modelDeps,
+      modelScopeAuth: this.modelScopeAuth,
+    });
     this.chatDefaultsRoutes = chatDefaultsRoutes({
       agentConfigService,
       projectConfigService,
       access,
+      sandboxDefaults: () => sessionService.sandboxView(sessionService.defaultSandbox()),
     });
     this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
     this.agentsRoutes = agentsRoutes({

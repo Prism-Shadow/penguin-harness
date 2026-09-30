@@ -55,6 +55,7 @@ import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
@@ -493,6 +494,7 @@ export function WorkspaceBrowser({
   // the new tab to the same-origin sandbox (which the link flags rather than failing
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated, desktopMode, sessionVia } = useAuth();
+  const saveShortcut = useShortcutLabel("editor.save");
   // The desktop app's own window is the one page whose machine IS the server's, so it is the
   // only one offered "show in folder" — see lib/account-menu.ts for why a browser signed into
   // the same server, even on this machine, must not be.
@@ -2357,7 +2359,11 @@ export function WorkspaceBrowser({
           </button>
         </Tooltip>
         <Tooltip
-          label={saving ? S.common.saving : S.files.saveTitle}
+          label={
+            saving
+              ? S.common.saving
+              : `${S.common.save}${saveShortcut !== null ? ` (${saveShortcut})` : ""}`
+          }
           placement="bottom"
           className="shrink-0"
         >

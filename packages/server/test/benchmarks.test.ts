@@ -24,8 +24,12 @@ import type {
   ProjectCreateResponse,
   WorkspaceFilesResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+
+// Symlink creation needs a privilege or Developer Mode on Windows; canCreateSymlink()
+// probes once and caches, so these cases still run where the capability exists.
+const itWithSymlinks = it.skipIf(!canCreateSymlink());
 
 describe("benchmarks api", () => {
   let t: TestApp;
@@ -69,290 +73,293 @@ describe("benchmarks api", () => {
     });
   });
 
-  it("current scoreboard: model-written averages, runtime, and runs pass through", async () => {
-    const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v2");
-    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
-    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
-      recursive: true,
-    });
-    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "rubric"), { recursive: true });
-    await fs.mkdir(path.join(dir, "CASE-002-web-task", "statement"), { recursive: true });
-    await fs.mkdir(path.join(dir, "CASE-002-web-task", "rubric"), { recursive: true });
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "README.md"),
-      "# Case 001: Excel cleanup\n\nClean the workbook.",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "data.csv"),
-      "id,value\n1,alpha\n",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "assets", "notes.txt"),
-      "public notes",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "large.txt"),
-      "x".repeat(300 * 1024),
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "rubric", "README.md"),
-      "# Scoring rubric\n\n- Correct workbook: 100 points",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "rubric", "expected.json"),
-      '{"rows": 1}\n',
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-002-web-task", "statement", "README.md"),
-      "# Web task\n\nBuild the page.",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
-      "PRIVATE GOLD: never return this text",
-      "utf8",
-    );
-    await fs.symlink(
-      path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
-      path.join(dir, "CASE-001-excel-task", "statement", "private-link.md"),
-    );
-    await fs.writeFile(
-      path.join(dir, "benchmark_config.toml"),
-      `title = "SWE Bench v2"\ndescription = "Example"\nruns = 2\n`,
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "scoreboard.yaml"),
-      [
-        "evaluations:",
-        '  - time: "2026-07-16T10:00:00Z"',
-        '    agent_id: "default_agent"',
-        "    version: 3",
-        '    provider: "deepseek"',
-        '    model_id: "deepseek-v4-pro"',
-        '    thinking_level: "medium"',
-        '    summary_title: "Added planning steps to the system Prompt"',
-        '    summary: "Each case run twice and averaged; added planning steps."',
-        "    score: 72.35",
-        "    cost: 0.04",
-        "    duration_ms: 42500",
-        "    cases:",
-        // Stored averages are authoritative even when inconsistent with the raw Runs.
-        '      - case: "CASE-001-excel-task"',
-        "        score: 80.2",
-        "        cost: 0.04",
-        "        duration_ms: 50000",
-        "        runs:",
-        "          - score: 80",
-        "            cost: null",
-        "            duration_ms: 48000",
-        '            session_id: "session-run-1"',
-        "          - score: 82",
-        "            cost: 0.04",
-        "            duration_ms: 52000",
-        '            session_id: "session-run-2"',
-        // All unknown Run costs produce a model-written null Case cost; the Evaluation ignores it.
-        '      - case: "CASE-002-web-task"',
-        "        score: 64.5",
-        "        cost: null",
-        "        duration_ms: 35000",
-        "        runs:",
-        "          - score: 60",
-        "            cost: null",
-        "            duration_ms: 30000",
-        '            session_id: "session-run-3"',
-        "          - score: 70",
-        "            cost: null",
-        "            duration_ms: 40000",
-        '            session_id: "session-run-4"',
-        // A second Agent evaluated by the same Benchmark: the two are peers, and one
-        // Benchmark measures as many Agents as it is pointed at.
-        '  - time: "2026-07-17T10:00:00Z"',
-        '    agent_id: "report_writer"',
-        "    version: 1",
-        '    provider: "deepseek"',
-        '    model_id: "deepseek-v4-pro"',
-        '    thinking_level: "medium"',
-        "    score: 55",
-        "    cost: null",
-        "    duration_ms: 30000",
-        "    cases:",
-        '      - case: "CASE-001-excel-task"',
-        "        score: 55",
-        "        cost: null",
-        "        duration_ms: 30000",
-        "        runs:",
-        "          - score: 55",
-        "            cost: null",
-        "            duration_ms: 30000",
-        '            session_id: "session-run-5"',
-        // Recorded before evaluations named an Agent: still listed, just unlabelled.
-        '  - time: "2026-07-18T10:00:00Z"',
-        "    version: 1",
-        '    provider: "deepseek"',
-        '    model_id: "deepseek-v4-pro"',
-        '    thinking_level: "medium"',
-        "    score: 60",
-        "    cost: null",
-        "    duration_ms: 31000",
-        "    cases:",
-        '      - case: "CASE-001-excel-task"',
-        "        score: 60",
-        "        cost: null",
-        "        duration_ms: 31000",
-        "        runs:",
-        "          - score: 60",
-        "            cost: null",
-        "            duration_ms: 31000",
-        '            session_id: "session-run-6"',
-      ].join("\n"),
-      "utf8",
-    );
+  itWithSymlinks(
+    "current scoreboard: model-written averages, runtime, and runs pass through",
+    async () => {
+      const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v2");
+      await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
+      await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
+        recursive: true,
+      });
+      await fs.mkdir(path.join(dir, "CASE-001-excel-task", "rubric"), { recursive: true });
+      await fs.mkdir(path.join(dir, "CASE-002-web-task", "statement"), { recursive: true });
+      await fs.mkdir(path.join(dir, "CASE-002-web-task", "rubric"), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "README.md"),
+        "# Case 001: Excel cleanup\n\nClean the workbook.",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "data.csv"),
+        "id,value\n1,alpha\n",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "assets", "notes.txt"),
+        "public notes",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "large.txt"),
+        "x".repeat(300 * 1024),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "rubric", "README.md"),
+        "# Scoring rubric\n\n- Correct workbook: 100 points",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "rubric", "expected.json"),
+        '{"rows": 1}\n',
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-002-web-task", "statement", "README.md"),
+        "# Web task\n\nBuild the page.",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
+        "PRIVATE GOLD: never return this text",
+        "utf8",
+      );
+      await fs.symlink(
+        path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
+        path.join(dir, "CASE-001-excel-task", "statement", "private-link.md"),
+      );
+      await fs.writeFile(
+        path.join(dir, "benchmark_config.toml"),
+        `title = "SWE Bench v2"\ndescription = "Example"\nruns = 2\n`,
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "scoreboard.yaml"),
+        [
+          "evaluations:",
+          '  - time: "2026-07-16T10:00:00Z"',
+          '    agent_id: "default_agent"',
+          "    version: 3",
+          '    provider: "deepseek"',
+          '    model_id: "deepseek-v4-pro"',
+          '    thinking_level: "medium"',
+          '    summary_title: "Added planning steps to the system Prompt"',
+          '    summary: "Each case run twice and averaged; added planning steps."',
+          "    score: 72.35",
+          "    cost: 0.04",
+          "    duration_ms: 42500",
+          "    cases:",
+          // Stored averages are authoritative even when inconsistent with the raw Runs.
+          '      - case: "CASE-001-excel-task"',
+          "        score: 80.2",
+          "        cost: 0.04",
+          "        duration_ms: 50000",
+          "        runs:",
+          "          - score: 80",
+          "            cost: null",
+          "            duration_ms: 48000",
+          '            session_id: "session-run-1"',
+          "          - score: 82",
+          "            cost: 0.04",
+          "            duration_ms: 52000",
+          '            session_id: "session-run-2"',
+          // All unknown Run costs produce a model-written null Case cost; the Evaluation ignores it.
+          '      - case: "CASE-002-web-task"',
+          "        score: 64.5",
+          "        cost: null",
+          "        duration_ms: 35000",
+          "        runs:",
+          "          - score: 60",
+          "            cost: null",
+          "            duration_ms: 30000",
+          '            session_id: "session-run-3"',
+          "          - score: 70",
+          "            cost: null",
+          "            duration_ms: 40000",
+          '            session_id: "session-run-4"',
+          // A second Agent evaluated by the same Benchmark: the two are peers, and one
+          // Benchmark measures as many Agents as it is pointed at.
+          '  - time: "2026-07-17T10:00:00Z"',
+          '    agent_id: "report_writer"',
+          "    version: 1",
+          '    provider: "deepseek"',
+          '    model_id: "deepseek-v4-pro"',
+          '    thinking_level: "medium"',
+          "    score: 55",
+          "    cost: null",
+          "    duration_ms: 30000",
+          "    cases:",
+          '      - case: "CASE-001-excel-task"',
+          "        score: 55",
+          "        cost: null",
+          "        duration_ms: 30000",
+          "        runs:",
+          "          - score: 55",
+          "            cost: null",
+          "            duration_ms: 30000",
+          '            session_id: "session-run-5"',
+          // Recorded before evaluations named an Agent: still listed, just unlabelled.
+          '  - time: "2026-07-18T10:00:00Z"',
+          "    version: 1",
+          '    provider: "deepseek"',
+          '    model_id: "deepseek-v4-pro"',
+          '    thinking_level: "medium"',
+          "    score: 60",
+          "    cost: null",
+          "    duration_ms: 31000",
+          "    cases:",
+          '      - case: "CASE-001-excel-task"',
+          "        score: 60",
+          "        cost: null",
+          "        duration_ms: 31000",
+          "        runs:",
+          "          - score: 60",
+          "            cost: null",
+          "            duration_ms: 31000",
+          '            session_id: "session-run-6"',
+        ].join("\n"),
+        "utf8",
+      );
 
-    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
-    const bench = res.benchmarks[0]!;
-    expect(bench).toMatchObject({
-      id: "swe-bench-v2",
-      title: "SWE Bench v2",
-      description: "Example",
-      runs: 2,
-      status: "published",
-      caseCount: 2,
-    });
-    // config carries no model reference (the model lives on each evaluation).
-    expect("modelId" in bench).toBe(false);
-    expect("provider" in bench).toBe(false);
-    // The Agents a Benchmark has evaluated come from its scoreboard, in first-seen order; an
-    // evaluation without an agent_id contributes none.
-    expect(bench.agentIds).toEqual(["default_agent", "report_writer"]);
-    expect(bench.evaluations[2]!.agentId).toBeNull();
-    const evaluation = bench.evaluations[0]!;
-    // The evaluation entry carries the Agent it tested, this run's model (as a pair) and a
-    // summary title (curve series / title-body are displayed separately).
-    expect(evaluation.agentId).toBe("default_agent");
-    expect(evaluation.provider).toBe("deepseek");
-    expect(evaluation.modelId).toBe("deepseek-v4-pro");
-    expect(evaluation.thinkingLevel).toBe("medium");
-    expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
-    expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
-    expect(evaluation.score).toBe(72.35);
-    expect(evaluation.cost).toBe(0.04);
-    expect(evaluation.durationMs).toBe(42500);
-    expect("maxScore" in evaluation).toBe(false);
-    // Per-case metrics trust the file (80.2, not the Runs' arithmetic mean of 81).
-    const full = evaluation.cases.find((c) => c.case === "CASE-001-excel-task")!;
-    expect(full.score).toBe(80.2);
-    expect(full.cost).toBe(0.04);
-    expect(full.durationMs).toBe(50000);
-    expect(full.runs).toEqual([
-      { score: 80, cost: null, durationMs: 48000, sessionId: "session-run-1" },
-      { score: 82, cost: 0.04, durationMs: 52000, sessionId: "session-run-2" },
-    ]);
-    const partialCost = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
-    expect(partialCost.score).toBe(64.5);
-    expect(partialCost.cost).toBeNull();
-    expect(partialCost.durationMs).toBe(35000);
-    expect(partialCost.runs).toEqual([
-      { score: 60, cost: null, durationMs: 30000, sessionId: "session-run-3" },
-      { score: 70, cost: null, durationMs: 40000, sessionId: "session-run-4" },
-    ]);
+      const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+      const bench = res.benchmarks[0]!;
+      expect(bench).toMatchObject({
+        id: "swe-bench-v2",
+        title: "SWE Bench v2",
+        description: "Example",
+        runs: 2,
+        status: "published",
+        caseCount: 2,
+      });
+      // config carries no model reference (the model lives on each evaluation).
+      expect("modelId" in bench).toBe(false);
+      expect("provider" in bench).toBe(false);
+      // The Agents a Benchmark has evaluated come from its scoreboard, in first-seen order; an
+      // evaluation without an agent_id contributes none.
+      expect(bench.agentIds).toEqual(["default_agent", "report_writer"]);
+      expect(bench.evaluations[2]!.agentId).toBeNull();
+      const evaluation = bench.evaluations[0]!;
+      // The evaluation entry carries the Agent it tested, this run's model (as a pair) and a
+      // summary title (curve series / title-body are displayed separately).
+      expect(evaluation.agentId).toBe("default_agent");
+      expect(evaluation.provider).toBe("deepseek");
+      expect(evaluation.modelId).toBe("deepseek-v4-pro");
+      expect(evaluation.thinkingLevel).toBe("medium");
+      expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
+      expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
+      expect(evaluation.score).toBe(72.35);
+      expect(evaluation.cost).toBe(0.04);
+      expect(evaluation.durationMs).toBe(42500);
+      expect("maxScore" in evaluation).toBe(false);
+      // Per-case metrics trust the file (80.2, not the Runs' arithmetic mean of 81).
+      const full = evaluation.cases.find((c) => c.case === "CASE-001-excel-task")!;
+      expect(full.score).toBe(80.2);
+      expect(full.cost).toBe(0.04);
+      expect(full.durationMs).toBe(50000);
+      expect(full.runs).toEqual([
+        { score: 80, cost: null, durationMs: 48000, sessionId: "session-run-1" },
+        { score: 82, cost: 0.04, durationMs: 52000, sessionId: "session-run-2" },
+      ]);
+      const partialCost = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
+      expect(partialCost.score).toBe(64.5);
+      expect(partialCost.cost).toBeNull();
+      expect(partialCost.durationMs).toBe(35000);
+      expect(partialCost.runs).toEqual([
+        { score: 60, cost: null, durationMs: 30000, sessionId: "session-run-3" },
+        { score: 70, cost: null, durationMs: 40000, sessionId: "session-run-4" },
+      ]);
 
-    const caseResponse = (await (
-      await member.get(`${base}/swe-bench-v2/cases`)
-    ).json()) as BenchmarkCasesResponse;
-    expect(caseResponse).toEqual({
-      cases: [
-        {
-          id: "CASE-001-excel-task",
-          title: "Excel cleanup",
-        },
-        {
-          id: "CASE-002-web-task",
-          title: "Web task",
-        },
-      ],
-    });
-    expect(JSON.stringify(caseResponse)).not.toContain("PRIVATE GOLD");
+      const caseResponse = (await (
+        await member.get(`${base}/swe-bench-v2/cases`)
+      ).json()) as BenchmarkCasesResponse;
+      expect(caseResponse).toEqual({
+        cases: [
+          {
+            id: "CASE-001-excel-task",
+            title: "Excel cleanup",
+          },
+          {
+            id: "CASE-002-web-task",
+            title: "Web task",
+          },
+        ],
+      });
+      expect(JSON.stringify(caseResponse)).not.toContain("PRIVATE GOLD");
 
-    const filesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/files`;
-    const files = (await (await member.get(filesBase)).json()) as WorkspaceFilesResponse;
-    expect(files.path).toBe("");
-    expect(files.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
-      "dir:assets",
-      "file:data.csv",
-      "file:large.txt",
-      "file:README.md",
-    ]);
-    expect(JSON.stringify(files)).not.toContain("private-link.md");
-    expect(
-      (
-        await member.get(
-          `${filesBase}/content?path=${encodeURIComponent("private-link.md")}&preview=1`,
-        )
-      ).status,
-    ).toBe(400);
+      const filesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/files`;
+      const files = (await (await member.get(filesBase)).json()) as WorkspaceFilesResponse;
+      expect(files.path).toBe("");
+      expect(files.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
+        "dir:assets",
+        "file:data.csv",
+        "file:large.txt",
+        "file:README.md",
+      ]);
+      expect(JSON.stringify(files)).not.toContain("private-link.md");
+      expect(
+        (
+          await member.get(
+            `${filesBase}/content?path=${encodeURIComponent("private-link.md")}&preview=1`,
+          )
+        ).status,
+      ).toBe(400);
 
-    const nested = (await (
-      await member.get(`${filesBase}?path=${encodeURIComponent("assets")}`)
-    ).json()) as WorkspaceFilesResponse;
-    expect(nested.entries.map((entry) => entry.name)).toEqual(["notes.txt"]);
+      const nested = (await (
+        await member.get(`${filesBase}?path=${encodeURIComponent("assets")}`)
+      ).json()) as WorkspaceFilesResponse;
+      expect(nested.entries.map((entry) => entry.name)).toEqual(["notes.txt"]);
 
-    const statement = await member.get(
-      `${filesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
-    );
-    expect(statement.status).toBe(200);
-    expect(statement.headers.get("content-type")).toContain("markdown");
-    expect(await statement.text()).toBe("# Case 001: Excel cleanup\n\nClean the workbook.");
+      const statement = await member.get(
+        `${filesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
+      );
+      expect(statement.status).toBe(200);
+      expect(statement.headers.get("content-type")).toContain("markdown");
+      expect(await statement.text()).toBe("# Case 001: Excel cleanup\n\nClean the workbook.");
 
-    const rubricFilesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/rubric/files`;
-    const rubricFiles = (await (
-      await member.get(rubricFilesBase)
-    ).json()) as WorkspaceFilesResponse;
-    expect(rubricFiles.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
-      "file:expected.json",
-      "file:README.md",
-    ]);
+      const rubricFilesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/rubric/files`;
+      const rubricFiles = (await (
+        await member.get(rubricFilesBase)
+      ).json()) as WorkspaceFilesResponse;
+      expect(rubricFiles.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
+        "file:expected.json",
+        "file:README.md",
+      ]);
 
-    const rubric = await member.get(
-      `${rubricFilesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
-    );
-    expect(rubric.status).toBe(200);
-    expect(rubric.headers.get("content-type")).toContain("markdown");
-    expect(await rubric.text()).toContain("Correct workbook: 100 points");
+      const rubric = await member.get(
+        `${rubricFilesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
+      );
+      expect(rubric.status).toBe(200);
+      expect(rubric.headers.get("content-type")).toContain("markdown");
+      expect(await rubric.text()).toContain("Correct workbook: 100 points");
 
-    const large = await member.get(
-      `${filesBase}/content?path=${encodeURIComponent("large.txt")}&preview=1`,
-    );
-    expect(large.status).toBe(200);
-    expect(large.headers.get("x-content-truncated")).toBe("1");
-    expect((await large.text()).length).toBe(256 * 1024);
+      const large = await member.get(
+        `${filesBase}/content?path=${encodeURIComponent("large.txt")}&preview=1`,
+      );
+      expect(large.status).toBe(200);
+      expect(large.headers.get("x-content-truncated")).toBe("1");
+      expect((await large.text()).length).toBe(256 * 1024);
 
-    const download = await member.get(
-      `${filesBase}/content?path=${encodeURIComponent("data.csv")}&download=1`,
-    );
-    expect(download.headers.get("content-disposition")).toContain("attachment");
-    expect(await download.text()).toBe("id,value\n1,alpha\n");
+      const download = await member.get(
+        `${filesBase}/content?path=${encodeURIComponent("data.csv")}&download=1`,
+      );
+      expect(download.headers.get("content-disposition")).toContain("attachment");
+      expect(await download.text()).toBe("id,value\n1,alpha\n");
 
-    expect(
-      (await member.get(`${filesBase}/content?path=${encodeURIComponent("../rubric/README.md")}`))
-        .status,
-    ).toBe(400);
-    expect(
-      (
-        await member.get(
-          `${rubricFilesBase}/content?path=${encodeURIComponent("../statement/README.md")}`,
-        )
-      ).status,
-    ).toBe(400);
-    expect((await outsider.get(`${base}/swe-bench-v2/cases`)).status).toBe(404);
-    expect((await outsider.get(filesBase)).status).toBe(404);
-  });
+      expect(
+        (await member.get(`${filesBase}/content?path=${encodeURIComponent("../rubric/README.md")}`))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await member.get(
+            `${rubricFilesBase}/content?path=${encodeURIComponent("../statement/README.md")}`,
+          )
+        ).status,
+      ).toBe(400);
+      expect((await outsider.get(`${base}/swe-bench-v2/cases`)).status).toBe(404);
+      expect((await outsider.get(filesBase)).status).toBe(404);
+    },
+  );
 
   it("does not migrate or backfill legacy Scoreboard entries", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v1");

@@ -1,11 +1,17 @@
 /**
  * Server-backed command wiring, driven through `cli()` in-process against the fake
- * server: run (foreground/background/json/goal exit codes), ls, input (steer vs task),
- * logs, agent ls/create, project ls, cost, schedule ls.
+ * server: run (foreground/background/json, goal exit codes and round lines), ls, input
+ * (steer vs task), logs, agent ls/create, project ls, cost, schedule ls.
  */
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assistantText, partialText, type OmniMessage } from "@prismshadow/penguin-core";
+import {
+  assistantText,
+  hookEvent,
+  partialText,
+  userText,
+  type OmniMessage,
+} from "@prismshadow/penguin-core";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
 import { FakeServer } from "./fake-server.js";
@@ -103,6 +109,24 @@ describe("penguin run", () => {
     expect(code).toBe(1);
     const session = [...server.sessions.values()][0]!;
     expect(session.tasks[0]!.goal).toEqual({ budget: 500_000 });
+  });
+
+  it("a goal run prints one line per round: another package's context riding round 1 is not a round", async () => {
+    // The stream of a goal on an Agent with a second user_prompt package: the objective and
+    // the goal protocol (both published by the server), the other package's context (core
+    // sends it right behind them), round 1's work, the goal hook's `continue`, round 2.
+    server.onTask = () => [
+      userText("raise coverage"),
+      userText("goal protocol for the first pass", "harness"),
+      userText("The local time is 10:00.", "harness"),
+      ...streamedText("first pass done"),
+      hookEvent({ hook: "stop", name: "goal", decision: "continue" }),
+      userText("goal protocol for the second pass", "harness"),
+      ...streamedText("second pass done"),
+    ];
+    await cli(["run", "-m", "raise coverage", "--goal", "500k"]);
+    const printed = (round: number) => out().split(t.goalRound(round)).length - 1;
+    expect([1, 2, 3].map(printed)).toEqual([1, 1, 0]);
   });
 
   it("--thinking pins the Session before the task (a PATCH); the task body carries no level", async () => {
