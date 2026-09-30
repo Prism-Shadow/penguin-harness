@@ -425,6 +425,8 @@ describe("the modal (source contract)", () => {
 
   it("is the shared Modal, so it stacks on a host dialog through the one Escape stack", () => {
     expect(finder).toContain("<Modal");
+    // No title bar: Cancel is the way out; the title still names the dialog.
+    expect(finder).toMatch(/<Modal[\s\S]*?headerless[\s\S]*?>/);
     expect(finder).not.toContain("createPortal");
     expect(finder).not.toMatch(/fixed inset-0/);
     expect(select).not.toContain("Dropdown");

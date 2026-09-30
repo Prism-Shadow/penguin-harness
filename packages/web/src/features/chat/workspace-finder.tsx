@@ -1359,6 +1359,9 @@ export function WorkspaceFinder({
       open={open}
       title={title}
       onClose={onClose}
+      // No title bar: Cancel in the footer (and Escape, and the backdrop) is the way out, and
+      // the title still names the dialog for assistive tech.
+      headerless
       bare
       fullScreenOnPhone
       widthClass="sm:h-[min(36rem,85vh)] sm:max-w-3xl"
