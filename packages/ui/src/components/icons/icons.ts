@@ -97,8 +97,7 @@ export const ICONS = {
   /** A wrench. */
   wrench: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
   /** A key: a round bow, the shaft and two teeth (feather key). */
-  key:
-    "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
+  key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
   /**
    * The same key struck through corner to corner, like `eyeOff`. Spelled out rather than composed
    * from `key`: a fragment equal to a whole entry would name one path twice. Redraw both together.
