@@ -165,6 +165,13 @@ export function CloseButton({
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /**
+ * Triangle alert (lucide): a warning worth acting on — the confirm dialog's danger badge, and the
+ * built-in browser's load warning with the tabs it points at.
+ */
+export const WARNING_ICON =
+  "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3zM12 9v4m0 4h.01";
+
+/**
  * Opening quotation marks: a passage carried in from somewhere else. The composer's chip for a
  * Workspace selection wears it, where a paperclip would have claimed the file was attached — the
  * file is not; a few of its lines are quoted.
@@ -175,6 +182,28 @@ export const QUOTE_ICON =
 /** A pane with an arrow leaving it: this opens somewhere outside the app, in a tab of its own. */
 export const EXTERNAL_LINK_ICON =
   "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
+
+/**
+ * A globe — the app's 9-radius circle, its equator and one meridian: the built-in browser,
+ * wherever the dock names it, and the stand-in for a page that has no favicon of its own.
+ */
+export const GLOBE_ICON =
+  "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18z";
+
+/** Arrows pointing back and forward along one line: a browser's history buttons. */
+export const ARROW_BACK_ICON = "M19 12H5m6-6-6 6 6 6";
+export const ARROW_FORWARD_ICON = "M5 12h14m-6-6 6 6-6 6";
+
+/** Angle brackets: developer tools. */
+export const CODE_ICON = "M16 18l6-6-6-6M8 6l-6 6 6 6";
+
+/** A house with its door: the built-in browser's homepage, on the Home button and the menu row that sets it. */
+export const HOME_ICON =
+  "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
+
+/** Two links of a chain: a link's address, as the conversation's link menu copies it. */
+export const LINK_ICON =
+  "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71";
 
 /**
  * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's

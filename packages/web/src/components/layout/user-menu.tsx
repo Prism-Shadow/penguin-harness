@@ -1,7 +1,7 @@
 /**
  * The account menu, shared by both avatars that open one: the pinned sidebar's user row and
  * the collapsed rail's avatar. One component rather than a copy per anchor — the rows
- * (System settings, the update entry, sign out) and the dialog behind the first of them must
+ * (Settings, the update entry, sign out) and the dialog behind the first of them must
  * stay the same menu from either side, and a second copy is how two menus drift apart.
  *
  * Only the trigger differs, so the trigger is the caller's: it is handed the menu's own open
@@ -89,7 +89,7 @@ export function UserMenu({
               </div>
             </div>
           )}
-          {/* System settings dialog: everyone gets the row — the dialog always has the
+          {/* Settings dialog: everyone gets the row — the dialog always has the
               personal pages, and the server-global ones inside it stay gated by the
               section registry rather than by this row. The preference rows that used to
               stack here live on its pages now. */}
@@ -101,7 +101,7 @@ export function UserMenu({
               setSettingsOpen(true);
             }}
           >
-            {S.settings.systemSettings}
+            {S.settings.title}
           </button>
           {/* Update entry, directly under the settings entry rather than on a page inside
               it: one row for both backends (the server release here, the shell's own

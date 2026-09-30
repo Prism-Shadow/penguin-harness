@@ -62,7 +62,7 @@ The group appears in the list once its first model is saved.
 **Import models** fills a new group with every model an OpenAI-compatible or Anthropic-compatible endpoint lists.
 
 1. Select **Import models**.
-2. In **API key**, enter the key. Leave it empty to use the protocol's `OPENAI_*` or `ANTHROPIC_*` environment variables.
+2. In **API key**, enter the endpoint's key. The server's `OPENAI_*` / `ANTHROPIC_*` variables are not used for an endpoint that is not the vendor's own (see [Set API keys](#set-api-keys)), so a listing without a key is refused.
 3. In **Custom base URL**, enter the endpoint's base URL.
 4. Select **Detect** at the top-right of the field, or pick the protocol from the menu at the right edge of the field. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 5. Select **Import all models**. PenguinHarness asks the endpoint for its model list and saves every model into the new group, in the endpoint's order.
@@ -88,7 +88,7 @@ All of the group's models and their API keys are removed. Built-in groups cannot
 2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `gpt-5.5`. **Get model IDs** opens the provider's model list.
 3. Optional: in **Display name**, enter a display name. An empty display name shows the model id.
 4. Fill in the credentials and endpoint:
-   - **API key**: leave it empty to use the provider's environment variable. The field names the variable when it is set on the server.
+   - **API key**: in a vendor group, leave it empty to use the provider's environment variable; the field names the variable when it is set on the server. In a gateway group, in **Custom** and in groups you created, the key is required — no environment variable is used for an endpoint that is not the vendor's own.
    - **Custom base URL**: required in **Custom** and in groups you created. In gateway groups it is filled in for you.
 5. Optional: fill in the limits and prices:
    - **Context window**: the model's context window in Tokens. For a model that is not in the built-in catalog, an empty field saves as 1000000.
@@ -102,7 +102,7 @@ Which protocol a new model uses depends on its group:
 
 - **Vendor groups** (DeepSeek, Google Gemini, OpenAI, Anthropic, Z.AI, Moonshot, MiniMax) support only the vendor's own API. If a model id cannot be routed that way, the dialog warns you and offers **Move to Custom**. Use Custom for OpenAI-compatible endpoints.
 - **OpenRouter** always uses `openai-responses`, and **vLLM** always uses `openai-chat-vllm-adapter`.
-- **Other gateway groups** use OpenAI Chat Completions.
+- **OpenAI-compatible gateway groups** use OpenAI Chat Completions, except for aggregate presets that pin a model-specific protocol.
 - **Custom** and groups you created: pick the protocol from the base URL field, or detect it. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 
 ### Edit or delete a model
@@ -163,8 +163,8 @@ Detection never blocks a save. If you select **Confirm** while the protocol is s
 
 - Probes are minimal invalid requests with `{}` bodies. They cost no Tokens and need no valid model id: an error in the protocol's own shape proves the route exists, a `404` or `405` means the path is not served, and HTML or gateway noise counts for nothing.
 - The probed URLs and auth headers are exactly what the AgentHub client uses after saving: `Authorization: Bearer` for the OpenAI protocols, and `x-api-key` plus `Authorization: Bearer` and `anthropic-version` for `ant-messages`. A detected protocol is one that will really work.
-- The server picks the probe credential in three steps: the API key typed in the dialog, else the key already stored for the entry, else the environment variable of the protocol that probe speaks (`ANTHROPIC_API_KEY` for `ant-messages`, `OPENAI_API_KEY` for the two OpenAI protocols). The choice is made per probe, because the protocol is what is being determined. None of these values reach the browser or the response.
-- Detection works with no credential at all, since a protocol-shaped `401` identifies the route. An authenticated probe is still far more likely to get that answer than the generic `401` or gateway HTML an anonymous request often gets.
+- The server picks the probe credential in three steps: the API key typed in the dialog, else the key already stored for the entry, else the environment variable of the protocol that probe speaks (`ANTHROPIC_API_KEY` for `ant-messages`, `OPENAI_API_KEY` for the two OpenAI protocols) — but only when the probed URL is that vendor's own endpoint. The choice is made per probe, because the protocol is what is being determined. None of these values reach the browser or the response.
+- Detection works with no credential at all, since a protocol-shaped `401` identifies the route. A gateway or a private server is therefore probed anonymously: your vendor key is never sent to a URL you typed.
 - Nothing is inferred from the model id in these groups. Typing `claude-sonnet-5` into a custom group does not select the Anthropic client or its `ANTHROPIC_*` key: custom groups fall back to `openai-chat`, and the API key hint follows that. Vendor and gateway groups are not affected; their ids are known to the catalog, so they route by id or by the group's preset.
 - Entries created before detection existed keep `client_type = "openai"`, which is still an alias of `openai-chat`. They are rewritten only when you pick a protocol or a detection applies. An older, non-standard protocol value is shown read-only: "Protocol: {t} (kept as configured; not editable)".
 - Detection is available as `POST /api/projects/:id/models/detect` (owner only); see [Server API](/server-api).
@@ -180,7 +180,7 @@ Detection never blocks a save. If you select **Confirm** while the protocol is s
 > [!NOTE]
 > Unlike protocol detection, this probe is a real, billed request: an image request cannot be made free the way the protocol probes are. It runs only when you select **Detect**, never on its own and never on save.
 
-The credential comes from the same chain as the connection test: the key typed in the dialog, else the stored key, else the protocol's environment variable, all resolved on the server. **Vision support** appears only for models that are not in the built-in catalog; catalog models already declare whether they accept images.
+The credential comes from the same chain as the connection test: the key typed in the dialog, else the stored key, else the environment variable where the endpoint is allowed one (see [Set API keys](#set-api-keys)), all resolved on the server. **Vision support** appears only for models that are not in the built-in catalog; catalog models already declare whether they accept images.
 
 ## Set API keys
 
@@ -188,13 +188,13 @@ Each model carries its own API key, or none.
 
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it.
 - **A whole group.** On a group's header, select **Set key** and enter the key. It applies to every model in the group.
-- **No key.** A model without a key uses the provider's environment variable on the server; see [Built-in provider groups](#built-in-provider-groups). The card and the dialog show when a key is read from an environment variable.
+- **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (AgentHub's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
 ### Authorize a new API key
 
-A provider that supports automatic key authorization adds **Authorize key** to its group header. Two built-in groups do: TokenDance and Penguin Go. The key is written to every model in the group, replacing the key those models use now.
+A provider that supports automatic key authorization adds **Authorize key** to its group header. Three built-in groups do: TokenDance, Penguin Go and ModelScope. The key is written to every model in the group, replacing the key those models use now.
 
 1. On the group's header, select **Authorize key**.
 2. Select **Open authorization page**. The provider's authorization page opens in a new tab.
@@ -212,11 +212,18 @@ Penguin Go differs in four ways:
 - A key the platform reports as invalid or revoked reopens authorization on the **Models** page.
 - If writing the delivered key locally fails, the server keeps that one delivery for a short while, so the write can be retried without authorizing again.
 
+ModelScope differs in three ways:
+
+- Authorization does not go through ModelScope's own pages but through an **authorization bridge**. The bridge holds ModelScope's client secret, runs the OAuth exchange on PenguinHarness's behalf, and hands back an access token that calls api-inference directly. The bridge's address comes from the server-side `MODELSCOPE_BRIDGE_URL` environment variable; see [Environment variables](/configuration#environment-variables).
+- The authorization page's address is the bridge's, opened as given, rather than assembled here the way Penguin Go's is. This group likewise has no manual-code mode.
+- The access token **expires**; PenguinHarness stores the refresh credential on the server and silently renews before model requests. Re-authorize with **Authorize key** only when the refresh credential is missing or no longer valid.
+
 Keep in mind:
 
 - Only the Project owner can start an authorization. With TokenDance, only their own signed-in session can finish it, which in practice is the tab the dialog is open in. The redirect itself is received without a session, because the browser the provider sends back is not always the one you started in, but it only hands the code over: nothing is exchanged and no key is saved until the dialog asks for the result.
-- The whole exchange runs on the server. Neither TokenDance's PKCE verifier nor Penguin Go's device secret ever reaches the browser, and the new key goes straight into the model table without passing through it.
-- An authorization delivers one key and expires at the provider's own deadline, and never later than ten minutes.
+- The whole exchange runs on the server. Neither TokenDance's PKCE verifier, Penguin Go's device secret, nor ModelScope's code and device secret ever reaches the browser, and the new key goes straight into the model table without passing through it. ModelScope's client secret is never in PenguinHarness at all; only the bridge holds it.
+- An authorization flow waits for at most ten minutes. ModelScope delivers an access token / refresh token pair: the access token is written to the model table, while the refresh token stays only in the server DB and is never returned to the frontend or written to the Project config.
+- A delivered key is handed over only once. Penguin Go and ModelScope both keep that one delivery briefly if saving it locally fails, so the write can be retried without authorizing again. ModelScope leaves nothing to clean up in ModelScope's console — what it returns is a token for your own account, not a newly minted key.
 - TokenDance hands over the new key only once. If saving it fails, authorize again and delete the unused key in the provider's console.
 - A TokenDance key carries PenguinHarness's app URL from the [App attribution](#app-attribution) table, so calls made with it stay attributed even from another tool.
 
@@ -352,7 +359,7 @@ A local inference server can join a Project in two ways.
 
 ### Add the model to the vLLM group
 
-Add the model to the **vLLM** group. The protocol is fixed to `openai-chat-vllm-adapter`, and the group has no preset base URL, so set **Custom base URL** to your server.
+Add the model to the **vLLM** group. The protocol is fixed to `openai-chat-vllm-adapter`, and the group has no preset base URL, so set **Custom base URL** to your server. Set **API key** too: the server's key, or any placeholder if it checks none. A row with its own base URL is never covered by the server's `OPENAI_API_KEY`, so a keyless row is refused.
 
 The group ships eight preset models at a price of 0:
 
@@ -374,6 +381,7 @@ Add a `custom` model with:
 - `client_type = "openai-chat"`
 - `base_url` pointing at the server, for example `http://127.0.0.1:8000/v1`
 - the served model name as `model_id`
+- `api_key`: the server's key, or any placeholder if it checks none — the environment's `OPENAI_API_KEY` does not cover a server of your own
 
 Protocol detection settles on `openai-chat` for such servers, and the base URL field's suffix menu selects it by hand.
 
@@ -391,7 +399,7 @@ The per-request output limit and the compaction threshold both follow this windo
 
 ## Built-in provider groups
 
-The table below lists the built-in groups and the environment variables their models fall back to when an entry has no key. The catalog source is `packages/core/src/state/model-catalog.ts`. Each group also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create.
+The table below lists the built-in groups and the environment variables their models fall back to when an entry has no key. The catalog source is `packages/core/src/state/model-catalog.ts`. Each group also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. A gateway group's rows carry the gateway's endpoint, so **they never fall back**: the variable in their row is the one their protocol client reads, and exactly because it holds your vendor key it is not sent to the gateway (see [Set API keys](#set-api-keys)).
 
 | Provider | API key env var | Notes |
 | --- | --- | --- |
@@ -409,14 +417,16 @@ The table below lists the built-in groups and the environment variables their mo
 | minimax | `MINIMAX_API_KEY` | Direct MiniMax M3 Responses client (`client_type = "minimax-m3"`): `MiniMax-M3` with a 1,000,000-token context window and vision; preset base URL `https://api.minimax.io/v1`; accepts a Token Plan Subscription Key or pay-as-you-go API key |
 | qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen pay-as-you-go (DashScope's OpenAI-compatible endpoint), preset base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`; resold third-party models keep vendor-prefixed ids (e.g. `kimi/kimi-k3`) |
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway, preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`; pricing from each model page's official list price (the preview model has only a quota-multiplier promo, no list price) |
+| modelscope | `OPENAI_API_KEY` | ModelScope's OpenAI-compatible api-inference gateway, preset base URL `https://api-inference.modelscope.cn/v1`; ids are the upstream repo names (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`); the group's header authorizes a token for you through an authorization bridge, or takes one you set by hand. See [The ModelScope group](#the-modelscope-group) |
 | vllm | `OPENAI_API_KEY` | Self-hosted vLLM servers: protocol fixed to `openai-chat-vllm-adapter`, no preset base URL, eight preset models priced at 0 (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)) |
-| custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, credential from `ANTHROPIC_API_KEY` when the entry has none, 256K window, priced at $0 until the vendor publishes prices) |
+| custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, needs its own key, 256K window, priced at $0 until the vendor publishes prices) |
 
-The gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, so with blank credentials they read `OPENAI_API_KEY`, not a gateway-specific variable.
+The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for custom, vLLM and user-created groups unless the row's base URL is the vendor's own endpoint. ModelScope also uses the `OPENAI_*` credential variables because its credential is an api-inference token, but its preset rows can pin a model-specific protocol; a keyless ModelScope row is refused the same way.
 
 - The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
-- Both clients read the same `OPENAI_*` variables, so the credential rules are identical either way.
+- ModelScope is an aggregate gateway like Penguin Go: its Qwen presets use `openai-chat-vllm-adapter`, carrying Qwen template thinking controls over Chat Completions, while its DeepSeek preset pins `deepseek-v4` and uses AgentHub's Responses client.
+- Those gateway clients read the same `OPENAI_*` variables, so the credential rules are identical either way.
 
 The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset uses `https://api.minimax.io/v1`. `MINIMAX_BASE_URL` is read only for entries without their own `base_url`.
 
@@ -432,6 +442,14 @@ The group's key comes from its header; see [Authorize a new API key](#authorize-
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
 
+### The ModelScope group
+
+`modelscope` is an aggregate gateway group: one ModelScope api-inference endpoint behind the preset base URL `https://api-inference.modelscope.cn/v1`, with each preset row carrying the protocol that AgentHub should use for that upstream model. Model ids are upstream repo names, so they keep their vendor prefix (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`). The Qwen rows use `openai-chat-vllm-adapter`, retaining Chat Completions on the wire while mapping thinking controls to the Qwen template; the DeepSeek row pins `deepseek-v4`, matching the direct and Penguin Go DeepSeek V4 rows. A new Project gets these presets right away; a Project created earlier adds them with **Sync presets**.
+
+The group's key comes from its header; see [Authorize a new API key](#authorize-a-new-api-key). Authorization goes through an authorization bridge, which holds the ModelScope client secret and returns an api-inference access token / refresh token pair, rather than through ModelScope's own pages. Nothing else about the group is special: inference requests go straight to `https://api-inference.modelscope.cn/v1` and never through the bridge. The access token is written into `.project_config.toml` like any other group key, while the refresh token stays only in the server DB. The access token expires, and PenguinHarness silently renews it before model requests; re-authorize from the header only when the refresh token is missing or no longer valid.
+
+The preset rows carry no price. ModelScope bills for api-inference and its model pages publish no read-able rate, so the rows are left unpriced: the models page shows no price badge on them and the cost center reports their usage as uncosted. That is the catalog's way of recording "nobody has looked this up" — see [Prices and promotions](#prices-and-promotions).
+
 ### Preset models
 
 The preset catalog includes, among others:
@@ -446,6 +464,7 @@ The preset catalog includes, among others:
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
 - `dots-3-note-preview` (free on TokenDance, 512K context)
+- `deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`, `Qwen/Qwen3.8-Flash-Next` (ModelScope's api-inference; preset rows with no price)
 
 The list is not exhaustive.
 
@@ -458,6 +477,7 @@ The list is not exhaustive.
 ### Prices and promotions
 
 - **Three price buckets.** Each model records `cache_read`, `cache_write` and `output` prices in USD per million Tokens. The cost center bills usage against them.
+- **Rows with no price.** The pricing block can be absent altogether, which records "nobody has looked this vendor's price up" rather than "free": such a row shows no price badge on the **Models** page, and the cost center reports its usage as uncosted. ModelScope's preset rows are the catalog's only ones — ModelScope bills for api-inference, but its model pages are client-rendered and carry no read-able rate. Three zeros would be worse than absent: they would read as the free tier and badge a billed gateway "Free".
 - **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K) and Gemini 3.1 Pro (above 200K) follow the same convention.
 - **DeepSeek off-peak.** The direct DeepSeek rows record the official peak prices and declare DeepSeek's off-peak schedule: outside Beijing time 9:00–12:00 and 14:00–18:00 on weekdays, every bucket is halved. The **Models** page shows a `50% off` tag during those hours, and the cost center bills at that rate.
   - Four resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, OpenRouter's `deepseek/deepseek-v4.1-flash`, and Penguin Go's `deepseek-flash` and `deepseek-v4-pro`.

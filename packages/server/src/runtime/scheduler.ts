@@ -47,7 +47,8 @@ export interface ScheduleTaskRunnerShape {
   startTask(
     sessionId: string,
     input: ReturnType<typeof userText>[],
-  ): Promise<{ sessionId: string }>;
+    opts?: { queueIfBusy?: boolean },
+  ): Promise<{ sessionId: string; queued: boolean }>;
 }
 
 /** Minimal dependency the scheduler needs from SessionService: new-Session mode (model ref passed through as a pair). */

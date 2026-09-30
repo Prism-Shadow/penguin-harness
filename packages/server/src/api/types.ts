@@ -24,7 +24,9 @@ import type {
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core/interfaces";
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
-import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
+import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
+import type { IfacesDiff } from "@prismshadow/penguin-hmr";
+import type { WorkflowInfo } from "../mechanisms/workflows.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -537,14 +539,21 @@ export interface ModelInfo {
   pricing?: ModelPricingDto;
   /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
   discount?: number;
-  /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
+  /**
+   * Environment variable name the entry falls back to when api_key is empty (e.g.
+   * ANTHROPIC_API_KEY); unset when it gets no fallback — an id nothing routes, or an entry
+   * whose base URL is not the vendor's own official endpoint (a gateway preset, a custom /
+   * vLLM / user-created row with its own endpoint, a vendor row re-pointed at a proxy).
+   */
   envKey?: string;
   /**
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
-   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
-   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
-   * entry is not first-party.
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
+   * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
+   * own base URL is a vendor endpoint, or a keyless row in a vendor group or Penguin Go. Gateway
+   * rows never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
+   * although those do fall back. Absent = the variable is unset or empty, or the entry is not
+   * previewable.
    */
   envKeyMasked?: string;
   credential?: CredentialInfo;
@@ -904,6 +913,22 @@ export interface PlatformModelSyncResponse extends ModelsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// ModelScope key authorization (/api/projects/:p/modelscope-auth, owner)
+// ---------------------------------------------------------------------------
+
+/**
+ * The wire shapes are Penguin Go's, deliberately: both flows create a request, poll it, and
+ * report the same six states and the same seven failure codes, so the App drives both with one
+ * dialog. They are aliases rather than a second declaration because a copy would be the same
+ * fields with the same meaning, and a shape that drifted apart in one of the two would be a
+ * bug rather than a distinction. The endpoints stay separate regardless — a flow id issued by
+ * one is not accepted by the other.
+ */
+export type ModelScopeAuthStartResponse = PlatformAuthStartResponse;
+export type ModelScopeAuthFlowErrorCode = PlatformAuthFlowErrorCode;
+export type ModelScopeAuthFlowStatusResponse = PlatformAuthFlowStatusResponse;
+
+// ---------------------------------------------------------------------------
 // New-chat defaults (the `[default_chat]` block of .project_config.toml)
 // ---------------------------------------------------------------------------
 
@@ -928,6 +953,11 @@ export interface ChatDefaultsDto {
    * "none" — only the selectable tiers.
    */
   thinkingLevel?: Exclude<ThinkingLevelName, "none">;
+  /**
+   * Read-only, GET only: the sandbox policy a new Session starts with — the server's Sandbox
+   * settings. Not part of the Project's block; PUT ignores it.
+   */
+  sandbox?: SessionSandbox;
 }
 
 // ---------------------------------------------------------------------------
@@ -1364,6 +1394,30 @@ export interface MemoryImportResponse {
 // Session
 // ---------------------------------------------------------------------------
 
+/** How far a Session's commands may reach the filesystem (the sandbox's confinement mode). */
+export type SessionSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+
+/**
+ * The part of a Session's sandbox policy a person picks from the composer: the filesystem
+ * mode and the network level. The Session keeps its own copy — taken from the server's
+ * Sandbox settings when it was created — so editing those settings only changes what NEW
+ * Sessions start with.
+ */
+export interface SessionSandbox {
+  mode: SessionSandboxMode;
+  /** `open` = unrestricted, `local` = only the host's localhost, `none` = no network. */
+  network: SessionSandboxNetwork;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `local` level. When false the composer shows it greyed out, and picking it is refused
+   * (400 `sandbox_unsupported`).
+   */
+  localNetworkSupported?: boolean;
+}
+
+/** The network levels, widest first. */
+export type SessionSandboxNetwork = "open" | "local" | "none";
+
 export interface SessionInfo {
   sessionId: string;
   projectId: string;
@@ -1374,6 +1428,8 @@ export interface SessionInfo {
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
+  /** The Session's own sandbox policy (see {@link SessionSandbox}). */
+  sandbox: SessionSandbox;
   /**
    * Thinking level pinned for this Session (set via PATCH; the Web App's in-chat picker).
    * Unset = never pinned: each model context the Session opens reads the Agent config's
@@ -1501,19 +1557,30 @@ export interface SessionsResponse {
   workspaceLatest?: Record<string, string>;
 }
 
-/** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
+/** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
-  /** Absolute path of this subdirectory (can be submitted directly as a Workspace). */
+  /** Absolute path of this entry (a folder's can be submitted directly as a Workspace). */
   path: string;
+  /**
+   * `file` for anything that is not a folder (a symlink counts as what it points to). Absent
+   * means a folder: a machine listed over ssh reports folders only.
+   */
+  kind?: "dir" | "file";
+  /** Last modification, epoch milliseconds; absent when unknown (listings over ssh, an entry stat could not reach). */
+  mtime?: number;
 }
 export interface DirListResponse {
   /** Absolute path of the current directory (realpath). */
   path: string;
   /** Absolute path of the parent directory; null when already at the root. */
   parent: string | null;
-  /** Subdirectory list (sorted by name, files excluded). */
+  /** Entries sorted by name, hidden ones included (the picker drops them). */
   entries: DirEntryInfo[];
+  /** The listed machine's `process.platform`; absent for a machine listed over ssh. */
+  platform?: string;
+  /** Windows only, on the home request (no `path`): the drive roots that exist. */
+  roots?: string[];
 }
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
@@ -1542,6 +1609,11 @@ export interface SessionCreateRequest {
   workspace?: string;
   /** Defaults to allow-all. */
   approvalMode?: ApprovalMode;
+  /**
+   * The Session's sandbox policy; either half omitted takes the server's Sandbox settings.
+   * A non-admin may not pick anything looser than those settings (403 `sandbox_forbidden`).
+   */
+  sandbox?: Partial<SessionSandbox>;
   /**
    * Creating-client hint stored on the Session row: "cli" when the CLI creates the
    * Session through the API, "org" when the organization runtime opened it (a desk or a
@@ -1592,6 +1664,11 @@ export interface SessionResponse {
 
 export interface SessionPatchRequest {
   approvalMode?: ApprovalMode;
+  /**
+   * Change this Session's sandbox policy; applies from its next command. A non-admin may not
+   * pick anything looser than the server's Sandbox settings (403 `sandbox_forbidden`).
+   */
+  sandbox?: Partial<SessionSandbox>;
   /**
    * Pin this Session's thinking level (`none | low | medium | high | xhigh | max`, anything else
    * is a 400). It replaces the Agent-config fallback for this Session and applies from the
@@ -2529,17 +2606,23 @@ export type ServerEvent =
   | { type: "hello" }
   /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
   | { type: "web_updated"; rev: string }
-  /** New session registered (pushed over the parent session's channel for subagent sessions): frontend refreshes the list in place. */
+  /**
+   * A Session now exists. On the user channel for every creation — the CLI, another tab,
+   * a schedule, an agent spawning a child — so the list learns about rows it did not make;
+   * and on the parent Session's channel for a subagent, so a tab watching the parent run
+   * refreshes in place. `source` is absent for a user-created Session, as it is on the row.
+   */
   | {
       type: "session_created";
       projectId: string;
       agentId: string;
       sessionId: string;
-      source: SessionSource;
+      source?: SessionSource;
     }
   | ScheduleServerEvent
   | GoalServerEvent
-  | CompanyServerEvent;
+  | CompanyServerEvent
+  | BuiltinBrowserServerEvent;
 
 /** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
 export type GoalServerEvent =
@@ -2567,7 +2650,11 @@ export type ScheduleServerEvent =
       agentId: string;
       name: string;
       sessionId: string;
-    };
+    }
+  /** A workflow of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  | { type: "workflow_updated"; projectId: string; agentId: string; workflow: WorkflowInfo }
+  /** A workflow's folder is gone — removed from the Web App or deleted on disk. */
+  | { type: "workflow_removed"; projectId: string; agentId: string; workflowId: string };
 
 // ---------------------------------------------------------------------------
 // Trace browsing and performance analysis
@@ -3684,6 +3771,27 @@ export interface PluginReadmeResponse {
  */
 export type VersionResponse = VersionReport;
 
+export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
+export type {
+  WorkflowInfo,
+  WorkflowVersion,
+  WorkflowRequest,
+  WorkflowResponse,
+} from "../mechanisms/workflows.js";
+
+/** GET /api/version/history: the harness versions this data root has committed, newest first. */
+export type VersionHistoryResponse = HarnessHistory;
+
+/** POST /api/version/history/rollback `{ id }`: the push back has started; the swap follows. */
+export interface VersionRollbackResponse {
+  started: true;
+  id: string;
+}
+
+/** GET /api/version/history/diff?from=&to=: what changed between two stored interface tables. */
+export type VersionHistoryDiffResponse = IfacesDiff;
+export type { IfaceChange, IfacesDiff, MemberChange, ModuleChange } from "@prismshadow/penguin-hmr";
+
 /**
  * GET /api/version/update-check: newest published release vs the running version.
  * Always HTTP 200 (fail-soft): a lookup failure sets `error` and leaves `latestVersion`
@@ -3964,6 +4072,15 @@ export interface MachineInfo {
    * since each probe is an ssh round trip while the list is only the config's text.
    */
   status: MachineServerStatus | null;
+  /**
+   * The data root the server there runs on (`PENGUIN_HOME`). This instance's PROFILE decides
+   * it — a dev instance names the machine's dev root and never the release one beside it
+   * (machines/layout.ts) — which is exactly what a reader looking at two instances of this
+   * page needs to tell them apart. Written in that machine's own spelling once its platform
+   * is known, and in the POSIX one before that; for `local` it is this process's own root,
+   * already resolved to an absolute path.
+   */
+  root: string;
 }
 
 /**
@@ -3988,10 +4105,18 @@ export interface MachineServerStatus {
  * refused key or an unusable Node than a paraphrase would.
  */
 export interface MachineJob {
-  kind: "install" | "connect" | "restart";
+  /** `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job. */
+  kind: "install" | "connect" | "restart" | "use";
   machineId: string;
   alias: string;
+  /** Waiting its turn: a few machines are worked on at once, and a batch queues the rest. */
+  queued: boolean;
   running: boolean;
+  /**
+   * Which step of the pipeline the job is on, in `MACHINE_PHASES` order — what the page draws
+   * as a stepper. Null until the first step is named; a finished job keeps its last phase.
+   */
+  phase: MachinePhase | null;
   log: string[];
   result:
     | null
@@ -4003,12 +4128,13 @@ export interface MachineJob {
         message: string;
         /**
          * The failure has a next step this side can take, and it needs saying yes to:
-         * installing the PROGRAM over there and restarting it. Set when a hot update could
-         * not be handed over — the machine's store holds no CLI this server can talk to, and
-         * installing is what replicates one. Offered rather than done, because it restarts a
-         * server this Project does not own alone.
+         * installing the PROGRAM over there and restarting it. Every failed install or
+         * connect offers it — a failure that leaves no next step leaves a person stuck —
+         * except a run that was itself that install, and one this server could not act on
+         * (no build of its own to send), which says `false`. Offered rather than done,
+         * because it restarts a server this Project does not own alone.
          */
-        canReplaceProgram?: true;
+        canReplaceProgram?: boolean;
       };
 }
 
@@ -4021,7 +4147,68 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
+  /** The most recently started job, running or finished. */
   job: MachineJob | null;
+  /**
+   * Every job worth showing this generation: the queued ones, the running one, and the last
+   * finished one per machine — so a batch reads as a list of rows each saying where it is.
+   */
+  jobs: MachineJob[];
+}
+
+/** The steps of bringing a machine into use, in the order a `use` job runs them. A step not needed is skipped, never revisited. */
+export const MACHINE_PHASES = [
+  "check",
+  "install",
+  "handover",
+  "restart",
+  "connect",
+  "sync",
+] as const;
+export type MachinePhase = (typeof MACHINE_PHASES)[number];
+
+/**
+ * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's
+ * `~/.ssh/config`. Answers the machines list (201), or 400 `ssh_host_invalid` naming the
+ * field, or 409 `ssh_host_exists`.
+ */
+export interface SshHostRequest {
+  /** The alias — what `ssh <alias>` will take, and the machine's name everywhere here. */
+  alias: string;
+  hostName: string;
+  user?: string;
+  port?: number;
+  identityFile?: string;
+}
+
+/**
+ * `GET /api/projects/:projectId/machines/ssh-hosts/:alias`: a host's block read back, and
+ * whether this app wrote it. Only a block this app wrote may be rewritten
+ * (`PUT …/ssh-hosts/:alias`, the same fields less the alias): a hand-written one may carry
+ * options this app does not know, and rewriting it would drop them.
+ */
+export interface SshHostResponse extends SshHostRequest {
+  editable: boolean;
+}
+
+/** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
+export interface MachinesUseRequest {
+  /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
+  machines: string[];
+  /** Install the program even where its version matches, and restart there — the answer to a job that asked for it. */
+  replaceProgram?: boolean;
+}
+
+/** Why one machine of a batch was not queued; the rest were. */
+export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
+
+export interface MachinesUseResponse extends MachinesResponse {
+  refused: { machineId: string; why: MachineUseRefusal }[];
+}
+
+/** `POST /api/projects/:projectId/machines/stop-using`: let go of these machines — connection dropped, Project membership released; the install stays. */
+export interface MachinesStopUsingRequest {
+  machines: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -4795,6 +4982,123 @@ export interface ContributionsResponse {
   sessionTabs: WebContribution[];
 }
 
+/**
+ * One field of a settings group a module declares (its `PluginConfigProvider.groups`
+ * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
+ * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
+ * `list` is a list of strings, drawn one per line.
+ */
+export interface PluginConfigField {
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  placeholder?: string;
+  /** The value a package with nothing stored reads; also what an empty field falls back to. */
+  default?: string | number | boolean | string[];
+  /** A save that would leave this field empty is refused. */
+  required?: boolean;
+  /** `enum` only: the values it may take, in display order. */
+  options?: PluginConfigOption[];
+  /** `list` only: the most entries a save may leave (after trimming and de-duplicating). */
+  maxItems?: number;
+  /** `number` only: the smallest and largest value a save may store. */
+  minimum?: number;
+  maximum?: number;
+  /** `string` / `list` only: a regular expression every value (every line) must match. */
+  pattern?: string;
+  /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
+  patternErrorMessage?: string;
+}
+
+/** One choice of an `enum` field. */
+export interface PluginConfigOption {
+  value: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** A declared configuration: a titled group of fields, in declaration order. */
+export interface PluginConfiguration {
+  title?: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  properties: Record<string, PluginConfigField>;
+}
+
+/** A line of live status a contributed group reports beside its fields (e.g. that nothing can enforce it). */
+export interface PluginConfigNotice {
+  /**
+   * `progress` = work the group started is still running (an install, a download): the page
+   * reads the groups again every few seconds while any notice says so, and the text is the
+   * step it is on.
+   */
+  tone: "attention" | "muted" | "progress";
+  text: string;
+  textZh?: string;
+}
+
+/** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
+export interface PluginConfigEntry {
+  /** The group's name — the id of the contribution that declared it; also the store key. */
+  name: string;
+  configuration: PluginConfiguration;
+  /** Stored values merged onto the defaults; a secret arrives masked (`first4…last4` or `***`), never in the clear. */
+  values: Record<string, unknown>;
+  /** Drawn inside that entry's card and saved with it (a sandbox backend's options inside the sandbox's). */
+  parent?: string;
+  /** Live status beside the fields; absent when there is none. */
+  notices?: PluginConfigNotice[];
+  /** What this group can DO once, on the machine, drawn as buttons beneath its notices. */
+  actions?: PluginConfigActionDecl[];
+  /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
+  unavailable?: PluginConfigUnavailableDecl[];
+}
+
+/** One enum option a settings group cannot honour on this machine, and why. */
+export interface PluginConfigUnavailableDecl {
+  field: string;
+  value: string;
+  reason: string;
+  reasonZh?: string;
+}
+
+/** One button under a settings group: what it is called, and what pressing it will do. */
+export interface PluginConfigActionDecl {
+  id: string;
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** POST /api/admin/plugin-config/action — what running one reported. */
+export interface PluginConfigActionResponse {
+  ok: boolean;
+  message: string;
+  messageZh?: string;
+  /** The groups as they stand after it ran: a setup that worked changes what the page says. */
+  plugins: PluginConfigEntry[];
+}
+
+export interface PluginConfigResponse {
+  plugins: PluginConfigEntry[];
+}
+
+/**
+ * PUT /api/admin/plugin-config — one group's update. Every named field is validated
+ * against its type; an omitted field keeps its stored value; a secret sent as the masked
+ * value keeps the stored one, and `null` or `""` clears any field. 400 `plugin_config_invalid`
+ * (with `field`) on a value that does not fit or a required field left empty; 404
+ * `plugin_config_unknown` for a name no group answers to.
+ */
+export interface PluginConfigUpdateRequest {
+  name: string;
+  values: Record<string, unknown>;
+}
+
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
@@ -4813,9 +5117,20 @@ export interface InstalledPlugin {
   replaces: string[];
   /**
    * Why the package is not running: unresolvable, or a load that
-   * failed (an import that threw, a module name another plugin already took).
+   * failed (an import that threw, a module name another plugin already took). Only ever
+   * reported for a plugin this server is asked to run (`here`).
    */
   error?: string;
+  /** Listed in the shared `[plugins]` table: every machine runs it. */
+  everywhere: boolean;
+  /** The machines whose own `[plugins.<machineId>]` table lists it, by machine id. */
+  machines: string[];
+  /**
+   * Whether THIS server is asked to run it — shared, or listed for this server's own id. A
+   * plugin listed only for other machines is neither installed nor loaded here, so `active`
+   * is false and no `error` is reported for it.
+   */
+  here: boolean;
 }
 
 export interface InstalledPluginsResponse {
@@ -4827,6 +5142,316 @@ export interface InstalledPluginsResponse {
   shipped: string[];
   /** The file the list lives in, named for the page that explains where to edit it by hand. */
   file: string;
+  /** This server's own machine id — the key of its `[plugins.<machineId>]` table. */
+  machineId: string;
   /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in Browser (desktop only): Electron <webview> guests in the persist:penguin-browser
+// partition, driven over CDP by the shell on the server's behalf. See builtin-browser/.
+// ---------------------------------------------------------------------------
+
+/** One guest page of the built-in browser; `id` is the guest's webContents id. */
+export interface BuiltinBrowserTab {
+  id: number;
+  url: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  favicon?: string;
+  /**
+   * Present while the page's renderer is gone, with Electron's reason (`crashed`, `oom`,
+   * `killed`, …): the panel shows the crash until the page is reloaded, and an agent action on
+   * the tab answers 409 `tab_crashed`.
+   */
+  crashed?: string;
+}
+
+/** Why the built-in browser cannot be driven: not under the desktop shell, a shell too old to host it, or no app window to host a new tab. */
+export type BuiltinBrowserUnavailableReason = "not_desktop" | "shell_unsupported" | "no_window";
+
+/** GET /api/builtin-browser/status. */
+export interface BuiltinBrowserStatus {
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+  /** The shell's latest measurement of the browser's load; absent before its first one. */
+  metrics?: BuiltinBrowserMetrics;
+}
+
+/** One tab's share of the built-in browser's load, as the shell last measured it. */
+export interface BuiltinBrowserTabMetrics {
+  tabId: number;
+  /** The memory held by the processes behind the page (its own and its cross-site frames'), KB. */
+  memoryKB: number;
+  /** Their CPU use since the previous measurement, in percent of one core. */
+  cpuPercent: number;
+}
+
+/** Why the built-in browser should be lighter. */
+export type BuiltinBrowserLoadWarning =
+  /** Its pages together hold more memory than they should. */
+  | "memory"
+  /** This computer is running out of memory. */
+  | "low_system_memory"
+  /** More tabs are open than the browser should hold. */
+  | "many_tabs";
+
+/**
+ * The built-in browser's load: GET /status's `metrics`, and the `builtin_browser_metrics` event
+ * after each of the shell's measurements (every ~10 s while tabs are open, and soon after one
+ * closes). The thresholds are the server's; the UI and the CLI only word what it concluded.
+ */
+export interface BuiltinBrowserMetrics {
+  /** When the server received the measurement (epoch ms). */
+  at: number;
+  tabs: BuiltinBrowserTabMetrics[];
+  /** All the pages' memory, a process two tabs share counted once, KB. */
+  totalKB: number;
+  /**
+   * This computer's memory, KB. Absent on macOS, whose free count leaves out the memory it would
+   * readily hand back, so that "free" there reads as nearly none on a healthy machine.
+   */
+  system?: { freeKB: number; totalKB: number };
+  /** What to warn about now; empty when all is well. */
+  warnings: BuiltinBrowserLoadWarning[];
+  /** While a memory warning stands: the tabs holding the most memory, heaviest first. */
+  heavyTabIds: number[];
+}
+
+/** GET /api/builtin-browser/tabs. */
+export interface BuiltinBrowserTabsResponse {
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/scan — GenericAgent's web_scan. */
+export interface BuiltinBrowserScanResult {
+  tab: BuiltinBrowserTab;
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+  /** Simplified HTML, or plain text with `textOnly`. */
+  content?: string;
+  truncated?: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/exec (and click / type) — GenericAgent's web_execute_js. */
+export interface BuiltinBrowserExecResult {
+  status: "success" | "failed";
+  tabId: number;
+  /** The script's JSON-safe return value. */
+  value?: unknown;
+  error?: string;
+  /** The page navigated or reloaded while the script ran. */
+  reloaded?: boolean;
+  /** Tabs opened while the call ran (popups, target=_blank). */
+  newTabs?: { id: number; url: string }[];
+  /** Text that appeared during the call and may be gone again (toasts, flashes). */
+  transients?: string[];
+  diff?: { changed: number; topChange?: string };
+  suggestion?: string;
+  /** click only: where the trusted click landed. */
+  clicked?: { x: number; y: number; tag?: string; text?: string };
+  /** The page's dialogs the call answered, in order (see BuiltinBrowserDialog). */
+  dialogs?: BuiltinBrowserDialog[];
+}
+
+/**
+ * A dialog the page opened during an exec, click or type, which the call answered so the page
+ * would not block: an alert is accepted, and a confirm, prompt or leave-page dialog dismissed
+ * unless the request said `acceptDialogs`.
+ */
+export interface BuiltinBrowserDialog {
+  type: "alert" | "confirm" | "prompt" | "beforeunload";
+  message: string;
+  accepted: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/screenshot. */
+export interface BuiltinBrowserScreenshot {
+  mime: "image/png";
+  /** Base64. */
+  data: string;
+}
+
+export type BuiltinBrowserImportBrowser =
+  "chrome" | "edge" | "brave" | "chromium" | "vivaldi" | "opera" | "arc" | "firefox";
+
+/** One profile of a system browser that can be imported from. */
+export interface BuiltinBrowserImportSource {
+  /** `<browser>:<profile dir>`, e.g. `chrome:Default`. */
+  id: string;
+  browser: BuiltinBrowserImportBrowser;
+  browserName: string;
+  /** The profile's directory name. */
+  profile: string;
+  /** The profile's display name. */
+  profileName: string;
+  hasCookies: boolean;
+  hasHistory: boolean;
+}
+
+export interface BuiltinBrowserImportSourcesResponse {
+  sources: BuiltinBrowserImportSource[];
+}
+
+/** POST /api/builtin-browser/import. */
+export interface BuiltinBrowserImportRequest {
+  sourceId: string;
+  cookies?: boolean;
+  history?: boolean;
+  /** Only cookies of these sites (a domain matches itself and its subdomains). */
+  domains?: string[];
+}
+
+export interface BuiltinBrowserImportResult {
+  sourceId: string;
+  cookies?: { found: number; imported: number; skipped: number; failed: number };
+  history?: { found: number; imported: number };
+  warnings: string[];
+}
+
+export interface BuiltinBrowserHistoryEntry {
+  url: string;
+  title: string;
+  visitCount: number;
+  /** Epoch ms. */
+  lastVisitAt: number;
+  /** `builtin` for pages visited in the built-in browser, else the browser it was imported from. */
+  source: string;
+}
+
+export interface BuiltinBrowserHistoryResponse {
+  entries: BuiltinBrowserHistoryEntry[];
+}
+
+/**
+ * GET / PUT /api/builtin-browser/settings: the browser's own settings, a file of the server's
+ * that is read and written without the desktop shell. PUT takes the whole object.
+ */
+export interface BuiltinBrowserSettings {
+  /**
+   * The page a new tab opens when it is given no address — the panel's "+", an agent's new tab
+   * — and the toolbar's Home button goes to: an http(s) address, or null for none (a new tab is
+   * then blank). PUT takes a bare host too and answers the address as stored.
+   */
+  homepage: string | null;
+}
+
+export type BuiltinBrowserAction =
+  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
+
+/** User-channel events of the built-in browser (admins only). */
+export type BuiltinBrowserServerEvent =
+  | { type: "builtin_browser_tabs"; tabs: BuiltinBrowserTab[]; activeTabId: number | null }
+  /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
+  | {
+      type: "builtin_browser_open";
+      requestId: string;
+      url: string;
+      activate: boolean;
+      openerTabId?: number;
+      sessionId?: string;
+    }
+  | { type: "builtin_browser_close"; tabId: number }
+  | {
+      type: "builtin_browser_activity";
+      tabId: number;
+      busy: boolean;
+      action: BuiltinBrowserAction;
+      sessionId?: string;
+    }
+  /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
+  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics };
+
+/** A cookie as the shell writes it (Electron's CookiesSetDetails). */
+export interface DesktopBrowserCookie {
+  url: string;
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  /** Unix seconds; absent = session cookie. */
+  expirationDate?: number;
+  sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
+}
+
+/** Server → shell: what the shell does with its guests. Mechanism only — the product logic stays on the server. */
+export type DesktopBrowserCommand =
+  /** Reply: `{ version: 1, partition: string }`. An older shell never answers. */
+  | { op: "hello" }
+  /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
+  | { op: "tabs" }
+  /**
+   * Reply: the CDP method's result object. `events` names the tab's CDP events the shell relays
+   * from then on, as `cdp-event`s: it replaces the list before (empty relays none), and is set
+   * before the command runs, so an event the command itself causes is not missed. Without it
+   * the list stays as it is.
+   */
+  | {
+      op: "cdp";
+      tabId: number;
+      method: string;
+      params?: Record<string, unknown>;
+      events?: string[];
+    }
+  /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
+  | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
+  /** Reply: `{}`. */
+  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[] }
+  /**
+   * Reply: `{}`. The tabs whose pages may be throttled while out of sight (Electron's background
+   * throttling, applied at once); every other tab runs at full speed. It replaces the list
+   * before. A tab is unthrottled until a command lists it, so a server that never sends one
+   * changes nothing. A shell older than this command answers `unknown_op`.
+   */
+  | { op: "throttle"; tabIds: number[] };
+
+export interface DesktopBrowserCommandMessage {
+  type: "desktop-browser-command";
+  id: string;
+  command: DesktopBrowserCommand;
+}
+
+export interface DesktopBrowserReplyMessage {
+  type: "desktop-browser-reply";
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+export type DesktopBrowserEvent =
+  | { kind: "tab"; tab: BuiltinBrowserTab }
+  | { kind: "tab-closed"; tabId: number }
+  /**
+   * window.open / target=_blank inside a guest (the shell denied it and asks for a tab instead),
+   * or the context menu's "Open link in new tab". `background`: the tab should open behind the
+   * current one, as a middle-click or that menu entry does in Chrome.
+   */
+  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean }
+  /** One of the tab's CDP events a `cdp` command's `events` asked for. */
+  | { kind: "cdp-event"; tabId: number; method: string; params: Record<string, unknown> }
+  /**
+   * The tab's renderer went away (Electron's render-process-gone reason and exit code). The tab
+   * stays; its `tab` events carry `crashed` until the page is reloaded, and the shell refuses
+   * CDP commands for it meanwhile (`tab_crashed`).
+   */
+  | { kind: "tab-crashed"; tabId: number; reason: string; exitCode: number }
+  /**
+   * The shell's measurement of its guests (every ~10 s while there are any, and once more
+   * shortly after one closes, empty after the last): each tab's memory and CPU, and the pages'
+   * memory together, a process shared by two tabs counted once.
+   */
+  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number };
+
+export interface DesktopBrowserEventMessage {
+  type: "desktop-browser-event";
+  event: DesktopBrowserEvent;
 }

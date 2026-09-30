@@ -38,8 +38,8 @@ const usable =
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
     mode === null || provider === null
-      ? argv
-      : provider.confine(argv, { mode, workspaceRoot: opts.workspaceDir }).argv,
+      ? { argv }
+      : provider.confine(argv, { mode, workspaceRoot: opts.workspaceDir }),
   workspaceDir: ws,
 });
 

@@ -8,7 +8,8 @@
  * bytes is still handed over as an image rather than dumped as text.
  */
 import path from "node:path";
-import { open, readFile, stat } from "node:fs/promises";
+import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
+import type { FsPort } from "./fs-port.js";
 
 /**
  * Image size upper bound (bytes): errors out above this. Taken as the common denominator of
@@ -69,24 +70,17 @@ export function isHttpUrl(source: string): boolean {
  * file that cannot be opened is judged by extension alone — the caller's own read reports
  * the error afterwards.
  */
-export async function looksLikeImageFile(filePath: string): Promise<boolean> {
-  let fd;
+export async function looksLikeImageFile(
+  filePath: string,
+  fs: FsPort = localFsPort,
+): Promise<boolean> {
+  let head: Buffer;
   try {
-    fd = await open(filePath, "r");
+    head = await fs.readRange(filePath, 0, SNIFF_BYTES);
   } catch {
     return imageMimeFromExt(filePath) !== null;
   }
-  try {
-    const head = Buffer.alloc(SNIFF_BYTES);
-    const { bytesRead } = await fd.read(head, 0, SNIFF_BYTES, 0);
-    return (
-      sniffImageMime(head.subarray(0, bytesRead)) !== null || imageMimeFromExt(filePath) !== null
-    );
-  } catch {
-    return imageMimeFromExt(filePath) !== null;
-  } finally {
-    await fd.close();
-  }
+  return sniffImageMime(head) !== null || imageMimeFromExt(filePath) !== null;
 }
 
 /** Byte count -> human-readable size (B / kB / MB, one decimal place). */
@@ -118,25 +112,35 @@ export async function loadImage(
   source: string,
   workspaceDir: string,
   signal?: AbortSignal,
+  /** The file system (and network) to work through — the Session's sandboxed helper when confined (see fs-port.ts). */
+  fs: FsPort = localFsPort,
+  sandboxed = false,
 ): Promise<LoadImageResult> {
   if (signal?.aborted) return { ok: false, reason: "aborted" };
 
   let bytes: Buffer;
   let mime: string | null;
   if (isHttpUrl(source)) {
-    // URL branch: downloads via the global fetch (abort signal passed through to the request);
-    // mime is preferentially taken from the response header, falling back to magic number / URL
-    // extension.
-    let res: Response;
+    // URL branch: downloaded through the port (the abort signal passed through), capped at
+    // the image limit — a declared or actual size beyond it is refused before the bytes are
+    // kept; mime is preferentially taken from the response header, falling back to magic
+    // number / URL extension.
+    let res;
     try {
-      res = await fetch(source, signal ? { signal } : {});
+      res = await fs.fetch(source, { maxBytes: MAX_IMAGE_BYTES, ...(signal ? { signal } : {}) });
     } catch (err) {
       if (signal?.aborted) return { ok: false, reason: "aborted" };
-      const message = err instanceof Error ? err.message : String(err);
+      if (errorCode(err) === "ETOOBIG") {
+        return {
+          ok: false,
+          reason: "failed",
+          message: OVERSIZE_MESSAGE((err as { size: number }).size),
+        };
+      }
       return {
         ok: false,
         reason: "failed",
-        message: `Failed to download image "${source}": ${message}`,
+        message: `Failed to download image "${source}": ${describeFsError(err, sandboxed)}`,
       };
     }
     if (!res.ok) {
@@ -146,24 +150,8 @@ export async function loadImage(
         message: `Failed to download image "${source}": HTTP ${res.status}`,
       };
     }
-    // When content-length is trustworthy, reject an oversized response early to avoid reading it
-    // into memory for nothing.
-    const declared = Number(res.headers.get("content-length") ?? "");
-    if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
-      return { ok: false, reason: "failed", message: OVERSIZE_MESSAGE(declared) };
-    }
-    try {
-      bytes = Buffer.from(await res.arrayBuffer());
-    } catch (err) {
-      if (signal?.aborted) return { ok: false, reason: "aborted" };
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        ok: false,
-        reason: "failed",
-        message: `Failed to download image "${source}": ${message}`,
-      };
-    }
-    const headerMime = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    bytes = res.bytes;
+    const headerMime = (res.contentType ?? "").split(";")[0]!.trim().toLowerCase();
     let urlExtMime: string | null = null;
     try {
       urlExtMime = imageMimeFromExt(new URL(source).pathname);
@@ -177,10 +165,10 @@ export async function loadImage(
     // size before reading, to avoid reading an oversized file into memory in one go.
     const filePath = path.resolve(workspaceDir, source);
     try {
-      const st = await stat(filePath);
+      const st = await fs.stat(filePath);
       // Explicitly reject non-file paths such as directories: readFile's EISDIR error isn't
       // model-friendly.
-      if (!st.isFile()) {
+      if (!st.isFile) {
         return {
           ok: false,
           reason: "failed",
@@ -190,14 +178,13 @@ export async function loadImage(
       if (st.size > MAX_IMAGE_BYTES) {
         return { ok: false, reason: "failed", message: OVERSIZE_MESSAGE(st.size) };
       }
-      bytes = await readFile(filePath);
+      bytes = await fs.readFile(filePath);
     } catch (err) {
       if (signal?.aborted) return { ok: false, reason: "aborted" };
-      const message = err instanceof Error ? err.message : String(err);
       return {
         ok: false,
         reason: "failed",
-        message: `Failed to read image "${source}": ${message}`,
+        message: `Failed to read image "${source}": ${describeFsError(err, sandboxed)}`,
       };
     }
     mime = sniffImageMime(bytes) ?? imageMimeFromExt(filePath);

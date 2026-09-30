@@ -11,8 +11,9 @@
  * overwritten file's permission bits), so a crash mid-write cannot leave the target
  * half-written; a symlinked path is followed to the file it names, so the link survives
  * and the content lands where it points. Relative paths resolve against the Workspace;
- * absolute paths are allowed (tools run with the user's full permissions, same as the
- * shell tool). The write is serialized against edit_file and other write_file calls on the
+ * absolute paths are allowed. Every file-system effect goes through the Session's port
+ * (see fs-port.ts): a confined Session's sandboxed helper, so the sandbox bounds this tool
+ * as it bounds the shell tool; unconfined, this process, with the user's full permissions. The write is serialized against edit_file and other write_file calls on the
  * same file in this process (see internal/file-lock.ts), so a concurrent edit of that file
  * applies either to the content this call replaced or to the content it wrote — never
  * computed from the one and written over the other.
@@ -27,9 +28,9 @@
  * Docs: /docs/tools § "File tools".
  */
 import path from "node:path";
-import { mkdir, readFile, stat } from "node:fs/promises";
-import { atomicWriteFile, resolveWriteTarget } from "../../internal/atomic-write.js";
 import { fileLockKey, withFileLock } from "../../internal/file-lock.js";
+import { describeFsError, localFsPort, resolveWriteTargetThrough } from "./fs-port.js";
+import type { FsPort } from "./fs-port.js";
 import { buildLineDiffHunks, renderHunk } from "./diff.js";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
@@ -75,17 +76,20 @@ async function applyWrite(params: {
   resolved: string;
   filePath: string;
   content: string;
+  /** The file system to work through (see fs-port.ts), and whether it is the sandboxed helper. */
+  fs: FsPort;
+  sandboxed: boolean;
   signal?: AbortSignal;
 }): Promise<WriteOutcome> {
-  const { resolved, filePath, content, signal } = params;
+  const { resolved, filePath, content, fs, sandboxed, signal } = params;
   // Determine created-vs-overwrote before writing; also reject directories up front
   // (writeFile's raw EISDIR is not model-friendly).
   let existed = false;
   let fileMode: number | undefined;
   let previous: string | null = null; // Previous content, for the overwrite diff
   try {
-    const st = await stat(resolved);
-    if (st.isDirectory()) {
+    const st = await fs.stat(resolved);
+    if (st.isDirectory) {
       return { kind: "fatal", text: `Cannot write "${filePath}": it is a directory.` };
     }
     existed = true;
@@ -93,7 +97,7 @@ async function applyWrite(params: {
     // Read the old content back for the diff — bounded: a huge or unreadable/binary
     // previous file simply gets no diff (never a failure).
     if (st.size <= DIFF_SOURCE_CAP_BYTES) {
-      const bytes = await readFile(resolved);
+      const bytes = await fs.readFile(resolved);
       if (!bytes.includes(0)) previous = bytes.toString("utf8");
     }
   } catch {
@@ -105,16 +109,17 @@ async function applyWrite(params: {
     // The parent to create is the one holding the file that will actually be written:
     // through a symlink that is the target's directory, not the link's (a link pointing
     // into a directory that does not exist yet is created the way `>` would).
-    await mkdir(path.dirname(await resolveWriteTarget(resolved)), { recursive: true });
-    await atomicWriteFile(resolved, content, {
+    await fs.mkdir(path.dirname(await resolveWriteTargetThrough(fs, resolved)));
+    await fs.writeFileAtomic(resolved, Buffer.from(content, "utf8"), {
       ...(fileMode !== undefined ? { mode: fileMode } : {}),
-      ...(signal ? { signal } : {}),
       followSymlinks: true,
     });
   } catch (err) {
     if (signal?.aborted) return { kind: "aborted" };
-    const message = err instanceof Error ? err.message : String(err);
-    return { kind: "fatal", text: `Failed to write "${filePath}": ${message}` };
+    return {
+      kind: "fatal",
+      text: `Failed to write "${filePath}": ${describeFsError(err, sandboxed)}`,
+    };
   }
 
   return { kind: "ok", existed, previous };
@@ -156,13 +161,17 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
+      // Every file-system effect goes through the Session's port: its sandboxed helper
+      // when the Session is confined, this process otherwise (see fs-port.ts).
+      const fs = ctx.fs ?? localFsPort;
+      const { sandboxed } = fs;
       // One file, one writer at a time: the previous content this call reads back and the
       // content it writes are a single critical section, so a concurrent edit of the same
       // file is applied either before this write or on top of it.
       const key = await fileLockKey(resolved);
       const outcome = await withFileLock(
         key,
-        () => applyWrite({ resolved, filePath, content, signal }),
+        () => applyWrite({ resolved, filePath, content, fs, sandboxed, signal }),
         signal,
       ).catch((err: unknown): WriteOutcome => {
         // Interrupted while queued behind another writer on the same file — the same

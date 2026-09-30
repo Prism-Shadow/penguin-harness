@@ -18,7 +18,7 @@
  */
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 import { setShortcutBlocker } from "../../lib/shortcuts/dispatcher";
 import { CloseButton } from "./icons";
 
@@ -35,6 +35,13 @@ export interface ModalProps {
   headerless?: boolean;
   /** Render children full-bleed: no built-in padding or 70vh scroller. For dialogs that own their inner layout and scroll regions (PagedDialog); the caller then also owns a close control. */
   bare?: boolean;
+  /**
+   * Fill the whole screen on a phone instead of rising as a bottom sheet, and lay the panel out
+   * as a column so a `bare` body can take the height between header and footer. For dialogs
+   * that are a workspace of their own (the Workspace finder) rather than a question; pair it
+   * with an `sm:` height in `widthClass`, since above the breakpoint the panel is a card again.
+   */
+  fullScreenOnPhone?: boolean;
 }
 
 /**
@@ -94,26 +101,25 @@ export function nextFocusIndex(count: number, at: number, backward: boolean): nu
   return (at + (backward ? -1 : 1) + count) % count;
 }
 
-export function Modal({
-  open,
-  title,
-  onClose,
-  children,
-  footer,
-  widthClass,
-  headerless,
-  bare,
-}: ModalProps) {
-  // Latest-callback ref, so the effect below re-runs ONLY on open/close: call sites pass an
-  // inline arrow for onClose, and re-running on its identity would pop and re-push this
-  // dialog's esc-layer on every render — jumping it back above a menu opened inside it, so
-  // Escape would close the whole dialog instead of just the menu. Dropdown keeps the same
-  // guard for the same reason.
+/**
+ * What makes a portaled panel a dialog for the keyboard, shared by Modal and the overlays that
+ * own their layout (the command palette, the harness history): Escape closes it only while it
+ * is the topmost esc-consuming layer; opening moves focus into the panel and closing hands it
+ * back; Tab and Shift+Tab cycle inside it. The returned `onKeyDown` goes on the panel element,
+ * which also needs `tabIndex={-1}` so it can hold focus when nothing inside can.
+ *
+ * `onClose` is read through a ref so the effects re-run ONLY on open/close: call sites pass an
+ * inline arrow, and re-running on its identity would pop and re-push this dialog's esc-layer
+ * on every render — jumping it back above a menu opened inside it, so Escape would close the
+ * whole dialog instead of just the menu. Dropdown keeps the same guard for the same reason.
+ */
+export function useDialogLayer(
+  open: boolean,
+  panelRef: RefObject<HTMLElement | null>,
+  onClose: () => void,
+): { onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => void } {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-
-  const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
 
   // Where focus goes when the dialog closes, read during render rather than in the effect
   // below: a child with `autoFocus` is focused during the same commit, before any effect
@@ -155,6 +161,7 @@ export function Modal({
     // Every close path lands in this cleanup: Escape, the close button, the overlay
     // mousedown, `open` going false, and the dialog unmounting outright.
     return () => restoreFocusRef.current?.focus();
+    // Keyed on `open` alone (a ref object is stable), so the cleanup runs for every close path.
   }, [open]);
 
   /**
@@ -168,7 +175,7 @@ export function Modal({
    * child, so its keydown bubbles through here; the containment check leaves that panel's own
    * focus alone.
    */
-  const onPanelKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+  const onPanelKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.key !== "Tab" || e.defaultPrevented) return;
     const panel = panelRef.current;
     if (!panel?.contains(document.activeElement)) return;
@@ -183,6 +190,23 @@ export function Modal({
     const at = items.indexOf(document.activeElement as HTMLElement);
     items[nextFocusIndex(items.length, at, e.shiftKey)]?.focus();
   };
+  return { onKeyDown: onPanelKeyDown };
+}
+
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  footer,
+  widthClass,
+  headerless,
+  bare,
+  fullScreenOnPhone,
+}: ModalProps) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown: onPanelKeyDown } = useDialogLayer(open, panelRef, onClose);
 
   if (!open) return null;
   return createPortal(
@@ -201,7 +225,11 @@ export function Modal({
         {...(headerless ? { "aria-label": title } : { "aria-labelledby": titleId })}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className={`anim-pop w-full ${widthClass ?? "sm:max-w-md"} rounded-t-lg border border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0 dark:border-gray-800 dark:bg-gray-900`}
+        className={`anim-pop w-full ${widthClass ?? "sm:max-w-md"} ${
+          fullScreenOnPhone
+            ? "flex h-[100dvh] flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
+            : "rounded-t-lg"
+        } border border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0 dark:border-gray-800 dark:bg-gray-900`}
       >
         {!headerless && (
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">

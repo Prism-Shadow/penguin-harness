@@ -47,7 +47,9 @@
  */
 import { modelVisiblePath } from "../../internal/model-visible-path.js";
 import path from "node:path";
-import { open, realpath, stat } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
+import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
+import type { FsPort } from "./fs-port.js";
 import { imageUrlMessage, partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type {
@@ -181,6 +183,7 @@ async function scanWindow(
   filePath: string,
   offset: number,
   limit: number,
+  fs: FsPort,
   signal?: AbortSignal,
 ): Promise<ScanOutcome> {
   const end = offset + limit - 1;
@@ -220,57 +223,54 @@ async function scanWindow(
     currentHasBytes = false;
   };
 
-  const fd = await open(filePath, "r");
-  try {
-    const chunk = Buffer.alloc(CHUNK_BYTES);
-    let prevByte = -1; // For CRLF detection across chunk boundaries
-    for (;;) {
-      if (signal?.aborted) {
-        out.aborted = true;
-        return out;
-      }
-      const toRead = Math.min(CHUNK_BYTES, READ_FILE_SCAN_CAP_BYTES - scanned);
-      if (toRead <= 0) {
-        // Scan cap: with no window line produced the request cannot be served (fails with
-        // guidance); with a partial window, return it plus a lower-bound total.
-        out.capBeforeWindow = out.lines.length === 0;
-        out.total = completedLines + (currentHasBytes ? 1 : 0);
-        return out;
-      }
-      const { bytesRead } = await fd.read(chunk, 0, toRead, scanned);
-      if (bytesRead === 0) {
-        // EOF: a final line without a trailing newline still counts.
-        if (currentHasBytes) finishLine();
-        out.total = completedLines;
-        out.totalKnown = true;
-        return out;
-      }
-      scanned += bytesRead;
-      let from = 0;
-      for (let i = 0; i < bytesRead; i += 1) {
-        const b = chunk[i]!;
-        if (b === 0) {
-          out.binary = true;
-          return out;
-        }
-        if (b === 0x0a) {
-          if (prevByte === 0x0d) out.sawCRLF = true;
-          if (i > from) {
-            currentHasBytes = true;
-            if (inWindow()) appendRun(chunk, from, i);
-          }
-          finishLine();
-          from = i + 1;
-        }
-        prevByte = b;
-      }
-      if (from < bytesRead) {
-        currentHasBytes = true;
-        if (inWindow()) appendRun(chunk, from, bytesRead);
-      }
+  let prevByte = -1; // For CRLF detection across chunk boundaries
+  for (;;) {
+    if (signal?.aborted) {
+      out.aborted = true;
+      return out;
     }
-  } finally {
-    await fd.close();
+    const toRead = Math.min(CHUNK_BYTES, READ_FILE_SCAN_CAP_BYTES - scanned);
+    if (toRead <= 0) {
+      // Scan cap: with no window line produced the request cannot be served (fails with
+      // guidance); with a partial window, return it plus a lower-bound total.
+      out.capBeforeWindow = out.lines.length === 0;
+      out.total = completedLines + (currentHasBytes ? 1 : 0);
+      return out;
+    }
+    // One chunk per round trip through the port: a confined Session reads through its
+    // sandboxed helper, so the loop asks for a range rather than holding a descriptor.
+    const chunk = await fs.readRange(filePath, scanned, toRead);
+    const bytesRead = chunk.length;
+    if (bytesRead === 0) {
+      // EOF: a final line without a trailing newline still counts.
+      if (currentHasBytes) finishLine();
+      out.total = completedLines;
+      out.totalKnown = true;
+      return out;
+    }
+    scanned += bytesRead;
+    let from = 0;
+    for (let i = 0; i < bytesRead; i += 1) {
+      const b = chunk[i]!;
+      if (b === 0) {
+        out.binary = true;
+        return out;
+      }
+      if (b === 0x0a) {
+        if (prevByte === 0x0d) out.sawCRLF = true;
+        if (i > from) {
+          currentHasBytes = true;
+          if (inWindow()) appendRun(chunk, from, i);
+        }
+        finishLine();
+        from = i + 1;
+      }
+      prevByte = b;
+    }
+    if (from < bytesRead) {
+      currentHasBytes = true;
+      if (inWindow()) appendRun(chunk, from, bytesRead);
+    }
   }
 }
 
@@ -310,7 +310,8 @@ async function* readImageSource(
     }
   }
 
-  const res = await loadImage(source, ctx.workspaceDir, signal);
+  const fs = ctx.fs ?? localFsPort;
+  const res = await loadImage(source, ctx.workspaceDir, signal, fs, fs.sandboxed);
   if (!res.ok) {
     if (res.reason === "aborted") return { stopReason: "aborted" };
     yield delta(res.message);
@@ -426,12 +427,17 @@ export function createReadFileTool(
       }
       const limit = limitArg.value;
 
-      // A URL is only ever an image source: no path resolution, no text window.
+      // A URL is only ever an image source: no path resolution, no text window. It is
+      // fetched through the Session's port, so a confined Session's network level holds.
       if (isHttpUrl(filePath)) {
         return yield* readImageSource(filePath, args, ctx, describer, delta);
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
+      // Every file-system effect goes through the Session's port: its sandboxed helper
+      // when the Session is confined, this process otherwise (see fs-port.ts).
+      const fs = ctx.fs ?? localFsPort;
+      const { sandboxed } = fs;
       // Secret stores are refused by name: read_file is auto-approved under read-only
       // approval, so it needs its own guard (aligned with the system prompt's ban).
       // secretStoreHit resolves symlinks and compares case-insensitively — the lexical
@@ -447,8 +453,8 @@ export function createReadFileTool(
 
       let size: number;
       try {
-        const st = await stat(resolved);
-        if (st.isDirectory()) {
+        const st = await fs.stat(resolved);
+        if (st.isDirectory) {
           yield delta(
             `Cannot read "${filePath}": it is a directory. Pass the path of a file inside it.`,
           );
@@ -457,17 +463,16 @@ export function createReadFileTool(
         size = st.size;
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
-        const code = (err as NodeJS.ErrnoException).code;
+        const code = errorCode(err);
         // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
         // so it gets the same diagnosis instead of a raw errno message.
         if (code === "ENOENT" || code === "ENOTDIR") {
-          const hint = await missingPathHint(resolved);
+          const hint = await missingPathHint(resolved, fs);
           yield delta(
             `File not found: "${filePath}". Absolute paths are supported; relative paths resolve against the workspace (${modelVisiblePath(ctx.workspaceDir)}).${hint}`,
           );
         } else {
-          const message = err instanceof Error ? err.message : String(err);
-          yield delta(`Failed to read "${filePath}": ${message}`);
+          yield delta(`Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`);
         }
         return { stopReason: "fatal" };
       }
@@ -478,17 +483,16 @@ export function createReadFileTool(
       }
 
       // Images take the image branch whatever offset/limit say; everything else is text.
-      if (await looksLikeImageFile(resolved)) {
+      if (await looksLikeImageFile(resolved, fs)) {
         return yield* readImageSource(filePath, args, ctx, describer, delta);
       }
 
       let scan: ScanOutcome;
       try {
-        scan = await scanWindow(resolved, offset, limit, signal);
+        scan = await scanWindow(resolved, offset, limit, fs, signal);
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
-        const message = err instanceof Error ? err.message : String(err);
-        yield delta(`Failed to read "${filePath}": ${message}`);
+        yield delta(`Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`);
         return { stopReason: "fatal" };
       }
       if (scan.aborted || signal?.aborted) return { stopReason: "aborted" };

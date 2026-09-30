@@ -31,8 +31,17 @@ export type ConfinedSandboxMode = Exclude<SandboxMode, "danger-full-access">;
  * The isolation dimensions of this interface. A provider declares the subset it
  * implements; `fs-write` is the floor every confining backend covers, while `network`
  * and `mask-paths` are optional implementations (see {@link SandboxProvider.dimensions}).
+ * `network-local` is the local network level: only the host's localhost is reachable. It is
+ * its own dimension because a backend that can cut the network cannot necessarily keep the
+ * host's loopback while cutting the rest.
  */
-export type SandboxDimension = "fs-write" | "network" | "mask-paths";
+export type SandboxDimension = "fs-write" | "network" | "network-local" | "mask-paths";
+
+/**
+ * The network levels, narrowest first: `none` = no network at all, `local` = only the host's
+ * localhost, absent = unrestricted.
+ */
+export type SandboxNetwork = "none" | "local";
 
 /**
  * What one confined execution is allowed to touch — carried PER CALL, not fixed on the
@@ -41,14 +50,36 @@ export type SandboxDimension = "fs-write" | "network" | "mask-paths";
  * implements it (never silently dropped).
  */
 export interface SandboxPolicy {
-  /** The file-effect mode this execution runs under (`fs-write`). */
-  mode: ConfinedSandboxMode;
+  /**
+   * The file-effect mode this execution runs under (`fs-write`). A provider is normally
+   * consulted only for a confining mode; it is handed `danger-full-access` ONLY when the
+   * policy still requires another dimension (a network cut, a masked path). Then it must
+   * leave the filesystem unrestricted while enforcing that other dimension — "everything
+   * writable, but no network" is a real, expressible policy.
+   */
+  mode: SandboxMode;
   /** Absolute root directory `workspace-write` may write under. */
   workspaceRoot: string;
-  /** `network`: "none" = the confined process gets no network at all. */
-  network?: "none";
+  /**
+   * Further absolute directories `workspace-write` may write under, beside the workspace:
+   * the Session's scratchpad, where the plan file, a goal's state file and the
+   * attachments live. Meaningless under `read-only`. A backend that does not implement
+   * the field confines more narrowly than asked, never more widely, so no dimension
+   * guards it.
+   */
+  writableRoots?: readonly string[];
+  /**
+   * `network`: "none" = the confined process gets no network at all (dimension `network`);
+   * "local" = it reaches the host's localhost and nothing else (dimension `network-local`).
+   */
+  network?: SandboxNetwork;
   /** `mask-paths`: absolute paths hidden from the confined process, reads included. */
   maskPaths?: readonly string[];
+  /**
+   * The system temporary directory is writable, in either confining mode: shells and most
+   * tools need somewhere to write before they run anything. Absent = not granted.
+   */
+  writableTemp?: boolean;
 }
 
 /**
@@ -84,6 +115,14 @@ export interface ConfinedArgv {
   denialSignatures: readonly string[];
   /** Structured runner-failure evidence (see {@link RunnerFailureRule}). */
   runnerFailureRules: readonly RunnerFailureRule[];
+  /**
+   * Environment entries the RUNNER needs, laid over the command's own environment at
+   * spawn. A runner that is a script has to tell its interpreter how to behave — the
+   * desktop app's own binary runs a script only under `ELECTRON_RUN_AS_NODE`, and
+   * nothing in an argv can say so. These describe the runner, not the command: a runner
+   * that hands the environment on keeps them from the command it confines.
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -103,7 +142,14 @@ export interface SandboxProvider {
 }
 
 /** A provider, or a promise of one: backends load asynchronously (dynamic imports, probes). */
-export type SandboxProviderSource = SandboxProvider | PromiseLike<SandboxProvider | null> | null;
+export type SandboxProviderLoad = SandboxProvider | PromiseLike<SandboxProvider | null> | null;
+
+/**
+ * What a backend binds: a load, or a loader that produces one. A loader is called at boot and
+ * again after its failure whenever the sandbox's settings are saved — so a backend whose check
+ * failed on a setting (a wrong program path) recovers once that setting is fixed, no restart.
+ */
+export type SandboxProviderSource = SandboxProviderLoad | (() => SandboxProviderLoad);
 
 /**
  * The active confinement settings, resolved per spawn. A type literal with plain
@@ -112,6 +158,8 @@ export type SandboxProviderSource = SandboxProvider | PromiseLike<SandboxProvide
 export type SandboxSettings = {
   /** `danger-full-access` = confinement off; commands spawn exactly as before. */
   mode: SandboxMode;
-  network?: "none";
+  network?: SandboxNetwork;
   maskPaths?: string[];
+  /** Grant the system temp directory writable (SandboxPolicy.writableTemp). Absent = granted. */
+  writableTemp?: boolean;
 };

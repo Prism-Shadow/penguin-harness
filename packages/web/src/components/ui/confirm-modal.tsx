@@ -19,14 +19,14 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Modal } from "./modal";
 import { Button } from "./button";
+import { WARNING_ICON } from "./icons";
 import { S } from "../../lib/strings";
 
 /** Tinted icon badge per tone: warning triangle on red for danger, pencil-on-gray for confirmations that overwrite/save. */
 function ToneBadge({ tone }: { tone: "danger" | "primary" }) {
   const glyph =
     tone === "danger"
-      ? // Triangle alert (lucide): outline + exclamation.
-        "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3zM12 9v4m0 4h.01"
+      ? WARNING_ICON
       : // Pencil-line (lucide): writing changes down.
         "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
   return (

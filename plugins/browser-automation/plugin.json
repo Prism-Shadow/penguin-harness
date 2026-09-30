@@ -1,0 +1,8 @@
+{
+  "description": "Drive the desktop app's built-in browser from the shell with penguin browser — read pages as simplified HTML or text, act with JavaScript and trusted clicks and typing, and extract structured data such as orders or search results, signed in with the user's own accounts, imported from their system browser when needed.",
+  "description_zh": "用 penguin browser 在 shell 中驱动桌面应用的内置浏览器——以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击与输入操作页面，提取订单、搜索结果等结构化数据；登录用的是用户自己的账号，需要时从系统浏览器导入。",
+  "short_description": "Read pages, act and extract data in the built-in browser.",
+  "short_description_zh": "在内置浏览器中读取页面、执行操作、提取数据。",
+  "version": "2026.09.24.1",
+  "category": "office-productivity"
+}

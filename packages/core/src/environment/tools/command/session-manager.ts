@@ -236,6 +236,8 @@ export class CommandSessionManager {
    * those fall back to the spawn cwd.
    */
   private readonly workspaceDir: string | undefined;
+  /** The Session's scratchpad, bound into every confiner call as `opts.scratchpadDir`: writable beside the Workspace under a workspace-write policy. */
+  private readonly scratchpadDir: string | undefined;
 
   constructor(opts?: {
     vault?: Record<string, string>;
@@ -244,6 +246,7 @@ export class CommandSessionManager {
     pathPrepend?: () => string[];
     confineSpawn?: () => SpawnConfiner | null;
     workspaceDir?: string;
+    scratchpadDir?: string;
   }) {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
@@ -251,6 +254,7 @@ export class CommandSessionManager {
     this.pathPrepend = opts?.pathPrepend;
     this.confineSpawn = opts?.confineSpawn;
     this.workspaceDir = opts?.workspaceDir;
+    this.scratchpadDir = opts?.scratchpadDir;
     this.registry.onChange(() => this.changeListener?.());
   }
 
@@ -295,7 +299,11 @@ export class CommandSessionManager {
       ...(confiner !== null
         ? {
             confine: (argv: readonly string[], o: { cwd: string }) =>
-              confiner(argv, { cwd: o.cwd, workspaceDir: this.workspaceDir ?? o.cwd }),
+              confiner(argv, {
+                cwd: o.cwd,
+                workspaceDir: this.workspaceDir ?? o.cwd,
+                ...(this.scratchpadDir !== undefined ? { scratchpadDir: this.scratchpadDir } : {}),
+              }),
           }
         : {}),
       // Spread order is priority: vault overrides host variables of the same name; the
