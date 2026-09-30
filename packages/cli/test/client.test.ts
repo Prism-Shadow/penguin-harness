@@ -1,7 +1,8 @@
 /**
  * Server-client plumbing: connection resolution order (--server > PENGUIN_API_URL >
  * live server.lock > auto-start), the remote-token gate, the SSE parser, and session
- * reference resolution (full id / unique fragment / ambiguity).
+ * reference resolution (full id / unique fragment / ambiguity), and where the credential
+ * comes from.
  */
 import fs from "node:fs";
 import net from "node:net";
@@ -31,6 +32,7 @@ const ENV_KEYS = [
   "PENGUIN_HOME",
   "PENGUIN_PROJECT_ID",
   "PENGUIN_AGENT_ID",
+  "PENGUIN_SESSION_ID",
 ];
 const saved = new Map<string, string | undefined>();
 
@@ -207,5 +209,42 @@ describe("option defaults", () => {
     expect(resolveAgentId(undefined)).toBe("env-agent");
     expect(resolveProjectId("flag-project")).toBe("flag-project");
     expect(resolveAgentId("flag-agent")).toBe("flag-agent");
+  });
+});
+
+describe("credential resolution", () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-cli-cred-"));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const conn = (baseUrl: string) => ({ baseUrl, root, autoStarted: false, loopback: true });
+  const storeLogin = (server: string) =>
+    fs.writeFileSync(
+      path.join(root, "cli-session.json"),
+      JSON.stringify({ server, userId: "admin", token: "signed-in" }),
+    );
+
+  it("an api-token file on the data root is never read", () => {
+    fs.writeFileSync(path.join(root, "api-token"), "boot-token\n");
+    expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("none");
+  });
+
+  it("outside a Session the sign-in stored on the data root is used, for loopback targets only", () => {
+    storeLogin("http://localhost:7364");
+    // An auto-started server on another port serves the same root: the sign-in holds there too.
+    expect(new ServerClient(conn("http://localhost:41234"), t).tokenSource).toBe("login");
+    const remote = { ...conn("https://remote.example"), loopback: false };
+    expect(new ServerClient(remote, t).tokenSource).toBe("none");
+  });
+
+  it("inside a Session only the environment's credential counts", () => {
+    storeLogin("http://localhost:7364");
+    process.env.PENGUIN_SESSION_ID = "session-2026-09-30-00-00-00-00000000";
+    expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("none");
+    process.env.PENGUIN_API_TOKEN = "pst1.claims.mac";
+    expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("env");
   });
 });

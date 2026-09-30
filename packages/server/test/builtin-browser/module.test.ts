@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { BuiltinBrowserStatus } from "../../src/api/types.js";
+import { mintSessionToken } from "../../src/auth/session-token.js";
 import { userChannelKey } from "../../src/http/routes/events.js";
 import {
   apiClient,
@@ -92,12 +93,18 @@ describe("the built-in browser in the platform tree", () => {
     }
   });
 
-  it("lets an Agent's CLI in with the admin's local API token", async () => {
+  it("lets an Agent's CLI in with its Session's own credential", async () => {
     const shell = new FakeShell();
     const t = await createDesktopApp({ browserShellPort: shell.port });
     try {
-      const token = t.deps.authService.localApiToken();
-      expect(token).not.toBeNull();
+      // What controlEnv hands a Session's commands: a credential the boot token signs.
+      const bootToken = t.deps.authService.localApiToken();
+      expect(bootToken).not.toBeNull();
+      const token = mintSessionToken(bootToken!, {
+        projectId: "default_project",
+        agentId: "default_agent",
+        sessionId: "session-2026-09-01-10-00-00-00000001",
+      });
       const res = await t.app.request("/api/builtin-browser/tabs", {
         headers: { authorization: `Bearer ${token}` },
       });

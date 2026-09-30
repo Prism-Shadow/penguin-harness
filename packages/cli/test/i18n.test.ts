@@ -109,7 +109,7 @@ describe("getMessages", () => {
       expect(m.agent.created("helper", "proj-x")).toContain("helper");
       expect(m.client.autoStarted("http://localhost:1", "/log")).toContain("http://localhost:1");
       expect(m.client.remoteNeedsToken("https://r")).toContain("PENGUIN_API_TOKEN");
-      expect(m.client.noToken("http://l", "/root/api-token")).toContain("/root/api-token");
+      expect(m.client.noToken("http://l")).toContain("penguin auth login");
       expect(m.client.httpError(500, "boom", "detail")).toContain("500");
       expect(m.client.sessionAmbiguous("ab", ["s1", "s2"])).toContain("s1");
       expect(m.client.sessionNotFound("zz", "proj-x")).toContain("zz");

@@ -36,6 +36,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { mintSessionToken } from "../auth/session-token.js";
 import {
   createAgent,
   findLatestTraceFile,
@@ -2846,8 +2847,19 @@ export class SessionsModule {
           config.host === "0.0.0.0" || config.host === "::"
             ? "127.0.0.1"
             : (loopbackHostRoles(config.host)?.app ?? config.host);
-        const token = authState.apiToken;
         const orgId = orgCache.ownerOfSession(ctx.sessionId)?.orgId ?? null;
+        // The Session's own credential, not the boot token: it reaches this Agent's sessions
+        // and the routes its commands call (auth/session-scope.ts), signed by the boot token so
+        // it verifies across pushes and dies at a restart.
+        const token =
+          authState.apiToken === null
+            ? null
+            : mintSessionToken(authState.apiToken, {
+                projectId: ctx.projectId,
+                agentId: ctx.agentId,
+                sessionId: ctx.sessionId,
+                ...(orgId !== null ? { orgId } : {}),
+              });
         return {
           PENGUIN_API_URL: `http://${host}:${config.port}`,
           ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),

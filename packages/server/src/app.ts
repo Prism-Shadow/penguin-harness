@@ -60,7 +60,7 @@ import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
-import { mintApiToken, storeApiToken } from "./auth/api-token.js";
+import { mintApiToken, removeApiTokenFile } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
@@ -271,13 +271,13 @@ export async function bootAppDeps(
   // change to it ships by push. Only the values that must survive a push live out here.
   const authState = newAuthRuntimeState();
 
-  // Local API token: minted per boot, persisted at <root>/api-token (0600) and published on
-  // the runtime auth state, so authMiddleware accepts it as the admin for this process's
-  // whole life — across hot swaps too, since the App that verifies it is rebuilt but the
-  // file on disk is not rewritten. Local filesystem access to the data root is admin
-  // authority (the reset-admin-password rule); see auth/api-token.ts.
+  // Local API token: minted per boot and held in memory only, on the runtime auth state, so
+  // it outlives the Apps a push replaces and dies at a restart. It is the key session
+  // credentials are signed with (auth/session-token.ts) and no credential by itself. An
+  // `<root>/api-token` an older build left behind still held admin authority for anyone who
+  // could read it: it goes.
   const apiToken = mintApiToken();
-  storeApiToken(config.root, apiToken);
+  removeApiTokenFile(config.root);
   authState.apiToken = apiToken;
 
   // Install identity: minted here so a root gets its name the first time it is used rather

@@ -555,6 +555,15 @@ export function loginAdmin(app: Hono<AppEnv>): Promise<{ cookie: string; user: U
   return loginUser(app, ADMIN_USER_ID, TEST_ADMIN_PASSWORD);
 }
 
+/**
+ * The admin's sign-in token, for `Authorization: Bearer`: what `penguin auth token` hands a
+ * command line, and the credential under which the routes honour a body's identity claims.
+ */
+export async function adminBearerToken(app: Hono<AppEnv>): Promise<string> {
+  const { cookie } = await loginAdmin(app);
+  return cookie.slice(cookie.indexOf("=") + 1);
+}
+
 /** The `name=value` cookie pair from a response's Set-Cookie (the shape apiClient wants). */
 export function cookieFrom(res: Response): string {
   return (res.headers.get("set-cookie") ?? "").split(";")[0]!;

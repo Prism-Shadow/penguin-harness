@@ -1,16 +1,12 @@
 /**
- * Local API token (`<root>/api-token`): the machine-local credential behind
- * `Authorization: Bearer`.
+ * The boot's local API token: minted fresh at every server boot and held in memory only
+ * (auth/runtime-state.ts). It signs the session credentials a server-driven Session's tool
+ * subprocesses get as PENGUIN_API_TOKEN (session-token.ts) and is accepted as no credential
+ * by itself, so there is nothing admin-level to hand out or to read off the disk.
  *
- * Minted fresh at every server boot (same recipe as auth-session tokens) and written to
- * the data root with owner-only permissions, so anything that can read the file can call
- * the API as the admin. That equivalence is the authorization model, not an accident:
- * local filesystem access to the data root already IS admin authority — the same rule
- * `penguin server reset-admin-password` stands on (whoever can run it owns web.db
- * anyway) — and agents driving their own harness through the CLI is the product feature
- * this token exists for (server-driven Sessions hand it to tool subprocesses as
- * PENGUIN_API_TOKEN). Rotation per boot bounds the life of any leaked copy to the
- * process that minted it.
+ * Builds before this one wrote it to `<root>/api-token` and accepted it as the admin; the CLI
+ * read that file when PENGUIN_API_TOKEN was unset. A person's command line now signs in
+ * instead (`penguin auth login` / `penguin auth token`).
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
@@ -26,30 +22,14 @@ export function mintApiToken(): string {
 }
 
 /**
- * Persists the boot token (owner-only file, tmp + rename so a concurrent reader never
- * sees a partial write). Best-effort like the initial-password file: an exotic read-only
- * root must not stop the server — local CLI callers then fall back to
- * PENGUIN_API_TOKEN.
+ * Removes the `<root>/api-token` an older build wrote. Best-effort: a root the process cannot
+ * write is one it could not have written the file to either.
  */
-export function storeApiToken(root: string, token: string): void {
+export function removeApiTokenFile(root: string): void {
   try {
-    fs.mkdirSync(root, { recursive: true });
-    const target = apiTokenPath(root);
-    const tmp = `${target}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, `${token}\n`, { mode: 0o600 });
-    fs.renameSync(tmp, target);
+    fs.rmSync(apiTokenPath(root), { force: true });
   } catch {
-    // Best-effort: Bearer auth still works for callers holding the token some other way.
-  }
-}
-
-/** The stored token, or null when absent/unreadable/empty (shared with the CLI's file fallback). */
-export function readApiToken(root: string): string | null {
-  try {
-    const value = fs.readFileSync(apiTokenPath(root), "utf8").trim();
-    return value === "" ? null : value;
-  } catch {
-    return null;
+    // Nothing to do: see above.
   }
 }
 

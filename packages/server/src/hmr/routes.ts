@@ -68,10 +68,11 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
     }
     await next();
   });
-  // Then the platform's cookie / API-token gate, and admin on top.
+  // Then the platform's cookie / Bearer gate, and admin on top. A Session's credential is the
+  // admin narrowed to its route table (auth/session-scope.ts), which has no row here.
   routes.use("*", authMiddleware(deps.auth, deps.config.trustProxy));
   routes.use("*", async (c, next) => {
-    if (!c.var.user.isAdmin) {
+    if (!c.var.user.isAdmin || c.var.sessionScope !== undefined) {
       throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
     }
     await next();

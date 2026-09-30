@@ -1022,7 +1022,7 @@ export interface Messages {
   /** Server-connection layer: resolution, auto-start, tokens, streams. */
   client: {
     invalidServerUrl(value: string): string;
-    /** --server names a non-loopback URL and no PENGUIN_API_TOKEN is set (the local token file must not travel). */
+    /** --server names a non-loopback URL and no PENGUIN_API_TOKEN is set. */
     remoteNeedsToken(url: string): string;
     /** No server reachable and auto-start was disabled by the caller. */
     noServer(): string;
@@ -1031,8 +1031,8 @@ export interface Messages {
     autoStartFailed(logPath: string): string;
     /** Printed to stderr when a server was auto-started for this invocation. */
     autoStarted(url: string, logPath: string): string;
-    /** 401 with no token found anywhere (env or file). */
-    noToken(url: string, tokenPath: string): string;
+    /** 401 with no credential: no PENGUIN_API_TOKEN and no sign-in stored for this server. */
+    noToken(url: string): string;
     /** 401 despite presenting a token. */
     authFailed(url: string): string;
     httpError(status: number, code: string, message: string): string;
@@ -2422,17 +2422,17 @@ const en: Messages = {
   client: {
     invalidServerUrl: (value) => `Invalid server URL "${value}": expected http(s)://host[:port].`,
     remoteNeedsToken: (url) =>
-      `${url} is not this machine: set PENGUIN_API_TOKEN to authenticate against a remote server (the local api-token file never leaves its own data root).`,
+      `${url} is not this machine: set PENGUIN_API_TOKEN to authenticate against a remote server.`,
     noServer: () => "No running server found for this data root.",
     autoStartUnavailable: () =>
       "No running server found, and this CLI entry cannot auto-start one (development run). Start it yourself with `penguin server`.",
     autoStartFailed: (logPath) =>
       `The auto-started server did not come up. Its output is in ${logPath}.`,
     autoStarted: (url, logPath) => `Started a local server at ${url} (log: ${logPath}).`,
-    noToken: (url, tokenPath) =>
-      `${url} rejected the request (401) and no API token is available: set PENGUIN_API_TOKEN, or make sure the server's token file is readable at ${tokenPath}.`,
+    noToken: (url) =>
+      `${url} rejected the request (401) and no credential is available: sign in with \`penguin auth login\` (or \`penguin auth token\` on this machine), or set PENGUIN_API_TOKEN.`,
     authFailed: (url) =>
-      `${url} rejected the API token (401). If the server restarted, its token rotated — check PENGUIN_API_TOKEN, or let the CLI read the current api-token file.`,
+      `${url} rejected the credential (401). A session's credential dies with the server that minted it, and a sign-in expires — sign in again with \`penguin auth login\`, or check PENGUIN_API_TOKEN.`,
     httpError: (status, code, message) =>
       `Server error ${status} (${code})${message ? `: ${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
@@ -3736,17 +3736,16 @@ const zh: Messages = {
   },
   client: {
     invalidServerUrl: (value) => `服务器地址「${value}」无效：应为 http(s)://host[:port]。`,
-    remoteNeedsToken: (url) =>
-      `${url} 不是本机：连接远端服务器须设置 PENGUIN_API_TOKEN（本机的 api-token 文件不会发往其它主机）。`,
+    remoteNeedsToken: (url) => `${url} 不是本机：连接远端服务器须设置 PENGUIN_API_TOKEN。`,
     noServer: () => "该数据根目录没有正在运行的服务器。",
     autoStartUnavailable: () =>
       "没有正在运行的服务器，且当前 CLI 入口无法自动拉起（开发态运行）。请自行执行 `penguin server`。",
     autoStartFailed: (logPath) => `自动启动的服务器未能就绪，输出见 ${logPath}。`,
     autoStarted: (url, logPath) => `已在本机启动服务器 ${url}（日志：${logPath}）。`,
-    noToken: (url, tokenPath) =>
-      `${url} 拒绝了请求（401），且没有可用的 API token：请设置 PENGUIN_API_TOKEN，或确认服务器的 token 文件可读（${tokenPath}）。`,
+    noToken: (url) =>
+      `${url} 拒绝了请求（401），且没有可用的凭据：请用 \`penguin auth login\` 登录（本机也可用 \`penguin auth token\`），或设置 PENGUIN_API_TOKEN。`,
     authFailed: (url) =>
-      `${url} 拒绝了 API token（401）。服务器重启会轮换 token——检查 PENGUIN_API_TOKEN，或让 CLI 读取最新的 api-token 文件。`,
+      `${url} 拒绝了凭据（401）。会话凭据随签发它的服务器重启而失效，登录也会过期——请重新 \`penguin auth login\`，或检查 PENGUIN_API_TOKEN。`,
     httpError: (status, code, message) =>
       `服务器错误 ${status}（${code}）${message ? `：${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>

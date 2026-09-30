@@ -32,7 +32,14 @@ import type {
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
+import {
+  adminBearerToken,
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  provisionUser,
+  writeTraceFile,
+} from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 type Call = { method: string; args: unknown[] };
@@ -94,14 +101,15 @@ function fakeService(calls: Call[]): OrganizationService {
 }
 
 /**
- * A write as a Session's subprocess would send it: the boot's local API token as a Bearer
- * header and no cookie, which is what `controlEnv` hands the CLI (auth/api-token.ts).
+ * A write carrying a body's identity claims under a credential that backs them: the admin's
+ * sign-in token as a Bearer header and no cookie. (A Session's own credential holds the same
+ * claims to its Agent and sessions — session-credential.test.ts.)
  */
-function fromSession(t: TestApp, apiPath: string, body: unknown) {
+async function fromSession(t: TestApp, apiPath: string, body: unknown) {
   return t.app.request(apiPath, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${t.deps.authService.localApiToken()}`,
+      authorization: `Bearer ${await adminBearerToken(t.app)}`,
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
@@ -477,7 +485,7 @@ describe("organization routes", () => {
   it("honours a read's sessionId only from the control environment", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/channels`;
     const res = await t.app.request(`${base}?sessionId=session-desk&agentId=acme_dev`, {
-      headers: { authorization: `Bearer ${t.deps.authService.localApiToken()}` },
+      headers: { authorization: `Bearer ${await adminBearerToken(t.app)}` },
     });
     expect(res.status).toBe(200);
     expect(calls.at(-1)).toEqual({

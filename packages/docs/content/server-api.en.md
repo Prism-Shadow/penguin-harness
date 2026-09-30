@@ -39,7 +39,7 @@ packages/server/src
 
 ## Authentication
 
-The API accepts two credentials: a cookie session and the local API token.
+The API accepts cookie sign-ins, Bearer sign-in tokens, and scoped Session credentials.
 
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax). Ordinary login sessions are valid for 30 days with sliding renewal; short CLI- and Remote-minted sessions keep the expiry set when they were issued.
 - Passwords are stored as scrypt hashes. A session is a row in `auth_sessions`, keyed by the sha256 of a random cookie token; the raw token is never stored. A session survives a restart, eligible sessions renew in place, and logout deletes the row.
@@ -54,19 +54,30 @@ curl -c cookies.txt -H "Content-Type: application/json" \
   http://localhost:7364/api/auth/login
 ```
 
-### Local API token (Bearer)
+### Bearer credentials
 
-Every protected route also accepts `Authorization: Bearer <token>` with the **local API token**. The CLI, and agents that drive the harness through it, use this machine-local credential instead of a login.
+Every protected route also accepts `Authorization: Bearer <token>`. Two kinds of token are accepted:
 
-- The server mints a fresh token at every boot and writes it to `<root>/api-token` with owner-only permissions (`0600`). The previous boot's token stops working as soon as the new one is minted.
-- A valid Bearer token authenticates as the built-in `admin`. This is the authorization model by design: local filesystem access to the data root already is admin authority, since whoever can read `api-token` can also read `web.db` next to it. `penguin server reset-admin-password` relies on the same rule.
-- Server-driven sessions inject the current token into every tool subprocess as `PENGUIN_API_TOKEN`, together with `PENGUIN_API_URL`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`. That is what authorizes an agent's own `penguin` and API calls to reach the server that runs them.
-- The token cannot change an agent's exposure. `PUT …/agents/:agentId/api`, `POST …/api/keys`, `DELETE …/api/keys/:keyId`, `POST …/api/try`, and a `PUT /api/admin/settings` whose body carries `agentApiEnabled` answer it `403` `human_required` and write nothing; they take a cookie session. It is the same refusal the [agent browser](#agent-browser) gives the token for choosing a backend and minting a pairing code. The reads stay open to it. Since every tool subprocess holds the token, an agent could otherwise open itself to the network from its own shell. This narrows the credential an agent is handed; it is not a boundary. A process that runs as the data root's OS account outside the sandbox can mint a session itself with `penguin auth token`. The sandbox is the boundary.
+- **A sign-in token.** The token `penguin auth login` or `penguin auth token` issues authenticates as that user, the same as the session cookie would. `penguin auth token` needs no password on the machine that owns the data root: it writes the session row into `web.db` directly. This is what a script or a person's CLI holds.
+- **A session credential.** Server-driven sessions inject a credential of their own into every tool subprocess as `PENGUIN_API_TOKEN`, together with `PENGUIN_API_URL`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`. It is signed by a key the server holds in memory and dies at the next restart.
+
+### Session credential
+
+A session credential reaches only what an agent's own commands call, and refuses everything else with `403 session_scope`:
+
+- the agent's own sessions (and the ones it created with `penguin run`): tasks, stream, messages, steering; a session list keeps only these;
+- the Project's organizations, or only its own one for a desk or ticket session, with the `sessionId` / `agentId` a request claims held to the credential's own;
+- the Project's agent list, agent creation, its own schedules, and the Project's usage;
+- telemetry, read with `session=` naming one of its own sessions.
+
+Admin routes, hot updates, other Projects and every other route are refused.
+
+- A Session credential cannot change an Agent's exposure or the person's browser backend. Those writes require a person's sign-in; the credential is restricted by the route table and `requireHuman`. The sandbox remains the boundary against a process with direct access to the data root.
 - SSE endpoints accept the header like any other route. Consume them with `fetch`, not `EventSource`, which cannot send headers.
 - The JSON-only Content-Type check on writes applies to Bearer requests too.
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
+curl -H "Authorization: Bearer $(penguin auth token)" \
   http://127.0.0.1:7364/api/me
 ```
 

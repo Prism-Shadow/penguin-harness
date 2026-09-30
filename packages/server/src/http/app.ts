@@ -13,6 +13,24 @@ import type { Auth, Users } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
+import type { SessionIndex } from "../mechanisms/sessions.js";
+import { agentKey, checkClaims, reachesSession, sessionScope } from "../auth/session-scope.js";
+import type { CarriedClaims, ScopeLookups } from "../auth/session-scope.js";
+
+/** The identity claims in a query or a JSON body: `sessionId`, and the Agent under `field`. */
+function claimOf(
+  source: URLSearchParams | Record<string, unknown>,
+  field: "agentId" | "callerAgentId",
+): CarriedClaims {
+  const get = (k: string): unknown =>
+    source instanceof URLSearchParams ? source.get(k) : source[k];
+  const out: CarriedClaims = {};
+  const sessionId = get("sessionId");
+  const agentId = get(field);
+  if (typeof sessionId === "string" && sessionId !== "") out.sessionId = sessionId;
+  if (typeof agentId === "string" && agentId !== "") out.agentId = agentId;
+  return out;
+}
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.
@@ -58,7 +76,15 @@ export class HttpModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly access!: Access;
   @Use() private readonly users!: Users;
+  @Use() private readonly sessionsRepo!: SessionIndex;
   @Provide() http!: Http;
+  /**
+   * The Sessions a session credential created (`penguin run --agent-id <colleague>`), by id →
+   * the creating Agent's key: they count as its own (auth/session-scope.ts). Held for the life
+   * of this App; a push or a restart forgets them, and the creator then reaches only its own
+   * Agent's sessions again.
+   */
+  private readonly createdBySession = new Map<string, string>();
   setup({ contributions }: ClassCtx) {
     const routes = [...(contributions.routes ?? [])]
       .map((c) => ({
@@ -155,11 +181,19 @@ export class HttpModule {
     app.use("/server/*", sameOriginWrites);
     app.use("/api/*", jsonOnlyWrites);
 
-    // A group's own auth declaration applies to both HTTP and socket calls, independent of order.
-    const authenticate = gate;
+    // Protected routes: the gate this surface was assembled with (the cookie one, or "this
+    // user" on the socket). Mounted per group, and run once per request: prefixes nest
+    // (/api/projects, /api/projects/:projectId/members), so a request can pass several mounts,
+    // and the first is the one that authenticates.
+    // The session-credential scope runs right behind the gate that authenticated, once per
+    // request like the gate itself: no row of its table is outside /api, so a session
+    // credential on a protected group elsewhere (the machine proxy at /server/) stops there.
+    const scope = this.sessionScopeGate();
     const once: MiddlewareHandler<AppEnv> = (c, next) =>
       (c.var.user as AppEnv["Variables"]["user"] | undefined) === undefined
-        ? authenticate(c, next)
+        ? gate(c, async () => {
+            await scope(c, next);
+          })
         : next();
     const authenticateToken = authMiddleware(this.auth, this.config.trustProxy, {
       apiTokenOnly: true,
@@ -181,5 +215,62 @@ export class HttpModule {
       app.route(r.prefix, r.app);
     }
     return app;
+  }
+
+  /**
+   * A request made with a session credential passes only the rows of the route table
+   * (auth/session-scope.ts), with the identity it claims held to the credential's own; every
+   * other request passes untouched. Also where the table's two answers that need the response
+   * are applied: a session list keeps only the credential's own sessions, and a Session it
+   * creates becomes one of them.
+   */
+  private sessionScopeGate(): MiddlewareHandler<AppEnv> {
+    const created = this.createdBySession;
+    const lookups: ScopeLookups = {
+      sessionOf: (sessionId) => {
+        const row = this.sessionsRepo.findById(sessionId);
+        return row === null ? null : { projectId: row.projectId, agentId: row.agentId };
+      },
+      createdBy: (sessionId) => created.get(sessionId),
+    };
+    return async (c, next) => {
+      const claims = c.var.sessionScope;
+      if (claims === undefined) return next();
+      const url = new URL(c.req.url);
+      const method = c.req.method;
+      const decision = sessionScope(method, c.req.path, url.searchParams, claims, lookups);
+      if (decision.kind === "deny") throw new HttpError(403, "session_scope", decision.message);
+      if (decision.claims !== undefined) {
+        const write = method !== "GET" && method !== "HEAD";
+        const field = decision.claims === "caller" ? "agentId" : "callerAgentId";
+        const carried: CarriedClaims = claimOf(url.searchParams, field);
+        if (write && c.req.header("content-type")?.toLowerCase().startsWith("application/json")) {
+          // Hono caches the parsed body, so the handler reads the same value again.
+          const body: unknown = await c.req.json().catch(() => null);
+          if (body !== null && typeof body === "object") {
+            Object.assign(carried, claimOf(body as Record<string, unknown>, field));
+          }
+        }
+        const refused = checkClaims(carried, claims, lookups, write);
+        if (refused !== null) throw new HttpError(403, "session_scope", refused);
+      }
+      await next();
+      if (decision.adoptCreated === true && c.res.status === 201) {
+        const answer = (await c.res.clone().json()) as { session?: { sessionId?: unknown } };
+        const id = answer.session?.sessionId;
+        if (typeof id === "string") created.set(id, agentKey(claims.projectId, claims.agentId));
+      }
+      if (decision.filterSessions === true && c.res.status === 200) {
+        const answer = (await c.res.json()) as { sessions?: { sessionId: string }[] };
+        const sessions = (answer.sessions ?? []).filter((s) =>
+          reachesSession(claims, s.sessionId, lookups),
+        );
+        // The page alone: the counts beside it are over rows the credential does not reach.
+        c.res = new Response(JSON.stringify({ sessions }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+    };
   }
 }
