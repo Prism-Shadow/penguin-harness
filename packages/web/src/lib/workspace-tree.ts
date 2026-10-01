@@ -77,6 +77,57 @@ export function baseName(path: string): string {
   return i >= 0 ? path.slice(i + 1) : path;
 }
 
+/** Whether `path` is `dir` itself or lies inside it. */
+export function isWithin(path: string, dir: string): boolean {
+  return path === dir || path.startsWith(`${dir}/`);
+}
+
+/**
+ * Where `path` is once `from` has moved to `to`: `to` itself, or the same place under it when
+ * `path` lay inside `from`; null when the move did not touch it. A sibling that merely shares a
+ * prefix (`docs-old` beside `docs`) is untouched.
+ */
+export function movedPath(path: string, from: string, to: string): string | null {
+  return isWithin(path, from) ? `${to}${path.slice(from.length)}` : null;
+}
+
+/** The set with every path the move touched carried to its new place. */
+export function movedSet(set: ReadonlySet<string>, from: string, to: string): Set<string> {
+  return new Set([...set].map((p) => movedPath(p, from, to) ?? p));
+}
+
+/** The loaded listings with every directory the move touched filed under its new path. */
+export function movedListings(
+  listings: Listings,
+  from: string,
+  to: string,
+): Map<string, readonly WorkspaceFileEntry[]> {
+  return new Map([...listings].map(([dir, entries]) => [movedPath(dir, from, to) ?? dir, entries]));
+}
+
+/** What a new text file is called until it is named. */
+export const DEFAULT_TEXT_FILE_NAME = "untitled.txt";
+
+/**
+ * The end of a file name's stem — where its extension starts, or its whole length when it has
+ * none. The name field selects up to here, so typing replaces `untitled` and keeps `.txt`. A
+ * leading dot (`.env`) is part of the stem, not an extension.
+ */
+export function stemEnd(name: string): number {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? dot : name.length;
+}
+
+/**
+ * A typed new-entry name made into the relative path it creates under the chosen directory:
+ * trimmed, with the slashes at either end dropped (a folder named `drafts/` is `drafts`, and a
+ * leading `/` would otherwise read as the Workspace root). A `/` inside stays: it creates the
+ * folders in between.
+ */
+export function newEntryName(raw: string): string {
+  return raw.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
 /** The directories from the root down to the path's parent, root first: "a/b/c.txt" → ["", "a", "a/b"]. */
 export function ancestorDirs(path: string): string[] {
   const out = [""];

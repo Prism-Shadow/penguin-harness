@@ -38,6 +38,7 @@
  * always survive.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
@@ -99,6 +100,7 @@ import {
 import { newChatAgentId } from "./new-chat";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
+import { FilesPanelToggle } from "./dock-toggles";
 import { sameModelRef } from "../models/model-grouping";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -153,12 +155,21 @@ export function DraftView({
   projectId,
   models,
   draftId,
+  composerRef: pageComposerRef,
+  onWorkspaceChange,
 }: {
   projectId: string;
   /** Project model config (already fetched by ChatPage): candidate list and default model. */
   models: ModelsResponse | null;
   /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
   draftId?: string;
+  /**
+   * The page's handle on the composer, so what the dock's panels hand the conversation (the
+   * Files panel's references) reaches this draft's composer as it reaches a live Session's.
+   */
+  composerRef?: RefObject<ComposerControl | null>;
+  /** The Workspace picked here ("" = a temporary one) and its machine, for the Files panel. */
+  onWorkspaceChange?: (path: string, machineId: string | null) => void;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -217,7 +228,8 @@ export function DraftView({
   // that case falls back to home (setDockCwd's null).
   useEffect(() => {
     setDockCwd(workspace || null, workspaceMachine);
-  }, [workspace, workspaceMachine]);
+    onWorkspaceChange?.(workspace, workspaceMachine);
+  }, [workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -821,7 +833,8 @@ export function DraftView({
    * in-flight guard to keep here, and everything else — where the prompt goes when text is
    * already typed, focus, the caret — is the composer's, reached through this handle.
    */
-  const composerRef = useRef<ComposerControl | null>(null);
+  const ownComposerRef = useRef<ComposerControl | null>(null);
+  const composerRef = pageComposerRef ?? ownComposerRef;
   const fillExample = useCallback((task: ExampleTask) => {
     // S is a live binding swapped on locale change: read the prompt at click time, not at render.
     composerRef.current?.fillPrompt(S.chat.exampleTasks[task.id].prompt, task.skills);
@@ -933,6 +946,9 @@ export function DraftView({
             chooseMachine
             {...(agentId ? { agentId } : {})}
           />
+          {/* The dock's Files panel on the folder picked beside it; a temporary Workspace has
+              none yet (see FilesPanelToggle). */}
+          <FilesPanelToggle available={workspace.trim() !== ""} />
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills

@@ -108,6 +108,8 @@ export function FilesBoard() {
     download: t.download,
     rename: t.rename,
     delete: t.delete,
+    newTextFile: t.newTextFile,
+    newFolder: t.newFolder,
   };
   const noop = () => undefined;
 
@@ -236,6 +238,9 @@ export function FilesBoard() {
                 onCopyPath={noop}
                 onAddToChat={noop}
                 onUploadInto={noop}
+                onNewFile={noop}
+                onNewFolder={noop}
+                onRename={noop}
                 onClose={noop}
               />
             </div>

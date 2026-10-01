@@ -23,6 +23,7 @@ penguin config model add --provider <group> --model-id <upstream_id> [--api-key 
 ```
 
 - A model is identified by the `(provider, model_id)` pair, so `--provider` and `--model-id` are **both required** — the group is never inferred from the model id, because gateways resell vendor models under their upstream ids and a wrong guess would send the key to another vendor's endpoint. `--model-id` takes the provider's upstream model id (what the API expects) and is persisted as the entry's request id, so it reaches the API unchanged; `--provider` names the group (`deepseek`, `openai`, `anthropic`, `google`, `openrouter`, `siliconflow`, … — `custom` for any other endpoint).
+- Only `custom`, `vllm` and groups of your own take models added by hand. Every other built-in group carries its catalog models only: `model add` there accepts one of that group's catalog model ids (to set its key, limits or prices, or to bring it back) and refuses any other id with "cannot be added". Add such a model under `custom` with `--base-url`, or under a group of your own.
 - For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).

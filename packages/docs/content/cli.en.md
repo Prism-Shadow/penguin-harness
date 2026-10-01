@@ -568,7 +568,8 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--set-default` | Also sets the entry as the Project's default model. | — |
 
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
-- For a new entry, `--client-type` and `--base-url` default to what the built-in catalog sets for that exact `(provider, model_id)` pair. Without a catalog row, the group decides: a group that pins a protocol uses it; `custom`, user-defined and gateway groups get `openai-chat`, with a gateway's endpoint filled in as the base URL; and first-party vendor groups leave both unset. Updating an existing entry changes them only when you pass the flags.
+- For a new entry, `--client-type` and `--base-url` default to what the built-in catalog sets for that exact `(provider, model_id)` pair. Without a catalog row, the group decides: a group that pins a protocol uses it (`vllm`), and `custom` and user-defined groups get `openai-chat`. Updating an existing entry changes them only when you pass the flags.
+- Only `custom`, `vllm` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - Turning on `--fast-mode` for a model whose AgentHub client rejects the parameter still writes the entry, but prints a warning on stderr.
 
 ### model default / model vision / model list / model remove

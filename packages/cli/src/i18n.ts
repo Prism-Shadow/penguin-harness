@@ -957,6 +957,8 @@ export interface Messages {
   modelNotConfigured(model: string): string;
   /** `model add` refused: a new entry in a first-party vendor group under a model id AgentHub cannot route. */
   modelNotRoutable(model: string): string;
+  /** A new entry in a built-in group that takes no hand-added models (everything but custom and vLLM). */
+  modelNotAddable(model: string, group: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;
   modelListTitle(): string;
@@ -1929,6 +1931,10 @@ const en: Messages = {
     `Model ${model} cannot be routed: a vendor group carries built-in models only. ` +
     `Add it under a custom group (--provider custom) with --client-type and --base-url, ` +
     `or pass --client-type to pin the protocol this model speaks.`,
+  modelNotAddable: (model, group) =>
+    `Model ${model} cannot be added: the ${group} group carries its built-in models only. ` +
+    `Add it under a custom group (--provider custom, or a group name of your own) ` +
+    `with --client-type and --base-url.`,
   visionModelCleared: () => "It was also the vision model; that setting is now unset.",
   modelListTitle: () => "Configured models:",
   modelListEmpty: () => "No models configured yet. Add one with `penguin config model add`.",
@@ -2818,6 +2824,9 @@ const zh: Messages = {
     `模型 ${model} 无法路由：厂商分组只承载内置模型。` +
     `请改用自定义分组（--provider custom）并附上 --client-type 与 --base-url，` +
     `或用 --client-type 指定该模型所用的协议。`,
+  modelNotAddable: (model, group) =>
+    `模型 ${model} 无法添加：${group} 分组只承载内置模型。` +
+    `请改用自定义分组（--provider custom，或自己命名的分组）并附上 --client-type 与 --base-url。`,
   visionModelCleared: () => "它同时是视觉模型，该设置已一并清空。",
   modelListTitle: () => "已配置的模型：",
   modelListEmpty: () => "尚未配置任何模型。用 `penguin config model add` 添加。",

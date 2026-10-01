@@ -8,6 +8,10 @@
  * The pending-approval amber dot rides the toggle of the dock that holds the agents tab
  * (the right one while the panel is closed — the default edge panels open on), keeping a
  * nested approval discoverable while the panel is off screen.
+ *
+ * The new-chat draft has no toolbar, and the one panel it has a use for is Files, on the folder
+ * picked there: `FilesPanelToggle` is the same toggle, for that one panel, beside the draft's
+ * Workspace pill.
  */
 import { useSyncExternalStore } from "react";
 import { ICONS, PanelsToolbar } from "@prismshadow/penguin-ui";
@@ -17,11 +21,14 @@ import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import {
   dockVersion,
   isDockVisible,
+  isTabShown,
+  openPanel,
   panelDock,
   subscribeDock,
   toggleDock,
   type DockPosition,
 } from "../dock/dock-state";
+import { panelLabel } from "../dock/panel-meta";
 
 export interface DockTogglesProps {
   /** A pending approval inside a subagent: amber dot beside the agents tab's dock toggle. */
@@ -59,6 +66,37 @@ export function DockToggles({ agentsPending }: DockTogglesProps) {
       toggles={[
         toggle("bottom", S.dock.bottomDock, bottomTitle, ICONS.panelBottom),
         toggle("right", S.dock.rightDock, rightTitle, ICONS.panelRight),
+      ]}
+    />
+  );
+}
+
+/**
+ * The dock's Files panel, from the new-chat draft: pressed while the panel is on screen, it puts
+ * that panel's dock away; otherwise it brings the panel up where it lives (the right dock the
+ * first time). A temporary Workspace has no directory until the first message makes one, so
+ * there the toggle has nothing to open and says so.
+ */
+export function FilesPanelToggle({ available }: { available: boolean }) {
+  useSyncExternalStore(subscribeDock, dockVersion);
+  const label = panelLabel("workspace");
+  const shown = available && isTabShown("workspace");
+  return (
+    <PanelsToolbar
+      toggles={[
+        {
+          key: "files",
+          label,
+          tooltip: available ? label : S.files.draftTemporary,
+          glyph: ICONS.folderOpen,
+          active: shown,
+          unavailable: !available,
+          onToggle: () => {
+            const home = panelDock("workspace");
+            if (shown && home !== null) toggleDock(home);
+            else openPanel("workspace");
+          },
+        },
       ]}
     />
   );

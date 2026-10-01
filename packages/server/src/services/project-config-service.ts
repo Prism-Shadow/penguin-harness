@@ -52,7 +52,12 @@ import {
   resolveModelCredential,
   userText,
 } from "@prismshadow/penguin-core";
-import { unroutableVendorModel } from "@prismshadow/penguin-core/model-catalog";
+import {
+  VENDOR_ENDPOINTS,
+  providerInfo,
+  unaddableModel,
+  unroutableVendorModel,
+} from "@prismshadow/penguin-core/model-catalog";
 import type {
   PluginTables,
   CommandPolicyRule,
@@ -1245,8 +1250,10 @@ export class ProjectConfigService implements ProjectConfigStore {
    * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
    *
    * An entry the request adds to a first-party vendor group under a model id AgentHub cannot
-   * route is rejected as well (`model_not_routable`); one already stored under that key is
-   * written as it stands. See the loop below for why the two differ.
+   * route is rejected as well (`model_not_routable`), and so is one it adds to any built-in
+   * group but custom and vLLM when it is not one of that group's presets
+   * (`model_not_addable`); one already stored under that key is written as it stands. See
+   * the loops below for why the two differ.
    */
   async updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, () =>
@@ -1288,6 +1295,31 @@ export class ProjectConfigService implements ProjectConfigStore {
         400,
         "model_not_routable",
         `Model ${showRef(entry.provider, entry.modelId)} cannot be routed: a vendor group carries built-in models only. Add it under a custom group, where its protocol can be picked or detected.`,
+      );
+    }
+
+    // Only custom, vLLM and user-defined groups take models added by hand; every other
+    // built-in group, gateways included, carries its catalog presets and the rows it already
+    // stores. The same grandfathering as above: a stored row is written as it stands, hand-added
+    // ones from before this rule included, and so is a row renamed inside its own group. A row
+    // moved in from another group is being added here, and a preset is always welcome back
+    // (the preset sync writes a deleted one again).
+    for (const entry of req.models) {
+      if (!unaddableModel(entry.provider, entry.modelId)) continue;
+      if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;
+      const from = entry.renamedFrom;
+      if (
+        from !== undefined &&
+        from.provider === entry.provider &&
+        prevModels.some((m) => entryMatches(m, from.provider, from.modelId))
+      ) {
+        continue;
+      }
+      const group = providerInfo(entry.provider)?.label ?? entry.provider;
+      throw new HttpError(
+        400,
+        "model_not_addable",
+        `Model ${showRef(entry.provider, entry.modelId)} cannot be added: the ${group} group carries its built-in models only. Add it under a custom group.`,
       );
     }
 
@@ -1562,6 +1594,50 @@ export class ProjectConfigService implements ProjectConfigStore {
       if (model.provider !== provider) continue;
       const apiKey = optStr(model.api_key);
       if (apiKey !== undefined) return apiKey;
+    }
+    return undefined;
+  }
+
+  /**
+   * The key a group's account balance is read with (the catalog's `balance` descriptor names
+   * the endpoint). The stored group key comes first. Without one, the environment key a
+   * Session on one of the group's rows would use: core's modelEnvFallback decides, the rule
+   * resolveModelCredential applies, and its variable is read from this process's env as the
+   * routed client itself would read it. One more condition, because the balance request is
+   * the server's own rather than the routed client's: the variable's official endpoint must
+   * be the balance endpoint's host, so a vendor key never reaches another vendor. A DeepSeek
+   * row keyed by DEEPSEEK_API_KEY qualifies; a gateway's rows (TokenDance) get no fallback at
+   * all. Never returned to the browser.
+   */
+  async getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined> {
+    const stored = await this.getGroupApiKey(projectId, provider);
+    if (stored !== undefined) return stored;
+    const balanceUrl = providerInfo(provider)?.balance?.url;
+    if (balanceUrl === undefined) return undefined;
+    const origin = (url: string): string | undefined => {
+      try {
+        return new URL(url).origin;
+      } catch {
+        return undefined;
+      }
+    };
+    const balanceOrigin = origin(balanceUrl);
+    const raw = await this.readRaw(projectId);
+    for (const model of asArray(raw.models)) {
+      if (model.provider !== provider) continue;
+      const modelId = optStr(model.model_id);
+      if (modelId === undefined) continue;
+      const fallback = modelEnvFallback({
+        provider,
+        modelId,
+        clientType: canonicalClientType(optStr(model.client_type)),
+        baseUrl: optStr(model.base_url),
+      });
+      if (fallback === undefined) continue;
+      const endpoints = VENDOR_ENDPOINTS[fallback.envKey] ?? [];
+      if (!endpoints.some((own) => origin(own) === balanceOrigin)) continue;
+      const value = process.env[fallback.envKey]?.trim();
+      if (value) return value;
     }
     return undefined;
   }

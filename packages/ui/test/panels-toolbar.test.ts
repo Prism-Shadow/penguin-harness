@@ -1,6 +1,7 @@
 /**
  * PanelsToolbar (src/components/shell/panels-toolbar/panels-toolbar.tsx): the toolbar's dock
- * toggles, each saying whether its dock is open.
+ * toggles, each saying whether its dock is open; a toggle with nothing to open yet stays in
+ * place, disabled for assistive technology, with its tooltip saying why.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -39,5 +40,27 @@ describe("PanelsToolbar", () => {
     expect(html).toContain('data-tooltip="Right dock (Ctrl+Alt+R)" aria-label="Right dock"');
     expect(html).toContain('data-tooltip="Bottom dock" aria-label="Bottom dock"');
     expect(html.match(/bg-tone-attention-emphasis/g)).toHaveLength(1);
+  });
+
+  it("a toggle with nothing to open yet is disabled and its tooltip says why", () => {
+    const html = renderStatic(
+      createElement(PanelsToolbar, {
+        toggles: [
+          {
+            key: "files",
+            label: "Files",
+            tooltip: "Choose a folder to browse its files.",
+            glyph: "M0 0h1",
+            active: false,
+            unavailable: true,
+            onToggle: () => {},
+          },
+        ],
+      }),
+    );
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain(
+      'data-tooltip="Choose a folder to browse its files." aria-label="Files"',
+    );
   });
 });

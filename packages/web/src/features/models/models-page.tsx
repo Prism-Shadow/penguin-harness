@@ -9,22 +9,23 @@
  * to migrate the credential and pointers).
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
- * name + count, collapsible), with one card per model within a group — the card shows only
- * the display name + status badges (default / vision / proxy-read), while
- * context, pricing, and key status are folded into a single line of small text. Clicking a
- * card opens the config dialog (credentials, context, pricing, vision toggle, plus set as
- * default / set as vision model / delete); the "add model" entry point lives in each group
- * header (owner only) and reuses the same dialog — provider is pre-filled with that group;
- * the protocol follows group semantics: a first-party vendor group doesn't persist
- * client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from the
- * id), while custom / user-defined groups / gateways use a fixed OpenAI protocol, and
- * gateways (OpenRouter / SiliconFlow / Qwen Token Plan) additionally pre-fill their endpoint
- * base URL; the "get model id / API key" external links sit next to the corresponding
- * input's label (shown in both add and edit dialogs). The group list ends with an "add
- * group" action (user-defined groups share custom's semantics; the group appears once the
- * first model saves successfully — groups are carried by the model entry's provider field,
- * not persisted separately). The header also holds an owner-only "sync presets" action next
- * to the search box (union-merge with the built-in catalog, see catalog-sync.ts).
+ * name + count + the collapse chevron), with one card per model within a group — the card
+ * shows only the display name + status badges (default / vision / fast / free / discount), while
+ * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
+ * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
+ * delete). The group header's right side holds the group's actions in a fixed order
+ * (group-header.ts): its balance (pin and refresh before the amount, a divider after it),
+ * Connect with its status, Enter key, the speed test, and — on the groups that take
+ * hand-added models (custom, vLLM, user-defined) — Add model, which reuses the same dialog
+ * with that group pre-filled. The protocol follows group semantics: custom / user-defined
+ * groups pick or detect it, a group that pins one (vLLM) hands it to every entry. The "get
+ * model id / API key" external links sit next to the corresponding input's label in the
+ * dialogs, never in the header. A TokenDance banner above the groups offers its connect flow
+ * until the group holds a key. The group list ends with an "add group" action (user-defined
+ * groups share custom's semantics; the group appears once the first model saves successfully —
+ * groups are carried by the model entry's provider field, not persisted separately). The
+ * header also holds an owner-only "sync presets" action next to the search box (union-merge
+ * with the built-in catalog, see catalog-sync.ts).
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
@@ -89,7 +90,7 @@ import {
   canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
-  isVendorGroup,
+  isAddableGroup,
   modelHomepageUrl,
   providerClientType,
   providerEnvFallbackKey,
@@ -146,13 +147,27 @@ import { refreshProjectTodos } from "../../lib/use-project-todos";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneInk } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { KeyAuthDialog } from "./key-auth-dialog";
 import type { KeyAuthTexts } from "./key-auth-dialog";
+import {
+  HEADER_BUTTON,
+  HEADER_LABEL,
+  HEADER_SQUARE,
+  HEADER_TEXT,
+  dividerAfterBalance,
+  groupHeaderActions,
+  groupKeyFromEnv,
+  groupKeyStored,
+} from "./group-header";
+import type { GroupHeaderAction } from "./group-header";
+import { GroupBalance } from "./group-balance";
+import { isPinned, usePinnedBalance } from "./balance";
+import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 
 /**
- * The authorization flows a group's "authorize a key" dialog can run, keyed by the flow named
- * in that group's catalog descriptor. Everything the two differ in lives here — the four
+ * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
+ * group's catalog descriptor. Everything the two differ in lives here — the four
  * endpoint calls and the copy — because everything else about the dialog is shared, and a
  * group picks its entry by carrying `bridgeAuth` rather than by being named in this file.
  */
@@ -753,6 +768,15 @@ export function ModelsPage() {
   const [speedFor, setSpeedFor] = useState<string | null>(null);
   /** Group currently being speed-tested (provider id); tests run strictly one model at a time. */
   const [speedRunning, setSpeedRunning] = useState<string | null>(null);
+  /**
+   * The running test was asked to stop. A ref for the loop, which reads it between probes; the
+   * state mirror disables the stop button meanwhile, since the probe in flight still has to
+   * come back before the loop can see it.
+   */
+  const speedStopRef = useRef(false);
+  const [speedStopping, setSpeedStopping] = useState(false);
+  /** The balance pinned beside the user name, so its group's header keeps the pin to undo it. */
+  const pinnedBalance = usePinnedBalance();
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
@@ -982,13 +1006,17 @@ export function ModelsPage() {
    * Group speed test: one real request per model, strictly sequential (concurrent probes
    * trip provider rate limits), each result written to the card as it lands. The
    * confirmation dialog (speedFor) has already warned about quota by the time this runs.
+   * A stop takes effect between probes: the one in flight is not abandoned (its request is
+   * already billed), its result lands like the others, and no further probe starts.
    */
   const runSpeedTest = async (providerId: string) => {
     if (!projectId || !rows) return;
     const targets = rows.filter((r) => r.provider === providerId);
+    speedStopRef.current = false;
     setSpeedRunning(providerId);
     try {
       for (const row of targets) {
+        if (speedStopRef.current) break;
         const key = refMapKey(row.provider, row.modelId);
         setSpeedResults((prev) => new Map(prev).set(key, "pending"));
         try {
@@ -1009,7 +1037,13 @@ export function ModelsPage() {
       }
     } finally {
       setSpeedRunning(null);
+      setSpeedStopping(false);
     }
+  };
+
+  const stopSpeedTest = () => {
+    speedStopRef.current = true;
+    setSpeedStopping(true);
   };
 
   /**
@@ -1091,10 +1125,10 @@ export function ModelsPage() {
         draggable: true,
         onDragStart: (e: ReactDragEvent) => {
           // dragstart fires AT the source node, so target === currentTarget exactly when
-          // the header row itself is what the browser picked up. The row also carries the
-          // provider's external key link, which is natively draggable: a drag begun there
-          // is a link drag, and claiming it would overwrite the link's payload and effect
-          // and turn a release over any other header into a silent reorder.
+          // the header row itself is what the browser picked up. A drag begun on anything
+          // inside it that is natively draggable (selected text, a link) belongs to that
+          // element, and claiming it would overwrite its payload and effect and turn a
+          // release over any other header into a silent reorder.
           if (e.target !== e.currentTarget) return;
           e.dataTransfer.setData(MODEL_GROUP_DRAG_MIME, key);
           e.dataTransfer.effectAllowed = "move" as const;
@@ -1153,6 +1187,156 @@ export function ModelsPage() {
   // PKCE one. Null means the open group authorizes some other way (or none).
   const oauthFlow = oauthFor === null ? undefined : providerInfo(oauthFor)?.bridgeAuth?.flow;
   const oauthKeyAuth = oauthFlow === undefined ? null : KEY_AUTH[oauthFlow];
+
+  /** TokenDance's rows, for the banner: shown while the group has models and none of them a key. */
+  const tokenDanceRows = rows?.filter((row) => row.provider === TOKENDANCE_PROVIDER_ID) ?? [];
+  const showTokenDanceBanner = tokenDanceRows.length > 0 && !groupKeyStored(tokenDanceRows);
+
+  /**
+   * One of a group header's actions (group-header.ts decides which, and in what order). Every
+   * button keeps an accessible name of "action group" and a title; on a narrow header the ones
+   * that carry words drop them and keep their icon.
+   */
+  const renderGroupAction = (
+    group: (typeof groups)[number],
+    action: GroupHeaderAction,
+    keyStored: boolean,
+  ): ReactNode => {
+    const { provider } = group;
+    switch (action) {
+      case "balance":
+        return <GroupBalance projectId={projectId} provider={provider} />;
+      case "connect": {
+        // The status is the group holding a stored key, however it got there; the button
+        // runs the group's flow again once it does, for a fresh key or another account.
+        const status = keyStored ? S.models.connectedStatus : S.models.notConnectedStatus;
+        const verb = keyStored ? S.models.reconnect : S.models.oauthKey;
+        return (
+          <span className="flex shrink-0 items-center gap-2">
+            <span
+              data-tooltip={status}
+              className={`${HEADER_TEXT} gap-1 whitespace-nowrap text-gray-500 dark:text-gray-400`}
+            >
+              <span
+                aria-hidden
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${keyStored ? toneDot.success : toneDot.muted}`}
+              />
+              {/* The words give way on a narrow header; the dot and its tooltip stay. */}
+              <span className="sr-only @2xl:not-sr-only">{status}</span>
+            </span>
+            {isOwner && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className={HEADER_BUTTON}
+                disabled={busy}
+                aria-label={`${verb} ${provider.label}`}
+                title={verb}
+                onClick={() => {
+                  keyLanded.current = false;
+                  setOauthFor(group.provider.id);
+                }}
+              >
+                <GlyphIcon d={ICONS.chainLink} size={ICON_SIZE.groupHeaderAction} />
+                <span className={HEADER_LABEL}>{verb}</span>
+              </Button>
+            )}
+          </span>
+        );
+      }
+      case "platformSync":
+        // A stored Penguin Go key enables catalog refresh, but connecting stays a separate
+        // action so the owner can replace the key with another account's.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.platformSync} ${provider.label}`}
+            title={S.models.platformSync}
+            onClick={() => void syncPlatformModels()}
+          >
+            <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.platformSync}</span>
+          </Button>
+        );
+      case "groupKey":
+        // One key written across the whole group, overwriting what each row holds; a single
+        // model still takes its own in the model dialog.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.groupApiKey} ${provider.label}`}
+            title={S.models.groupApiKey}
+            onClick={() => setGroupKeyFor(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.key} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.groupApiKey}</span>
+          </Button>
+        );
+      case "speedTest": {
+        // One icon for both directions: it starts a run (after the confirmation) and, while
+        // its own group's run is going, stops it — the gauge turns into the registry's square in
+        // a circle. Every other group's waits its turn.
+        const running = speedRunning === group.provider.id;
+        const verb = running ? S.models.speedTestStop : S.models.speedTest;
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_SQUARE}
+            disabled={busy || (running ? speedStopping : speedRunning !== null)}
+            aria-label={`${verb} ${provider.label}`}
+            title={verb}
+            onClick={() => (running ? stopSpeedTest() : setSpeedFor(group.provider.id))}
+          >
+            <GlyphIcon
+              d={running ? ICONS.stopCircle : GAUGE_ICON}
+              size={ICON_SIZE.groupHeaderAction}
+            />
+          </Button>
+        );
+      }
+      case "addModel":
+        // Only the groups that take hand-added models: custom, vLLM and user-defined ones. The
+        // rest carry the catalog's presets, which the server enforces too (model_not_addable).
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.addToGroup} ${provider.label}`}
+            title={S.models.addToGroup}
+            onClick={() => setAddingTo(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.addToGroup}</span>
+          </Button>
+        );
+      case "deleteGroup":
+        // Whole-group delete, user-defined groups only: a built-in group is catalog identity
+        // (its rows delete one by one), a user-defined group exists solely through its rows.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.deleteGroup} ${provider.label}`}
+            title={S.models.deleteGroup}
+            onClick={() => setDeleteGroupFor(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.deleteGroup}</span>
+          </Button>
+        );
+    }
+  };
 
   return (
     <PageFrame>
@@ -1230,6 +1414,17 @@ export function ModelsPage() {
         )}
       </PageHeader>
 
+      {/* Above every group, while the TokenDance group has models but no key: its own connect
+          flow, pitched as the way to skip setting keys by hand. */}
+      {isOwner && showTokenDanceBanner && (
+        <TokenDanceBanner
+          onConnect={() => {
+            keyLanded.current = false;
+            setOauthFor(TOKENDANCE_PROVIDER_ID);
+          }}
+        />
+      )}
+
       {rows === null ? (
         <SkeletonList rows={4} />
       ) : rows.length === 0 ? (
@@ -1246,16 +1441,20 @@ export function ModelsPage() {
           {groups.map((group) => {
             const open = isGroupExpanded(expanded, group.provider.id, searching);
             const drag = groupDragProps(group.provider.id);
-            const platformAuthorized =
-              group.provider.id === PENGUIN_GO_PROVIDER_ID &&
-              group.rows.some((row) => Boolean(row.credential?.apiKeyMasked));
+            const keyStored = groupKeyStored(group.rows);
+            const actions = groupHeaderActions(group.provider, {
+              isOwner,
+              keyStored,
+              keyFromEnv: groupKeyFromEnv(group.rows),
+              balancePinned: isPinned(pinnedBalance, projectId, group.provider.id),
+            });
             return (
               // The drop indicator is drawn against the WHOLE group, so "below" reads as
               // after this group and its model cards rather than between the header and
               // its own first card. It needs this wrapper to live in: the section clips
               // its children (overflow-hidden carries the expand/collapse transition).
               // Absolutely positioned, so it costs no layout width and cannot push the
-              // header's up-to-six actions out of a narrow page.
+              // header's actions out of a narrow page.
               <div key={group.provider.id} className="relative">
                 {drag.dropEdge !== null && (
                   <div
@@ -1266,43 +1465,48 @@ export function ModelsPage() {
                   />
                 )}
                 <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                  {/* Group header: collapse button (logo + vendor name + count) + group-level
-                    actions on the right. Actions are separate elements because buttons can't
-                    nest. The row is a size container: the sidebar can narrow it while the
-                    viewport remains desktop-sized, so action labels must respond to this
-                    row's actual width rather than viewport breakpoints. Narrow rows never
-                    hide an action — each one keeps its icon (with aria-label + title) and
-                    only sheds its text label. The row is also the drag handle for
-                    reordering the group (groupDragProps). */}
+                  {/* Group header: collapse button (logo + vendor name + count + chevron) +
+                    the group's actions on the right, in group-header.ts's order. Actions are
+                    separate elements because buttons can't nest. The row is a size
+                    container: the sidebar can narrow it while the viewport remains
+                    desktop-sized, so labels respond to this row's actual width rather than
+                    viewport breakpoints. Narrow rows never hide an action — each one keeps
+                    its icon (with aria-label + title) and only sheds its text. When even the
+                    icons leave the name too little room, the actions move to a line of their
+                    own below it, as one block (the name keeps a floor, so it is never
+                    squeezed to nothing). The row is also the drag handle for reordering the
+                    group (groupDragProps). */}
                   <div
                     {...drag.header}
-                    className={`@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
+                    className={`@container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-1.5 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
                   >
                     <button
                       type="button"
                       aria-expanded={open}
                       onClick={() => toggleGroup(group.provider.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left"
+                      className="flex min-w-[10rem] flex-1 items-center gap-2 px-3 py-2 text-left"
                     >
                       <ProviderLogo
                         provider={group.provider.id}
                         className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
                       />
-                      {/* The vendor name is the only thing in this row allowed to take the
-                          remaining space, and the only one that truncates. Giving it a
-                          minimum width is what made a narrow row overlap: the items beside
-                          it never shrink, so once their widths plus that floor exceeded the
-                          button, the whole group overflowed the box and ran under the
-                          actions. The floor is gone; what gives way instead is the two marks
-                          after it, which drop out on a narrow row (below, and the actions'
-                          labels do the same at @3xl). The name then always has the leftovers
-                          to itself and truncates inside them, so nothing can overlap. */}
+                      {/* The vendor name is the only thing in this button allowed to take
+                          the remaining space, and the only one that truncates. */}
                       <span className="min-w-0 truncate text-sm font-semibold">
                         {group.provider.label}
                       </span>
-                      <span className="hidden shrink-0 whitespace-nowrap font-mono text-xs text-gray-400 @xl:inline">
-                        {S.models.modelCount(group.rows.length)}
+                      {/* The count as the model picker's rail writes it: a bare number, with
+                          the words kept for assistive tech. */}
+                      <span
+                        aria-hidden
+                        className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                      >
+                        {group.rows.length}
                       </span>
+                      <span className="sr-only">{S.models.modelCount(group.rows.length)}</span>
+                      {/* The chevron follows the name and its count rather than the row's far
+                          edge, so it reads as part of the group it folds. */}
+                      <Chevron open={open} className="text-gray-400" />
                       {/* The recommendation rides the collapse bar itself, so it is read with
                           the group's name rather than as a caption floating above the
                           section. `shrink-0` keeps it whole: the vendor name beside it is
@@ -1312,9 +1516,8 @@ export function ModelsPage() {
                         // endorsement is neither, which is the category tone.ts keeps out on
                         // purpose. Unfilled, like the card marks below it: an outline
                         // is enough to make it a pill, and a block of colour on the collapse
-                        // bar competes with the vendor name it is endorsing. It holds on
-                        // longer than the model count beside it and gives way before the
-                        // name does.
+                        // bar competes with the vendor name it is endorsing. It gives way on
+                        // a narrow row before the name does.
                         //
                         // Gold, and the darker end of it: `yellow-700` (#a16207) is the last
                         // rung that still clears 4.5:1 against this bar's gray-50 — 12px bold
@@ -1328,150 +1531,23 @@ export function ModelsPage() {
                         </span>
                       )}
                     </button>
-                    {isOwner && platformAuthorized && (
-                      // A stored Penguin Go key enables catalog refresh, but authorization remains
-                      // a separate action so the owner can replace it with another account.
-                      // Sync leads the group actions and sits immediately before Add model.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.platformSync} ${group.provider.label}`}
-                        title={S.models.platformSync}
-                        onClick={() => void syncPlatformModels()}
-                      >
-                        <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.groupHeaderAction} />
-                        <span className="hidden @3xl:inline">{S.models.platformSync}</span>
-                      </Button>
+                    {actions.length > 0 && (
+                      <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
+                        {actions.map((action) => (
+                          <Fragment key={action}>
+                            {renderGroupAction(group, action, keyStored)}
+                            {/* A rule between the account's figure and the group's status and
+                                actions, drawn only when something follows the balance. */}
+                            {action === "balance" && dividerAfterBalance(actions) && (
+                              <span
+                                aria-hidden
+                                className="h-7 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
+                              />
+                            )}
+                          </Fragment>
+                        ))}
+                      </div>
                     )}
-                    {isOwner && !isVendorGroup(group.provider.id) && (
-                      // Add-model entry point: on every group header whose group decides a
-                      // protocol — custom, user-defined, and the gateways. A vendor group
-                      // carries the built-in catalog and nothing else: it persists no
-                      // client_type, so AgentHub places its entries by the model id alone
-                      // and anything outside the catalog's ids cannot start. The way to add
-                      // a model of one's own is a custom group, which has a protocol to
-                      // pick. Narrow rows never hide a group action — they drop its label
-                      // and keep the icon (same pattern for every action in this row), so
-                      // the button stays reachable.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.addToGroup} ${group.provider.label}`}
-                        title={S.models.addToGroup}
-                        onClick={() => setAddingTo(group.provider.id)}
-                      >
-                        <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
-                        <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
-                      </Button>
-                    )}
-                    {isOwner &&
-                      (group.provider.oauth || group.provider.bridgeAuth !== undefined) && (
-                        // Authorize-a-key action: rendered off the group's own catalog
-                        // descriptor, so a provider gains this button by publishing a flow
-                        // rather than by being named here — `oauth` for the ones whose PKCE
-                        // round-trip the App runs itself, `bridgeAuth` for the ones an
-                        // authorization bridge runs for it. Same narrow-row rule as its
-                        // neighbours — the label goes, the icon and its names stay. It leads the
-                        // manual key action: where a group can mint a key, that is the shorter path.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.oauthKey} ${group.provider.label}`}
-                          title={S.models.oauthKey}
-                          onClick={() => setOauthFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={SIGN_IN_ICON} size={ICON_SIZE.groupHeaderAction} />
-                          <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
-                        </Button>
-                      )}
-                    {isOwner && group.provider.id !== "custom" && (
-                      // Bulk key action: icon-only while this row is narrow, labeled from
-                      // @3xl up. The button itself never disappears — aria-label + title
-                      // carry the name while the visible label is dropped.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.groupApiKey} ${group.provider.label}`}
-                        title={S.models.groupApiKey}
-                        onClick={() => setGroupKeyFor(group.provider.id)}
-                      >
-                        <GlyphIcon d={ICONS.key} size={ICON_SIZE.groupHeaderAction} />
-                        <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
-                      </Button>
-                    )}
-                    {isOwner && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy || speedRunning !== null}
-                        aria-label={`${S.models.speedTest} ${group.provider.label}`}
-                        title={
-                          speedRunning === group.provider.id
-                            ? S.models.speedPending
-                            : S.models.speedTest
-                        }
-                        onClick={() => setSpeedFor(group.provider.id)}
-                      >
-                        <GlyphIcon d={GAUGE_ICON} size={ICON_SIZE.groupHeaderAction} />
-                        {/* Compact rows keep this accessible action icon-only. */}
-                        <span className="hidden @3xl:inline">
-                          {speedRunning === group.provider.id
-                            ? S.models.speedPending
-                            : S.models.speedTest}
-                        </span>
-                      </Button>
-                    )}
-                    {isOwner && !MODEL_PROVIDERS.some((p) => p.id === group.provider.id) && (
-                      // Whole-group delete, user-defined groups only: a built-in group is
-                      // catalog identity (its rows delete one by one), a user-defined group
-                      // exists solely through its rows and can go as a unit.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.deleteGroup} ${group.provider.label}`}
-                        title={S.models.deleteGroup}
-                        onClick={() => setDeleteGroupFor(group.provider.id)}
-                      >
-                        <GlyphIcon d={ICONS.trash} size={ICON_SIZE.groupHeaderAction} />
-                        <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
-                      </Button>
-                    )}
-                    {group.provider.apiKeyUrl && (
-                      // External link: its label is the last one admitted as space grows
-                      // (@4xl); below that only the link's external glyph is left, with a
-                      // small padding bump for a usable touch target.
-                      <Link
-                        href={group.provider.apiKeyUrl}
-                        external
-                        variant="standalone"
-                        aria-label={`${S.models.getApiKey} ${group.provider.label}`}
-                        data-tooltip={S.models.getApiKey}
-                        className="shrink-0 whitespace-nowrap p-1 text-xs @4xl:p-0"
-                      >
-                        <span className="hidden @4xl:inline">{S.models.getApiKey}</span>
-                      </Link>
-                    )}
-                    {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      aria-label={group.provider.label}
-                      onClick={() => toggleGroup(group.provider.id)}
-                      className="shrink-0 p-1.5"
-                    >
-                      <Chevron open={open} className="text-gray-400" />
-                    </button>
                   </div>
 
                   {/* Expand/collapse: grid-template-rows goes between 0fr and 1fr, with the
@@ -1480,7 +1556,7 @@ export function ModelsPage() {
                     (and stills it under reduced motion). Content stays in the DOM while
                     collapsed (height is 0), so both directions animate. The section keeps its
                     own head rather than being a CollapsibleSection: the head is the group's
-                    drag handle and a size container, and its chevron trails the actions. */}
+                    drag handle and a size container, and its chevron follows the group's name. */}
                   <div
                     data-layout-motion
                     className={`grid ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
@@ -3008,7 +3084,14 @@ function ModelDialog({
             set({ provider, clientType: clientTypeAfterProviderChange(provider, form.clientType) });
           }}
         >
-          {MODEL_PROVIDERS.map((p) => (
+          {/* Built-in groups: the ones that take hand-added models (custom, vLLM), and the
+              group the row was loaded in — a row already in a gateway or vendor group may stay
+              there, but no other row may be moved into one (the server refuses that as an
+              addition, model_not_addable). The current value stays listed so it is valid. */}
+          {MODEL_PROVIDERS.filter(
+            (p) =>
+              isAddableGroup(p.id) || p.id === row?.original?.provider || p.id === form.provider,
+          ).map((p) => (
             <option key={p.id} value={p.id}>
               {p.label}
             </option>

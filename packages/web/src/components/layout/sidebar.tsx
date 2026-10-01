@@ -203,8 +203,11 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { prepareNewChatDraft } from "../../features/chat/new-chat";
+import { docksOnScreen, openPanel } from "../../features/dock/dock-state";
+import { dockWorkspace } from "../../features/dock/dock-terminal";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { UserMenu } from "./user-menu";
+import { PinnedBalanceBadge } from "../../features/models/group-balance";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
@@ -1317,7 +1320,8 @@ export function Sidebar({
     agentId,
     workspace,
     machineId,
-  }: { agentId?: string; workspace?: string; machineId?: string } = {}) => {
+    browseFiles,
+  }: { agentId?: string; workspace?: string; machineId?: string; browseFiles?: boolean } = {}) => {
     // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
     // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
     // so this click always lands on an empty composer and never silently shelves content;
@@ -1330,9 +1334,28 @@ export function Sidebar({
       // different directory on every machine, so handing the composer one without the other
       // is handing it a directory it cannot find.
       ...(workspace !== undefined ? { workspace, machineId } : {}),
+      // The chat page opens the dock's Files panel on arrival (a group's "Browse files").
+      ...(browseFiles === true ? { browseFiles } : {}),
     };
     navigate(`/chat/${DRAFT_SESSION_ID}`, Object.keys(state).length > 0 ? { state } : undefined);
     onNavigate?.();
+  };
+
+  /**
+   * A Workspace group's "Browse files": the dock's Files panel on that directory. A page already
+   * on it — the open conversation's Workspace, or the folder the draft picked, on the same
+   * machine — only brings the panel up. Anywhere else lands on a new-chat draft for the folder,
+   * the group's "+", whose Files panel is addressed by the directory itself: the dock belongs to
+   * the conversation on screen, so a folder another conversation is in has no panel here.
+   */
+  const browseFiles = (path: string, machineId: string | null) => {
+    const here = dockWorkspace();
+    if (docksOnScreen() && here !== null && here.path === path && here.machineId === machineId) {
+      openPanel("workspace");
+      onNavigate?.();
+      return;
+    }
+    newChat({ workspace: path, ...(machineId ? { machineId } : {}), browseFiles: true });
   };
 
   /** Confirmed parked-draft deletion: drops the entry; a deleted draft that is open falls back to the plain new-chat page. */
@@ -1958,6 +1981,7 @@ export function Sidebar({
             </UserAvatar>
           }
           name={user?.displayName ?? user?.userId}
+          trailing={<PinnedBalanceBadge />}
           {...(user?.isAdmin ? { role: S.auth.admin } : {})}
         />
       )}
@@ -2669,19 +2693,25 @@ export function Sidebar({
                         >
                           <Icon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
                         </button>
-                        {/* Manually-added (registry-backed) Workspaces only: rename-alias /
-                              remove-from-sidebar overflow, to the right of the "+" (session-
-                              derived groups have no registry entry for these to act on). */}
-                        {fullPath !== null && registeredKeys.has(group.key) && (
+                        {/* A group that is one directory (not the merged temporary group):
+                              the overflow right of the "+" — browse its files, and, for a
+                              manually-added (registry-backed) Workspace, rename the alias or
+                              remove it from the sidebar (session-derived groups have no
+                              registry entry for those two to act on). */}
+                        {fullPath !== null && (
                           <GroupOverflowMenu
-                            onRename={() => openRenameWorkspace(fullPath, group.machineId)}
-                            onDelete={() =>
-                              setDeletingWorkspace({
-                                path: fullPath,
-                                machineId: group.machineId,
-                                label: group.label,
-                              })
-                            }
+                            onBrowse={() => browseFiles(fullPath, group.machineId)}
+                            {...(registeredKeys.has(group.key)
+                              ? {
+                                  onRename: () => openRenameWorkspace(fullPath, group.machineId),
+                                  onDelete: () =>
+                                    setDeletingWorkspace({
+                                      path: fullPath,
+                                      machineId: group.machineId,
+                                      label: group.label,
+                                    }),
+                                }
+                              : {})}
                           />
                         )}
                       </>
@@ -3039,12 +3069,21 @@ function SidebarSessionRow({
 }
 
 /**
- * Registry-backed workspace group's overflow (… to the right of the header's "+"):
- * 重命名工作区 / 删除工作区 as small Menu rows, like the session row's menu. Sits among the
- * header's action buttons — outside the header's collapse toggle, so opening it never
- * expands/collapses the group. Body-portaled like every menu inside the scroller.
+ * A workspace group's overflow (… to the right of the header's "+"): 打开文件浏览, then — for a
+ * registry-backed group — 重命名工作区 / 删除工作区, as small Menu rows like the session row's
+ * menu. Sits among the header's action buttons — outside the header's collapse toggle, so
+ * opening it never expands/collapses the group. Body-portaled like every menu inside the
+ * scroller.
  */
-function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDelete: () => void }) {
+function GroupOverflowMenu({
+  onBrowse,
+  onRename,
+  onDelete,
+}: {
+  onBrowse: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   /** Close first, then act (the rename modal opens on top; the delete is immediate). */
   const item = (fn: () => void) => () => {
@@ -3056,7 +3095,7 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
       open={open}
       setOpen={setOpen}
       portal={{ direction: "down", align: "right" }}
-      menuClass="w-32"
+      menuClass="w-max min-w-32"
       className="shrink-0"
       button={
         /* No hover pill on this trigger (user: color, not background, should carry the
@@ -3079,13 +3118,22 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
       }
     >
       <Menu density="sm">
-        <MenuItem glyph={ICONS.pencil} label={S.chat.renameWorkspace} onSelect={item(onRename)} />
         <MenuItem
-          glyph={ICONS.trash}
-          label={S.chat.deleteWorkspace}
-          danger
-          onSelect={item(onDelete)}
+          glyph={ICONS.folderOpen}
+          label={S.chat.browseWorkspaceFiles}
+          onSelect={item(onBrowse)}
         />
+        {onRename !== undefined && (
+          <MenuItem glyph={ICONS.pencil} label={S.chat.renameWorkspace} onSelect={item(onRename)} />
+        )}
+        {onDelete !== undefined && (
+          <MenuItem
+            glyph={ICONS.trash}
+            label={S.chat.deleteWorkspace}
+            danger
+            onSelect={item(onDelete)}
+          />
+        )}
       </Menu>
     </Dropdown>
   );

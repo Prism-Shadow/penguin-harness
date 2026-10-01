@@ -444,6 +444,7 @@ export function SidebarSwitcherButton({
 export function SidebarAccountButton({
   avatar,
   name,
+  trailing,
   role,
   expanded,
   onClick,
@@ -452,6 +453,8 @@ export function SidebarAccountButton({
 }: {
   avatar: ReactNode;
   name: ReactNode;
+  /** What the app shows after the name, which the name truncates before: a pinned balance. */
+  trailing?: ReactNode;
   /** A short role after the name ("Admin"). */
   role?: string;
   /** The account menu is open. */
@@ -474,6 +477,7 @@ export function SidebarAccountButton({
     >
       {avatar}
       <span className="min-w-0 flex-1 truncate font-sans text-sm font-medium">{name}</span>
+      {trailing}
       {role !== undefined && <span className="text-xs text-fg-subtle">{role}</span>}
     </button>
   );

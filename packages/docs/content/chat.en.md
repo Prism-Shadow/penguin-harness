@@ -226,7 +226,7 @@ To return to the newest message, select **Jump to latest**. In a longer conversa
 
 ## Use side panels
 
-The chat page has two docks for panels: the right sidebar and the bottom panel. The **Right sidebar** and **Bottom panel** buttons at the top right of the chat toolbar show and hide them. An empty dock offers a list of panels to open; **Add panel** adds another, and a panel can move to the other dock. Panels become available once the conversation has started.
+The chat page has two docks for panels: the right sidebar and the bottom panel. The **Right sidebar** and **Bottom panel** buttons at the top right of the chat toolbar show and hide them. An empty dock offers a list of panels to open; **Add panel** adds another, and a panel can move to the other dock. Panels become available once the conversation has started, except **Files**: on the new-chat page it browses the folder picked for the new conversation, from the **Files** button right of the Workspace pill (see [Files panel](/files#open-the-files-panel)).
 
 | Panel | What it shows |
 | --- | --- |

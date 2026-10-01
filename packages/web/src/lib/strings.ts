@@ -1444,9 +1444,9 @@ export const zh = {
       {
         key: "openrouter",
         label: "OpenRouter 热门模型",
-        description: "读取模型列表页，加为一个分组",
+        description: "读取模型列表页，加为一个自建分组",
         prompt:
-          "把 https://openrouter.ai/models 上的热门模型加为一个 OpenRouter 分组（先问我要 API key）。",
+          "把 https://openrouter.ai/models 上的热门模型加为一个自建分组（先问我要 API key）。",
       },
       {
         key: "vllm",
@@ -1481,6 +1481,8 @@ export const zh = {
     platformSync: "同步",
     homepage: "模型主页",
     speedTest: "测速",
+    /** The same icon button while its group's run is going: stops after the probe in flight. */
+    speedTestStop: "停止测速",
     speedTestTitle: "分组测速",
     speedTestConfirm: (n: number): string =>
       `将对该分组的 ${n} 个模型逐个发起一次真实请求,测量首 token 延迟(TTFT)与输出速率(TPS),会消耗少量 API 额度。是否继续?`,
@@ -1622,7 +1624,7 @@ export const zh = {
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "手动设置密钥",
+    groupApiKey: "填写密钥",
     groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
     groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
     getApiKey: "前往密钥管理",
@@ -1630,7 +1632,35 @@ export const zh = {
     groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
     // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
     // 不透明的 flow id 和状态。
-    oauthKey: "自动获取密钥",
+    oauthKey: "连接",
+    /** The same button once the group holds a key: the flow again, for a fresh key or another account. */
+    reconnect: "重新连接",
+    /** The small status beside it: whether the group holds a stored key, however that key got there. */
+    connectedStatus: "连接成功",
+    notConnectedStatus: "未连接",
+    /**
+     * A group's account balance in its header (and pinned beside the user name): the tooltip
+     * names the group, the vendor's own figures and the time of the reading. `amounts` and
+     * `time` are already formatted.
+     */
+    balanceTitle: (label: string, amounts: string, time: string): string =>
+      `${label} 余额 ${amounts}，查询于 ${time}`,
+    balanceRefreshHint: "点击同步",
+    /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
+    balanceUnavailable: "账户当前不可用，余额可能不足",
+    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    balanceErrors: {
+      no_key: "该分组没有可用的 API key，无法查询余额",
+      upstream_failed: "服务商没有返回余额，可点击重试",
+      unsupported: "该分组不支持查询余额",
+    } as Record<string, string | undefined>,
+    /** Appended when the vendor answered with an HTTP error. */
+    balanceStatus: (status: number): string => `（服务商返回 HTTP ${status}）`,
+    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
+    pinBalance: "常驻到用户名旁",
+    unpinBalance: "取消常驻",
+    /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
+    tokenDanceBanner: "连接 TokenDance 钱包，无需手动配置模型密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
     oauthIntro: (label: string, n: number): string =>
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
@@ -2449,12 +2479,14 @@ export const zh = {
     sortManual: "手动排序",
     sortRecent: "最近更新",
     newWorkspaceEntity: "新建工作区",
-    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
     workspaceMenu: "工作区选项",
     renameWorkspace: "重命名工作区",
     renameWorkspaceLabel: "名称",
     renameWorkspaceHint: "留空则使用目录名",
     deleteWorkspace: "删除工作区",
+    /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
+    browseWorkspaceFiles: "打开文件浏览",
     deleteWorkspaceConfirm: (name: string) =>
       `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
@@ -3528,6 +3560,8 @@ Benchmark：
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
+    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
+    stopEditing: "退出编辑",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
@@ -3538,7 +3572,8 @@ Benchmark：
     renameLabel: "新的路径",
     renameHint: "相对 Workspace 根目录；路径中不存在的目录会自动创建",
     renameConfirm: "移动",
-    renameTargetExists: (path: string): string => `${path} 已存在，未做改动。`,
+    /** A move or a New landed on a name that is taken: nothing was written. */
+    targetExists: (path: string): string => `${path} 已存在，未做改动。`,
     renamed: (name: string): string => `已移动到 ${name}`,
     deleteTitle: "删除文件",
     deleteBody: (name: string): string => `删除 ${name}？该文件不会进入回收站。`,
@@ -3553,6 +3588,18 @@ Benchmark：
     conflictBody: (name: string): string =>
       `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
     overwriteAnyway: "仍然覆盖",
+    /** The tree header's New menu, a folder's menu and the blank space under the tree. */
+    newMenu: "新建",
+    newTextFile: "新建文本文件",
+    newFolder: "新建文件夹",
+    newFileName: "文件名",
+    newFolderName: "文件夹名",
+    /** Formatting, kept on screen while typing: where the entry goes, and what a `/` does. */
+    createHint: (dir: string): string => `建在 ${dir} 下；名称里的 / 会同时建出中间的文件夹`,
+    createConfirm: "创建",
+    created: (name: string): string => `已创建 ${name}`,
+    /** The new-chat draft's Files panel and its toggle, while the Workspace is a temporary one. */
+    draftTemporary: "临时工作区在发送第一条消息时才创建。选一个文件夹，即可浏览其中的文件。",
   },
 
   usage: {
@@ -4805,6 +4852,7 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       model_not_routable:
         "该模型 ID 无法按厂商分组的协议路由。厂商分组只承载内置模型；请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",
