@@ -1999,6 +1999,15 @@ router
   .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
 
 // ---------------------------------------------------------------------------------------------
+// Port forwarding: the demo holds no machine session, so it lists none and opens none.
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/port-forwards", () => ({ forwards: [] }))
+  .post("/api/port-forwards", () => readOnly("forward a port"))
+  .delete("/api/port-forwards/:id", () => readOnly("remove a port forward"));
+
+// ---------------------------------------------------------------------------------------------
 // Agent packages: publishing to a gist and installing from a source both reach GitHub or a
 // registry, which the demo has no server for.
 // ---------------------------------------------------------------------------------------------

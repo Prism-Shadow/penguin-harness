@@ -13,16 +13,20 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { PortForwardInfo } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  CloseIcon,
+  CopyButton,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+  noAutofill,
+} from "@prismshadow/penguin-ui";
 import { createPortForward, deletePortForward, listPortForwards } from "../../api/endpoints";
-import { Button } from "../../components/ui/button";
-import { CopyButton } from "../../components/ui/copy-button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon, EXTERNAL_LINK_ICON } from "../../components/ui/icons";
-import { noAutofill } from "../../components/ui/input";
-import { Skeleton } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { parsePort } from "./port-forward-facts";
@@ -196,7 +200,7 @@ function MachinePorts({
                         aria-label={S.ports.open}
                         className={ROW_BUTTON}
                       >
-                        <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.inlineGlyph} />
+                        <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.inlineGlyph} />
                       </a>
                       <button
                         type="button"

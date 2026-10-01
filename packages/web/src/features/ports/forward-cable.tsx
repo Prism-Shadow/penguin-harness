@@ -14,7 +14,7 @@
  */
 import type { ReactNode } from "react";
 import type { PortForwardInfo } from "@prismshadow/penguin-server/api";
-import { ICON_GAP } from "../../lib/icon-scale";
+import { ICON_GAP } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";

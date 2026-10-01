@@ -10,9 +10,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { MachineInfo, PortForwardInfo } from "@prismshadow/penguin-server/api";
+import { CloseIcon, Skeleton } from "@prismshadow/penguin-ui";
 import { deletePortForward, getMachines, listPortForwards } from "../../api/endpoints";
-import { CloseIcon } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
