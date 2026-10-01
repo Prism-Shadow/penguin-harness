@@ -155,7 +155,7 @@ describe("the column", () => {
     expect(bare).toContain("#105");
     expect(bare).toContain("Right column");
     expect(bare).toContain(`>${S.company.roadmaps.statusUnknown}</span>`);
-    expect(bare).toContain(`title="${S.company.roadmaps.statusUnknownHint}"`);
+    expect(bare).toContain(`data-tooltip="${S.company.roadmaps.statusUnknownHint}"`);
     expect(bare).not.toContain(S.company.proposals.status.ready);
     // With the list back, the same row wears the proposal's own status and no fallback.
     expect(html).not.toContain(S.company.roadmaps.statusUnknown);

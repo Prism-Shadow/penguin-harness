@@ -171,9 +171,11 @@ export function RoadmapDetailView({
   const roadmapItemRows = rows.filter((row) => row.kind === "roadmap");
   const list = (title: string, items: RoadmapRow[]) => (
     <section className="mt-4">
-      <Text variant="eyebrow" as="h3" className="mb-1.5">
-        {title}
-      </Text>
+      <h3 className="mb-1.5">
+        <Text variant="eyebrow" as="span">
+          {title}
+        </Text>
+      </h3>
       <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
         {items.map((row) => (
           <RoadmapItemRow
@@ -294,7 +296,7 @@ function RoadmapItemRow({
             // The proposal is not in the organization's list: the list has not loaded (a failed
             // read, a machine link that dropped) or it does not carry this number. The row still
             // says it has a status, one the column could not read, instead of drawing none.
-            <span title={t.statusUnknownHint}>
+            <span data-tooltip={t.statusUnknownHint}>
               <Badge tone="gray">{t.statusUnknown}</Badge>
             </span>
           )}
