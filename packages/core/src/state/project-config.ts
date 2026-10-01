@@ -76,7 +76,7 @@ export interface ModelEntry {
   context_window?: number;
   /**
    * MMSP client type (`openai-responses` / `ant-messages` / `openai-chat` /
-   * `gemini-generate-content` / `anthropic-official` / …); when absent, MMSP routes the
+   * `google-genai` / `anthropic-official` / …); when absent, MMSP routes the
    * request id (`model_id`) by the vendor family it begins with (`gpt-`, `claude-`,
    * `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Third-party endpoints use one of
    * the generic protocol clients: `openai-responses` (OpenAI Responses API), `ant-messages`
@@ -291,13 +291,13 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
 
 /**
  * The client types AgentHub 0.4 named after model generations, matched the way its router
- * matched them (anywhere in the lowercased value, in its branch order), and the MMSP 0.5.0
+ * matched them (anywhere in the lowercased value, in its branch order), and the MMSP 0.5
  * client that speaks the same wire protocol: the 0.4 Gemini client spoke generateContent,
- * which the compatible client still does (and what the Penguin Go relay serves); the rest
- * became their vendor's official client. No 0.5.0 name matches any of these.
+ * which the compatible `google-genai` client still does (and what the Penguin Go relay
+ * serves); the rest became their vendor's official client. No 0.5 name matches any of these.
  */
 const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
-  [/gemini-(3|embedding)/, "gemini-generate-content"],
+  [/gemini-(3|embedding)/, "google-genai"],
   [/^(?=.*claude).*(4-[678]|-5)/, "anthropic-official"],
   [/gpt-(5\.[456]|6)/, "openai-official"],
   [/glm-5/, "zai-official"],

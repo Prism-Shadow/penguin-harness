@@ -1084,7 +1084,7 @@ describe("project-config round trip", () => {
     const typeOf = (provider: string, modelId: string): string | undefined =>
       getModel(loaded, { provider, model_id: modelId })?.client_type;
     expect(typeOf("deepseek", "deepseek-flash")).toBe("deepseek-official");
-    expect(typeOf("penguin-go", "gemini-3.8-flash")).toBe("gemini-generate-content");
+    expect(typeOf("penguin-go", "gemini-3.8-flash")).toBe("google-genai");
     expect(typeOf("minimax", "MiniMax-M3")).toBe("minimax-official");
     expect(typeOf("custom", "my-claude")).toBe("anthropic-official"); // matched case-insensitively
     expect(typeOf("custom", "kept")).toBe("openai-responses"); // a 0.5.0 name passes through
@@ -1094,7 +1094,7 @@ describe("project-config round trip", () => {
     // The file was rewritten with the new names and nothing else lost.
     const rewritten = await fs.readFile(file, "utf8");
     expect(rewritten).toContain('client_type = "deepseek-official"');
-    expect(rewritten).toContain('client_type = "gemini-generate-content"');
+    expect(rewritten).toContain('client_type = "google-genai"');
     expect(rewritten).toContain('client_type = "minimax-official"');
     expect(rewritten).toContain('client_type = "anthropic-official"');
     expect(rewritten).not.toMatch(/deepseek-v4|gemini-3\.8"|minimax-m3|Claude-5/);

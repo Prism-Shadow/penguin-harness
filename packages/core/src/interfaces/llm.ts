@@ -29,7 +29,7 @@ export interface GenerativeModelConfig {
   baseUrl?: string;
   /**
    * MMSP client type (`openai-chat` / `openai-responses` / `ant-messages` /
-   * `gemini-generate-content` / `anthropic-official` / …; the bare `openai` spelling is a
+   * `google-genai` / `anthropic-official` / …; the bare `openai` spelling is a
    * deprecated alias of `openai-chat`). If omitted, MMSP routes by the vendor family
    * `modelId` begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`,
    * `minimax-`); custom-named models or third-party models using an OpenAI protocol must

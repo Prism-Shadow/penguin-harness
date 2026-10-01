@@ -35,7 +35,7 @@ export const DEFAULT_CUSTOM_CLIENT_TYPE = "openai-chat";
  * Whether a stored client_type belongs to the generic protocol family the picker can
  * represent: the three protocol clients, the bare `openai` alias (legacy default for
  * custom groups; routes to openai-chat), or empty. Any other explicit type (a vendor client
- * such as `deepseek-official`, another compatible client such as `gemini-generate-content`,
+ * such as `deepseek-official`, another compatible client such as `google-genai`,
  * or a legacy vendor-pinned config like `deepseek-v4` that MMSP no longer knows) keeps the
  * read-only note instead — showing the picker there would silently rewrite it.
  */

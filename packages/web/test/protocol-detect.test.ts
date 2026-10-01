@@ -47,7 +47,7 @@ describe("isGenericProtocolClientType", () => {
     // Official clients, compatible clients outside the trio, and a pre-0.5.0 vendor name.
     expect(isGenericProtocolClientType("deepseek-official")).toBe(false);
     expect(isGenericProtocolClientType("anthropic-official")).toBe(false);
-    expect(isGenericProtocolClientType("gemini-generate-content")).toBe(false);
+    expect(isGenericProtocolClientType("google-genai")).toBe(false);
     expect(isGenericProtocolClientType("openai-chat-vllm-adapter")).toBe(false);
     expect(isGenericProtocolClientType("minimax-m3")).toBe(false);
   });
@@ -230,7 +230,7 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
       envHintKeyFor(
         "penguin-go",
         "gemini-3.8-flash",
-        "gemini-generate-content",
+        "google-genai",
         "https://token.penguin.ooo/api",
       ),
     ).toBe("PENGUIN_GO_API_KEY");
@@ -263,12 +263,7 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
       ["anthropic", "claude-sonnet-4-6", "", ""],
       ["anthropic", "claude-sonnet-4-6", "", "https://proxy.example/anthropic"],
       ["tokendance", "glm-5.3", "openai-chat", "https://tokendance.space/gateway/v1"],
-      [
-        "penguin-go",
-        "gemini-3.8-flash",
-        "gemini-generate-content",
-        "https://token.penguin.ooo/api",
-      ],
+      ["penguin-go", "gemini-3.8-flash", "google-genai", "https://token.penguin.ooo/api"],
     ];
     for (const [provider, modelId, clientType, baseUrl] of cases) {
       expect(envHintKeyFor(provider, modelId, clientType, baseUrl), `${provider}/${modelId}`).toBe(

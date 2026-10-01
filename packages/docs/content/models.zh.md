@@ -365,7 +365,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | --- | --- |
 | OpenAI 协议（`openai-official`、`openai-responses`、`openai-chat`、`openai-chat-vllm-adapter`）、`minimax-official`、`gemini-official`（Interactions API） | 以 `service_tier: "priority"` 发送 |
 | Anthropic 协议（`anthropic-official`、`ant-messages`） | 以 `speed: "fast"` 发送，外加 beta 请求头 |
-| `zai-official`、`moonshot-official`、`deepseek-official`、`gemini-generate-content`、OpenAI embeddings | 拒绝，不显示开关 |
+| `zai-official`、`moonshot-official`、`deepseek-official`、`google-genai`、OpenAI embeddings | 拒绝，不显示开关 |
 | Bedrock 上的 `anthropic-official`，或 Claude 4.6、Sonnet 5.5、Fable 5.1 的 id | 拒绝，不显示开关 |
 
 路由跟随条目的 `client_type`；没有设置时，由 `model_id` 开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）指定该厂商的官方客户端。因此同一个上游 id 可能落到不同的客户端。添加在网关分组下的 Kimi 模型（`client_type = "openai-chat"`）可以使用快速模式，同一个 id 路由到 Moonshot 的官方客户端就不行。你自己 base URL 背后的 custom 模型会保留开关：它走 OpenAI 协议，背后很可能就是 OpenAI，但第三方服务器完全可以接受这个参数，然后照常按标准层级提供服务。
@@ -373,7 +373,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 开关无法替你确认两件事：
 
 - Anthropic 的快速模式目前是限量研究预览。在你的组织获得访问权限之前，请求会返回 429 限流错误。对 Anthropic 协议的模型，确认提示里会说明这一点。
-- 服务端的环境可能把模型路由到开关没有预料到的地方：`CLIENT_TYPE` 为所有没有 `client_type` 的条目指定客户端；`ANTHROPIC_BASE_URL` 为没有 base URL 的 Claude 条目提供端点（`bedrock://` 端点没有快速层级）；Vertex AI 服务账号 key 会把 Gemini 模型送到 generateContent，那里同样没有快速层级。
+- 服务端的环境可能把模型路由到开关没有预料到的地方：`CLIENT_TYPE` 为所有没有 `client_type` 的条目指定客户端；`ANTHROPIC_BASE_URL` 为没有 base URL 的 Claude 条目提供端点（`bedrock://` 端点没有快速层级）。
 
 > [!NOTE]
 > 如果请求仍然落到拒绝 `fast_mode` 的客户端，MMSP 会在发出任何网络请求之前直接拒绝。这一轮对话会立即结束，并给出供应商的消息和指向设置的提示。必定重复出现的拒绝不会重试。

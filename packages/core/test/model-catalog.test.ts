@@ -202,7 +202,7 @@ describe("model-catalog", () => {
     expect(
       penguinGoModels
         .filter((model) => model.modelId.startsWith("gemini-"))
-        .every((model) => model.clientType === "gemini-generate-content"),
+        .every((model) => model.clientType === "google-genai"),
     ).toBe(true);
     expect(
       penguinGoModels
@@ -1516,6 +1516,8 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     expect(resolveModelEnv("deepseek-v4-pro", "ant-messages")?.envBaseUrlKey).toBe(
       "ANTHROPIC_BASE_URL",
     );
+    expect(resolveModelEnv("any-model", "google-genai")?.envKey).toBe("GEMINI_API_KEY");
+    // MMSP 0.5.1 keeps google-genai's 0.5.0 name as an alias.
     expect(resolveModelEnv("any-model", "gemini-generate-content")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("any-model", "openai-embedding")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("Qwen/Qwen3.8", "openai-chat-vllm-adapter")?.envKey).toBe(
@@ -1747,7 +1749,7 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
     expect(fastModeProtocol("kimi-k2.5")).toBeUndefined();
     expect(fastModeProtocol("deepseek-v4-pro")).toBeUndefined();
     expect(fastModeProtocol("deepseek-flash", "deepseek-official")).toBeUndefined();
-    expect(fastModeProtocol("gemini-3.8-flash", "gemini-generate-content")).toBeUndefined();
+    expect(fastModeProtocol("gemini-3.8-flash", "google-genai")).toBeUndefined();
     expect(fastModeProtocol("text-embedding-3-large", "openai-embedding")).toBeUndefined();
     // OpenAI's embedding ids route to its Embeddings API even without a pin.
     expect(fastModeProtocol("text-embedding-3-large")).toBeUndefined();
@@ -2203,7 +2205,7 @@ describe("modelEnvFallback / resolveModelCredential (a vendor key from the envir
         {
           provider: "penguin-go",
           modelId: "gemini-3.8-flash",
-          clientType: "gemini-generate-content",
+          clientType: "google-genai",
           apiKey: "pg",
         },
         VENDOR_ENV,

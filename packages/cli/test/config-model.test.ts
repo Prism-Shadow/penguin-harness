@@ -463,7 +463,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     ) as { models: Array<Record<string, unknown>> };
     const by = (p: string, id: string) =>
       parsed.models.find((m) => m.provider === p && m.model_id === id)!;
-    expect(by("penguin-go", "gemini-3.8-flash").client_type).toBe("gemini-generate-content");
+    expect(by("penguin-go", "gemini-3.8-flash").client_type).toBe("google-genai");
     expect(by("penguin-go", "gemini-3.8-flash").base_url).toBe("https://token.penguin.ooo/api");
     expect(by("deepseek", "deepseek-flash").client_type).toBeUndefined();
     expect(by("deepseek", "deepseek-flash").base_url).toBeUndefined();

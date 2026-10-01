@@ -1,7 +1,7 @@
 /**
  * Protocol-path suffix for the config dialog's base URL field: the path the MMSP client
  * appends to a custom base URL, shown inside the field so the user knows which endpoint
- * shape the URL must serve. Verified against the MMSP 0.5.0 clients and the SDKs they
+ * shape the URL must serve. Verified against the MMSP 0.5.1 clients and the SDKs they
  * construct:
  * - `anthropic-official` (`@anthropic-ai/sdk`): POST {base}/v1/messages — the SDK's default
  *   base URL (https://api.anthropic.com) carries no /v1; the request path does, so a custom
@@ -14,10 +14,9 @@
  *   what every OpenRouter row pins, OpenRouter serving the Responses API for all of its
  *   upstreams; `openai-embedding` serves the Embeddings shape.
  * - `gemini-official` (`@google/genai`): the Interactions API, {base}/v1beta/interactions.
- *   `gemini-generate-content` (what the Penguin Go rows pin) speaks generateContent,
- *   {base}/v1beta/models/<id>:… — the SDK joins base URL + API version (v1beta) + the
- *   resource path in both cases. A Vertex service-account key also switches
- *   `gemini-official` to generateContent, which a display keyed on the config cannot see.
+ *   The compatible `google-genai` client (what the Penguin Go rows pin; `gemini-generate-content`
+ *   is its alias) speaks generateContent, {base}/v1beta/models/<id>:… — the SDK joins base URL
+ *   + API version (v1beta) + the resource path in both cases.
  * - `deepseek-official` and `minimax-official`: each vendor's Responses API,
  *   POST {base}/responses (DeepSeek's default base URL https://api.deepseek.com carries no
  *   /v1 and the request path adds none; MiniMax's https://api.minimax.io/v1 already ends in

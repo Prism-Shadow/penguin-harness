@@ -1785,7 +1785,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Penguin Go (mixed-protocol relay). The model ids are the generation rows
   // provisioned by Penguin Go's generic-client authorization contract. Both
-  // protocols share the /api base: the generateContent client appends /v1beta itself, while
+  // protocols share the /api base: the google-genai client appends /v1beta itself, while
   // DeepSeek's Responses client appends /responses. The rows carry Penguin Go's current list
   // prices so a new Project is complete before its first authorization, and no `discount`:
   // the platform delivers any promotion it runs at authorization and Sync, and both stay
@@ -1799,7 +1799,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "gemini-generate-content",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1809,7 +1809,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "gemini-generate-content",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1819,7 +1819,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "gemini-generate-content",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1829,7 +1829,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 9),
     supportsVision: true,
-    clientType: "gemini-generate-content",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1839,7 +1839,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
-    clientType: "gemini-generate-content",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1849,7 +1849,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.025, 0.25, 1.5),
     supportsVision: true,
-    clientType: "gemini-generate-content",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1859,7 +1859,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.2, 2, 12),
     supportsVision: true,
-    clientType: "gemini-generate-content",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -3029,6 +3029,8 @@ export const MMSP_CLIENTS: Readonly<
   "openai-chat-vllm-adapter": { env: "OPENAI", path: "/chat/completions", fastMode: "openai" },
   "openai-embedding": { env: "OPENAI", path: "/embeddings" },
   "ant-messages": { env: "ANTHROPIC", path: "/v1/messages", fastMode: "anthropic" },
+  "google-genai": { env: "GEMINI", path: "/v1beta/models" },
+  // MMSP 0.5.1 keeps the 0.5.0 name of google-genai as an alias.
   "gemini-generate-content": { env: "GEMINI", path: "/v1beta/models" },
 };
 
@@ -3333,7 +3335,7 @@ export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefi
  * parameter:
  *
  * - maps it -> the protocol, and the toggle may be offered;
- * - raises UnsupportedParameterError (the Z.AI, Moonshot, DeepSeek, generateContent and
+ * - raises UnsupportedParameterError (the Z.AI, Moonshot, DeepSeek, google-genai and
  *   embedding clients, and anthropic-official on Bedrock or for the generations that reject
  *   the `speed` parameter) -> `undefined`;
  * - routes nowhere (AutoLLMClient throws for an id it cannot place) -> `undefined` as well,
@@ -3346,12 +3348,11 @@ export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefi
  * research preview's Opus allowlist: Anthropic answers those with a 429 at request time, which
  * is something to warn about before enabling, not grounds to hide the setting.
  *
- * Three runtime inputs stay invisible to a pure function of the config and can still flip the
- * answer: the server's `CLIENT_TYPE` env var names the client for an entry that pins none,
+ * Two runtime inputs stay invisible to a pure function of the config and can still flip the
+ * answer: the server's `CLIENT_TYPE` env var names the client for an entry that pins none, and
  * `ANTHROPIC_BASE_URL` supplies the base URL when the entry leaves it blank (so a `bedrock://`
- * there sends Claude to Bedrock, which has no fast tier), and a Vertex service-account key
- * sends a Gemini id to the generateContent client instead. Third-party OpenAI-compatible
- * endpoints are a fourth: they accept `service_tier` and may quietly serve the standard tier.
+ * there sends Claude to Bedrock, which has no fast tier). Third-party OpenAI-compatible
+ * endpoints are a third: they accept `service_tier` and may quietly serve the standard tier.
  * That residue is why llm/generative-model.ts still handles the rejection at runtime.
  */
 export function fastModeProtocol(

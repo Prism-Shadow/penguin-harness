@@ -397,7 +397,7 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
     // A Gemini id pinned to the generateContent client (what the Penguin Go rows pin) loses
     // the tier its unpinned id would have.
     expect(
-      fastModeState(draft({ modelId: "gemini-3.5-flash", clientType: "gemini-generate-content" })),
+      fastModeState(draft({ modelId: "gemini-3.5-flash", clientType: "google-genai" })),
     ).toEqual({ protocol: undefined, show: false });
     // Claude 4.6 is refused by name even though the client serves the family, and Bedrock
     // has no fast tier at all — the base URL is read from the draft, not the saved row.

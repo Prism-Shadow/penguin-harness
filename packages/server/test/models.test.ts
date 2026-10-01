@@ -291,7 +291,7 @@ describe("models preset & catalog enrichment", () => {
           {
             provider: "penguin-go",
             modelId: "gemini-3.8-flash",
-            clientType: "gemini-generate-content",
+            clientType: "google-genai",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
           {
@@ -618,10 +618,10 @@ describe("models preset & catalog enrichment", () => {
       "utf8",
     );
     const body = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(body, "penguin-go", "gemini-3.8-flash").clientType).toBe("gemini-generate-content");
+    expect(pick(body, "penguin-go", "gemini-3.8-flash").clientType).toBe("google-genai");
     expect(pick(body, "deepseek", "deepseek-flash").clientType).toBe("deepseek-official");
     const rewritten = await readFile(cfgFile, "utf8");
-    expect(rewritten).toContain('client_type = "gemini-generate-content"');
+    expect(rewritten).toContain('client_type = "google-genai"');
     expect(rewritten).toContain('client_type = "deepseek-official"');
     expect(rewritten).not.toMatch(/gemini-3\.8"|deepseek-v4/);
     expect(rewritten).toContain('name = "Legacy"');

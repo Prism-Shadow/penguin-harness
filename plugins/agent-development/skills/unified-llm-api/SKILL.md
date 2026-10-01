@@ -100,8 +100,8 @@ The registry is the curated current line-up, not the routing table: any id of a 
 
 **Client types.** `clientType` names one client:
 
-- **Official** clients speak their vendor's own API: `openai-official` (Responses API; `text-embedding-*` ids go to the Embeddings API), `anthropic-official` (Messages; a `bedrock://<region>` base URL reaches Bedrock), `gemini-official` (Interactions API; a Vertex AI service-account JSON key switches it to generateContent), `zai-official` and `moonshot-official` (Chat Completions), `deepseek-official` and `minimax-official` (Responses API).
-- **Compatible** clients speak one wire protocol for any endpoint that serves it: `openai-responses`, `openai-chat` (the bare `openai` is an alias), `openai-chat-vllm-adapter` (Chat Completions plus the served model's thinking switch), `openai-embedding`, `ant-messages` (Anthropic Messages), `gemini-generate-content`.
+- **Official** clients speak their vendor's own API: `openai-official` (Responses API; `text-embedding-*` ids go to the Embeddings API), `anthropic-official` (Messages; a `bedrock://<region>` base URL reaches Bedrock), `gemini-official` (Interactions API only; a Vertex AI service-account JSON key is refused with an error naming `google-genai`), `zai-official` and `moonshot-official` (Chat Completions), `deepseek-official` and `minimax-official` (Responses API).
+- **Compatible** clients speak one wire protocol for any endpoint that serves it: `openai-responses`, `openai-chat` (the bare `openai` is an alias), `openai-chat-vllm-adapter` (Chat Completions plus the served model's thinking switch), `openai-embedding`, `ant-messages` (Anthropic Messages), `google-genai` (Google's generateContent as the Google GenAI SDK speaks it — Vertex AI with a service-account JSON key as `apiKey`, the Gemini API, or a relay; `gemini-generate-content` is its 0.5.0 name, kept as an alias).
 
 **Routing by prefix.** Without `clientType` (or the `CLIENT_TYPE` environment variable), the family the lowercased model id begins with names its official client: `gpt-` and `text-embedding-` → `openai-official`, `claude-` → `anthropic-official`, `gemini-` → `gemini-official`, `glm-` → `zai-official`, `kimi-` → `moonshot-official`, `deepseek-` → `deepseek-official`, `minimax-` → `minimax-official`. Any other id throws at construction: `No client for model "<id>": its family is not known. Pass clientType, one of the official clients: …; compatible clients: …`. An unknown client type throws `Unknown client type "<type>". Pass one of the …`. Routing never looks at `baseUrl`.
 
@@ -121,9 +121,9 @@ The registry is the curated current line-up, not the routing table: any id of a 
 
 - `openai-responses` on OpenRouter: `https://openrouter.ai/api/v1` serves the Responses API for every model it resells and round-trips reasoning items (`openai-chat` works there too).
 - `openai-chat` on Chat Completions endpoints: SiliconFlow, Fireworks AI, DashScope `https://dashscope.aliyuncs.com/compatible-mode/v1`, a self-hosted server (`openai-chat-vllm-adapter` for vLLM, to switch the served model's thinking). A self-hosted `deepseek-*` id needs it too, because `deepseek-official` posts to `{baseUrl}/responses`.
-- `ant-messages` on Anthropic Messages endpoints (Anthropic, OpenRouter `https://openrouter.ai/api`, DeepSeek `https://api.deepseek.com/anthropic`, Z.AI, MiniMax); `gemini-generate-content` on a relay that proxies Gemini's generateContent.
+- `ant-messages` on Anthropic Messages endpoints (Anthropic, OpenRouter `https://openrouter.ai/api`, DeepSeek `https://api.deepseek.com/anthropic`, Z.AI, MiniMax); `google-genai` on Vertex AI or a relay that proxies Gemini's generateContent.
 
-**Credentials.** The constructor's `apiKey` comes first, then the environment: an official client reads its vendor's pair (`DEEPSEEK_`, `OPENAI_`, `ANTHROPIC_`, `GEMINI_`, `ZAI_`, `MOONSHOT_`, `MINIMAX_` + `API_KEY` / `BASE_URL`), a compatible client the pair of its protocol (`OPENAI_*`; `ANTHROPIC_*` for `ant-messages`, `GEMINI_*` for `gemini-generate-content`). The OpenAI- and Anthropic-protocol clients send an environment key only to the environment's endpoint: a `baseUrl` without an `apiKey` throws `apiKey is required for <Client> with a baseUrl: OPENAI_API_KEY is not sent to another endpoint.` The other clients read their own variable whatever endpoint they are given, so pass a gateway's key as `apiKey` every time.
+**Credentials.** The constructor's `apiKey` comes first, then the environment: an official client reads its vendor's pair (`DEEPSEEK_`, `OPENAI_`, `ANTHROPIC_`, `GEMINI_`, `ZAI_`, `MOONSHOT_`, `MINIMAX_` + `API_KEY` / `BASE_URL`), a compatible client the pair of its protocol (`OPENAI_*`; `ANTHROPIC_*` for `ant-messages`, `GEMINI_*` for `google-genai`). The OpenAI-, Anthropic- and generateContent-protocol clients send an environment key only to the environment's endpoint: a `baseUrl` without an `apiKey` throws `apiKey is required for <Client> with a baseUrl: OPENAI_API_KEY is not sent to another endpoint.` The other clients read their own variable whatever endpoint they are given, so pass a gateway's key as `apiKey` every time.
 
 ## Streaming
 
@@ -200,7 +200,7 @@ try {
 - `fast_mode`: fast processing at premium pricing, decided by the client the model routes to:
   - sent as `service_tier: "priority"` by `openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`, `gemini-official` and `minimax-official`;
   - sent as `speed: "fast"` with the fast-mode beta header by `ant-messages` and `anthropic-official` — except on Bedrock and on Claude 4.6, Sonnet 5.5 and Fable 5.1, which reject it. Anthropic's fast mode is a research preview: organizations without access get a 429;
-  - rejected by `zai-official`, `moonshot-official`, `deepseek-official`, `gemini-generate-content` and `openai-embedding` (which also serves `openai-official`'s `text-embedding-*` ids).
+  - rejected by `zai-official`, `moonshot-official`, `deepseek-official`, `google-genai` and `openai-embedding` (which also serves `openai-official`'s `text-embedding-*` ids).
 
   A third-party OpenAI-compatible endpoint may accept `service_tier` and still serve the standard tier.
 

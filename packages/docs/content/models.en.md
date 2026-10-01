@@ -366,7 +366,7 @@ Whether a fast tier exists depends on the MMSP client a model routes to, not on 
 | --- | --- |
 | OpenAI protocol (`openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`), `minimax-official`, `gemini-official` (Interactions API) | sent as `service_tier: "priority"` |
 | Anthropic protocol (`anthropic-official`, `ant-messages`) | sent as `speed: "fast"` plus the beta header |
-| `zai-official`, `moonshot-official`, `deepseek-official`, `gemini-generate-content`, OpenAI embeddings | rejected — no toggle |
+| `zai-official`, `moonshot-official`, `deepseek-official`, `google-genai`, OpenAI embeddings | rejected — no toggle |
 | `anthropic-official` on Bedrock, or a Claude 4.6, Sonnet 5.5 or Fable 5.1 id | rejected — no toggle |
 
 Routing follows the entry's `client_type`; when none is set, the vendor family its `model_id` begins with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`) names the vendor's official client. The same upstream id can therefore land in different places. A Kimi model added under a gateway group (`client_type = "openai-chat"`) can use fast mode, while the same id routed to Moonshot's official client cannot. A custom model behind your own base URL keeps the switch: it speaks the OpenAI protocol and may well be OpenAI, but a third-party server is free to accept the parameter and serve the standard tier anyway.
@@ -374,7 +374,7 @@ Routing follows the entry's `client_type`; when none is set, the vendor family i
 Two things the switch cannot check for you:
 
 - Anthropic's fast mode is a limited research preview. Until your organization is granted access, requests return a 429 rate-limit error. The confirmation says so for Anthropic-protocol models.
-- The server's environment can route a model somewhere the switch did not anticipate: `CLIENT_TYPE` names the client of every entry without a `client_type`, `ANTHROPIC_BASE_URL` gives Claude entries without a base URL their endpoint (a `bedrock://` one has no fast tier), and a Vertex AI service-account key sends a Gemini model to generateContent, which has none either.
+- The server's environment can route a model somewhere the switch did not anticipate: `CLIENT_TYPE` names the client of every entry without a `client_type`, and `ANTHROPIC_BASE_URL` gives Claude entries without a base URL their endpoint (a `bedrock://` one has no fast tier).
 
 > [!NOTE]
 > If a request still reaches a client that rejects `fast_mode`, MMSP refuses it before any network request. The conversation ends that turn immediately with the provider's message and a pointer to the setting. A rejection that will always repeat is never retried.

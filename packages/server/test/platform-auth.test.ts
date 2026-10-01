@@ -107,7 +107,7 @@ describe("Penguin Go key delivery validation", () => {
         models: [
           {
             modelId: "gemini-3.8-flash",
-            clientType: "gemini-generate-content",
+            clientType: "google-genai",
             // A promoted model normalizes to its list price, which is what a Project stores,
             // and the fraction off it; the billed price is only checked against the two.
             pricing: {
@@ -309,7 +309,7 @@ describe("Penguin Go key authorization routes", () => {
     // beside it in web.db.
     const gemini = penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash");
     expect(gemini).toMatchObject({
-      clientType: "gemini-generate-content",
+      clientType: "google-genai",
       pricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 },
       discount: 0.5,
     });
@@ -422,7 +422,7 @@ describe("Penguin Go key authorization routes", () => {
     expect(added.models.find((model) => model.modelId === "gemini-future")).toMatchObject({
       displayName: "Gemini Future",
       contextWindow: 1_048_576,
-      clientType: "gemini-generate-content",
+      clientType: "google-genai",
       vision: true,
       pricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
       discount: 0.5,

@@ -137,6 +137,7 @@ describe("protocolPathForModel", () => {
   it("the compatible protocol clients map to their own endpoint shapes", () => {
     expect(protocolPathForModel("custom", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
+    expect(protocolPathForModel("custom", "google-genai")).toBe("/v1beta/models");
     expect(protocolPathForModel("custom", "gemini-generate-content")).toBe("/v1beta/models");
     expect(protocolPathForModel("deepseek", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("myproxy", " Ant-Messages ")).toBe("/v1/messages");
