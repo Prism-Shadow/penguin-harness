@@ -689,8 +689,15 @@
     border-radius: var(--ui-radius-sm);
     background-color: var(--ui-canvas);
   }
-  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > [data-slot="head"]:hover,
-  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-tree .ui-activity:hover {
+  /* Only a row that does something lights up: a harness note or a server with nothing to open
+     is the same line held still. */
+  :root[data-theme="modern"]
+    .ui-frame:has(> .ui-activity)
+    > [data-slot="head"]:is(button, :has(button)):hover,
+  :root[data-theme="modern"]
+    .ui-frame:has(> .ui-activity)
+    .ui-tree
+    .ui-activity:is(button, :has(button)):hover {
     background-color: var(--ui-surface-muted);
   }
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-tree > [data-depth] {

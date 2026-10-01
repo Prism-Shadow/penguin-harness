@@ -3042,7 +3042,10 @@ Benchmark：
     skillsEmptyHint: "暂无已装技能，去技能库添加",
     /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in [use_skills] before sending). */
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
+    /** The handoff note's back-link, as one sentence: its accessible name. */
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
+    /** The handoff note's fixed phrase; the agent follows it as the note's subject. */
+    handoffLabel: "交接自",
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
     /** `/model` handoff: command description, picker title, the staged target's description and remove button, the origin banner, and the empty-body auto message. Every surface says that it opens a NEW conversation and leaves this one as it is — switching inside this conversation is the toolbar's model picker (`modelSwitchInSession*`). */
     switchModel: "换模型开新会话：发送时用所选模型新开一个会话延续本对话，本会话保持不变",
@@ -3056,11 +3059,15 @@ Benchmark：
       prevModel
         ? `换模型新开的会话（原模型 ${prevModel}），延续原会话`
         : "换模型新开的会话，延续原会话",
+    /** The model-switch note: its fixed phrase, and the earlier model as its subject (`modelSwitchFrom` is its accessible name). */
+    modelSwitchLabel: "换模型新开的会话",
+    modelSwitchPrev: (model: string) => `原模型 ${model}`,
     /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
-    scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
-    /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line. */
-    orgTriggerFrom: (org: string): string => `由组织「${org}」触发`,
+    /** The scheduled-task note's fixed phrase; the task's name follows it as the note's subject. */
+    scheduledLabel: "定时任务触发",
+    /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line — this fixed phrase, then the organization's name. */
+    orgTriggerLabel: "组织触发",
     orgTriggerKinds: {
       init: "初始化",
       event: "日程",
@@ -3175,9 +3182,12 @@ Benchmark：
      */
     folderOnlyGroup: (n: number, path?: string) =>
       `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
-    skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
-    /** Attached-file notice above a user message (file names only; the paths stay in the Trace). */
-    attachedFilesBanner: (names: string[]): string => `附加文件：${names.join("、")}`,
+    /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
+    skillsLabel: (_count: number): string => "使用技能",
+    /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */
+    attachedFilesLabel: (_count: number): string => "附加文件",
+    /** Names listed after a note's fixed phrase (skills, files). */
+    nameList: (names: string[]): string => names.join("、"),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "更多输入方式",
     uploadImage: "上传图片",
@@ -3210,6 +3220,8 @@ Benchmark：
     goalRemove: "退出目标模式",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "由 harness 注入",
+    /** The goal line's fixed phrase; the objective follows it as the line's subject. */
+    goalLabel: "目标",
     goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
     goalStatus: {
       active: "进行中",

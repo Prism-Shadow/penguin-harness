@@ -1,7 +1,7 @@
 /**
- * Compaction row: one StepBanner across running/done/failed (same shell as the MCP
- * connect row and the reasoning-&-tools group header) — the wall time ticks while it runs
- * and settles once finished, failures stay on a single line.
+ * Compaction row: one StepBanner across running/done/failed (the harness card, shared with the
+ * MCP connect row and the background and injected-message notices, on the work group's anatomy)
+ * — the wall time ticks while it runs and settles once finished, failures stay on a single line.
  *
  * **The title names the mode and doubles as the status**, the work-group header's idiom
  * (运行中 → 运行完毕): a `summarize` row reads 压缩中 / "Compacting" while it runs and
@@ -52,6 +52,7 @@ import {
   StatusIcon,
   StepBanner,
 } from "@prismshadow/penguin-ui";
+import type { StepBannerRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { CompactionItem } from "../../lib/omni/stream-model";
@@ -62,15 +63,18 @@ import { compactionResultVisible, compactionSummaryText } from "../../lib/omni/c
  * the thinking block's text body — the same three marks in the same order, so a compaction
  * section and a thinking block read as the one thing they are. Sticky like a row inside the
  * work group, so a long expanded section keeps its own label pinned under the stuck banner
- * header.
+ * header. Like the work group's rows it is an activity row hanging off the banner's head: the
+ * thinking section names thinking, the summary is the compaction's own event.
  */
 function CompactionSection({
+  kind,
   label,
   text,
   streaming,
   startedAtMs,
   durationMs,
 }: {
+  kind: "thinking" | "event";
   label: string;
   text: string;
   streaming: boolean;
@@ -82,6 +86,7 @@ function CompactionSection({
   return (
     <DisclosureRow
       sticky
+      activity={{ kind, state: streaming ? "running" : "done" }}
       icon={
         <StatusIcon
           state={streaming ? "running" : "done"}
@@ -90,7 +95,7 @@ function CompactionSection({
       }
       label={label}
       trailing={
-        <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">
+        <span data-slot="detail" className="shrink-0 font-mono text-xs text-fg-muted">
           {streaming ? (
             <LiveDuration sinceMs={startedAtMs} />
           ) : durationMs !== undefined ? (
@@ -114,28 +119,38 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
   // block's is) rather than appearing mid-stream and shifting the row.
   const expandable =
     summary !== "" || thinking !== "" || (item.running && item.mode === "summarize");
-  const body = expandable ? (
-    <>
-      {thinking !== "" && (
+  // The sections hang off the banner's head as its rows, the work group's steps' anatomy.
+  const rows: StepBannerRow[] = [];
+  if (thinking !== "") {
+    rows.push({
+      key: "thinking",
+      content: (
         <CompactionSection
+          kind="thinking"
           label={S.chat.thinking}
           text={thinking}
           streaming={item.thinkingStreaming === true}
           startedAtMs={item.thinkingStartedAtMs}
           durationMs={item.thinkingDurationMs}
         />
-      )}
-      {compactionResultVisible(item) && (
+      ),
+    });
+  }
+  if (compactionResultVisible(item)) {
+    rows.push({
+      key: "result",
+      content: (
         <CompactionSection
+          kind="event"
           label={S.chat.compactionResult}
           text={summary}
           streaming={item.running}
           startedAtMs={item.summaryStartedAtMs}
           durationMs={item.summaryDurationMs}
         />
-      )}
-    </>
-  ) : null;
+      ),
+    });
+  }
 
   // The title says both what runs and that it is running (压缩中 / "Compacting"), as the
   // work-group header's does; no detail line — the body streams behind the chevron, and the
@@ -146,9 +161,8 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
         state="running"
         title={S.chat.compactionRunning(item.mode)}
         {...(item.beginTsMs !== undefined ? { liveSinceMs: item.beginTsMs } : {})}
-      >
-        {body}
-      </StepBanner>
+        {...(expandable ? { rows } : {})}
+      />
     );
   }
   const ok = item.status === "completed";
@@ -161,8 +175,7 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
       title={ok ? S.chat.compactionDone(item.mode) : S.chat.compactionTitle(item.mode)}
       detail={ok ? undefined : S.chat.compactionFailed(item.status ?? "failed", item.errorMessage)}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
-    >
-      {body}
-    </StepBanner>
+      {...(expandable ? { rows } : {})}
+    />
   );
 }

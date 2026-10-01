@@ -717,6 +717,9 @@ function categoryOf(row: SessionInfo): SessionCategory {
   return row.source ?? "active";
 }
 
+/** An organization's desk or ticket Session, by its owner or by the durable `org` stamp. */
+const isOrgRow = (row: SessionInfo) => (row.orgId ?? "") !== "" || row.client === "org";
+
 function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
   const counts: SessionCategoryCounts = {
     active: 0,
@@ -732,8 +735,11 @@ function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
 router
   .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
     const { store, params, query } = ctx;
+    // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
+    // and the totals alike.
+    const ownOnly = query.get("excludeOrg") === "1";
     const all = store.f.sessions
-      .filter((s) => s.agentId === params.agentId)
+      .filter((s) => s.agentId === params.agentId && !(ownOnly && isOrgRow(s)))
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
     const category = query.get("category") as SessionCategory | null;
     const group = query.get("workspaceGroup");

@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import {
   AssistantText,
+  Button,
   MessageBubble,
   MessageImage,
   MessageMeta,
@@ -124,31 +125,33 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
       actions={
         showControls ? (
           <>
+            {/* The line's two controls on the button rungs: the retry is the one it offers, the
+                bordered secondary; giving up is the quieter ghost beside it. */}
             {ctx.onRetryNow && (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="xs"
                 disabled={acted}
                 onClick={() => {
                   setActed(true);
                   ctx.onRetryNow!();
                 }}
-                className="rounded border border-amber-300 px-1.5 py-0.5 text-xs font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/40"
               >
                 {S.chat.reconnectRetryNow}
-              </button>
+              </Button>
             )}
             {ctx.onGiveUp && (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 disabled={acted}
                 onClick={() => {
                   setActed(true);
                   ctx.onGiveUp!();
                 }}
-                className="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
               >
                 {S.chat.reconnectGiveUp}
-              </button>
+              </Button>
             )}
           </>
         ) : undefined
@@ -308,7 +311,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return (
         <AssistantText text={item.text} streaming={item.streaming}>
           {item.stopReason && item.stopReason !== "completed" && (
-            <span className="ml-1 font-mono text-xs text-gray-400">[{item.stopReason}]</span>
+            <span className="ml-1 font-mono text-xs text-fg-subtle">[{item.stopReason}]</span>
           )}
           {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
           {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
@@ -354,12 +357,12 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       const name = (m: { provider: string; modelId: string }): string =>
         sameId ? `${m.provider} / ${m.modelId}` : m.modelId;
       return (
-        <div className="anim-msg my-3 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+        <div className="anim-msg my-3 flex items-center gap-3 text-xs text-fg-muted">
+          <span aria-hidden className="h-px flex-1 bg-line" />
           <span className="min-w-0 break-words text-center">
             {S.chat.modelChanged(name(item.from), name(item.to))}
           </span>
-          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+          <span aria-hidden className="h-px flex-1 bg-line" />
         </div>
       );
     }

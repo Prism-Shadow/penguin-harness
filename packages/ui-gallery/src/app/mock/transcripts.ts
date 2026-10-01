@@ -9,6 +9,7 @@
  * - an open `partial_text` fragment, carried the same way, is a reply streaming in;
  * - a tool call the stream has escalated with `approval_request` is waiting on a human.
  */
+import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
 import { IDS } from "./ids";
 import type { Lang, OmniMessage, PayloadOf, ToolCallMessage } from "./types";
 
@@ -23,7 +24,7 @@ const model = <T extends PayloadOf<"text" | "thinking" | "tool_call" | "tool_cal
   payload: T,
 ): OmniMessage => ({ timestamp: iso(ms), type: "model_msg", payload });
 
-const event = (ms: number, payload: OmniMessage["payload"]): OmniMessage => ({
+export const event = (ms: number, payload: OmniMessage["payload"]): OmniMessage => ({
   timestamp: iso(ms),
   type: "event_msg",
   payload,
@@ -48,8 +49,9 @@ export const meta = (
   },
 });
 
-export const userText = (ms: number, text: string): OmniMessage =>
-  model(ms, { type: "text", role: "user", text });
+/** A user-role text; `sender` names who wrote it when the person did not (absent = the person). */
+export const userText = (ms: number, text: string, sender?: "harness" | "server"): OmniMessage =>
+  model(ms, { type: "text", role: "user", text, ...(sender ? { sender } : {}) });
 
 export const assistantText = (
   ms: number,
@@ -451,6 +453,8 @@ export interface Transcript {
   openText?: { startedAt: number; text: string };
   /** A tool call awaiting a human decision. */
   pendingApproval?: ToolCallMessage;
+  /** Goal-mode events a fresh subscription is told after the run state (the goal banner's). */
+  goalEvents?: GoalServerEvent[];
   running: boolean;
 }
 

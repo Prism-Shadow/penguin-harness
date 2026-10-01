@@ -99,6 +99,8 @@ describe("the surfaces", () => {
     expect(surfaceById("chat-thinking")?.route).toBe(`/chat/${IDS.sessions.thinking}`);
     expect(surfaceById("chat-streaming")?.route).toBe(`/chat/${IDS.sessions.streaming}`);
     expect(surfaceById("chat-approval")?.route).toBe(`/chat/${IDS.sessions.approval}`);
+    expect(surfaceById("chat-harness")?.route).toBe(`/chat/${IDS.sessions.harness}`);
+    expect(surfaceById("chat-org")?.route).toBe(`/chat/${IDS.sessions.orgDesk}`);
     expect(surfaceById("settings")?.route).toBe(`/chat/${IDS.sessions.done}`);
     expect(surfaceById("agent-settings")?.route).toBe(`/agents/${IDS.agents.docs}`);
     expect(surfaceById("schedules")?.route).toBe(`/agents/${IDS.agents.docs}?tab=schedules`);

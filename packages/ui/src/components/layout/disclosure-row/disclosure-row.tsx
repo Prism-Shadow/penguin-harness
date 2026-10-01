@@ -1,9 +1,10 @@
 /**
  * The collapsible one-liner: a full-width row — status icon, label, optional trailing detail,
- * chevron — that expands to a caller-styled body. Every disclosure row in the transcript
- * (thinking, compaction, the background completion notice) shares it, so their width, padding,
- * both colour states and the chevron interaction cannot drift apart. The tool cards and the work
- * group keep their own richer rows but read the same class constants below.
+ * chevron — that expands to a caller-styled body, or, with no body, the same line held still.
+ * Every disclosure row in the transcript (thinking, a compaction's sections, an MCP connection's
+ * servers) shares it, so their width, padding, both colour states and the chevron interaction
+ * cannot drift apart. The tool cards, the work group and the harness cards (`StepBanner`) keep
+ * their own richer rows but read the same class constants below.
  */
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -29,8 +30,8 @@ export const DISCLOSURE_LABEL_CLASS = "shrink-0 text-xs text-fg-muted";
 
 /**
  * The header-family row — the work group's "Running / Done" summary bar: a muted ground, taller
- * padding, a stronger hover. A standalone disclosure that should read like a settled work group
- * (the background completion notice) uses this variant.
+ * padding, a stronger hover. A harness card's head (`StepBanner`) uses it, so a compaction or a
+ * background task's notice reads like a settled work group.
  */
 export const DISCLOSURE_HEADER_ROW_CLASS =
   "flex w-full items-center gap-2 bg-surface-muted px-3 py-2 text-left transition-colors duration-150 hover:bg-line-muted";
@@ -80,12 +81,16 @@ export const DISCLOSURE_CARD_CLASS =
   "anim-msg my-2 overflow-clip rounded-md border border-line bg-surface";
 
 /**
- * What a work step is and where it stands, for the `ui-activity` hook: the transcript's thinking
- * and tool rows and the work group's header carry it, so a theme can render work in progress its
- * own way (a glow while running, a transcript line with a block progress bar).
+ * What a transcript row is and where it stands, for the `ui-activity` hook: a step of the agent's
+ * work (the thinking and tool rows, the work group's header) or an `event`, something the harness
+ * did or injected (a compaction and its sections, an MCP connection and its servers, a background
+ * task settling, an injected message, a trigger, a handoff), so a theme can render every one of
+ * them its own way (a sweep while running, a transcript line).
  */
+export type ActivityKind = "thinking" | "tool" | "event";
+
 export interface ActivityMark {
-  kind: "thinking" | "tool";
+  kind: ActivityKind;
   state: "running" | "done" | "error";
 }
 
@@ -120,22 +125,29 @@ export function DisclosureRow({
 }: {
   /** The leading status icon slot (a StatusIcon, matching the thinking and tool rows). */
   icon: ReactNode;
-  /** The row's one-line label. */
-  label: string;
+  /**
+   * The row's one-line label, a fixed phrase ("Thinking"). A theme may recase it, so a row that
+   * names something (an MCP server) leaves it out and sets the name in `trailing` as a detail.
+   */
+  label?: string;
   /** Optional detail between the label and the spacer (a duration, a failure tag). */
   trailing?: ReactNode;
   /**
    * "row" = a line inside the work group (the thinking block's form); "header" = the work
-   * group's own summary-bar form (the background notice's standalone card).
+   * group's own summary-bar form.
    */
   variant?: "row" | "header";
   /** Pins the row while its body scrolls: nested rows under the stuck group header, a header against the scrollport. */
   sticky?: boolean;
   defaultOpen?: boolean;
-  /** A work step (the thinking row): the row carries the `ui-activity` hook with this mark. */
+  /** A row of the transcript's work or a harness event: the row carries the `ui-activity` hook with this mark. */
   activity?: ActivityMark;
-  /** The expanded body; the caller styles it (a Markdown body, an output `<pre>`, …). */
-  children: ReactNode;
+  /**
+   * The expanded body; the caller styles it (a Markdown body, an output `<pre>`, …). Without one
+   * the row is a static line — no button, no chevron, no hover — so a list mixing rows that open
+   * with rows that have nothing to show keeps one column.
+   */
+  children?: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -145,6 +157,36 @@ export function DisclosureRow({
   const labelClass = header
     ? `${DISCLOSURE_HEADER_TITLE_CLASS} text-fg-muted`
     : DISCLOSURE_LABEL_CLASS;
+  const parts = (
+    <>
+      {icon !== undefined && (
+        <span data-slot="mark" className="flex shrink-0">
+          {icon}
+        </span>
+      )}
+      {label !== undefined && (
+        <span className={labelClass} {...(activity ? { "data-slot": "label" } : {})}>
+          {label}
+        </span>
+      )}
+      {trailing}
+      {activity && <ActivityProgress running={activity.state === "running"} />}
+    </>
+  );
+  if (children === undefined || children === null) {
+    return (
+      <div
+        className={`${activity ? "ui-activity " : ""}flex w-full items-center gap-2 text-left ${
+          header ? "bg-surface-muted px-3 py-2" : "bg-surface px-3 py-1.5"
+        }`}
+        data-kind={activity?.kind}
+        data-state={activity?.state}
+      >
+        {parts}
+        <span className="min-w-0 flex-1" />
+      </div>
+    );
+  }
   return (
     <div ref={rootRef}>
       <button
@@ -163,16 +205,7 @@ export function DisclosureRow({
         data-kind={activity?.kind}
         data-state={activity?.state}
       >
-        {icon !== undefined && (
-          <span data-slot="mark" className="flex shrink-0">
-            {icon}
-          </span>
-        )}
-        <span className={labelClass} {...(activity ? { "data-slot": "label" } : {})}>
-          {label}
-        </span>
-        {trailing}
-        {activity && <ActivityProgress running={activity.state === "running"} />}
+        {parts}
         {/* The chevron follows the words; `order-last` carries it past the spacer to the row's far
             edge unless a theme's recipe keeps it beside them. */}
         <span data-slot="toggle" className="order-last flex shrink-0">

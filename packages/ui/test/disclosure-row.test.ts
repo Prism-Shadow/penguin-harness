@@ -36,6 +36,20 @@ describe("DisclosureRow", () => {
     expect(html).toContain('data-slot="progress"');
   });
 
+  it("is a static line with nothing to open, and a row naming something has no label", () => {
+    const html = renderStatic(
+      createElement(DisclosureRow, {
+        icon: null,
+        trailing: createElement("span", { "data-slot": "detail" }, "github"),
+        activity: { kind: "event", state: "done" },
+      }),
+    );
+    expect(html).toMatch(/<div class="ui-activity [^"]*" data-kind="event" data-state="done">/);
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain('data-slot="toggle"');
+    expect(html).not.toContain('data-slot="label"');
+  });
+
   it("folds the run states onto the hook's three", () => {
     expect(activityState("waiting")).toBe("running");
     expect(activityState("failed")).toBe("error");

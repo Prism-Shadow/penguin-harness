@@ -2991,7 +2991,10 @@ Scenarios:
     skillsEmptyHint: "No skills installed yet — add some from the skill library",
     skillsAutoMessage: (names: string[]): string =>
       names.length === 1 ? `use the ${names[0]} skill` : `use the ${names.join(", ")} skills`,
+    /** The handoff note's back-link, as one sentence: its accessible name. */
     handoffFrom: (agent: string) => `Handed off from ${agent}'s conversation`,
+    /** The handoff note's fixed phrase; the agent follows it as the note's subject. */
+    handoffLabel: "Handed off from",
     handoffBack: (title?: string) =>
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
     switchModel:
@@ -3006,10 +3009,14 @@ Scenarios:
       prevModel
         ? `New conversation on another model (was ${prevModel}) — continues the original`
         : "New conversation on another model — continues the original",
+    /** The model-switch note: its fixed phrase, and the earlier model as its subject (`modelSwitchFrom` is its accessible name). */
+    modelSwitchLabel: "New conversation on another model",
+    modelSwitchPrev: (model: string) => `was ${model}`,
     modelSwitchAutoMessage: "Continue this conversation on the new model",
-    scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
-    /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line. */
-    orgTriggerFrom: (org: string): string => `Triggered by organization "${org}"`,
+    /** The scheduled-task note's fixed phrase; the task's name follows it as the note's subject. */
+    scheduledLabel: "Scheduled task",
+    /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line — this fixed phrase, then the organization's name. */
+    orgTriggerLabel: "Organization trigger",
     orgTriggerKinds: {
       init: "Initialization",
       event: "Calendar event",
@@ -3121,10 +3128,12 @@ Scenarios:
     /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
     folderOnlyGroup: (n: number, path?: string) =>
       `Folded tasks only: ${n} conversation${n === 1 ? "" : "s"}${path ? ` (${path})` : ""}`,
-    skillsBanner: (names: string[]): string =>
-      `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
-    attachedFilesBanner: (names: string[]): string =>
-      `Attached file${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
+    /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
+    skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
+    /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */
+    attachedFilesLabel: (count: number): string => `Attached file${count === 1 ? "" : "s"}`,
+    /** Names listed after a note's fixed phrase (skills, files). */
+    nameList: (names: string[]): string => names.join(", "),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "More input options",
     uploadImage: "Upload image",
@@ -3155,6 +3164,8 @@ Scenarios:
     goalRemove: "Exit goal mode",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "Injected by the harness",
+    /** The goal line's fixed phrase; the objective follows it as the line's subject. */
+    goalLabel: "Goal",
     goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
     goalStatus: {
       active: "running",

@@ -11,6 +11,7 @@
 import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
 import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
+import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
 import { streamScript } from "./stream-script";
 import {
@@ -118,6 +119,8 @@ export class DemoStore {
       [IDS.sessions.thinking]: thinkingTranscript(lang, now, ref),
       [IDS.sessions.streaming]: streamingTranscript(lang, now, ref),
       [IDS.sessions.approval]: approvalTranscript(lang, now, ref),
+      [IDS.sessions.harness]: harnessTranscript(lang, now, ref),
+      [IDS.sessions.orgDesk]: orgDeskTranscript(lang, now, ref),
     };
     for (const row of this.f.sessions) {
       const transcript =
@@ -238,7 +241,7 @@ export class DemoStore {
 
   /**
    * What a fresh subscription is told first: the run state snapshot, then every approval still
-   * pending — exactly what the server resends on connect.
+   * pending — exactly what the server resends on connect — then a transcript's goal events.
    */
   onSubscribe(sessionId: string, handlers: StreamHandlers): void {
     const live = this.live.get(sessionId);
@@ -247,6 +250,7 @@ export class DemoStore {
     live.channel.event({ type: "task_state", state: row?.status ?? "idle" }, handlers);
     const pending = live.transcript.pendingApproval;
     if (pending) live.channel.event({ type: "approval_request", toolCall: pending }, handlers);
+    for (const goal of live.transcript.goalEvents ?? []) live.channel.event(goal, handlers);
     if (sessionId === IDS.sessions.thinking) this.keepThinking(live);
     if (sessionId === IDS.sessions.streaming) this.keepStreaming(sessionId, live);
   }

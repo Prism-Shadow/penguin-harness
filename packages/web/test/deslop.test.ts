@@ -67,14 +67,27 @@ const ALLOWLIST: DeslopAllowlist = {
  * Web files that are on the tokens, by path under `packages/web/src`: rule 20 holds each to the
  * package's standard — no palette class, no `dark:` variant, no hex — so a file a wave moved off
  * the palette cannot drift back onto it. A file joins when its wave rewrites it. These are W10's,
- * the code that landed on main while the waves were in flight; the terminal's appearance module
- * is not among them by design, since the terminal resolves its own palette outside the token
- * system, while the key bar that reads it is.
+ * the code that landed on main while the waves were in flight, and the transcript's harness rows
+ * (the cards and notes on the work group's anatomy, and the item dispatch around them); the
+ * terminal's appearance module is not among them by design, since the terminal resolves its own
+ * palette outside the token system, while the key bar that reads it is.
  */
 const TOKENS_ONLY: readonly string[] = [
   "features/builtin-browser/browser-tab-strip.tsx",
   "features/builtin-browser/browser-toolbar.tsx",
+  "features/chat/attached-files-banner.tsx",
+  "features/chat/background-done-banner.tsx",
+  "features/chat/compaction-banner.tsx",
+  "features/chat/goal-banner.tsx",
+  "features/chat/handoff-banner.tsx",
+  "features/chat/harness-banner.tsx",
+  "features/chat/mcp-connect-banner.tsx",
+  "features/chat/message-item.tsx",
   "features/chat/model-picker-modal.tsx",
+  "features/chat/org-trigger-banner.tsx",
+  "features/chat/scheduled-banner.tsx",
+  "features/chat/skills-banner.tsx",
+  "features/chat/task-stats-line.tsx",
   "features/chat/workspace-finder.tsx",
   "features/chat/workspace-finder-model.ts",
   "features/chat/workspace-select.tsx",

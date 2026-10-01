@@ -169,7 +169,7 @@ export function TaskStatsLine({
             data-tooltip={S.chat.forkSession}
             aria-label={S.chat.forkSession}
             onClick={() => setConfirmingFork(true)}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted disabled:cursor-wait disabled:opacity-50"
           >
             {forking ? (
               <Spinner size="sm" label={S.common.loading} />
@@ -195,9 +195,7 @@ export function TaskStatsLine({
               }).finally(() => setForking(false));
             }}
           >
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              {S.chat.forkSessionConfirmBody}
-            </p>
+            <p className="text-sm text-fg-muted">{S.chat.forkSessionConfirmBody}</p>
           </ConfirmModal>
         </>
       )}

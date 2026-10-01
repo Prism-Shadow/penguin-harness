@@ -107,6 +107,15 @@ describe("the mocked API", () => {
       category: "archived",
     });
     expect(archived.sessions.every((s) => s.archived)).toBe(true);
+    // An organization's desk Session reaches neither the user's own page nor its totals.
+    const notes = await api.listSessions(project, store.f.agents[1]!.agentId, {
+      offset: 0,
+      limit: 10,
+      withCounts: true,
+      excludeOrg: true,
+    });
+    expect(notes.sessions.some((s) => s.client === "org")).toBe(false);
+    expect(notes.counts?.active).toBe(notes.sessions.length);
   });
 
   it("serves a running Session's history with its live tail, and a finished one without", async () => {

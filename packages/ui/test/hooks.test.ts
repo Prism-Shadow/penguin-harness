@@ -33,9 +33,9 @@
  *   `nav`, `main` or `dock`, `.ui-field`'s are `label`, `control` or `hint`, a tree row's
  *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
  *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
- *   (`thinking` / `tool`), its state (`running` / `done` / `error`) and its slots (`label`,
- *   `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`, `title`,
- *   `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
+ *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
+ *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
+ *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
  *   (`caret`), a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
  *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
  *   `pixel`), wherever a `data-set` is written.
@@ -81,8 +81,9 @@ const APPENDIX_A = [
  * for the app window; a decorative icon for the rows and headers whose label already says what the
  * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
  * tab, an empty state) — a session row is not a host, its avatar and marks carry information; a
- * tree for a file tree and a work group's steps; a field for a settings row; activity for the
- * transcript's work in progress (the work group's header, a tool call, the thinking row).
+ * tree for a file tree and the steps under a work group's or a harness card's head; a field for a
+ * settings row; activity for the transcript's work in progress (the work group's header, a tool
+ * call, the thinking row) and for the harness's events (its card and its one-line note).
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The composer's card and the slash list that opens over it (W6) float with the menus.
@@ -110,9 +111,19 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
   "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar", "StreamingCaret"],
-  // The transcript's cards (the tool call, the work group, the changes card at a Task's foot) and
-  // the code block, and the page-level boxes (W4): the card and a table that is its own box.
-  "ui-frame": ["ToolCallCard", "WorkGroup", "ChangesCard", "CodeBlock", "Card", "Table"],
+  // The transcript's cards (the tool call, the work group, the changes card at a Task's foot, the
+  // harness's card and its one-line note) and the code block, and the page-level boxes (W4): the
+  // card and a table that is its own box.
+  "ui-frame": [
+    "ToolCallCard",
+    "WorkGroup",
+    "ChangesCard",
+    "StepBanner",
+    "TranscriptNote",
+    "CodeBlock",
+    "Card",
+    "Table",
+  ],
   // The page tab bar, and a dock's tab strip (W7).
   "ui-underline-nav": ["Tabs", "DockTabs"],
   // The app window (W7: the package's shell; the web's layout route renders it).
@@ -126,9 +137,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "Tabs",
     "EmptyState",
   ],
-  "ui-tree": ["FileTree", "WorkGroup"],
+  "ui-tree": ["FileTree", "WorkGroup", "StepBanner"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],
-  "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow"],
+  "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow", "StepBanner", "TranscriptNote"],
   // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
   // renders through. The charts: the plot frame (its children — the trend, requests, token-bar
   // and score charts — carry parts, not the hook), the token donut, the sparkline and the ring.
@@ -155,7 +166,7 @@ const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
 const FIELD_SLOTS = new Set(["label", "control", "hint"]);
 const LIVE_SIGNALS = new Set(["dot", "caret", "spinner", "bar"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
-const ACTIVITY_KINDS = new Set(["thinking", "tool"]);
+const ACTIVITY_KINDS = new Set(["thinking", "tool", "event"]);
 const ACTIVITY_STATES = new Set(["running", "done", "error"]);
 const ACTIVITY_SLOTS = new Set(["label", "detail", "progress", "mark", "toggle", "toggle-end"]);
 const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]);
@@ -338,7 +349,7 @@ describe("style hooks", () => {
           const kind = element.attributes.get("data-kind");
           if (kind !== null && (typeof kind !== "string" || !ACTIVITY_KINDS.has(kind))) {
             problems.push(
-              `${at} .ui-activity needs data-kind="thinking|tool", has ${String(kind)}`,
+              `${at} .ui-activity needs data-kind="thinking|tool|event", has ${String(kind)}`,
             );
           }
           const state = element.attributes.get("data-state");

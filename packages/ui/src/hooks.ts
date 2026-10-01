@@ -29,8 +29,8 @@
  * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`   |
  * |                    | hosts: the Spinner, a pulsing Dot, the streaming caret   |                                                       |
  * | `ui-frame`         | a ruled box with a head, a body, a foot and panes        | children carry `data-slot="head" \| "body" \| "foot" \| "pane"` |
- * |                    | hosts: the transcript's cards, the code block, `Card`,   |                                                       |
- * |                    | a framed `Table`                                         |                                                       |
+ * |                    | hosts: the transcript's cards and harness notes, the     |                                                       |
+ * |                    | code block, `Card`, a framed `Table`                     |                                                       |
  * | `ui-underline-nav` | the selected-tab marker of a tab bar (a page's tabs, a   | items `[role="tab"]`, selected by `aria-selected="true"` |
  * |                    | dock's tab strip)                                        |                                                       |
  * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]` |
@@ -39,8 +39,10 @@
  * |                    | hosts: the icon renderers' call sites, `NavRow`'s glyph  |                                                       |
  * | `ui-tree`          | a container whose rows nest                              | rows carry `data-depth="0"…"8"`, the last row of a level `data-last="true"`; a row's children may follow it in a `data-branch` element carrying the children's `data-depth` |
  * | `ui-field`         | a labelled control row                                   | children carry `data-slot="label" \| "control"` and optionally `"hint"` |
- * | `ui-activity`      | a step of the agent's work in the transcript: a thinking | `data-kind="thinking" \| "tool"`, `data-state="running" \| "done" \| "error"`; descendants may carry `data-slot="label" \| "detail" \| "progress" \| "mark" \| "toggle" \| "toggle-end"` (the progress slot exists only while running, hidden by the host — a recipe that draws it sets `display` itself; `mark` wraps the leading status icon; `toggle` is the fold's chevron after the words, carried to the far edge by `order-last`; `toggle-end` is a chevron button at a row's end that a theme showing `toggle` hides) |
- * |                    | row, a tool-call row, a work group's header              |                                                       |
+ * | `ui-activity`      | a row of the transcript's work: a step of the agent's    | `data-kind="thinking" \| "tool" \| "event"`, `data-state="running" \| "done" \| "error"`; descendants may carry `data-slot="label" \| "detail" \| "progress" \| "mark" \| "toggle" \| "toggle-end"` (the progress slot exists only while running, hidden by the host — a recipe that draws it sets `display` itself; `mark` wraps the leading status icon; `toggle` is the fold's chevron after the words, carried to the far edge by `order-last`; `toggle-end` is a chevron button at a row's end that a theme showing `toggle` hides) |
+ * |                    | (a thinking row, a tool-call row, a work group's         |                                                       |
+ * |                    | header) or an event of the harness's (`StepBanner`,      |                                                       |
+ * |                    | `TranscriptNote`)                                        |                                                       |
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
@@ -81,16 +83,17 @@
  *   the host list. A wrapper that holds only the icon may carry the class itself instead, so a
  *   hidden icon leaves no empty box behind in a flex row.
  * - `ui-tree` marks a list whose rows nest: a file tree, a work group's tool rows under its head,
+ *   a harness card's rows under its own (a compaction's sections, an MCP connection's servers),
  *   a plan's sub-steps, the subagent call graph. A host indents its rows itself, by
  *   `calc(var(--ui-tree-inset) + var(--ui-tree-indent) * depth)`, so every theme's connector
  *   rules land on the same columns; rows directly under the container's own head (a work group's
- *   tool rows) are depth 1, a tree's roots depth 0, and depths past 8 draw as 8. Console draws
- *   `├─` / `└─` connector rules in CSS (no box, no glyphs in the markup) and takes the box away
- *   from a frame whose body is a tree; Frost indents against a soft guide rule and keeps its
- *   card; Primer keeps today's bordered box. A branch is a plain block holding one level's rows
- *   right after their parent row (`<li data-depth="1">` then `<div data-branch data-depth="2">`);
- *   the recipes continue the parent's rule alongside it. Rows draw with `::before` / `::after`,
- *   so a tree row carries no pseudo-elements of its own.
+ *   tool rows, a harness card's) are depth 1, a tree's roots depth 0, and depths past 8 draw
+ *   as 8. Console draws `├─` / `└─` connector rules in CSS (no box, no glyphs in the markup) and
+ *   takes the box away from a frame whose body is a tree; Frost indents against a soft guide
+ *   rule and keeps its card; Primer keeps today's bordered box. A branch is a plain block
+ *   holding one level's rows right after their parent row (`<li data-depth="1">` then
+ *   `<div data-branch data-depth="2">`); the recipes continue the parent's rule alongside it.
+ *   Rows draw with `::before` / `::after`, so a tree row carries no pseudo-elements of its own.
  * - `ui-field` marks a labelled control row — a form field or a settings row — so a theme can
  *   lay its parts out its own way: Primer keeps the host's layout (label above in a form, label
  *   left and control right in settings); Frost keeps the host's row and sets it as a band in a
@@ -112,6 +115,20 @@
  * the `└` its `ui-tree` row draws. Both recipes go still under reduced motion (a plain label,
  * the bar holding one fill) and read as finished at rest. The host's own status icon stays: the
  * recipes add to it, never replace it.
+ *
+ * The kind is `thinking`, `tool` or `event`. An event is something the harness did or injected
+ * rather than a step the agent took — a compaction and its sections, an MCP connection and its
+ * servers, a background task settling, an injected message, a trigger, attached files, a
+ * handoff — written on the work group's anatomy: `StepBanner` for a card that opens,
+ * `TranscriptNote` for one line. No recipe branches on the kind, so an event renders as a step
+ * in the same state does (settled, or running while a compaction or a connection is in flight),
+ * and a harness row reads as a work group in every theme: Primer's card or grey pill, Frost's
+ * lineless row with its soft hover, Console's transcript line with the fold mark leading. A
+ * hover answers only a row that does something (one that is or holds a button); a note with
+ * nothing to open is held still in every theme. A harness row's label is a fixed phrase and
+ * never holds a name, since a recipe may recase the label (Console uppercases it): the task,
+ * the organization, the skills, the files, the agent, the server or the objective it names sits
+ * in a detail, which no recipe recases.
  *
  * `ui-notice` and `ui-chart` (2026-09-29) let notices and charts differ per theme where their
  * components had one look. A notice names its tone; Primer keeps the host's own strip, Frost

@@ -67,6 +67,18 @@ export const en: GalleryStrings = {
         "A Task waiting on a human: a command needs approval; allow or deny it and the Task carries on and ends.",
       how: "Sidebar › a session row with the approval mark.",
     },
+    "chat-harness": {
+      title: "Chat · harness rows",
+      description:
+        "Every row neither a person nor the model wrote: a handoff origin, Skills and an attached file, the MCP connect row, background-task notices, a scheduled trigger, a reconnect, an abort, a provider error, a compaction and a model switch, the rounds and steering of a goal run, each Task's stats line and the goal banner.",
+      how: "Sidebar › “Fix the hooks doc citations”, the oldest row of the session list.",
+    },
+    "chat-org": {
+      title: "Chat · organization trigger",
+      description:
+        "A desk Session an organization's scheduler opened: the first message's trigger block folds into a one-line origin notice.",
+      how: "Company mode › an employee's desk.",
+    },
     "chat-new": {
       title: "New chat",
       description:

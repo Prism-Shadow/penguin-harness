@@ -50,6 +50,7 @@ import {
   presetModelEntries,
   presetPromotions,
 } from "../../../../core/dist/state/model-catalog.js";
+import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
 import type { Lang } from "./types";
 import type { ModelRef } from "./transcripts";
@@ -429,6 +430,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ...extra,
   });
   const tempWorkspace = `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/workspaces/tmp-7c1e9b2a`;
+  const harness = harnessTimeline(now);
+  const orgDesk = orgDeskTimeline(now);
   const sessions: SessionInfo[] = [
     session(
       IDS.sessions.approval,
@@ -529,6 +532,18 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         workspace: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/workspaces/case-001`,
       },
     ),
+    // Every row the harness writes; it switched models mid-way, so the row names the new one.
+    session(
+      IDS.sessions.harness,
+      IDS.agents.docs,
+      L("修复 hooks 文档的引用", "Fix the hooks doc citations"),
+      harness.startedAt,
+      {
+        provider: SWITCHED_MODEL.provider,
+        modelId: SWITCHED_MODEL.modelId,
+        lastActiveAt: iso(harness.endedAt),
+      },
+    ),
     session(
       IDS.sessions.notes[0],
       IDS.agents.notes,
@@ -540,6 +555,18 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       IDS.agents.notes,
       L("破坏性变更清单", "Breaking changes list"),
       ago(9),
+    ),
+    // An organization's desk Session (the durable `org` stamp): reached by its link, never listed.
+    session(
+      IDS.sessions.orgDesk,
+      IDS.agents.notes,
+      L("本周发布摘要", "This week's release digest"),
+      orgDesk.startedAt,
+      {
+        workspace: "/home/demo/projects/release-notes",
+        lastActiveAt: iso(orgDesk.endedAt),
+        client: "org",
+      },
     ),
   ];
 
