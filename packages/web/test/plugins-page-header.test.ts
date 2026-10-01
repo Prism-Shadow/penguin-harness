@@ -1,183 +1,85 @@
 /**
- * The plugins page's header and its buttons, read from the real JSX.
+ * The plugins page's header actions and a module row's verbs, rendered.
  *
- * The search box lives among the header's actions (PageHeader's title row, which wraps on a
- * narrow screen), the way the Models page lays its header out, and outside the admin-only
- * branch, because a member filters the list too. Every button the page draws carries its copy on the button, not
- * only in aria-label: an icon is followed by its words (hidden while its container is narrow,
- * the Models page's `hidden @3xl:inline`), and each `@3xl:` has an `@container` above it to
- * answer to.
+ * - A member sees the search box, labelled, and no settings gear: filtering the list is not an
+ *   admin's alone, the plugins' options are.
+ * - An admin sees the search box and the settings gear, and the gear carries its words on the
+ *   button, not only in its accessible name.
+ * - An available module row offers Install, and an installed one Remove, each with its words
+ *   beside the icon.
  *
- * Both are layout facts a regex over the file cannot settle (which element the box sits in,
- * whether an `isAdmin &&` encloses it, what a button's children are), so the module is parsed
- * with the TypeScript parser, as `control-size.test.ts` and `company-click-targets.test.ts` do.
+ * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
+ * its cards. How the header row wraps on a narrow screen is PageHeader's, not this page's.
  */
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeEach, describe, expect, it } from "vitest";
+import { ModuleRow, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
+import { en } from "../src/lib/strings-en";
+import { LocaleProvider } from "../src/state/locale";
+import { stubLocalStorage } from "./helpers/storage";
 
-const PATH = fileURLToPath(new URL("../src/features/plugins/plugins-page.tsx", import.meta.url));
-const TEXT = readFileSync(PATH, "utf8");
-const SOURCE = ts.createSourceFile(
-  PATH,
-  TEXT,
-  ts.ScriptTarget.Latest,
-  /* setParentNodes */ true,
-  ts.ScriptKind.TSX,
-);
+beforeEach(() => {
+  stubLocalStorage().setItem("penguin.lang", "en");
+});
 
-function each(node: ts.Node, visit: (n: ts.Node) => void): void {
-  visit(node);
-  ts.forEachChild(node, (child) => {
-    each(child, visit);
-  });
-}
+const inLocale = (child: Parameters<typeof createElement>[0], props: object) =>
+  renderToStaticMarkup(createElement(LocaleProvider, null, createElement(child, props)));
 
-const tagOf = (el: ts.JsxOpeningLikeElement): string => el.tagName.getText();
-
-function attribute(el: ts.JsxOpeningLikeElement, name: string): string | undefined {
-  const attr = el.attributes.properties.find(
-    (a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText() === name,
+/** The text a reader sees inside the button with this accessible name; undefined when absent. */
+function buttonText(html: string, name: string): string | undefined {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`<button[^>]*aria-label="${escaped}"[^>]*>(.*?)</button>`, "s").exec(
+    html,
   );
-  const init = attr?.initializer;
-  if (init === undefined) return undefined;
-  if (ts.isStringLiteral(init)) return init.text;
-  if (ts.isJsxExpression(init) && init.expression !== undefined) return init.expression.getText();
-  return undefined;
+  return match?.[1]?.replace(/<[^>]+>/g, "").trim();
 }
 
-function openings(): ts.JsxOpeningLikeElement[] {
-  const out: ts.JsxOpeningLikeElement[] = [];
-  each(SOURCE, (n) => {
-    if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) out.push(n);
-  });
-  return out;
-}
-
-/** The JSX element that owns an opening tag (the opening itself for a self-closing one). */
-const elementOf = (el: ts.JsxOpeningLikeElement): ts.Node =>
-  ts.isJsxOpeningElement(el) ? el.parent : el;
-
-/** The nearest enclosing JSX element's opening tag. */
-function parentElement(node: ts.Node): ts.JsxOpeningElement | undefined {
-  for (let p = node.parent; p !== undefined; p = p.parent) {
-    if (ts.isJsxElement(p)) return p.openingElement;
-  }
-  return undefined;
-}
-
-/** The page's `<PageHeader>` (the shared UI package draws its title row, which wraps). */
-function pageHeader(): ts.JsxOpeningLikeElement {
-  const header = openings().find((el) => tagOf(el) === "PageHeader");
-  expect(header, "plugins-page.tsx draws no <PageHeader>").toBeDefined();
-  return header!;
-}
-
-/** The header's `actions` attribute: what PageHeader lays out at the end of its title row. */
-function headerActions(): ts.JsxAttribute {
-  const attr = pageHeader().attributes.properties.find(
-    (a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText() === "actions",
-  );
-  expect(attr, "the <PageHeader> has no actions").toBeDefined();
-  return attr!;
-}
-
-function searchBoxes(): ts.JsxOpeningLikeElement[] {
-  return openings().filter((el) => tagOf(el) === "SearchInput");
-}
-
-describe("plugins page header", () => {
-  it("holds the one search box, labelled, among the header's actions and outside the admin-only branch", () => {
-    const boxes = searchBoxes();
-    expect(boxes).toHaveLength(1);
-    const box = boxes[0]!;
-    expect(attribute(box, "aria-label")).toBe("S.plugins.searchPlaceholder");
-    expect(attribute(box, "value")).toBe("query");
-    const actions = headerActions();
-    let inActions = false;
-    for (let p: ts.Node | undefined = box.parent; p !== undefined; p = p.parent) {
-      if (p === actions) inActions = true;
-      if (
-        ts.isBinaryExpression(p) &&
-        p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
-        /\bisAdmin\b/.test(p.left.getText())
-      ) {
-        throw new Error("the search box is inside an isAdmin branch: members would not see it");
-      }
-    }
-    expect(inActions, "the search box is not among the header's actions").toBe(true);
+const header = (isAdmin: boolean) =>
+  inLocale(PluginsHeaderActions, {
+    query: "",
+    onQuery: () => undefined,
+    isAdmin,
+    machinePicker: null,
+    onOpenSettings: () => undefined,
   });
 
-  it("gives the box the Models header's shape: fixed width at sm, flexible below", () => {
-    const wrapper = parentElement(elementOf(searchBoxes()[0]!));
-    expect(attribute(wrapper!, "className")?.split(/\s+/)).toEqual(
-      expect.arrayContaining(["min-w-0", "flex-1", "sm:w-56", "sm:flex-none"]),
-    );
+describe("the plugins page header", () => {
+  it("offers a member the search box and no settings gear", () => {
+    const html = header(false);
+    expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
+    expect(buttonText(html, en.plugins.openSettings)).toBeUndefined();
+  });
+
+  it("offers an admin the search box and a settings gear that says what it is", () => {
+    const html = header(true);
+    expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
+    expect(buttonText(html, en.plugins.openSettings)).toBe(en.plugins.openSettings);
   });
 });
 
-/** The JSX elements a node holds (its own children, any depth, through expressions). */
-function openingsUnder(node: ts.Node): ts.JsxOpeningLikeElement[] {
-  const out: ts.JsxOpeningLikeElement[] = [];
-  each(node, (n) => {
-    if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) out.push(n);
-  });
-  return out;
-}
+describe("a module plugin's row", () => {
+  const row = (installed: boolean) =>
+    inLocale(ModuleRow, {
+      specifier: "@acme/plugin",
+      entry: undefined,
+      state: installed ? "active" : "none",
+      shipped: false,
+      busy: false,
+      blocked: false,
+      onInstall: installed ? null : () => undefined,
+      onRemove: installed ? () => undefined : null,
+    });
 
-const classesOf = (el: ts.JsxOpeningLikeElement): string[] =>
-  attribute(el, "className")?.split(/\s+/) ?? [];
-
-/** Copy a reader sees: a `{S.…}` child of the button, or of a span inside it that is not sr-only. */
-function visibleCopy(button: ts.JsxElement): boolean {
-  const holders: ts.Node[] = [
-    button,
-    ...openingsUnder(button)
-      .filter((el) => tagOf(el) === "span" && !classesOf(el).includes("sr-only"))
-      .map(elementOf),
-  ];
-  return holders.some(
-    (h) =>
-      ts.isJsxElement(h) &&
-      h.children.some((c) => ts.isJsxExpression(c) && /\bS\./.test(c.getText())),
-  );
-}
-
-function buttons(): ts.JsxElement[] {
-  return openings()
-    .filter((el) => tagOf(el) === "Button" && ts.isJsxOpeningElement(el))
-    .map((el) => el.parent as ts.JsxElement);
-}
-
-const ICONS = new Set(["GlyphIcon", "StatusIcon"]);
-
-describe("plugins page buttons", () => {
-  it("every icon button shows its copy beside the icon, not only in aria-label", () => {
-    const withIcon = buttons().filter((b) => openingsUnder(b).some((el) => ICONS.has(tagOf(el))));
-    // The header's settings gear, the library card's three, the module row's two (install,
-    // remove).
-    expect(withIcon.length).toBeGreaterThanOrEqual(6);
-    for (const b of withIcon) {
-      const label = attribute(b.openingElement, "aria-label") ?? b.openingElement.getText();
-      expect(visibleCopy(b), `icon-only button: ${label}`).toBe(true);
-      // The square icon-only form (h-8 w-8 … p-0) has no room for the words.
-      expect(classesOf(b.openingElement), label).not.toContain("w-8");
-    }
+  it("offers Install on an available row, its words beside the icon", () => {
+    const html = row(false);
+    expect(buttonText(html, `${en.plugins.install} @acme/plugin`)).toBe(en.plugins.install);
+    expect(buttonText(html, `${en.plugins.uninstall} @acme/plugin`)).toBeUndefined();
   });
 
-  it("names the Models page's narrow-container rule only where a container answers it", () => {
-    const labelled = openings().filter((el) => classesOf(el).some((c) => c.startsWith("@3xl:")));
-    expect(labelled.length).toBeGreaterThanOrEqual(6);
-    for (const el of labelled) {
-      let contained = false;
-      for (let p = parentElement(elementOf(el)); p !== undefined; p = parentElement(p.parent)) {
-        if (classesOf(p).includes("@container")) {
-          contained = true;
-          break;
-        }
-      }
-      expect(contained, `no @container above: ${el.parent.getText().slice(0, 80)}`).toBe(true);
-    }
+  it("offers Remove on an installed row, its words beside the icon", () => {
+    const html = row(true);
+    expect(buttonText(html, `${en.plugins.uninstall} @acme/plugin`)).toBe(en.plugins.uninstall);
+    expect(buttonText(html, `${en.plugins.install} @acme/plugin`)).toBeUndefined();
   });
 });

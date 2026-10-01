@@ -602,52 +602,31 @@ export function PluginsPage() {
   // would otherwise take the scrollbar with it and shift everything sideways at the click.
   return (
     <PageFrame className="[scrollbar-gutter:stable]">
-      {/* The header's actions, the Models page's shape: search for everyone (flexible below sm,
-          14rem from sm up, the row wrapping on a narrow screen), then the admin's machine picker
-          and the gear. The options loaded plugins declare live on the Settings dialog's Plugins
-          page, an admin's page; the gear opens the dialog there rather than sending anyone
-          through the user menu to find it. The wrapper is the @container the buttons' words
-          answer to. */}
+      {/* The wrapper is the @container the header buttons' words answer to (see
+          PluginsHeaderActions). The options loaded plugins declare live on the Settings
+          dialog's Plugins page, an admin's page; the header's gear opens the dialog there rather
+          than sending anyone through the user menu to find it. */}
       <div className="@container">
         <PageHeader
           title={S.plugins.pageTitle}
           info={S.plugins.pageDesc}
           actions={
-            <>
-              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-                <SearchInput
-                  size="sm"
-                  value={query}
-                  placeholder={S.plugins.searchPlaceholder}
-                  aria-label={S.plugins.searchPlaceholder}
-                  onChange={setQuery}
-                />
-              </div>
-              {isAdmin && (
-                <>
-                  {/* Which machine's plugins the rows show, and which table an install or a
-                      removal edits: the shared one, or that machine's own. */}
-                  {otherMachines.length > 0 && (
-                    <MachinePicker
-                      aria-label={S.plugins.viewMachine}
-                      choices={machineChoices}
-                      value={viewMachine ?? ALL_MACHINES_CHOICE}
-                      onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
-                    />
-                  )}
-                  <Button
-                    size="sm"
-                    className="h-8 shrink-0"
-                    aria-label={S.plugins.openSettings}
-                    title={S.plugins.openSettings}
-                    onClick={() => setSettingsOpen(true)}
-                  >
-                    <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
-                    <span className="hidden @3xl:inline">{S.plugins.openSettings}</span>
-                  </Button>
-                </>
-              )}
-            </>
+            <PluginsHeaderActions
+              query={query}
+              onQuery={setQuery}
+              isAdmin={isAdmin}
+              machinePicker={
+                otherMachines.length > 0 ? (
+                  <MachinePicker
+                    aria-label={S.plugins.viewMachine}
+                    choices={machineChoices}
+                    value={viewMachine ?? ALL_MACHINES_CHOICE}
+                    onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
+                  />
+                ) : null
+              }
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
           }
         >
           {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
@@ -886,6 +865,57 @@ export interface PluginView {
 
 /** The picker's value for all machines: a machine id is never this short. */
 const ALL_MACHINES_CHOICE = "*";
+
+/**
+ * The page header's actions, the Models page's shape: search for everyone (a member filters the
+ * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
+ * which table an install or a removal edits: the shared one, or that machine's own) and the gear
+ * that opens the Settings dialog's Plugins page. The gear's words sit beside its icon once the
+ * header's `@container` is wide enough.
+ */
+export function PluginsHeaderActions({
+  query,
+  onQuery,
+  isAdmin,
+  machinePicker,
+  onOpenSettings,
+}: {
+  query: string;
+  onQuery: (query: string) => void;
+  isAdmin: boolean;
+  /** The machine picker, when there is another machine to pick; null otherwise. */
+  machinePicker: React.ReactNode;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <>
+      <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+        <SearchInput
+          size="sm"
+          value={query}
+          placeholder={S.plugins.searchPlaceholder}
+          aria-label={S.plugins.searchPlaceholder}
+          onChange={onQuery}
+        />
+      </div>
+      {isAdmin && (
+        <>
+          {machinePicker}
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            aria-label={S.plugins.openSettings}
+            title={S.plugins.openSettings}
+            onClick={onOpenSettings}
+          >
+            <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.openSettings}</span>
+          </Button>
+        </>
+      )}
+    </>
+  );
+}
 
 const ALL_MACHINES: PluginView = { machineId: null, remote: null, nameOf: (id) => id };
 
@@ -1573,7 +1603,7 @@ function InstallRow({
  * knows the package; the cluster sits BESIDE that link — a button inside an anchor is invalid
  * markup, and the click would have two meanings.
  */
-function ModuleRow({
+export function ModuleRow({
   specifier,
   entry,
   state,
