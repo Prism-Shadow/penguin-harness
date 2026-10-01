@@ -7,12 +7,11 @@
  * a "Roadmap" bar under the header swaps the column in, with "Back to the room" to swap back.
  */
 import { useEffect, useState } from "react";
+import { GlyphIcon, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
-import { useContributions } from "../../state/contributions";
+import { NAV_ICONS } from "../../lib/nav-icons";
+import { useOrgPages } from "./use-org-pages";
 import { roadmapDetailSrc, roadmapsPageSrc } from "./roadmaps";
 
 /** The roadmap whose room this channel is, with the detail page to show for it; null for any other channel (or while the plugin is not there). */
@@ -21,7 +20,7 @@ export function useChannelRoadmap(
   orgId: string,
   channelId: string,
 ): { number: number; name: string; src: string } | null {
-  const { pages } = useContributions();
+  const pages = useOrgPages();
   const src = roadmapsPageSrc(pages);
   const [found, setFound] = useState<{ key: string; number: number; name: string } | null>(null);
   const key = `${projectId}/${orgId}/${channelId}`;

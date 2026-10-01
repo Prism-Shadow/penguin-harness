@@ -14,15 +14,15 @@
  */
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
+import { ICON_GAP, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { OrgRoadmapItem } from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { Icon } from "../../components/ui/group-list";
-import { NAV_ICONS, PlusIcon } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { Truncated } from "../../components/ui/truncated";
-import { useContributions } from "../../state/contributions";
+import { useOrgPages } from "./use-org-pages";
 import { orgChannelPath, orgContributedPagePath } from "./company-nav";
 import { roadmapsPageSrc, sidebarRoadmaps } from "./roadmaps";
 
@@ -35,7 +35,7 @@ export function RoadmapsSidebar({
   orgId: string;
   onNavigate?: () => void;
 }) {
-  const { pages } = useContributions();
+  const pages = useOrgPages();
   const enabled = roadmapsPageSrc(pages) !== null;
   const { pathname } = useLocation();
   const navigate = useNavigate();

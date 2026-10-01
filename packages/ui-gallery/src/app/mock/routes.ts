@@ -2597,6 +2597,7 @@ router
   .put("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
+  .get("/api/projects/:projectId/organizations/:orgId/roadmaps", companyOff)
   // The company-proposals plugin's routes: company mode is off in the demo, as for the rest.
   .get("/api/projects/:projectId/organizations/:orgId/proposals", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/proposals", companyOff)
