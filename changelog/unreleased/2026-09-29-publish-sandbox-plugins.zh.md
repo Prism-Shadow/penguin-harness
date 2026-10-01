@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** process
 - **Scope:** `plugins`, `release`, `ci`, `tooling`
-- **PR:** [#923](https://github.com/Prism-Shadow/penguin-harness/pull/923)
+- **PR:** [#910](https://github.com/Prism-Shadow/penguin-harness/pull/910)
 
 [English](2026-09-29-publish-sandbox-plugins.md)
 

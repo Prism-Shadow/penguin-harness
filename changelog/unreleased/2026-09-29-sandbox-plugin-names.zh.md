@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** refactor
 - **Scope:** `plugins`, `server`, `docs`, `release`, `ci`
-- **PR:** [Myriad-Dreamin/penguin-harness#68](https://github.com/Myriad-Dreamin/penguin-harness/pull/68)
+- **PR:** [#910](https://github.com/Prism-Shadow/penguin-harness/pull/910)
 
 [English](2026-09-29-sandbox-plugin-names.md)
 
