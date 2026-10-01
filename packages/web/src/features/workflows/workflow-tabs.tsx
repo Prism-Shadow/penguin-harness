@@ -11,12 +11,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
+import { Button, NoticeStrip } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { Button } from "../../components/ui/button";
 import { formatDateTime } from "../../lib/format";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { forwardFrameKeys, readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
 import {
   FILL_APP_MESSAGE,
@@ -94,8 +94,8 @@ export function useWorkflowTabs(
 const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 const TAB_BASE =
-  "relative h-9 shrink-0 border-b-2 px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
-const TAB_ACTIVE = "border-[var(--accent-bg)] font-medium text-gray-900 dark:text-gray-100";
+  "relative h-9 shrink-0 border-b-2 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
+const TAB_ACTIVE = "border-accent font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 
@@ -116,16 +116,16 @@ export function WorkflowTabStrip({
   return (
     <>
       {notices.map((n) => (
-        <div
+        <NoticeStrip
           key={n.workflowId}
+          tone={n.error === null ? "neutral" : "attention"}
           role="status"
-          className={`shrink-0 truncate px-3 py-1 text-xs ${
-            n.error === null ? toneStrip.muted : toneStrip.attention
-          }`}
-          title={n.error ?? n.hints.join("\n")}
+          className="shrink-0 truncate px-3 py-1 text-xs"
+          data-tooltip={n.error ?? n.hints.join("\n")}
+          data-tooltip-content="text"
         >
           <span className="font-mono">{n.workflowId}</span>: {n.error ?? n.hints[0]}
-        </div>
+        </NoticeStrip>
       ))}
       {tabs.length > 0 && (
         <div
@@ -148,7 +148,7 @@ export function WorkflowTabStrip({
               type="button"
               role="tab"
               aria-selected={active === t.tabId}
-              title={t.error ?? undefined}
+              data-tooltip={t.error ?? undefined}
               className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
               onClick={() => onSelect(t.tabId)}
             >
@@ -184,7 +184,7 @@ export function WorkflowFrame({
   /** The workflow and its versions are gone; the caller drops the tab (the list refetch confirms). */
   onRemoved: () => void;
 }) {
-  const { dark, accent, fontScale } = useTheme();
+  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
@@ -237,8 +237,8 @@ export function WorkflowFrame({
     }
   };
 
-  // The page is a separate document: the app's dark class, accent and root font size stop at
-  // the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
+  // The page is a separate document: the app's dark class, theme, accent, fonts and root font
+  // size stop at the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
   // change. Past the commit, because the provider that stamps them on the app's own document
   // is an ancestor and its effect runs after this one's.
   const applyTheme = useCallback(() => {
@@ -247,7 +247,7 @@ export function WorkflowFrame({
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, accent, fontScale, tab.uiRev]);
+  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
 
   // A page is its own document: until it has loaded and been themed it paints the browser's
   // white canvas, and then its own unstyled markup — a white flash in a dark app, on every
@@ -371,12 +371,14 @@ export function WorkflowFrame({
         )}
       </div>
       {tab.error !== null && !bare && (
-        <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
           {S.workflows.loadError}: {tab.error}
-        </div>
+        </NoticeStrip>
       )}
       {failure !== null && (
-        <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>{failure}</div>
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
+          {failure}
+        </NoticeStrip>
       )}
       <div
         id={historyId}

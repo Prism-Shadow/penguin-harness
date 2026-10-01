@@ -1,64 +1,77 @@
 /**
- * The tab on screen, told to the server (features/builtin-browser/on-screen-report.ts): once the
- * choice has settled, once per change however many frames repeat it, and again after a resync.
+ * The tab on screen, told to the server (features/builtin-browser/on-screen-report.ts), as the
+ * `POST …/tabs/on-screen` requests the fetch fake records. The layer reports on every frame it
+ * lays out (every 16 ms here, on fake timers).
+ *
+ * - The tab on screen is said once it has stayed put for the settle time, and not again while it
+ *   stays.
+ * - A quick run of switches says only where it ends; a switch that comes back before it settled
+ *   says nothing new.
+ * - After a resync the tab on screen is said again.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("../src/api/endpoints", () => ({
-  setBuiltinBrowserOnScreen: vi.fn(() => Promise.resolve()),
-}));
-
-import * as api from "../src/api/endpoints";
 import {
   ON_SCREEN_SETTLE_MS,
   forgetOnScreenReport,
   reportOnScreenTab,
 } from "../src/features/builtin-browser/on-screen-report";
+import { json, stubFetch } from "./helpers/fetch";
+import type { FakeFetch } from "./helpers/fetch";
 
-const sent = vi.mocked(api.setBuiltinBrowserOnScreen);
+let fetch: FakeFetch;
 
 beforeEach(() => {
   vi.useFakeTimers();
   forgetOnScreenReport();
-  sent.mockClear();
+  fetch = stubFetch(() => json({}));
 });
 afterEach(() => vi.useRealTimers());
 
-/** The layer lays out a frame every 16 ms. */
+const FRAME_MS = 16;
+/** Enough frames for a choice to settle; a handful, well short of it. */
+const SETTLED = Math.ceil(ON_SCREEN_SETTLE_MS / FRAME_MS) + 1;
+const QUICK = 3;
+
+/** The layer laying out `count` frames with `tabId` on screen. */
 function frames(tabId: number | null, count: number): void {
   for (let i = 0; i < count; i++) {
     reportOnScreenTab(tabId);
-    vi.advanceTimersByTime(16);
+    vi.advanceTimersByTime(FRAME_MS);
   }
 }
 
+/** The tab each on-screen report named, in order. */
+const said = () =>
+  fetch.requests
+    .filter((r) => r.path.endsWith("/tabs/on-screen"))
+    .map((r) => (r.body as { tabId: number | null }).tabId);
+
 describe("reportOnScreenTab", () => {
   it("says the tab on screen once it has stayed a moment, and not again while it stays", () => {
-    frames(4, 5);
-    expect(sent).not.toHaveBeenCalled();
-    frames(4, 60);
-    expect(sent.mock.calls).toEqual([[4]]);
+    frames(4, QUICK);
+    expect(said()).toEqual([]);
+    frames(4, SETTLED * 2);
+    expect(said()).toEqual([4]);
   });
 
   it("says only where a quick run of switches ends", () => {
-    frames(4, 3);
-    frames(7, 3);
-    frames(null, 40);
-    expect(sent.mock.calls).toEqual([[null]]);
+    frames(4, QUICK);
+    frames(7, QUICK);
+    frames(null, SETTLED);
+    expect(said()).toEqual([null]);
   });
 
   it("says nothing when the switch comes back before it settled", () => {
-    frames(4, 40);
-    frames(7, 3);
-    frames(4, 40);
-    expect(sent.mock.calls).toEqual([[4]]);
+    frames(4, SETTLED);
+    frames(7, QUICK);
+    frames(4, SETTLED);
+    expect(said()).toEqual([4]);
   });
 
   it("says it again after a resync", () => {
-    frames(4, 40);
+    frames(4, SETTLED);
     forgetOnScreenReport();
-    frames(4, 40);
-    expect(sent.mock.calls).toEqual([[4], [4]]);
-    expect(ON_SCREEN_SETTLE_MS).toBeLessThan(40 * 16);
+    frames(4, SETTLED);
+    expect(said()).toEqual([4, 4]);
   });
 });

@@ -31,6 +31,9 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
+    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
+    pinEntry: "Pin",
+    unpinEntry: "Unpin",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
@@ -208,6 +211,21 @@ export const en: Strings = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `exit code ${code}`,
+    touchKeys: {
+      label: "Terminal keys",
+      esc: "Escape",
+      tab: "Tab",
+      ctrl: "Ctrl (tap, then the next character)",
+      alt: "Alt (tap, then the next character)",
+      up: "Arrow up",
+      down: "Arrow down",
+      left: "Arrow left",
+      right: "Arrow right",
+      interrupt: "Interrupt (Ctrl+C)",
+      paste: "Paste",
+      hideKeyboard: "Dismiss the keyboard",
+      showKeyboard: "Show the keyboard",
+    },
   },
 
   dock: {
@@ -231,6 +249,8 @@ export const en: Strings = {
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
+    maximize: "Fill the screen",
+    restore: "Restore the height",
   },
 
   builtinBrowser: {
@@ -344,6 +364,13 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
+    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
+    creditsTitle: "Credits",
+    creditsThemes: "Used by",
+    creditsNoTheme: "Not a theme's default",
+    creditsLicense: "License",
+    creditsSource: "Source",
+    creditsLicenseText: "Full license text",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -430,7 +457,11 @@ export const en: Strings = {
       `inline image enters the conversation and the Trace, where its size is paid again on ` +
       `every history page and resume.`,
     theme: "Theme",
-    themeInfo: "Light or dark look of the app.",
+    themeInfo:
+      "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    colorMode: "Mode",
+    colorModeInfo: "Light or dark look of the app.",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
@@ -441,11 +472,17 @@ export const en: Strings = {
     langEn: "English",
     fontSize: "Font size",
     fontSizeInfo: "Overall interface font size.",
-    fontSmall: "S",
-    fontMedium: "M",
-    fontLarge: "L",
+    textSizeNames: { xs: "XS", s: "S", m: "M", l: "L", xl: "XL" },
+    fonts: "Fonts",
+    fontsInfo:
+      "The face for Latin text and the face for CJK text, each following the theme by default. Code and other monospaced text always keep the theme's monospaced face.",
+    fontLatin: "Latin",
+    fontCjk: "CJK",
+    fontFollowTheme: "Theme's own",
+    fontSystem: "System font",
     accent: "Accent",
-    accentInfo: "Interface accent color.",
+    accentInfo:
+      "Interface accent color. Each theme offers its own set; after a theme change, a color the new theme does not offer shows as the theme's own until you return.",
     launcher: "Shortcuts launcher",
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
@@ -474,12 +511,23 @@ export const en: Strings = {
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
     accentNames: {
-      neutral: "Neutral",
+      neutral: "Theme's own",
       blue: "Blue",
       green: "Green",
       violet: "Violet",
       rose: "Rose",
       amber: "Amber",
+      ocean: "Ocean",
+      clay: "Clay",
+      plum: "Plum",
+      honey: "Honey",
+      slate: "Slate",
+      phosphor: "Phosphor",
+      cyan: "Cyan",
+      magenta: "Magenta",
+      gold: "Gold",
+      cobalt: "Cobalt",
+      orange: "Orange",
     } as Record<string, string>,
   },
 
@@ -686,7 +734,7 @@ export const en: Strings = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
@@ -753,6 +801,13 @@ export const en: Strings = {
     moreInfo: "More info",
     /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
     moreInfoAbout: (subject: string) => `More info: ${subject}`,
+    /** The toast stack's name as a live region (the shared UI package's `Toaster`). */
+    notifications: "Notifications",
+    /** Read after a toast's text: pressing the toast dismisses it. */
+    dismiss: "Dismiss",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "Previous page",
+    nextPage: "Next page",
     name: "Name",
     username: "Username",
     role: "Role",
@@ -998,7 +1053,7 @@ export const en: Strings = {
     createDirSkillsEmpty: "This directory carries no installable Skills",
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
-    createDirSkillsClear: "Clear the selected directory",
+    createDirSkillsClear: "Don't import from a directory",
     createSnapshot: "Initialize from a snapshot",
     createSnapshotPick: "Choose a snapshot package",
     createSnapshotHint:
@@ -2239,7 +2294,9 @@ export const en: Strings = {
       "no-identity": "not identified",
     },
     workspaceAuto: "Temporary workspace",
-    workspaceClear: "Use a temporary workspace instead",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "Start in a temporary workspace",
+    workspaceTempRule: "A new empty folder inside the agent's workspaces/ folder",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
     finder: {
@@ -2528,14 +2585,11 @@ Scenarios:
       },
     },
     sessionList: "Sessions",
+    sessionListByMode: { workspace: "Workspaces", agent: "Agents", time: "Recent" },
     defaultSessionTitle: "New chat",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint:
-      "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -2986,6 +3040,9 @@ Scenarios:
     dropFilesDesc: "Images and files are added to the message draft",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string =>
+      `The pasted text was long, so it was attached as ${name}.`,
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -3481,11 +3538,13 @@ Scenarios:
     errorsColKind: "Type",
     errorsColMessage: "Message",
     errorsEmpty: "No errors",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `First at ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "Newer",
     errorsOlder: "Older",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `Page ${page} / ${pages} · ${total} total`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `Page ${page} / ${pages} · ${rows} row${rows === 1 ? "" : "s"}`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
@@ -3986,11 +4045,8 @@ Scenarios:
     workspaceField: "Company workspace",
     workspaceInfo:
       "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",
-    workspaceHint:
-      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory on the server",
     workspaceEmpty: "The organization's own workspace/ directory",
-    workspaceMenuHint: "Pick an existing directory as the company workspace",
-    workspaceClear: "Back to the organization's own directory",
+    workspaceClear: "Use the organization's own directory",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO budget",
     ceoBudgetHint: "A monthly cap; the CEO's budget is the whole company's",
@@ -4023,6 +4079,13 @@ Scenarios:
     statusPaused: "Paused",
     pause: "Pause organization",
     resume: "Resume organization",
+    deleteOrg: "Delete organization",
+    deleteOrgDesc:
+      "Moves the organization to the Project's trash. Its employees stay as Agents and its conversations are kept.",
+    deleteOrgConfirm:
+      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. Its employees remain Agents of the Project; its desk and ticket conversations are kept, but with the organization gone no page lists them any more. Its id can be reused only after the old CEO's Agent is deleted. To stop an organization without losing anything, pause it instead.",
+    deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
+    deleted: (orgId: string) => `Organization ${orgId} deleted`,
     pauseInfo:
       "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",

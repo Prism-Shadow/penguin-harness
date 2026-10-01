@@ -9,15 +9,15 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
+import { EmptyState, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
-import { EmptyState } from "../../components/ui/empty-state";
 import { MessageItem } from "./message-item";
-import { WorkspaceLinksProvider } from "./md";
-import { WorkGroup, isWorkItem } from "./work-group";
+import { WorkspaceLinksProvider } from "./workspace-links";
+import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
@@ -103,7 +103,7 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
-      <WorkGroup
+      <SessionWorkGroup
         key={`wg-${seg.items[0]!.id}`}
         items={seg.items}
         ctx={ctx}
@@ -458,7 +458,7 @@ export function MessageStream({
             <div className="flex justify-center pb-2">
               {older.loading ? (
                 <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  <Spinner size="sm" label={S.common.loading} />
                   {S.chat.loadingEarlier}
                 </span>
               ) : older.error !== null ? (
@@ -480,7 +480,7 @@ export function MessageStream({
             <EmptyState title={S.chat.emptyStream} />
           ) : (
             // Links in replies, reasoning and compaction summaries name files of this Session's
-            // Workspace: they open in its Files panel rather than a new tab (see md.tsx).
+            // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
               <MessageItems items={items} ctx={ctx} />
             </WorkspaceLinksProvider>
@@ -496,7 +496,7 @@ export function MessageStream({
         <button
           type="button"
           aria-label={S.chat.jumpToLatest}
-          title={S.chat.jumpToLatest}
+          data-tooltip={S.chat.jumpToLatest}
           onClick={jumpToLatest}
           className="anim-pop absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >

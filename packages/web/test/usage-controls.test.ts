@@ -1,14 +1,18 @@
 /**
- * Cost center control + series-shaping helper tests (usage-controls.ts): range
- * presets (calendar and trailing timestamp windows), the precision each range
- * derives (there is no precision control) and the bucket counts that keeps
- * inside the server's cap, bucket-key labels, entity
- * folding for the requests chart's stacked bars (top entities + a neutral
- * counted tail), the per-bucket success / cache-hit rates (a bucket with
- * nothing to rate has no rate, and is only given a height when a line has to
- * cross it), and the empty-bucket compaction every chart on the page draws
- * over — including that the per-entity counts stay aligned with the buckets
- * after it.
+ * The cost center's controls and series shaping (features/usage/usage-controls.ts).
+ *
+ * - A calendar preset ends today and spans its day count inclusively; a trailing preset yields
+ *   instant bounds plus the local dates they span; a range counts both ends.
+ * - The range picks the precision: one per preset, a custom range scaling day → week → month,
+ *   never more buckets than the server returns, timestamp precisions only for trailing presets.
+ * - A bucket key reads short on the axis and in full in the bubble.
+ * - The requests chart keeps its top entities and folds a tail of two or more into one summed,
+ *   counted tail (success counts included); a tail of one keeps its name; by default every named
+ *   series fits the palette.
+ * - Series sum column by column; a bucket with nothing to rate has no rate (neither 0 nor a
+ *   number), and is drawn at the top of the percent axis only so a line can cross it.
+ * - Empty buckets are dropped (a request with no tokens still counts), shortening the axis and
+ *   marking breaks where buckets were skipped; per-entity counts stay with their buckets.
  */
 import { describe, expect, it } from "vitest";
 import type { UsageSeriesPoint } from "@prismshadow/penguin-server/api";
@@ -21,8 +25,6 @@ import {
   foldEntitySeries,
   hitRateValues,
   isoDate,
-  MAX_NAMED_SERIES,
-  NO_RATE_PLOT,
   plotRates,
   presetDefaultGranularity,
   presetRange,
@@ -222,11 +224,10 @@ describe("foldEntitySeries", () => {
     expect(foldEntitySeries([], (n) => `other:${n}`, 4)).toEqual([]);
   });
 
-  it("the default cap is the palette's length: every named series gets a color of its own", () => {
-    expect(MAX_NAMED_SERIES).toBe(SERIES_COLORS.length);
-    const many = Array.from({ length: MAX_NAMED_SERIES + 3 }, (_, i) => e(`e${i}`, [1]));
+  it("by default keeps as many named series as the palette has colours, and folds the rest", () => {
+    const many = Array.from({ length: SERIES_COLORS.length + 3 }, (_, i) => e(`e${i}`, [1]));
     const folded = foldEntitySeries(many, (n) => `other:${n}`);
-    expect(folded).toHaveLength(MAX_NAMED_SERIES + 1);
+    expect(folded.filter((series) => !series.other)).toHaveLength(SERIES_COLORS.length);
     expect(folded.at(-1)).toMatchObject({ label: "other:3", other: true });
   });
 });
@@ -268,13 +269,9 @@ describe("rate values", () => {
   });
 
   it("plotRates gives every bucket a height so the stroke stays continuous, absent rates at the top of the axis", () => {
-    expect(NO_RATE_PLOT).toBe(100);
-    expect(plotRates([75, null, 0])).toEqual([75, NO_RATE_PLOT, 0]);
+    expect(plotRates([75, null, 0])).toEqual([75, 100, 0]);
     // Drawing at 100 and reading 0 are different questions: a rated 0 is not lifted.
-    expect(plotRates(rateSeries({ completed: [0, 0], denominator: [0, 4] }))).toEqual([
-      NO_RATE_PLOT,
-      0,
-    ]);
+    expect(plotRates(rateSeries({ completed: [0, 0], denominator: [0, 4] }))).toEqual([100, 0]);
   });
 });
 

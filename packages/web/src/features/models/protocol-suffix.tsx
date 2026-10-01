@@ -30,14 +30,10 @@
  * the call site — so no extra row appears in the happy path.
  */
 import { useState } from "react";
-import { Dropdown } from "../../components/ui/dropdown";
-import { CheckIcon, ChevronDown } from "../../components/ui/icons";
-import { menuRowClass } from "../../components/ui/field";
+import { ChevronDown, Dropdown, Menu, MenuRadioItem, Spinner } from "@prismshadow/penguin-ui";
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
-// OptionMenu cannot do), so it takes its row typography from OptionMenu's own records rather
-// than re-spelling them — a change to the family reaches it.
-import { rowDescClass } from "../../components/ui/option-menu";
-import { sizeTextClass } from "../../components/ui/input";
+// OptionMenu cannot do), so it takes its rows from the Menu family rather than re-spelling
+// them — a change to the family reaches it.
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
 import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
@@ -86,7 +82,7 @@ export function ProtocolSuffixMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label={`${S.models.protocol}: ${name}`}
-          title={S.models.protocolTriggerTitle(name)}
+          data-tooltip={S.models.protocolTriggerTitle(name)}
           onClick={() => setOpen((v) => !v)}
           className={
             "flex items-center gap-1 rounded px-1 py-0.5 font-mono text-xs transition-colors duration-150 " +
@@ -99,57 +95,26 @@ export function ProtocolSuffixMenu({
           <span className="truncate">{path}</span>
           {/* Same 10px box as the chevron it replaces: switching to the busy state must not
               resize the trigger, or the input's reserved padding would jump mid-detection. */}
-          {detecting ? (
-            <span
-              aria-hidden
-              className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-            />
-          ) : (
-            <ChevronDown size={10} />
-          )}
+          {detecting ? <Spinner size="xs" label={S.models.detecting} /> : <ChevronDown size={10} />}
         </button>
       }
     >
-      <div role="menu">
-        {PROTOCOL_CLIENT_TYPES.map((t) => {
-          const selected = t === value;
-          return (
-            <button
-              key={t}
-              type="button"
-              role="menuitemradio"
-              aria-checked={selected}
-              onClick={() => {
-                setOpen(false);
-                onPick(t);
-              }}
-              className={`block ${menuRowClass} hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                selected ? "bg-gray-100 dark:bg-gray-800" : ""
-              }`}
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span
-                  className={`min-w-0 truncate ${sizeTextClass.sm} ${
-                    selected
-                      ? "font-medium text-gray-900 dark:text-gray-100"
-                      : "text-gray-700 dark:text-gray-300"
-                  }`}
-                >
-                  {S.models.protocolNames[t] ?? t}
-                </span>
-                {selected && <CheckIcon className="text-gray-500 dark:text-gray-400" />}
-              </span>
-              {/* The path this protocol appends: the same string the trigger shows, so the
-                  menu explains what the suffix in the field means. */}
-              <span
-                className={`mt-0.5 block font-mono ${rowDescClass.sm} text-gray-500 dark:text-gray-500`}
-              >
-                {protocolPathForModel("custom", t)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <Menu density="sm">
+        {PROTOCOL_CLIENT_TYPES.map((t) => (
+          <MenuRadioItem
+            key={t}
+            checked={t === value}
+            onSelect={() => {
+              setOpen(false);
+              onPick(t);
+            }}
+            label={S.models.protocolNames[t] ?? t}
+            // The path this protocol appends: the same string the trigger shows, so the menu
+            // explains what the suffix in the field means.
+            description={<span className="font-mono">{protocolPathForModel("custom", t)}</span>}
+          />
+        ))}
+      </Menu>
     </Dropdown>
   );
 }

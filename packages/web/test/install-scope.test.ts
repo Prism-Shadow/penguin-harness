@@ -1,22 +1,27 @@
 /**
- * install-scope.ts unit tests: reconciling browser-persisted UI state against the data root
- * the server is actually serving.
+ * Install scope (lib/install-scope.ts): browser state that names one data root's entities is
+ * swept when the server starts serving a different root, and nothing else ever is.
  *
- * The decision table, in full — a changed install id sweeps the keys that reference server
- * entities and leaves browser preferences alone; an unchanged id (every ordinary restart)
- * touches nothing; a first sight with keys and no recorded id ADOPTS without sweeping, so
- * upgrading into this release never destroys legitimate state; an unknown id changes
- * nothing at all. Plus the two matching traps the classification exists to avoid
- * (`penguin.sidebarCollapsed` under `penguin.sidebarCollapsedGroups.`,
- * `penguin.terminal.theme` beside `penguin.terminal.page.id`), and storage that throws.
- *
- * The classification is also checked against the SOURCE rather than against a fixture: a key
- * added to the app and forgotten here is the one way this module silently stops working.
+ * - Every `penguin.*` key the source persists is classified — checked against the source, since
+ *   a key added to the app and forgotten here is the one way this module silently stops working;
+ *   each deliberate exclusion is still a key the source contains.
+ * - An exact preference is never captured by a family that shares its stem
+ *   (`penguin.sidebarCollapsed` beside `penguin.sidebarCollapsedGroups.`, `penguin.terminal.theme`
+ *   beside `penguin.terminal.page.id`); the rule table is well formed.
+ * - A changed install id sweeps the install-scoped keys, orphans of every earlier root included,
+ *   and keeps the preferences and every key no rule covers.
+ * - An unchanged id (every ordinary restart) sweeps nothing; a first sight adopts without
+ *   sweeping, and the next boot is an ordinary one.
+ * - A sweep whose marker cannot be written back is reported apart from one that stuck; a store
+ *   that throws only on enumeration sweeps nothing rather than half of it.
+ * - Asking the server: an unreachable server, a null identity, a 401 and a server that never
+ *   answers (three seconds) all sweep nothing; blocked site data still lets boot proceed.
+ * - A swept boot reloads, and the second pass cannot resurrect the dock; every other outcome
+ *   mounts, a sweep that could not be recorded included.
+ * - A tab left open across the wipe sweeps what it re-persisted when another tab records a
+ *   different root, and ignores a first recording, a clear, a rewrite and every other key.
  */
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { setUnauthorizedHandler } from "../src/api/client";
 import {
   bootInstallScope,
@@ -28,97 +33,88 @@ import {
   syncInstallScope,
 } from "../src/lib/install-scope";
 import type { InstallScopeStorage } from "../src/lib/install-scope";
+import { apiError, json, stubFetch } from "./helpers/fetch";
+import { expectEveryRootScanned, scanSources } from "./helpers/roots";
+import type { SourceScan } from "./helpers/roots";
+import { blockedStorage, memoryStorage, stubLocalStorage } from "./helpers/storage";
+import type { MemoryStorage } from "./helpers/storage";
 
-/** In-memory storage (vitest runs in a Node environment, no localStorage; pinned-sessions.test.ts convention). */
-function memStorage(entries: Record<string, string> = {}): InstallScopeStorage & {
-  map: Map<string, string>;
-} {
-  const map = new Map<string, string>(Object.entries(entries));
-  return {
-    map,
-    get length() {
-      return map.size;
-    },
-    key: (i) => [...map.keys()][i] ?? null,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
+/** State that names the data root's Projects, Sessions, Workspaces and terminals. */
+const INSTALL_STATE: Record<string, string> = {
+  "penguin.chatDraft.admin.default_project": '{"workspace":"/srv/app","agentId":"default_agent"}',
+  "penguin.chatDraft.session.admin.session-1": '{"text":"half a sentence"}',
+  "penguin.chatDrafts.admin.default_project": '[{"id":"draft-abcd1234"}]',
+  "penguin.sidebarWorkspaces.default_project": '[{"path":"/srv/app"}]',
+  "penguin.pinnedSessions.default_project": '["session-1"]',
+  "penguin.sessionOrder.default_project.workspace": '["session-1"]',
+  "penguin.sessionSeen.default_project": '{"session-1":"2026-08-26T00:00:00Z"}',
+  "penguin.groupOrder.default_project.workspace": '["/srv/app"]',
+  "penguin.sidebarCollapsedGroups.default_project": '["/srv/app"]',
+  "penguin.sidebarPinnedGroups.default_project": '["/srv/app"]',
+  "penguin.lastProjectId": "default_project",
+  "penguin.lastAgentId.default_project": "default_agent",
+  "penguin.memoryCollapsed.admin.default_project.default_agent": '["project"]',
+  "penguin.modelsExpandedGroups.default_project": '["anthropic"]',
+  "penguin.modelsGroupOrder.default_project": '["anthropic"]',
+  "penguin.dock.layout": '{"scopes":{"session-1":{}},"bottomRatio":0.4}',
+  "penguin.terminal.page.id": "term-1",
+  "penguin.orgTempSessions.admin.default_project.acme":
+    '[{"sessionId":"session-2","agentId":"acme_dev","title":"Build the site"}]',
+};
 
-/** A representative populated store: install-scoped state on the left, preferences on the right. */
-function populated(): ReturnType<typeof memStorage> {
-  return memStorage({
-    "penguin.chatDraft.admin.default_project": '{"workspace":"/srv/app","agentId":"default_agent"}',
-    "penguin.chatDraft.session.admin.session-1": '{"text":"half a sentence"}',
-    "penguin.chatDrafts.admin.default_project": '[{"id":"draft-abcd1234"}]',
-    "penguin.sidebarWorkspaces.default_project": '[{"path":"/srv/app"}]',
-    "penguin.pinnedSessions.default_project": '["session-1"]',
-    "penguin.sessionOrder.default_project.workspace": '["session-1"]',
-    "penguin.sessionSeen.default_project": '{"session-1":"2026-08-26T00:00:00Z"}',
-    "penguin.groupOrder.default_project.workspace": '["/srv/app"]',
-    "penguin.sidebarCollapsedGroups.default_project": '["/srv/app"]',
-    "penguin.sidebarPinnedGroups.default_project": '["/srv/app"]',
-    "penguin.lastProjectId": "default_project",
-    "penguin.lastAgentId.default_project": "default_agent",
-    "penguin.memoryCollapsed.admin.default_project.default_agent": '["project"]',
-    "penguin.modelsExpandedGroups.default_project": '["anthropic"]',
-    "penguin.modelsGroupOrder.default_project": '["anthropic"]',
-    "penguin.dock.layout": '{"scopes":{"session-1":{}},"bottomRatio":0.4}',
-    "penguin.terminal.page.id": "term-1",
-    "penguin.orgTempSessions.admin.default_project.acme":
-      '[{"sessionId":"session-2","agentId":"acme_dev","title":"Build the site"}]',
+/** This browser's preferences, whatever root it talks to. */
+const PREFERENCES: Record<string, string> = {
+  "penguin.theme": "dark",
+  "penguin.themeId": "geek",
+  "penguin.textSize": "l",
+  "penguin.fontScale": "lg",
+  "penguin.fontLatin": "mona-sans",
+  "penguin.fontCjk": "noto-sans-sc",
+  "penguin.accent": "violet",
+  "penguin.currency": "CNY",
+  "penguin.terminal.theme": "dark",
+  "penguin.lang": "en",
+  "penguin.sidebarCollapsed": "1",
+  "penguin.panelWidth": "420",
+  "penguin.sidebarGroupMode": "agent",
+  "penguin.sidebarSortMode": "manual",
+  "penguin.sidebarNavGroupCollapsed": "collapsed",
+  "penguin.sidebarNavPinned": '{"models":false}',
+  "penguin.steerMode": "followup",
+  "penguin.dock.launcherY": "0.25",
+  "penguin.dock.launcherHidden": "1",
+  "penguin.files.treeVisible": "0",
+  "penguin.files.treeWidth": "220",
+  "penguin.files.editorWrap": "1",
+  "penguin.notifications": "1",
+  "penguin.keybindings": '{"v":1,"linux":{"terminal.close":"Mod+Alt+KeyW"}}',
+};
 
-    "penguin.theme": "dark",
-    "penguin.fontScale": "lg",
-    "penguin.accent": "violet",
-    "penguin.currency": "CNY",
-    "penguin.terminal.theme": "dark",
-    "penguin.lang": "en",
-    "penguin.sidebarCollapsed": "1",
-    "penguin.panelWidth": "420",
-    "penguin.sidebarGroupMode": "agent",
-    "penguin.sidebarSortMode": "manual",
-    "penguin.sidebarNavGroupCollapsed": "collapsed",
-    "penguin.steerMode": "followup",
-    "penguin.dock.launcherY": "0.25",
-    "penguin.dock.launcherHidden": "1",
-    "penguin.files.treeVisible": "0",
-    "penguin.files.treeWidth": "220",
-    "penguin.files.editorWrap": "1",
-    "penguin.notifications": "1",
-    "penguin.keybindings": '{"v":1,"linux":{"terminal.close":"Mod+Alt+KeyW"}}',
+/** A store holding both halves, with `marker` recorded as the install id when given. */
+function populated(marker?: string): MemoryStorage {
+  return memoryStorage({
+    ...INSTALL_STATE,
+    ...PREFERENCES,
+    ...(marker === undefined ? {} : { [INSTALL_ID_KEY]: marker }),
   });
 }
 
 /** Order-independent snapshot of a store, so assertions do not depend on Map insertion order. */
-function snap(map: Map<string, string>): [string, string][] {
-  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+function snap(entries: Iterable<[string, string]>): [string, string][] {
+  return [...entries].sort(([a], [b]) => a.localeCompare(b));
 }
 
-const PREFERENCE_KEYS = [
-  "penguin.theme",
-  "penguin.fontScale",
-  "penguin.accent",
-  "penguin.currency",
-  "penguin.terminal.theme",
-  "penguin.lang",
-  "penguin.sidebarCollapsed",
-  "penguin.panelWidth",
-  "penguin.sidebarGroupMode",
-  "penguin.sidebarSortMode",
-  "penguin.sidebarNavGroupCollapsed",
-  "penguin.steerMode",
-  "penguin.dock.launcherY",
-  "penguin.dock.launcherHidden",
-  "penguin.files.treeVisible",
-  "penguin.files.treeWidth",
-  "penguin.files.editorWrap",
-  "penguin.notifications",
-  "penguin.keybindings",
-];
+/** `before` with the marker set to `installId`. */
+function marked(before: [string, string][], installId: string): [string, string][] {
+  const entries = new Map(before);
+  entries.set(INSTALL_ID_KEY, installId);
+  return snap(entries);
+}
 
-const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** What a populated store holds once swept onto `installId`: the preferences and the marker. */
+function sweptOnto(installId: string): [string, string][] {
+  return marked(Object.entries(PREFERENCES), installId);
+}
 
 /**
  * Keys the source contains that KEY_RULES deliberately does not classify, each with the
@@ -132,56 +128,37 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
 };
 
 /**
- * Every `penguin.*` key literal in the web source, mapped to the file it was found in.
+ * Every `penguin.*` key literal in the scanned source, mapped to the file it was found in.
  *
  * Block comments are stripped first, and a match must follow a quote or backtick: prose
  * names key PREFIXES (`penguin.terminal.`), a family without its dot, and the product's own
  * domain in an example URL (`penguin.ooo`), and none of those is a storage key.
  */
-function storageKeysInSource(): Map<string, string> {
+function storageKeysIn(scan: SourceScan): Map<string, string> {
   const found = new Map<string, string>();
-  const walk = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (/\.tsx?$/.test(entry.name)) {
-        const code = fs.readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-        for (const match of code.matchAll(/["'`](penguin\.[A-Za-z0-9_.]*)/g)) {
-          const key = match[1]!;
-          if (!found.has(key)) found.set(key, path.relative(WEB_SRC, full));
-        }
-      }
+  for (const file of scan.files) {
+    const code = file.text.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const match of code.matchAll(/["'`](penguin\.[A-Za-z0-9_.]*)/g)) {
+      const key = match[1]!;
+      if (!found.has(key)) found.set(key, file.id);
     }
-  };
-  walk(WEB_SRC);
+  }
   return found;
 }
 
 describe("install-scope classification", () => {
-  it("classifies every penguin.* key the web source actually persists", () => {
-    const found = storageKeysInSource();
+  it("classifies every penguin.* key the source persists, and each exclusion is still one of them", () => {
+    const scan = scanSources([".ts", ".tsx"]);
+    expectEveryRootScanned(scan);
+    const found = storageKeysIn(scan);
     // A scan that finds nothing would pass every assertion below without checking anything.
     expect(found.size).toBeGreaterThan(20);
     for (const [key, file] of found) {
       if (key in UNCLASSIFIED_ON_PURPOSE) continue;
-      expect(scopeOfKey(key), `${key} (src/${file}) is missing from KEY_RULES`).not.toBeNull();
+      expect(scopeOfKey(key), `${key} (${file}) is missing from KEY_RULES`).not.toBeNull();
     }
-  });
-
-  it("keeps the deliberate exclusions honest: each is still a key the source contains", () => {
-    const found = storageKeysInSource();
     for (const key of Object.keys(UNCLASSIFIED_ON_PURPOSE)) {
       expect(found.has(key), `${key} is no longer in the source`).toBe(true);
-    }
-  });
-
-  it("covers every key the populated fixture holds, with no key both scopes", () => {
-    for (const key of populated().map.keys()) {
-      expect(scopeOfKey(key), key).not.toBeNull();
-    }
-    for (const key of PREFERENCE_KEYS) {
-      expect(scopeOfKey(key), key).toBe("browser");
     }
   });
 
@@ -191,12 +168,6 @@ describe("install-scope classification", () => {
     expect(scopeOfKey("penguin.sidebarCollapsedGroups.default_project")).toBe("install");
     expect(scopeOfKey("penguin.terminal.theme")).toBe("browser");
     expect(scopeOfKey("penguin.terminal.page.id")).toBe("install");
-  });
-
-  it("an unclassified key has no scope, so the sweep leaves it alone", () => {
-    expect(scopeOfKey("penguin.somethingAddedLater")).toBeNull();
-    expect(scopeOfKey("unrelated-app-key")).toBeNull();
-    expect(scopeOfKey(INSTALL_ID_KEY)).toBeNull();
   });
 
   it("rules are well formed: penguin-namespaced, families dotted, no duplicates", () => {
@@ -212,104 +183,57 @@ describe("install-scope classification", () => {
 });
 
 describe("reconcileInstallScope", () => {
-  it("a changed install id sweeps install-scoped keys and keeps preferences", () => {
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
+  it("a changed install id sweeps the install-scoped keys and keeps the preferences", () => {
+    const storage = populated("root-a");
 
     expect(reconcileInstallScope("root-b", storage)).toBe("swept");
-
-    for (const key of storage.map.keys()) {
-      expect(scopeOfKey(key), `${key} survived the sweep`).not.toBe("install");
-    }
-    for (const key of PREFERENCE_KEYS) {
-      expect(storage.map.has(key), key).toBe(true);
-    }
-    expect(storage.map.get("penguin.theme")).toBe("dark");
-    expect(storage.map.get(INSTALL_ID_KEY)).toBe("root-b");
+    expect(snap(storage.map)).toEqual(sweptOnto("root-b"));
   });
 
-  it("the sweep collects orphans from every earlier root, not just the last one", () => {
+  it("the sweep collects orphans of every earlier root, and leaves keys no rule covers", () => {
     // Keys are id-suffixed, so a Project or Session that no longer exists leaves an entry
     // nothing would ever read again. Walking the store is what reaches them.
-    const storage = memStorage({
+    const storage = memoryStorage({
       [INSTALL_ID_KEY]: "root-a",
       "penguin.chatDraft.admin.default_project": "{}",
       "penguin.pinnedSessions.long_gone_project": '["session-9"]',
       "penguin.sessionSeen.another_dead_project": "{}",
       "penguin.theme": "dark",
+      "penguin.somethingAddedLater": "1",
+      "unrelated-app-key": "1",
     });
 
     expect(reconcileInstallScope("root-b", storage)).toBe("swept");
-    expect([...storage.map.keys()].sort()).toEqual([INSTALL_ID_KEY, "penguin.theme"]);
+    expect([...storage.map.keys()].sort()).toEqual(
+      [INSTALL_ID_KEY, "penguin.somethingAddedLater", "penguin.theme", "unrelated-app-key"].sort(),
+    );
   });
 
   it("an unchanged install id sweeps nothing (the ordinary server restart)", () => {
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
-    const before = new Map(storage.map);
+    const storage = populated("root-a");
+    const before = snap(storage.map);
 
     expect(reconcileInstallScope("root-a", storage)).toBe("unchanged");
-    expect(snap(storage.map)).toEqual(snap(before));
+    expect(snap(storage.map)).toEqual(before);
   });
 
-  it("first sight — keys but no recorded id — adopts without sweeping", () => {
+  it("first sight — keys but no recorded id — adopts without sweeping, and the next boot is an ordinary one", () => {
     const storage = populated();
-    const before = new Map(storage.map);
+    const before = snap(storage.map);
 
     expect(reconcileInstallScope("root-a", storage)).toBe("adopted");
-    expect(storage.map.get(INSTALL_ID_KEY)).toBe("root-a");
-    storage.map.delete(INSTALL_ID_KEY);
-    expect(snap(storage.map)).toEqual(snap(before));
-  });
-
-  it("an adopted id makes the very next boot an ordinary unchanged one", () => {
-    const storage = populated();
-    expect(reconcileInstallScope("root-a", storage)).toBe("adopted");
+    expect(snap(storage.map)).toEqual(marked(before, "root-a"));
     expect(reconcileInstallScope("root-a", storage)).toBe("unchanged");
     expect(reconcileInstallScope("root-b", storage)).toBe("swept");
   });
 
-  it("an unknown id (server could not establish one) changes nothing at all", () => {
-    const storage = populated();
-    const before = new Map(storage.map);
-
-    expect(reconcileInstallScope(null, storage)).toBe("unknown");
-    expect(snap(storage.map)).toEqual(snap(before));
-  });
-
-  it("a throwing store degrades instead of escaping", () => {
-    const throwing: InstallScopeStorage = {
-      get length(): number {
-        throw new Error("site data is blocked");
-      },
-      key: () => {
-        throw new Error("site data is blocked");
-      },
-      getItem: () => {
-        throw new Error("site data is blocked");
-      },
-      setItem: () => {
-        throw new Error("site data is blocked");
-      },
-      removeItem: () => {
-        throw new Error("site data is blocked");
-      },
-    };
-    // getItem throwing reads as "nothing recorded", so this is a first sight that adopts;
-    // the adopting write throws too and is swallowed.
-    expect(() => reconcileInstallScope("root-a", throwing)).not.toThrow();
-    expect(reconcileInstallScope("root-a", throwing)).toBe("adopted");
-  });
-
   it("a sweep whose marker cannot be recorded is reported apart from one that stuck", () => {
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
+    const storage = populated("root-a");
     const readOnlyMarker: InstallScopeStorage = {
       ...storage,
       get length(): number {
         return storage.length;
       },
-      key: (i) => storage.key(i),
       setItem: () => {
         throw new Error("quota exceeded");
       },
@@ -317,110 +241,47 @@ describe("reconcileInstallScope", () => {
 
     // The keys still go; only the marker fails to land, so the next load compares again.
     expect(reconcileInstallScope("root-b", readOnlyMarker)).toBe("swept-unrecorded");
-    expect(storage.map.has("penguin.chatDraft.admin.default_project")).toBe(false);
-    expect(storage.map.get(INSTALL_ID_KEY)).toBe("root-a");
-    expect(storage.map.get("penguin.theme")).toBe("dark");
+    expect(snap(storage.map)).toEqual(sweptOnto("root-a"));
   });
 
   it("a store that throws only on enumeration sweeps nothing rather than half of it", () => {
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
-    const before = new Map(storage.map);
+    const storage = populated("root-a");
+    const before = snap(storage.map);
     const half: InstallScopeStorage = {
       ...storage,
       get length(): number {
         throw new Error("site data is blocked");
       },
-      setItem: (k, v) => storage.setItem(k, v),
     };
 
     expect(reconcileInstallScope("root-b", half)).toBe("swept");
-    before.set(INSTALL_ID_KEY, "root-b");
-    expect(snap(storage.map)).toEqual(snap(before));
+    expect(snap(storage.map)).toEqual(marked(before, "root-b"));
   });
 });
 
 describe("syncInstallScope", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("reconciles against the id the server reports", async () => {
-    vi.stubGlobal(
-      "fetch",
-      async () =>
-        new Response(JSON.stringify({ installId: "root-b" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    );
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
-
-    expect(await syncInstallScope(storage)).toBe("swept");
-    expect(storage.map.has("penguin.chatDraft.admin.default_project")).toBe(false);
-    expect(storage.map.get("penguin.theme")).toBe("dark");
-  });
-
   it("a server that cannot be reached sweeps nothing and never rejects", async () => {
-    vi.stubGlobal("fetch", async () => {
+    stubFetch(() => {
       throw new Error("connection refused");
     });
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
-    const before = new Map(storage.map);
+    const storage = populated("root-a");
+    const before = snap(storage.map);
 
     await expect(syncInstallScope(storage)).resolves.toBe("unknown");
-    expect(snap(storage.map)).toEqual(snap(before));
+    expect(snap(storage.map)).toEqual(before);
   });
 
   it("a server reporting a null identity sweeps nothing", async () => {
-    vi.stubGlobal(
-      "fetch",
-      async () =>
-        new Response(JSON.stringify({ installId: null }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    );
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
-    const before = new Map(storage.map);
+    stubFetch(() => json({ installId: null }));
+    const storage = populated("root-a");
+    const before = snap(storage.map);
 
     await expect(syncInstallScope(storage)).resolves.toBe("unknown");
-    expect(snap(storage.map)).toEqual(snap(before));
-  });
-
-  it("a storage that throws on every access still lets boot proceed", async () => {
-    vi.stubGlobal(
-      "fetch",
-      async () =>
-        new Response(JSON.stringify({ installId: "root-b" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    );
-    const exploding = new Proxy({} as InstallScopeStorage, {
-      get() {
-        throw new Error("site data is blocked");
-      },
-    });
-
-    // Every read reads as empty, so this looks like a first sight and adopts — an adoption
-    // that stores nothing, because the write throws too. Nothing is destroyed and boot
-    // continues, which is the whole requirement.
-    await expect(syncInstallScope(exploding)).resolves.toBe("adopted");
+    expect(snap(storage.map)).toEqual(before);
   });
 
   it("a non-2xx answer sweeps nothing", async () => {
-    vi.stubGlobal(
-      "fetch",
-      async () =>
-        new Response(
-          JSON.stringify({ error: { code: "unauthorized", message: "Not signed in." } }),
-          { status: 401, headers: { "content-type": "application/json" } },
-        ),
-    );
+    stubFetch(() => apiError(401, "unauthorized", "Not signed in."));
     // apiFetch takes a different branch from the network failure above: it parses the error
     // body and, for a 401 outside /api/auth/, calls the global sign-out hook. Nothing is
     // registered at this point in the boot — AuthProvider installs one during the first
@@ -428,14 +289,13 @@ describe("syncInstallScope", () => {
     // hook is reached at all, since registering one EARLIER would then sign the user out.
     const signedOut = vi.fn();
     setUnauthorizedHandler(signedOut);
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-a");
-    const before = new Map(storage.map);
+    const storage = populated("root-a");
+    const before = snap(storage.map);
 
     try {
       await expect(syncInstallScope(storage)).resolves.toBe("unknown");
       expect(signedOut).toHaveBeenCalledTimes(1);
-      expect(snap(storage.map)).toEqual(snap(before));
+      expect(snap(storage.map)).toEqual(before);
     } finally {
       setUnauthorizedHandler(null);
     }
@@ -446,10 +306,9 @@ describe("syncInstallScope", () => {
     try {
       // A request that never settles: the page renders nothing until this resolves, so the
       // bound is the whole reason the timeout exists.
-      vi.stubGlobal("fetch", () => new Promise<Response>(() => {}));
-      const storage = populated();
-      storage.map.set(INSTALL_ID_KEY, "root-a");
-      const before = new Map(storage.map);
+      stubFetch(() => new Promise<Response>(() => {}));
+      const storage = populated("root-a");
+      const before = snap(storage.map);
 
       const pending = syncInstallScope(storage);
       let settled = false;
@@ -462,10 +321,19 @@ describe("syncInstallScope", () => {
       await vi.advanceTimersByTimeAsync(1);
 
       await expect(pending).resolves.toBe("unknown");
-      expect(snap(storage.map)).toEqual(snap(before));
+      expect(snap(storage.map)).toEqual(before);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("blocked site data still lets boot proceed", async () => {
+    stubFetch(() => json({ installId: "root-b" }));
+
+    // Every read reads as empty, so this looks like a first sight and adopts — an adoption
+    // that stores nothing, because the write throws too. Nothing is destroyed and boot
+    // continues, which is the whole requirement.
+    await expect(syncInstallScope(blockedStorage())).resolves.toBe("adopted");
   });
 });
 
@@ -488,34 +356,16 @@ describe("bootInstallScope", () => {
     bottomRatio: 0.4,
   });
 
-  function installStorageGlobal(storage: InstallScopeStorage): void {
-    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: storage });
-  }
-
-  function serverReports(installId: string | null): void {
-    vi.stubGlobal(
-      "fetch",
-      async () =>
-        new Response(JSON.stringify({ installId }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    );
-  }
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    Reflect.deleteProperty(globalThis, "localStorage");
-    vi.resetModules();
-  });
+  const serverReports = (installId: string | null) => stubFetch(() => json({ installId }));
 
   it("a swept boot reloads instead of rendering, and the second pass cannot resurrect the dock", async () => {
-    const storage = memStorage({
-      [INSTALL_ID_KEY]: "root-a",
-      "penguin.dock.layout": DOCK_FROM_ROOT_A,
-      "penguin.theme": "dark",
-    });
-    installStorageGlobal(storage);
+    const storage = stubLocalStorage(
+      memoryStorage({
+        [INSTALL_ID_KEY]: "root-a",
+        "penguin.dock.layout": DOCK_FROM_ROOT_A,
+        "penguin.theme": "dark",
+      }),
+    );
     serverReports("root-b");
 
     // Pass one. Every module evaluates before main.tsx runs a statement, so dock-state is
@@ -542,29 +392,25 @@ describe("bootInstallScope", () => {
   });
 
   it("mounts on every outcome that swept nothing, and on a sweep that could not be recorded", async () => {
-    const unchanged = memStorage({ [INSTALL_ID_KEY]: "root-a" });
-    installStorageGlobal(unchanged);
+    stubLocalStorage(memoryStorage({ [INSTALL_ID_KEY]: "root-a" }));
     serverReports("root-a");
     expect(await bootInstallScope()).toBe("mount");
 
-    const firstSight = memStorage({ "penguin.theme": "dark" });
-    installStorageGlobal(firstSight);
+    stubLocalStorage(memoryStorage({ "penguin.theme": "dark" }));
     serverReports("root-a");
     expect(await bootInstallScope()).toBe("mount");
 
-    const unknown = memStorage({ [INSTALL_ID_KEY]: "root-a" });
-    installStorageGlobal(unknown);
+    stubLocalStorage(memoryStorage({ [INSTALL_ID_KEY]: "root-a" }));
     serverReports(null);
     expect(await bootInstallScope()).toBe("mount");
 
     // The reload would otherwise repeat forever: sweep, fail to record, reload, sweep again.
-    const backing = memStorage({ [INSTALL_ID_KEY]: "root-a", "penguin.lastProjectId": "p1" });
-    installStorageGlobal({
+    const backing = memoryStorage({ [INSTALL_ID_KEY]: "root-a", "penguin.lastProjectId": "p1" });
+    stubLocalStorage({
       ...backing,
       get length(): number {
         return backing.length;
       },
-      key: (i) => backing.key(i),
       setItem: () => {
         throw new Error("quota exceeded");
       },
@@ -577,8 +423,7 @@ describe("bootInstallScope", () => {
 
 describe("a tab left open across the wipe", () => {
   it("sweeps its own re-persisted state when another tab records a different root", () => {
-    const storage = populated();
-    storage.map.set(INSTALL_ID_KEY, "root-b"); // the other tab already recorded it
+    const storage = populated("root-b"); // the other tab already recorded it
 
     const stale = reactToInstallIdChange(
       { key: INSTALL_ID_KEY, oldValue: "root-a", newValue: "root-b" },
@@ -586,25 +431,22 @@ describe("a tab left open across the wipe", () => {
     );
 
     expect(stale).toBe(true);
-    for (const key of storage.map.keys()) {
-      expect(scopeOfKey(key), `${key} survived the sweep`).not.toBe("install");
-    }
-    expect(storage.map.get("penguin.theme")).toBe("dark");
+    expect(snap(storage.map)).toEqual(sweptOnto("root-b"));
   });
 
   it("ignores the other tab's FIRST recording, which swept nothing itself", () => {
     const storage = populated();
-    const before = new Map(storage.map);
+    const before = snap(storage.map);
 
     expect(
       reactToInstallIdChange({ key: INSTALL_ID_KEY, oldValue: null, newValue: "root-a" }, storage),
     ).toBe(false);
-    expect(snap(storage.map)).toEqual(snap(before));
+    expect(snap(storage.map)).toEqual(before);
   });
 
   it("ignores site data being cleared, and a rewrite of the same id", () => {
     const storage = populated();
-    const before = new Map(storage.map);
+    const before = snap(storage.map);
 
     expect(
       reactToInstallIdChange({ key: INSTALL_ID_KEY, oldValue: "root-a", newValue: null }, storage),
@@ -615,12 +457,12 @@ describe("a tab left open across the wipe", () => {
         storage,
       ),
     ).toBe(false);
-    expect(snap(storage.map)).toEqual(snap(before));
+    expect(snap(storage.map)).toEqual(before);
   });
 
   it("ignores every other key, including the ones it would otherwise sweep", () => {
     const storage = populated();
-    const before = new Map(storage.map);
+    const before = snap(storage.map);
 
     expect(
       reactToInstallIdChange(
@@ -631,6 +473,6 @@ describe("a tab left open across the wipe", () => {
     expect(reactToInstallIdChange({ key: null, oldValue: null, newValue: null }, storage)).toBe(
       false,
     );
-    expect(snap(storage.map)).toEqual(snap(before));
+    expect(snap(storage.map)).toEqual(before);
   });
 });

@@ -13,10 +13,8 @@
  */
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE, PlusIcon, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { CloseIcon, GLOBE_ICON, PlusIcon, WARNING_ICON } from "../../components/ui/icons";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { faviconSrc, isBlankUrl, tabLabel } from "./address";
 import { formatMemory } from "./load";
@@ -31,24 +29,20 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
         aria-label={S.builtinBrowser.crashedTab}
         className={`shrink-0 ${toneInk.danger}`}
       >
-        <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.inlineGlyph} />
+        <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.inlineGlyph} />
       </span>
     );
   }
   if (tab.loading) {
     return (
-      <span
-        aria-hidden
-        style={{ width: ICON_SIZE.inlineGlyph, height: ICON_SIZE.inlineGlyph }}
-        className="inline-block shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-gray-400 dark:text-gray-500"
-      />
+      <Spinner size="md" label={S.common.loading} className="text-gray-400 dark:text-gray-500" />
     );
   }
   const src = faviconSrc(tab.favicon, window.location.origin);
   if (src === null || src === failed) {
     return (
       <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
-        <GlyphIcon d={GLOBE_ICON} size={ICON_SIZE.inlineGlyph} />
+        <GlyphIcon d={ICONS.globe} size={ICON_SIZE.inlineGlyph} />
       </span>
     );
   }
@@ -126,7 +120,7 @@ export function BrowserTabStrip({
                 type="button"
                 role="tab"
                 aria-selected={active}
-                title={title}
+                data-tooltip={title}
                 onClick={() => onSelect(tab.id)}
                 // A middle click closes a tab, as in every browser.
                 onAuxClick={(event) => {
@@ -149,13 +143,13 @@ export function BrowserTabStrip({
                     data-testid="builtin-browser-heavy-tab"
                     className={`shrink-0 ${toneInk.attention}`}
                   >
-                    <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.inlineGlyph} />
+                    <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.inlineGlyph} />
                   </span>
                 )}
               </button>
               <button
                 type="button"
-                title={S.builtinBrowser.closeTab}
+                data-tooltip={S.builtinBrowser.closeTab}
                 aria-label={`${S.builtinBrowser.closeTab}: ${label}`}
                 onClick={() => onClose(tab.id)}
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
@@ -168,7 +162,7 @@ export function BrowserTabStrip({
       </div>
       <button
         type="button"
-        title={S.builtinBrowser.newTab}
+        data-tooltip={S.builtinBrowser.newTab}
         aria-label={S.builtinBrowser.newTab}
         data-testid="builtin-browser-new-tab"
         onClick={onNew}

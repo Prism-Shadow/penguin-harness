@@ -84,8 +84,8 @@ export interface KeyRule {
  *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (lib/remark-autolink-boundary.ts) is the product's domain inside an
- *     example URL in a doc comment. It is not a storage key.
+ *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
   // ---------------------------------------------------------------- browser preferences
@@ -97,9 +97,33 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.themeId",
+    scope: "browser",
+    why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.textSize",
+    scope: "browser",
+    why: "Root text size (five steps) — a readability preference of this display.",
+  },
+  {
+    kind: "exact",
     key: "penguin.fontScale",
     scope: "browser",
-    why: "Root font size — a readability preference of this display.",
+    why: "The three-step text size of earlier releases; read once, migrated to penguin.textSize and removed.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontLatin",
+    scope: "browser",
+    why: "Latin font face chosen over the theme's own; pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontCjk",
+    scope: "browser",
+    why: "CJK font face chosen over the theme's own; pure appearance.",
   },
   {
     kind: "exact",
@@ -190,6 +214,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarNavGroupCollapsed",
     scope: "browser",
     why: "Whether the static page-nav group is folded; the nav is built from a compile-time manifest.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.sidebarNavPinned",
+    scope: "browser",
+    why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
   },
   {
     kind: "exact",

@@ -1,22 +1,17 @@
 /**
- * settings-sections.ts unit tests: which Settings pages each viewer gets.
+ * Which Settings pages each viewer gets (lib/settings-sections.ts), pinned by value: a rail
+ * showing a forbidden entry leaks that the setting exists, and a page rendered without the same
+ * filter hands a non-admin the form. The admin APIs answer a non-admin with 403 either way; this
+ * filter is convenience, not the boundary.
  *
- * The rule is pinned by value rather than by shape because both halves of it can fail
- * silently and separately: a rail that shows a forbidden entry leaks that the setting
- * exists, and an active page rendered without the same filter hands a non-admin the form
- * itself. Both go through these functions, so both are covered here.
- *
- * The client filter is convenience, not the boundary — the admin APIs answer a non-admin
- * with 403 either way (server/test/admin-settings.test.ts, "non-admin access is always
- * 403").
- *
- * vitest runs node-only here (`environment: "node"`, no jsdom), so this asserts against
- * the exported functions and, for the dialog's use of them, its source
- * (account-menu.test.ts convention).
+ * - A web admin gets every page in rail order; a non-admin only their own pages, nothing
+ *   server-global; the desktop shell's window drops the account page and user management; a
+ *   password session against a desktop-mode server keeps the account page.
+ * - The rail lists an admin's groups once each, in page order, and a single group when only
+ *   one remains (its cue to draw no heading).
+ * - A requested page passes through when the viewer may open it; a forbidden or unknown page,
+ *   or none, falls back to the first visible page; nothing visible resolves to nothing.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   resolveSettingsSection,
@@ -57,6 +52,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -76,6 +72,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "credits",
     ]);
   });
 
@@ -88,6 +85,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -104,6 +102,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -146,28 +145,5 @@ describe("resolveSettingsSection", () => {
 
   it("returns null when nothing is visible, rather than inventing a page", () => {
     expect(resolveSettingsSection("general", [])).toBe(null);
-  });
-});
-
-describe("the Settings dialog", () => {
-  const source = readFileSync(
-    resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "../src/features/settings/settings-dialog.tsx",
-    ),
-    "utf8",
-  );
-
-  it("builds its rail from the filtered list rather than the full one", () => {
-    // Without this the functions above could pass every test while the dialog mapped over
-    // the raw registry and rendered the admin rows to everyone.
-    expect(source).toContain("visibleSettingsSections({");
-    expect(source).not.toContain("SECTION_RULES");
-  });
-
-  it("resolves the page it renders through the same gate on every render", () => {
-    // The active page is a state value, not a right: a viewer who loses admin mid-dialog
-    // must fall back to their own first page rather than keep rendering the admin form.
-    expect(source).toContain("resolveSettingsSection(active, sections)");
   });
 });

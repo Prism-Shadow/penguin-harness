@@ -10,16 +10,19 @@
  */
 import { useState } from "react";
 import type { BenchmarkCaseScore, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  Chevron,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Modal,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
-import { Modal } from "../../components/ui/modal";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
 import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
@@ -29,7 +32,7 @@ import type { AskEvaluationParams } from "./benchmark-prompts";
 function SessionCell({ sessionId }: { sessionId?: string }) {
   if (!sessionId) return <span className="text-gray-400">—</span>;
   return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
+    <span className="font-mono text-gray-600 dark:text-gray-300" data-tooltip={sessionId}>
       {sessionId}
     </span>
   );
@@ -79,7 +82,7 @@ function CaseRow({
                 </span>
               )}
               {title && title !== c.case && (
-                <span className="block font-mono text-[11px] text-gray-400">{c.case}</span>
+                <span className="block font-mono text-xs text-gray-400">{c.case}</span>
               )}
             </span>
           </span>
@@ -120,7 +123,7 @@ function CaseRow({
 function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <span className="min-w-0">
-      <span className="block text-[11px] text-gray-500 dark:text-gray-400">{label}</span>
+      <span className="block text-xs text-gray-500 dark:text-gray-400">{label}</span>
       <span
         className={`block font-mono text-xs tabular-nums ${strong ? "font-semibold" : "text-gray-600 dark:text-gray-300"}`}
       >
@@ -195,7 +198,7 @@ export function EvaluationDetailModal({
               {S.common.close}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>
-              <GlyphIcon d={MAGIC_WAND_ICON} />
+              <GlyphIcon d={ICONS.wand} />
               {S.benchmark.askAi}
             </Button>
           </>

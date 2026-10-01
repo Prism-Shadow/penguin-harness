@@ -1,22 +1,30 @@
 /**
- * Integration tests for importing Skills from a directory the user picked: discovery under
- * `.agents/skills` / `.claude/skills`, the `.claude`-is-a-symlink-to-`.agents` case that would
- * otherwise offer everything twice, which layout wins a name collision, what is passed over rather
- * than offered (no frontmatter, a symlinked Skill directory, an unsafe name), the empty directory
- * being a normal answer, path and authorization rejections, and Agent creation installing the
- * picked names — including a directory Skill shadowing a library Skill of the same name.
+ * Importing Skills from a directory the user picked.
  *
- * It also pins the read discipline the module promises: `SKILL.md` and `icon.svg` are read only
- * when they are regular files the Skill directory owns, so a symlink cannot hand back a file
- * outside it; and one Skill that cannot be read does not take the rest of the directory with it.
+ * - Discovery reads `.agents/skills` and `.claude/skills` and says which layout each Skill came
+ *   from; a `.claude` that is a symlink to `.agents` offers nothing twice; `.agents` wins a
+ *   name both layouts carry.
+ * - Passed over rather than offered: a Skill with no frontmatter, a symlinked Skill directory,
+ *   an unsafe name, one past the size caps. `SKILL.md` and `icon.svg` are read only when they
+ *   are regular files the Skill directory owns, so a symlink cannot hand back a file outside
+ *   it, and one unreadable Skill does not take the rest of the directory with it.
+ * - An empty directory is an empty list; a relative path, a missing directory and an outsider
+ *   are refused.
+ * - Creating an Agent installs the picked names, files and icon included, a directory Skill
+ *   shadowing a library Skill of the same name; a picked Skill that is gone is a 404 with no
+ *   Agent created; a relative skillsDirectory and half of the directory pair are refused.
+ *
+ * One app and one Project for the file; every case works in a scratch directory and Agents of
+ * its own.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir, librarySkill } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
+  AgentsResponse,
   AgentSkillsResponse,
   DirectorySkillsResponse,
   ProjectCreateResponse,
@@ -57,12 +65,20 @@ describe("directory skills api", () => {
     }
   };
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_d");
     const b = await provisionUser(t.app, "outsider_d");
     owner = apiClient(t.app, a.cookie);
     outsider = apiClient(t.app, b.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case picks a directory of its own and installs into the one Project, in Agents that
+  // go with the case (a retry finds their names free).
+  beforeAll(async () => {
     const created = (await (
       await owner.post("/api/projects", {
         projectId: "owner_d-dirskills",
@@ -70,18 +86,22 @@ describe("directory skills api", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+  });
+  beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-dirskills-"));
   });
-
   afterEach(async () => {
-    // The app teardown must run even if the scratch checkout resists removal: a throw here would
-    // skip `t.cleanup()`, leaking the db/hmr host into every later file in this worker — the
-    // ci-windows cascade helpers.ts documents. Same maxRetries discipline, same reason.
-    try {
-      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    } finally {
-      await t.cleanup();
+    const listed = (await (
+      await owner.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    for (const { agentId } of listed.agents) {
+      if (agentId !== "default_agent") {
+        await owner.delete(`/api/projects/${projectId}/agents/${agentId}`);
+      }
     }
+    // A scratch checkout can resist removal on Windows for a moment; same retry discipline as
+    // helpers.ts.
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it("finds Skills in both layouts and says which one each came from", async () => {

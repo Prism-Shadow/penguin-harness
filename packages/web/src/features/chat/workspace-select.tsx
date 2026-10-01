@@ -12,12 +12,8 @@
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Chevron, FormPickerTrigger, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Chevron } from "../../components/ui/chevron";
-import { FormPickerTrigger } from "../../components/ui/form-picker";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { WorkspaceFinder } from "./workspace-finder";
 import { baseName } from "./workspace-finder-model";
 
@@ -30,7 +26,7 @@ export const pillClass =
 /**
  * Workspace selection: the trigger shows the selected directory's name (empty = a temporary
  * workspace, or the host's `emptyLabel`) and opens the finder. Callers get `onChange(path,
- * machineId)` on Choose, and `onChange("", machineId)` from the finder's clear link.
+ * machineId)` on Choose, and `onChange("", machineId)` from the finder's no-folder button.
  */
 export function WorkspaceSelect({
   projectId,
@@ -38,12 +34,13 @@ export function WorkspaceSelect({
   onChange,
   machineId,
   chooseMachine,
+  agentId,
   variant = "pill",
   trigger,
   fieldLabel,
   emptyLabel,
-  menuHint,
   clearLabel,
+  clearable = true,
 }: {
   projectId: string;
   workspace: string;
@@ -53,6 +50,8 @@ export function WorkspaceSelect({
   machineId?: string | null;
   /** Offer the Machines section. Off where a machine cannot be meaningfully chosen yet. */
   chooseMachine?: boolean;
+  /** The Agent a temporary Workspace would belong to, so the finder can show where it would be created. */
+  agentId?: string;
   /** Trigger style: the draft page's pill (default), or a dialog form control (see the header comment). */
   variant?: "pill" | "form";
   /**
@@ -70,9 +69,17 @@ export function WorkspaceSelect({
    */
   fieldLabel?: string;
   emptyLabel?: string;
-  menuHint?: string;
-  /** Copy for the "back to a temporary workspace" link, which for a non-Workspace host just clears the field. */
+  /**
+   * The finder's no-folder button, for a host whose empty value is not a temporary Workspace
+   * (the organization's own directory, or no directory at all): it shows this label alone,
+   * since the path it would name and the rule behind it are the temporary Workspace's.
+   */
   clearLabel?: string;
+  /**
+   * Offer that button (the default). Off for the sidebar's new-workspace button, which adds a
+   * folder and has no empty value to go back to.
+   */
+  clearable?: boolean;
 }) {
   const fieldName = fieldLabel ?? S.chat.workspace;
   const [open, setOpen] = useState(false);
@@ -80,8 +87,8 @@ export function WorkspaceSelect({
   const trimmed = workspace.trim();
   // Short name: the last segment of the directory (a root keeps its own spelling); "temporary workspace" when empty.
   const label = trimmed ? baseName(trimmed) : (emptyLabel ?? S.chat.workspaceAuto);
-  const hint = menuHint ?? S.chat.workspaceHint;
-  const title = trimmed ? `${fieldName}：${trimmed}` : hint;
+  // The field and its value, the whole path where the label shows only its last segment.
+  const title = `${fieldName}：${trimmed || label}`;
 
   const finder = (
     <WorkspaceFinder
@@ -91,23 +98,32 @@ export function WorkspaceSelect({
         onChange(path, machine);
         setOpen(false);
       }}
-      onClear={(machine) => {
-        onChange("", machine);
-        setOpen(false);
-      }}
+      onClear={
+        clearable
+          ? (machine) => {
+              onChange("", machine);
+              setOpen(false);
+            }
+          : undefined
+      }
       projectId={projectId}
       workspace={workspace}
       machineId={machineId}
       chooseMachine={chooseMachine}
+      agentId={agentId}
       title={fieldName}
-      hint={hint}
       clearLabel={clearLabel ?? S.chat.workspaceClear}
+      clearTitle={clearLabel === undefined ? S.chat.workspaceTempRule : undefined}
     />
   );
 
   /** Folder glyph shared by both built-in triggers. */
   const folderIcon = (extraClass: string) => (
-    <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.rowLead} className={`text-gray-400 ${extraClass}`} />
+    <GlyphIcon
+      d={ICONS.folder}
+      size={ICON_SIZE.rowLead}
+      className={`text-gray-400 ${extraClass}`}
+    />
   );
 
   if (trigger) {
@@ -144,7 +160,7 @@ export function WorkspaceSelect({
     <>
       <button
         type="button"
-        title={title}
+        data-tooltip={title}
         aria-label={fieldName}
         aria-haspopup="dialog"
         aria-expanded={open}

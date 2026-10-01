@@ -20,6 +20,7 @@
  * | 7368 | `pnpm dev:server` (dev backend)    | `~/.penguin/dev-data`      | `packages/server/package.json` `dev` |
  * | 7369 | `pnpm penguin web` (dev CLI)       | `~/.penguin/dev-data-cli`  | the root and cli `penguin` scripts   |
  * | 7371 | a machine's dev-profile server     | `~/.penguin-dev/data` there | `DEFAULT_DEV_SERVER_PORT` below      |
+ * | 7372 | `pnpm dev:gallery` (Vite)          | none (static)              | `packages/ui-gallery/vite.config.ts` |
  *
  * The desktop app binds no fixed port in either form (PORT=0 with a per-instance sticky
  * preference); its release profile shares `~/.penguin/data` with the CLI by design and its

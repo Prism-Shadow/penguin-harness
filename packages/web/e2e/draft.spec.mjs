@@ -172,7 +172,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   ).json();
   const meta = replay.messages.find((m) => m.type === "session_meta");
   expect(meta?.payload?.thinking_level).toBeUndefined();
-  await expect(page.getByTitle("思考等级：高 (high)")).toBeVisible();
+  await expect(page.locator('[data-tooltip="思考等级：高 (high)"]')).toBeVisible();
 
   // On a successful send the cache clears — except the model selection, which carries over as
   // the next conversation's default (switch-becomes-default, like the thinking level above).
@@ -293,7 +293,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // —— Switch the sidebar to agent mode via the header's list-settings menu (persists in
   // localStorage; the grouping radios moved from the inline toggle into this menu) ——
   await page.getByRole("button", { name: "列表选项" }).click();
-  await page.getByRole("button", { name: "按 Agent 分组" }).click();
+  await page.getByRole("menuitemradio", { name: "按 Agent 分组" }).click();
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("penguin.sidebarGroupMode")))
     .toBe("agent");

@@ -1,12 +1,17 @@
 /**
- * Endpoint model listing (POST /api/projects/:p/models/list): the service collapses every
- * failure into `{ ok:false }` (UnsupportedOperationError additionally flagged, listings
- * bounded in time), and the route validates shape/ownership before anything is fetched.
+ * Endpoint model listing (POST /api/projects/:p/models/list).
+ *
+ * - The service returns a listing verbatim (the legacy openai spelling canonicalized), omits an
+ *   absent key, flags AgentHub's UnsupportedOperationError so the dialog can point at the
+ *   manual path, and collapses every other failure — a timeout included — into ok:false with
+ *   the reason truncated.
+ * - The route refuses a non-http(s) base URL and a missing clientType before anything is
+ *   fetched, is owner-only, and answers in the service's DTO shape.
  */
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { mkdtemp, rm } from "node:fs/promises";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EndpointModelListResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
@@ -83,17 +88,23 @@ describe("POST /api/projects/:p/models/list route validation", () => {
   let projectId: string;
   const url = () => `/api/projects/${projectId}/models/list`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "alice");
     api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await api.post("/api/projects", { projectId: "alice-list", name: "List project" })
+      await api.post("/api/projects", { projectId: `alice-list_${projects}`, name: "List project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("rejects a non-http(s) base URL and a missing clientType before anything is fetched", async () => {
@@ -123,7 +134,10 @@ describe("POST /api/projects/:p/models/list route validation", () => {
     const original = t.deps.projectConfigService.listEndpointModels.bind(
       t.deps.projectConfigService,
     );
-    t.deps.projectConfigService.listEndpointModels = (r) => original(r, async () => ["m-1", "m-2"]);
+    // A spy, so the shared app gets its real lister back after this case.
+    vi.spyOn(t.deps.projectConfigService, "listEndpointModels").mockImplementation((r) =>
+      original(r, async () => ["m-1", "m-2"]),
+    );
     const res = await api.post(url(), {
       baseUrl: "https://gw.example/v1",
       clientType: "openai-chat",

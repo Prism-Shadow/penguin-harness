@@ -26,29 +26,37 @@ import type {
   OrgCalendarOutcome,
   OrgChartResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Card,
+  ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  Modal,
+  Notice,
+  Segmented,
+  Select,
+  Skeleton,
+  Switch,
+  Textarea,
+  toastAttention,
+  toastError,
+  toastSuccess,
+  usePortalPanel,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Button } from "../../components/ui/button";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
-import { usePortalPanel } from "../../components/ui/use-portal-panel";
-import { toastAttention, toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   cadenceOf,
@@ -68,9 +76,6 @@ import {
 import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 
-const PREV_ICON = "M15 18 9 12l6-6";
-const NEXT_ICON = "m9 18 6-6-6-6";
-
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",
   queued: "attention",
@@ -81,8 +86,8 @@ const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
 
 /** The mark a recorded outcome leaves on its instance: a check, an hourglass, a pause, a cross, an alert. */
 const OUTCOME_ICON: Record<OrgCalendarOutcome, string> = {
-  fired: "M5 13l4 4L19 7",
-  queued: "M6 3h12M6 21h12M8 3v3.5L12 10l4-3.5V3M8 21v-3.5L12 14l4 3.5V21",
+  fired: ICONS.check,
+  queued: ICONS.hourglass,
   paused: "M9 5v14M15 5v14",
   missed: "M18 6 6 18M6 6l12 12",
   error: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01",
@@ -104,9 +109,6 @@ const MONTH_CELL_CHIPS = 3;
  */
 const DAY_PANEL_WIDTH = 240;
 
-/** The plus that leads the "new event" hint an empty slot spells out while the pointer is on it. */
-const PLUS_ICON = "M12 5v14M5 12h14";
-
 /**
  * The create control that fills an empty calendar slot — a month cell, an hour row of the week
  * and day columns. It is a real button, so it takes focus and the keyboard, and it lies *under*
@@ -122,7 +124,7 @@ const PLUS_ICON = "M12 5v14M5 12h14";
  * hour row), and so is where the hint sits inside it.
  */
 const CREATE_SLOT_CLASS =
-  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-[var(--accent-bg)]/[0.07] hover:ring-1 hover:ring-inset hover:ring-[var(--accent-bg)]/25 focus-visible:bg-[var(--accent-bg)]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent-bg)]/40 disabled:pointer-events-none";
+  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-accent/[0.07] hover:ring-1 hover:ring-inset hover:ring-accent/25 focus-visible:bg-accent/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 disabled:pointer-events-none";
 
 /**
  * What the slot under the pointer would do, spelled out inside it: a plus and 「新建日程」. It is
@@ -142,9 +144,9 @@ const CREATE_SLOT_CLASS =
 function CreateSlotHint({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-[10px] leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
+      className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-xs leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
     >
-      <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.inlineGlyph} />
+      <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
       {S.company.calendar.create}
     </span>
   );
@@ -410,12 +412,12 @@ export function CalendarPage() {
       <button
         key={i.key}
         type="button"
-        title={title}
+        data-tooltip={title}
         onClick={() => {
           opts.onOpen?.();
           openEdit(i.event);
         }}
-        className={`flex min-w-0 items-center gap-1 rounded px-1 text-left text-[11px] leading-5 transition-opacity ${color.chip} ${
+        className={`flex min-w-0 items-center gap-1 rounded px-1 text-left text-xs leading-5 transition-opacity ${color.chip} ${
           opts.block ? "h-full w-full" : "w-full"
         } ${i.past && outcome === null ? "opacity-60" : ""} ${
           inert ? "line-through decoration-1 opacity-60" : ""
@@ -491,7 +493,7 @@ export function CalendarPage() {
       >
         <button
           type="button"
-          title={createLabel}
+          data-tooltip={createLabel}
           aria-label={createLabel}
           disabled={employees.length === 0}
           onClick={() => openCreate(createMs)}
@@ -504,9 +506,9 @@ export function CalendarPage() {
         <div className="pointer-events-none relative pb-5">
           <p className="mb-1 flex h-5 items-center">
             <span
-              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums ${
+              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums ${
                 isToday
-                  ? "bg-[var(--accent-bg)] font-semibold text-[var(--accent-fg)]"
+                  ? "bg-accent font-semibold text-accent-fg"
                   : day.inMonth
                     ? "text-gray-600 dark:text-gray-300"
                     : "text-gray-400 dark:text-gray-600"
@@ -515,7 +517,7 @@ export function CalendarPage() {
               {new Date(day.dayStartMs).getDate()}
             </span>
           </p>
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {shown.map((i) => (
               <span key={i.key} className="pointer-events-auto block">
                 {chip(i)}
@@ -557,7 +559,7 @@ export function CalendarPage() {
       <div
         key={day.key}
         className={`relative border-l border-gray-100 dark:border-gray-800 ${
-          isToday ? "bg-[var(--accent-bg)]/[0.03]" : ""
+          isToday ? "bg-accent/[0.03]" : ""
         }`}
         style={{ height: HOUR_PX * 24 }}
       >
@@ -567,7 +569,7 @@ export function CalendarPage() {
             <button
               key={h}
               type="button"
-              title={createLabel}
+              data-tooltip={createLabel}
               aria-label={createLabel}
               disabled={employees.length === 0}
               className={`${CREATE_SLOT_CLASS} inset-x-0 flex items-center justify-center border-t border-gray-100 dark:border-gray-800`}
@@ -586,8 +588,8 @@ export function CalendarPage() {
             className="pointer-events-none absolute inset-x-0 z-10 flex items-center"
             style={{ top: dayFraction(now) * HOUR_PX * 24 - 1 }}
           >
-            <span className="-ml-1 h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
-            <span className="h-0.5 flex-1 bg-[var(--accent-bg)]" />
+            <span className="-ml-1 h-2 w-2 rounded-full bg-accent" />
+            <span className="h-0.5 flex-1 bg-accent" />
           </div>
         )}
         {slots.map(({ item, lane, lanes }) => (
@@ -613,55 +615,57 @@ export function CalendarPage() {
     const cols = days.length === 1 ? "grid-cols-[3rem_1fr]" : "grid-cols-[3rem_repeat(7,1fr)]";
     return (
       <div className="overflow-x-auto">
-        <div
-          className={`${days.length === 1 ? "" : "min-w-[52rem]"} overflow-hidden rounded-md border border-gray-200 dark:border-gray-800`}
-        >
-          <div
-            className={`grid ${cols} border-b border-gray-200 text-[11px] font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400`}
-          >
-            <div />
-            {days.map((day) => {
-              const d = new Date(day.dayStartMs);
-              const isToday = day.key === todayKey;
-              return (
-                <div
-                  key={day.key}
-                  className={`flex items-center gap-1.5 border-l border-gray-100 px-2 py-1.5 dark:border-gray-800 ${
-                    isToday ? "font-semibold text-gray-900 dark:text-gray-100" : ""
-                  }`}
-                >
-                  {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
-                  <span
-                    className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
-                      isToday ? "bg-[var(--accent-bg)] text-[var(--accent-fg)]" : ""
+        {/* The width floor sits on a wrapper: the card keeps its own `min-w-0`. */}
+        <div className={days.length === 1 ? "" : "min-w-[52rem]"}>
+          <Card padding="none">
+            <div
+              className={`grid ${cols} border-b border-gray-200 text-xs font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400`}
+            >
+              <div />
+              {days.map((day) => {
+                const d = new Date(day.dayStartMs);
+                const isToday = day.key === todayKey;
+                return (
+                  <div
+                    key={day.key}
+                    className={`flex items-center gap-1.5 border-l border-gray-100 px-2 py-1.5 dark:border-gray-800 ${
+                      isToday ? "font-semibold text-gray-900 dark:text-gray-100" : ""
                     }`}
                   >
-                    {d.getDate()}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <div
-            ref={scrollRef}
-            className="overflow-y-auto"
-            style={{ height: VISIBLE_HOURS * HOUR_PX }}
-          >
-            <div className={`grid ${cols}`}>
-              <div className="relative" style={{ height: HOUR_PX * 24 }}>
-                {Array.from({ length: 24 }, (_, h) => (
-                  <span
-                    key={h}
-                    className="absolute right-2 font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
-                    style={{ top: h * HOUR_PX - 6 }}
-                  >
-                    {h === 0 ? "" : hourLabel(h)}
-                  </span>
-                ))}
-              </div>
-              {days.map(timeColumn)}
+                    {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
+                    <span
+                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
+                        isToday ? "bg-accent text-accent-fg" : ""
+                      }`}
+                    >
+                      {d.getDate()}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+            <div
+              ref={scrollRef}
+              className="overflow-y-auto"
+              style={{ height: VISIBLE_HOURS * HOUR_PX }}
+            >
+              <div className={`grid ${cols}`}>
+                <div className="relative" style={{ height: HOUR_PX * 24 }}>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    // Centred on its hour line: half the label's 16px line box above it.
+                    <span
+                      key={h}
+                      className="absolute right-2 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                      style={{ top: h * HOUR_PX - 8 }}
+                    >
+                      {h === 0 ? "" : hourLabel(h)}
+                    </span>
+                  ))}
+                </div>
+                {days.map(timeColumn)}
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     );
@@ -670,22 +674,24 @@ export function CalendarPage() {
   const grid =
     view === "month" ? (
       <div className="overflow-x-auto">
-        <div className="min-w-[44rem] overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-          <div className="grid grid-cols-7 border-b border-gray-200 text-[11px] font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400">
-            {S.company.calendar.weekdays.map((w) => (
-              <div key={w} className="px-2 py-1.5">
-                {w}
+        <div className="min-w-[44rem]">
+          <Card padding="none">
+            <div className="grid grid-cols-7 border-b border-gray-200 text-xs font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400">
+              {S.company.calendar.weekdays.map((w) => (
+                <div key={w} className="px-2 py-1.5">
+                  {w}
+                </div>
+              ))}
+            </div>
+            {monthGrid(anchor).map((row, r) => (
+              <div
+                key={r}
+                className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
+              >
+                {row.map(monthCell)}
               </div>
             ))}
-          </div>
-          {monthGrid(anchor).map((row, r) => (
-            <div
-              key={r}
-              className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
-            >
-              {row.map(monthCell)}
-            </div>
-          ))}
+          </Card>
         </div>
       </div>
     ) : view === "week" ? (
@@ -712,7 +718,7 @@ export function CalendarPage() {
           aria-label={S.company.calendar.prev}
           onClick={() => setAnchor((a) => shiftAnchor(a, view, -1))}
         >
-          <GlyphIcon d={PREV_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
         </Button>
         <Button size="sm" onClick={() => setAnchor(Date.now())}>
           {S.company.calendar.today}
@@ -724,7 +730,7 @@ export function CalendarPage() {
           aria-label={S.company.calendar.next}
           onClick={() => setAnchor((a) => shiftAnchor(a, view, 1))}
         >
-          <GlyphIcon d={NEXT_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.chevronRight} size={ICON_SIZE.iconButton} />
         </Button>
         <span className="text-sm font-semibold tabular-nums">{heading}</span>
         <div className="ml-auto w-48">
@@ -747,7 +753,7 @@ export function CalendarPage() {
       {/* Legend: one entry per employee in the chart's colour order, naming its cadence; a click
           filters to it, and strikes through everyone it just switched off. */}
       {employees.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-x-1 gap-y-1 text-[11px]">
+        <div className="mb-3 flex flex-wrap gap-x-1 gap-y-1 text-xs">
           {employees.map((e) => {
             const own = (events ?? []).filter((ev) => ev.agentId === e.agentId);
             const cadences = own.map(
@@ -762,7 +768,7 @@ export function CalendarPage() {
               <button
                 key={e.agentId}
                 type="button"
-                title={
+                data-tooltip={
                   active ? S.company.calendar.allEmployees : S.company.calendar.legendFilter(e.name)
                 }
                 aria-pressed={active}
@@ -785,7 +791,8 @@ export function CalendarPage() {
                 </span>
                 <span
                   className={`truncate ${struck ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
-                  title={cadences.join(" · ")}
+                  data-tooltip={cadences.join(" · ")}
+                  data-tooltip-content="text"
                 >
                   {cadences.length === 0
                     ? S.company.calendar.legendEmpty
@@ -798,50 +805,44 @@ export function CalendarPage() {
       )}
 
       {error !== null && (
-        <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+        <Notice
+          tone="danger"
+          role="alert"
+          className="mb-3"
+          retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          <span>{S.company.calendar.loadFailed(error)}</span>
-          <Button size="sm" onClick={() => void load()}>
-            {S.common.retry}
-          </Button>
-        </div>
+          {S.company.calendar.loadFailed(error)}
+        </Notice>
       )}
 
       {events !== null && events.length === 0 && invalidFiles.length === 0 && !hintDismissed && (
-        <div
-          className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
-        >
-          <span className="min-w-0 flex-1">{S.company.calendar.emptyHint}</span>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="shrink-0"
-            title={S.company.calendar.dismissHint}
-            aria-label={S.company.calendar.dismissHint}
-            onClick={() => {
+        <Notice
+          tone="neutral"
+          className="mb-3"
+          dismiss={{
+            ariaLabel: S.company.calendar.dismissHint,
+            onClick: () => {
               dismissHint(emptyHintKey);
               setHintDismissed(true);
-            }}
-          >
-            <CloseIcon />
-          </Button>
-        </div>
+            },
+          }}
+        >
+          {S.company.calendar.emptyHint}
+        </Notice>
       )}
 
       {events === null && error === null ? <CalendarSkeleton view={view} /> : grid}
 
       {invalidFiles.length > 0 && (
-        <div className={`mt-4 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
-          <p className="mb-1 font-medium">{S.company.calendar.invalidFiles}</p>
-          <ul className="space-y-0.5 font-mono">
+        <Notice tone="danger" title={S.company.calendar.invalidFiles} className="mt-4">
+          <ul className="mt-1 space-y-1 font-mono">
             {invalidFiles.map((f) => (
               <li key={`${f.agentId}/${f.name}`}>
                 {f.agentId}/{f.name}: {f.error}
               </li>
             ))}
           </ul>
-        </div>
+        </Notice>
       )}
 
       {/* Create / edit dialog: the scheduled-task form minus its target, the employee as a select. */}
@@ -1013,6 +1014,7 @@ export function CalendarPage() {
         title={S.common.confirmSaveTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmSave(false))}
         onConfirm={() => void save()}
@@ -1025,6 +1027,7 @@ export function CalendarPage() {
         open={deleting !== null}
         title={S.company.calendar.delete}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setDeleting(null))}
         onConfirm={() => void remove()}
@@ -1069,8 +1072,9 @@ function DayOverflow({
   const { triggerRef, panelRef, position } = usePortalPanel({
     open,
     onClose: () => setOpen(false),
-    // A chip row is 20px tall; the header and the panel's own padding add about 40.
-    estimatedHeight: total * 22 + 40,
+    // A chip row is 20px tall with 4px between rows; the header and the panel's own padding add
+    // about 40.
+    estimatedHeight: total * 24 + 40,
     panelWidth: DAY_PANEL_WIDTH,
   });
   const close = () => setOpen(false);
@@ -1080,12 +1084,12 @@ function DayOverflow({
       <button
         ref={triggerRef}
         type="button"
-        title={label}
+        data-tooltip={label}
         aria-label={label}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className="block w-full rounded px-1 text-left text-[10px] text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+        className="block w-full rounded px-1 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
       >
         {S.company.calendar.moreEvents(hidden)}
       </button>
@@ -1107,7 +1111,7 @@ function DayOverflow({
             className="anim-pop z-[60] flex max-h-[70vh] max-w-[calc(100vw-2rem)] flex-col rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
-              <span className="truncate text-[11px] font-medium tabular-nums text-gray-700 dark:text-gray-200">
+              <span className="truncate text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200">
                 {dateLabel}
               </span>
               <button
@@ -1116,12 +1120,12 @@ function DayOverflow({
                   close();
                   onOpenDay();
                 }}
-                className="shrink-0 text-[11px] text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+                className="shrink-0 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
               >
                 {S.company.calendar.openDay}
               </button>
             </div>
-            <div className="space-y-0.5 overflow-y-auto p-1">{children(close)}</div>
+            <div className="space-y-1 overflow-y-auto p-1">{children(close)}</div>
           </div>,
           document.body,
         )}
@@ -1134,36 +1138,38 @@ function CalendarSkeleton({ view }: { view: CalendarView }) {
   if (view === "month") {
     return (
       <div className="overflow-x-auto">
-        <div className="min-w-[44rem] overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-          <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800">
-            {Array.from({ length: 7 }, (_, i) => (
-              <div key={i} className="px-2 py-2">
-                <Skeleton className="h-3 w-8" />
-              </div>
-            ))}
-          </div>
-          {Array.from({ length: 5 }, (_, r) => (
-            <div
-              key={r}
-              className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
-            >
-              {Array.from({ length: 7 }, (_, c) => (
-                <div
-                  key={c}
-                  className="min-h-24 space-y-1 border-r border-gray-100 p-1.5 last:border-r-0 dark:border-gray-800"
-                >
-                  <Skeleton className="h-3 w-4" />
-                  {(r + c) % 3 === 0 && <Skeleton className="h-4 w-full" />}
+        <div className="min-w-[44rem]">
+          <Card padding="none">
+            <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800">
+              {Array.from({ length: 7 }, (_, i) => (
+                <div key={i} className="px-2 py-2">
+                  <Skeleton className="h-3 w-8" />
                 </div>
               ))}
             </div>
-          ))}
+            {Array.from({ length: 5 }, (_, r) => (
+              <div
+                key={r}
+                className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
+              >
+                {Array.from({ length: 7 }, (_, c) => (
+                  <div
+                    key={c}
+                    className="min-h-24 space-y-1 border-r border-gray-100 p-1.5 last:border-r-0 dark:border-gray-800"
+                  >
+                    <Skeleton className="h-3 w-4" />
+                    {(r + c) % 3 === 0 && <Skeleton className="h-4 w-full" />}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Card>
         </div>
       </div>
     );
   }
   return (
-    <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+    <Card padding="none">
       <div className="flex gap-4 border-b border-gray-200 px-14 py-2 dark:border-gray-800">
         {Array.from({ length: view === "week" ? 7 : 1 }, (_, i) => (
           <Skeleton key={i} className="h-3 w-12" />
@@ -1177,6 +1183,6 @@ function CalendarSkeleton({ view }: { view: CalendarView }) {
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

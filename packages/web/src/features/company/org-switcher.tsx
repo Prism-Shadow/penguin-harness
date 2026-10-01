@@ -6,24 +6,30 @@
  * Project with a check mark on the open one (picking one opens its overview), then the two
  * entries that make and shape one — "New organization" (success makes the new organization
  * the shell's current one and lands in its CEO's desk session) and "Organization settings".
- * Same Dropdown, same menu rows as the Project switcher, so the two modes read as one shell.
+ * Same Dropdown, same Menu rows as the Project switcher, so the two modes read as one shell.
  *
  * Beside it lives what the sidebar shows in place of a channel list while the user has no
  * organization at all — the same create dialog, reached from the slot where the list would be.
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import {
+  Badge,
+  Button,
+  ChevronDown,
+  Dropdown,
+  ICONS,
+  ICON_GAP,
+  MenuItem,
+  MenuLabel,
+  MenuRadioItem,
+  MenuSeparator,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneSurface } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
-import { Dropdown } from "../../components/ui/dropdown";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown, GEAR_ICON, PlusIcon } from "../../components/ui/icons";
 import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
 import {
   CreateOrganizationDialog,
@@ -31,8 +37,6 @@ import {
   useOrganizationCreated,
 } from "./org-dialogs";
 import { OrgStatusDot, OrgStatusPill, orgStatusText } from "./shared";
-
-const menuItemClass = `flex w-full items-center ${ICON_GAP.menu} px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`;
 
 export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
@@ -89,7 +93,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            title={triggerLabel}
+            data-tooltip={triggerLabel}
             // The count beside the name renders aria-hidden — it is a bare `@3` — so the
             // accessible name has to carry the same fact in words.
             aria-label={triggerLabel}
@@ -116,7 +120,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
               </span>
               {/* The Project the organization belongs to: the second line, so the name stays the headline. */}
               {current !== null && (
-                <span className="block truncate text-[11px] leading-tight text-gray-500 dark:text-gray-400">
+                <span className="block truncate text-xs leading-tight text-gray-500 dark:text-gray-400">
                   {projectName(current.projectId)}
                 </span>
               )}
@@ -124,7 +128,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             {channelNote !== null && (
               <span
                 aria-hidden
-                className={`shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                className={`shrink-0 rounded-full px-1.5 text-xs font-semibold tabular-nums ${
                   company.channelMentions > 0
                     ? toneSurface.attention
                     : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
@@ -143,38 +147,35 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
       >
         {groups.map((group) => (
           <div key={group.projectId} role="group" aria-label={projectName(group.projectId)}>
-            <p className="px-3.5 pb-0.5 pt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              {projectName(group.projectId)}
-            </p>
+            <MenuLabel>{projectName(group.projectId)}</MenuLabel>
             {group.organizations.map((o) => {
               const key = orgKey(o.projectId, o.orgId);
               const active = key === currentKey;
               return (
-                <button
+                <MenuRadioItem
                   key={key}
-                  type="button"
-                  title={S.company.inProject(projectName(o.projectId), o.name)}
+                  data-tooltip={S.company.inProject(projectName(o.projectId), o.name)}
                   aria-current={active ? "true" : undefined}
-                  onClick={() => {
+                  onSelect={() => {
                     setOpen(false);
                     go(orgPagePath(o.projectId, o.orgId, "overview"));
                   }}
-                  className={`${menuItemClass} ${active ? "font-semibold" : ""}`}
-                >
-                  <OrgStatusDot org={o} />
-                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                  {o.invalid !== undefined ? (
-                    <Badge tone="red">{S.company.orgInvalid}</Badge>
-                  ) : o.status === "paused" ? (
-                    <Badge tone="amber">{S.company.orgPaused}</Badge>
-                  ) : null}
-                  {active && (
-                    <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                      <CheckIcon />
-                      <span className="sr-only">{S.company.switcherCurrent}</span>
-                    </span>
-                  )}
-                </button>
+                  glyph={<OrgStatusDot org={o} />}
+                  label={
+                    <>
+                      {o.name}
+                      {active && <span className="sr-only">{S.company.switcherCurrent}</span>}
+                    </>
+                  }
+                  trailing={
+                    o.invalid !== undefined ? (
+                      <Badge tone="danger">{S.company.orgInvalid}</Badge>
+                    ) : o.status === "paused" ? (
+                      <Badge tone="attention">{S.company.orgPaused}</Badge>
+                    ) : undefined
+                  }
+                  checked={active}
+                />
               );
             })}
           </div>
@@ -184,36 +185,25 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             {company.orgsLoaded ? S.company.noOrganizations : S.common.loading}
           </p>
         )}
-        <div className="mt-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
-          <button
-            type="button"
-            className={menuItemClass}
-            onClick={() => {
+        <MenuSeparator />
+        <MenuItem
+          glyph={ICONS.plus}
+          label={S.company.createOrg}
+          onSelect={() => {
+            setOpen(false);
+            setCreateOpen(true);
+          }}
+        />
+        {settingsTarget !== null && (
+          <MenuItem
+            glyph={ICONS.gear}
+            label={S.company.orgSettings}
+            onSelect={() => {
               setOpen(false);
-              setCreateOpen(true);
+              setSettingsOpen(true);
             }}
-          >
-            <span className="shrink-0 text-gray-400 dark:text-gray-500">
-              <PlusIcon size={ICON_SIZE.rowLead} />
-            </span>
-            {S.company.createOrg}
-          </button>
-          {settingsTarget !== null && (
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setOpen(false);
-                setSettingsOpen(true);
-              }}
-            >
-              <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                <GlyphIcon d={GEAR_ICON} size={ICON_SIZE.rowLead} />
-              </span>
-              {S.company.orgSettings}
-            </button>
-          )}
-        </div>
+          />
+        )}
       </Dropdown>
 
       <CreateOrganizationDialog
@@ -233,6 +223,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           orgId={settingsTarget.orgId}
           onClose={() => setSettingsOpen(false)}
           onChanged={() => void company.reloadOrganizations()}
+          // The list drops it, and the shell then moves off its pages by itself (the settled
+          // listing no longer holds the current organization).
+          onDeleted={() => void company.reloadOrganizations()}
         />
       )}
     </>

@@ -27,10 +27,11 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Plugins / Models / Cost Center / Evaluation Center, each labeled by a
- *   localized (en + zh) styled tooltip on hover and by no native `title` (two tooltips would
- *   stack); "last conversation" targets the most recently active non-archived session and is
- *   disabled while none exists; expanding from the rail restores the pinned sidebar;
+ *   Agents / Models / Plugins / Cost Center / Evaluation Center (the user is a member, so no
+ *   Machines), each labeled by a localized (en + zh) styled tooltip on hover and by no native
+ *   `title` (two tooltips would stack); "last conversation" targets the most recently active
+ *   non-archived session and is disabled while none exists; expanding from the rail restores
+ *   the pinned sidebar;
  * - login page: a single brand penguin logo above the form (part of the form area; the
  *   background still only has the trace animation), the trace animation grows in after a
  *   delayed blank first paint, no two trace segments cross or touch (except where a fork shares
@@ -114,7 +115,7 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   await page.getByPlaceholder(/Type a message/).waitFor();
   let d = await docWidths(page);
   expect(d.scrollWidth, "draft @1280 no horizontal overflow").toBeLessThanOrEqual(d.clientWidth);
-  await expect(page.locator('[title*="Context usage"]')).toHaveCount(0);
+  await expect(page.locator('[data-tooltip*="Context usage"]')).toHaveCount(0);
 
   // Goal mode keeps its chip compact: the committed budget is a value button, while editing
   // happens in a fixed upward popover (never inline and never covering the objective textarea).
@@ -215,7 +216,7 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
   await page.getByPlaceholder(/Type a message/).waitFor();
-  await expect(page.locator('[title*="Context usage"]')).toHaveCount(1);
+  await expect(page.locator('[data-tooltip*="Context usage"]')).toHaveCount(1);
 
   // --- Models page @390: must not overflow, text must not overlap ---
   await page.setViewportSize({ width: 390, height: 844 });
@@ -419,20 +420,24 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Last conversation",
     "New chat",
     "Agents",
-    "Plugins",
     "Models",
+    "Plugins",
     "Cost Center",
     "Evaluation Center",
   ];
   const attrs = (name) =>
     entries.evaluateAll((els, n) => els.map((el) => el.getAttribute(n)), name);
-  expect(await attrs("aria-label"), "rail order (en)").toEqual(EN);
+  // An entry on a badge trail appends what is waiting (" · …") to its name, and Models does
+  // here: replacing the Project's model table above leaves presets to sync. The order is
+  // about the names.
+  const names = async () => (await attrs("aria-label")).map((label) => label.split(" · ")[0]);
+  expect(await names(), "rail order (en)").toEqual(EN);
   // No native title anywhere on the rail: it would open a second, slower tooltip under the
   // styled one, which is the whole reason the styled one exists.
   expect(await attrs("title"), "rail carries no native tooltips (en)").toEqual(EN.map(() => null));
   const tooltip = page.getByTestId("tooltip");
   await rail.getByRole("link", { name: "Models" }).hover();
-  await expect(tooltip, "rail tooltip (en)").toHaveText("Models");
+  await expect(tooltip, "rail tooltip (en)").toHaveText(/^Models/);
   await rail.getByRole("button", { name: "Last conversation" }).hover();
   await expect(tooltip, "rail tooltip follows the pointer (en)").toHaveText("Last conversation");
 
@@ -467,8 +472,9 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
       { timeout: 1000 },
     );
   }).toPass({ timeout: 15_000 });
-  // Active fill = the *unprefixed* bg-gray-200/70 token (the resting state carries hover:bg-gray-200/70, which a bare substring match would also hit).
-  const ACTIVE_FILL = /(^|\s)bg-gray-200\/70(\s|$)/;
+  // Active fill = the *unprefixed* bg-fg/7 token, the navigation column's selected wash (the
+  // resting state carries hover:bg-fg/7, which a bare substring match would also hit).
+  const ACTIVE_FILL = /(^|\s)bg-fg\/7(\s|$)/;
   // On a conversation, the entry lights as "you are here" (any non-draft /chat/:id).
   await expect(rail.getByRole("button", { name: "Last conversation" })).toHaveClass(ACTIVE_FILL);
 
@@ -490,15 +496,16 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await page.reload();
   await expect(entries).toHaveCount(7);
-  const ZH = ["最近一次对话", "新建对话", "智能体", "插件市场", "模型库", "成本中心", "评估中心"];
-  expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
+  const ZH = ["最近一次对话", "新建对话", "智能体", "模型库", "插件市场", "成本中心", "评估中心"];
+  expect(await names(), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail carries no native tooltips (zh)").toEqual(ZH.map(() => null));
   await rail.getByRole("link", { name: "模型库" }).hover();
-  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText("模型库");
+  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText(/^模型库/);
 
   // --- Expand: the rail's top button (localized) restores the pinned sidebar ---
   await page.getByRole("button", { name: "展开侧栏" }).click();
-  await expect(page.locator("aside")).toHaveClass(/w-64/);
+  // The app's sidebar is the first <aside>; the Plugins page open here has one of its own.
+  await expect(page.locator("aside").first()).toHaveClass(/w-64/);
   await expect(page.getByRole("button", { name: "收起侧栏" })).toBeVisible();
 });
 
@@ -728,10 +735,13 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   // Chips at 390: input/output/elapsed shown (no pricing configured -> no cost chip); TPS is
   // deliberately dropped below sm to keep the row inside the width.
   for (const chip of ["Input tokens", "Output tokens", "Elapsed"]) {
-    await expect(footer.locator(`[title="${chip}"]`), `${chip} chip present @390`).toBeVisible();
+    await expect(
+      footer.locator(`[data-tooltip="${chip}"]`),
+      `${chip} chip present @390`,
+    ).toBeVisible();
   }
-  await expect(footer.locator('[title="Output TPS"]'), "TPS chip in DOM").toHaveCount(1);
-  await expect(footer.locator('[title="Output TPS"]'), "TPS chip hidden @390").toBeHidden();
+  await expect(footer.locator('[data-tooltip="Output TPS"]'), "TPS chip in DOM").toHaveCount(1);
+  await expect(footer.locator('[data-tooltip="Output TPS"]'), "TPS chip hidden @390").toBeHidden();
   // With TPS dropped and compact decimals the common case FITS at 390 — no sideways scroll
   // needed (the scroll container remains only as a fallback for extreme values).
   const statsSpan = footer.locator("span").first();

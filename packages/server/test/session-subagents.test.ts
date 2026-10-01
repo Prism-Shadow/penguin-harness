@@ -1,36 +1,33 @@
 /**
- * Integration tests for the panel's subagent endpoints and the child-liveness broadcast:
- *   - POST /api/sessions/:id/subagents/:childSessionId/message — a user input on the child,
- *     whatever its state: {outcome:"steered"} while it runs, {outcome:"started"} while idle,
- *     {outcome:"resumed"} when the released child was revived; the resume option carries the
- *     child's owning agent from its session row; 404 subagent_gone when nothing can be
- *     revived, 409 subagent_busy when the child cannot take the message, 400 without text;
- *   - POST /api/sessions/:id/subagents/:childSessionId/abort — 202 when a run was aborted,
- *     204 when the child is idle/unknown (nothing left to stop);
- *   - `task_state` republished with the live `subagents` listing on every child state ping,
- *     and the SSE subscribe snapshot carrying the same listing;
- *   - 404 for foreign/unknown sessions (the shared resolveSession semantics).
+ * The panel's subagent endpoints and the child-liveness broadcast.
+ *
+ * - A message to a child is a user input whatever its state: steering while it runs, a
+ *   follow-up run while it is idle, a revival when it was released (the resume carries the
+ *   child's owning Agent from its session row); nothing to revive is a 404 subagent_gone, a
+ *   child that cannot take it a 409 subagent_busy, no text a 400.
+ * - An abort ends the running child's round (202); an idle or unknown child is a 204.
+ * - task_state is republished with the live subagents listing on every child state ping, and
+ *   the SSE subscribe snapshot carries the same listing.
+ * - Foreign and unknown Sessions are 404s, as on every Session route.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { toolCall, withOrigin } from "@prismshadow/penguin-core";
 import type {
   BackgroundSubagentInfo,
   OmniMessage,
-  ApproveFn,
   SubagentMessageOptions,
   SubagentMessageOutcome,
 } from "@prismshadow/penguin-core";
 import { ApprovalRegistry } from "../src/runtime/approvals.js";
 import type { ServerEvent, SubagentMessageResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-24-10-00-00-ccdd0041";
+const PROJECT = "subuser-default_project";
 const CHILD_RUNNING = "session-2026-08-24-10-01-00-child001";
 const CHILD_IDLE = "session-2026-08-24-10-01-00-child002";
-const CHILD_RELEASED = "session-2026-08-24-10-01-00-child003";
 
 interface SentMessage {
   childSessionId: string;
@@ -46,15 +43,7 @@ function subagentsFakeSession(
   aborts: string[],
   stateListeners: (() => void)[],
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run(_input: OmniMessage[], _opts: { approve: ApproveFn; signal: AbortSignal }) {},
-    async *compact() {},
+  return fakeSession(sessionId, {
     listBackgroundSubagents: () => children.map((c) => ({ ...c })),
     sendToBackgroundSubagent: async (
       childSessionId: string,
@@ -89,37 +78,31 @@ function subagentsFakeSession(
       stateListeners.push(listener);
     },
     setSubagentApprovalFallback: () => {},
-  };
+  });
 }
 
 describe("session subagent routes and liveness", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let outsider: ReturnType<typeof apiClient>;
+  let SID: string;
+  let CHILD_RELEASED: string;
   let children: BackgroundSubagentInfo[];
   let sent: SentMessage[];
   let aborts: string[];
   let stateListeners: (() => void)[];
 
-  const sessionRow = (sessionId: string): SessionRow => ({
-    sessionId,
-    projectId: "subuser-default_project",
-    agentId: "default_agent",
-    modelId: "m1",
-    provider: "custom",
-    workspace: "/tmp/w",
-    approvalMode: "always-ask",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  });
-
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "subuser");
-    const other = await provisionUser(t.app, "outsider_s");
-    api = apiClient(t.app, cookie);
-    outsider = apiClient(t.app, other.cookie);
+    api = apiClient(t.app, (await provisionUser(t.app, "subuser")).cookie);
+    outsider = apiClient(t.app, (await provisionUser(t.app, "outsider_s")).cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    CHILD_RELEASED = uniqueSessionId();
     children = [
       { sessionId: CHILD_RUNNING, subagentId: "subagent-child001", running: true },
       { sessionId: CHILD_IDLE, subagentId: null, running: false },
@@ -127,17 +110,13 @@ describe("session subagent routes and liveness", () => {
     sent = [];
     aborts = [];
     stateListeners = [];
-    t.deps.sessionsRepo.insert(sessionRow(SID));
-    t.deps.manager.adopt(
-      sessionRow(SID),
-      subagentsFakeSession(SID, children, sent, aborts, stateListeners),
-    );
+    adoptSession(t.deps, subagentsFakeSession(SID, children, sent, aborts, stateListeners), {
+      projectId: PROJECT,
+      approvalMode: "always-ask",
+    });
     // A released child with its own session row: the message route resolves its owning agent
     // from this row and asks core to revive it.
-    t.deps.sessionsRepo.insert(sessionRow(CHILD_RELEASED));
-  });
-  afterEach(async () => {
-    await t.cleanup();
+    t.deps.sessionsRepo.insert(sessionRow(CHILD_RELEASED, { projectId: PROJECT }));
   });
 
   it("message: steering while the child runs, a follow-up run while it is idle", async () => {

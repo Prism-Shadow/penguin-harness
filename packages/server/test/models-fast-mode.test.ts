@@ -1,9 +1,12 @@
 /**
- * Round-trip of a model's fast_mode annotation (premium faster serving tier) through
- * PUT/GET: only `true` is persisted and read back; false or omission clears it (absent =
- * off — existing configs are untouched by the feature); a non-boolean value returns 400.
+ * A model's fast_mode annotation (the premium faster serving tier) through PUT/GET.
+ *
+ * - Only `true` is persisted and read back; false or omission clears it (absent means off, so
+ *   existing configs are untouched).
+ * - A preset model takes the annotation too (it is the user's; the catalog never presets it).
+ * - A non-boolean value is a 400.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ModelsResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -13,17 +16,26 @@ describe("models fast-mode annotation", () => {
   let owner: ReturnType<typeof apiClient>;
   let projectId: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_f");
     owner = apiClient(t.app, a.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_f-fast", name: "fast project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_f-fast_${projects}`,
+        name: "fast project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("fastMode=true persists and reads back; false or omitted = off (no field)", async () => {

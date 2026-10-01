@@ -637,7 +637,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | --- | --- | --- |
 | GET | `/usage` | Usage statistics |
 | GET | `/usage/model-totals` | Lifetime Token total per model; takes no filters |
-| GET | `/usage/errors` | One page of the error detail table, newest first: → `{items, total}` |
+| GET | `/usage/errors` | One page of the error detail table, newest first: → `{items, total, rows}` |
 | DELETE | `/usage/errors` | Empties the error table for the current filter: → `{deleted}` (Project owner only) |
 | GET | `/agents/:agentId/traces` | Trace files as a date → Session drill-down |
 | GET | `/agents/:agentId/traces/:sessionId/:index` | Reads Trace events (`offset` / `limit` pagination) |
@@ -656,6 +656,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | `agentId`, `provider`, `modelId` | Filters |
 
 - `GET /usage/errors` takes `offset`, `limit`, the same `from` / `to` / `fromTs` / `toTs` / `agentId` filter, and an optional `kind` (`unexpected` or `expected`).
+- The error table folds the records of one day that share a source, code, kind and message into one row, with its `count`, its latest time `ts` and its first time `firstTs`. `offset`, `limit` and `rows` count those rows; `total` and the dashboard's summary figures count records. `GET /usage` and `GET /usage/errors` take an optional `utcOffsetMinutes`, the reader's offset east of UTC (−840 to 840), which decides the day; without it the day is the server's own.
 - `DELETE /usage/errors` takes the same filter as the reads, `from` / `to` / `fromTs` / `toTs` / `agentId`, but no `kind`, because the panel offers no such control. `from` and `to` are both required here (400 otherwise), because an open bound would clear the whole history rather than a filtered part. The clear reaches exactly what the caller's reads reach: an admin's clear also removes the unattributed rows that only an admin's read shows, and a member's clear never does.
 - `GET /agents/:agentId/traces` also accepts `limit` and `offset` for paging, and `category` (which requires `limit`) to list one category of Sessions.
 - Any member can download a Trace. Import is owner only, like the Agent State snapshot import, and capped at 14MB. The imported file must be valid Trace JSONL whose first record is a `session_meta` with a filename-safe `session_id`. A session id the agent already has is rejected (409 `trace_session_exists`), so an imported file always becomes index 001 of a new Session, stored in the local date directory of its first record's timestamp.
@@ -1002,6 +1003,8 @@ Besides its state, a binding's runtime status reports what the live connection h
 - `lastConnectionError`: `{at, detail}` for the last connection failure, kept after the connection recovers. By contrast, `lastError` belongs to the `error` state and disappears as soon as the state leaves it.
 
 All three live in the server process and reset on every connect or reconnect, and re-enabling the channel or saving credentials opens a new connection. An absent `lastInboundAt` therefore means "nothing since this connection opened", never "nothing ever". These fields exist because a channel that withholds messages still shows `connected` with no error.
+
+A connection failure is also filed as an error record, `messaging_connect_failed`, once per outage, and a reply that never reached the chat as `messaging_send_failed`. On Telegram, QQ and WeChat both are `expected` when the next attempt clears them by itself: a request that never completed, a timeout, HTTP 408, 429 or 5xx, a QQ gateway that stopped answering heartbeats or asked to reconnect, or WeChat's session timeout. They are `unexpected` when they repeat until someone acts, such as a rejected credential, a missing permission, or a webhook or a second poller on a Telegram bot. When an outage starts with an `expected` failure, the first `unexpected` one after it is filed too.
 
 ## Terminals
 

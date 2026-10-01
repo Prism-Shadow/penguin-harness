@@ -38,6 +38,21 @@ import type {
   OrganizationPatchRequest,
   OrganizationSettings,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ConfirmModal,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  ICON_GAP,
+  InfoPopover,
+  Input,
+  Modal,
+  Select,
+  Textarea,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -47,15 +62,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { Modal } from "../../components/ui/modal";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { ICON_GAP } from "../../lib/icon-scale";
-import { ModelSelect, modelLabel } from "../chat/model-select";
+import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
@@ -118,8 +125,8 @@ function useProjectModels(projectId: string, open: boolean) {
 }
 
 /**
- * The model field: the App's own model picker (ModelSelect in its form shape — the same
- * searchable, grouped, key-configured-first panel the chat composer and the Project's
+ * The model field: the App's own model picker (ModelCatalogSelect in its form shape — the same
+ * searchable, grouped, key-configured-first dialog the chat composer and the Project's
  * default-model setting open), with this field's two extra states around it.
  *
  * Empty is a choice here, not a gap: it means "follow the Project's default", named after
@@ -162,7 +169,7 @@ function ModelField({
         <FieldLabel block={false}>{S.company.modelField}</FieldLabel>
         <InfoPopover label={S.company.modelField}>{S.company.modelInfo}</InfoPopover>
       </span>
-      <ModelSelect
+      <ModelCatalogSelect
         models={list}
         value={value}
         {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
@@ -218,10 +225,8 @@ function WorkspaceField({
         variant="form"
         fieldLabel={S.company.workspaceField}
         emptyLabel={S.company.workspaceEmpty}
-        menuHint={S.company.workspaceMenuHint}
         clearLabel={S.company.workspaceClear}
       />
-      <FieldHint>{S.company.workspaceHint}</FieldHint>
     </div>
   );
 }
@@ -253,10 +258,11 @@ function MissionExamples({
           <button
             key={example.id}
             type="button"
-            title={`${copy.mission}\n${S.company.missionExampleHint}`}
+            data-tooltip={`${copy.mission}\n${S.company.missionExampleHint}`}
+            data-tooltip-content="text"
             disabled={disabled}
             onClick={() => onPick(copy)}
-            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             {copy.name}
           </button>
@@ -575,6 +581,7 @@ export function OrganizationSettingsDialog({
   orgId,
   onClose,
   onChanged,
+  onDeleted,
 }: {
   open: boolean;
   projectId: string;
@@ -582,6 +589,8 @@ export function OrganizationSettingsDialog({
   onClose: () => void;
   /** Settings were written (name, mission, status …): the caller refreshes the list. */
   onChanged: () => void;
+  /** The organization was deleted: the caller refreshes the list and leaves its pages. */
+  onDeleted?: () => void;
 }) {
   /** Stored settings as loaded on open (null until then) — the no-change baseline. */
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
@@ -594,7 +603,25 @@ export function OrganizationSettingsDialog({
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
   const [workspace, setWorkspace] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The delete confirmation, and what has been typed into it (the id, to mean it). */
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [typedId, setTypedId] = useState("");
   const { models, error: modelsError } = useProjectModels(projectId, open);
+
+  const doDelete = async () => {
+    setBusy(true);
+    try {
+      await api.deleteOrganization(projectId, orgId);
+      setConfirmDelete(false);
+      toastSuccess(S.company.deleted(orgId));
+      onClose();
+      onDeleted?.();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const adopt = (next: OrganizationSettings) => {
     setSettings(next);
@@ -786,7 +813,49 @@ export function OrganizationSettingsDialog({
             ))}
           </Select>
         </div>
+        {/* Deleting is its own decision, below everything Save writes: immediate, confirmed by
+              typing the id, and refused by the server for anyone but the Project's owner. */}
+        <div className="flex items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-gray-800">
+          <span className="min-w-0">
+            <span className="block text-xs font-semibold text-gray-600 dark:text-gray-400">
+              {S.company.deleteOrg}
+            </span>
+            <FieldHint>{S.company.deleteOrgDesc}</FieldHint>
+          </span>
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={!hydrated || busy}
+            onClick={() => {
+              setTypedId("");
+              setConfirmDelete(true);
+            }}
+          >
+            {S.common.delete}
+          </Button>
+        </div>
       </div>
+      <ConfirmModal
+        open={confirmDelete}
+        title={S.company.deleteOrg}
+        busy={busy}
+        confirmDisabled={typedId.trim() !== orgId}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void doDelete()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.company.deleteOrgConfirm}</p>
+        <Input
+          size="sm"
+          className="mt-3 font-mono"
+          aria-label={S.company.deleteOrgTypeId(orgId)}
+          placeholder={orgId}
+          value={typedId}
+          hint={S.company.deleteOrgTypeId(orgId)}
+          onChange={(e) => setTypedId(e.target.value)}
+        />
+      </ConfirmModal>
     </Modal>
   );
 }

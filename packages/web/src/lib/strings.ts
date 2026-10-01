@@ -18,10 +18,10 @@ export const zh = {
 
   nav: {
     chat: "对话",
-    newChat: "新对话",
+    newChat: "新建对话",
     agents: "智能体",
     models: "模型库",
-    machines: "机器",
+    machines: "机器管理",
     plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
@@ -36,6 +36,9 @@ export const zh = {
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
+    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
+    pinEntry: "常驻",
+    unpinEntry: "取消常驻",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "概览",
@@ -49,7 +52,7 @@ export const zh = {
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
-    pageTitle: "机器",
+    pageTitle: "机器管理",
     /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
@@ -156,7 +159,7 @@ export const zh = {
     serverUpOn: (port: number) => `运行中，端口 ${port}`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
     output: "输出",
-    agentsUnreachable: "那台机器尚未连接——请在「机器」页面使用它",
+    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
   },
 
@@ -224,6 +227,28 @@ export const zh = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `退出码 ${code}`,
+    /**
+     * The touch key bar (terminal-keybar.tsx), shown only under `(pointer: coarse)`: the
+     * keys a phone's soft keyboard has none of. Cap faces are the key names themselves
+     * (Esc / Tab / Ctrl / Alt / ^C) and stay untranslated, as on a physical keyboard; these
+     * are their accessible names.
+     */
+    touchKeys: {
+      label: "终端快捷键",
+      esc: "Esc 键",
+      tab: "Tab 键",
+      /** Sticky: tap to arm, the next character composes with it. */
+      ctrl: "Ctrl 键（点一下，下一个字符生效）",
+      alt: "Alt 键（点一下，下一个字符生效）",
+      up: "上方向键",
+      down: "下方向键",
+      left: "左方向键",
+      right: "右方向键",
+      interrupt: "中断（Ctrl+C）",
+      paste: "粘贴",
+      hideKeyboard: "收起键盘",
+      showKeyboard: "调出键盘",
+    },
   },
 
   /** The dock surfaces (right / bottom) every side element renders in as a tab. */
@@ -264,6 +289,9 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
+    /** Touch-only: the bottom dock's height toggle, standing in for a boundary drag. */
+    maximize: "放大到整屏",
+    restore: "还原高度",
   },
 
   /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
@@ -402,6 +430,13 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
+    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
+    creditsTitle: "版权信息",
+    creditsThemes: "用于",
+    creditsNoTheme: "没有主题默认使用",
+    creditsLicense: "许可",
+    creditsSource: "来源",
+    creditsLicenseText: "许可全文",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -482,7 +517,11 @@ export const zh = {
       `一条消息最多 ${count} 个附件；对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——` +
       `图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
-    themeInfo: "应用的明暗外观。",
+    themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
+    /** Display names of the three themes; the ids stay github / modern / geek. */
+    themeNames: { github: "通用", modern: "白领", geek: "极客" },
+    colorMode: "明暗",
+    colorModeInfo: "应用的明暗外观。",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
@@ -493,11 +532,16 @@ export const zh = {
     langEn: "English",
     fontSize: "字号",
     fontSizeInfo: "界面整体字号。",
-    fontSmall: "小",
-    fontMedium: "中",
-    fontLarge: "大",
-    accent: "主题色",
-    accentInfo: "界面强调色。",
+    textSizeNames: { xs: "特小", s: "小", m: "中", l: "大", xl: "特大" },
+    fonts: "字体",
+    fontsInfo: "英文与中文各自的字体，默认随主题；代码与等宽文字始终使用主题的等宽字体。",
+    fontLatin: "英文",
+    fontCjk: "中文",
+    fontFollowTheme: "随主题",
+    fontSystem: "系统字体",
+    accent: "强调色",
+    accentInfo:
+      "界面强调色。每个主题有自己的一组强调色，换主题后不在新主题里的颜色会暂时按「随主题」显示。",
     launcher: "快捷方式悬浮球",
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
@@ -526,12 +570,23 @@ export const zh = {
     companyModeServerInfo:
       "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。内测功能：可能有不稳定的现象，遇到问题请反馈。",
     accentNames: {
-      neutral: "灰白",
+      neutral: "随主题",
       blue: "蓝",
       green: "绿",
       violet: "紫",
       rose: "红",
       amber: "橙",
+      ocean: "海蓝",
+      clay: "陶土",
+      plum: "梅紫",
+      honey: "蜂蜜",
+      slate: "石板灰",
+      phosphor: "荧光绿",
+      cyan: "青",
+      magenta: "品红",
+      gold: "金",
+      cobalt: "钴蓝",
+      orange: "橙红",
     } as Record<string, string>,
   },
 
@@ -733,7 +788,7 @@ export const zh = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "标记为已读",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
@@ -799,6 +854,13 @@ export const zh = {
     moreInfo: "说明",
     /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
     moreInfoAbout: (subject: string) => `说明：${subject}`,
+    /** The toast stack's name as a live region (the shared UI package's `Toaster`). */
+    notifications: "通知",
+    /** Read after a toast's text: pressing the toast dismisses it. */
+    dismiss: "关闭",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "上一页",
+    nextPage: "下一页",
     name: "名称",
     username: "用户名",
     role: "角色",
@@ -1036,7 +1098,7 @@ export const zh = {
     createDirSkillsHint: "选择一个项目目录，读取其 .agents/skills 与 .claude/skills 下的技能",
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
-    createDirSkillsClear: "清除已选目录",
+    createDirSkillsClear: "不从目录导入",
     /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
     createSnapshot: "从快照初始化",
     createSnapshotPick: "选择快照包",
@@ -2267,7 +2329,9 @@ export const zh = {
       "no-identity": "待识别",
     },
     workspaceAuto: "临时工作区",
-    workspaceClear: "改用临时工作区",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "从临时工作区开始",
+    workspaceTempRule: "在 Agent 目录的 workspaces/ 下新建一个空目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
     finder: {
@@ -2567,13 +2631,12 @@ Benchmark：
       },
     },
     sessionList: "Session",
+    /** The Session list's heading, named for how the list is grouped. */
+    sessionListByMode: { workspace: "工作区", agent: "智能体", time: "最近" },
     defaultSessionTitle: "新对话",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -3030,6 +3093,8 @@ Benchmark：
     dropFilesDesc: "图片与文件将添加到输入框",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "目标模式仅支持附加图片，文件未添加。",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string => `粘贴的文本较长，已作为附件 ${name} 添加。`,
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -3507,11 +3572,13 @@ Benchmark：
     errorsColKind: "类型",
     errorsColMessage: "消息",
     errorsEmpty: "暂无异常",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `首次出现于 ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "较新",
     errorsOlder: "更早",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `第 ${page} / ${pages} 页 · 共 ${total} 条`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `第 ${page} / ${pages} 页 · 共 ${rows} 行`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "清空",
     errorsClearTitle: "清空错误记录",
@@ -4004,10 +4071,8 @@ Benchmark：
     workspaceField: "公司工作区",
     workspaceInfo:
       "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。",
-    workspaceHint: "留空则使用组织自己的 workspace/ 目录；指定时必须是服务器上已存在的目录",
     workspaceEmpty: "组织自己的 workspace/ 目录",
-    workspaceMenuHint: "选一个已存在的目录作为公司工作区",
-    workspaceClear: "改回组织自己的目录",
+    workspaceClear: "使用组织自己的目录",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO 预算",
     ceoBudgetHint: "每月上限；CEO 的预算就是整家公司的预算",
@@ -4039,6 +4104,12 @@ Benchmark：
     statusPaused: "已暂停",
     pause: "暂停组织",
     resume: "恢复组织",
+    deleteOrg: "删除组织",
+    deleteOrgDesc: "把组织移入 Project 的回收目录。员工保留为 Agent，对话也保留。",
+    deleteOrgConfirm:
+      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。员工仍是 Project 的 Agent；工位与工单的对话会保留，但组织不在了，就没有页面再列出它们。要再次使用这个 id，需先删除旧 CEO 的 Agent。只是想让组织停下来而不丢任何东西，请改用暂停。",
+    deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
+    deleted: (orgId: string) => `组织 ${orgId} 已删除`,
     pauseInfo:
       "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。组织只会被暂停，不会被删除：它的对话、员工与工单始终可以回去看。",
     settingsLoadFailed: "组织设置读取失败",

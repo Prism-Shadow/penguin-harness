@@ -32,7 +32,29 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import {
+  ActivityIcon,
+  Button,
+  ConfirmModal,
+  CopyButton,
+  Dot,
+  Dropdown,
+  EmptyState,
+  GlyphIcon,
+  Heading,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Modal,
+  Skeleton,
+  StatChip,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { switchDeskModel } from "../company/desk-model";
+import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
@@ -46,7 +68,11 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
-import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
+import {
+  sessionActivity,
+  sessionActivityLabel,
+  sessionBackgroundTasks,
+} from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
   approvalKey,
@@ -67,19 +93,7 @@ import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
-import { Dropdown } from "../../components/ui/dropdown";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { EmptyState } from "../../components/ui/empty-state";
-import {
-  SessionActivityIcon,
-  sessionActivityLabel,
-} from "../../components/ui/session-activity-icon";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
@@ -148,29 +162,13 @@ import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-l
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
-import { PanelsToolbar } from "./panels-toolbar";
-import { toneDot, toneInk } from "../../lib/tone";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { DockToggles } from "./dock-toggles";
+import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
-
-/** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
-function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
-  return (
-    <span
-      title={label}
-      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
-    >
-      <GlyphIcon d={icon} />
-      {value}
-    </span>
-  );
-}
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
@@ -186,7 +184,7 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
       </p>
       <div className="flex items-start gap-1.5">
         <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
-        <CopyButton text={sessionId} label={S.chat.copySessionId} className={ROW_COPY_CLASS} />
+        <CopyButton text={sessionId} label={S.chat.copySessionId} size="sm" className="shrink-0" />
       </div>
     </div>
   );
@@ -308,6 +306,7 @@ export function ChatPage() {
   const location = useLocation();
   const params = useParams<{ sessionId?: string }>();
   const { user } = useAuth();
+  const company = useCompany();
   const { currency } = useTheme();
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -1262,6 +1261,38 @@ export function ChatPage() {
           prevModelId: selected.modelId,
         }),
       };
+      // A desk is not forked: the switch is the EMPLOYEE's. Its model goes into the chart and
+      // its desk is renewed onto it (features/company/desk-model.ts), so the organization —
+      // its sidebar, its calendar rounds, its @mentions — follows to the Session the person
+      // is now talking in, instead of staying on the old one while a stray one is opened.
+      if (selected.orgId !== undefined) {
+        try {
+          const deskId = await switchDeskModel(
+            api,
+            {
+              projectId,
+              orgId: selected.orgId,
+              agentId: selected.agentId,
+              sessionId: selected.sessionId,
+            },
+            ref,
+          );
+          if (deskId !== null) {
+            const res = await api.postTask(deskId, { input: [origin, ...input] });
+            discardSessionDraft();
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+            navigate(`/chat/${res.sessionId}`);
+            return true;
+          }
+        } catch (e) {
+          // The model may be written and the desk renewed by now; the lists say which.
+          void company.reloadOrgChart();
+          void company.reloadOrgSessions();
+          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          return false;
+        }
+      }
       let createdId: string | null = null;
       try {
         const created = await api.createSession(
@@ -1293,7 +1324,7 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate],
+    [projectId, selected, addSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -2004,7 +2035,10 @@ export function ChatPage() {
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
     // ratio all measure this column (dock-drag.tsx / dock-panel.tsx).
-    <div data-dock-host className="relative flex h-full flex-col bg-white dark:bg-gray-950">
+    // bg-canvas: the chat column is the page, so it takes the theme's page colour — white and
+    // gray-950 in Primer, exactly what it painted before; paper in Console, the sheet in Frost —
+    // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
+    <div data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workflow tabs: the Agent's own pages beside the chat. A workflow tab covers the
           chat (which stays mounted, so its state survives a look at the page) below the
           strip; the strip is absent when the Agent has no workflow with a UI. */}
@@ -2033,11 +2067,12 @@ export function ChatPage() {
       )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <h1 className="flex min-w-0 text-[15px] font-semibold">
+            {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
+            <Heading level={5} as="h1" className="flex min-w-0">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
-            </h1>
+            </Heading>
             {/* Session-level state: a turning hourglass while the run is active, and nothing at
                 all once it settles — the conversation on screen is by definition read, and the
                 unread dot is a sidebar affordance for the rows you are NOT looking at. The
@@ -2045,10 +2080,13 @@ export function ChatPage() {
                 Below sm only the glyph remains so the title keeps its room. */}
             {headerActivity === "running" && (
               <span
-                title={sessionActivityLabel(headerActivity)}
+                data-tooltip={sessionActivityLabel(headerActivity)}
                 className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
               >
-                <SessionActivityIcon activity={headerActivity} />
+                <ActivityIcon
+                  activity={headerActivity}
+                  label={sessionActivityLabel(headerActivity)}
+                />
                 <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
               </span>
             )}
@@ -2058,7 +2096,7 @@ export function ChatPage() {
               placement actions and pin toggles. Every entry is a dock tab (features/dock)
               — the toolbar reads and drives the dock store directly; this page only feeds
               the pending-approval dot. */}
-          <PanelsToolbar agentsPending={anySubagentPending} />
+          <DockToggles agentsPending={anySubagentPending} />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
               (phones without a hover pointer; a desktop window whose gutter a docked panel
@@ -2084,7 +2122,7 @@ export function ChatPage() {
             button={
               <button
                 type="button"
-                title={S.chat.infoPanel}
+                data-tooltip={S.chat.infoPanel}
                 aria-label={S.chat.infoPanel}
                 aria-expanded={infoOpen}
                 onClick={() => setInfoOpen(!infoOpen)}
@@ -2092,10 +2130,11 @@ export function ChatPage() {
                   infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
                 }`}
               >
-                {/* Wide: the chip row (icon + title per chip carries the full meaning). */}
-                <span className="hidden items-center gap-3 px-2 sm:flex">
+                {/* Wide: the chip row (icon + tooltip per chip carries the full meaning). The
+                    row sets the chips' face and ink, and keeps each on one line. */}
+                <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
                   <StatChip
-                    icon={STAT_ICONS.tokens}
+                    glyph={STAT_ICONS.tokens}
                     value={hs.tokensText}
                     label={`${S.chat.statTokens}（Token）`}
                   />
@@ -2105,13 +2144,13 @@ export function ChatPage() {
                       something's broken. */}
                   {hs.costText != null && (
                     <StatChip
-                      icon={STAT_ICONS.cost}
+                      glyph={STAT_ICONS.cost}
                       value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
                       label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
                     />
                   )}
                   <StatChip
-                    icon={STAT_ICONS.elapsed}
+                    glyph={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
                     label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
                   />
@@ -2128,17 +2167,17 @@ export function ChatPage() {
                       wherever they appear; the title still names the count in words. */}
                   {backgroundCount > 0 && (
                     <span
-                      title={S.chat.backgroundTasks(backgroundCount)}
+                      data-tooltip={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
+                      <GlyphIcon d={ICONS.pulse} />
                       {backgroundCount}
                     </span>
                   )}
                 </span>
                 {/* Narrow: the info icon alone (the chips would crowd the title out). */}
                 <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
-                  <GlyphIcon d={INFO_ICON} size={ICON_SIZE.navRow} />
+                  <GlyphIcon d={ICONS.info} size={ICON_SIZE.navRow} />
                 </span>
               </button>
             }
@@ -2199,7 +2238,7 @@ export function ChatPage() {
                     from the usage fetch, so it can trail the live total mid-run and
                     reconciles on idle. No-cost sessions omit the cost bullet entirely, as
                     the chip does. */}
-                <ul className="list-inside list-disc space-y-0.5 font-mono text-xs">
+                <ul className="list-inside list-disc space-y-1 font-mono text-xs">
                   <li>
                     {S.chat.statTotalTokens} {hs.tokensText}
                     {cacheHitRate !== null &&
@@ -2239,7 +2278,7 @@ export function ChatPage() {
                     {exitedIds.length > 0 && (
                       <button
                         type="button"
-                        title={S.chat.processClearExitedHint}
+                        data-tooltip={S.chat.processClearExitedHint}
                         disabled={procBusy !== null}
                         onClick={() => void onClearExitedProcesses()}
                         className="shrink-0 cursor-pointer text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
@@ -2251,17 +2290,17 @@ export function ChatPage() {
                   <ul className="mt-1 space-y-1.5">
                     {processes.map((p) => (
                       <li key={p.processId} className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            p.running
-                              ? `animate-pulse ${toneDot.busy}`
-                              : "bg-gray-300 dark:bg-gray-600"
-                          }`}
-                        />
+                        {p.running ? (
+                          <Dot tone="success" pulse />
+                        ) : (
+                          <span
+                            aria-hidden
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+                          />
+                        )}
                         <span className="min-w-0 flex-1">
                           <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
-                          <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                          <span className="block truncate text-xs text-gray-400 dark:text-gray-500">
                             {formatDateTime(p.startedAt)}
                             {p.pid !== null && ` · pid ${p.pid}`}
                             {/* Detected service URL (output scan or port probe), running rows
@@ -2274,7 +2313,7 @@ export function ChatPage() {
                                   href={p.serviceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  title={p.serviceUrl}
+                                  data-tooltip={p.serviceUrl}
                                   className="text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:decoration-gray-500 dark:text-gray-400 dark:decoration-gray-600 dark:hover:text-gray-200"
                                 >
                                   {p.serviceUrl.replace(/^https?:\/\//i, "")}
@@ -2296,7 +2335,7 @@ export function ChatPage() {
                           </button>
                         ) : (
                           <>
-                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                               {S.chat.processExited}
                             </span>
                             {/* The row is the only handle on that process's captured
@@ -2307,7 +2346,7 @@ export function ChatPage() {
                                 says what leaves with it. */}
                             <button
                               type="button"
-                              title={S.chat.processRemoveHint}
+                              data-tooltip={S.chat.processRemoveHint}
                               disabled={procBusy !== null}
                               onClick={() => void onRemoveProcess(p.processId)}
                               className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
@@ -2429,7 +2468,7 @@ export function ChatPage() {
                           while that dock is hidden, and opens its panels in one click. */}
                       <DockLauncher agentsPending={anySubagentPending} />
                     </div>
-                    <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
+                    <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
                       <div className="mx-auto max-w-3xl">
                         {/* Goal banner docked above the composer: an in-flight goal's progress
                             (restored on load while still active), or the terminal state reached
@@ -2525,6 +2564,7 @@ export function ChatPage() {
         title={S.chat.thinkingSwitchTitle}
         tone="primary"
         confirmLabel={S.chat.thinkingSwitchCompactFirst}
+        cancelLabel={S.common.cancel}
         confirmDisabled={stream.taskState !== "idle"}
         onConfirm={compactThenThinkingSwitch}
         secondaryLabel={S.chat.thinkingSwitchConfirm}

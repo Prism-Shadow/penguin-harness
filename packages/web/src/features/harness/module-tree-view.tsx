@@ -4,11 +4,10 @@
  * Pure rendering over the table — the same data the CI page draws.
  */
 import { useEffect, useMemo, useState } from "react";
+import { Badge, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
+import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { Badge } from "../../components/ui/badge";
-import { Skeleton } from "../../components/ui/skeleton";
 import { S } from "../../lib/strings";
-import { toneStrip } from "../../lib/tone";
 
 interface Manifest {
   name: string;
@@ -28,10 +27,10 @@ interface Table {
 type NodeKind = "group" | "module" | "component";
 const kindOf = (m: Manifest): NodeKind =>
   m.kind === "component" ? "component" : m.exports?.length ? "group" : "module";
-const kindTone: Record<NodeKind, "gray" | "brand" | "green"> = {
-  group: "gray",
-  module: "brand",
-  component: "green",
+const kindBadge: Record<NodeKind, BadgeStyle> = {
+  group: { tone: "neutral" },
+  module: { tone: "neutral", variant: "solid" },
+  component: { tone: "success" },
 };
 const short = (key: string) => key.slice(key.indexOf("#") + 1);
 
@@ -83,7 +82,7 @@ function Node({
         ) : (
           <span className="w-4" />
         )}
-        <Badge tone={kindTone[kind]}>{S.harnessHistory.kind[kind]}</Badge>
+        <Badge {...kindBadge[kind]}>{S.harnessHistory.kind[kind]}</Badge>
         <button type="button" onClick={() => onSelect(name)} className="font-mono text-left">
           {name}
         </button>
@@ -132,7 +131,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Badge tone={kindTone[kind]}>{t.kind[kind]}</Badge>
+        <Badge {...kindBadge[kind]}>{t.kind[kind]}</Badge>
         <span className="font-mono text-sm">{name}</span>
       </div>
       {row(
@@ -140,9 +139,9 @@ function Detail({ name, table }: { name: string; table: Table }) {
         req.length === 0 ? (
           <span className="text-gray-400">—</span>
         ) : (
-          <ul className="flex flex-col gap-0.5 font-mono">
+          <ul className="flex flex-col gap-px font-mono">
             {req.map(([f, r]) => (
-              <li key={f} title={r.iface}>
+              <li key={f} data-tooltip={r.iface}>
                 {f}: {short(r.iface)}
                 {r.from ? <span className="text-gray-400"> ← {r.from}</span> : null}
               </li>
@@ -155,9 +154,9 @@ function Detail({ name, table }: { name: string; table: Table }) {
         prov.length === 0 ? (
           <span className="text-gray-400">—</span>
         ) : (
-          <ul className="flex flex-col gap-0.5 font-mono">
+          <ul className="flex flex-col gap-px font-mono">
             {prov.map(([a, k]) => (
-              <li key={a} title={k}>
+              <li key={a} data-tooltip={k}>
                 {a}
                 {a !== short(k) ? <span className="text-gray-400">: {short(k)}</span> : null}
                 {kind === "group" && !exportsSet.has(a) ? (
@@ -171,7 +170,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
       {contrib.length > 0
         ? row(
             t.contributes,
-            <ul className="flex flex-col gap-0.5 font-mono">
+            <ul className="flex flex-col gap-px font-mono">
               {contrib.map(([slot, items]) => (
                 <li key={slot}>
                   {slot} × {items.length}
@@ -215,7 +214,9 @@ export function ModuleTreeView({ hash }: { hash: string }) {
   }, [table]);
   if (error !== null)
     return (
-      <div className={`mt-2 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>{error}</div>
+      <NoticeStrip tone="danger" className="mt-2 rounded-md border px-3 py-2 text-sm">
+        {error}
+      </NoticeStrip>
     );
   if (table === null) return <Skeleton className="mt-2 h-9 w-full" />;
   return (

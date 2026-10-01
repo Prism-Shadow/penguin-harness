@@ -36,29 +36,39 @@ import type {
   OrgTicketUpdateRequest,
 } from "@prismshadow/penguin-server/api";
 import type { ReactNode } from "react";
+import {
+  Button,
+  Chevron,
+  CloseButton,
+  ConfirmModal,
+  CopyButton,
+  FieldLabel,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  KeyValue,
+  KeyValueRow,
+  Modal,
+  Notice,
+  RuledSection,
+  Segmented,
+  Select,
+  Skeleton,
+  Text,
+  Textarea,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { Segmented } from "../../components/ui/segmented";
-import { FieldLabel } from "../../components/ui/field";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CloseButton } from "../../components/ui/icons";
-import { Modal } from "../../components/ui/modal";
-import { Skeleton } from "../../components/ui/skeleton";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { OrgSection } from "./org-layout";
 import { PathMarkdown, PathText } from "./path-capsule";
 import {
   BlockedBadge,
@@ -408,14 +418,11 @@ function TicketDialog({
     navigate(chatPath(session.sessionId));
   };
 
-  /** One field of the summary grid: every row is one line tall, so labels and values line up down the column. */
+  /** One field of the summary list: every row is one line tall, so labels and values line up down the column. */
   const row = (label: string, value: ReactNode) => (
-    <>
-      <dt className="whitespace-nowrap text-gray-500 dark:text-gray-400">{label}</dt>
-      <dd className="flex min-w-0 items-center gap-1.5 text-gray-800 dark:text-gray-100">
-        {value}
-      </dd>
-    </>
+    <KeyValueRow label={label}>
+      <span className="flex min-w-0 items-center gap-1.5">{value}</span>
+    </KeyValueRow>
   );
 
   return (
@@ -449,18 +456,17 @@ function TicketDialog({
           <CloseButton onClose={onClose} />
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 sm:px-6">
           {error !== null && detail === null ? (
-            <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+            <Notice
+              tone="danger"
+              role="alert"
+              retry={{ label: S.common.retry, onClick: () => void load() }}
             >
-              <span>{error}</span>
-              <Button size="sm" onClick={() => void load()}>
-                {S.common.retry}
-              </Button>
-            </div>
+              {error}
+            </Notice>
           ) : detail === null || !contextReady ? (
-            <div className="space-y-5">
+            <div className="space-y-6">
               <div className="flex gap-2">
                 <Skeleton className="h-5 w-14 rounded-full" />
                 <Skeleton className="h-5 w-10 rounded-full" />
@@ -481,12 +487,13 @@ function TicketDialog({
                     {...(detail.blockedBy !== undefined ? { by: detail.blockedBy } : {})}
                   />
                 )}
-                <span className="inline-flex items-center gap-0.5 font-mono">
+                <span className="inline-flex items-center gap-1 font-mono">
                   {detail.ticketId}
                   <CopyButton
                     text={detail.ticketId}
                     label={S.company.tickets.copyId}
-                    className={ROW_COPY_CLASS}
+                    size="sm"
+                    className="shrink-0"
                   />
                 </span>
                 <span className="ml-auto tabular-nums">
@@ -501,30 +508,30 @@ function TicketDialog({
                   </span>
                 </span>
               </div>
-              {detail.invalid !== undefined && (
-                <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
-                  {detail.invalid}
-                </div>
-              )}
+              {detail.invalid !== undefined && <Notice tone="danger">{detail.invalid}</Notice>}
               {blocked && (
-                <div
-                  className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
-                >
-                  <span>
-                    <span className="font-medium">{S.company.tickets.blockedReason}:</span>{" "}
-                    <PathText text={detail.blocked ?? ""} scope={{ projectId }} />
-                  </span>
-                  {detail.blockedBy !== undefined && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <span>{S.company.tickets.blockedBy}:</span>
-                      <PrincipalChip principal={detail.blockedBy} names={names} />
+                <Notice tone="attention">
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>
+                      <span className="font-medium">{S.company.tickets.blockedReason}:</span>{" "}
+                      <PathText text={detail.blocked ?? ""} scope={{ projectId }} />
                     </span>
-                  )}
-                </div>
+                    {detail.blockedBy !== undefined && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>{S.company.tickets.blockedBy}:</span>
+                        <PrincipalChip principal={detail.blockedBy} names={names} />
+                      </span>
+                    )}
+                  </span>
+                </Notice>
               )}
 
               {/* Summary: the header fields as a definition list, a form while editing. */}
-              <OrgSection title={S.company.tickets.summary} actions={sectionActions("summary")}>
+              <RuledSection
+                level={3}
+                title={S.company.tickets.summary}
+                actions={sectionActions("summary")}
+              >
                 {editing === "summary" && summaryDraft !== null ? (
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="md:col-span-2">
@@ -596,7 +603,7 @@ function TicketDialog({
                     </div>
                   </div>
                 ) : (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+                  <KeyValue>
                     {row(
                       S.company.tickets.owner,
                       <PrincipalChip principal={detail.owner} names={names} />,
@@ -658,15 +665,20 @@ function TicketDialog({
                         S.common.created,
                         <span className="font-mono tabular-nums">{created}</span>,
                       )}
-                  </dl>
+                  </KeyValue>
                 )}
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection title={S.company.tickets.goal} actions={sectionActions("goal")}>
+              <RuledSection
+                level={3}
+                title={S.company.tickets.goal}
+                actions={sectionActions("goal")}
+              >
                 {textSection("goal", detail.goal, S.company.tickets.noGoal)}
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection
+              <RuledSection
+                level={3}
                 title={S.company.tickets.acceptance}
                 actions={sectionActions("acceptance")}
               >
@@ -675,12 +687,12 @@ function TicketDialog({
                   detail.acceptanceCriteria,
                   S.company.tickets.noAcceptance,
                 )}
-              </OrgSection>
+              </RuledSection>
 
               {/* Progress: the sentences as written, oldest first, plus the one-line append.
                   Who wrote one and when is a history entry, not a chip on the sentence; the
                   bullets are md-compact so a one-line note reads as a line, not a paragraph. */}
-              <OrgSection title={S.company.tickets.progress}>
+              <RuledSection level={3} title={S.company.tickets.progress}>
                 {detail.progress.length === 0 ? (
                   <p className="text-xs text-gray-400 dark:text-gray-500">
                     {S.company.tickets.progressEmpty}
@@ -711,11 +723,15 @@ function TicketDialog({
                     {S.company.tickets.addProgress}
                   </Button>
                 </div>
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection title={S.company.tickets.result} actions={sectionActions("result")}>
+              <RuledSection
+                level={3}
+                title={S.company.tickets.result}
+                actions={sectionActions("result")}
+              >
                 {textSection("result", detail.result, S.company.tickets.noResult)}
-              </OrgSection>
+              </RuledSection>
 
               {/* The child tickets, folded: a plain list, each opened by clicking its title. */}
               <Fold
@@ -731,7 +747,7 @@ function TicketDialog({
                     {S.company.tickets.childrenEmpty}
                   </p>
                 ) : (
-                  <ul className="space-y-0.5">
+                  <ul className="space-y-1">
                     {children.map((c) => (
                       <li key={c.ticketId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
                         <span className="flex min-w-0 flex-1">
@@ -751,8 +767,8 @@ function TicketDialog({
                         )}
                         {"cost" in c && (
                           <span
-                            className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500"
-                            title={S.company.tickets.cost}
+                            className="shrink-0 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                            data-tooltip={S.company.tickets.cost}
                           >
                             {formatMoney(c.cost, currency)}
                           </span>
@@ -777,7 +793,7 @@ function TicketDialog({
                 {detail.sessionItems.length === 0 ? (
                   <p className="text-xs text-gray-400 dark:text-gray-500">{S.common.none}</p>
                 ) : (
-                  <ul className="space-y-0.5">
+                  <ul className="space-y-1">
                     {detail.sessionItems.map((s) => (
                       <li key={s.sessionId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
                         <PrincipalChip principal={agentPrincipal(s.agentId)} names={names} />
@@ -789,7 +805,8 @@ function TicketDialog({
                             // becomes a Temporary entry.
                             <span
                               className="truncate text-gray-400 dark:text-gray-500"
-                              title={s.sessionId}
+                              data-tooltip={s.sessionId}
+                              data-tooltip-content="text"
                             >
                               {s.title ?? s.sessionId}
                             </span>
@@ -804,7 +821,7 @@ function TicketDialog({
                           )}
                         </span>
                         {s.lastActiveAt !== undefined && (
-                          <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                          <span className="shrink-0 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
                             {formatDateTime(s.lastActiveAt)}
                           </span>
                         )}
@@ -835,7 +852,7 @@ function TicketDialog({
                               <span
                                 key="at"
                                 className="shrink-0 font-mono tabular-nums text-gray-400 dark:text-gray-500"
-                                title={h.at}
+                                data-tooltip={h.at}
                               >
                                 {formatDateTime(h.at)}
                               </span>,
@@ -850,7 +867,7 @@ function TicketDialog({
                       return (
                         <li
                           key={h.key}
-                          className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-gray-600 dark:text-gray-300"
+                          className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-gray-600 dark:text-gray-300"
                         >
                           {parts.map((part, i) => (
                             <Fragment key={i}>
@@ -929,6 +946,7 @@ function TicketDialog({
         title={S.common.confirmSaveTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setPendingSave(null))}
         onConfirm={commitSave}
@@ -942,6 +960,7 @@ function TicketDialog({
         title={S.company.tickets.unblock}
         tone="primary"
         confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmUnblock(false))}
         onConfirm={() => {
@@ -1045,6 +1064,7 @@ export function MoveTicketConfirm({
       title={S.company.tickets.moveTitle}
       tone={move?.to === "rejected" ? "danger" : "primary"}
       confirmLabel={S.common.confirm}
+      cancelLabel={S.common.cancel}
       confirmDisabled={needsReason && reason.trim() === ""}
       busy={busy}
       onClose={onClose}
@@ -1076,7 +1096,7 @@ export function MoveTicketConfirm({
 }
 
 /**
- * A section of the dialog that is folded on every visit: the ruled header of `OrgSection`
+ * A section of the dialog that is folded on every visit: the ruled header of a `RuledSection`
  * with the app's one collapse chevron in front of it, and what it holds after it — a count,
  * a count and a cost — so a reader decides from the closed row whether to open it. The panel
  * stays in the DOM and is `hidden` while collapsed — the WAI-ARIA disclosure pattern, so
@@ -1102,13 +1122,18 @@ function Fold({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center ${ICON_GAP.row} border-b border-gray-200 pb-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
+        className={`group/fold flex w-full items-center ${ICON_GAP.row} border-b border-gray-200 pb-2 text-left text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
       >
         <Chevron open={open} size={ICON_SIZE.chevronDense} />
-        <span className="min-w-0 truncate">{title}</span>
-        <span className="min-w-0 truncate font-normal normal-case tracking-normal text-gray-400 dark:text-gray-500">
-          · {summary}
-        </span>
+        {/* The title is a group label, like the ruled sections' above it. */}
+        <Text
+          variant="eyebrow"
+          as="span"
+          className="min-w-0 truncate transition-colors duration-150 group-hover/fold:text-fg"
+        >
+          {title}
+        </Text>
+        <span className="min-w-0 truncate text-gray-400 dark:text-gray-500">· {summary}</span>
       </button>
       <div id={panelId} hidden={!open} className="mt-3 space-y-4">
         {children}

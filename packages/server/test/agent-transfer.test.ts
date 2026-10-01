@@ -1,13 +1,19 @@
 /**
- * Agent State export/import integration tests: export auto-packages (excluding .vault.toml), any member can export, only the owner can
- * import, importing the same or an older version requires confirmation (409 -> succeeds
- * after confirm), import replaces agent_state while keeping the current vault, invalid
- * packages return 400, and snapshots are written to snapshots/v<N>.tar.gz.
+ * Agent State export and import.
+ *
+ * - Any member exports (auto-packaged, `.vault.toml` left out); only the owner imports.
+ * - Re-importing the same or an older version needs confirmation (409, then success), replaces
+ *   agent_state and keeps the current vault; a newer package imports directly and records its
+ *   version; a `.vault.toml` inside a package is ignored; an invalid package is a 400.
+ * - Snapshots are written to snapshots/v<N>.tar.gz; initializing and seeding one are mutually
+ *   exclusive.
+ * - Creating an Agent from a package takes its state, name and version (explicit name and
+ *   description win); an invalid package fails the creation and leaves no Agent behind.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as tar from "tar";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
@@ -26,23 +32,32 @@ describe("agent export/import", () => {
   let projectId: string;
   let base: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-snap", name: "Snapshot project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_a-snap_${projects}`,
+        name: "Snapshot project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     base = `/api/projects/${projectId}/agents/default_agent`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("reimport same version: confirm required, agent_state replaced, vault kept", async () => {

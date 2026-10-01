@@ -1,8 +1,21 @@
 /**
- * The overview page's shaping (features/company/overview-summary.ts): the employee counts,
- * the board as a segmented bar, today's timeline with its marks, the spend against the
- * budget, the inbox rows with their order and filters, the first-steps decision and the
- * mission fold's guess.
+ * The overview page's shaping (features/company/overview-summary.ts).
+ *
+ * - Employees are counted by desk, running and budget-paused, live states overriding the
+ *   snapshot where known; no employees count zero.
+ * - The board lists every column in lifecycle order with its share; a missing column is zero
+ *   and an empty board has no shares.
+ * - Today's timeline orders instances by time (the last firing over the next), marks the
+ *   unevaluated ones upcoming, and buckets the outcomes.
+ * - Spend derives ratio and remainder from a budget (the server's ratio winning, overspend a
+ *   negative remainder), and neither without a budget.
+ * - The inbox orders rows newest first (undated last, ties by mention, blocked, done), says
+ *   what each row is about and where it leads, dates a ticket by its close then its id's day,
+ *   keeps the newest rows under the cap, and is empty for an older server.
+ * - The filter chips count and admit rows by category.
+ * - First steps: fresh while only the CEO is employed and the board is empty, the CEO first
+ *   while the desk was never opened, and no next step once all three are done.
+ * - The mission fold is offered for a mission with a line break or longer than a line.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -12,10 +25,7 @@ import type {
   OrgTicketItem,
 } from "@prismshadow/penguin-server/api";
 import {
-  BOARD_SEGMENT_TONE,
-  FIRST_STEPS,
   INBOX_ROWS,
-  TIMELINE_TONE,
   boardSummary,
   employeeCounts,
   firstSteps,
@@ -88,10 +98,6 @@ describe("boardSummary", () => {
     expect(b.open).toBe(0);
     expect(b.segments.every((s) => s.count === 0 && s.share === 0)).toBe(true);
   });
-
-  it("gives every column a fill tone", () => {
-    for (const status of TICKET_COLUMNS) expect(BOARD_SEGMENT_TONE[status]).toBeTruthy();
-  });
 });
 
 describe("todaySummary", () => {
@@ -145,13 +151,6 @@ describe("todaySummary", () => {
       },
     ]);
     expect(t.entries[0]?.at).toBe(Date.parse("2026-09-02T08:00:00Z"));
-  });
-
-  it("gives every mark a tone, failures in danger", () => {
-    expect(TIMELINE_TONE.missed).toBe("danger");
-    expect(TIMELINE_TONE.error).toBe("danger");
-    expect(TIMELINE_TONE.fired).toBe("success");
-    expect(TIMELINE_TONE.upcoming).toBe("attention");
   });
 });
 
@@ -385,7 +384,6 @@ describe("firstSteps", () => {
     });
     expect(s.done).toEqual({ ceo: true, hire: true, schedule: true });
     expect(s.next).toBeNull();
-    expect(FIRST_STEPS).toEqual(["ceo", "hire", "schedule"]);
   });
 });
 

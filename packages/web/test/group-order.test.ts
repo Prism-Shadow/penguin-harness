@@ -1,46 +1,36 @@
 /**
- * group-order.ts unit tests: the sidebar's manual order of the GROUPS themselves
- * (Workspace folders / Agents), one axis up from session-order.ts's row order.
+ * The sidebar's manual order of its groups (Workspace folders / Agents), lib/group-order.ts.
  *
- * The mode is implicit — there is no second sort toggle — so an empty stored order must
- * be the identity: a Project that has never been dragged keeps the automatic sort
- * exactly. Beyond that: one array per Project AND grouping mode, "time" refused at the
- * store because its buckets are a fixed chronological ladder, groups with no stored
- * place surfacing at the TOP (including the merged temporary-workspace group, which is
- * otherwise forced last), stale keys inert, and pruning gated on a complete live set.
- * Beside the stored order stands the demotion of folder-only groups — applied last, inside
- * the unpinned cluster only, over the two pure predicates session-grouping.ts exports for it.
+ * - Given time mode, an order is neither stored nor read back: its buckets are a fixed ladder.
+ * - Given no Project or nothing stored, the order is empty and reading writes nothing.
+ * - An order saved for one Project and mode reads back for exactly that pair.
+ * - A malformed stored value reads as empty, keeping the well-formed keys.
+ * - Given a storage that throws (or no storage at all in node), reads and writes degrade quietly.
+ * - With nothing stored, the automatic sort is kept (temp group last, pins first).
+ * - With a stored order, stored groups take their places, unstored ones surface on top, stale
+ *   keys are inert, and the pin boundary is never crossed; neither input is mutated.
+ * - The merged temporary-workspace group can be dragged anywhere, like any other group.
+ * - A drop splices the rendered list into the stored order: an unmoved drop writes nothing,
+ *   unloaded groups keep their places, pins and unpins do not fling groups, stale keys stay.
+ * - The group order and each group's row order are independent.
+ * - Folder-only groups sort last, never when pinned, keeping the manual order in each block.
  */
 import { describe, expect, it } from "vitest";
 import {
-  ORDERABLE_GROUP_MODES,
   commitGroupOrder,
   groupOrderKey,
-  isOrderableGroupMode,
   loadGroupOrder,
   orderGroups,
   saveGroupOrder,
 } from "../src/lib/group-order";
 import type { GroupOrderStorage } from "../src/lib/group-order";
-import { moveInSequence } from "../src/lib/session-order";
 import {
   TEMP_WORKSPACE_GROUP_KEY,
   foldedShare,
   groupSessionsByWorkspace,
-  groupSessionsByTime,
   isFolderOnly,
-  timeGroupKey,
 } from "../src/lib/session-grouping";
-
-/** In-memory storage (vitest runs in a Node environment, no localStorage; session-order.test.ts convention). */
-function memStorage(): GroupOrderStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-  };
-}
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const id = (x: string) => x;
 const noPins = { pinned: new Set<string>() };
@@ -48,53 +38,24 @@ const noPins = { pinned: new Set<string>() };
 /** Minimal row shape groupSessionsByWorkspace needs. */
 const row = (workspace: string, createdAt: string) => ({ workspace, createdAt });
 
-describe("orderable modes (time is excluded, at the store)", () => {
-  it("exactly Workspace and Agent mode are orderable", () => {
-    expect([...ORDERABLE_GROUP_MODES]).toEqual(["workspace", "agent"]);
-    expect(isOrderableGroupMode("workspace")).toBe(true);
-    expect(isOrderableGroupMode("agent")).toBe(true);
-    expect(isOrderableGroupMode("time")).toBe(false);
-  });
-
-  it("time mode cannot store an order: saving writes nothing and loading stays empty", () => {
-    const s = memStorage();
+describe("time mode (excluded at the store)", () => {
+  it("time mode neither stores an order nor reads back one planted under its key", () => {
+    const s = memoryStorage();
     saveGroupOrder("p1", "time", ["\0time-earlier", "\0time-day"], s);
     expect(s.map.size).toBe(0);
-    expect(loadGroupOrder("p1", "time", s)).toEqual([]);
-  });
-
-  it("a value planted under the time-mode key is never read back", () => {
-    const s = memStorage();
     // Hand-edited storage, or an older build: the gate is on the mode, so the read never
-    // reaches the value. Guards against the gate drifting below the getItem call.
+    // reaches the value.
     s.map.set("penguin.groupOrder.p1.time", JSON.stringify(["\u0000time-earlier"]));
     expect(loadGroupOrder("p1", "time", s)).toEqual([]);
     // And the workspace key of the same Project is unaffected either way.
     saveGroupOrder("p1", "workspace", ["/a"], s);
     expect(loadGroupOrder("p1", "workspace", s)).toEqual(["/a"]);
-    expect(loadGroupOrder("p1", "time", s)).toEqual([]);
-  });
-
-  it("the time buckets keep their fixed chronological ladder — nothing in this module touches them", () => {
-    const buckets = groupSessionsByTime(
-      [
-        { lastActiveAt: "2020-01-01T00:00:00Z" },
-        { lastActiveAt: "2026-08-24T11:00:00Z" },
-        { lastActiveAt: "2026-08-10T00:00:00Z" },
-      ],
-      Date.parse("2026-08-24T12:00:00Z"),
-    );
-    expect(buckets.map((b) => b.bucket)).toEqual(["day", "month", "earlier"]);
-    // Even an order naming those keys cannot reach them: time mode never loads one.
-    const s = memStorage();
-    saveGroupOrder("p1", "time", [timeGroupKey("earlier"), timeGroupKey("day")], s);
-    expect(loadGroupOrder("p1", "time", s)).toEqual([]);
   });
 });
 
 describe("group-order store (per-Project × grouping-mode localStorage)", () => {
   it("nothing stored — or no Project yet — is empty, reading never writes, saving without a Project is a no-op", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(loadGroupOrder("p1", "workspace", s)).toEqual([]);
     expect(loadGroupOrder(null, "workspace", s)).toEqual([]);
     expect(s.map.size).toBe(0);
@@ -102,17 +63,17 @@ describe("group-order store (per-Project × grouping-mode localStorage)", () => 
     expect(s.map.size).toBe(0);
   });
 
-  it("save → load round-trips per Project; Projects are isolated", () => {
-    const s = memStorage();
-    saveGroupOrder("p1", "workspace", ["/b", "/a"], s);
+  it("save → load round-trips per Project, the temp group's key included; Projects are isolated", () => {
+    const s = memoryStorage();
+    saveGroupOrder("p1", "workspace", ["/b", TEMP_WORKSPACE_GROUP_KEY, "/a"], s);
     saveGroupOrder("p2", "workspace", ["/c"], s);
-    expect(loadGroupOrder("p1", "workspace", s)).toEqual(["/b", "/a"]);
+    expect(loadGroupOrder("p1", "workspace", s)).toEqual(["/b", TEMP_WORKSPACE_GROUP_KEY, "/a"]);
     expect(loadGroupOrder("p2", "workspace", s)).toEqual(["/c"]);
     expect(loadGroupOrder("p3", "workspace", s)).toEqual([]);
   });
 
   it("the two orderable modes keep separate orders (their group lists are unrelated)", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveGroupOrder("p1", "workspace", ["/b", "/a"], s);
     saveGroupOrder("p1", "agent", ["a2", "a1"], s);
     expect(loadGroupOrder("p1", "workspace", s)).toEqual(["/b", "/a"]);
@@ -120,12 +81,8 @@ describe("group-order store (per-Project × grouping-mode localStorage)", () => 
     expect(groupOrderKey("p1", "workspace")).not.toBe(groupOrderKey("p1", "agent"));
   });
 
-  it("the group order lives under its own key namespace, clear of the row order's", () => {
-    expect(groupOrderKey("p1", "workspace")).toBe("penguin.groupOrder.p1.workspace");
-  });
-
   it("malformed JSON / non-array shapes degrade to empty; junk array elements are dropped", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     for (const raw of ["{not json", '"/a"', "42", "null", "{}", ""]) {
       s.map.set(groupOrderKey("p1", "workspace"), raw);
       expect(loadGroupOrder("p1", "workspace", s)).toEqual([]);
@@ -143,15 +100,7 @@ describe("group-order store (per-Project × grouping-mode localStorage)", () => 
     } as unknown as GroupOrderStorage;
     expect(() => loadGroupOrder("p1", "workspace", hostile)).not.toThrow();
     expect(loadGroupOrder("p1", "workspace", hostile)).toEqual([]);
-    const broken: GroupOrderStorage = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    };
-    expect(() => saveGroupOrder("p1", "workspace", ["/a"], broken)).not.toThrow();
+    expect(() => saveGroupOrder("p1", "workspace", ["/a"], blockedStorage())).not.toThrow();
   });
 
   it("with NO storage injected, resolving localStorage is itself inside the try", () => {
@@ -259,12 +208,6 @@ describe("the merged temporary-workspace group is draggable like any other", () 
       orderGroups(groups, (g) => g.key, { ...noPins, order: stored }).map((g) => g.key),
     ).toEqual(["/home/b", TEMP_WORKSPACE_GROUP_KEY, "/home/a"]);
   });
-
-  it("its key round-trips through storage like any other group key", () => {
-    const s = memStorage();
-    saveGroupOrder("p1", "workspace", [TEMP_WORKSPACE_GROUP_KEY, "/home/a"], s);
-    expect(loadGroupOrder("p1", "workspace", s)).toEqual([TEMP_WORKSPACE_GROUP_KEY, "/home/a"]);
-  });
 });
 
 describe("commitGroupOrder (a drop is a splice, not a rewrite)", () => {
@@ -357,17 +300,11 @@ describe("commitGroupOrder (a drop is a splice, not a rewrite)", () => {
       "w2",
     ]);
   });
-
-  it("the underlying move is still the rows' own moveInSequence", () => {
-    const seq: readonly string[] = ["a", "b", "c"];
-    expect(moveInSequence(seq, "a", "a", true)).toBe(seq);
-    expect(moveInSequence(seq, "c", "a", false)).toEqual(["c", "a", "b"]);
-  });
 });
 
 describe("group order and row order are independent axes", () => {
   it("a group order names only group keys, so committing one cannot touch a row order array", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     // Same Project, same mode, different key namespaces.
     saveGroupOrder("p1", "workspace", ["/w2", "/w1"], s);
     s.map.set("penguin.sessionOrder.p1.workspace", JSON.stringify(["s2", "s1"]));

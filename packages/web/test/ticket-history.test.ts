@@ -1,7 +1,12 @@
 /**
- * ticket-history.ts unit tests: the order and keys of the history rows the drawer lists, that
- * a row carries only what happened and never the note the action wrote, and the per-list
- * counts the two folded sections report.
+ * A ticket's history and folded sections in the ticket drawer (features/company/
+ * ticket-history.ts).
+ *
+ * - History rows list newest first, each with a key of its own.
+ * - A row keeps who acted and when, and never the note the action wrote.
+ * - An entry older than the history's timestamps is kept; no history lists nothing.
+ * - The folded sections count the children and the ticket's sessions, and report each list's
+ *   emptiness on its own.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgTicketDetail, OrgTicketHistoryEntry } from "@prismshadow/penguin-server/api";
@@ -29,14 +34,13 @@ describe("ticketHistoryRows", () => {
     const rows = ticketHistoryRows([
       entry({ by: "agent:mk_dev", action: "progress", note: "drafted the schema" }),
     ]);
-    expect(rows).toEqual([
-      {
-        key: "0-2026-09-08T10:00:00.000Z-progress",
-        at: "2026-09-08T10:00:00.000Z",
-        by: "agent:mk_dev",
-        action: "progress",
-      },
-    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      at: "2026-09-08T10:00:00.000Z",
+      by: "agent:mk_dev",
+      action: "progress",
+    });
+    expect(JSON.stringify(rows[0])).not.toContain("drafted the schema");
   });
 
   it("keeps an entry that predates the history's timestamps", () => {

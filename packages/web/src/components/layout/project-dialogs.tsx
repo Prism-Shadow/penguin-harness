@@ -3,7 +3,6 @@
  * (member management and deletion, owner only). Invoked from the sidebar's Project switcher.
  */
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import type {
   ApprovalMode,
   ChatDefaultsDto,
@@ -13,6 +12,24 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  ConfirmModal,
+  FieldError,
+  FieldLabel,
+  ICONS,
+  InfoPopover,
+  Input,
+  Modal,
+  NavList,
+  NavRow,
+  Select,
+  SettingRow,
+  Switch,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -28,21 +45,10 @@ import {
   dispatchChatDefaultsChanged,
   type ChatDefaultsChangedDetail,
 } from "../../features/chat/chat-defaults-event";
-import { ModelSelect, modelLabel } from "../../features/chat/model-select";
+import { ModelCatalogSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Select } from "../ui/select";
-import { Switch } from "../ui/switch";
-import { GEAR_ICON } from "../ui/icons";
-import { FieldError, FieldHint, FieldLabel } from "../ui/field";
-import { toastError, toastSuccess } from "../ui/toast";
-import { Modal } from "../ui/modal";
-import { ConfirmModal } from "../ui/confirm-modal";
-import { Badge } from "../ui/badge";
-import { InfoPopover } from "../ui/info-popover";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
@@ -161,7 +167,7 @@ export function CreateProjectDialog({
 
 /** Path data for the settings tabs' small icons (24px viewBox, stroked like NAV_ICONS). */
 const TAB_ICON_PATHS = {
-  general: GEAR_ICON,
+  general: ICONS.gear,
   /** Two people (lucide users). Project members are humans — the Agent glyph used to stand in here. */
   members:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
@@ -172,50 +178,6 @@ const TAB_ICON_PATHS = {
 } as const;
 
 type SettingsTab = keyof typeof TAB_ICON_PATHS;
-
-function TabIcon({ d }: { d: string }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="shrink-0"
-    >
-      <path d={d} />
-    </svg>
-  );
-}
-
-/**
- * One row of a settings page: title plus a one-line gray description on the left, the
- * control on the right. Rows are separated by the parent container's divide-y hairlines
- * (ruled sections, not card boxes).
- */
-function SettingRow({
-  title,
-  description,
-  children,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm">{title}</p>
-        {description !== undefined && <p className="mt-0.5 text-xs text-gray-400">{description}</p>}
-      </div>
-      {children !== undefined && <div className="flex shrink-0 items-center gap-2">{children}</div>}
-    </div>
-  );
-}
 
 /**
  * Project settings dialog: a left tab rail (General / Members / Defaults / Security
@@ -255,27 +217,21 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   return (
     <Modal open={open} title={S.project.settingsTitle} onClose={onClose} widthClass="sm:max-w-3xl">
       <div className="flex flex-col gap-3 sm:min-h-[26rem] sm:flex-row sm:gap-0">
-        <nav
-          aria-label={S.project.settingsTitle}
-          className="flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-x-visible sm:border-r sm:border-gray-100 sm:pr-3 dark:sm:border-gray-800"
+        <NavList
+          label={S.project.settingsTitle}
+          orientation="responsive"
+          className="shrink-0 sm:w-44 sm:border-r sm:border-line-muted sm:pr-3"
         >
           {tabs.map((t) => (
-            <button
+            <NavRow
               key={t.key}
-              type="button"
-              aria-current={active.key === t.key ? "page" : undefined}
+              label={t.label}
+              glyph={TAB_ICON_PATHS[t.key]}
+              active={active.key === t.key}
               onClick={() => setTab(t.key)}
-              className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
-                active.key === t.key
-                  ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/60"
-              }`}
-            >
-              <TabIcon d={TAB_ICON_PATHS[t.key]} />
-              <span className="truncate">{t.label}</span>
-            </button>
+            />
           ))}
-        </nav>
+        </NavList>
         <section className="min-w-0 flex-1 sm:pl-5">
           <h3 className="flex items-center gap-1.5 text-base font-semibold">
             {active.label}
@@ -415,6 +371,8 @@ function GeneralSection({
         title={S.project.deleteProject}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
       </ConfirmModal>
@@ -494,7 +452,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
             <tr key={m.userId}>
               <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
               <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge tone="gray">{m.role}</Badge>
+                <Badge>{m.role}</Badge>
               </td>
               <td className="whitespace-nowrap px-2.5 py-1 text-right">
                 {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
@@ -519,7 +477,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
                 />
               </td>
               <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge tone="gray">member</Badge>
+                <Badge>member</Badge>
               </td>
               <td className="whitespace-nowrap px-2.5 py-1 text-right">
                 <Button size="sm" disabled={!newMemberId.trim()} onClick={() => void addMember()}>
@@ -539,7 +497,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
  * delete zone): the `[default_chat]` block (Agent / Workspace / approval mode / thinking
  * level) plus the Project's default model, laid out as a compact responsive two-column
  * grid. Workspace and model reuse the chat draft's own pickers — WorkspaceSelect (the
- * folder finder, a modal stacked on this one) and ModelSelect (the composer's model
+ * folder finder, a modal stacked on this one) and ModelCatalogSelect (the composer's model
  * picker, a dialog too) — with their `form` trigger variant, so the controls line up with
  * the dialog's Input/Select while what they open stays exactly the composer's.
  * The model default is SINGLE-SOURCED with the models page — the picker renders and writes
@@ -714,8 +672,8 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 </option>
               ))}
             </Select>
-            {/* Plain tier names, not the composer dropdown's annotated variant: a native
-                <select> paints the picked option's own text on the collapsed control, so
+            {/* Plain tier names, not the composer dropdown's annotated variant: a Select
+                shows the picked option's own text on its closed trigger, so
                 annotating the rows here would also put "(xhigh)" on what is, once closed,
                 a trigger. Matches the approval-mode select directly above, whose options
                 are plain localized names too. */}
@@ -741,7 +699,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 <>
                   {/* The composer's model picker (provider logo + name, opening the model-picker
                       dialog); the default row carries the S.models.default marker. */}
-                  <ModelSelect
+                  <ModelCatalogSelect
                     models={models.models}
                     value={modelRef}
                     defaultModel={models.defaultModel}
@@ -757,14 +715,15 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
             <div className="sm:col-span-2">
               <FieldLabel>{S.chat.workspace}</FieldLabel>
               {/* The draft page's folder finder: browse server directories, go to a typed
-                  path, or clear back to a temporary workspace. */}
+                  path, or start in a temporary workspace. That one would belong to the
+                  default Agent when one is set, so the finder can show where. */}
               <WorkspaceSelect
                 projectId={projectId}
                 workspace={workspace}
                 onChange={setWorkspace}
+                {...(agentId ? { agentId } : {})}
                 variant="form"
               />
-              <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
             </div>
           </div>
           <div className="mt-3 flex justify-end">
@@ -1074,8 +1033,9 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                         <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
                       )}
                       <p
-                        className="mt-0.5 truncate font-mono text-[11px] text-gray-400"
-                        title={r.pattern}
+                        className="mt-0.5 truncate font-mono text-xs text-gray-400"
+                        data-tooltip={r.pattern}
+                        data-tooltip-content="code"
                       >
                         {r.pattern}
                       </p>

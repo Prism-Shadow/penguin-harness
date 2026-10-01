@@ -1,0 +1,1100 @@
+{
+  "$comment": "Importer rewrites for the UI package migration, read by scripts/ui-migrate.mjs. waves.<wave>.<web module, repo-relative, no extension> is a list of rules: names that left that module for `target` (the package, or a web module that took them over), defined in `dest`. A name is `Name`, `Old→New` (renamed) or `OLD→OBJECT.key` (became a member of a registry object). A rule applies once the web module no longer exports the name and `dest` exports what it maps to; delete a wave's block once the wave is on main.",
+  "waves": {
+    "W1": {
+      "packages/web/src/lib/icon-scale": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/icon-scale.ts",
+          "names": ["ICON_SIZE", "ICON_GAP"]
+        }
+      ],
+      "packages/web/src/components/ui/glyph-icon": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/glyph-icon/glyph-icon.tsx",
+          "names": ["GlyphIcon"]
+        }
+      ],
+      "packages/web/src/components/ui/chevron": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/chevron/chevron.tsx",
+          "names": ["Chevron"]
+        }
+      ],
+      "packages/web/src/components/ui/icons": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/marks/marks.tsx",
+          "names": [
+            "ChevronDown",
+            "CheckIcon",
+            "PlusIcon",
+            "DownloadIcon",
+            "UploadIcon",
+            "CloseIcon"
+          ]
+        },
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/close-button/close-button.tsx",
+          "names": ["CloseButton"]
+        },
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/icons.ts",
+          "names": [
+            "INFO_ICON→ICONS.info",
+            "QUOTE_ICON→ICONS.quote",
+            "EXTERNAL_LINK_ICON→ICONS.externalLink",
+            "PANEL_BOTTOM_ICON→ICONS.panelBottom",
+            "PANEL_RIGHT_ICON→ICONS.panelRight",
+            "WORKBENCH_ICON→ICONS.tiles",
+            "EXPAND_ICON→ICONS.cornersOut",
+            "COLLAPSE_ICON→ICONS.cornersIn",
+            "AGENTS_PAIR_ICON→ICONS.robotPair",
+            "MEMORY_ICON→ICONS.brain",
+            "HIDDEN_ICON→ICONS.eyeOff",
+            "FILE_ICON→ICONS.file",
+            "FILE_WRITE_ICON→ICONS.filePlus",
+            "FILE_EDIT_ICON→ICONS.penLine",
+            "UPLOAD_ICON→ICONS.upload",
+            "DOWNLOAD_ICON→ICONS.download",
+            "REFRESH_ICON→ICONS.refresh",
+            "WRAP_TEXT_ICON→ICONS.wrapText",
+            "BACKGROUND_TASKS_ICON→ICONS.pulse",
+            "ADD_TO_CHAT_ICON→ICONS.messagePlus",
+            "MESSAGING_RELAY_ICON→ICONS.paperPlane",
+            "GEAR_ICON→ICONS.gear",
+            "HOOK_ICON→ICONS.fishHook",
+            "PLUGIN_ICON→ICONS.puzzle",
+            "MAGIC_WAND_ICON→ICONS.wand",
+            "HAND_ICON→ICONS.hand",
+            "SCHEDULE_ICON→ICONS.alarmClock",
+            "COMPANY_MODE_ICON→ICONS.building",
+            "ADD_ICON→ICONS.plus",
+            "WARNING_ICON→ICONS.triangleAlert",
+            "GLOBE_ICON→ICONS.globe",
+            "ARROW_BACK_ICON→ICONS.arrowLeftCentered",
+            "ARROW_FORWARD_ICON→ICONS.arrowRightCentered",
+            "CODE_ICON→ICONS.angleBrackets",
+            "HOME_ICON→ICONS.house",
+            "LINK_ICON→ICONS.chainLink"
+          ]
+        },
+        {
+          "owner": "WP-A",
+          "target": "packages/web/src/lib/nav-icons",
+          "dest": "packages/web/src/lib/nav-icons.ts",
+          "names": ["NAV_ICONS"]
+        }
+      ],
+      "packages/web/src/components/ui/group-list": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/icons.ts",
+          "names": [
+            "FOLDER_ICON→ICONS.folder",
+            "FOLDER_OPEN_ICON→ICONS.folderOpen",
+            "AGENT_GROUP_ICON→ICONS.robot",
+            "CLOCK_ICON→ICONS.clock",
+            "CALENDAR_ICON→ICONS.calendar",
+            "REORDER_ICON→ICONS.arrowUpDown"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/session-row-menu": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/icons.ts",
+          "names": [
+            "PIN_ICON→ICONS.pin",
+            "PENCIL_ICON→ICONS.pencil",
+            "ARCHIVE_ICON→ICONS.archive",
+            "UNARCHIVE_ICON→ICONS.archiveRestore",
+            "TRASH_ICON→ICONS.trash",
+            "ELLIPSIS_ICON→ICONS.ellipsis"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/agent-avatar": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/avatars/agent-avatar.tsx",
+          "names": ["AgentAvatar"]
+        }
+      ],
+      "packages/web/src/components/ui/user-avatar": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/avatars/user-avatar.tsx",
+          "names": ["UserAvatar", "USER_AVATAR_SIZE"]
+        }
+      ],
+      "packages/web/src/lib/avatar": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/avatars/avatar.ts",
+          "names": ["avatarHue", "avatarTile", "avatarInitial"]
+        }
+      ],
+      "packages/web/src/components/ui/provider-logo": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/logos/provider-logo.tsx",
+          "names": ["ProviderLogo"]
+        }
+      ],
+      "packages/web/src/components/ui/penguin-logo": [
+        {
+          "owner": "WP-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/logos/penguin-logo.tsx",
+          "names": ["PenguinLogo"]
+        }
+      ],
+      "packages/web/src/components/ui/status-icon": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/status-icon/status-icon.tsx",
+          "names": ["StatusIcon", "RunState"]
+        }
+      ],
+      "packages/web/src/components/ui/session-activity-icon": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/activity-icon/activity-icon.tsx",
+          "names": ["SessionActivityIcon→ActivityIcon", "BackgroundTasksMark", "ScheduleMark"]
+        },
+        {
+          "owner": "WP-B",
+          "target": "packages/web/src/lib/session-activity",
+          "dest": "packages/web/src/lib/session-activity.ts",
+          "names": ["sessionActivityLabel"]
+        }
+      ],
+      "packages/web/src/components/ui/update-dot": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/icons/update-dot/update-dot.tsx",
+          "names": ["UpdateDot", "UpdatePill", "UPDATE_DOT_INLINE", "UpdateDotSize"]
+        }
+      ],
+      "packages/web/src/components/ui/badge": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/badge/badge.tsx",
+          "names": ["Badge"]
+        },
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/tokens.ts",
+          "names": ["BadgeTone→ToneName"]
+        },
+        {
+          "owner": "WP-B",
+          "target": "packages/web/src/lib/stop-reason-tone",
+          "dest": "packages/web/src/lib/stop-reason-tone.ts",
+          "names": ["stopReasonTone"]
+        }
+      ],
+      "packages/web/src/components/ui/skeleton": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/skeleton/skeleton.tsx",
+          "names": ["Skeleton", "SkeletonList", "SkeletonCard"]
+        }
+      ],
+      "packages/web/src/components/ui/empty-state": [
+        {
+          "owner": "WP-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/empty-state/empty-state.tsx",
+          "names": ["EmptyState", "SettingsEmpty"]
+        }
+      ],
+      "packages/web/src/components/ui/button": [
+        {
+          "owner": "WP-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/button/button.tsx",
+          "names": ["Button", "ButtonProps", "labelButtonClass→buttonClass"]
+        }
+      ],
+      "packages/web/src/components/ui/copy-button": [
+        {
+          "owner": "WP-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/copy-button/copy-button.tsx",
+          "names": ["CopyButton", "useCopied", "CopiedStatus", "CopyCheckGlyph"]
+        },
+        {
+          "owner": "WP-C",
+          "target": "packages/web/src/lib/clipboard",
+          "dest": "packages/web/src/lib/clipboard.ts",
+          "names": ["writeClipboard"]
+        }
+      ],
+      "packages/web/src/components/ui/hidden-file-input": [
+        {
+          "owner": "WP-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/hidden-file-input/hidden-file-input.tsx",
+          "names": ["HiddenFileInput"]
+        }
+      ]
+    },
+    "W2": {
+      "packages/web/src/components/ui/field": [
+        {
+          "owner": "W2-0",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/menu-panel/menu-panel.tsx",
+          "names": ["menuPanelClass", "menuRowClass", "menuRowTone", "ChoiceCheck"]
+        },
+        {
+          "owner": "W2-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/field/field.tsx",
+          "names": ["Field", "FieldLabel", "FieldHint", "FieldError", "RequiredMark", "controlBase"]
+        }
+      ],
+      "packages/web/src/components/ui/input": [
+        {
+          "owner": "W2-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/input/input.tsx",
+          "names": [
+            "Input",
+            "InputProps",
+            "Textarea",
+            "TextareaProps",
+            "ControlSize",
+            "sizeTextClass",
+            "sizeClass",
+            "errorClass",
+            "autofillProps",
+            "noAutofill"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/password-input": [
+        {
+          "owner": "W2-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/password-input/password-input.tsx",
+          "names": ["PasswordInput"]
+        }
+      ],
+      "packages/web/src/components/ui/use-portal-panel": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/use-portal-panel.ts",
+          "names": ["usePortalPanel", "PortalPanelPosition"]
+        }
+      ],
+      "packages/web/src/lib/context-menu": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/use-portal-panel.ts",
+          "names": ["scrollMovesAnchor"]
+        }
+      ],
+      "packages/web/src/components/ui/info-popover": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/info-popover/info-popover.tsx",
+          "names": ["InfoPopover"]
+        }
+      ],
+      "packages/web/src/components/ui/help-fold": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/info-popover/help-fold.tsx",
+          "names": ["HelpFold"]
+        }
+      ],
+      "packages/web/src/components/ui/select": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/select/select.tsx",
+          "names": ["Select", "SelectProps"]
+        }
+      ],
+      "packages/web/src/components/ui/option-menu": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/select/option-menu.tsx",
+          "names": ["OptionMenu", "OptionMenuChoice", "rowDescClass"]
+        }
+      ],
+      "packages/web/src/features/chat/model-select": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/picker-list/picker-list.tsx",
+          "names": ["PickerList"]
+        }
+      ],
+      "packages/web/src/components/ui/switch": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/switch/switch.tsx",
+          "names": ["Switch", "SwitchProps"]
+        }
+      ],
+      "packages/web/src/components/ui/segmented": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/segmented/segmented.tsx",
+          "names": ["Segmented"]
+        }
+      ],
+      "packages/web/src/features/settings/setting-row": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/pref-row/pref-row.tsx",
+          "names": ["PrefRow"]
+        }
+      ],
+      "packages/web/src/features/settings/section-shell": [
+        {
+          "owner": "W2-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/pref-row/pref-row.tsx",
+          "names": ["SectionShell→SettingsSection"]
+        }
+      ]
+    },
+    "W3": {
+      "packages/web/src/components/ui/modal": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/modal/modal.tsx",
+          "names": ["Modal", "ModalProps"]
+        },
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/esc-layers/esc-layers.ts",
+          "names": [
+            "pushEscLayer",
+            "popEscLayer",
+            "isTopEscLayer",
+            "FOCUSABLE_SELECTOR",
+            "nextFocusIndex",
+            "useDialogLayer"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/confirm-modal": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/confirm-modal/confirm-modal.tsx",
+          "names": ["ConfirmModal"]
+        },
+        {
+          "owner": "W3-B",
+          "target": "packages/web/src/features/agents/save-confirm",
+          "dest": "packages/web/src/features/agents/save-confirm.tsx",
+          "names": ["useSaveConfirm"]
+        }
+      ],
+      "packages/web/src/components/ui/paged-dialog": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/paged-dialog/paged-dialog.tsx",
+          "names": ["PagedDialog", "PagedDialogItem", "PagedDialogGroup"]
+        }
+      ],
+      "packages/web/src/components/ui/drawer": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/drawer/drawer.tsx",
+          "names": ["Drawer", "DrawerProps"]
+        }
+      ],
+      "packages/web/src/components/ui/sheet": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/drawer/sheet.tsx",
+          "names": ["Sheet", "SheetProps", "SheetSnap"]
+        }
+      ],
+      "packages/web/src/components/ui/image-zoom": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/lightbox/lightbox.tsx",
+          "names": ["ZoomableImage"]
+        }
+      ],
+      "packages/web/src/lib/spring": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/motion/spring.ts",
+          "names": [
+            "SPRING_DEFAULT",
+            "SPRING_MOMENTUM",
+            "stepSpring",
+            "isSettled",
+            "createSpringDriver",
+            "SpringConfig",
+            "SpringDriver"
+          ]
+        }
+      ],
+      "packages/web/src/lib/sheet-physics": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/motion/sheet-physics.ts",
+          "names": ["project", "rubberband", "nearestSnap"]
+        }
+      ],
+      "packages/web/src/components/ui/use-reduced-motion": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/motion/use-reduced-motion.ts",
+          "names": ["usePrefersReducedMotion"]
+        }
+      ],
+      "packages/web/src/components/ui/dropdown": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/dropdown/dropdown.tsx",
+          "names": ["Dropdown", "DropdownPortal"]
+        }
+      ],
+      "packages/web/src/components/ui/form-picker": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/select/form-picker.tsx",
+          "names": ["FormPicker"]
+        }
+      ],
+      "packages/web/src/components/ui/context-menu": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/use-row-context-menu.ts",
+          "names": ["useRowContextMenu", "RowContextMenu", "ContextMenuRowProps"]
+        }
+      ],
+      "packages/web/src/lib/context-menu": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/context-menu.ts",
+          "names": [
+            "AnchorRect",
+            "ContextMenuEventLike",
+            "Point",
+            "pointerAnchor",
+            "isPointerContextMenu",
+            "contextMenuAnchor",
+            "isContextMenuKey",
+            "LONG_PRESS_MS",
+            "LONG_PRESS_SLOP_PX",
+            "LONG_PRESS_SETTLE_MS",
+            "isLongPressPointer",
+            "longPressMoved",
+            "withinSettleWindow",
+            "HoldState",
+            "IDLE_HOLD",
+            "HoldEvent",
+            "HoldOutcome",
+            "reduceHold"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/tooltip": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/tooltip/tooltip.tsx",
+          "names": [
+            "Tooltip",
+            "TooltipLayer",
+            "TooltipPlacement",
+            "TooltipContent",
+            "TOOLTIP_ATTR",
+            "ClipBox",
+            "isCutOff",
+            "hintAllowed",
+            "hintAllowedFor",
+            "TriggerRect",
+            "Viewport",
+            "PanelPosition",
+            "besideTrigger",
+            "belowTrigger",
+            "TooltipRequest",
+            "tooltipRequest",
+            "namedHint"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/toast": [
+        {
+          "owner": "W3-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/toaster/toaster.tsx",
+          "names": ["Toaster", "toastSuccess", "toastError", "toastInfo", "toastAttention"]
+        }
+      ],
+      "packages/web/src/components/ui/notice-strip": [
+        {
+          "owner": "W3-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/notice/notice-strip.tsx",
+          "names": ["NoticeStrip", "NOTICE_TONE", "NoticeTone"]
+        }
+      ]
+    },
+    "W4": {
+      "packages/web/src/components/ui/tabs": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/navigation/tabs/tabs.tsx",
+          "names": ["Tabs", "TabItem"]
+        }
+      ],
+      "packages/web/src/components/ui/group-list": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/navigation/group-header/group-header.tsx",
+          "names": ["GroupHeader", "FolderSection", "MoreRow"]
+        }
+      ],
+      "packages/web/src/features/ai-create/create-buttons": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/create-buttons/create-buttons.tsx",
+          "names": ["CreateButtons", "CreateButtonsProps"]
+        }
+      ],
+      "packages/web/src/features/ai-create": [
+        {
+          "owner": "W4-A",
+          "target": "packages/web/src/features/ai-create/ai-create-buttons",
+          "dest": "packages/web/src/features/ai-create/ai-create-buttons.tsx",
+          "names": ["CreateButtons→AiCreateButtons", "CreateButtonsProps→AiCreateButtonsProps"]
+        }
+      ],
+      "packages/web/src/components/ui/todo-notice": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/todo-notice/todo-notice.tsx",
+          "names": ["TodoNotice"]
+        }
+      ],
+      "packages/web/src/features/company/beta-badge": [
+        {
+          "owner": "W4-A",
+          "target": "packages/web/src/features/company/company-beta",
+          "dest": "packages/web/src/features/company/company-beta.tsx",
+          "names": [
+            "BetaBadge→CompanyBetaBadge",
+            "BETA_NOTICE_KEY",
+            "BetaNoticeStorage",
+            "shouldShowBetaNotice",
+            "markBetaNoticeShown"
+          ]
+        }
+      ],
+      "packages/web/src/features/chat/disclosure-row": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/disclosure-row/disclosure-row.tsx",
+          "names": [
+            "DisclosureRow",
+            "ActivityMark",
+            "ActivityProgress",
+            "activityState",
+            "DISCLOSURE_ROW_CLASS",
+            "DISCLOSURE_ROW_STICKY_CLASS",
+            "DISCLOSURE_LABEL_CLASS",
+            "DISCLOSURE_HEADER_ROW_CLASS",
+            "DISCLOSURE_HEADER_STICKY_CLASS",
+            "DISCLOSURE_HEADER_TITLE_CLASS",
+            "DISCLOSURE_OUTPUT_PRE_CLASS",
+            "DISCLOSURE_BODY_MD_CLASS",
+            "DISCLOSURE_CARD_CLASS"
+          ]
+        }
+      ],
+      "packages/web/src/features/chat/live-duration": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/duration-slot/duration-slot.tsx",
+          "names": ["LiveDuration", "useElapsedPast"]
+        }
+      ],
+      "packages/web/src/features/company/shared": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/data/stat-tile/stat-tile.tsx",
+          "names": ["StatTile"]
+        }
+      ],
+      "packages/web/src/features/company/org-layout": [
+        {
+          "owner": "W4-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/ruled-section/ruled-section.tsx",
+          "names": ["OrgSection→RuledSection"]
+        }
+      ]
+    },
+    "W5": {
+      "packages/web/src/features/chat/md": [
+        {
+          "owner": "W5-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/prose.tsx",
+          "names": ["Md", "SETTLED_MD_COMPONENTS"]
+        },
+        {
+          "owner": "W5-A",
+          "target": "packages/web/src/features/chat/workspace-links",
+          "dest": "packages/web/src/features/chat/workspace-links.tsx",
+          "names": ["WorkspaceLinksProvider"]
+        }
+      ],
+      "packages/web/src/lib/markdown-plugins": [
+        {
+          "owner": "W5-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/markdown-plugins.ts",
+          "names": ["REMARK_PLUGINS", "REHYPE_PLUGINS", "NO_REHYPE_PLUGINS"]
+        }
+      ],
+      "packages/web/src/features/chat/code-block": [
+        {
+          "owner": "W5-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/code-block/code-block.tsx",
+          "names": ["CodeBlock", "CodeSurface"]
+        }
+      ],
+      "packages/web/src/features/chat/code-languages": [
+        {
+          "owner": "W5-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/code-block/code-languages.ts",
+          "names": [
+            "languageForExtension",
+            "resolveLanguage",
+            "isPlainTextLanguage",
+            "PLAIN_TEXT_LANGUAGE",
+            "LANGUAGE_LOADERS",
+            "LANGUAGE_ALIASES"
+          ]
+        }
+      ]
+    },
+    "W7": {
+      "packages/web/src/features/dock/use-pointer-drag": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/resize-handle/use-pointer-drag.ts",
+          "names": ["usePointerDrag"]
+        }
+      ],
+      "packages/web/src/lib/file-tree": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/file-tree/tree-rows.ts",
+          "names": ["FileTreeRow", "TreeKeyAction", "subtreeEnd", "treeKeyStep"]
+        }
+      ],
+      "packages/web/src/components/ui/file-tree": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/file-tree/file-tree.tsx",
+          "names": ["FileTree", "TreeToggle"]
+        }
+      ],
+      "packages/web/src/components/ui/file-browser": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/file-browser/file-browser.tsx",
+          "names": ["FileBrowser", "FileBrowserPreview", "FileBrowserPreviewKind"]
+        },
+        {
+          "owner": "W7-A",
+          "target": "packages/web/src/lib/workspace-tree",
+          "dest": "packages/web/src/lib/workspace-tree.ts",
+          "names": ["previewKindOf"]
+        }
+      ],
+      "packages/web/src/features/chat/workspace-file-menu": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/workspace-file-menu/workspace-file-menu.tsx",
+          "names": ["WorkspaceFileMenuRows", "FileMenuTarget"]
+        }
+      ],
+      "packages/web/src/features/chat/workspace-editor": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/workspace-file-editor/workspace-file-editor.tsx",
+          "names": ["WorkspaceFileEditor"]
+        }
+      ],
+      "packages/web/src/lib/workspace-tree": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/navigation/breadcrumbs/crumb-fit.ts",
+          "names": ["CRUMB_ELLIPSIS", "CrumbLayout", "visibleCrumbSegments", "splitFileName"]
+        },
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/resize-handle/resize-handle.tsx",
+          "names": ["TREE_DIVIDER_PX→RESIZE_HANDLE_PX"]
+        }
+      ],
+      "packages/web/src/lib/frontmatter": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/frontmatter.ts",
+          "names": ["bodyWithoutFrontmatter"]
+        }
+      ],
+      "packages/web/src/features/chat/panels-toolbar": [
+        {
+          "owner": "W7-C",
+          "target": "packages/web/src/features/chat/dock-toggles",
+          "dest": "packages/web/src/features/chat/dock-toggles.tsx",
+          "names": ["PanelsToolbar→DockToggles", "PanelsToolbarProps→DockTogglesProps"]
+        }
+      ]
+    },
+    "W6": {
+      "packages/web/src/features/chat/work-group": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/work-group",
+          "dest": "packages/web/src/features/chat/work-group.tsx",
+          "names": ["WorkGroup→SessionWorkGroup"]
+        }
+      ],
+      "packages/web/src/features/chat/thinking-block": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/thinking-block",
+          "dest": "packages/web/src/features/chat/thinking-block.tsx",
+          "names": ["ThinkingBlock→SessionThinking"]
+        }
+      ],
+      "packages/web/src/features/chat/tool-call-card": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/tool-call-card",
+          "dest": "packages/web/src/features/chat/tool-call-card.tsx",
+          "names": ["ToolCallCard→SessionToolCall"]
+        }
+      ],
+      "packages/web/src/features/chat/subagent-chip": [
+        {
+          "owner": "W6-A2",
+          "target": "packages/web/src/features/chat/subagent-chip",
+          "dest": "packages/web/src/features/chat/subagent-chip.tsx",
+          "names": ["SubagentChip→SessionSubagentChip"]
+        }
+      ],
+      "packages/web/src/features/chat/step-banner": [
+        {
+          "owner": "W6-A2",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/step-banner/step-banner.tsx",
+          "names": ["StepBanner"]
+        }
+      ],
+      "packages/web/src/features/chat/approval-buttons": [
+        {
+          "owner": "W6-A2",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/approval-block/approval-block.tsx",
+          "names": ["ApprovalButtons"]
+        }
+      ],
+      "packages/web/src/features/chat/assistant-reply-body": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/assistant-text.tsx",
+          "names": ["AssistantReplyBody→AssistantText"]
+        }
+      ],
+      "packages/web/src/features/chat/streaming-caret": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/streaming-caret.tsx",
+          "names": ["StreamingCaret"]
+        }
+      ],
+      "packages/web/src/features/chat/use-stream-reveal": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/use-stream-reveal.ts",
+          "names": ["useStreamReveal"]
+        }
+      ],
+      "packages/web/src/lib/stream-style": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/assistant-text/stream-style.ts",
+          "names": [
+            "StreamStyle",
+            "DEFAULT_STREAM_STYLE",
+            "readStreamStyle",
+            "effectiveReveal",
+            "sameStreamStyle",
+            "nextStreamStyle",
+            "useStreamStyle"
+          ]
+        },
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/tokens.ts",
+          "names": ["StreamRevealMode→StreamReveal"]
+        }
+      ],
+      "packages/web/src/features/chat/message-files-card": [
+        {
+          "owner": "W6-A1",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/chat/changes-card/changes-card.tsx",
+          "names": ["PathLabel"]
+        }
+      ],
+      "packages/web/src/features/chat/model-select": [
+        {
+          "owner": "W6-B",
+          "target": "packages/web/src/features/chat/model-select",
+          "dest": "packages/web/src/features/chat/model-select.tsx",
+          "names": ["ModelSelect→ModelCatalogSelect"]
+        }
+      ]
+    },
+    "W8": {
+      "packages/web/src/features/palette/command-palette": [
+        {
+          "owner": "W8-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/command-palette/command-palette.tsx",
+          "names": ["CommandPalette"]
+        }
+      ],
+      "packages/web/src/lib/command-palette": [
+        {
+          "owner": "W8-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/command-palette/command-palette.tsx",
+          "names": ["PaletteAction", "filterPaletteActions"]
+        }
+      ],
+      "packages/web/src/components/ui/chart": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/marks.tsx",
+          "names": [
+            "ChartArc",
+            "ChartArea",
+            "ChartAxis",
+            "ChartAxisBreak",
+            "ChartBar",
+            "ChartBarHit",
+            "ChartCursor",
+            "ChartGrid",
+            "ChartHit",
+            "ChartLine",
+            "ChartPoint",
+            "ChartSwatch",
+            "resolvePaint",
+            "useBarWidth",
+            "ChartPaint"
+          ]
+        },
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/timeline-bar.tsx",
+          "names": ["TimelineBar"]
+        },
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/geom.ts",
+          "names": ["BAR_W", "curvePath", "fitBarWidth", "roundCoord"]
+        }
+      ],
+      "packages/web/src/components/ui/chart/marks": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/marks.tsx",
+          "names": [
+            "ChartPaint",
+            "resolvePaint",
+            "useBarWidth",
+            "barPath",
+            "ChartBar",
+            "ChartLine",
+            "ChartArea",
+            "ChartPoint",
+            "ChartArc",
+            "ChartGrid",
+            "ChartCursor",
+            "ChartAxis",
+            "ChartAxisBreak",
+            "ChartHit",
+            "ChartBarHit",
+            "ChartSwatch"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/chart/geom": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/geom.ts",
+          "names": ["roundCoord", "curvePath", "BAR_W", "fitBarWidth"]
+        }
+      ],
+      "packages/web/src/components/ui/chart/timeline-bar": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/marks/timeline-bar.tsx",
+          "names": ["TimelineBar"]
+        }
+      ],
+      "packages/web/src/lib/chart-style": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/chart-style.ts",
+          "names": [
+            "ChartCurve",
+            "ChartStyle",
+            "DEFAULT_CHART_STYLE",
+            "readChartStyle",
+            "seriesStroke",
+            "sameChartStyle",
+            "nextChartStyle",
+            "useChartStyle"
+          ]
+        }
+      ],
+      "packages/web/src/features/usage/chart-svg": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/chart-frame/chart-frame.tsx",
+          "names": ["LINE_HIT_H", "LineHits", "useChartWidth", "ChartFrame"]
+        }
+      ],
+      "packages/web/src/features/usage/chart-geom": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/chart-frame/chart-geom.ts",
+          "names": [
+            "CHART_H",
+            "PAD_L",
+            "PAD_R",
+            "PAD_T",
+            "PAD_B",
+            "PAD_R_AXIS",
+            "TokenBucketKey",
+            "ChartGeom",
+            "makeGeom",
+            "makeRangeGeom",
+            "seriesPoints",
+            "LinePoint",
+            "segmentPoints",
+            "segmentPath",
+            "sparseLabelIdx",
+            "autoLabelIdx",
+            "BUBBLE_OFFSET",
+            "BubbleView",
+            "bubblePosition",
+            "MIN_HIT_H",
+            "StackSegment",
+            "BarSegment",
+            "stackSegments",
+            "barSegments"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/token-donut": [
+        {
+          "owner": "W8-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/charts/token-donut/token-donut.tsx",
+          "names": ["TokenDonut"]
+        }
+      ]
+    }
+  }
+}

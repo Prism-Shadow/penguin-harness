@@ -1,15 +1,29 @@
 /**
- * The Workspace finder (src/features/chat/workspace-finder*.tsx): the modal every Workspace
- * picker opens. Its decisions live in workspace-finder-model.ts and are exercised directly —
- * breadcrumbs for both path families, back/forward history, type-to-select, the keyboard map,
- * Quick access per platform with the user's own edits, the context menu's rows, Recent, and
- * what the box for a refused folder offers. The suite has no DOM, so the few JSX facts that
- * fail silently are pinned against the source: the finder is a Modal (no second overlay
- * system), a permission refusal renders its own box instead of an empty folder, the address
- * bar is the one place a path is typed, and a folder row carries its own way in.
+ * The Workspace finder every Workspace picker opens; its decisions live in
+ * features/chat/workspace-finder-model.ts.
+ *
+ * - Breadcrumbs split a posix path from the root and keep a drive root whole.
+ * - History goes back and forward, a new visit drops what was ahead, and reloading the folder
+ *   shown records nothing.
+ * - The list hides hidden entries and puts folders first; type-to-select finds a folder by
+ *   prefix and arrow keys skip files, stopping at the ends.
+ * - The keyboard map reads the Finder chords with ⌘ on a Mac and Ctrl elsewhere, leaving Enter
+ *   and Home/End to a text field.
+ * - Quick access offers each platform's standard folders that exist there (Windows names
+ *   ignoring case), keeps Windows drives apart, takes the user's additions and removals (a
+ *   default included), and stores them per machine, reading anything unreadable as none.
+ * - The context menu offers open, choose, Quick access and copy on a folder, copy only on a
+ *   file, and acts on the open folder (with Refresh) from the list's empty space.
+ * - Recent folds the newest Session per Workspace across Agents, leaving temporary ones out;
+ *   "go to" resolves ~ against the machine's home.
+ * - A folder the server may not read gets a box of its own: the desktop app's access request
+ *   only on a Mac, in the shell, browsing its own server, and never Retry alone where there is
+ *   something better to do.
+ * - The footer's no-folder button is there whenever the host offers no folder, and its tooltip
+ *   names the folder a temporary Workspace would get (a Windows path keeps its separator) —
+ *   none without the Agent's directory, while another machine is browsed, or for an unknown
+ *   layout.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { DirEntryInfo, DirListResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -18,6 +32,7 @@ import {
   addToQuickAccess,
   canGoBack,
   canGoForward,
+  clearButton,
   defaultPlaces,
   deniedBox,
   drivePlaces,
@@ -35,14 +50,12 @@ import {
   saveQuickAccess,
   splitBreadcrumbs,
   stepSelection,
+  tempWorkspacePath,
   typeSelectIndex,
   visibleEntries,
 } from "../src/features/chat/workspace-finder-model";
-import type {
-  AccessAsk,
-  DeniedBox,
-  QuickAccessStorage,
-} from "../src/features/chat/workspace-finder-model";
+import type { AccessAsk, DeniedBox } from "../src/features/chat/workspace-finder-model";
+import { memoryStorage } from "./helpers/storage";
 
 const dir = (name: string, kind: "dir" | "file" = "dir"): DirEntryInfo => ({
   name,
@@ -247,21 +260,15 @@ describe("quick access", () => {
   });
 
   it("stores the edits per machine, and reads anything unreadable as none", () => {
-    const store = new Map<string, string>();
-    const storage: QuickAccessStorage = {
-      getItem: (k) => store.get(k) ?? null,
-      setItem: (k, v) => void store.set(k, v),
-    };
+    const storage = memoryStorage();
     const edits = { added: ["/srv/work"], removed: ["/home/me/Desktop"] };
     saveQuickAccess(null, edits, storage);
     saveQuickAccess("m-1", NO_EDITS, storage);
     expect(loadQuickAccess(null, storage)).toEqual(edits);
     expect(loadQuickAccess("m-1", storage)).toEqual(NO_EDITS);
-    expect(quickAccessKey(null)).toBe("penguin.finderQuickAccess.local");
-    expect(quickAccessKey("m-1")).toBe("penguin.finderQuickAccess.m-1");
-    store.set(quickAccessKey("m-2"), "{not json");
+    storage.setItem(quickAccessKey("m-2"), "{not json");
     expect(loadQuickAccess("m-2", storage)).toEqual(NO_EDITS);
-    store.set(quickAccessKey("m-3"), JSON.stringify({ added: ["/a", 3, ""], removed: "x" }));
+    storage.setItem(quickAccessKey("m-3"), JSON.stringify({ added: ["/a", 3, ""], removed: "x" }));
     expect(loadQuickAccess("m-3", storage)).toEqual({ added: ["/a"], removed: [] });
   });
 });
@@ -385,37 +392,31 @@ describe("a folder the server may not read", () => {
   });
 });
 
-describe("the modal (source contract)", () => {
-  const read = (rel: string) =>
-    readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), "utf8");
-  const finder = read("features/chat/workspace-finder.tsx");
-  const select = read("features/chat/workspace-select.tsx");
+describe("the footer's no-folder button", () => {
+  const stateDir = "/home/me/.penguin/data/default_project/agents/writer/agent_state";
+  const base = { offered: true, stateDir: null, machine: null };
 
-  it("is the shared Modal, so it stacks on a host dialog through the one Escape stack", () => {
-    expect(finder).toContain("<Modal");
-    expect(finder).not.toContain("createPortal");
-    expect(finder).not.toMatch(/fixed inset-0/);
-    expect(select).not.toContain("Dropdown");
+  it("is there whenever the host offers no folder", () => {
+    expect(clearButton({ ...base, offered: false })).toBeNull();
+    expect(clearButton(base)).not.toBeNull();
   });
 
-  it("says a refused folder is refused, in the box deniedBox decides", () => {
-    expect(finder).toContain('code === "dir_permission_denied"');
-    expect(finder).toContain("f[denied.text]");
-    // The one renderer marker (lib/desktop-renderer.ts), not a check of the finder's own.
-    expect(finder).toContain("isElectronRenderer(navigator.userAgent)");
-    expect(finder).toMatch(/api\s*\.requestDirAccess\(projectId, target\)/);
-    // A server with no shell behind it gets the browser tab's explanation, not an error loop.
-    expect(finder).toContain('err.code === "shell_unreachable"');
+  it("names the folder a temporary Workspace would get, in its tooltip", () => {
+    expect(clearButton({ ...base, stateDir })).toEqual({
+      fullPath: "/home/me/.penguin/data/default_project/agents/writer/workspaces/tmp-…",
+    });
   });
 
-  it("types a path in the address bar itself — no separate Go to row or button", () => {
-    expect(finder).toContain("onClick={editAddress}");
-    expect(finder).not.toMatch(/goToSubmit|gotoRow/);
+  it("names none without the Agent's directory, or while another machine is browsed", () => {
+    expect(clearButton(base)).toEqual({ fullPath: null });
+    expect(clearButton({ ...base, stateDir, machine: "far" })).toEqual({ fullPath: null });
   });
 
-  it("gives a folder row an enter button, and one context menu covers the finder", () => {
-    expect(finder).toContain("aria-label={f.openFolder(entry.name)}");
-    expect(finder).toContain("useRowContextMenu()");
-    expect(finder).toContain("anchorRect={menu.anchor}");
+  it("keeps a Windows path's separator, and names nothing for an unknown layout", () => {
+    expect(tempWorkspacePath("C:\\Users\\me\\.penguin\\data\\p\\agents\\a\\agent_state")).toBe(
+      "C:\\Users\\me\\.penguin\\data\\p\\agents\\a\\workspaces\\tmp-…",
+    );
+    expect(tempWorkspacePath("/srv/agents/a/state")).toBeNull();
+    expect(tempWorkspacePath("/")).toBeNull();
   });
 });

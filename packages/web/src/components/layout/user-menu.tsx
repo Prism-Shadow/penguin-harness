@@ -14,19 +14,25 @@
  * it once a nickname stands in for it. Both anchors are avatars, and the rail's is nothing but
  * an avatar, so without the header the menu never says whose account its rows act on.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
+import {
+  ConfirmModal,
+  Dropdown,
+  ICON_GAP,
+  Menu,
+  MenuItem,
+  UserAvatar,
+} from "@prismshadow/penguin-ui";
+import type { DropdownPortal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
-import { ConfirmModal } from "../ui/confirm-modal";
-import { Dropdown, menuItemClass } from "../ui/dropdown";
-import { UserAvatar } from "../ui/user-avatar";
-import type { DropdownPortal } from "../ui/dropdown";
 import { UpdateRow } from "../account/update-row";
 import { openUpdateModal } from "../../lib/use-update-flow";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
+import { onSettingsRequest } from "../../features/settings/settings-request";
+import type { SettingsSectionKey } from "../../lib/settings-sections";
 
 export function UserMenu({
   trigger,
@@ -53,7 +59,20 @@ export function UserMenu({
   const { user, logout, desktopMode } = useAuth();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The page a request asked for; the menu's own row asks for none (the viewer's first). */
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionKey | undefined>(undefined);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+
+  // Settings can be asked for from outside this menu (see settings-request.ts): the request
+  // opens the same dialog, on the page it names.
+  useEffect(
+    () =>
+      onSettingsRequest(({ section }) => {
+        setSettingsSection(section);
+        setSettingsOpen(true);
+      }),
+    [],
+  );
 
   return (
     <>
@@ -93,47 +112,48 @@ export function UserMenu({
               personal pages, and the server-global ones inside it stay gated by the
               section registry rather than by this row. The preference rows that used to
               stack here live on its pages now. */}
-          <button
-            type="button"
-            className={menuItemClass}
-            onClick={() => {
-              setOpen(false);
-              setSettingsOpen(true);
-            }}
-          >
-            {S.settings.title}
-          </button>
-          {/* Update entry, directly under the settings entry rather than on a page inside
-              it: one row for both backends (the server release here, the shell's own
-              updater in the desktop window), naming where the update flow stands and
-              opening the update modal — where the flow is explained and acted on. The
-              modal is mounted by the app layout, so it outlives this menu. Hidden where
-              this session can update nothing (a browser signed into a desktop-mode
-              server, see updateModeFor). */}
-          <UpdateRow
-            menuItemClass={menuItemClass}
-            onOpen={() => {
-              setOpen(false);
-              openUpdateModal();
-            }}
-          />
-          {/* Hidden in desktop mode: the window IS the session — logging out would
-              strand the user on a login page whose password was never shown. */}
-          {!desktopMode && (
-            <button
-              type="button"
-              className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-              onClick={() => {
+          <Menu>
+            <MenuItem
+              label={S.settings.title}
+              onSelect={() => {
                 setOpen(false);
-                setConfirmingLogout(true);
+                setSettingsSection(undefined);
+                setSettingsOpen(true);
               }}
-            >
-              {S.auth.logout}
-            </button>
-          )}
+            />
+            {/* Update entry, directly under the settings entry rather than on a page inside
+                it: one row for both backends (the server release here, the shell's own
+                updater in the desktop window), naming where the update flow stands and
+                opening the update modal — where the flow is explained and acted on. The
+                modal is mounted by the app layout, so it outlives this menu. Hidden where
+                this session can update nothing (a browser signed into a desktop-mode
+                server, see updateModeFor). */}
+            <UpdateRow
+              onOpen={() => {
+                setOpen(false);
+                openUpdateModal();
+              }}
+            />
+            {/* Hidden in desktop mode: the window IS the session — logging out would
+                strand the user on a login page whose password was never shown. */}
+            {!desktopMode && (
+              <MenuItem
+                danger
+                onSelect={() => {
+                  setOpen(false);
+                  setConfirmingLogout(true);
+                }}
+                label={S.auth.logout}
+              />
+            )}
+          </Menu>
         </div>
       </Dropdown>
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        {...(settingsSection !== undefined ? { section: settingsSection } : {})}
+      />
       {/* Signing out is confirmed first: the row sits in a menu of harmless entries, and a
           slip would end the session and land on the login page. Mounted beside the settings
           dialog, outside the dropdown, so it outlives the menu that opened it. */}
@@ -141,6 +161,7 @@ export function UserMenu({
         open={confirmingLogout}
         title={S.auth.logoutConfirmTitle}
         confirmLabel={S.auth.logout}
+        cancelLabel={S.common.cancel}
         onClose={() => setConfirmingLogout(false)}
         onConfirm={() => {
           setConfirmingLogout(false);

@@ -1,33 +1,48 @@
 /**
- * QQ messaging tests — the third channel's mirror of messaging.test.ts, and the proof the
- * connector seam survives a platform that will not let a bot speak freely.
+ * QQ messaging — the third channel's mirror of messaging.test.ts over a fake transport, and
+ * the proof the connector seam survives a platform that will not let a bot speak freely. No
+ * test opens a socket.
  *
- * Two halves. The ordinary one repeats what the other channels already pin, because the
- * route wiring is per-channel even where the behaviour is not: secret masking and
- * keep-on-blank, the App ID as the account identity and the enable-time 409 it collides
- * on, the save/enable split, the channel-agnostic GET, the credential probe.
+ * The ordinary half repeats what the other channels pin, because the route wiring is
+ * per-channel even where the behaviour is not:
+ * - A stored config narrows; a chat id round-trips its scene and openid; dispatches are read
+ *   from the two subscribed events (the @bot prefix taken at the platform's word, everything
+ *   else dropped).
+ * - A PUT saves the pair only (secret masked, the App ID as the account, disabled); POST /state
+ *   owns the gateway and a re-save while enabled restarts it; saving never collides, enabling
+ *   does, and a save cannot carry an enabled connection onto another Session's bot; clearing
+ *   the secret needs the connection off; the probe is the token exchange; GET /messaging lists
+ *   qq beside the others.
+ * - Inbound text starts an ordinary Task and is answered; a redelivered message is a no-op; a
+ *   message with no text gets the notice as a reply to it. Formatting renders what QQ has,
+ *   plain when renderMarkdown is off, falling back to plain at the cost of one slot when
+ *   refused — but a refusal not about the body is not retried.
  *
- * The half that only exists here is the PASSIVE REPLY BUDGET. QQ accepts a fixed, small
- * number of replies to one inbound message and has no push this product may use, so the
- * connector coalesces a run's messages to fit. These tests are the ones that matter:
- * exactly four sends for a run that completed six messages, the last carrying the
- * remainder; `msg_seq` increasing without repeating; the approval notice taking the
- * reserved slot rather than being lost behind it; one-message-per-line clamped to the
- * budget instead of the channel-neutral 20; a reply's files, which QQ cannot take, filed as one
- * error record without spending a slot; and a send with nothing to reply to failing loudly
- * rather than pretending. No test opens a socket.
+ * The half that only exists here is the PASSIVE REPLY BUDGET: QQ accepts a small fixed number
+ * of replies to one inbound message and has no push this product may use.
+ * - A run of six messages reaches QQ as four, the last carrying the remainder, on one anchor
+ *   with an increasing, never repeating msg_seq; a group gets its larger budget.
+ * - The approval notice takes the reserved slot rather than being lost behind it;
+ *   one-message-per-line is clamped to the budget.
+ * - A reply's files, which QQ cannot take, are one expected error record and spend no slot.
+ * - A send with nothing to reply to fails loudly; the test message needs a received message and
+ *   rides its passive reply; the client refuses a file with a reason.
+ * - The ledger: a redelivered msg_id is not fresh budget; closing the connection drops a
+ *   withheld tail; a failed flush keeps its text for the next message's budget; a chat quiet
+ *   past the reply window refuses rather than restarting its sequence.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import type {
   MessagingBindingsResponse,
   QQBindingResponse,
   QQTestResponse,
 } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { ProjectsRepo } from "../src/db/repos/projects.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
@@ -55,11 +70,11 @@ import {
   qqChatIdOf,
   qqConfigOf,
 } from "../src/runtime/messaging/qq-connector.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-27-10-00-00-q9000001";
-const SID2 = "session-2026-08-27-10-00-01-q9000002";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/qq`;
 const APP_ID = "102000001";
 const APP_SECRET = "qq-app-secret-ABCD-1234";
@@ -167,46 +182,26 @@ function echoFakeSession(
   runs: TextPayload[][],
   reply = "Reply text",
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(input: OmniMessage[]) {
       runs.push(input.map((m) => m.payload as TextPayload));
       yield assistantText(reply);
     },
-    async *compact() {},
-  };
+  });
 }
 
 /** Fake Session completing several assistant messages in ONE run — the budget's whole point. */
 function multiMessageFakeSession(sessionId: string, texts: readonly string[]): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run() {
       for (const text of texts) yield assistantText(text);
     },
-    async *compact() {},
-  };
+  });
 }
 
 /** Fake Session that completes `texts` and THEN parks on an approval (drives approval_request). */
 function parkingAfterMessagesSession(sessionId: string, texts: readonly string[]): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       for (const text of texts) yield assistantText(text);
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-qq" });
@@ -214,23 +209,7 @@ function parkingAfterMessagesSession(sessionId: string, texts: readonly string[]
       const decision = await opts.approve(tc);
       yield approvalDecision(decision, "tc-qq");
     },
-    async *compact() {},
-  };
-}
-
-function sessionRowOf(sessionId: string, projectId: string): SessionRow {
-  return {
-    sessionId,
-    projectId,
-    agentId: "default_agent",
-    provider: "custom",
-    modelId: "m1",
-    workspace: "/tmp/w",
-    approvalMode: "allow-all",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -358,8 +337,17 @@ describe("qq binding routes and the passive reply budget", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeQQTransport;
-  let projectId: string;
   let runs: TextPayload[][];
+  /**
+   * The case's Project and its two Sessions, fresh per case: the app is the describe's, a
+   * binding, a gateway and a status belong to their Session, and the error log dedupes and
+   * reads per Project. The Project is birder's row alone — every Session here is a fake, so
+   * nothing opens a default Agent's tree.
+   */
+  let projectId: string;
+  let SID: string;
+  let SID2: string;
+  let cases = 0;
 
   /** Save the credentials, then flip the toggle on and wait for the gateway handshake. */
   const bindEnabled = async (sid: string, appId = APP_ID, put: Record<string, unknown> = {}) => {
@@ -368,19 +356,34 @@ describe("qq binding routes and the passive reply budget", () => {
     await waitFor(() => t.deps.messaging.statusOf(sid, "qq").state === "connected");
   };
 
-  beforeEach(async () => {
-    fake = new FakeQQTransport();
-    t = await createTestApp({ qqTransport: fake, qqTailFlushMs: TAIL_MS });
+  beforeAll(async () => {
+    t = await createTestApp({ qqTransport: forwardingTo(() => fake), qqTailFlushMs: TAIL_MS });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    projectId = "birder-default_project";
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    fake = new FakeQQTransport();
     runs = [];
-    const row = sessionRowOf(SID, projectId);
+    cases += 1;
+    projectId = `birder-case-${cases}`;
+    wire(ProjectsRepo, { db: t.deps.db }).insert({
+      projectId,
+      ownerUserId: "birder",
+      createdAt: new Date().toISOString(),
+    });
+    SID = uniqueSessionId();
+    SID2 = uniqueSessionId();
+    const row = sessionRow(SID, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   });
-  afterEach(async () => {
-    await t.cleanup();
+  afterEach(() => {
+    // What the case bound goes with it, gateway and all, and so does the error log it wrote.
+    for (const row of t.deps.messagingRepo.listAll()) t.deps.messaging.unbindSession(row.sessionId);
+    t.deps.db.prepare("DELETE FROM error_records").run();
   });
 
   // —— Routes ——————————————————————————————————————————————————————————————
@@ -430,7 +433,7 @@ describe("qq binding routes and the passive reply budget", () => {
   });
 
   it("the account is the App ID: saving never collides, enabling does", async () => {
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     await bindEnabled(SID);
     expect(
       (await api.put(BASE(SID2), { appId: APP_ID, appSecret: "other-secret-9999" })).status,
@@ -453,7 +456,7 @@ describe("qq binding routes and the passive reply budget", () => {
     // an App ID somebody else has enabled would stand two gateways on one bot's single
     // event stream without ever passing the gate above.
     const other = "102000002";
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     await bindEnabled(SID, other);
     await bindEnabled(SID2, APP_ID);
 
@@ -562,7 +565,7 @@ describe("qq binding routes and the passive reply budget", () => {
   // —— renderMarkdown: the per-binding formatting option ————————————————————————
 
   it("renders the constructs QQ has, and degrades the two it does not", async () => {
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(
       row,
@@ -583,7 +586,7 @@ describe("qq binding routes and the passive reply budget", () => {
 
   it("renderMarkdown off reproduces the plain msg_type 0 send, byte for byte", async () => {
     const raw = "## Result\n\nRan **2** tests.";
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, [raw]));
     await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
@@ -598,7 +601,7 @@ describe("qq binding routes and the passive reply budget", () => {
 
   it("a markdown send the platform REFUSES falls back to plain text, at the cost of one slot", async () => {
     const raw = "**bold** and more";
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, [raw]));
     await bindEnabled(SID2);
@@ -617,7 +620,7 @@ describe("qq binding routes and the passive reply budget", () => {
   });
 
   it("a refusal that was not about the body is not retried, so the reserved slot is kept", async () => {
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["**bold**"]));
     await bindEnabled(SID2);
@@ -637,7 +640,7 @@ describe("qq binding routes and the passive reply budget", () => {
   // —— The budget ——————————————————————————————————————————————————————————
 
   it("a run of six messages reaches QQ as four, the last carrying the remainder", async () => {
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["m1", "m2", "m3", "m4", "m5", "m6"]));
     await bindEnabled(SID2);
@@ -656,7 +659,7 @@ describe("qq binding routes and the passive reply budget", () => {
   });
 
   it("a group chat gets the platform's larger budget", async () => {
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["g1", "g2", "g3", "g4", "g5", "g6"]));
     await bindEnabled(SID2);
@@ -678,7 +681,7 @@ describe("qq binding routes and the passive reply budget", () => {
   it("the approval notice takes the reserved slot rather than being lost behind it", async () => {
     // Three messages spend every immediate slot; the notice then has only the reserved one
     // left — and it must not wait for the run, which is parked until a human acts.
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     row.approvalMode = "always-ask";
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, parkingAfterMessagesSession(SID2, ["a1", "a2", "a3"]));
@@ -705,7 +708,7 @@ describe("qq binding routes and the passive reply budget", () => {
 
   it("one-message-per-line is clamped to the budget, not to the channel-neutral 20", async () => {
     const lines = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`);
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, [lines.join("\n")]));
     await api.put(BASE(SID2), { appId: APP_ID, appSecret: APP_SECRET, linePerMessage: true });
@@ -730,7 +733,7 @@ describe("qq binding routes and the passive reply budget", () => {
 
   it("a file the reply mentions is filed as an expected error record and spends no reply slot", async () => {
     const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     row.workspace = ws;
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["The notes are in xx.md."]));
@@ -766,7 +769,7 @@ describe("qq binding routes and the passive reply budget", () => {
 
   it("three files in one reply are ONE expected record naming all three, and QQ hears only the reply", async () => {
     const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     row.workspace = ws;
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["Wrote a.md, b.md and c.md."]));
@@ -899,15 +902,16 @@ describe("the QQ client's media half", () => {
 describe("the passive-reply ledger's lifetime", () => {
   const CONFIG = { appId: APP_ID, appSecret: APP_SECRET };
   const CHAT = qqChatIdOf("c2c", USER_OPENID);
-  const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  /**
-   * The ledger map is private and, for the eviction below, has no behavioural surface at
-   * all: nothing past the window can be replied to whether it is held or not, so how many
-   * are held is the only question there is to ask.
-   */
-  const ledgerCount = (c: QQConnector): number =>
-    (c as unknown as { ledgers: Map<string, unknown> }).ledgers.size;
+  // The tail's flush is a timer: the clock is the test's, so "nothing more arrives" is
+  // proved by advancing past it rather than by waiting it out.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const pastTheTail = () => vi.advanceTimersByTimeAsync(TAIL_MS * 3);
 
   /** A connector on a fake transport with its gateway open and its client built. */
   async function connected(opts: QQConnectorOpts = {}) {
@@ -946,7 +950,7 @@ describe("the passive-reply ledger's lifetime", () => {
     await spendImmediate(client);
     await client.sendText(CHAT, "withheld"); // no immediate slot left: waits for the reserved one
     connection.close();
-    await settle(TAIL_MS * 3);
+    await pastTheTail();
     // The binding is off. A message arriving now lands in a chat the Session no longer
     // answers, and there is no route by which the user could have expected it.
     expect(fake.allSends().map((s) => s.content)).toEqual(["a", "b", "c"]);
@@ -955,7 +959,7 @@ describe("the passive-reply ledger's lifetime", () => {
     const again = await connector.connect(CONFIG, { onMessage: () => {} });
     await fake.lastGateway().fire(c2cText("hello again", "msg_reenabled"));
     await client.sendText(CHAT, "fresh");
-    await settle(TAIL_MS * 3);
+    await pastTheTail();
     expect(fake.allSends().map((s) => s.content)).toEqual(["a", "b", "c", "fresh"]);
     expect(fake.allSends().at(-1)).toMatchObject({ msgId: "msg_reenabled", msgSeq: 1 });
     again.close();
@@ -968,12 +972,13 @@ describe("the passive-reply ledger's lifetime", () => {
     await client.sendText(CHAT, "the end");
     // The one send carrying a long answer's coalesced end, lost to a transient 5xx.
     fake.failSend = "503 Service Unavailable";
-    await settle(TAIL_MS * 3);
+    await pastTheTail();
     expect(fake.allSends().map((s) => s.content)).toEqual(["a", "b", "c"]);
 
     fake.failSend = null;
     await gateway.fire(c2cText("still there?", "msg_next"));
-    await waitFor(() => fake.allSends().length === 4);
+    await pastTheTail();
+    expect(fake.allSends()).toHaveLength(4);
     expect(fake.allSends().at(-1)).toMatchObject({
       content: "the end",
       msgId: "msg_next",
@@ -981,15 +986,13 @@ describe("the passive-reply ledger's lifetime", () => {
     });
   });
 
-  it("forgets a chat left quiet past the reply window", async () => {
+  it("forgets a chat left quiet past the reply window: it refuses rather than restarting", async () => {
     let clock = Date.now();
-    const { fake, client, connector, gateway } = await connected({ now: () => clock });
+    const { fake, client, gateway } = await connected({ now: () => clock });
     await gateway.fire(c2cText("go", "msg_old"));
     await client.sendText(CHAT, "answered");
-    expect(ledgerCount(connector)).toBe(1);
 
-    // Past the window this chat can never be replied to again, so its accounting is dead
-    // weight — one entry per chat the bot is ever messaged in, each able to hold a tail.
+    // Past the window this chat can never be replied to again.
     clock += QQ_PASSIVE_WINDOW_MS + 1;
     await gateway.fire({
       kind: "group",
@@ -998,7 +1001,6 @@ describe("the passive-reply ledger's lifetime", () => {
       content: "hi",
       senderOpenid: "member_1",
     });
-    expect(ledgerCount(connector)).toBe(1);
     // The live chat still answers, and the expired one refuses rather than restarting a
     // sequence the platform still remembers.
     await client.sendText(qqChatIdOf("group", GROUP_OPENID), "answered too");

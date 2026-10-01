@@ -48,20 +48,25 @@ import type {
   MessagingRuntimeStatus,
   TelegramTestResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Checkbox,
+  FieldLabel,
+  HelpFold,
+  InfoPopover,
+  Input,
+  PasswordInput,
+  Segmented,
+  Switch,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { toneInk, type Tone } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
-import { FieldLabel } from "../../components/ui/field";
-import { HelpFold } from "../../components/ui/help-fold";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { Input } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Segmented } from "../../components/ui/segmented";
-import { Switch } from "../../components/ui/switch";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { QQScanConnect } from "./qq-scan-connect";
 import { WeChatScanConnect } from "./wechat-scan-connect";
 import {
@@ -578,17 +583,7 @@ function StoredSecretRow({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
       <span className="font-mono">{masked}</span>
-      <label
-        className={`flex items-center gap-1.5 ${enabled ? "cursor-not-allowed opacity-60" : ""}`}
-      >
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={enabled}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        {clearLabel}
-      </label>
+      <Checkbox checked={checked} disabled={enabled} onChange={onChange} label={clearLabel} />
       {/* A disabled checkbox does not reliably fire hover, so the reason is on screen rather
           than in a title: a gated control that never says why is the bug this avoids. */}
       {enabled && (
@@ -705,7 +700,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label
             className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
-            title={S.messaging.bindByEnableHint}
+            data-tooltip={S.messaging.bindByEnableHint}
           >
             <Switch
               checked={facts.enabled}
@@ -721,7 +716,8 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         </div>
         {facts.status.state === "error" && facts.status.lastError !== undefined && (
           <p
-            title={facts.status.lastError}
+            data-tooltip={facts.status.lastError}
+            data-tooltip-content="text"
             className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
           >
             {facts.status.lastError}
@@ -734,7 +730,8 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             left with the symptom and no trace of the cause. */}
         {facts.status.state !== "error" && facts.status.lastConnectionError !== undefined && (
           <p
-            title={facts.status.lastConnectionError.detail}
+            data-tooltip={facts.status.lastConnectionError.detail}
+            data-tooltip-content="text"
             className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
           >
             {S.messaging.lastConnectionError(
@@ -771,7 +768,8 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             live fault, and a title= is hover-only and unreachable on touch. */}
         {facts.status.lastDeliveryError !== undefined && (
           <p
-            title={facts.status.lastDeliveryError.detail}
+            data-tooltip={facts.status.lastDeliveryError.detail}
+            data-tooltip-content="text"
             className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
           >
             {facts.status.lastDeliveryError.stage === "inbound"

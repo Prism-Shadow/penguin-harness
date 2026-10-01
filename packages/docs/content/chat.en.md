@@ -17,7 +17,7 @@ The chat page is where you work with an agent. You start a conversation, follow 
 A new conversation starts as a draft. The Session is created when you send the first message.
 
 1. In the sidebar, select **New chat**. The draft opens on the agent in the Project's **New chat defaults**, as long as that agent still exists in the Project; otherwise on `default_agent`, and otherwise on the first agent.
-2. Above the composer, pick the **Agent**, the **Workspace** (a directory on the server, chosen in a directory browser), the **Approval mode**, the **Model** and the **Thinking level**.
+2. Above the composer, pick the **Agent**, the **Workspace** (a directory on the server, chosen in a directory browser; to use none, select **Start in a temporary workspace** at its bottom left), the **Approval mode**, the **Model** and the **Thinking level**.
 3. Type your message and press Enter.
 
 Once the Session exists, its model and Workspace are locked. To move to another model later, see [Switch the model](#switch-the-model).
@@ -58,6 +58,7 @@ Press Enter to send, and Shift+Enter for a new line. In an empty composer, the u
 ### Attach images and files
 
 - Paste an image into the composer. Pasting accepts images only.
+- Paste a very long text (more than 20,000 characters or 400 lines, such as a whole log) and it is attached as a text file named `pasted-<date>-<time>.txt` instead of filling the text box, so typing stays responsive; the model still reads all of it. In goal mode, which takes no file attachments, it is pasted as text.
 - In the + menu (**More input options**), select **Upload image** or **Upload file**.
 
 An attachment can be any type. Selected files show as removable chips above the text, in the order you picked them, and a message with attachments and no text can be sent.

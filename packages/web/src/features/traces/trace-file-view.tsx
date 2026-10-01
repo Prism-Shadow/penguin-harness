@@ -32,6 +32,16 @@ import type {
   TraceTaskStats,
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Card,
+  CardHeader,
+  Chevron,
+  GlyphIcon,
+  Skeleton,
+  StatChip,
+  TokenDonut,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -48,10 +58,6 @@ import {
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { resolveContextWindow } from "../../lib/context";
 import { useTheme } from "../../state/theme";
-import { Skeleton } from "../../components/ui/skeleton";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { TokenDonut } from "../../components/ui/token-donut";
 import { TRACE_EVENT_PAGE_SIZE, loadTraceEventPages } from "./trace-events-loader";
 import { TimelineChart } from "./timeline-chart";
 import type { TraceHighlight } from "./timeline-chart";
@@ -124,10 +130,10 @@ function SummaryRow({ label, value, detail }: { label: string; value: string; de
   const hasDetail = detail !== undefined && detail !== "";
   return (
     <div
-      title={hasDetail ? `${label}${detail}` : undefined}
+      data-tooltip={hasDetail ? `${label}${detail}` : undefined}
       className="flex items-baseline justify-between gap-3 py-0.5"
     >
-      <span className="shrink-0 text-[11px] text-gray-400">{label}</span>
+      <span className="shrink-0 text-xs text-gray-400">{label}</span>
       <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
       {hasDetail && <span className="sr-only">{detail}</span>}
     </div>
@@ -140,19 +146,13 @@ const inputOf = (b: Buckets): number => b.cacheRead + b.cacheWrite;
 /** Cache hit rate of this round's input: the shared formula (lib/format.ts cacheHitRate, also used by the Cost center's bubble); input 0 → null (shown as `—`). */
 const hitRateOf = (b: Buckets): number | null => cacheHitRate(b.cacheRead, b.cacheWrite);
 
-/** Shared style for stat rows (icon + value, tabular figures). */
-const CHIP_CLASS =
-  "flex shrink-0 items-center font-mono text-[11px] tabular-nums text-gray-500 dark:text-gray-400";
-
-/** Icon + value; hover shows what this item is (plain text alone doesn't convey the meaning). */
-function StatChip({ icon, value, label }: { icon: string; value: string; label: string }) {
-  return (
-    <span title={label} aria-label={label} className={`${CHIP_CLASS} gap-1`}>
-      <GlyphIcon d={icon} className="text-gray-400" />
-      {value}
-    </span>
-  );
-}
+/**
+ * The size, ink and face a round's readings share, and no chip breaking over two lines. The chips
+ * themselves are the package's `StatChip` (a glyph and a value in tabular figures, named by its
+ * tooltip), which take these from the row they sit in; the input chip below is two readings in
+ * one and spells its own.
+ */
+const CHIP_ROW_CLASS = "whitespace-nowrap font-mono text-xs text-gray-500 dark:text-gray-400";
 
 /**
  * This round's input chip: `↑ 84k (◎ 60k)` — the parenthesized number is the
@@ -169,16 +169,19 @@ function InputChip({ buckets }: { buckets: Buckets }) {
   return (
     <span
       aria-label={`${S.traces.taskInput} ${humanizeTokens(input)} · ${hitTitle}`}
-      className={CHIP_CLASS}
+      className="flex shrink-0 items-center tabular-nums"
     >
-      <span title={S.traces.taskInput} className="flex items-center gap-1">
-        <GlyphIcon d={STAT_ICONS.input} className="text-gray-400" />
+      <span data-tooltip={S.traces.taskInput} className="flex items-center gap-1">
+        <GlyphIcon d={STAT_ICONS.input} />
         {humanizeTokens(input)}
       </span>
-      <span title={hitTitle} className="ml-1 flex items-center gap-0.5 text-gray-400">
+      {/* The parentheses hug the reading they enclose; the glyph keeps a chip's gap to its figure. */}
+      <span data-tooltip={hitTitle} className="ml-1 flex items-center text-gray-400">
         <span>(</span>
-        <GlyphIcon d={STAT_ICONS.cacheHit} />
-        <span>{humanizeTokens(buckets.cacheRead)}</span>
+        <span className="flex items-center gap-1">
+          <GlyphIcon d={STAT_ICONS.cacheHit} />
+          {humanizeTokens(buckets.cacheRead)}
+        </span>
         <span>)</span>
       </span>
     </span>
@@ -496,14 +499,14 @@ export function TraceFileView({
       {/* Global summary: split into three groups by nature (count / Token
           usage / duration·cost·TPS), separated by vertical rules — a dozen
           metrics laid out in one row would read as a blur of digits; grouping lets you spot the kind you want at a glance. */}
-      <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
-        <p className="mb-2 text-xs font-semibold text-gray-500">{S.traces.globalSummary}</p>
+      <Card>
+        <CardHeader title={S.traces.globalSummary} />
         {/* Three groups side by side as columns, each item within a group
             taking its own row (name on the left, value on the right): laid
             out in one row it's a blur of digits, while giving each group a
             full row only uses a small strip on the left and wastes the rest.
             Splitting into columns fills the width and keeps it to three rows tall. */}
-        <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
           {/* Counts */}
           <div>
             {/* Rounds = number of cards below (a compaction round counts as
@@ -551,7 +554,7 @@ export function TraceFileView({
             />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Grouped by Task */}
       {tasks.map((t) => {
@@ -565,12 +568,10 @@ export function TraceFileView({
         const tokens = st?.tokens ?? zeroBuckets();
         const compactionBadge = compactionBadgeLabel(st);
         return (
-          <div
-            key={t.taskIndex}
-            className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800"
-          >
+          <Card key={t.taskIndex} padding="none">
             <button
               type="button"
+              data-slot="head"
               onClick={() => toggle(t.taskIndex)}
               aria-expanded={open}
               className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800/60"
@@ -585,15 +586,17 @@ export function TraceFileView({
                   user, it's housekeeping" — naming which housekeeping, since a discard round
                   clears the context rather than compacting it. */}
               {compactionBadge !== null && (
-                <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {compactionBadge}
+                <span className="shrink-0">
+                  <Badge size="sm">{compactionBadge}</Badge>
                 </span>
               )}
               <span className="min-w-0 flex-1" />
               {/* This round's stats: iconified in the top-right corner (hover gives a text explanation) */}
-              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+              <div
+                className={`flex flex-wrap items-center justify-end gap-x-3 gap-y-1 ${CHIP_ROW_CLASS}`}
+              >
                 <StatChip
-                  icon={STAT_ICONS.toolCalls}
+                  glyph={STAT_ICONS.toolCalls}
                   value={String(t.toolCalls)}
                   label={S.traces.toolCalls}
                 />
@@ -602,22 +605,22 @@ export function TraceFileView({
                     output. Uses the server's this-round throughput tokens (whole file, including compaction), not computed from truncated events. */}
                 <InputChip buckets={tokens} />
                 <StatChip
-                  icon={STAT_ICONS.output}
+                  glyph={STAT_ICONS.output}
                   value={humanizeTokens(tokens.output)}
                   label={S.traces.taskOutput}
                 />
                 <StatChip
-                  icon={STAT_ICONS.cost}
+                  glyph={STAT_ICONS.cost}
                   value={formatMoney(st?.cost ?? null, currency)}
                   label={`${S.common.cost}（${currency}）`}
                 />
                 <StatChip
-                  icon={STAT_ICONS.elapsed}
+                  glyph={STAT_ICONS.elapsed}
                   value={humanizeDuration(t.durationMs)}
                   label={`${S.chat.statElapsed}${durationSplit(st?.llmMs ?? 0, st?.toolMs ?? 0)}`}
                 />
                 <StatChip
-                  icon={STAT_ICONS.tps}
+                  glyph={STAT_ICONS.tps}
                   value={formatTps(computeTps(tokens.output, st?.llmMs ?? 0))}
                   label={S.chat.statTps}
                 />
@@ -638,18 +641,23 @@ export function TraceFileView({
                   output={ctx.output}
                   max={contextMax}
                   size={22}
+                  labels={{
+                    usage: S.chat.contextUsage,
+                    cacheRead: S.usage.colCacheRead,
+                    cacheWrite: S.usage.colCacheWrite,
+                    output: S.usage.colOutput,
+                  }}
+                  format={humanizeTokens}
                 />
               )}
             </button>
 
             {open && (
-              <div className="space-y-3 p-3">
+              <div data-slot="body" className="space-y-3 p-3">
                 {/* This round's timeline */}
                 {(t.segments.length > 0 || t.spans.length > 0 || t.otherSpans.length > 0) && (
                   <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
-                    <p className="mb-1.5 text-[11px] font-medium text-gray-500">
-                      {S.traces.timeline}
-                    </p>
+                    <p className="mb-1.5 text-xs font-medium text-gray-500">{S.traces.timeline}</p>
                     <TimelineChart
                       segments={t.segments}
                       toolSpans={t.spans}
@@ -664,7 +672,7 @@ export function TraceFileView({
 
                 {/* This round's messages */}
                 <div>
-                  <p className="mb-1.5 text-[11px] font-medium text-gray-500">
+                  <p className="mb-1.5 text-xs font-medium text-gray-500">
                     {S.traces.messages}（{t.messages.length}）
                   </p>
                   {t.messages.length === 0 ? (
@@ -688,7 +696,7 @@ export function TraceFileView({
                 </div>
               </div>
             )}
-          </div>
+          </Card>
         );
       })}
 

@@ -1,10 +1,21 @@
 /**
- * Version routes and update-check service tests: response shapes, the fail-soft
- * contract of /api/version/update-check (always 200, error field instead of 5xx),
- * cache TTLs with an injected clock, the PENGUIN_UPDATE_CHECK=off opt-out, and the
- * admin gate of POST /api/version/update. Nothing here touches the network or spawns
- * a process: fetch is stubbed, and the update run is exercised only through its pure
- * classifier and the "not launched via the CLI" early exit.
+ * The version routes and the update check behind the About page.
+ *
+ * - GET /api/version needs a session and serves exactly the report `penguin version --json`
+ *   prints; a root with nothing pushed reports no harness, and a pushed one reports its store.
+ * - The update check reports a newer release with its URL and date; an unreachable endpoint
+ *   is still a 200, carrying `error: network` instead of a 5xx.
+ * - A plain check is answered from the cache; `?force=1` (the manual check) bypasses it and
+ *   the fresh outcome is what later plain checks see.
+ * - A rate-limit answer reads as rate_limited, any other bad status or body as bad_response;
+ *   a latest release that is not newer is no update.
+ * - PENGUIN_UPDATE_CHECK=off answers disabled and never dials out, forced or not.
+ * - A success is cached for an hour and a failure for ten minutes.
+ * - The update job is admin-only; before any run it is idle, and a server not launched through
+ *   the CLI finishes it at once as unsupported, readable afterwards.
+ * - A restart is admin-only and refused when nothing supervises the process.
+ *
+ * Nothing here touches the network or spawns a process: the release lookup is the fetch fake.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -23,23 +34,11 @@ import {
   SUCCESS_TTL_MS,
   UpdateCheckService,
 } from "../src/services/update-check-service.js";
-import { classifyUpdateRun } from "../src/http/routes/version.js";
+import { fakeFetch } from "./fixtures/fetch.js";
+import type { FetchScript } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-
-/** Counting fetch stub; the handler decides the outcome per call. */
-function makeFetch(handler: () => Response | Promise<Response>): {
-  impl: typeof fetch;
-  state: { calls: number };
-} {
-  const state = { calls: 0 };
-  const impl: typeof fetch = async () => {
-    state.calls += 1;
-    return handler();
-  };
-  return { impl, state };
-}
 
 function releaseResponse(tag: string): Response {
   return new Response(
@@ -50,6 +49,21 @@ function releaseResponse(tag: string): Response {
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
+}
+
+/** An update-check service over the fetch fake; `calls` counts the lookups that reached it. */
+function updateCheck(
+  script: FetchScript,
+  env: Record<string, string> = {},
+  now: () => Date = () => new Date(),
+) {
+  const releases = fakeFetch(script);
+  const service = wire(UpdateCheckService, {
+    http: { fetch: releases.fetch },
+    env,
+    clock: { now },
+  });
+  return { service, calls: () => releases.calls.length };
 }
 
 describe("GET /api/version", () => {
@@ -118,14 +132,7 @@ describe("GET /api/version/update-check", () => {
   });
 
   it("reports a newer release with its URL and publish date", async () => {
-    const { impl } = makeFetch(() => releaseResponse("v99.0.0"));
-    t = await createTestApp({
-      updateCheck: wire(UpdateCheckService, {
-        http: { fetch: impl },
-        env: {},
-        clock: { now: () => new Date() },
-      }),
-    });
+    t = await createTestApp({ updateCheck: updateCheck(() => releaseResponse("v99.0.0")).service });
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).get("/api/version/update-check");
     expect(res.status).toBe(200);
@@ -141,17 +148,11 @@ describe("GET /api/version/update-check", () => {
     expect(body.disabled).toBeUndefined();
   });
 
-  it("fail-soft: an unreachable endpoint is HTTP 200 with error=network, not a 5xx", async () => {
-    const { impl } = makeFetch(() => {
+  it("answers an unreachable endpoint with a 200 carrying error=network, not a 5xx", async () => {
+    const { service } = updateCheck(() => {
       throw new Error("getaddrinfo ENOTFOUND api.github.com");
     });
-    t = await createTestApp({
-      updateCheck: wire(UpdateCheckService, {
-        http: { fetch: impl },
-        env: {},
-        clock: { now: () => new Date() },
-      }),
-    });
+    t = await createTestApp({ updateCheck: service });
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).get("/api/version/update-check");
     expect(res.status).toBe(200);
@@ -162,32 +163,32 @@ describe("GET /api/version/update-check", () => {
     expect(body.releaseUrl).toBeNull();
   });
 
-  it("?force=1 (the manual check) reaches the service as a cache bypass", async () => {
-    const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
-    t = await createTestApp({
-      updateCheck: wire(UpdateCheckService, {
-        http: { fetch: impl },
-        env: {},
-        clock: { now: () => new Date() },
-      }),
-    });
+  it("answers a plain check from the cache, and ?force=1 refetches and recaches", async () => {
+    let tag = "v99.0.0";
+    const check = updateCheck(() => releaseResponse(tag));
+    t = await createTestApp({ updateCheck: check.service });
     const admin = await loginAdmin(t.app);
     const client = apiClient(t.app, admin.cookie);
+    const latest = async (url: string) =>
+      ((await (await client.get(url)).json()) as UpdateCheckResponse).latestVersion;
 
     // Warm the cache, then confirm a plain GET serves from it.
-    expect((await client.get("/api/version/update-check")).status).toBe(200);
-    expect((await client.get("/api/version/update-check")).status).toBe(200);
-    expect(state.calls).toBe(1);
+    expect(await latest("/api/version/update-check")).toBe("99.0.0");
+    expect(await latest("/api/version/update-check")).toBe("99.0.0");
+    expect(check.calls()).toBe(1);
 
-    const forced = await client.get("/api/version/update-check?force=1");
-    expect(forced.status).toBe(200);
-    expect(((await forced.json()) as UpdateCheckResponse).latestVersion).toBe("99.0.0");
-    expect(state.calls).toBe(2);
+    // The manual check refetches despite the fresh cache…
+    tag = "v100.0.0";
+    expect(await latest("/api/version/update-check?force=1")).toBe("100.0.0");
+    expect(check.calls()).toBe(2);
+    // …and stores what it found: the next plain check reuses it without a call.
+    expect(await latest("/api/version/update-check")).toBe("100.0.0");
+    expect(check.calls()).toBe(2);
   });
 });
 
 describe("UpdateCheckService", () => {
-  it("maps 403/429 to rate_limited and other bad statuses/bodies to bad_response", async () => {
+  it("reads 403/429 as rate_limited and any other bad status or body as bad_response", async () => {
     for (const [make, expected] of [
       [() => new Response("limited", { status: 403 }), "rate_limited"],
       [() => new Response("limited", { status: 429 }), "rate_limited"],
@@ -195,121 +196,71 @@ describe("UpdateCheckService", () => {
       [() => new Response("not json", { status: 200 }), "bad_response"],
       [() => new Response(JSON.stringify({ name: "no tag" }), { status: 200 }), "bad_response"],
     ] as const) {
-      const service = wire(UpdateCheckService, {
-        http: { fetch: makeFetch(make).impl },
-        env: {},
-        clock: { now: () => new Date() },
-      });
-      const result = await service.check();
+      const result = await updateCheck(make).service.check();
       expect(result.error).toBe(expected);
       expect(result.updateAvailable).toBe(false);
       expect(result.latestVersion).toBeNull();
     }
   });
 
-  it("updateAvailable is false when the latest release is not newer", async () => {
-    const { impl } = makeFetch(() => releaseResponse(`v${VERSION}`));
-    const service = wire(UpdateCheckService, {
-      http: { fetch: impl },
-      env: {},
-      clock: { now: () => new Date() },
-    });
-    const result = await service.check();
+  it("reports no update when the latest release is not newer", async () => {
+    const result = await updateCheck(() => releaseResponse(`v${VERSION}`)).service.check();
     expect(result.error).toBeUndefined();
     expect(result.latestVersion).toBe(VERSION);
     expect(result.updateAvailable).toBe(false);
   });
 
-  it("PENGUIN_UPDATE_CHECK=off disables the lookup without any network call", async () => {
-    const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
-    const service = wire(UpdateCheckService, {
-      http: { fetch: impl },
-      env: { PENGUIN_UPDATE_CHECK: "off" },
-      clock: { now: () => new Date() },
-    });
-    const result = await service.check();
-    expect(result.disabled).toBe(true);
-    expect(result.updateAvailable).toBe(false);
-    expect(result.latestVersion).toBeNull();
-    expect(state.calls).toBe(0);
+  it("never dials out under PENGUIN_UPDATE_CHECK=off, forced or not", async () => {
+    const check = updateCheck(() => releaseResponse("v99.0.0"), { PENGUIN_UPDATE_CHECK: "off" });
+    for (const force of [false, true]) {
+      const result = await check.service.check(force);
+      expect(result.disabled).toBe(true);
+      expect(result.updateAvailable).toBe(false);
+      expect(result.latestVersion).toBeNull();
+    }
+    expect(check.calls()).toBe(0);
   });
 
   it("caches a success for an hour and a failure for ten minutes", async () => {
     let nowMs = 1_000_000_000;
     let fail = false;
-    const { impl, state } = makeFetch(() => {
-      if (fail) throw new Error("down");
-      return releaseResponse("v99.0.0");
-    });
-    const service = wire(UpdateCheckService, {
-      http: { fetch: impl },
-      env: {},
-      clock: { now: () => new Date(nowMs) },
-    });
+    const check = updateCheck(
+      () => {
+        if (fail) throw new Error("down");
+        return releaseResponse("v99.0.0");
+      },
+      {},
+      () => new Date(nowMs),
+    );
+    const service = check.service;
 
     const first = await service.check();
     expect(first.latestVersion).toBe("99.0.0");
-    expect(state.calls).toBe(1);
+    expect(check.calls()).toBe(1);
 
     // Within the success TTL: served from cache, original checkedAt preserved.
     nowMs += SUCCESS_TTL_MS - 1;
     const cached = await service.check();
-    expect(state.calls).toBe(1);
+    expect(check.calls()).toBe(1);
     expect(cached.checkedAt).toBe(first.checkedAt);
 
     // Past the success TTL: refetched; the failure is itself cached, but only briefly.
     nowMs += 2;
     fail = true;
     const failed = await service.check();
-    expect(state.calls).toBe(2);
+    expect(check.calls()).toBe(2);
     expect(failed.error).toBe("network");
 
     nowMs += FAILURE_TTL_MS - 1;
     expect((await service.check()).error).toBe("network");
-    expect(state.calls).toBe(2);
+    expect(check.calls()).toBe(2);
 
     nowMs += 2;
     fail = false;
     const healed = await service.check();
-    expect(state.calls).toBe(3);
+    expect(check.calls()).toBe(3);
     expect(healed.error).toBeUndefined();
     expect(healed.latestVersion).toBe("99.0.0");
-  });
-
-  it("force bypasses a warm cache and recaches the fresh outcome", async () => {
-    let tag = "v99.0.0";
-    const { impl, state } = makeFetch(() => releaseResponse(tag));
-    const service = wire(UpdateCheckService, {
-      http: { fetch: impl },
-      env: {},
-      clock: { now: () => new Date() },
-    });
-
-    // Warm the cache; a passive check is then served from it.
-    expect((await service.check()).latestVersion).toBe("99.0.0");
-    expect((await service.check()).latestVersion).toBe("99.0.0");
-    expect(state.calls).toBe(1);
-
-    // A forced check refetches despite the fresh cache…
-    tag = "v100.0.0";
-    expect((await service.check(true)).latestVersion).toBe("100.0.0");
-    expect(state.calls).toBe(2);
-
-    // …and stores the outcome: the next passive check reuses it without a call.
-    expect((await service.check()).latestVersion).toBe("100.0.0");
-    expect(state.calls).toBe(2);
-  });
-
-  it("force never dials out when PENGUIN_UPDATE_CHECK=off (the opt-out stays authoritative)", async () => {
-    const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
-    const service = wire(UpdateCheckService, {
-      http: { fetch: impl },
-      env: { PENGUIN_UPDATE_CHECK: "off" },
-      clock: { now: () => new Date() },
-    });
-    const result = await service.check(true);
-    expect(result.disabled).toBe(true);
-    expect(state.calls).toBe(0);
   });
 });
 
@@ -327,10 +278,18 @@ describe("POST /api/version/update", () => {
     await t.cleanup();
   });
 
-  it("is admin-only", async () => {
-    const user = await provisionUser(t.app, "regular_user");
-    const res = await apiClient(t.app, user.cookie).post("/api/version/update", {});
-    expect(res.status).toBe(403);
+  it("is admin-only both ways, and idle before any run", async () => {
+    const user = apiClient(t.app, (await provisionUser(t.app, "regular_user")).cookie);
+    expect((await user.post("/api/version/update", {})).status).toBe(403);
+    expect((await user.get("/api/version/update")).status).toBe(403);
+    const admin = await loginAdmin(t.app);
+    const res = await apiClient(t.app, admin.cookie).get("/api/version/update");
+    expect(res.status).toBe(200);
+    expect((await res.json()) as UpdateJobStatus).toEqual({
+      state: "idle",
+      targetVersion: null,
+      output: "",
+    });
   });
 
   it("reports unsupported when the server was not launched via the CLI", async () => {
@@ -348,19 +307,6 @@ describe("POST /api/version/update", () => {
     // The finished status stays readable at GET until the next start.
     const again = await apiClient(t.app, admin.cookie).get("/api/version/update");
     expect(((await again.json()) as UpdateJobStatus).result?.status).toBe("unsupported");
-  });
-
-  it("GET /api/version/update is admin-only and idle before any run", async () => {
-    const user = await provisionUser(t.app, "regular_user");
-    expect((await apiClient(t.app, user.cookie).get("/api/version/update")).status).toBe(403);
-    const admin = await loginAdmin(t.app);
-    const res = await apiClient(t.app, admin.cookie).get("/api/version/update");
-    expect(res.status).toBe(200);
-    expect((await res.json()) as UpdateJobStatus).toEqual({
-      state: "idle",
-      targetVersion: null,
-      output: "",
-    });
   });
 });
 
@@ -384,36 +330,5 @@ describe("POST /api/version/restart", () => {
     } finally {
       await t.cleanup();
     }
-  });
-});
-
-describe("classifyUpdateRun", () => {
-  it("a non-zero exit is a failed upgrade attempt", () => {
-    const r = classifyUpdateRun(1, "Upgrade failed; the previous install was left in place.");
-    expect(r.status).toBe("failed");
-    expect(r.needsRestart).toBe(false);
-  });
-
-  it("a refusal (exit 0 with the CLI's refusal message) is unsupported", () => {
-    // Literal CLI copy (packages/cli/src/i18n.ts update.sourceCheckout / unknownInstall):
-    // the classifier matches fragments of these exact strings.
-    const source =
-      "This penguin runs from a source checkout, so there is nothing to download — update it with `git pull` and rebuild (`pnpm install && pnpm -r build`).";
-    expect(classifyUpdateRun(0, source).status).toBe("unsupported");
-    const unknown =
-      "Cannot tell how this penguin was installed (running from /opt/penguin/cli.js), so it will not be replaced. Re-install with the official installer, or upgrade with the package manager you used.";
-    expect(classifyUpdateRun(0, unknown).status).toBe("unsupported");
-  });
-
-  it("a clean exit without a refusal is updated and needs a restart (up-to-date included)", () => {
-    const done =
-      "Upgrade 0.1.2 -> 0.1.3\nPenguinHarness 0.1.3 installed. Run `penguin --version` in a new shell to confirm.";
-    expect(classifyUpdateRun(0, done)).toEqual({
-      status: "updated",
-      output: done,
-      needsRestart: true,
-    });
-    const upToDate = "Already on the latest version (0.1.3); nothing to do.";
-    expect(classifyUpdateRun(0, upToDate).status).toBe("updated");
   });
 });

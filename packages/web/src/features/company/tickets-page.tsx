@@ -35,25 +35,32 @@ import type {
   OrgTicketStatus,
   OrgTicketsResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Count,
+  FieldLabel,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Input,
+  Modal,
+  Notice,
+  SearchInput,
+  Segmented,
+  Select,
+  Skeleton,
+  Switch,
+  Textarea,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Button } from "../../components/ui/button";
-import { Switch } from "../../components/ui/switch";
-import { Segmented } from "../../components/ui/segmented";
-import { Modal } from "../../components/ui/modal";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   BlockedBadge,
@@ -83,9 +90,6 @@ import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
-/** Clock face (lucide): the due-date mark on a card. */
-const DUE_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2";
-
 /**
  * The colour bar atop each column. Proposed is neutral, in-progress takes the accent (it is
  * the column being worked, not a judgement), review waits on a person (attention), done is
@@ -93,7 +97,7 @@ const DUE_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2";
  */
 const COLUMN_BAR: Record<OrgTicketStatus, string> = {
   proposed: "bg-gray-300 dark:bg-gray-600",
-  in_progress: "bg-[var(--accent-bg)]",
+  in_progress: "bg-accent",
   review: toneDot.attention,
   done: toneDot.success,
   rejected: toneDot.danger,
@@ -234,7 +238,7 @@ export function TicketsPage() {
     return (
       <>
         <span className="flex items-start gap-1.5">
-          <span className="line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug text-gray-900 dark:text-gray-100">
+          <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium leading-snug text-gray-900 dark:text-gray-100">
             {t.title}
           </span>
           {/* The priority reads with the title and shares its line, a size under it; the line
@@ -243,7 +247,7 @@ export function TicketsPage() {
             <PriorityBadge priority={t.priority} />
           </span>
           {t.invalid !== undefined && (
-            <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} title={t.invalid}>
+            <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} data-tooltip={t.invalid}>
               <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
               <span className="sr-only">{S.company.tickets.invalid}</span>
             </span>
@@ -252,13 +256,15 @@ export function TicketsPage() {
         {/* The time-bound line, drawn only when there is something on it: the priority has
             moved up to the title and an empty row would leave a gap under it. */}
         {(t.due !== undefined || isBlocked(t)) && (
-          <span className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+          <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
             {t.due !== undefined && (
               <span
                 className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
-                title={overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due}
+                data-tooltip={
+                  overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due
+                }
               >
-                <GlyphIcon d={DUE_ICON} size={ICON_SIZE.inlineGlyph} />
+                <GlyphIcon d={ICONS.clockCompact} size={ICON_SIZE.inlineGlyph} />
                 {t.due}
                 {overdue && <span className="sr-only">{S.company.tickets.overdue}</span>}
               </span>
@@ -275,16 +281,17 @@ export function TicketsPage() {
         )}
         {t.parent !== undefined && (
           <span
-            className="mt-2 block truncate text-[11px] text-gray-400 dark:text-gray-500"
-            title={t.parent}
+            className="mt-2 block truncate text-xs text-gray-400 dark:text-gray-500"
+            data-tooltip={t.parent}
+            data-tooltip-content="text"
           >
             {S.company.tickets.parentLine(titles.get(t.parent) ?? t.parent)}
           </span>
         )}
-        <span className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+        <span className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
           <span
             className="flex min-w-0 text-gray-700 dark:text-gray-200"
-            title={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
+            data-tooltip={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
           >
             <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
           </span>
@@ -295,7 +302,7 @@ export function TicketsPage() {
 
   /** The card's frame: a hairline box, danger-edged when the server flagged the ticket. */
   const cardFrame = (t: OrgTicketItem) =>
-    `block w-full rounded-md border bg-white p-2.5 text-left text-xs dark:bg-gray-900 ${
+    `block w-full rounded-md border bg-white p-3 text-left text-xs dark:bg-gray-900 ${
       t.invalid !== undefined
         ? "border-red-300 dark:border-red-800"
         : "border-gray-200 dark:border-gray-800"
@@ -311,7 +318,7 @@ export function TicketsPage() {
       key={t.ticketId}
       type="button"
       data-ticket-card={t.ticketId}
-      title={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
+      data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
       {...drag.cardProps(t)}
       className={`${cardFrame(t)} cursor-pointer select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
         lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
@@ -332,16 +339,14 @@ export function TicketsPage() {
       wide
       actions={
         <>
-          <div className="w-44">
-            <Input
-              size="sm"
-              type="search"
-              aria-label={S.company.tickets.searchPlaceholder}
-              placeholder={S.company.tickets.searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
+          <SearchInput
+            size="sm"
+            className="w-44"
+            aria-label={S.company.tickets.searchPlaceholder}
+            placeholder={S.company.tickets.searchPlaceholder}
+            value={query}
+            onChange={setQuery}
+          />
           <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
             {S.company.tickets.blockedOnly}
             <Switch
@@ -359,38 +364,33 @@ export function TicketsPage() {
       }
     >
       {error !== null && (
-        <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+        <Notice
+          tone="danger"
+          role="alert"
+          className="mb-3"
+          retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          <span>{S.company.tickets.loadFailed(error)}</span>
-          <Button size="sm" onClick={() => void load()}>
-            {S.common.retry}
-          </Button>
-        </div>
+          {S.company.tickets.loadFailed(error)}
+        </Notice>
       )}
 
       {board !== null &&
         allTickets(board).length === 0 &&
         board.invalidFiles.length === 0 &&
         !hintDismissed && (
-          <div
-            className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
-          >
-            <span className="min-w-0 flex-1">{S.company.tickets.emptyHint}</span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="shrink-0"
-              title={S.company.tickets.dismissHint}
-              aria-label={S.company.tickets.dismissHint}
-              onClick={() => {
+          <Notice
+            tone="neutral"
+            className="mb-3"
+            dismiss={{
+              ariaLabel: S.company.tickets.dismissHint,
+              onClick: () => {
                 dismissHint(emptyHintKey);
                 setHintDismissed(true);
-              }}
-            >
-              <CloseIcon />
-            </Button>
-          </div>
+              },
+            }}
+          >
+            {S.company.tickets.emptyHint}
+          </Notice>
         )}
 
       <div ref={drag.boardRef} className="overflow-x-auto pb-2">
@@ -405,7 +405,7 @@ export function TicketsPage() {
                   {...{ [TICKET_COLUMN_ATTR]: col.status }}
                   className={`${columnClass} ${
                     dropOver === col.status
-                      ? "border-[var(--accent-bg)] ring-1 ring-[var(--accent-bg)]"
+                      ? "border-accent ring-1 ring-accent"
                       : highlightColumn === col.status && isTicketStatus(highlightColumn)
                         ? "border-gray-400 dark:border-gray-600"
                         : ""
@@ -416,17 +416,15 @@ export function TicketsPage() {
                     <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
                       {S.company.tickets.columns[col.status] ?? col.status}
                     </span>
-                    <span className="rounded-full bg-gray-200/70 px-1.5 py-px text-[11px] font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                      {col.tickets.length}
-                    </span>
+                    <Count n={col.tickets.length} />
                   </div>
                   <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
                     {col.tickets.map(card)}
                     {col.tickets.length === 0 && (
                       <div
-                        className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-[11px] ${
+                        className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-xs ${
                           dropOver === col.status
-                            ? "border-[var(--accent-bg)] text-gray-600 dark:text-gray-300"
+                            ? "border-accent text-gray-600 dark:text-gray-300"
                             : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"
                         }`}
                       >
@@ -444,14 +442,16 @@ export function TicketsPage() {
       </div>
 
       {(invalids.length > 0 || (board !== null && board.invalidFiles.length > 0)) && (
-        <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
+        <Notice tone="danger" className="mt-2">
           {invalids.length > 0 && (
             <>
               <p className="mb-1 flex items-center gap-1.5 font-medium">
-                <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                <span data-slot="icon" className="shrink-0">
+                  <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                </span>
                 {S.company.tickets.invalidTickets}
               </p>
-              <ul className="mb-2 space-y-0.5">
+              <ul className="mb-2 space-y-1">
                 {invalids.map((t) => (
                   <li key={t.ticketId} className="flex items-baseline">
                     <TitleButton
@@ -470,10 +470,12 @@ export function TicketsPage() {
           {board !== null && board.invalidFiles.length > 0 && (
             <>
               <p className="mb-1 flex items-center gap-1.5 font-medium">
-                <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                <span data-slot="icon" className="shrink-0">
+                  <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                </span>
                 {S.company.tickets.invalidFiles}
               </p>
-              <ul className="space-y-0.5 font-mono">
+              <ul className="space-y-1 font-mono">
                 {board.invalidFiles.map((f) => (
                   <li key={f.path}>
                     {f.path}: {f.error}
@@ -482,7 +484,7 @@ export function TicketsPage() {
               </ul>
             </>
           )}
-        </div>
+        </Notice>
       )}
 
       {/* The lifted card's ghost: the card's own face at its own width, following the
@@ -496,9 +498,7 @@ export function TicketsPage() {
             style={{ width: lifted.width, transform: drag.ghostTransform() }}
             className="pointer-events-none fixed left-0 top-0 z-[60]"
           >
-            <div
-              className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-[var(--accent-bg)]`}
-            >
+            <div className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-accent`}>
               {cardBody(lifted.ticket)}
             </div>
           </div>,
@@ -548,7 +548,7 @@ function ColumnSkeleton({ status }: { status: OrgTicketStatus }) {
           (_, i) => (
             <div
               key={i}
-              className="space-y-2 rounded-md border border-gray-200 bg-white p-2.5 dark:border-gray-800 dark:bg-gray-900"
+              className="space-y-2 rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
             >
               <Skeleton className="h-3.5 w-4/5" />
               <Skeleton className="h-3 w-2/5" />

@@ -9,8 +9,8 @@
  *
  * It is the Files panel preview's selection menu applied to the conversation, and it borrows
  * that menu's parts instead of copying them: `useRowContextMenu` for the anchored open state
- * and its dismissal, the `Dropdown` in `anchorRect` mode for the panel, the overflow-menu row
- * styling, and `restoreSelection` for the highlight. It is also what gives the desktop app a
+ * and its dismissal, the `Dropdown` in `anchorRect` mode for the panel, the small Menu rows,
+ * and `restoreSelection` for the highlight. It is also what gives the desktop app a
  * copy menu for conversation text, and a menu for its links, since Electron raises no context
  * menu of its own.
  *
@@ -28,11 +28,21 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
+import {
+  Dropdown,
+  ICONS,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  contextMenuAnchor,
+  isContextMenuKey,
+  toastSuccess,
+  useRowContextMenu,
+} from "@prismshadow/penguin-ui";
+import type { AnchorRect, ContextMenuEventLike } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { isDesktopShellWindow } from "../../lib/account-menu";
-import { contextMenuAnchor, isContextMenuKey } from "../../lib/context-menu";
-import type { AnchorRect, ContextMenuEventLike } from "../../lib/context-menu";
 import {
   SELECTION_MENU_ITEMS,
   excerptReference,
@@ -44,18 +54,8 @@ import {
 } from "../../lib/selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { useAuth } from "../../state/auth";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
-import { Dropdown } from "../../components/ui/dropdown";
-import {
-  ADD_TO_CHAT_ICON,
-  EXTERNAL_LINK_ICON,
-  GLOBE_ICON,
-  LINK_ICON,
-} from "../../components/ui/icons";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
+import { writeClipboard } from "../../lib/clipboard";
 import { restoreSelection } from "../../components/ui/text-selection";
-import { toastSuccess } from "../../components/ui/toast";
 import { openLinkInBrowser } from "../builtin-browser/browser-actions";
 import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
 
@@ -92,32 +92,25 @@ export function SelectionMenuRows({
     <>
       {SELECTION_MENU_ITEMS.map((item) =>
         item === "copy" ? (
-          <button
+          <MenuItem
             key={item}
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={() => {
-              writeClipboard(selection.text);
-              toastSuccess(S.common.copied);
+            glyph={STAT_ICONS.copy}
+            label={S.common.copy}
+            onSelect={() => {
+              void writeClipboard(selection.text).then((ok) => ok && toastSuccess(S.common.copied));
               onDone(selection);
             }}
-          >
-            {overflowMenuGlyph(STAT_ICONS.copy)}
-            {S.common.copy}
-          </button>
+          />
         ) : (
-          <button
+          <MenuItem
             key={item}
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={() => {
+            glyph={ICONS.messagePlus}
+            label={S.files.addToChat}
+            onSelect={() => {
               onAddExcerpt(excerptReference(selection.text));
               onDone(selection);
             }}
-          >
-            {overflowMenuGlyph(ADD_TO_CHAT_ICON)}
-            {S.files.addToChat}
-          </button>
+          />
         ),
       )}
     </>
@@ -156,42 +149,32 @@ export function LinkMenuRows({
         switch (item) {
           case "openInBuiltinBrowser":
             return (
-              <button
+              <MenuItem
                 key={item}
-                type="button"
-                className={overflowMenuRowClass}
-                onClick={run(() => openLinkInBrowser(href))}
-              >
-                {overflowMenuGlyph(GLOBE_ICON)}
-                {S.chat.linkMenu.openInBuiltinBrowser}
-              </button>
+                glyph={ICONS.globe}
+                label={S.chat.linkMenu.openInBuiltinBrowser}
+                onSelect={run(() => openLinkInBrowser(href))}
+              />
             );
           case "openExternal":
             return (
-              <button
+              <MenuItem
                 key={item}
-                type="button"
-                className={overflowMenuRowClass}
-                onClick={run(() => window.open(href, "_blank", "noopener,noreferrer"))}
-              >
-                {overflowMenuGlyph(EXTERNAL_LINK_ICON)}
-                {desktopShell ? S.chat.linkMenu.openExternal : S.chat.linkMenu.openInNewTab}
-              </button>
+                glyph={ICONS.externalLink}
+                label={desktopShell ? S.chat.linkMenu.openExternal : S.chat.linkMenu.openInNewTab}
+                onSelect={run(() => window.open(href, "_blank", "noopener,noreferrer"))}
+              />
             );
           case "copyLink":
             return (
-              <button
+              <MenuItem
                 key={item}
-                type="button"
-                className={overflowMenuRowClass}
-                onClick={run(() => {
-                  writeClipboard(href);
-                  toastSuccess(S.common.copied);
+                glyph={ICONS.chainLink}
+                label={S.chat.linkMenu.copyLink}
+                onSelect={run(() => {
+                  void writeClipboard(href).then((ok) => ok && toastSuccess(S.common.copied));
                 })}
-              >
-                {overflowMenuGlyph(LINK_ICON)}
-                {S.chat.linkMenu.copyLink}
-              </button>
+              />
             );
         }
       })}
@@ -377,13 +360,11 @@ export function useStreamSelectionMenu(
       button={null}
     >
       {captured !== null && (
-        <>
+        <Menu density="sm">
           {captured.linkHref !== null && (
             <StreamLinkRows href={captured.linkHref} onDone={() => done(captured.selection)} />
           )}
-          {captured.linkHref !== null && captured.selection !== null && (
-            <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />
-          )}
+          {captured.linkHref !== null && captured.selection !== null && <MenuSeparator />}
           {captured.selection !== null && (
             <SelectionMenuRows
               selection={captured.selection}
@@ -391,7 +372,7 @@ export function useStreamSelectionMenu(
               onDone={done}
             />
           )}
-        </>
+        </Menu>
       )}
     </Dropdown>
   );

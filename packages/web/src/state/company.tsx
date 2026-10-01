@@ -19,7 +19,7 @@
  * entered only by the user: the mode switch, or an `/org` route.
  *
  * Entering company mode is also where the shell says the mode is a beta: the first switch
- * into it in a browser raises the notice once (features/company/beta-badge.tsx keeps the
+ * into it in a browser raises the notice once (features/company/company-beta.tsx keeps the
  * flag), which is why `setWorkMode` is the single handler both mode switches call.
  *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
@@ -59,11 +59,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
+import { toastAttention } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { apiErrorText } from "../lib/api-error";
 import { S } from "../lib/strings";
-import { toastAttention } from "../components/ui/toast";
-import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/beta-badge";
+import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/company-beta";
 import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";
 import type { WorkMode } from "../features/company/company-nav";

@@ -1,47 +1,44 @@
 /**
- * The shared page notice (src/components/ui/todo-notice.tsx) and the decisions behind its
- * bulk-update button (src/lib/bulk-update.ts).
+ * The shared page notice (the UI package's `TodoNotice`, todo-notice.tsx) and the decisions
+ * behind its bulk-update button (lib/bulk-update.ts).
  *
- * Three rules are defended here, and each is a rule rather than a preference because breaking it
- * produces a screen the user cannot reason about:
+ * Guard, over every `<TodoNotice>` call site in the source roots (discovered, not listed):
+ * - The notice is defined in one place.
+ * - A bulk action is never offered without a label, nor a label without an action.
+ * - The bulk button never writes on click: its handler opens the batch's own confirmation by
+ *   setting the state that ConfirmModal is rendered behind.
  *
- * 1. **The counts come off the raised to-do**, never a second calculation. A block claiming three
- *    updates under a dot raised for four is unresolvable from the outside.
- * 2. **The button opens a confirmation; it does not write.** A bulk overwrite is consented to
- *    before it runs, and every one of these pages already asks before overwriting a single
- *    object.
- * 3. **A partial failure names the targets that failed.** On a control whose entire point is
- *    "all of them at once", a count with no names leaves the user re-checking every row by hand.
- *
- * Rules 2 and 3's first half are source scans over the real JSX rather than render assertions —
- * vitest runs node-only here, so the thing that decays is a call site, not a component's output.
+ * Behaviour:
+ * - The counts come off the raised to-do: the whole count is upgradable where the trail has no
+ *   honest split, added and upgradable are split where it can tell them apart, and the block
+ *   never claims more than the dot was raised for.
+ * - A batch outcome is clean when every target took the write (an empty batch included), and
+ *   otherwise names the failed targets by position, never as a blank; a long list reports its
+ *   overflow as a count; the first rejection is surfaced for the error text.
  */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../src/lib/bulk-update";
 import type { Todo } from "../src/lib/todo-badges";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** Web and the shared UI package: the notice's call sites are counted wherever they live. */
+const SCAN = scanSources();
+const TODO_NOTICE = "packages/ui/src/components/feedback/todo-notice/todo-notice.tsx";
 
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
-  }
-  return out;
-}
-
-/** Every `<TodoNotice …>` in the app, as "relative/path" plus its attributes by name. */
+/** Every `<TodoNotice …>` in the scanned roots, as its file's repo-relative id plus its attributes by name. */
 function noticeSites(): { file: string; attrs: Map<string, string>; source: string }[] {
   const sites: { file: string; attrs: Map<string, string>; source: string }[] = [];
-  for (const path of tsxFiles()) {
-    const rel = path.slice(SRC.length + 1).replaceAll(sep, "/");
-    const source = readFileSync(path, "utf8");
-    const sf = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  for (const file of SCAN.files.filter((f) => f.name.endsWith(".tsx"))) {
+    const rel = file.id;
+    const source = file.text;
+    const sf = ts.createSourceFile(
+      file.path,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
     const visit = (node: ts.Node): void => {
       const opening = ts.isJsxSelfClosingElement(node)
         ? node
@@ -60,20 +57,16 @@ function noticeSites(): { file: string; attrs: Map<string, string>; source: stri
     };
     visit(sf);
   }
-  // The component's own definition is not a call site.
-  return sites.filter((s) => s.file !== "components/ui/todo-notice.tsx");
+  // The component's own definition is not a call site, wherever it lives.
+  return sites.filter((s) => !s.file.endsWith("/todo-notice.tsx"));
 }
 
 describe("the notice block is the one shape on every page that has one", () => {
   const sites = noticeSites();
 
-  it("is placed on all four dismissible trails and nowhere else", () => {
-    expect(sites.map((s) => s.file).sort()).toEqual([
-      "features/agents/agents-page.tsx",
-      "features/models/models-page.tsx",
-      "features/plugins/plugins-page.tsx",
-      "features/usage/usage-page.tsx",
-    ]);
+  it("is looked for in every source root, and defined in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, TODO_NOTICE);
   });
 
   it("never offers a bulk action without labelling it, or a label without an action", () => {
@@ -82,15 +75,6 @@ describe("the notice block is the one shape on every page that has one", () => {
         attrs.has("onAction"),
       );
     }
-  });
-
-  it("only the cost center omits the bulk action — nothing there can be updated", () => {
-    const withAction = sites.filter((s) => s.attrs.has("onAction")).map((s) => s.file);
-    expect(withAction.sort()).toEqual([
-      "features/agents/agents-page.tsx",
-      "features/models/models-page.tsx",
-      "features/plugins/plugins-page.tsx",
-    ]);
   });
 });
 

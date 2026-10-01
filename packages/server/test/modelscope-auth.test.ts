@@ -1,4 +1,26 @@
+/**
+ * ModelScope key authorization: the harness starts a flow at the Penguin bridge, polls it, and
+ * writes the delivered token to the ModelScope group; later it refreshes that token.
+ *
+ * - The flow: the bridge's own authorize URL is passed through (never one a tab must not open),
+ *   the delivered token is written, a failed or swallowed write keeps the token for a retry
+ *   without polling again, every terminal status maps onto the flow's own states and ends the
+ *   polling, an unreachable bridge or a rejected start is an upstream failure, the bridge's
+ *   rate limit surfaces with its Retry-After on start and backs a poll off, cancelling reaches
+ *   the bridge and applies nothing, a flow is hidden from another Project or user and forgotten
+ *   once expired, and a delivery is validated rather than trusted.
+ * - Refresh: a token about to expire is refreshed silently, dropped if the stored refresh token
+ *   changed meanwhile, kept usable when a proactive refresh fails, and re-authorization is asked
+ *   for when an expired token cannot be refreshed or after three failures (a changed refresh
+ *   token resets the count).
+ * - The routes: only the owner starts; the token lands on the group's preset rows and no account
+ *   state is exposed; an unknown or foreign flow has its own not-found code.
+ *
+ * No test reaches the network: the bridge is the suite's fetch fake, handed to the service or
+ * standing in for the global fetch in the route cases.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
 import type {
   ModelScopeAuthFlowStatusResponse,
   ModelScopeAuthStartResponse,
@@ -9,24 +31,21 @@ import {
   ModelScopeAuthService,
   modelscopeAccessToken,
 } from "../src/services/modelscope-auth-service.js";
+import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 /** The production bridge address, path prefix included: the prefix must survive into every call. */
 const BRIDGE = "https://go.penguin.ooo/modelscope";
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
 function started(expiresInMs = 60_000): Response {
-  return json(201, {
-    authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
-    expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
-  });
+  return jsonResponse(
+    {
+      authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
+      expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
+    },
+    201,
+  );
 }
 
 function pathOf(input: string | URL | Request): string {
@@ -63,7 +82,7 @@ describe("ModelScope key authorization service", () => {
         applied.push({ projectId, token: credential.accessToken });
         return 1;
       },
-      fetchImpl: async (input, init) => {
+      fetchImpl: fakeFetch(async ({ url: input, init }) => {
         if (pathOf(input) === "/modelscope/oauth/start") {
           const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
           expect(body.client).toEqual({ id: "penguin-harness" });
@@ -74,8 +93,8 @@ describe("ModelScope key authorization service", () => {
         }
         expect(init?.redirect).toBe("manual");
         polls += 1;
-        return polls === 1 ? json(200, { status: "pending" }) : json(200, delivery);
-      },
+        return polls === 1 ? jsonResponse({ status: "pending" }) : jsonResponse(delivery);
+      }).fetch,
     });
 
     const flow = await service.start(owner);
@@ -104,11 +123,11 @@ describe("ModelScope key authorization service", () => {
         if (applies === 1) throw new Error("disk busy");
         return 1;
       },
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) return started();
         polls += 1;
-        return json(200, delivery);
-      },
+        return jsonResponse(delivery);
+      }).fetch,
     });
     const flow = await service.start(owner);
     expect(await service.status({ ...owner, flowId: flow.flowId })).toMatchObject({
@@ -130,8 +149,9 @@ describe("ModelScope key authorization service", () => {
     const service = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 0,
-      fetchImpl: async (input) =>
-        pathOf(input).endsWith("/start") ? started() : json(200, delivery),
+      fetchImpl: fakeFetch(async ({ url: input }) =>
+        pathOf(input).endsWith("/start") ? started() : jsonResponse(delivery),
+      ).fetch,
     });
     const flow = await service.start(owner);
     expect(await service.status({ ...owner, flowId: flow.flowId })).toMatchObject({
@@ -159,8 +179,9 @@ describe("ModelScope key authorization service", () => {
       const service = new ModelScopeAuthService({
         bridgeUrl: BRIDGE,
         applyCredential: async () => 1,
-        fetchImpl: async (input) =>
-          pathOf(input).endsWith("/start") ? started() : json(200, { status: reported }),
+        fetchImpl: fakeFetch(async ({ url: input }) =>
+          pathOf(input).endsWith("/start") ? started() : jsonResponse({ status: reported }),
+        ).fetch,
       });
       const flow = await service.start(owner);
       const result = await service.status({ ...owner, flowId: flow.flowId });
@@ -175,11 +196,11 @@ describe("ModelScope key authorization service", () => {
     const service = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) return started();
         polls += 1;
-        return json(200, { status: "expired" });
-      },
+        return jsonResponse({ status: "expired" });
+      }).fetch,
     });
     const flow = await service.start(owner);
     await service.status({ ...owner, flowId: flow.flowId });
@@ -191,9 +212,9 @@ describe("ModelScope key authorization service", () => {
     const unreachable = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async () => {
+      fetchImpl: fakeFetch(async () => {
         throw new Error("ECONNREFUSED");
-      },
+      }).fetch,
     });
     await expect(unreachable.start(owner)).rejects.toMatchObject({
       status: 502,
@@ -203,7 +224,7 @@ describe("ModelScope key authorization service", () => {
     const refused = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async () => json(409, { error: "flow_conflict" }),
+      fetchImpl: fakeFetch(async () => jsonResponse({ error: "flow_conflict" }, 409)).fetch,
     });
     await expect(refused.start(owner)).rejects.toMatchObject({
       status: 502,
@@ -216,11 +237,15 @@ describe("ModelScope key authorization service", () => {
       const service = new ModelScopeAuthService({
         bridgeUrl: BRIDGE,
         applyCredential: async () => 1,
-        fetchImpl: async () =>
-          json(201, {
-            authorizeUrl,
-            expiresAt: new Date(Date.now() + 60_000).toISOString(),
-          }),
+        fetchImpl: fakeFetch(async () =>
+          jsonResponse(
+            {
+              authorizeUrl,
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+            201,
+          ),
+        ).fetch,
       });
       await expect(service.start(owner)).rejects.toMatchObject({
         status: 502,
@@ -233,7 +258,9 @@ describe("ModelScope key authorization service", () => {
     const service = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async () => json(429, { error: "rate_limited", retryAfterSeconds: 12 }),
+      fetchImpl: fakeFetch(async () =>
+        jsonResponse({ error: "rate_limited", retryAfterSeconds: 12 }, 429),
+      ).fetch,
     });
     await expect(service.start(owner)).rejects.toMatchObject({
       status: 429,
@@ -249,18 +276,21 @@ describe("ModelScope key authorization service", () => {
       bridgeUrl: BRIDGE,
       now: () => now,
       applyCredential: async () => 1,
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) {
-          return json(201, {
-            authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
-            expiresAt: new Date(now + 60_000).toISOString(),
-          });
+          return jsonResponse(
+            {
+              authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
+              expiresAt: new Date(now + 60_000).toISOString(),
+            },
+            201,
+          );
         }
         polls += 1;
         return polls === 1
-          ? json(429, { error: "rate_limited", retryAfterSeconds: 2 })
-          : json(200, delivery);
-      },
+          ? jsonResponse({ error: "rate_limited", retryAfterSeconds: 2 }, 429)
+          : jsonResponse(delivery);
+      }).fetch,
     });
     const flow = await service.start(owner);
     expect(await service.status({ ...owner, flowId: flow.flowId })).toEqual({ status: "pending" });
@@ -292,17 +322,17 @@ describe("ModelScope key authorization service", () => {
         expect(credential.refreshToken).toBe("new-refresh");
         return 3;
       },
-      fetchImpl: async (input, init) => {
+      fetchImpl: fakeFetch(async ({ url: input, init }) => {
         expect(pathOf(input)).toBe("/modelscope/oauth/refresh");
         expect(JSON.parse(String(init?.body))).toEqual({ refreshToken: "old-refresh" });
-        return json(200, {
+        return jsonResponse({
           token: {
             accessToken: "new-access",
             refreshToken: "new-refresh",
             expiresAt: new Date(now + 3_600_000).toISOString(),
           },
         });
-      },
+      }).fetch,
     });
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: true },
@@ -326,14 +356,15 @@ describe("ModelScope key authorization service", () => {
         expect(options).toEqual({ expectedRefreshToken: "old-refresh" });
         return 0;
       },
-      fetchImpl: async () =>
-        json(200, {
+      fetchImpl: fakeFetch(async () =>
+        jsonResponse({
           token: {
             accessToken: "new-access",
             refreshToken: "new-refresh",
             expiresAt: new Date(now + 3_600_000).toISOString(),
           },
         }),
+      ).fetch,
     });
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: false },
@@ -354,7 +385,7 @@ describe("ModelScope key authorization service", () => {
       applyCredential: async () => {
         throw new Error("must not apply");
       },
-      fetchImpl: async () => json(502, { error: "bridge_down" }),
+      fetchImpl: fakeFetch(async () => jsonResponse({ error: "bridge_down" }, 502)).fetch,
     });
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: false },
@@ -373,7 +404,7 @@ describe("ModelScope key authorization service", () => {
         updatedAt: new Date(now - 1_000).toISOString(),
       }),
       applyCredential: async () => 1,
-      fetchImpl: async () => json(401, { error: "invalid_grant" }),
+      fetchImpl: fakeFetch(async () => jsonResponse({ error: "invalid_grant" }, 401)).fetch,
     });
     await expect(
       service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
@@ -393,10 +424,10 @@ describe("ModelScope key authorization service", () => {
         updatedAt: new Date(0).toISOString(),
       }),
       applyCredential: async () => 1,
-      fetchImpl: async () => {
+      fetchImpl: fakeFetch(async () => {
         attempts += 1;
-        return json(502, { error: "bridge_down" });
-      },
+        return jsonResponse({ error: "bridge_down" }, 502);
+      }).fetch,
     });
 
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
@@ -430,17 +461,17 @@ describe("ModelScope key authorization service", () => {
         updatedAt: new Date(now - 1_000).toISOString(),
       }),
       applyCredential: async () => 3,
-      fetchImpl: async () => {
+      fetchImpl: fakeFetch(async () => {
         attempts += 1;
-        if (refreshToken === "old-refresh") return json(502, { error: "bridge_down" });
-        return json(200, {
+        if (refreshToken === "old-refresh") return jsonResponse({ error: "bridge_down" }, 502);
+        return jsonResponse({
           token: {
             accessToken: "reauthorized-access",
             refreshToken,
             expiresAt: new Date(now + 3_600_000).toISOString(),
           },
         });
-      },
+      }).fetch,
     });
 
     await service.ensureFresh({ projectId: "p1", provider: "modelscope" });
@@ -467,14 +498,14 @@ describe("ModelScope key authorization service", () => {
         applied += 1;
         return 1;
       },
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) return started();
         if (pathOf(input).endsWith("/cancel")) {
           cancelled += 1;
-          return json(200, { ok: true });
+          return jsonResponse({ ok: true });
         }
-        return json(200, delivery);
-      },
+        return jsonResponse(delivery);
+      }).fetch,
     });
     const flow = await service.start(owner);
     service.cancel({ ...owner, flowId: flow.flowId });
@@ -492,7 +523,7 @@ describe("ModelScope key authorization service", () => {
       bridgeUrl: BRIDGE,
       now: () => now,
       applyCredential: async () => 1,
-      fetchImpl: async () => started(600_000),
+      fetchImpl: fakeFetch(async () => started(600_000)).fetch,
     });
     const flow = await service.start(owner);
     const gone = { status: 404, code: "modelscope_auth_flow_not_found" };
@@ -551,23 +582,20 @@ describe("ModelScope key authorization routes", () => {
     ).toBe(201);
 
     pollCount = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const path = pathOf(input);
-        // Every call carries the bridge's path prefix; a lost prefix is a 404 at the bridge.
-        if (path === "/modelscope/oauth/start") {
-          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          expect(body.client).toEqual({ id: "penguin-harness" });
-          return started();
-        }
-        if (path === "/modelscope/oauth/poll") {
-          pollCount += 1;
-          return pollCount === 1 ? json(200, { status: "pending" }) : json(200, delivery);
-        }
-        throw new Error(`Unexpected bridge request: ${path}`);
-      }),
-    );
+    stubFetch(({ url, init }) => {
+      const path = pathOf(url);
+      // Every call carries the bridge's path prefix; a lost prefix is a 404 at the bridge.
+      if (path === "/modelscope/oauth/start") {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(body.client).toEqual({ id: "penguin-harness" });
+        return started();
+      }
+      if (path === "/modelscope/oauth/poll") {
+        pollCount += 1;
+        return pollCount === 1 ? jsonResponse({ status: "pending" }) : jsonResponse(delivery);
+      }
+      throw new Error(`Unexpected bridge request: ${path}`);
+    });
   });
 
   afterEach(async () => {
@@ -582,11 +610,15 @@ describe("ModelScope key authorization routes", () => {
       await ownerClient.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
     const preset = before.models.filter((model) => model.provider === "modelscope");
-    expect(preset.map((model) => model.modelId)).toEqual([
-      "deepseek-ai/DeepSeek-V4.1-Flash",
-      "Qwen/Qwen3.8-27B",
-      "Qwen/Qwen3.8-Flash-Next",
-    ]);
+    // The group's rows are the catalog's ModelScope presets.
+    expect(preset).not.toEqual([]);
+    expect(preset.map((model) => model.modelId).sort()).toEqual(
+      presetModelEntries()
+        .filter((entry) => entry.provider === "modelscope")
+        .map((entry) => entry.model_id)
+        .sort(),
+    );
+    expect(preset.every((model) => model.clientType === "openai-responses")).toBe(true);
     expect(preset.every((model) => model.credential?.apiKeyMasked === undefined)).toBe(true);
 
     expect((await memberClient.post(`${base}/start`, {})).status).toBe(403);
