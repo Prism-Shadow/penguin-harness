@@ -210,11 +210,14 @@ router
     const user: UserInfo = { ...store.f.user };
     if (patch.displayName === null) delete user.displayName;
     else if (typeof patch.displayName === "string") user.displayName = patch.displayName;
-    if (patch.avatar === null) delete user.avatar;
-    else if (typeof patch.avatar === "string") user.avatar = patch.avatar;
+    // The demo keeps no image bytes: an upload only gives the account a revision, and
+    // GET /api/me/avatar (below) has nothing to serve for it.
+    if (patch.avatar === null) delete user.avatarRev;
+    else if (typeof patch.avatar === "string") user.avatarRev = String(patch.avatar.length);
     store.f.user = user;
     return { user };
   })
+  .get("/api/me/avatar", () => notFound("avatar"))
   .get("/api/me/prefs", ({ store }): PrefsResponse => ({ prefs: store.f.prefs }))
   .put("/api/me/prefs", ({ store, body }): PrefsResponse => {
     store.f.prefs = { ...store.f.prefs, ...record(body) };
