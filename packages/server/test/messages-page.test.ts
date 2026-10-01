@@ -653,4 +653,80 @@ describe("messages windowed reads", () => {
     expect(tail.prior.turns).toBe(0);
     expect(tail.messages).toEqual(await service.readMessages(P, A, S));
   });
+
+  it("names the model of the context a window starts in: the session_meta heading that shard, which the window does not hold", async () => {
+    // A Session that switched models: shard 1 on m1, closed by the switch's compaction; shard 2
+    // on another provider's m2, opened with its summary and continued for two turns.
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload({ model_id: "m1" })),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+      at(
+        "2026-07-20T10:02:00.000Z",
+        compactionBegin({ reason: "manual", mode: "summarize", context: 102, turns: 2 }),
+      ),
+      at("2026-07-20T10:02:01.000Z", requestBegin()),
+      at("2026-07-20T10:02:02.000Z", assistantText("[summary]s[/summary]")),
+      at("2026-07-20T10:02:03.000Z", requestEnd("completed")),
+      at(
+        "2026-07-20T10:02:04.000Z",
+        compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      ),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-20", S, 2, [
+      sessionMeta(metaPayload({ provider: "other", model_id: "m2" })),
+      at("2026-07-20T10:02:05.000Z", userText("[context_summary]\ns\n[/context_summary]")),
+      ...turn(3, 3, 3000),
+      ...turn(4, 4, 4000),
+    ]);
+    const M1 = { provider: "custom", modelId: "m1" };
+    const M2 = { provider: "other", modelId: "m2" };
+    const metas = (ms: OmniMessage[]) => ms.filter((m) => m.type === "session_meta");
+
+    // Partway into the context after the switch: no meta in the window, and it runs on m2.
+    const last = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    expect(userTexts(last.messages)).toEqual(["q4"]);
+    expect(metas(last.messages)).toEqual([]);
+    expect(last.contextModel).toEqual(M2);
+
+    // From that context's first prompt: still m2 — the records it opened with (its meta, the
+    // summary) close the unit before, so they belong to the window before.
+    const afterSwitch = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 });
+    expect(userTexts(afterSwitch.messages)).toEqual(["q3", "q4"]);
+    expect(metas(afterSwitch.messages)).toEqual([]);
+    expect(afterSwitch.contextModel).toEqual(M2);
+
+    // Partway into the context the switch closed: it starts on m1, and the m2 meta further
+    // down is what tells the switch.
+    const acrossSwitch = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 3 });
+    expect(userTexts(acrossSwitch.messages)[0]).toBe("q2");
+    expect(acrossSwitch.contextModel).toEqual(M1);
+    expect(
+      metas(acrossSwitch.messages).map((m) => (m.payload as SessionMetaPayload).model_id),
+    ).toEqual(["m2"]);
+
+    // The window before the switched context ends with that context's opening records.
+    const older = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(afterSwitch.before!)!,
+      limit: 1,
+    });
+    expect(userTexts(older.messages)[0]).toBe("q2");
+    expect(older.contextModel).toEqual(M1);
+    expect((older.messages.at(-2)!.payload as SessionMetaPayload).model_id).toBe("m2");
+
+    // A window that reaches the beginning holds the first meta itself and names the same model.
+    const whole = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 50 });
+    expect(whole.before).toBeUndefined();
+    expect(whole.contextModel).toEqual(M1);
+    // Nothing is repeated to say so: the windows still tile the transcript exactly.
+    const first = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(older.before!)!,
+      limit: 5,
+    });
+    expect([...first.messages, ...older.messages, ...afterSwitch.messages]).toEqual(
+      await service.readMessages(P, A, S),
+    );
+  });
 });

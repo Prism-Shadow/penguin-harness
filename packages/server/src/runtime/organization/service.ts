@@ -967,6 +967,36 @@ export class OrganizationService {
     return item;
   }
 
+  /**
+   * A Session's model moved (an in-session switch). When that Session is an employee's
+   * CURRENT desk the switch is the employee's: its chart entry takes the desk's model, so a
+   * desk renewed later opens on it (ticket Sessions read the desk itself, see
+   * `openTicketSession`). Any other Session — a ticket Session, a desk already replaced, one
+   * no organization owns — leaves the chart alone.
+   */
+  async deskModelChanged(
+    sessionId: string,
+    model: { provider: string; modelId: string },
+  ): Promise<void> {
+    const owner = this.deps.cache.ownerOfSession(sessionId);
+    if (owner === null || owner.kind !== "desk") return;
+    const { projectId, orgId, agentId } = owner;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await loadOrg(this.deps, projectId, orgId);
+      // An organization that needs repair is repaired by editing its files, not from here.
+      if (org === null || org.invalid !== undefined) return;
+      if (org.desks[agentId]?.sessionId !== sessionId) return;
+      const employee = org.byId.get(agentId);
+      if (!employee) return;
+      if (employee.model?.provider === model.provider && employee.model.modelId === model.modelId)
+        return;
+      await this.writeChart(
+        org,
+        org.chart.employees.map((e) => (e.agentId === agentId ? { ...e, model } : e)),
+      );
+    });
+  }
+
   /** Removes the employee from the tree (subordinates move up to its manager); the Agent and its sessions stay. */
   async leave(projectId: string, orgId: string, agentId: string): Promise<void> {
     await this.scheduler.withLock(projectId, orgId, async () => {
@@ -2798,7 +2828,20 @@ export class OrganizationModule {
     };
     const orgScheduler = new OrganizationScheduler(deps);
     this.orgScheduler = orgScheduler;
-    this.orgService = new OrganizationService(deps, orgScheduler);
+    const service = new OrganizationService(deps, orgScheduler);
+    this.orgService = service;
+    // An employee's model is its desk Session's: a switch made on a desk reaches the chart.
+    const unsubscribe = runner.onModelChanged((sessionId, model) => {
+      service.deskModelChanged(sessionId, model).catch((err: unknown) =>
+        deps.errors.record({
+          source: "organization",
+          err,
+          code: "org_desk_model_sync_failed",
+          ctx: { sessionId },
+        }),
+      );
+    });
+    effect(() => unsubscribe());
     // Only active while this App is; the successor's start() reconciles from the files.
     effect(() => orgScheduler.stop());
   }

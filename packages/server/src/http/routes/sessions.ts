@@ -956,6 +956,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
           sessionTokens: result.prior.sessionTokens,
           contextTokens: result.prior.contextTokens,
         },
+        ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
       };
       return c.json({
         messages: appendPendingInputs(result.messages, pendingInputs),

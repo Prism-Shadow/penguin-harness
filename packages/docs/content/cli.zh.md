@@ -386,7 +386,7 @@ penguin org finance [--period <YYYY-MM>] [--json]
 
 ### employee set
 
-`employee set` 只修改你给出的字段。`--workspace` 的用法与 `hire` 相同，但没有默认值：只有传了这个选项才改变分区。`--budget` 是月度预算，单位为美元，覆盖这名员工以及下面的所有人。模型对要么都给，要么都不给，与其他地方一致。
+`employee set` 只修改你给出的字段。`--workspace` 的用法与 `hire` 相同，但没有默认值：只有传了这个选项才改变分区。`--budget` 是月度预算，单位为美元，覆盖这名员工以及下面的所有人。模型对要么都给，要么都不给，与其他地方一致；它指定的是员工下一个工位开在哪个模型上，不改动已经开着的工位（见[工位会话](/company-mode#工位会话)）。
 
 ### calendar
 

@@ -86,6 +86,13 @@ id 使用小写 snake_case，长 2 到 64 个字符，以字母开头。按惯�
 
 员工一受雇就有一个常设的工位会话。日程项、频道里的提及和真人的消息都送到这里。工位负责调度，开工单会话去干活，自己不动手。服务端会为没有工位的员工补开一个，比如手工写进 `org_chart.yaml` 的员工，或者工位会话已删除的员工。
 
+**员工的模型就是它的工位会话所用的模型。** `org_chart.yaml` 里员工条目的 `model` 只决定工位开在哪个模型上，也就是受雇时和换工位时。换模型有两种方式：
+
+- 在工位对话里切换模型：用输入框工具栏的模型选择器，或 `penguin chat` 里的 `/switch-model`（见[切换模型](/chat#切换模型)）。工位保留原来的对话，服务端把新模型写回员工条目，之后换工位也开在它上面。
+- 在工位对话里用 `/model`。它先写员工条目，再在这个模型上开一个新工位。
+
+工单会话开在员工工位此刻所用的模型上。只改员工条目（`penguin org employee set --model-id <id> --provider <p>`）不会改动已经开着的工位和它的工单会话，要到换工位时才生效。
+
 ### 工单
 
 工单文件先是 YAML frontmatter（`title`、`status`、`owner`、`parent`、`notify`、`priority`、`due`、`blocked`、`blocked_by`、`sessions`、`history`），后面是四节：`## Goal`、`## Acceptance criteria`、`## Progress` 和 `## Result`。文件所在的列目录就是它的状态。文件名里的 slug 是用连字符连接的小写英文单词。

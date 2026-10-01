@@ -36,6 +36,10 @@ export interface OrgTaskRunner {
  */
 export interface OrgRunsShape extends OrgTaskRunner {
   invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
+  onModelChanged(
+    listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
+  ): () => void;
 }
 
 /** Session creation (desk and ticket sessions are ordinary sessions of the employee's Agent). */

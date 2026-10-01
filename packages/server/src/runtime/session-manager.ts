@@ -1448,13 +1448,27 @@ export class SessionManager {
     });
   }
 
+  /** Who is told when a Session's model moves (see `onModelChanged`). */
+  private readonly modelListeners = new Set<(sessionId: string, model: ModelRefDto) => void>();
+
+  /**
+   * Subscribes to a Session's model moving: an in-session switch completing, or a row brought
+   * back in step with its Trace when the Session loads. The listener runs once the entry and
+   * the row carry the new pair. Returns the unsubscribe. Company mode listens: an employee's
+   * model is its desk Session's.
+   */
+  onModelChanged(listener: (sessionId: string, model: ModelRefDto) => void): () => void {
+    this.modelListeners.add(listener);
+    return () => void this.modelListeners.delete(listener);
+  }
+
   /**
    * Moves the entry — and the row it caches into — to the model the runtime reports itself on,
    * when that differs: the pair the next drive attributes usage to, and the one
    * `GET /sessions/:id` describes. A runtime that reports none (test fakes) leaves the entry
    * alone. The row write is guarded like the other bookkeeping writes (see `touchRow`): a
    * switch must not be stranded mid-drive by a closed DB handle, and the entry is right either
-   * way.
+   * way. The same holds for whoever listens: a listener that throws is recorded, not rethrown.
    */
   private syncEntryModel(entry: RuntimeEntry): void {
     const model = runtimeModelOf(entry.session);
@@ -1462,6 +1476,7 @@ export class SessionManager {
     if (entry.provider === model.provider && entry.modelId === model.modelId) return;
     entry.provider = model.provider;
     entry.modelId = model.modelId;
+    const ctx = { projectId: entry.projectId, agentId: entry.agentId, sessionId: entry.sessionId };
     try {
       this.deps.sessions.updateModel(entry.sessionId, model.provider, model.modelId);
     } catch (err) {
@@ -1471,9 +1486,21 @@ export class SessionManager {
       this.deps.errors?.record({
         source: "session",
         err,
-        ctx: { projectId: entry.projectId, agentId: entry.agentId, sessionId: entry.sessionId },
+        ctx,
         code: "session_model_update_failed",
       });
+    }
+    for (const listener of this.modelListeners) {
+      try {
+        listener(entry.sessionId, model);
+      } catch (err) {
+        this.deps.errors?.record({
+          source: "session",
+          err,
+          ctx,
+          code: "session_model_listener_failed",
+        });
+      }
     }
   }
 
@@ -2474,6 +2501,7 @@ export abstract class Sessions extends Interface<
     | "startGoal"
     | "startCompact"
     | "startSwitch"
+    | "onModelChanged"
     | "decideApproval"
     | "steer"
     | "recallSteering"
