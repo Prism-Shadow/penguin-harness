@@ -72,6 +72,7 @@ import { loadPluginHost } from "../plugin/loader.js";
 import { useInstalledPluginPrefix, usePushedPluginLibrary } from "@prismshadow/penguin-core";
 import { pluginsPrefix } from "../plugin/install.js";
 import { pushedLibraryDir } from "./asset-archives.js";
+import { bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
 import { migrate } from "../db/migrations.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -325,6 +326,10 @@ async function createInner(
     for (const entry of injected.entries().values()) plugins.use(entry);
   }
 
+  // Installed plugins this platform cannot satisfy are left out of this generation rather
+  // than refusing the push (plugin/unsatisfied.ts); the host keeps them for the next one.
+  const loaded = [...plugins.entries().values()];
+  let leftOut: Map<string, string>;
   let tree: ModuleTree;
   let business: ModuleTree | null = null;
   let terminals: TerminalManager;
@@ -335,26 +340,30 @@ async function createInner(
     console.warn("[platform] bare kernel: terminals only, no business surface");
     terminals = new TerminalManager(ctx.resources, { assets: () => null });
     terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
-    tree = await bootModules(bareTree([...plugins.modules()], plugins.replacements()), {
-      ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
-      resources: ctx.resources,
-      parked: parkedModules(context),
-    });
+    ({ tree, left: leftOut } = await bootWithoutUnsatisfied(loaded, (kept) =>
+      bootModules(bareTree(kept.modules, kept.replacements), {
+        ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
+        resources: ctx.resources,
+        parked: parkedModules(context),
+      }),
+    ));
   } else {
     // THE MODULE TREE (see ../platform.ts): every business service, every route
     // group and the terminal manager are modules wired by their manifests — checked as
     // data before any create() runs, created in dependency order. Sandbox backends the
     // plugin host registered enter the same tree as one contributing module.
-    tree = await bootModules(
-      platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements(), reassemble),
-      {
+    ({ tree, left: leftOut } = await bootWithoutUnsatisfied(loaded, (kept) =>
+      bootModules(platformDef(caps, adoptable, kept.modules, kept.replacements, reassemble), {
         ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
         resources: ctx.resources,
         parked: parkedModules(context),
-      },
-    );
+      }),
+    ));
     business = tree;
     terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
+  }
+  for (const [specifier, why] of leftOut) {
+    console.warn(`[platform] plugin '${specifier}' left out of this generation: ${why}`);
   }
   // Ordinary code over this App's own auth: the same object the business routes
   // authenticate with. A bare kernel has none — terminals stay fail-closed.
