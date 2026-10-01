@@ -155,9 +155,8 @@ const ICONS = new Set(["GlyphIcon", "StatusIcon"]);
 describe("plugins page buttons", () => {
   it("every icon button shows its copy beside the icon, not only in aria-label", () => {
     const withIcon = buttons().filter((b) => openingsUnder(b).some((el) => ICONS.has(tagOf(el))));
-    // The header's settings gear, the library card's three, the module row's three, and the
-    // install dialog's three.
-    expect(withIcon.length).toBeGreaterThanOrEqual(10);
+    // The header's settings gear, the library card's three, the module row's three.
+    expect(withIcon.length).toBeGreaterThanOrEqual(7);
     for (const b of withIcon) {
       const label = attribute(b.openingElement, "aria-label") ?? b.openingElement.getText();
       expect(visibleCopy(b), `icon-only button: ${label}`).toBe(true);

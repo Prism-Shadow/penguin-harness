@@ -1532,7 +1532,6 @@ function InstallRow({
           aria-label={`${S.skills.updateAction} ${agentId}`}
           onClick={onUpdate}
         >
-          <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.inlineGlyph} />
           {S.skills.updateAction}
         </Button>
       )}
@@ -1546,8 +1545,7 @@ function InstallRow({
           onClick={() => onToggle(false)}
         >
           <span className="group-hover:hidden">{S.skills.installed}</span>
-          <span className="hidden items-center gap-1 text-red-600 group-hover:inline-flex dark:text-red-400">
-            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.inlineGlyph} />
+          <span className="hidden text-red-600 group-hover:inline dark:text-red-400">
             {S.skills.uninstall}
           </span>
         </Button>
@@ -1558,7 +1556,6 @@ function InstallRow({
           aria-label={`${S.skills.install} ${agentId}`}
           onClick={() => onToggle(true)}
         >
-          <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.inlineGlyph} />
           {S.skills.install}
         </Button>
       )}
