@@ -74,7 +74,7 @@ export function DeployableRow({
   node: ProposalGraphNode;
   scripts: ProposalDeployScript[] | null;
   scriptsError: string | null;
-  onPick: (script: ProposalDeployScript) => void;
+  onPick: (script: ProposalDeployScript, withArgs: boolean) => void;
   children: ReactNode;
 }) {
   const t = S.company.proposals.graph.deploy;
@@ -134,7 +134,7 @@ export function DeployableRow({
               disabled
             />
           ) : (
-            scripts.map((s) => (
+            scripts.flatMap((s) => [
               <MenuItem
                 key={s.id}
                 label={t.to(s.id)}
@@ -142,10 +142,18 @@ export function DeployableRow({
                 data-tooltip={s.description || s.command.join(" ")}
                 onSelect={() => {
                   close();
-                  onPick(s);
+                  onPick(s, false);
                 }}
-              />
-            ))
+              />,
+              <MenuItem
+                key={`${s.id}+args`}
+                label={t.toWithArgs(s.id)}
+                onSelect={() => {
+                  close();
+                  onPick(s, true);
+                }}
+              />,
+            ])
           )}
         </Menu>
       </Dropdown>
@@ -159,12 +167,21 @@ export function DeployDialog({
   orgId,
   node,
   script,
+  withArgs,
+  runId: knownRunId,
+  onRun,
   onClose,
 }: {
   projectId: string;
   orgId: string;
   node: ProposalGraphNode;
   script: ProposalDeployScript;
+  /** Ask for extra arguments first; otherwise the deploy starts as the dialog opens. */
+  withArgs: boolean;
+  /** A run already started (reopened from the corner dock): follow it instead of starting one. */
+  runId: string | null;
+  /** The run this dialog started, and every status it reads, for the dock. */
+  onRun: (run: ProposalDeployRun) => void;
   onClose: () => void;
 }) {
   const t = S.company.proposals.graph.deploy;
@@ -172,6 +189,10 @@ export function DeployDialog({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<ProposalDeployRun | null>(null);
+  const [followId, setFollowId] = useState<string | null>(knownRunId);
+  // The parent's callback changes every render; the effects below must not restart for it.
+  const onRunRef = useRef(onRun);
+  onRunRef.current = onRun;
   const [output, setOutput] = useState("");
   const outRef = useRef<HTMLPreElement | null>(null);
 
@@ -185,7 +206,11 @@ export function DeployDialog({
         head: node.head,
         args: splitArgs(args),
       });
-      if ("run" in res) setRun(res.run);
+      if ("run" in res) {
+        setRun(res.run);
+        setFollowId(res.run.id);
+        onRunRef.current(res.run);
+      }
     } catch (e) {
       setError(apiErrorText(e));
     } finally {
@@ -193,8 +218,16 @@ export function DeployDialog({
     }
   }, [projectId, orgId, script.id, node.number, node.head, args]);
 
-  // Follow the run while it is running; a closed dialog stops asking.
-  const runId = run?.id ?? null;
+  // A plain deploy starts as the dialog opens — once, and never for a run reopened from the dock.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (withArgs || knownRunId !== null || autoStarted.current) return;
+    autoStarted.current = true;
+    void start();
+  }, [withArgs, knownRunId, start]);
+
+  // Follow the run while it is running; a closed dialog stops asking (the dock takes over).
+  const runId = followId;
   useEffect(() => {
     if (runId === null) return;
     let alive = true;
@@ -207,6 +240,7 @@ export function DeployDialog({
         from = res.next;
         if (res.output !== "") setOutput((o) => o + res.output);
         setRun(res.run);
+        onRunRef.current(res.run);
         if (res.run.status === "running") timer = setTimeout(() => void tick(), POLL_MS);
       } catch (e) {
         if (alive) setError(apiErrorText(e));
@@ -227,7 +261,7 @@ export function DeployDialog({
   const ref = `#${node.number}`;
   const head = node.head.slice(0, 12);
   const status =
-    run === null ? null : run.status === "running" ? (
+    run === null || run.status === "running" ? (
       <span className="text-gray-500 dark:text-gray-400">{t.running}</span>
     ) : run.status === "succeeded" ? (
       <span className={toneInk.success}>{t.succeeded}</span>
@@ -244,7 +278,7 @@ export function DeployDialog({
       onClose={onClose}
       widthClass="sm:max-w-2xl"
       footer={
-        run === null ? (
+        run === null && withArgs && knownRunId === null ? (
           <>
             <Button size="sm" variant="secondary" onClick={onClose}>
               {t.cancel}
@@ -268,7 +302,7 @@ export function DeployDialog({
             {[...script.command, ...splitArgs(args)].join(" ")}
           </code>
         </p>
-        {run === null ? (
+        {run === null && withArgs && knownRunId === null ? (
           <Input
             size="sm"
             label={t.args}
@@ -286,7 +320,7 @@ export function DeployDialog({
             >
               {output === "" ? t.noOutput : output}
             </pre>
-            {run.status === "running" && (
+            {(run === null || run.status === "running") && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{t.keepsRunning}</p>
             )}
           </>

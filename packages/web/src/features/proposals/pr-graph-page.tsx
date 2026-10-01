@@ -22,11 +22,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import type {
-  ProposalDeployScript,
-  ProposalGraphNode,
-  ProposalGraphResponse,
-} from "@prismshadow/penguin-server/api";
+import type { ProposalGraphNode, ProposalGraphResponse } from "@prismshadow/penguin-server/api";
 import { Button, ICON_GAP, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -59,6 +55,7 @@ import {
   UnplacedSection,
 } from "./pr-graph-rows";
 import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy";
+import { DeployDock, useDeployJobs } from "./pr-graph-deploy-dock";
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
 
 /** Reads of a graph the organization's machine is still building, and the pause between them. */
@@ -146,16 +143,14 @@ export function GraphPage() {
 
   const openProposal = (n: number) => navigate(orgProposalPath(projectId, orgId, n));
   const deployScripts = useDeployScripts(projectId, orgId);
-  const [deploying, setDeploying] = useState<{
-    node: ProposalGraphNode;
-    script: ProposalDeployScript;
-  } | null>(null);
+  const deploys = useDeployJobs(projectId, orgId);
+  const openJob = deploys.jobs.find((j) => j.key === deploys.open) ?? null;
   const deployable = (node: ProposalGraphNode, row: ReactNode) => (
     <DeployableRow
       node={node}
       scripts={deployScripts.scripts}
       scriptsError={deployScripts.error}
-      onPick={(script) => setDeploying({ node, script })}
+      onPick={(script, withArgs) => deploys.start(node, script, withArgs)}
     >
       {row}
     </DeployableRow>
@@ -290,15 +285,28 @@ export function GraphPage() {
           <UnplacedSection graph={graph} focus={focus} onOpenProposal={openProposal} />
         </div>
       )}
-      {deploying !== null && (
+      {openJob !== null && (
         <DeployDialog
+          key={openJob.key}
           projectId={projectId}
           orgId={orgId}
-          node={deploying.node}
-          script={deploying.script}
-          onClose={() => setDeploying(null)}
+          node={openJob.node}
+          script={openJob.script}
+          withArgs={openJob.withArgs}
+          runId={openJob.runId}
+          onRun={(run) => deploys.update(openJob.key, run)}
+          onClose={deploys.close}
         />
       )}
+      <DeployDock
+        projectId={projectId}
+        orgId={orgId}
+        jobs={deploys.jobs}
+        open={deploys.open}
+        onOpen={deploys.setOpen}
+        onStatus={deploys.update}
+        onDismiss={deploys.dismiss}
+      />
     </OrgPage>
   );
 }
