@@ -13,11 +13,9 @@ import type {
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
-import { Badge } from "../../components/ui/badge";
-import { OrgSection } from "../company/org-layout";
+import { Badge, ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../company/shared";
 import { PROPOSAL_STATUS_TONE } from "./proposals-model";
 
@@ -54,8 +52,8 @@ function StatusPill({ status }: { status: ProposalStatus }) {
 export function Mark({ tone, children, title }: { tone: Tone; children: string; title?: string }) {
   return (
     <span
-      title={title}
-      className={`shrink-0 rounded px-1 text-[10px] font-medium ${toneSurface[tone]}`}
+      data-tooltip={title}
+      className={`shrink-0 rounded px-1 text-xs font-medium ${toneSurface[tone]}`}
     >
       {children}
     </span>
@@ -98,7 +96,7 @@ export function NodeRow({
           href={node.url}
           target="_blank"
           rel="noreferrer"
-          title={t.openPr}
+          data-tooltip={t.openPr}
           className="shrink-0 font-mono text-gray-500 hover:underline dark:text-gray-400"
         >
           #{node.number}
@@ -117,7 +115,7 @@ export function NodeRow({
             <StatusPill status={node.proposal.status} />
           </>
         )}
-        <span className="min-w-0 truncate" title={node.title}>
+        <span className="min-w-0 truncate" data-tooltip={node.title}>
           {node.title}
         </span>
         {graph.top === node.number && <Mark tone="success">{t.top}</Mark>}
@@ -141,15 +139,15 @@ export function NodeRow({
         )}
       </div>
       <div
-        className={`flex min-w-0 items-center ${ICON_GAP.row} text-[11px] text-gray-500 dark:text-gray-400`}
+        className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs text-gray-500 dark:text-gray-400`}
       >
-        <span className="min-w-0 truncate font-mono" title={`${node.branch} → ${node.base}`}>
+        <span className="min-w-0 truncate font-mono" data-tooltip={`${node.branch} → ${node.base}`}>
           {node.branch}
         </span>
         {node.ahead !== null && (
           <span
             className="shrink-0 font-mono tabular-nums"
-            title={t.aheadTitle(node.ahead, node.base)}
+            data-tooltip={t.aheadTitle(node.ahead, node.base)}
           >
             {t.ahead(node.ahead)}
           </span>
@@ -161,7 +159,7 @@ export function NodeRow({
             href={o.url}
             target="_blank"
             rel="noreferrer"
-            title={t.originTitle(o.origin, o.number, relationWord(o.relation))}
+            data-tooltip={t.originTitle(o.origin, o.number, relationWord(o.relation))}
             className={`shrink-0 font-mono hover:underline ${toneInk[RELATION_TONE[o.relation]]}`}
           >
             {o.origin}#{o.number} {relationWord(o.relation)}
@@ -188,7 +186,7 @@ export function NodeListSection({
 }) {
   if (nodes.length === 0) return null;
   return (
-    <OrgSection title={title} count={nodes.length} info={info}>
+    <RuledSection title={title} count={nodes.length} info={info}>
       <ul className="divide-y divide-gray-100 dark:divide-gray-800">
         {nodes.map((node) => (
           <li key={node.number} className="flex items-center py-1.5 pr-3">
@@ -196,7 +194,7 @@ export function NodeListSection({
           </li>
         ))}
       </ul>
-    </OrgSection>
+    </RuledSection>
   );
 }
 
@@ -213,7 +211,7 @@ export function UnplacedSection({
   const t = S.company.proposals.graph;
   if (graph.unplaced.length === 0) return null;
   return (
-    <OrgSection title={t.unplaced} count={graph.unplaced.length} info={t.unplacedHint}>
+    <RuledSection title={t.unplaced} count={graph.unplaced.length} info={t.unplacedHint}>
       <ul className="divide-y divide-gray-100 dark:divide-gray-800">
         {graph.unplaced.map((u) => (
           <li
@@ -231,7 +229,7 @@ export function UnplacedSection({
               #{u.number}
             </TitleButton>
             <StatusPill status={u.status} />
-            <span className="min-w-0 truncate" title={u.title}>
+            <span className="min-w-0 truncate" data-tooltip={u.title}>
               {u.title}
             </span>
             <Mark tone={u.reason === "counterpart" ? "attention" : "muted"}>
@@ -246,7 +244,7 @@ export function UnplacedSection({
               href={u.implPr}
               target="_blank"
               rel="noreferrer"
-              title={u.implPr}
+              data-tooltip={u.implPr}
               className="ml-auto shrink-0 truncate pl-3 text-gray-400 hover:underline dark:text-gray-500"
             >
               {u.implPr.replace(/^https?:\/\/github\.com\//, "")}
@@ -254,6 +252,6 @@ export function UnplacedSection({
           </li>
         ))}
       </ul>
-    </OrgSection>
+    </RuledSection>
   );
 }

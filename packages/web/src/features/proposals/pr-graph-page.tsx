@@ -17,16 +17,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
+import { Button, ICON_GAP, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
-import { ICON_GAP } from "../../lib/icon-scale";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
 import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, TitleButton } from "../company/shared";
@@ -166,26 +164,26 @@ export function GraphPage() {
               </span>
             ))}
             <span aria-hidden="true">·</span>
-            <span title={formatDateTime(graph.checkedAt)}>
+            <span data-tooltip={formatDateTime(graph.checkedAt)}>
               {t.checkedAt(formatRelativeShort(graph.checkedAt, locale))}
             </span>
           </p>
 
           {graph.errors.length > 0 && (
-            <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>
+            <NoticeStrip tone="attention" className="rounded-md border px-3 py-2 text-xs">
               <p>{t.partial}</p>
               <ul className="mt-1 list-disc pl-5">
                 {graph.errors.map((e) => (
                   <li key={e}>{e}</li>
                 ))}
               </ul>
-            </div>
+            </NoticeStrip>
           )}
 
           {focus !== null && focusRow < 0 && !focusUnplaced && (
-            <p className={`rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}>
+            <NoticeStrip as="p" tone="neutral" className="rounded-md border px-3 py-2 text-xs">
               {t.focusMissing(focus)}
-            </p>
+            </NoticeStrip>
           )}
 
           {graph.nodes.length === 0 && <OrgEmptyLine>{t.empty}</OrgEmptyLine>}
@@ -297,7 +295,7 @@ function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
       <Mark tone="muted">{t.base}</Mark>
       <span className="font-mono font-medium">{graph.base.branch}</span>
       {graph.base.head !== null && (
-        <span className="font-mono text-gray-400 dark:text-gray-500" title={graph.base.head}>
+        <span className="font-mono text-gray-400 dark:text-gray-500" data-tooltip={graph.base.head}>
           {graph.base.head.slice(0, 9)}
         </span>
       )}
