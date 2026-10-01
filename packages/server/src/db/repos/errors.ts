@@ -81,13 +81,38 @@ export interface ErrorCodeCount {
   count: number;
 }
 
-/** One error summary row (a row in the error panel's table). */
+/**
+ * One row of the error panel's table: the records of one calendar day that share a source,
+ * code, kind and message (see ErrorsRepo.recent).
+ */
 export interface ErrorItem {
+  /** The latest of the records this row stands for. */
   ts: string;
   source: string;
   code: string;
   kind: string;
   message: string;
+  /** How many records this row stands for. */
+  count: number;
+  /** The earliest of them (equal to `ts` for a single record). */
+  firstTs: string;
+}
+
+/**
+ * The calendar day a record falls on in the table: the viewer's, from their offset east of UTC
+ * applied to `ts`, or — with no offset given — the `date` column, which is the server's own.
+ * The offset is bound rather than spliced in, as the modifier `date()` takes.
+ */
+function dayOf(utcOffsetMinutes: number | undefined): {
+  sql: string;
+  params: Record<string, string>;
+} {
+  if (utcOffsetMinutes === undefined) return { sql: "date", params: {} };
+  const sign = utcOffsetMinutes >= 0 ? "+" : "-";
+  return {
+    sql: "date(ts, :dayShift)",
+    params: { dayShift: `${sign}${Math.abs(utcOffsetMinutes)} minutes` },
+  };
 }
 
 @Component()
@@ -210,23 +235,59 @@ export class ErrorsRepo implements ErrorLog {
     };
   }
 
-  /** The most recent `limit` entries (reverse chronological order). */
-  recent(projectId: string, f: ErrorFilter = {}, limit = 20, offset = 0): ErrorItem[] {
+  /**
+   * One page of the table, newest first: the records of one calendar day that share a source,
+   * code, kind and message fold into a single row, with how many there were and the first and
+   * last time among them.
+   *
+   * A failure that comes back all day — a connection that drops and recovers every few
+   * minutes, a send that fails whenever it is asked — reads as one line saying how often,
+   * rather than a page of the same line; `summary` and `topCode` still count records, which is
+   * what measures how often. The day is `utcOffsetMinutes`'s (see dayOf), so the boundary falls
+   * at the viewer's midnight. Rows are ordered by their newest record, and a page is `limit`
+   * rows, not records.
+   */
+  recent(
+    projectId: string,
+    f: ErrorFilter = {},
+    limit = 20,
+    offset = 0,
+    utcOffsetMinutes?: number,
+  ): ErrorItem[] {
     const { where, params } = this.conds(projectId, f);
+    const day = dayOf(utcOffsetMinutes);
     const rows = this.db
       .prepare(
-        `SELECT ts, source, code, kind, message
+        `SELECT MAX(ts) AS ts, MIN(ts) AS first_ts, COUNT(*) AS count, source, code, kind, message
          FROM error_records WHERE ${where}
-         ORDER BY id DESC LIMIT :limit OFFSET :offset`,
+         GROUP BY ${day.sql}, source, code, kind, message
+         ORDER BY MAX(id) DESC LIMIT :limit OFFSET :offset`,
       )
-      .all({ ...params, limit, offset });
+      .all({ ...params, ...day.params, limit, offset });
     return rows.map((r) => ({
       ts: r.ts as string,
       source: r.source as string,
       code: r.code as string,
       kind: r.kind as string,
       message: r.message as string,
+      count: r.count as number,
+      firstTs: r.first_ts as string,
     }));
+  }
+
+  /** How many rows `recent` pages through for the same filter and day — what a pager counts. */
+  rowCount(projectId: string, f: ErrorFilter = {}, utcOffsetMinutes?: number): number {
+    const { where, params } = this.conds(projectId, f);
+    const day = dayOf(utcOffsetMinutes);
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM (
+           SELECT 1 FROM error_records WHERE ${where}
+           GROUP BY ${day.sql}, source, code, kind, message
+         )`,
+      )
+      .get({ ...params, ...day.params })!;
+    return row.n as number;
   }
 
   /**

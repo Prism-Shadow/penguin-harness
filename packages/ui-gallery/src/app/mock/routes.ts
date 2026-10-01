@@ -1223,7 +1223,11 @@ router
     const items = store.f.usageErrors.filter((e) => !kind || e.kind === kind);
     const offset = Number(query.get("offset")) || 0;
     const limit = Number(query.get("limit")) || items.length;
-    return { items: items.slice(offset, offset + limit), total: items.length };
+    return {
+      items: items.slice(offset, offset + limit),
+      total: items.reduce((n, e) => n + e.count, 0),
+      rows: items.length,
+    };
   })
   .delete("/api/projects/:projectId/usage/errors", ({ store }): UsageErrorsClearResponse => {
     const deleted = store.f.usageErrors.length;
@@ -1353,7 +1357,8 @@ router
       byAgentSeries: [...perAgent.values()],
       byModelSeries: [...perModel.values()],
       errors: {
-        total: store.f.usageErrors.length,
+        total: store.f.usageErrors.reduce((n, e) => n + e.count, 0),
+        rows: store.f.usageErrors.length,
         unexpected,
         topCode: store.f.usageErrors[0]
           ? {

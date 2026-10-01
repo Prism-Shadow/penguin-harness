@@ -2,8 +2,10 @@
  * The pinned sidebar's frame: one column, top to bottom — an optional mode switch, the switcher
  * row (the fold button and the Project or organization switcher), one pinned entry, the scroll
  * area, and the account row at the foot. The pieces the scroll area is built from are here too:
- * the page nav that folds away under a slim toggle, the list's header with its label and its
- * controls, the controls themselves, and the switcher's and the account's buttons.
+ * the page nav — pinned entries that always show, then the ones that fold away under a slim
+ * toggle — its entries with their pin toggles and the areas a dragged entry can land in, the
+ * list's header with its label and its controls, the controls themselves, and the switcher's and
+ * the account's buttons.
  *
  * The page nav and the list scroll together, so the nav rides up as the list is scrolled: the
  * scroll area is the column's only shrinkable block, and a column of fixed chrome taller than a
@@ -16,14 +18,21 @@
  * washes of the ink (`NAV_FILL`). The frame paints no background of its own: the column that holds
  * it does (`AppShell`'s navigation slot, or the phone's drawer).
  */
-import type { ReactNode, Ref } from "react";
+import type {
+  DragEvent as ReactDragEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+  Ref,
+} from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { ChevronFlip } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { ChevronDown } from "../../icons/marks/marks";
 import { Text } from "../../content/typography/typography";
-import { NAV_FILL } from "../../navigation/nav-list/nav-list";
+import { NAV_FILL, NavRow } from "../../navigation/nav-list/nav-list";
+import type { NavRowProps } from "../../navigation/nav-list/nav-list";
+import { ROW_ACTION_GLYPH, ROW_HOVER_BUTTON } from "../session-row/session-row";
 
 /**
  * A list-header control's glyph: one step under the icon-button rung, since the control's square
@@ -105,19 +114,58 @@ export function SidebarFrame({
 }
 
 /**
- * The page nav: its rows in a group that folds away, and under them a slim, full-width toggle
- * whose caret points up while the rows show (fold them) and down once they are folded (the way
- * back). The fold slides: the group's row track tweens between `0fr` and `1fr` under the theme's
- * layout motion while the rows fade, and the list below glides up with it. The rows stay mounted
- * for the tween but turn inert while folded, so a zero-height row is never focusable or
- * clickable. The toggle's resting band is the column's one fill at rest: it reads as the seam
- * between the nav and the list below it.
+ * A nav area a dragged entry can be dropped into: the caller's drag handlers, and whether a drag
+ * the area would take is over it now, which lays the accent ring over the area.
+ */
+export interface SidebarDropTarget {
+  /** A drag this area would take is over it. */
+  over: boolean;
+  onDragOver: (e: ReactDragEvent) => void;
+  onDragLeave: (e: ReactDragEvent) => void;
+  onDrop: (e: ReactDragEvent) => void;
+}
+
+const dropHandlers = (drop: SidebarDropTarget | undefined) =>
+  drop === undefined
+    ? {}
+    : { onDragOver: drop.onDragOver, onDragLeave: drop.onDragLeave, onDrop: drop.onDrop };
+
+/**
+ * The ring over the area a drop would land in. It is laid over the area's `relative` box rather
+ * than drawn by the box itself, because the rows paint over their container and a selected row's
+ * fill would hide an outline of the box's own.
+ */
+function DropRing() {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-10 rounded-md ring-1 ring-inset ring-accent"
+    />
+  );
+}
+
+/**
+ * The page nav: the pinned entries, which always show, then the rest in a group that folds away,
+ * and under them a slim, full-width toggle whose caret points up while the rows show (fold them)
+ * and down once they are folded (the way back). The fold slides: the group's row track tweens
+ * between `0fr` and `1fr` under the theme's layout motion while the rows fade, and the list below
+ * glides up with it. The rows stay mounted for the tween but turn inert while folded, so a
+ * zero-height row is never focusable or clickable. The toggle's resting band is the column's one
+ * fill at rest: it reads as the seam between the nav and the list below it.
+ *
+ * With nothing to fold (`foldable={false}`) neither the group nor its toggle is drawn. With
+ * `drop`, the group and its toggle band are one drop target, ringed while a drag it would take is
+ * over them.
  */
 export function SidebarNavGroup({
   collapsed,
   onToggle,
   expandLabel,
   collapseLabel,
+  pinned,
+  foldable = true,
+  drop,
+  toggleRef,
   children,
 }: {
   collapsed: boolean;
@@ -126,36 +174,157 @@ export function SidebarNavGroup({
   expandLabel: string;
   /** The toggle's name while they show. */
   collapseLabel: string;
+  /** The entries that show whatever the fold, above it (a `SidebarNavArea`). */
+  pinned?: ReactNode;
+  /** Whether there is a group to fold: false draws neither the group nor its toggle. */
+  foldable?: boolean;
+  /** The group and its toggle band as a drop target. */
+  drop?: SidebarDropTarget;
+  /** The toggle's node: where the caller sends focus that cannot land in the folded group. */
+  toggleRef?: Ref<HTMLButtonElement>;
   children: ReactNode;
 }) {
   const label = collapsed ? expandLabel : collapseLabel;
   return (
     <nav className="space-y-px">
-      <div
-        data-layout-motion
-        className={`grid ${collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
-      >
-        <div className="overflow-hidden" inert={collapsed}>
+      {pinned}
+      {foldable && (
+        <div {...dropHandlers(drop)} className="relative flex flex-col gap-px">
           <div
-            className={`space-y-px transition-opacity duration-200 ${
-              collapsed ? "opacity-0" : "opacity-100"
-            }`}
+            data-layout-motion
+            className={`grid ${collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
           >
-            {children}
+            <div className="overflow-hidden" inert={collapsed}>
+              <div
+                className={`space-y-px transition-opacity duration-200 ${
+                  collapsed ? "opacity-0" : "opacity-100"
+                }`}
+              >
+                {children}
+              </div>
+            </div>
           </div>
+          <button
+            ref={toggleRef}
+            type="button"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+            aria-label={label}
+            data-tooltip={label}
+            className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-colors duration-150 hover:bg-fg/10 hover:text-fg`}
+          >
+            <ChevronFlip up={!collapsed} />
+          </button>
+          {drop?.over === true && <DropRing />}
         </div>
-      </div>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={!collapsed}
-        aria-label={label}
-        data-tooltip={label}
-        className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-colors duration-150 hover:bg-fg/10 hover:text-fg`}
-      >
-        <ChevronFlip up={!collapsed} />
-      </button>
+      )}
     </nav>
+  );
+}
+
+/**
+ * A run of nav entries outside the fold — the pinned ones — as the place a dragged entry can
+ * land: the caller's `drop` wiring, and the ring while a drag it would take is over it. `reserve`
+ * keeps a row's height while the run is empty, so a drag still has somewhere to land.
+ */
+export function SidebarNavArea({
+  drop,
+  reserve = false,
+  children,
+}: {
+  drop?: SidebarDropTarget;
+  /** Hold a row's height with no rows in it. */
+  reserve?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      {...dropHandlers(drop)}
+      className={`relative flex flex-col gap-px${reserve ? " min-h-8" : ""}`}
+    >
+      {children}
+      {drop?.over === true && <DropRing />}
+    </div>
+  );
+}
+
+/** A nav entry's pin toggle, as its caller describes it. */
+export interface SidebarNavPin {
+  /** The entry is pinned: the tack is filled. */
+  pinned: boolean;
+  /** The toggle's accessible name, the same either way: `aria-pressed` carries the state. */
+  label: string;
+  /** The hint: the move a click makes ("Pin" while unpinned, "Unpin" while pinned). */
+  tooltip: string;
+  onToggle: (e: ReactMouseEvent<HTMLButtonElement>) => void;
+  /** The toggle's node: a caller moving focus onto it once the entry has changed area reads it. */
+  buttonRef?: Ref<HTMLButtonElement>;
+}
+
+export interface SidebarNavEntryProps extends Omit<
+  NavRowProps,
+  "badge" | "surface" | "groupHover" | "draggable"
+> {
+  pin: SidebarNavPin;
+  /** A mark at the row's end (an update dot) that gives way to the toggle wherever it shows. */
+  badge?: ReactNode;
+  /** The whole row is a drag handle; the caller wires the handlers below. */
+  draggable?: boolean;
+  onDragStart?: (e: ReactDragEvent) => void;
+  onDragEnd?: () => void;
+}
+
+/**
+ * A page entry on the navigation column that the reader can pin: the column's `NavRow`, with a
+ * pin toggle over the row's end (a button cannot sit inside the row's link, so the toggle is laid
+ * over the link's last pixels and the link keeps the whole row as its hit area). The toggle is the
+ * conversation rows' hover button — flat, shown on the row's hover or its own focus, taking taps
+ * only while shown — with one addition: where there is no hover at all it always shows, because
+ * the toggle is then the only way to move an entry. The tack is filled while pinned.
+ *
+ * The row's hover answers to the entry as a whole, so its fill holds while the pointer is on the
+ * toggle. A badge sits at the row's end, where the toggle appears, so it gives way to the toggle —
+ * the conversation rows' time-and-actions handoff — and where the toggle always shows it moves
+ * just left of it. Draggable, the whole entry is the handle and its link starts no drag of its own.
+ */
+export function SidebarNavEntry({
+  pin,
+  badge,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
+  ...row
+}: SidebarNavEntryProps) {
+  return (
+    <div
+      className="group relative flex items-center"
+      {...(draggable ? { draggable: true, onDragStart, onDragEnd } : {})}
+    >
+      <NavRow
+        {...row}
+        surface="muted"
+        groupHover
+        {...(draggable ? { draggable: false as const } : {})}
+      />
+      <span className="peer absolute right-1 top-1/2 flex -translate-y-1/2">
+        <button
+          ref={pin.buttonRef}
+          type="button"
+          data-tooltip={pin.tooltip}
+          aria-label={pin.label}
+          aria-pressed={pin.pinned}
+          onClick={pin.onToggle}
+          className={`${ROW_HOVER_BUTTON} hover:text-fg [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
+        >
+          <GlyphIcon d={ICONS.pin} size={ROW_ACTION_GLYPH} filled={pin.pinned} />
+        </button>
+      </span>
+      {badge !== undefined && (
+        <span className="pointer-events-none absolute inset-y-0 right-0 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 [@media(hover:none)]:right-6.5">
+          {badge}
+        </span>
+      )}
+    </div>
   );
 }
 

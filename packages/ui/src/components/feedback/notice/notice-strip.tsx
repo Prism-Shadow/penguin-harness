@@ -47,11 +47,17 @@ const TONE_CLASS: Readonly<Record<NoticeStripTone, string>> = {
 export function NoticeStrip({
   tone,
   as: Tag = "div",
+  banner = false,
   className = "",
   children,
   ...rest
 }: {
   tone: NoticeStripTone;
+  /**
+   * A strip laid edge to edge across a column (the initial-password banner, a load error above a
+   * list): `data-banner` lets a theme that draws notices as rounded cards inset it from the edges.
+   */
+  banner?: boolean;
   /**
    * A strip that is one sentence of prose may be a paragraph; a notice the reader presses (a
    * toast, which dismisses itself) is a button, and gets `type="button"`.
@@ -66,6 +72,7 @@ export function NoticeStrip({
       {...rest}
       {...(Tag === "button" ? { type: "button" as const } : {})}
       data-tone={NOTICE_TONE[tone]}
+      data-banner={banner ? "" : undefined}
       className={`ui-notice ${className} border-line ${TONE_CLASS[tone]}`}
     >
       {children}

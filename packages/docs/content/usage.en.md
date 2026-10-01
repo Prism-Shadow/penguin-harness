@@ -61,6 +61,7 @@ The **Errors** panel at the bottom of the page shows the errors the server recor
 
 - Summary figures: **Total**, **Unexpected**, **Expected** and the **Most common** error code.
 - A table of errors with their time, **Source · code**, **Type** and **Message**. Click a message to expand its full text. The table shows 10 rows a page and pages with **Newer** and **Older** instead of scrolling.
+- The same error recorded more than once on one day shares a row. The time is the latest one, hover it for the first, and ×N after the message counts the records. The summary figures count every record.
 
 The model filter does not apply to this panel.
 

@@ -150,7 +150,7 @@ const LIVE_SIGNALS = new Set(["dot", "caret", "spinner", "bar"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
 const ACTIVITY_KINDS = new Set(["thinking", "tool"]);
 const ACTIVITY_STATES = new Set(["running", "done", "error"]);
-const ACTIVITY_SLOTS = new Set(["label", "detail", "progress"]);
+const ACTIVITY_SLOTS = new Set(["label", "detail", "progress", "mark", "toggle", "toggle-end"]);
 const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]);
 const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
 const STREAM_STATES = new Set(["streaming", "done"]);
@@ -333,7 +333,9 @@ describe("style hooks", () => {
           }
           for (const { slot } of childSlots(element)) {
             if (!ACTIVITY_SLOTS.has(slot)) {
-              problems.push(`${at} .ui-activity slot "${slot}" is not label, detail or progress`);
+              problems.push(
+                `${at} .ui-activity slot "${slot}" is not label, detail, progress, mark, toggle or toggle-end`,
+              );
             }
           }
         }

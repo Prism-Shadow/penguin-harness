@@ -931,6 +931,7 @@ export function DraftView({
             machineId={workspaceMachine}
             onChange={changeWorkspace}
             chooseMachine
+            {...(agentId ? { agentId } : {})}
           />
         </div>
 

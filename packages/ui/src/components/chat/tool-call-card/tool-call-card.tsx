@@ -128,7 +128,9 @@ export function ToolCallCard({
           onClick={toggleOpen}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
         >
-          <StatusIcon state={state} label={stateLabel} />
+          <span data-slot="mark" className="flex shrink-0">
+            <StatusIcon state={state} label={stateLabel} />
+          </span>
           <span
             data-tooltip={nameTooltip}
             data-tooltip-content="code"
@@ -150,6 +152,11 @@ export function ToolCallCard({
             )}
           </span>
           <ActivityProgress running={state === "running"} />
+          {/* A theme that keeps the chevron beside the words shows this one and hides the button
+              at the row's end; by default it is hidden and that button is the chevron. */}
+          <span data-slot="toggle" aria-hidden className="hidden shrink-0">
+            <Chevron open={open} className="text-fg-subtle" />
+          </span>
           <span className="min-w-0 flex-1" />
         </button>
         {marker !== undefined && (
@@ -175,6 +182,7 @@ export function ToolCallCard({
           aria-expanded={open}
           aria-label={open ? (collapseLabel ?? strings.collapse) : (expandLabel ?? strings.expand)}
           onClick={toggleOpen}
+          data-slot="toggle-end"
           className="flex shrink-0 items-center self-stretch"
         >
           <Chevron open={open} className="text-fg-subtle" />

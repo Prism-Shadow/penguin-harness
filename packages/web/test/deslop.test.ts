@@ -60,7 +60,7 @@ const POLICY: DeslopPolicy = {
 const ALLOWLIST: DeslopAllowlist = {
   "features/builtin-browser/browser-tab-strip.tsx": { 12: [2, "W10"] },
   "features/chat/model-picker-modal.tsx": { 12: [1, "W10"] },
-  "features/chat/workspace-finder.tsx": { 12: [6, "W10"] },
+  "features/chat/workspace-finder.tsx": { 12: [5, "W10"] },
   "features/settings/shortcut-recorder.tsx": { 12: [1, "W10"], 13: [1, "W10"] },
   "features/settings/shortcuts-section.tsx": { 13: [1, "W10"] },
   "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },

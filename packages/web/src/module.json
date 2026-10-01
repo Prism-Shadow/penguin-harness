@@ -39,6 +39,17 @@
         }
       },
       {
+        "id": "web.models",
+        "key": "models",
+        "path": "/models",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "ModelsPage"
+        }
+      },
+      {
         "id": "web.plugins",
         "key": "plugins",
         "path": "/plugins",
@@ -58,17 +69,6 @@
         "released": true,
         "renderer": {
           "builtin": "PluginDetailPage"
-        }
-      },
-      {
-        "id": "web.models",
-        "key": "models",
-        "path": "/models",
-        "nav": "main",
-        "admin": false,
-        "released": true,
-        "renderer": {
-          "builtin": "ModelsPage"
         }
       },
       {

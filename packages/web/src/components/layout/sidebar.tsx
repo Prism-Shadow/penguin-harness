@@ -1,10 +1,12 @@
 /**
  * Single-column sidebar, top to bottom:
- * Project switcher -> new chat (a draft on the Project's new-chat defaults) + page nav
- * (Agents → Evaluation Center, one collapsible group behind a nav-row-wide chevron button
- * under its last entry: arrow
- * up = click to collapse, arrow down while collapsed = the way back; state persists in
- * localStorage, the pinned new-chat block never collapses) -> Session area with three grouping
+ * Project switcher -> nav: New chat (a draft on the Project's new-chat defaults), always pinned
+ * in its fixed slot above the scroll area, then Agents → Evaluation Center. Each page entry is
+ * pinned (always shown) or collapsible (folded away by a nav-row-wide chevron button under the
+ * collapsible area: arrow up = click to collapse, arrow down while collapsed = the way back);
+ * Agents, Models and Plugins are pinned by default, a row's hover pin button or a drag across
+ * the areas moves an entry, and both the fold and the pin choices persist in localStorage
+ * (nav-group-collapse.ts) -> Session area with three grouping
  * modes (chosen in the section header's list options; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
@@ -75,6 +77,8 @@ import {
   SidebarControl,
   SidebarFrame,
   SidebarListHeader,
+  SidebarNavArea,
+  SidebarNavEntry,
   SidebarNavGroup,
   SidebarSwitcherButton,
   SkeletonList,
@@ -84,6 +88,7 @@ import {
   toastInfo,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
+import type { SidebarDropTarget } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
@@ -130,9 +135,15 @@ import { machineForSession } from "../../lib/session-machines";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import {
   initialNavGroupCollapsed,
-  navKeysFor,
+  initialNavPinOverrides,
+  isNavPinned,
+  navEntryKeysFor,
+  splitNavEntries,
   storeNavGroupCollapsed,
+  storeNavPinOverrides,
+  withNavPinned,
 } from "../../lib/nav-group-collapse";
+import type { NavEntryKey, NavGroupKey } from "../../lib/nav-group-collapse";
 import {
   loadPinnedSessions,
   removePinnedSession,
@@ -246,6 +257,18 @@ const GROUP_DRAG_MIME = "application/x-penguin-group-key";
  * from the desktop, a Session row — paint a phantom drop line, and commit on release.
  */
 const isGroupDrag = (e: ReactDragEvent): boolean => e.dataTransfer.types.includes(GROUP_DRAG_MIME);
+
+/** Private drag payload type of a nav entry moved between the pinned and collapsible areas (never text/plain, as above). */
+const NAV_DRAG_MIME = "application/x-penguin-nav-entry";
+
+/** Is the drag in flight a nav entry of ours? Authorizes a nav drop the way isGroupDrag authorizes a group drop. */
+const isNavDrag = (e: ReactDragEvent): boolean => e.dataTransfer.types.includes(NAV_DRAG_MIME);
+
+/** The two nav areas a dragged entry can be dropped into. */
+type NavArea = "pinned" | "collapsible";
+
+/** A page entry of the development nav: every entry but New chat, which keeps its fixed slot. */
+const isNavPage = (key: NavEntryKey): key is NavGroupKey => key !== "newChat";
 
 /** Manual drag-reordering needs a pointer that can drag (HTML5 DnD never fires from touch) — the outline rail's query. */
 const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
@@ -463,8 +486,21 @@ export function Sidebar({
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   const folderOnlyStoreKey =
     currentProjectId === null ? null : expandedFolderOnlyGroupsKey(currentProjectId);
-  /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
+  /** Folded collapsible nav area (company mode: the whole nav group); expanded by default, the choice persists across sessions. */
   const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
+  /** The user's changes to which nav entries are pinned (the defaults live in nav-group-collapse.ts); persisted like the fold. */
+  const [navPins, setNavPins] = useState(initialNavPinOverrides);
+  /** Nav entry being dragged across the areas, and the area a drop would move it into. */
+  const [navDrag, setNavDrag] = useState<NavEntryKey | null>(null);
+  const [navDropArea, setNavDropArea] = useState<NavArea | null>(null);
+  /**
+   * The entry whose pin button takes focus once its row re-mounts in the other area. Moving
+   * an entry moves its row to another container, and the button that had focus goes with the
+   * old one — a keyboard user would be dropped onto <body>.
+   */
+  const pinFocusRef = useRef<NavEntryKey | null>(null);
+  /** The chevron toggle: where focus goes when the moved row lands in a folded (inert) area. */
+  const navToggleRef = useRef<HTMLButtonElement | null>(null);
   /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */
   const [groupMode, setGroupModeState] = useState<GroupMode>(initialGroupMode);
   /** Collapsed groups (expanded by default), keyed by Agent id or Workspace group key depending on the mode; persisted per Project. */
@@ -619,6 +655,65 @@ export function Sidebar({
     storeNavGroupCollapsed(next);
     setNavCollapsed(next);
   };
+
+  /** Pin or unpin one nav entry: the pin button and a drop across the areas both land here. */
+  const setNavPinned = (key: NavEntryKey, pinned: boolean) => {
+    const next = withNavPinned(navPins, key, pinned);
+    if (next === navPins) return;
+    storeNavPinOverrides(next);
+    setNavPins(next);
+  };
+
+  /**
+   * Drag wiring of one development-mode nav entry: the row is its own handle. Offered only
+   * where a pointer that can drag exists (HTML5 drag-and-drop never fires from touch); the
+   * pin button is the way everywhere, and the only one there.
+   */
+  const navEntryDragProps = (key: NavEntryKey) =>
+    canDrag
+      ? {
+          draggable: true,
+          onDragStart: (e: ReactDragEvent) => {
+            e.dataTransfer.setData(NAV_DRAG_MIME, key);
+            e.dataTransfer.effectAllowed = "move";
+            setNavDrag(key);
+          },
+          onDragEnd: () => {
+            setNavDrag(null);
+            setNavDropArea(null);
+          },
+        }
+      : {};
+
+  /**
+   * Drop wiring of one nav area. Only a drag that would move the entry to this side is
+   * accepted, so dropping a row back into its own area is not a drop at all; where inside the
+   * area it lands is not asked, since both areas keep manifest order.
+   */
+  const navAreaDrop = (area: NavArea): SidebarDropTarget => ({
+    over: navDropArea === area,
+    onDragOver: (e) => {
+      if (navDrag === null || !isNavDrag(e)) return;
+      if (isNavPinned(navDrag, navPins) === (area === "pinned")) return;
+      e.preventDefault();
+      // The effect must be one effectAllowed permits, or the drop never fires (groupDragProps).
+      e.dataTransfer.dropEffect = "move";
+      setNavDropArea(area);
+    },
+    // Crossing onto one of the area's own rows fires dragleave too; still inside is no change.
+    onDragLeave: (e) => {
+      const to = e.relatedTarget;
+      if (to instanceof Node && e.currentTarget.contains(to)) return;
+      setNavDropArea((prev) => (prev === area ? null : prev));
+    },
+    onDrop: (e) => {
+      if (navDrag === null || !isNavDrag(e)) return;
+      e.preventDefault();
+      setNavPinned(navDrag, area === "pinned");
+      setNavDrag(null);
+      setNavDropArea(null);
+    },
+  });
 
   /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
   const workspaceGroupCounts = useMemo(
@@ -1746,19 +1841,16 @@ export function Sidebar({
         );
 
   /**
-   * Page entries of the collapsible nav group. Development mode: 智能体 → 评估中心, driven by
-   * the NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach. Company
-   * mode: the organization's six pages (COMPANY_NAV_KEYS) — channels are not among them,
-   * they are the list below. Always mounted — the collapse animates their height to zero and
-   * turns them inert.
+   * Company mode's nav rows: the organization's six pages (COMPANY_NAV_KEYS) — channels are not
+   * among them, they are the list below — all in the fold, with no pins and no drag. Always
+   * mounted — the fold animates their height to zero and turns them inert.
    */
-  const navItems: Array<{
+  const companyNavItems: Array<{
     key: string;
     /** Where the row leads — null for a row with nowhere to lead, which renders disabled. */
     to: string | null;
     label: string;
     icon: string;
-    note: string | null;
   }> = inCompany
     ? COMPANY_NAV_KEYS.map((key) => ({
         key,
@@ -1768,15 +1860,73 @@ export function Sidebar({
         to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
         label: S.nav.org[key],
         icon: COMPANY_NAV_ICONS[key],
-        note: null,
       }))
-    : navKeysFor(user?.isAdmin === true).map((key) => ({
-        key,
-        to: `/${key}`,
-        label: S.nav[key],
-        icon: NAV_ICONS[key],
-        note: navNoteFor(badges, `/${key}`),
-      }));
+    : [];
+
+  /**
+   * Development mode's entries by area (nav-group-collapse.ts): New chat, then the
+   * NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach, each pinned or
+   * collapsible, both areas in manifest order. New chat is always pinned and renders in its
+   * fixed slot above the scroll area, so the pinned rows here are the pages after it.
+   */
+  const navSplit = splitNavEntries(navEntryKeysFor(user?.isAdmin === true), navPins);
+  const pinnedNavPages = navSplit.pinned.filter(isNavPage);
+  const collapsibleNavPages = navSplit.collapsible.filter(isNavPage);
+
+  /**
+   * One development-mode page entry: the package's pinnable nav row, bound to its route, its
+   * badge trail, its pin choice and its drag. Four entries sit on a badge trail — Agents (an
+   * outdated kernel, fixed on the Agent settings page two clicks down), Plugins, Models and the
+   * Cost Center (each cleared on the page itself). The row's own label is visible, so the hint
+   * only adds what the dot means, and the accessible name keeps the label as its prefix. The dot
+   * hangs at the row's right edge, vertically centred on the row.
+   */
+  const renderNavEntry = (key: NavGroupKey) => {
+    const to = `/${key}`;
+    const label = S.nav[key];
+    const note = navNoteFor(badges, to);
+    const pinned = isNavPinned(key, navPins);
+    return (
+      <SidebarNavEntry
+        key={key}
+        label={label}
+        glyph={NAV_ICONS[key]}
+        href={to}
+        active={isCurrentPath(to, location.pathname)}
+        renderLink={renderRouterLink}
+        onClick={() => onNavigate?.()}
+        {...navEntryDragProps(key)}
+        pin={{
+          pinned,
+          label: S.nav.pinEntry,
+          tooltip: pinned ? S.nav.unpinEntry : S.nav.pinEntry,
+          onToggle: (e) => {
+            // A keyboard toggle follows its row into the other area (see pinFocusRef).
+            if (e.currentTarget.matches(":focus-visible")) pinFocusRef.current = key;
+            setNavPinned(key, !pinned);
+          },
+          buttonRef: (el) => {
+            if (el === null || pinFocusRef.current !== key) return;
+            pinFocusRef.current = null;
+            el.focus();
+            // A row that lands in the folded area is inert and cannot take focus: the chevron
+            // that unfolds it is the nearest place to stand. It is read once this commit is
+            // done, since the commit may be mounting the chevron together with the row.
+            if (document.activeElement !== el) {
+              queueMicrotask(() => navToggleRef.current?.focus());
+            }
+          },
+        }}
+        {...(note !== null
+          ? {
+              ariaLabel: `${label} · ${note}`,
+              tooltip: note,
+              badge: <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />,
+            }
+          : {})}
+      />
+    );
+  };
 
   /**
    * The account row at the column's foot: the trigger for the account menu both this sidebar and
@@ -2063,66 +2213,77 @@ export function Sidebar({
           </Dropdown>
         )
       }
-      // New chat: the only pinned entry besides the switcher above and the account row below,
-      // a page row like the nav's (no fill at rest), told apart by its place and its weight, and
-      // lit while on the draft page. Company mode pins nothing here: a channel is made rarely,
-      // so "New channel" is the channel list's own header action rather than a permanent row
-      // (channel-sidebar.tsx).
+      // New chat: always pinned, in the one slot between the switcher above and the scroll area
+      // below; it has no pin button and cannot be dragged. A page row like the nav's (no fill at
+      // rest), told apart by its place and its weight, and lit while on the draft page. Its slot
+      // belongs to the pinned area, so it also takes an entry dragged out of the collapsible
+      // one. Company mode pins nothing here: a channel is made rarely, so "New channel" is the
+      // channel list's own header action rather than a permanent row (channel-sidebar.tsx).
       {...(inCompany
         ? {}
         : {
             pinned: (
-              <NavRow
-                surface="muted"
-                label={S.chat.newSessionMenu}
-                tooltip={newChatTitle}
-                glyph={NEW_CHAT_ICON}
-                active={activeSessionId === DRAFT_SESSION_ID}
-                onClick={() => newChat()}
-                className="font-medium"
-              />
+              <SidebarNavArea drop={navAreaDrop("pinned")}>
+                <NavRow
+                  surface="muted"
+                  label={S.chat.newSessionMenu}
+                  tooltip={newChatTitle}
+                  glyph={NEW_CHAT_ICON}
+                  active={activeSessionId === DRAFT_SESSION_ID}
+                  onClick={() => newChat()}
+                  className="font-medium"
+                />
+              </SidebarNavArea>
             ),
           })}
       account={accountRow}
       overlays={dialogs}
     >
-      {/* The page nav (智能体 → 评估中心, or the organization's six pages), folded away under
-          its slim toggle; the choice persists. Always mounted — the fold animates the rows'
-          height to zero and turns them inert. The nav and the session list scroll together. */}
+      {/* The page nav: in development mode the pinned pages, then the collapsible ones folded
+          away under the slim toggle (with nothing collapsible there is no toggle); in company
+          mode the organization's six pages, all under the toggle. The fold persists. Folded rows
+          stay mounted — the fold animates their height to zero and turns them inert. The nav
+          and the session list scroll together. Mid-drag, an empty pinned run keeps a row's
+          height and a hidden toggle band comes back, so either side can take the drop. */}
       <SidebarNavGroup
         collapsed={navCollapsed}
         onToggle={toggleNavGroup}
         expandLabel={S.nav.expandGroup}
         collapseLabel={S.nav.collapseGroup}
+        toggleRef={navToggleRef}
+        {...(inCompany
+          ? {}
+          : {
+              pinned:
+                pinnedNavPages.length > 0 || navDrag !== null ? (
+                  <SidebarNavArea
+                    drop={navAreaDrop("pinned")}
+                    reserve={pinnedNavPages.length === 0}
+                  >
+                    {pinnedNavPages.map(renderNavEntry)}
+                  </SidebarNavArea>
+                ) : undefined,
+              foldable: collapsibleNavPages.length > 0 || navDrag !== null,
+              drop: navAreaDrop("collapsible"),
+            })}
       >
-        {navItems.map((item) => (
-          /* Four nav entries sit on a badge trail — Agents (an outdated kernel, fixed on the Agent
-             settings page two clicks down), Skills, Models and the Cost Center (each cleared on
-             the page itself). The dot is anchored to the row, not to the label text: at the
-             row's right edge, on its horizontal padding, vertically centred on the row. The row's
-             own label is visible, so the hint only adds what the dot means, and the accessible
-             name keeps the label as its prefix. A row with nowhere to go keeps its place and its
-             glyph, muted, with nothing to click or tab to. */
-          <NavRow
-            key={item.key}
-            surface="muted"
-            label={item.label}
-            glyph={item.icon}
-            href={item.to ?? ""}
-            disabled={item.to === null}
-            active={item.to !== null && isCurrentPath(item.to, location.pathname)}
-            renderLink={renderRouterLink}
-            onClick={() => onNavigate?.()}
-            className="relative"
-            {...(item.note !== null
-              ? {
-                  ariaLabel: `${item.label} · ${item.note}`,
-                  tooltip: item.note,
-                  badge: <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />,
-                }
-              : {})}
-          />
-        ))}
+        {inCompany
+          ? companyNavItems.map((item) => (
+              /* A row with nowhere to go keeps its place and its glyph, muted, with nothing to
+                 click or tab to. */
+              <NavRow
+                key={item.key}
+                surface="muted"
+                label={item.label}
+                glyph={item.icon}
+                href={item.to ?? ""}
+                disabled={item.to === null}
+                active={item.to !== null && isCurrentPath(item.to, location.pathname)}
+                renderLink={renderRouterLink}
+                onClick={() => onNavigate?.()}
+              />
+            ))
+          : collapsibleNavPages.map(renderNavEntry)}
       </SidebarNavGroup>
 
       {inCompany ? (
@@ -2152,8 +2313,9 @@ export function Sidebar({
               settings (grouping + sort radios), and the mode-dependent create button (the created
               object follows the grouping mode). The search opens in place, over the label's
               column, so it costs no extra row; the magnifier becomes the field's leading glyph.
-              No ruled separator at this boundary — the nav toggle above is the seam. */}
-          <SidebarListHeader label={S.chat.sessionList} searching={searchOpen}>
+              No ruled separator at this boundary — the nav toggle above is the seam. The label
+              names the grouping: workspaces, agents, or the recent ones by time. */}
+          <SidebarListHeader label={S.chat.sessionListByMode[groupMode]} searching={searchOpen}>
             {searchOpen ? (
               /* Expanded field: the magnifier, the input and the clear ×, one bordered
              box filling the row (its width rides the column tween). Esc and × both
@@ -2286,6 +2448,7 @@ export function Sidebar({
                 // machine is chosen; the draft and settings pickers edit a workspace that
                 // already has one.
                 chooseMachine
+                clearable={false}
                 trigger={(open, toggle) => (
                   <SidebarControl
                     label={newEntityLabel}

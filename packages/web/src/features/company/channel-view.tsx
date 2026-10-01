@@ -591,7 +591,13 @@ export function ChannelView() {
           }}
         />
         {detailError !== null && detail === null && (
-          <NoticeStrip tone="danger" as="p" role="alert" className="border-b px-4 py-1.5 text-xs">
+          <NoticeStrip
+            banner
+            tone="danger"
+            as="p"
+            role="alert"
+            className="border-b px-4 py-1.5 text-xs"
+          >
             {S.company.channels.channelLoadFailed} · {detailError}
           </NoticeStrip>
         )}
