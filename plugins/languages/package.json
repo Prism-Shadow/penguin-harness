@@ -1,6 +1,7 @@
 {
   "name": "@prismshadow/penguin-plugin-languages",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "description": "Syntax highlighting for Typst, Swift, Kotlin, C# and Dart in PenguinHarness.",
   "license": "MIT",
