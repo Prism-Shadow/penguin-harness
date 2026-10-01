@@ -155,8 +155,9 @@ const ICONS = new Set(["GlyphIcon", "StatusIcon"]);
 describe("plugins page buttons", () => {
   it("every icon button shows its copy beside the icon, not only in aria-label", () => {
     const withIcon = buttons().filter((b) => openingsUnder(b).some((el) => ICONS.has(tagOf(el))));
-    // The header's settings gear, the library card's three, the module row's three.
-    expect(withIcon.length).toBeGreaterThanOrEqual(7);
+    // The header's settings gear, the library card's three, the module row's two (install,
+    // remove).
+    expect(withIcon.length).toBeGreaterThanOrEqual(6);
     for (const b of withIcon) {
       const label = attribute(b.openingElement, "aria-label") ?? b.openingElement.getText();
       expect(visibleCopy(b), `icon-only button: ${label}`).toBe(true);
@@ -167,7 +168,7 @@ describe("plugins page buttons", () => {
 
   it("names the Models page's narrow-container rule only where a container answers it", () => {
     const labelled = openings().filter((el) => classesOf(el).some((c) => c.startsWith("@3xl:")));
-    expect(labelled.length).toBeGreaterThanOrEqual(7);
+    expect(labelled.length).toBeGreaterThanOrEqual(6);
     for (const el of labelled) {
       let contained = false;
       for (let p = parentElement(elementOf(el)); p !== undefined; p = parentElement(p.parent)) {
