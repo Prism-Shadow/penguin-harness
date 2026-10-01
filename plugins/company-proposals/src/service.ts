@@ -51,7 +51,8 @@ import {
 import { renderForAgent, sectionSource } from "./comments.js";
 import { readBaseFile } from "./files.js";
 import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
-import { PrGraphReader, pullKey } from "./pr-graph.js";
+import { pullKey } from "./pr-chain.js";
+import { PrGraphReader } from "./pr-graph.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import {
   checkScope,

@@ -709,7 +709,11 @@ export interface Messages {
     proposalImplUsage(): string;
     graphNoProposal(): string;
     graphOffChain(): string;
+    /** Why a node is off the chain; `at` is `#n` or the base branch, `base` the declared base. */
+    graphOffReason(reason: string, at: string, relation: string, base: string): string;
     graphUnplaced(): string;
+    /** Why an impl PR is not on the graph; `at` is `#n`, `into` the branch merged into, `base` the base branch. */
+    graphUnplacedReason(reason: string, at: string, into: string, base: string): string;
     graphErrors(): string;
     proposalFeedbackRecorded(number: number): string;
     proposalConcluded(number: number, owner: string): string;
@@ -1954,7 +1958,25 @@ const en: Messages = {
     proposalImplUsage: () => "Give the proposal and the PR URL: impl <number> <url>, or --adopt.",
     graphNoProposal: () => "no proposal",
     graphOffChain: () => "Off the chain:",
+    graphOffReason: (reason, at, relation, base) =>
+      ({
+        "old-line": `old line: ${relation} against ${at}`,
+        unread: `not compared with ${at}`,
+        "no-base": `base ${base} is the branch of no open, merged or closed PR`,
+        "not-taken": `not taken at the fork at ${at}`,
+        above: `on off-chain ${at}`,
+        cycle: "its declared bases form a cycle",
+      })[reason] ?? reason,
     graphUnplaced: () => "Proposals whose impl PR is not on the graph:",
+    graphUnplacedReason: (reason, at, into, base) =>
+      ({
+        counterpart: `${at} carries its branch`,
+        merged: `merged into ${into}`,
+        "in-base": `already in ${base}`,
+        closed: "closed",
+        "open-elsewhere": "open on another repository",
+        unread: "not read",
+      })[reason] ?? reason,
     graphErrors: () => "Not read from GitHub:",
     proposalFeedbackRecorded: (number) => `Feedback recorded on proposal #${number}.`,
     proposalConcluded: (number, owner) =>
@@ -3160,7 +3182,25 @@ const zh: Messages = {
     proposalImplUsage: () => "请给出提案号与 PR URL：impl <number> <url>，或加 --adopt。",
     graphNoProposal: () => "无提案",
     graphOffChain: () => "链外：",
+    graphOffReason: (reason, at, relation, base) =>
+      ({
+        "old-line": `旧线：相对 ${at} ${relation}`,
+        unread: `没能与 ${at} 比对`,
+        "no-base": `base ${base} 不是任何 open、已合并或已关闭 PR 的分支`,
+        "not-taken": `分叉点 ${at} 处没被取的一支`,
+        above: `叠在链外的 ${at} 上`,
+        cycle: "声明的 base 互相成环",
+      })[reason] ?? reason,
     graphUnplaced: () => "impl PR 不在图上的提案：",
+    graphUnplacedReason: (reason, at, into, base) =>
+      ({
+        counterpart: `${at} 带着它的分支`,
+        merged: `已合进 ${into}`,
+        "in-base": `已在 ${base} 里`,
+        closed: "已关闭",
+        "open-elsewhere": "开在别的仓库",
+        unread: "没读到",
+      })[reason] ?? reason,
     graphErrors: () => "没能从 GitHub 读到：",
     proposalFeedbackRecorded: (number) => `已记录对提案 #${number} 的反馈。`,
     proposalConcluded: (number, owner) => `已把讨论的结论送到 ${owner} 的工位（提案 #${number}）。`,

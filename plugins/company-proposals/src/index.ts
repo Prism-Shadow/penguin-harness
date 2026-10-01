@@ -72,8 +72,9 @@ export {
   undeclaredGroupsMessage,
 } from "./config.js";
 export type { GraphConfig } from "./config.js";
-export { PrGraphReader, buildGraph, pullKey } from "./pr-graph.js";
-export type { GraphInput, GraphProposal } from "./pr-graph.js";
+export { PrGraphReader } from "./pr-graph.js";
+export { buildGraph, pullKey } from "./pr-chain.js";
+export type { GraphInput, GraphProposal } from "./pr-chain.js";
 export { checkScope, scopeBase, scopeStates, suggestPaths } from "./scope-check.js";
 export {
   PARAGRAPH_GAP,

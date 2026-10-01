@@ -6466,7 +6466,7 @@ Benchmark：
         open: "关系图",
         openTitle: "打开 PR 关系图",
         openForProposal: "在关系图里看这份提案",
-        info: "交付仓库上每张 open PR 的 head 是一个节点，按提交祖系从底座分支一层层叠上去，最新的在上。节点标出它是哪份提案的 impl PR、比下一层多几个提交，以及各 origin 上同名分支的 PR 与它的关系。图只标链顶、分叉与链外，不替人裁。",
+        info: "交付仓库上每张 open PR 的 head 是一个节点，按提交祖系从底座分支一层层叠上去，最新的在上。节点标出它是哪份提案的 impl PR、比下一层多几个提交，以及各 origin 上同名分支的 PR 与它的关系。链按手册对「唯一一条 PR stack」的定义读：穿过已合并、已关闭的层，分叉点落在下一层内部的层仍在链上、标为待重排，分叉处取继续往上走的那一支。要靠路线图位次才能决定的分叉，图只标出来、不给链顶。",
         refresh: "刷新",
         loadFailed: "关系图读取失败",
         partial: "关系图不完整，以下各项没读到：",
@@ -6474,7 +6474,24 @@ Benchmark：
         baseForked: "底座上分叉",
         top: "链顶",
         fork: "分叉",
-        offChain: (relation: string): string => `链外（${relation}）`,
+        offReason: (reason: string, at: string, relation: string, base: string): string =>
+          ({
+            "old-line": `旧线：相对 ${at} ${relation}`,
+            unread: `没能与 ${at} 比对`,
+            "no-base": `base ${base} 不是任何 open、已合并或已关闭 PR 的分支`,
+            "not-taken": `分叉点 ${at} 处没被取的一支`,
+            above: `叠在链外的 ${at} 上`,
+            cycle: "声明的 base 互相成环",
+          })[reason] ?? reason,
+        via: (state: string, n: number): string =>
+          state === "closed" ? `经已关闭的 #${n}` : `经已合并的 #${n}`,
+        viaClosedTitle: (n: number): string =>
+          `声明的 base 是 #${n} 的分支，#${n} 未合并即关闭：这一层仍带着 #${n} 的提交，重排到下一层之上才会去掉。`,
+        viaMergedTitle: (n: number): string =>
+          `声明的 base 是 #${n} 的分支，#${n} 已合并：链从 #${n} 自己的 base 接着往下走。`,
+        stale: "待重排",
+        staleTitle: (behind: number): string =>
+          `下一层在这一层分出之后又前进了 ${behind} 个提交，分叉点在它自己那一层里：仍在链上，等重排。`,
         noProposal: "无提案",
         proposalRef: (n: number): string => `提案 #${n}`,
         ahead: (n: number): string => `+${n}`,
@@ -6488,11 +6505,24 @@ Benchmark：
         } as Record<string, string>,
         originTitle: (origin: string, n: number, relation: string): string =>
           `${origin} 上同名分支的 PR #${n}：${relation}`,
-        detached: "不在图上的 PR",
+        offSection: "链外的 PR",
+        offSectionHint:
+          "画在图上、但不在链上的 PR，各带原因：旧线、分叉处没被取的一支，或叠在这两类之上的层。",
+        detached: "画不出来的 PR",
         detachedHint:
-          "声明的 base 不是底座分支，也不是图上任何一张 PR 的分支（多半是已关 PR 的分支）。",
+          "声明的 base 既走不到底座分支，也走不到任何一张 open PR（穿过已合并、已关闭的 PR 也不行），或者 base 互相成环。这与「不在链上」不是一回事。",
         unplaced: "impl PR 不在图上的提案",
-        unplacedHint: "登记了 impl PR，但它不是交付仓库上的 open PR（已关、已合并，或开在别处）。",
+        unplacedHint:
+          "登记了 impl PR，但它不是交付仓库上的 open PR；每行写明原因：已合并、已在底座分支里、已关闭、开在别的仓库，或者这里有一张 open PR 带着它的分支（登记的是另一张）。",
+        unplacedReason: (reason: string, at: string, into: string, base: string): string =>
+          ({
+            counterpart: `${at} 带着它的分支`,
+            merged: `已合进 ${into}`,
+            "in-base": `已在 ${base} 里`,
+            closed: "已关闭",
+            "open-elsewhere": "开在别的仓库",
+            unread: "没读到",
+          })[reason] ?? reason,
         empty: "交付仓库上没有 open PR，图上只有底座。",
         focusMissing: (n: number): string =>
           `提案 #${n} 没有登记 impl PR，或它的 impl PR 不在交付仓库上。`,

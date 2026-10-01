@@ -3,59 +3,48 @@
  * newest on top and the base branch at the bottom, laid out by pr-graph-model.ts. Each row is one
  * PR at its head — its number (to GitHub), the proposal it is the impl PR of (to that proposal's
  * page), its title and branch, how many commits it adds to the layer below, the marks the server
- * gave it (top, fork, off the chain) and the PRs the other origins have on the same branch.
+ * gave it (top, fork, the closed PRs its base led through, stale, off the chain and why) and the PRs
+ * the other origins have on the same branch.
  *
  * It is reached from the queue's header and from a proposal's header; the latter opens it with
  * `?proposal=<n>`, and the page scrolls to that proposal's row and tints it, or says in one line
- * why the proposal has no row. PRs the graph could not place and proposals whose impl PR is not
- * on it are listed under the graph, as the server reported them.
+ * why the proposal has no row. Under the graph, pr-graph-rows.tsx lists apart the PRs off the chain,
+ * the PRs the graph cannot draw, and the proposals whose impl PR is not on it, each with its reason.
  *
  * The lanes are an SVG drawn behind fixed-height rows, so a row's geometry never depends on how
  * its text wraps: the text truncates and carries the full value in its tooltip.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import type {
-  ProposalGraphNode,
-  ProposalGraphRelation,
-  ProposalGraphResponse,
-  ProposalStatus,
-} from "@prismshadow/penguin-server/api";
+import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { ICON_GAP } from "../../lib/icon-scale";
-import { toneInk, toneStrip, toneSurface } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
+import { toneInk, toneStrip } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
-import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "../company/org-layout";
+import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, TitleButton } from "../company/shared";
-import { PROPOSAL_STATUS_TONE } from "./proposals-model";
 import { focusedProposal, layoutGraph, rowOfProposal } from "./pr-graph-model";
 import type { GraphRow } from "./pr-graph-model";
-
-/** The focused proposal's row: a background wash only, so the marks on it keep their own ink. */
-const FOCUS_WASH = "bg-blue-50 dark:bg-blue-950/40";
+import {
+  FOCUS_WASH,
+  Mark,
+  NodeListSection,
+  NodeRow,
+  RELATION_TONE,
+  UnplacedSection,
+} from "./pr-graph-rows";
 
 /** Row height and lane pitch of the drawn graph, in px. */
 const ROW = 44;
 const LANE = 16;
 const DOT = 4.5;
-
-/** How one head stands against another, as a tone: the same is settled, behind waits, diverged is the problem. */
-const RELATION_TONE: Record<ProposalGraphRelation, Tone> = {
-  same: "success",
-  ahead: "link",
-  behind: "attention",
-  diverged: "danger",
-  unknown: "muted",
-};
 
 const laneX = (lane: number): number => lane * LANE + LANE / 2 + 2;
 const rowY = (row: number): number => row * ROW + ROW / 2;
@@ -72,25 +61,6 @@ function edgePath(child: number, childLane: number, parent: number, parentLane: 
   if (x1 === x2) return `M${x1} ${y1}V${y2}`;
   const bend = y2 - ROW / 2;
   return `M${x1} ${y1}V${bend}C${x1} ${y2 - ROW / 6} ${x2} ${bend + ROW / 6} ${x2} ${y2}`;
-}
-
-function StatusPill({ status }: { status: ProposalStatus }) {
-  return (
-    <Badge tone={PROPOSAL_STATUS_TONE[status]}>
-      {S.company.proposals.status[status] ?? status}
-    </Badge>
-  );
-}
-
-function Mark({ tone, children, title }: { tone: Tone; children: string; title?: string }) {
-  return (
-    <span
-      title={title}
-      className={`shrink-0 rounded px-1 text-[10px] font-medium ${toneSurface[tone]}`}
-    >
-      {children}
-    </span>
-  );
 }
 
 export function GraphPage() {
@@ -143,6 +113,10 @@ export function GraphPage() {
 
   const openProposal = (n: number) => navigate(orgProposalPath(projectId, orgId, n));
   const onChain = graph?.nodes.filter((n) => n.onChain).length ?? 0;
+  const drawnOff = useMemo(() => {
+    const undrawn = new Set(layout?.detached.map((n) => n.number));
+    return graph?.nodes.filter((n) => !n.onChain && !undrawn.has(n.number)) ?? [];
+  }, [graph, layout]);
 
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
@@ -233,11 +207,7 @@ export function GraphPage() {
                     {row.node === null ? (
                       <BaseRow graph={graph} />
                     ) : (
-                      <NodeRow
-                        node={row.node}
-                        isTop={graph.top === row.node.number}
-                        onOpenProposal={openProposal}
-                      />
+                      <NodeRow graph={graph} node={row.node} onOpenProposal={openProposal} />
                     )}
                   </li>
                 ))}
@@ -245,54 +215,21 @@ export function GraphPage() {
             </div>
           </div>
 
-          {layout.detached.length > 0 && (
-            <OrgSection title={t.detached} count={layout.detached.length} info={t.detachedHint}>
-              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-                {layout.detached.map((node) => (
-                  <li key={node.number} className="flex items-center py-1.5 pr-3">
-                    <NodeRow node={node} isTop={false} onOpenProposal={openProposal} />
-                  </li>
-                ))}
-              </ul>
-            </OrgSection>
-          )}
-
-          {graph.unplaced.length > 0 && (
-            <OrgSection title={t.unplaced} count={graph.unplaced.length} info={t.unplacedHint}>
-              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-                {graph.unplaced.map((u) => (
-                  <li
-                    key={u.number}
-                    data-focus={focus === u.number ? "true" : undefined}
-                    className={`flex items-center ${ICON_GAP.row} px-1 py-1.5 text-xs ${
-                      focus === u.number ? FOCUS_WASH : ""
-                    }`}
-                  >
-                    <TitleButton
-                      onClick={() => openProposal(u.number)}
-                      hint={S.company.proposals.openProposal}
-                      className="font-mono text-xs"
-                    >
-                      #{u.number}
-                    </TitleButton>
-                    <StatusPill status={u.status} />
-                    <span className="min-w-0 truncate" title={u.title}>
-                      {u.title}
-                    </span>
-                    <a
-                      href={u.implPr}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={u.implPr}
-                      className="ml-auto shrink-0 truncate pl-3 text-gray-400 hover:underline dark:text-gray-500"
-                    >
-                      {u.implPr.replace(/^https?:\/\/github\.com\//, "")}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </OrgSection>
-          )}
+          <NodeListSection
+            graph={graph}
+            title={t.offSection}
+            info={t.offSectionHint}
+            nodes={drawnOff}
+            onOpenProposal={openProposal}
+          />
+          <NodeListSection
+            graph={graph}
+            title={t.detached}
+            info={t.detachedHint}
+            nodes={layout.detached}
+            onOpenProposal={openProposal}
+          />
+          <UnplacedSection graph={graph} focus={focus} onOpenProposal={openProposal} />
         </div>
       )}
     </OrgPage>
@@ -365,84 +302,6 @@ function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
         </span>
       )}
       {graph.base.fork && <Mark tone="attention">{t.baseForked}</Mark>}
-    </div>
-  );
-}
-
-function NodeRow({
-  node,
-  isTop,
-  onOpenProposal,
-}: {
-  node: ProposalGraphNode;
-  isTop: boolean;
-  onOpenProposal: (n: number) => void;
-}) {
-  const t = S.company.proposals.graph;
-  const relationWord = (r: ProposalGraphRelation) => t.relation[r] ?? r;
-  return (
-    <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-      <div className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs`}>
-        <a
-          href={node.url}
-          target="_blank"
-          rel="noreferrer"
-          title={t.openPr}
-          className="shrink-0 font-mono text-gray-500 hover:underline dark:text-gray-400"
-        >
-          #{node.number}
-        </a>
-        {node.proposal === null ? (
-          <Mark tone="muted">{t.noProposal}</Mark>
-        ) : (
-          <>
-            <TitleButton
-              onClick={() => onOpenProposal(node.proposal!.number)}
-              hint={`${S.company.proposals.openProposal}: ${node.proposal.title}`}
-              className="shrink-0 font-mono text-xs font-medium"
-            >
-              {t.proposalRef(node.proposal.number)}
-            </TitleButton>
-            <StatusPill status={node.proposal.status} />
-          </>
-        )}
-        <span className="min-w-0 truncate" title={node.title}>
-          {node.title}
-        </span>
-        {isTop && <Mark tone="success">{t.top}</Mark>}
-        {node.fork && <Mark tone="attention">{t.fork}</Mark>}
-        {!node.onChain && (
-          <Mark tone={RELATION_TONE[node.relation]}>{t.offChain(relationWord(node.relation))}</Mark>
-        )}
-      </div>
-      <div
-        className={`flex min-w-0 items-center ${ICON_GAP.row} text-[11px] text-gray-500 dark:text-gray-400`}
-      >
-        <span className="min-w-0 truncate font-mono" title={`${node.branch} → ${node.base}`}>
-          {node.branch}
-        </span>
-        {node.ahead !== null && (
-          <span
-            className="shrink-0 font-mono tabular-nums"
-            title={t.aheadTitle(node.ahead, node.base)}
-          >
-            {t.ahead(node.ahead)}
-          </span>
-        )}
-        {node.draft && <span className="shrink-0">{S.company.proposals.materialStatus.draft}</span>}
-        {node.origins.map((o) => (
-          <a
-            key={`${o.origin}#${o.number}`}
-            href={o.url}
-            target="_blank"
-            rel="noreferrer"
-            title={t.originTitle(o.origin, o.number, relationWord(o.relation))}
-            className={`shrink-0 font-mono hover:underline ${toneInk[RELATION_TONE[o.relation]]}`}
-          >
-            {o.origin}#{o.number} {relationWord(o.relation)}
-          </a>
-        ))}
-      </div>
     </div>
   );
 }

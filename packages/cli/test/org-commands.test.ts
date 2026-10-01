@@ -1717,7 +1717,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "impl", "4"])).toBe(1);
   });
 
-  it("graph prints the chain indented by depth, each line with its PR, proposal and origins, then what is off the chain", async () => {
+  it("graph prints the chain indented by depth, each line with its PR, proposal, origins and marks, then what is off the chain and why", async () => {
     server.addProposal("acme", { number: 1 });
     const node = (n: Record<string, unknown>) => ({
       url: `https://github.com/acme/site/pull/${String(n.number)}`,
@@ -1725,7 +1725,11 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       draft: false,
       relation: "ahead",
       behind: 0,
+      via: [],
+      stacked: true,
+      stale: false,
       onChain: true,
+      off: null,
       fork: false,
       proposal: null,
       origins: [],
@@ -1759,9 +1763,12 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           number: 12,
           branch: "feat/b",
           head: "cccccccccccc",
-          base: "feat/a",
+          base: "feat/gone",
           parent: 11,
           ahead: 1,
+          behind: 2,
+          via: [{ number: 9, state: "closed" }],
+          stale: true,
         }),
         node({
           number: 13,
@@ -1772,7 +1779,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           ahead: 3,
           behind: 4,
           relation: "diverged",
+          stacked: false,
           onChain: false,
+          off: { reason: "old-line", at: null },
         }),
       ],
       top: 12,
@@ -1782,6 +1791,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           title: "B",
           status: "approved",
           implPr: "https://github.com/acme/site/pull/5",
+          reason: "merged",
+          at: null,
+          into: "feat/a",
         },
       ],
       errors: [],
@@ -1792,13 +1804,13 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       [
         "acme/site dev aaaaaaaaa",
         "  #11 feat/a bbbbbbbbb +2  proposal #1 ready  origin #801 behind",
-        `    #12 feat/b ccccccccc +1  [top]  ${t.org.graphNoProposal()}`,
+        `    #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
         "",
         t.org.graphOffChain(),
-        `  #13 feat/c ddddddddd +3 -4  [diverged feat/a]  ${t.org.graphNoProposal()}`,
+        `  #13 feat/c ddddddddd +3 -4  [${t.org.graphOffReason("old-line", "#11", "diverged", "feat/a")}]  ${t.org.graphNoProposal()}`,
         "",
         t.org.graphUnplaced(),
-        "  proposal #2 approved  https://github.com/acme/site/pull/5",
+        `  proposal #2 approved  https://github.com/acme/site/pull/5  [${t.org.graphUnplacedReason("merged", "?", "feat/a", "dev")}]`,
         "",
       ].join("\n"),
     );

@@ -1,22 +1,24 @@
 /**
  * The PR graph's layout: the rows and lanes the graph page draws `GET …/proposals/graph` in.
  *
- * The server answers with a flat list of nodes, each naming the PR it is declared to stack on
- * (`parent`: a PR number, 0 for the base branch, null for neither). The page draws it the way
+ * The server answers with a flat list of nodes, each naming the open PR its declared base leads to
+ * (`parent`: a PR number, 0 for the base branch, null for neither — the server walks through
+ * merged and closed PRs on the way) and whether that edge holds (`stacked`). The page draws it the way
  * `git log --graph` draws history — newest at the top, the base branch at the bottom, one lane
  * per branch that is still open at that height — so a straight chain is one vertical line and a
  * fork is a second lane leaving the line where it forks.
  *
  * Which child continues its parent's lane: the one that leads to the chain's top when the server
- * named one, else a stacked child before one off the chain, else the taller subtree, else the
+ * named one, else a child on the chain, else a stacked one, else the taller subtree, else the
  * lower PR number. Every other child takes a lane to the right, and its whole subtree is laid out
  * before the continuing child, so a side branch sits between its fork point and the rest of the
  * chain and its lanes are free again above it.
  *
- * A node whose declared parent is not in the graph (a closed PR's branch), or that is not reached
- * from the base at all (a cycle of declarations), is not placed; the page lists it apart.
+ * A node with no parent (its declared base leads to no open PR and not to the base branch), or
+ * that is not reached from the base at all (a cycle of declarations), cannot be drawn; the page
+ * lists it apart — which is not the same as off the chain.
  */
-import type { ProposalGraphNode, ProposalGraphRelation } from "@prismshadow/penguin-server/api";
+import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
 
 /** One row of the drawn graph, top to bottom. `node` is null for the base branch (the last row). */
 export interface GraphRow {
@@ -24,7 +26,7 @@ export interface GraphRow {
   lane: number;
   /** The row this one is drawn hanging from (its parent's), or null for the base. */
   parentRow: number | null;
-  /** Whether the edge to the parent is stacked (the head contains the parent's) or off the chain. */
+  /** Whether the edge to the parent holds (the server's `stacked`): drawn solid, else dashed. */
   stacked: boolean;
 }
 
@@ -32,13 +34,8 @@ export interface GraphLayout {
   rows: GraphRow[];
   /** How many lanes the widest height uses (at least 1). */
   lanes: number;
-  /** Nodes the graph could not place: listed apart, in PR order. */
+  /** Nodes the graph cannot draw: listed apart, in PR order. */
   detached: ProposalGraphNode[];
-}
-
-/** A relation that keeps a layer on the chain: its head contains its declared base's head. */
-export function isStacked(relation: ProposalGraphRelation): boolean {
-  return relation === "ahead" || relation === "same";
 }
 
 export function layoutGraph(nodes: readonly ProposalGraphNode[], top: number | null): GraphLayout {
@@ -78,7 +75,8 @@ export function layoutGraph(nodes: readonly ProposalGraphNode[], top: number | n
     [...(children.get(key) ?? [])].sort(
       (a, b) =>
         Number(leadsToTop.get(b.number) ?? false) - Number(leadsToTop.get(a.number) ?? false) ||
-        Number(isStacked(b.relation)) - Number(isStacked(a.relation)) ||
+        Number(b.onChain) - Number(a.onChain) ||
+        Number(b.stacked) - Number(a.stacked) ||
         (height.get(b.number) ?? 0) - (height.get(a.number) ?? 0) ||
         a.number - b.number,
     );
@@ -100,7 +98,7 @@ export function layoutGraph(nodes: readonly ProposalGraphNode[], top: number | n
     const key = node === null ? 0 : node.number;
     placed.add(key);
     const index = emitted.length;
-    emitted.push({ node, lane, parent, stacked: node === null || isStacked(node.relation) });
+    emitted.push({ node, lane, parent, stacked: node === null || node.stacked });
     const kids = ordered(key).filter((c) => !placed.has(c.number));
     if (kids.length === 0) return lane;
     const [main, ...sides] = kids;

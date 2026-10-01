@@ -591,18 +591,32 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
 
 /**
  * `proposal graph`: the chain from the base branch, one PR per line indented by its depth,
- * then the PRs off the chain and the proposals whose impl PR is not on the graph. Each line:
- * the PR, its branch and head, the layer's size, the marks, the proposal, the origins' twins.
- * Relations, statuses and marks stay in English: they are field values.
+ * then the PRs off the chain with the reason each is off, and the proposals whose impl PR is not
+ * on the graph with the reason why. Each line: the PR, its branch and head, the layer's size,
+ * the marks, the proposal, the origins' twins. Relations, statuses and marks stay in English:
+ * they are field values; the reasons are sentences and follow the locale.
  */
 function renderGraph(g: ProposalGraphResponse, t: Messages): string {
   const short = (sha: string | null): string => (sha === null ? "?" : sha.slice(0, 9));
+  const label = (n: number | null): string =>
+    n === null ? "?" : n === 0 ? g.base.branch : `#${n}`;
   const line = (n: ProposalGraphNode): string => {
     const marks = [
       ...(n.draft ? ["draft"] : []),
       ...(n.fork ? ["fork"] : []),
       ...(g.top === n.number ? ["top"] : []),
-      ...(n.onChain ? [] : [`${n.relation} ${n.base}`]),
+      ...n.via.map((v) => `via ${v.state} #${v.number}`),
+      ...(n.stale ? ["stale, restack pending"] : []),
+      ...(n.off === null
+        ? []
+        : [
+            t.org.graphOffReason(
+              n.off.reason,
+              label(n.off.reason === "old-line" || n.off.reason === "unread" ? n.parent : n.off.at),
+              n.relation,
+              n.base,
+            ),
+          ]),
     ];
     const size = n.ahead === null ? "" : ` +${n.ahead}${n.behind ? ` -${n.behind}` : ""}`;
     const proposal =
@@ -642,7 +656,17 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
       ? [
           [
             t.org.graphUnplaced(),
-            ...g.unplaced.map((p) => indent(1, `proposal #${p.number} ${p.status}  ${p.implPr}`)),
+            ...g.unplaced.map((p) =>
+              indent(
+                1,
+                `proposal #${p.number} ${p.status}  ${p.implPr}  [${t.org.graphUnplacedReason(
+                  p.reason,
+                  label(p.at),
+                  p.into ?? "?",
+                  g.base.branch,
+                )}]`,
+              ),
+            ),
           ].join("\n"),
         ]
       : []),

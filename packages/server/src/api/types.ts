@@ -6886,6 +6886,29 @@ export interface ProposalGraphOriginPr {
   relation: ProposalGraphRelation;
 }
 
+/**
+ * A merged or closed PR the walk from a node's declared base passed through on its way to the
+ * node's parent: the declared base was that PR's head branch, and the walk went on from that PR's
+ * own base. A `closed` one was never merged, so its commits are still in the node's layer —
+ * dropping them takes a restack of the layer onto the one below.
+ */
+export interface ProposalGraphVia {
+  number: number;
+  state: "merged" | "closed";
+}
+
+/**
+ * Why a node is off the chain:
+ * - `old-line`: its head neither contains its parent's head nor forked inside the parent's own layer;
+ * - `unread`: its edge could not be compared;
+ * - `no-base`: its declared base is neither the base branch nor the head branch of an open, merged or closed PR, so it is not drawn;
+ * - `not-taken`: it stacks on a fork (`at`; 0 = the base branch) where another branch keeps going;
+ * - `above`: it stacks on `at`, which is off the chain itself;
+ * - `cycle`: its declared bases lead back to itself.
+ */
+export type ProposalGraphOffReason =
+  "old-line" | "unread" | "no-base" | "not-taken" | "above" | "cycle";
+
 /** One open PR on the delivery repository: a commit in the graph. */
 export interface ProposalGraphNode {
   number: number;
@@ -6896,15 +6919,26 @@ export interface ProposalGraphNode {
   head: string;
   /** The declared base branch (`baseRefName`): a declaration, checked against ancestry below. */
   base: string;
-  /** The PR whose head branch is the declared base; 0 = the base branch; null = neither (a closed PR's branch, say). */
+  /** The open PR the declared base leads to, through the PRs in `via`; 0 = the base branch; null = neither (`off.reason` says why). */
   parent: number | null;
-  /** The head against the declared base's head: `ahead` (or `same`) is stacked, anything else is off the chain. */
+  /** The merged or closed PRs between the declared base and `parent`, nearest first; empty when the base is the parent's branch. */
+  via: ProposalGraphVia[];
+  /** The head against the parent's head. */
   relation: ProposalGraphRelation;
-  /** Commits the head has that the declared base's head has not (the layer's size); null when unknown. */
+  /** Commits the head has that the parent's head has not (the layer's size); null when unknown. */
   ahead: number | null;
   behind: number | null;
-  /** Reached from the base branch through stacked edges only. */
+  /**
+   * The edge to the parent holds: the head contains the parent's, or the commits it lacks carry no
+   * content, or it forked inside the parent's own layer (then `stale`).
+   */
+  stacked: boolean;
+  /** Stacked only because it forked inside the parent's own layer, which has moved on since: a restack is pending. */
+  stale: boolean;
+  /** On the chain: reached from the base branch through stacked edges, taking one branch at each fork. */
   onChain: boolean;
+  /** Why the node is off the chain; null when it is on it. */
+  off: { reason: ProposalGraphOffReason; at: number | null } | null;
   /** More than one stacked child: the chain forks here. */
   fork: boolean;
   /** The proposal whose impl PR this is; null for a PR no proposal registered. */
@@ -6913,16 +6947,44 @@ export interface ProposalGraphNode {
   origins: ProposalGraphOriginPr[];
 }
 
+/**
+ * Why a proposal's impl PR is not on the graph:
+ * - `counterpart`: an open PR on the delivery repository (`at`) has the impl PR's head branch — the registration names the other one;
+ * - `merged`: merged, into `into`;
+ * - `in-base`: not merged, but its head is already in the base branch;
+ * - `closed`: closed without merging, and not in the base branch;
+ * - `open-elsewhere`: open, on another repository;
+ * - `unread`: GitHub could not be asked about it.
+ */
+export type ProposalGraphUnplacedReason =
+  "counterpart" | "merged" | "in-base" | "closed" | "open-elsewhere" | "unread";
+
+/** A proposal whose impl PR is not an open PR on the delivery repository, and why. */
+export interface ProposalGraphUnplaced {
+  number: number;
+  title: string;
+  status: ProposalStatus;
+  implPr: string;
+  reason: ProposalGraphUnplacedReason;
+  /** The counterpart's number (`counterpart`); null otherwise. */
+  at: number | null;
+  /** The branch it was merged into (`merged`); null otherwise. */
+  into: string | null;
+}
+
 /** `GET …/proposals/graph`: the delivery repository's open PRs as a commit graph. */
 export interface ProposalGraphResponse {
   repo: string;
   base: { branch: string; head: string | null; fork: boolean };
   origins: Array<{ name: string; repo: string }>;
   nodes: ProposalGraphNode[];
-  /** The one leaf of the chain, or null when the chain forks (or is empty): the graph marks forks, it does not pick. */
+  /**
+   * The chain's last layer, or null when the chain is empty or forks with no single branch that
+   * keeps going — choosing there takes the record (the roadmap's order), which the graph does not read.
+   */
   top: number | null;
   /** Proposals with an impl PR that is not an open PR on the delivery repository. */
-  unplaced: Array<{ number: number; title: string; status: ProposalStatus; implPr: string }>;
+  unplaced: ProposalGraphUnplaced[];
   /** What could not be read from GitHub; the graph is partial when present. */
   errors: string[];
   checkedAt: string;

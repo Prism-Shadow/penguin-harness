@@ -1,8 +1,10 @@
 /**
  * features/proposals/pr-graph-model.ts unit tests: a straight chain is one lane with the base at
  * the bottom; a fork puts the side branch in its own lane, below the continuing chain; the chain
- * that leads to the server's top keeps the lane; an off-chain layer is drawn with an unstacked
- * edge; a PR on an unknown branch, or in a cycle of declarations, is listed apart; and the
+ * that leads to the server's top keeps the lane; an edge that does not hold is drawn unstacked,
+ * while a branch the chain did not take keeps its solid edge; a layer the server reached through a
+ * closed PR hangs from its parent; a PR with no parent, or in a cycle of declarations, is listed
+ * apart; and the
  * `?proposal=` focus finds its row.
  */
 import { describe, expect, it } from "vitest";
@@ -23,10 +25,14 @@ const node = (number: number, parent: number | null, over: Partial<ProposalGraph
     head: `h${number}`,
     base: parent === 0 ? "dev" : `b${parent}`,
     parent,
+    via: [],
     relation: "ahead",
     ahead: 1,
     behind: 0,
+    stacked: true,
+    stale: false,
     onChain: true,
+    off: null,
     fork: false,
     proposal: null,
     origins: [],
@@ -86,14 +92,41 @@ describe("layoutGraph", () => {
     expect(lane(4)).toBeGreaterThan(0);
   });
 
-  it("marks an off-chain layer's edge as unstacked", () => {
+  it("draws an edge that does not hold unstacked, and a branch the chain did not take with its solid edge", () => {
+    const off = (reason: "old-line" | "not-taken", at: number | null) => ({
+      onChain: false,
+      off: { reason, at },
+    });
     const layout = layoutGraph(
-      [node(1, 0), node(2, 1, { relation: "diverged", onChain: false })],
-      1,
+      [
+        node(1, 0, { fork: true }),
+        node(2, 1, { relation: "diverged", stacked: false, ...off("old-line", null) }),
+        node(3, 1, off("not-taken", 1)),
+        node(4, 1),
+        node(5, 4),
+      ],
+      5,
     );
-    const row = layout.rows.find((r) => r.node?.number === 2)!;
-    expect(row.stacked).toBe(false);
-    expect(layout.rows.find((r) => r.node?.number === 1)!.stacked).toBe(true);
+    const row = (n: number) => layout.rows.find((r) => r.node?.number === n)!;
+    expect(row(2).stacked).toBe(false);
+    expect(row(3).stacked).toBe(true);
+    expect(row(1).stacked).toBe(true);
+    // The chain keeps the lane; of the two branches off it, the stacked one sits nearer.
+    expect(row(4).lane).toBe(0);
+    expect(row(3).lane).toBeLessThan(row(2).lane);
+  });
+
+  it("hangs a layer the server reached through a closed PR from its parent instead of listing it apart", () => {
+    const layout = layoutGraph(
+      [node(1, 0), node(2, 1, { base: "closed-branch", via: [{ number: 9, state: "closed" }] })],
+      2,
+    );
+    expect(shape(layout.rows)).toEqual([
+      [2, 0, 1],
+      [1, 0, 2],
+      [0, 0, null],
+    ]);
+    expect(layout.detached).toEqual([]);
   });
 
   it("lists apart a PR on an unknown branch and PRs whose declarations form a cycle", () => {

@@ -1,192 +1,26 @@
 /**
- * The PR graph: the delivery repository's open PRs laid out as a commit graph, each node
- * marked with the proposal whose impl PR it is and with the PR every other origin has on the
- * same branch.
+ * The PR graph's GitHub side: the delivery repository's open PRs, the base branch's tip, the
+ * merged or closed PRs a declared base leads through, the impl PRs that are not open there, and
+ * the comparisons between heads — read through the machine's `gh`, like the PR status
+ * (pr-status.ts), and handed to buildGraph (pr-chain.ts), which lays them out. The server fetches
+ * nothing and writes no git ref.
  *
- * A node is an open PR's head commit; its edge goes to the head of its declared base (the PR
- * whose head branch that is, or the base branch's tip) and is checked against ancestry with
- * GitHub's compare — `baseRefName` is only a declaration. A head `ahead` of (or the same as)
- * its base's head is stacked; anything else is off the chain. The graph marks the chain's
- * forks and, when there is exactly one, its top; it never picks between branches of a fork.
- *
- * Everything comes from GitHub through the machine's `gh`, like the PR status (pr-status.ts):
- * the server fetches nothing and writes no git ref. A PR list or a branch tip is kept for a
- * minute; a comparison of two commits never changes, so it is kept for as long as the reader
- * lives (up to a bound). A lookup that fails leaves its part of the graph `unknown` and is
- * listed in `errors`.
+ * A PR list, a branch tip, a branch's closed PRs or one PR is kept for a minute; a comparison of
+ * two commits never changes, so it is kept for as long as the reader lives (up to a bound). A
+ * lookup that fails leaves its part of the graph `unknown` and is listed in `errors`.
  */
-import type {
-  ProposalGraphNode,
-  ProposalGraphOriginPr,
-  ProposalGraphRelation,
-  ProposalGraphResponse,
-  ProposalStatus,
-} from "@prismshadow/penguin-server/api";
+import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
+import {
+  buildGraph,
+  parentsOf,
+  pullKey,
+  type Comparison,
+  type GraphProposal,
+  type ImplPull,
+  type OpenPull,
+  type ShutPull,
+} from "./pr-chain.js";
 import { ghRunner, parsePullUrl, STATUS_TTL_MS, type RunGh } from "./pr-status.js";
-
-/** `owner/repo#n`, lower-cased owner and repo: how two URLs of one PR are recognised as one. */
-export function pullKey(url: string): string | null {
-  const ref = parsePullUrl(url);
-  return ref === null ? null : `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}#${ref.number}`;
-}
-
-/** An open PR as the graph needs it. */
-export interface OpenPull {
-  number: number;
-  url: string;
-  title: string;
-  draft: boolean;
-  branch: string;
-  head: string;
-  base: string;
-}
-
-/** Where `to` stands against `from` (GitHub's `compare/<from>...<to>`). */
-export interface Comparison {
-  relation: Exclude<ProposalGraphRelation, "unknown">;
-  ahead: number;
-  behind: number;
-}
-
-/** A proposal as the graph annotates with it. */
-export interface GraphProposal {
-  number: number;
-  title: string;
-  status: ProposalStatus;
-  implPr: string | null;
-}
-
-/** Everything read from GitHub and the ledger, as plain data: what buildGraph lays out. */
-export interface GraphInput {
-  repo: string;
-  base: { branch: string; head: string | null };
-  pulls: OpenPull[];
-  origins: Array<{ name: string; repo: string; pulls: OpenPull[] | null }>;
-  /** A comparison read earlier; undefined when it was not (or could not be) read. */
-  compare: (from: string, to: string) => Comparison | undefined;
-  proposals: GraphProposal[];
-  errors: string[];
-  checkedAt: string;
-}
-
-const STACKED = new Set<ProposalGraphRelation>(["ahead", "same"]);
-
-/** The layout: parents from the declared bases, the chain from the base branch, forks, the top, the annotations. */
-export function buildGraph(input: GraphInput): ProposalGraphResponse {
-  const byBranch = new Map(input.pulls.map((p) => [p.branch, p]));
-  const byKey = new Map<string, GraphProposal>();
-  for (const p of input.proposals) {
-    const key = p.implPr === null ? null : pullKey(p.implPr);
-    if (key !== null && p.status !== "rejected") byKey.set(key, p);
-  }
-  const repoKey = input.repo.toLowerCase();
-
-  const nodes = new Map<number, ProposalGraphNode>();
-  for (const pull of input.pulls) {
-    const parentPull = byBranch.get(pull.base);
-    const parent =
-      parentPull !== undefined && parentPull.number !== pull.number
-        ? parentPull.number
-        : pull.base === input.base.branch
-          ? 0
-          : null;
-    const baseHead =
-      parent === null ? null : parent === 0 ? input.base.head : (parentPull?.head ?? null);
-    const cmp = baseHead === null ? undefined : input.compare(baseHead, pull.head);
-    const proposal = byKey.get(`${repoKey}#${pull.number}`) ?? null;
-    nodes.set(pull.number, {
-      number: pull.number,
-      url: pull.url,
-      title: pull.title,
-      draft: pull.draft,
-      branch: pull.branch,
-      head: pull.head,
-      base: pull.base,
-      parent,
-      relation: cmp?.relation ?? "unknown",
-      ahead: cmp?.ahead ?? null,
-      behind: cmp?.behind ?? null,
-      onChain: false,
-      fork: false,
-      proposal:
-        proposal === null
-          ? null
-          : { number: proposal.number, title: proposal.title, status: proposal.status },
-      origins: originsOf(input, pull),
-    });
-  }
-
-  // Stacked children per parent (0 = the base branch), in PR-number order.
-  const children = new Map<number, number[]>();
-  for (const n of [...nodes.values()].sort((a, b) => a.number - b.number)) {
-    if (n.parent === null || !STACKED.has(n.relation)) continue;
-    children.set(n.parent, [...(children.get(n.parent) ?? []), n.number]);
-  }
-  // Walk the chain from the base branch; the seen set guards a cycle of declared bases.
-  const order: number[] = [];
-  const leaves: number[] = [];
-  const seen = new Set<number>();
-  const walk = (at: number): void => {
-    const kids = (children.get(at) ?? []).filter((k) => !seen.has(k));
-    if (at !== 0 && kids.length === 0) leaves.push(at);
-    for (const k of kids) {
-      seen.add(k);
-      order.push(k);
-      walk(k);
-    }
-  };
-  walk(0);
-  for (const number of order) nodes.get(number)!.onChain = true;
-  for (const [at, kids] of children) {
-    if (at !== 0 && kids.length > 1 && nodes.has(at)) nodes.get(at)!.fork = true;
-  }
-  const offChain = [...nodes.keys()].filter((n) => !seen.has(n)).sort((a, b) => a - b);
-
-  const placed = new Set([...nodes.keys()].map((n) => `${repoKey}#${n}`));
-  const unplaced = input.proposals
-    .filter((p) => p.status !== "rejected" && p.implPr !== null)
-    .filter((p) => !placed.has(pullKey(p.implPr!) ?? ""))
-    .sort((a, b) => a.number - b.number)
-    .map((p) => ({ number: p.number, title: p.title, status: p.status, implPr: p.implPr! }));
-
-  return {
-    repo: input.repo,
-    base: {
-      branch: input.base.branch,
-      head: input.base.head,
-      fork: (children.get(0)?.length ?? 0) > 1,
-    },
-    origins: input.origins.map((o) => ({ name: o.name, repo: o.repo })),
-    nodes: [...order, ...offChain].map((n) => nodes.get(n)!),
-    top: leaves.length === 1 ? leaves[0]! : null,
-    unplaced,
-    errors: input.errors,
-    checkedAt: input.checkedAt,
-  };
-}
-
-/** Each origin's open PR on the node's branch, with its head against the node's. */
-function originsOf(input: GraphInput, pull: OpenPull): ProposalGraphOriginPr[] {
-  const out: ProposalGraphOriginPr[] = [];
-  for (const origin of input.origins) {
-    if (origin.repo.toLowerCase() === input.repo.toLowerCase()) continue;
-    const twin = origin.pulls?.find((p) => p.branch === pull.branch);
-    if (twin === undefined) continue;
-    const relation: ProposalGraphRelation =
-      twin.head === pull.head
-        ? "same"
-        : (input.compare(pull.head, twin.head)?.relation ?? "unknown");
-    out.push({
-      origin: origin.name,
-      number: twin.number,
-      url: twin.url,
-      draft: twin.draft,
-      head: twin.head,
-      relation,
-    });
-  }
-  return out;
-}
 
 const TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -198,7 +32,14 @@ const MAX_COMPARISONS = 5000;
 
 const PULLS_JQ =
   "[.[] | {number, title, draft, url: .html_url, branch: .head.ref, head: .head.sha, base: .base.ref}]";
-const COMPARE_JQ = "{status, ahead_by, behind_by}";
+const COMPARE_JQ =
+  "{status, ahead_by, behind_by, merge_base: .merge_base_commit.sha, empty: (.merge_base_commit.commit.tree.sha == .base_commit.commit.tree.sha)}";
+const SHUT_JQ =
+  '[.[] | {number, merged: (.merged_at != null), at: (.merged_at // .closed_at // ""), base: .base.ref}]';
+const PULL_JQ =
+  "{merged: (.merged_at != null), state, branch: .head.ref, head: .head.sha, base: .base.ref}";
+/** Rounds of looking up the merged or closed PRs a walk from a declared base passes through. */
+const MAX_WALK_ROUNDS = 20;
 const GITHUB_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA = /^[0-9a-f]{7,64}$/i;
 
@@ -216,6 +57,8 @@ export interface PrGraphDeps {
 export class PrGraphReader {
   private readonly lists = new Map<string, Timed<OpenPull[]>>();
   private readonly tips = new Map<string, Timed<string>>();
+  private readonly shut = new Map<string, Timed<ShutPull | null>>();
+  private readonly pulls = new Map<string, Timed<ImplPull>>();
   private readonly comparisons = new Map<string, Comparison>();
   private readonly run: RunGh;
 
@@ -247,30 +90,166 @@ export class PrGraphReader {
     const list = pulls ?? [];
     const origins = config.origins.map((o, i) => ({ ...o, pulls: originPulls[i] ?? null }));
 
-    // The pairs to compare: each head against its declared base's head, and each origin's
-    // twin head against the node's head.
-    const byBranch = new Map(list.map((p) => [p.branch, p]));
-    const pairs: Array<[string, string]> = [];
-    for (const p of list) {
-      const from = byBranch.get(p.base)?.head ?? (p.base === config.base ? head : null);
-      if (from !== null && from !== undefined) pairs.push([from, p.head]);
-      for (const o of origins) {
-        const twin = o.pulls?.find((t) => t.branch === p.branch);
-        if (twin !== undefined && twin.head !== p.head) pairs.push([p.head, twin.head]);
+    // The branches the declared bases lead to that no open PR has: each round looks up the
+    // merged or closed PR on them and walks on from its base (rules 1 and 1a).
+    const shut = new Map<string, ShutPull | null>();
+    for (let round = 0; round < MAX_WALK_ROUNDS; round++) {
+      const missing = new Set<string>();
+      for (const p of parentsOf(list, shut, config.base).values()) {
+        if (p.missing !== null) missing.add(p.missing);
       }
+      if (missing.size === 0) break;
+      await this.shutOnBranches(config.repo, [...missing], shut, errors);
     }
-    await this.compareAll(config.repo, pairs, errors);
 
-    return buildGraph({
-      repo: config.repo,
-      base: { branch: config.base, head },
-      pulls: list,
-      origins,
-      compare: (from, to) => this.comparisons.get(`${from}...${to}`),
-      proposals: config.proposals,
-      errors,
-      checkedAt: new Date(this.now()).toISOString(),
+    // Each impl PR that is not an open PR here, as GitHub answers it — unless the open PRs
+    // themselves could not be read: then every impl PR would look off the graph, and none is asked.
+    const open = new Set(list.map((p) => `${config.repo.toLowerCase()}#${p.number}`));
+    const offGraph = config.proposals
+      .filter((p) => p.status !== "rejected" && p.implPr !== null)
+      .map((p) => p.implPr!)
+      .filter((url) => !open.has(pullKey(url) ?? ""));
+    const implPulls =
+      pulls === null ? new Map<string, ImplPull | null>() : await this.implPulls(offGraph, errors);
+    const implHeads = new Set([...implPulls.values()].flatMap((p) => (p === null ? [] : [p.head])));
+
+    // buildGraph asks for the comparisons it needs — each edge, an edge that fails alone against
+    // the grandparent's head (rule 2a), each origin's twin, each off-graph impl PR against the
+    // base branch — and the graph is laid out again once they are read. Within one read a pair
+    // is asked once. An impl PR's head may not be in this repository at all, so those failures
+    // are summed up in one line instead of one per PR.
+    const asked = new Set<string>();
+    const implFailures: string[] = [];
+    let pending: Array<[string, string]> = [];
+    const layout = (): ProposalGraphResponse =>
+      buildGraph({
+        repo: config.repo,
+        base: { branch: config.base, head },
+        pulls: list,
+        origins,
+        shut,
+        compare: (from, to) => {
+          const key = `${from}...${to}`;
+          const found = this.comparisons.get(key);
+          if (found === undefined && !asked.has(key)) {
+            asked.add(key);
+            pending.push([from, to]);
+          }
+          return found;
+        },
+        proposals: config.proposals,
+        implPulls,
+        errors,
+        checkedAt: new Date(this.now()).toISOString(),
+      });
+    let graph = layout();
+    while (pending.length > 0) {
+      const batch = pending;
+      pending = [];
+      const ofImpl = batch.filter(([, to]) => implHeads.has(to));
+      await this.compareAll(
+        config.repo,
+        batch.filter(([, to]) => !implHeads.has(to)),
+        errors,
+      );
+      await this.compareAll(config.repo, ofImpl, implFailures);
+      graph = layout();
+    }
+    if (implFailures.length > 0) {
+      errors.push(
+        `${config.repo}: ${implFailures.length} impl PR heads not compared with ${config.base}: ${implFailures[0]!.split(" not compared: ")[1] ?? implFailures[0]}`,
+      );
+    }
+    return graph;
+  }
+
+  /** The merged or closed PR on each branch, the latest merge before the latest close; null for none or a failed lookup. */
+  private async shutOnBranches(
+    repo: string,
+    branches: string[],
+    into: Map<string, ShutPull | null>,
+    errors: string[],
+  ): Promise<void> {
+    const owner = repo.split("/")[0]!;
+    await eachAtMost(CONCURRENCY, branches, async (branch) => {
+      const key = `${repo}@${branch}`;
+      const cached = this.shut.get(key);
+      if (cached !== undefined && this.now() - cached.at < STATUS_TTL_MS) {
+        into.set(branch, cached.value);
+        return;
+      }
+      try {
+        const found = await this.gh<
+          Array<{ number: number; merged: boolean; at: string; base: string }>
+        >([
+          "api",
+          `repos/${repo}/pulls?state=closed&per_page=100&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+          "--jq",
+          SHUT_JQ,
+        ]);
+        const latest = (merged: boolean) =>
+          found.filter((p) => p.merged === merged).sort((a, b) => b.at.localeCompare(a.at))[0];
+        const pick = latest(true) ?? latest(false);
+        const value: ShutPull | null =
+          pick === undefined
+            ? null
+            : { number: pick.number, state: pick.merged ? "merged" : "closed", base: pick.base };
+        this.shut.set(key, { value, at: this.now() });
+        into.set(branch, value);
+      } catch (err) {
+        errors.push(`${repo}: closed PRs on ${branch} not read: ${reason(err)}`);
+        into.set(branch, null);
+      }
     });
+  }
+
+  /** Each impl PR URL's PR, by pullKey; null when it is not a GitHub PR or could not be read. */
+  private async implPulls(urls: string[], errors: string[]): Promise<Map<string, ImplPull | null>> {
+    const out = new Map<string, ImplPull | null>();
+    const refs = new Map(
+      urls.flatMap((url) => {
+        const ref = parsePullUrl(url);
+        const key = pullKey(url);
+        return ref === null || key === null ? [] : [[key, ref] as const];
+      }),
+    );
+    const failures: string[] = [];
+    await eachAtMost(CONCURRENCY, [...refs], async ([key, ref]) => {
+      const cached = this.pulls.get(key);
+      if (cached !== undefined && this.now() - cached.at < STATUS_TTL_MS) {
+        out.set(key, cached.value);
+        return;
+      }
+      const repo = `${ref.owner}/${ref.repo}`;
+      if (!GITHUB_REPO.test(repo)) {
+        out.set(key, null);
+        return;
+      }
+      try {
+        const body = await this.gh<{
+          merged: boolean;
+          state: string;
+          branch: string;
+          head: string;
+          base: string;
+        }>(["api", `repos/${repo}/pulls/${ref.number}`, "--jq", PULL_JQ]);
+        const value: ImplPull = {
+          state: body.merged ? "merged" : body.state === "closed" ? "closed" : "open",
+          branch: body.branch,
+          head: body.head,
+          base: body.base,
+        };
+        this.pulls.set(key, { value, at: this.now() });
+        out.set(key, value);
+      } catch (err) {
+        failures.push(`${key}: ${reason(err)}`);
+        out.set(key, null);
+      }
+    });
+    if (failures.length > 0) {
+      errors.push(`${failures.length} impl PRs not read: ${failures.sort()[0]}`);
+    }
+    return out;
   }
 
   private async gh<T>(args: string[]): Promise<T> {
@@ -343,12 +322,13 @@ export class PrGraphReader {
       while (next < todo.length) {
         const [from, to] = todo[next++]!;
         try {
-          const body = await this.gh<{ status?: string; ahead_by?: number; behind_by?: number }>([
-            "api",
-            `repos/${repo}/compare/${from}...${to}`,
-            "--jq",
-            COMPARE_JQ,
-          ]);
+          const body = await this.gh<{
+            status?: string;
+            ahead_by?: number;
+            behind_by?: number;
+            merge_base?: string | null;
+            empty?: boolean;
+          }>(["api", `repos/${repo}/compare/${from}...${to}`, "--jq", COMPARE_JQ]);
           const relation =
             body.status === "identical"
               ? "same"
@@ -363,6 +343,8 @@ export class PrGraphReader {
             relation,
             ahead: body.ahead_by ?? 0,
             behind: body.behind_by ?? 0,
+            mergeBase: body.merge_base ?? null,
+            empty: body.empty === true,
           });
         } catch (err) {
           errors.push(
@@ -373,6 +355,19 @@ export class PrGraphReader {
     };
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
   }
+}
+
+/** Runs `task` over `items`, at most `limit` at a time. */
+async function eachAtMost<T>(
+  limit: number,
+  items: readonly T[],
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) await task(items[next++]!);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 function reason(err: unknown): string {
