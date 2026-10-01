@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Components } from "react-markdown";
-import { Md } from "../src/features/chat/md";
+import { Md } from "@prismshadow/penguin-ui";
 import {
   PROPOSAL_COMPONENTS,
   PROPOSAL_REMARK_PLUGINS,

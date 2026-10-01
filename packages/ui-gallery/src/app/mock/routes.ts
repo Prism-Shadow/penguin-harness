@@ -2376,6 +2376,9 @@ router
   .post("/api/port-forwards", () => readOnly("forward a port"))
   .delete("/api/port-forwards/:id", () => readOnly("remove a port forward"));
 
+// What the server's modules and plugins contribute: the demo has no plugin, so nothing.
+router.get("/api/contributions", () => ({ pages: [], agentTabs: [], sessionTabs: [] }));
+
 // ---------------------------------------------------------------------------------------------
 // Agent packages: publishing to a gist and installing from a source both reach GitHub or a
 // registry, which the demo has no server for.
@@ -2594,6 +2597,16 @@ router
   .put("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
+  // The company-proposals plugin's routes: company mode is off in the demo, as for the rest.
+  .get("/api/projects/:projectId/organizations/:orgId/proposals", companyOff)
+  .post("/api/projects/:projectId/organizations/:orgId/proposals", companyOff)
+  .get("/api/projects/:projectId/organizations/:orgId/proposals/:number", companyOff)
+  .put("/api/projects/:projectId/organizations/:orgId/proposals/:number", companyOff)
+  .get("/api/projects/:projectId/organizations/:orgId/proposals/:number/*", companyOff)
+  .put("/api/projects/:projectId/organizations/:orgId/proposals/:number/*", companyOff)
+  .post("/api/projects/:projectId/organizations/:orgId/proposals/:number/*", companyOff)
+  .patch("/api/projects/:projectId/organizations/:orgId/proposals/:number/*", companyOff)
+  .delete("/api/projects/:projectId/organizations/:orgId/proposals/:number/*", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/handbook", companyOff)
   .put("/api/projects/:projectId/organizations/:orgId/handbook", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/handbook/files", companyOff)

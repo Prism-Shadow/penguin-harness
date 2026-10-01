@@ -4,7 +4,7 @@
  * how a pattern is matched against a proposal's headings and paragraphs, the one-line text of
  * an event, and what the page may do to a proposal in each status.
  */
-import type { BadgeTone } from "../../components/ui/badge";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import type {
   ProposalDetail,
   ProposalEvent,
@@ -34,12 +34,12 @@ export function sortProposals<T extends { number: number; unread: number }>(
  * (attention), `approved` is settled well, `merged` is done and recedes into the neutral
  * emphasis, `rejected` is the one closed badly, `drafting` is nobody's turn but the author's.
  */
-export const PROPOSAL_STATUS_TONE: Record<ProposalStatus, BadgeTone> = {
-  drafting: "gray",
-  ready: "amber",
-  approved: "green",
-  merged: "brand",
-  rejected: "red",
+export const PROPOSAL_STATUS_TONE: Record<ProposalStatus, ToneName> = {
+  drafting: "neutral",
+  ready: "attention",
+  approved: "success",
+  merged: "done",
+  rejected: "danger",
 };
 
 /** A closed proposal takes no more comments, approvals or rejections. */

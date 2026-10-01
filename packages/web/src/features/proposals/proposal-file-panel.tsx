@@ -12,17 +12,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ProposalFileResponse } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  CloseIcon,
+  CodeSurface,
+  CopyButton,
+  SkeletonList,
+  isTopEscLayer,
+  languageForExtension,
+  popEscLayer,
+  pushEscLayer,
+  usePointerDrag,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { Button } from "../../components/ui/button";
-import { CopyButton } from "../../components/ui/copy-button";
-import { CloseIcon } from "../../components/ui/icons";
-import { popEscLayer, pushEscLayer, isTopEscLayer } from "../../components/ui/modal";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { CodeSurface } from "../chat/code-block";
-import { languageForExtension } from "../chat/code-languages";
-import { usePointerDrag } from "../dock/use-pointer-drag";
 import { matchingLines } from "./proposals-model";
 import type { ProposalFileRef } from "./proposals-model";
 

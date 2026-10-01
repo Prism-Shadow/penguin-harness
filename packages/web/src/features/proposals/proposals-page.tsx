@@ -51,33 +51,40 @@ import type {
   ProposalScopeKind,
   ProposalTestEntry,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  Chevron,
+  CloseIcon,
+  ConfirmModal,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  Md,
+  Modal,
+  RuledSection,
+  Segmented,
+  Select,
+  Skeleton,
+  Textarea,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
-import { Segmented } from "../../components/ui/segmented";
-import { Chevron } from "../../components/ui/chevron";
+import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
-import { Badge } from "../../components/ui/badge";
-import type { BadgeTone } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon, NAV_ICONS } from "../../components/ui/icons";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { Select } from "../../components/ui/select";
-import { Skeleton } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
 import { EmployeeAvatar } from "../company/employee-avatar";
-import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "../company/org-layout";
+import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { dismissHint, hintKey, isHintDismissed } from "../company/page-hints";
 import {
   ErrorLine,
@@ -314,7 +321,7 @@ function QueuePage() {
 
       {queue !== null && company.proposals?.length === 0 && !hintDismissed && (
         <div
-          className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+          className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneSurface.muted}`}
         >
           <span className="min-w-0 flex-1">{t.queueEmptyHint}</span>
           <Button
@@ -890,6 +897,7 @@ function DetailPage({ number }: { number: number }) {
             }
             tone={confirm === "reject" ? "danger" : "primary"}
             confirmLabel={S.common.confirm}
+            cancelLabel={S.common.cancel}
             confirmDisabled={confirm === "reject" && rejectReason.trim() === ""}
             busy={busy}
             onClose={() => {
@@ -1062,7 +1070,7 @@ function ProposalView({
         />
       )}
 
-      <OrgSection title={t.briefSection}>
+      <RuledSection title={t.briefSection}>
         <div className="md-body md-compact text-sm text-gray-800 dark:text-gray-100">
           <Md
             text={detail.brief}
@@ -1070,9 +1078,9 @@ function ProposalView({
             components={PROPOSAL_COMPONENTS}
           />
         </div>
-      </OrgSection>
+      </RuledSection>
 
-      <OrgSection title={t.materials} count={detail.materials.length}>
+      <RuledSection title={t.materials} count={detail.materials.length}>
         {detail.materials.length === 0 ? (
           <OrgEmptyLine>{t.materialsEmpty}</OrgEmptyLine>
         ) : (
@@ -1082,9 +1090,9 @@ function ProposalView({
             ))}
           </ul>
         )}
-      </OrgSection>
+      </RuledSection>
 
-      <OrgSection title={t.scope} count={detail.scope.length}>
+      <RuledSection title={t.scope} count={detail.scope.length}>
         {detail.root !== "" && (
           <p className="mb-1 font-mono text-xs text-gray-500 dark:text-gray-400">
             <span className="mr-1 text-[11px] uppercase tracking-wide">{t.scopeRoot}</span>
@@ -1105,9 +1113,9 @@ function ProposalView({
             ))}
           </ul>
         )}
-      </OrgSection>
+      </RuledSection>
 
-      <OrgSection title={t.sections}>
+      <RuledSection title={t.sections}>
         {detail.sections.length === 0 ? (
           <OrgEmptyLine>{t.sectionsEmpty}</OrgEmptyLine>
         ) : (
@@ -1152,9 +1160,9 @@ function ProposalView({
             </div>
           </div>
         )}
-      </OrgSection>
+      </RuledSection>
 
-      <OrgSection title={t.tests} count={detail.tests.length}>
+      <RuledSection title={t.tests} count={detail.tests.length}>
         {testRows.length === 0 ? (
           <OrgEmptyLine>{t.testsEmpty}</OrgEmptyLine>
         ) : (
@@ -1164,10 +1172,10 @@ function ProposalView({
             onOpenFile={onOpenFile}
           />
         )}
-      </OrgSection>
+      </RuledSection>
 
       {detail.sessions.length > 0 && (
-        <OrgSection title={t.sessions} count={detail.sessions.length}>
+        <RuledSection title={t.sessions} count={detail.sessions.length}>
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {detail.sessions.map((sessionId) => (
               <li
@@ -1181,11 +1189,11 @@ function ProposalView({
               </li>
             ))}
           </ul>
-        </OrgSection>
+        </RuledSection>
       )}
 
       {detail.discussions.length > 0 && (
-        <OrgSection title={t.discussions} count={detail.discussions.length}>
+        <RuledSection title={t.discussions} count={detail.discussions.length}>
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {detail.discussions.map((d) => (
               <li
@@ -1205,10 +1213,10 @@ function ProposalView({
               </li>
             ))}
           </ul>
-        </OrgSection>
+        </RuledSection>
       )}
 
-      <OrgSection title={t.events} count={events.length}>
+      <RuledSection title={t.events} count={events.length}>
         <ol className="space-y-2">
           {events.map((ev) => {
             const more = eventDetail(ev);
@@ -1239,7 +1247,7 @@ function ProposalView({
             );
           })}
         </ol>
-      </OrgSection>
+      </RuledSection>
 
       {/* The action bar sits at the foot of the page and stays in view while the body
           scrolls under it: the decision is taken after reading, so it waits at the end. */}
@@ -1314,7 +1322,7 @@ function ChangesBar({
     [detail.events],
   );
   return (
-    <div className={`rounded-md border px-3 py-1.5 text-xs ${toneStrip.attention}`}>
+    <div className={`rounded-md border px-3 py-1.5 text-xs ${toneSurface.attention}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium" title={t.hint}>
           {t.title(approvedRevision, detail.revision)}
@@ -1808,11 +1816,11 @@ function MaterialRow({
 }
 
 /** A pull request's state as a badge tone: merged is done, open is a link to follow, draft is not there yet, closed went nowhere. */
-const MATERIAL_STATUS_TONE: Record<ProposalPrStatus, BadgeTone> = {
-  draft: "gray",
-  open: "brand",
-  merged: "green",
-  closed: "red",
+const MATERIAL_STATUS_TONE: Record<ProposalPrStatus, ToneName> = {
+  draft: "neutral",
+  open: "info",
+  merged: "done",
+  closed: "danger",
 };
 
 // ---------------------------------------------------------------------------
@@ -2284,7 +2292,7 @@ function CommentLine({
           {principalLabel(comment.by, names)}
         </span>
         <span title={formatDateTime(comment.at)}>{formatRelativeShort(comment.at, locale)}</span>
-        {comment.batchId === null && <Badge tone="amber">{t.pending}</Badge>}
+        {comment.batchId === null && <Badge tone="attention">{t.pending}</Badge>}
         {editable && editing === null && (
           <>
             <button
