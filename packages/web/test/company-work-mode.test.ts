@@ -1,52 +1,42 @@
 /**
  * The work mode the shell stands in across the two switches that make company mode available
- * (state/company.tsx). Turning a switch on offers company mode and never enters it — not even
- * when a company choice is still stored from before the switch went off, which is what used to
- * swap the company sidebar in under the new-chat page. Only the user's own move enters it.
+ * (state/company.tsx), driven against the store: `setServerEnabled` is what the Provider calls
+ * with every read of /api/me, and `applyPrefs` what it calls when the preferences arrive. Each
+ * case says where the choice ends up (the localStorage mirror and the `PUT /api/me/prefs` the
+ * fetch fake records) as well as what the shell shows.
  *
- * Driven against the store, with no React and no DOM: `setServerEnabled` is what the Provider
- * calls with every read of /api/me, and `applyPrefs` what it calls when the preferences arrive.
- * The localStorage mirror is an in-memory stand-in and the preference writes are recorded, so
- * each case says where the choice ends up as well as what the shell shows.
+ * - Company mode is available only with both switches on; the shell stands in development
+ *   otherwise.
+ * - A switch coming on offers company mode and never enters it: not when the server's switch
+ *   comes on, not with a company choice left from before it went off (which is written back as
+ *   development), and not after the server's or the user's own switch went off and on again.
+ * - Preferences that arrive with a company choice while a switch is off are settled to
+ *   development without passing through company; while company mode stays available, the
+ *   choice is kept as it was.
+ * - Entering company mode is the user's own move, and only while it is available.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("../src/api/endpoints", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/api/endpoints")>()),
-  putPrefs: vi.fn(() => Promise.resolve({ prefs: {} })),
-}));
-
-import * as api from "../src/api/endpoints";
-import { BETA_NOTICE_KEY } from "../src/features/company/beta-badge";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
+import { BETA_NOTICE_KEY } from "../src/features/company/company-beta";
 import { WORK_MODE_KEY } from "../src/lib/work-mode";
 import { companyModeAvailable, createCompanyStore, effectiveWorkMode } from "../src/state/company";
+import { json, stubFetch } from "./helpers/fetch";
+import type { FakeFetch } from "./helpers/fetch";
+import { memoryStorage, stubLocalStorage } from "./helpers/storage";
+import type { MemoryStorage } from "./helpers/storage";
 
-const putPrefs = vi.mocked(api.putPrefs);
-let storage: Map<string, string>;
-/**
- * Every value written to the work-mode mirror, in order. The end state is not the whole story:
- * a mode the mirror only passes through is a mode the next load finds if the tab closes in that
- * window, so a settled choice must never be written unsettled first.
- */
-let modeWrites: string[];
+let storage: MemoryStorage;
+let setItem: MockInstance<Storage["setItem"]>;
+let fetch: FakeFetch;
 
 beforeEach(() => {
   // The beta notice counts as shown, so entering company mode raises no toast here.
-  storage = new Map([[BETA_NOTICE_KEY, "1"]]);
-  modeWrites = [];
-  vi.stubGlobal("localStorage", {
-    getItem: (key: string) => storage.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      if (key === WORK_MODE_KEY) modeWrites.push(value);
-      storage.set(key, value);
-    },
-    removeItem: (key: string) => void storage.delete(key),
+  storage = stubLocalStorage(memoryStorage({ [BETA_NOTICE_KEY]: "1" }));
+  setItem = vi.spyOn(storage, "setItem");
+  fetch = stubFetch((request) => {
+    if (request.path === "/api/me/prefs") return json({ prefs: {} });
+    throw new TypeError("fetch failed");
   });
-  putPrefs.mockClear();
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 type Store = ReturnType<typeof createCompanyStore>;
@@ -54,9 +44,25 @@ type Store = ReturnType<typeof createCompanyStore>;
 /** What the shell stands in: the mode switch's selection and the sidebar it draws. */
 const shown = (store: Store) => effectiveWorkMode(store.getState());
 
+/**
+ * Every value written to the work-mode mirror, in order. The end state is not the whole story:
+ * a mode the mirror only passes through is a mode the next load finds if the tab closes in that
+ * window, so a settled choice must never be written unsettled first.
+ */
+const modeWrites = () =>
+  setItem.mock.calls.filter(([key]) => key === WORK_MODE_KEY).map(([, value]) => value);
+
+/** Every preferences body sent to the server, in order. */
+const sentPrefs = () =>
+  fetch.requests
+    .filter((r) => r.method === "PUT" && r.path === "/api/me/prefs")
+    .map((r) => r.body as { workMode?: string });
+
 /** Every work mode written to the user's preferences, in order. */
 const writtenModes = () =>
-  putPrefs.mock.calls.map(([body]) => body.workMode).filter((mode) => mode !== undefined);
+  sentPrefs()
+    .map((body) => body.workMode)
+    .filter((mode) => mode !== undefined);
 
 describe("availability and the mode the shell stands in", () => {
   it("is available only with both switches on, and stands in development otherwise", () => {
@@ -88,13 +94,14 @@ describe("turning company mode on offers it and does not enter it", () => {
 
   it("writes a company choice found while the server's switch is off back as development, so the switch coming on does not apply it", () => {
     // The mirror still holds a choice made before the switch was turned off somewhere else.
-    storage.set(WORK_MODE_KEY, "company");
+    storage.setItem(WORK_MODE_KEY, "company");
+    setItem.mockClear();
     const store = createCompanyStore({ serverEnabled: false });
     // The first render, before the Provider's effect has reached the store.
     expect(shown(store)).toBe("dev");
     store.getState().setServerEnabled(false);
     expect(store.getState().workMode).toBe("dev");
-    expect(storage.get(WORK_MODE_KEY)).toBe("dev");
+    expect(storage.getItem(WORK_MODE_KEY)).toBe("dev");
     expect(writtenModes()).toEqual(["dev"]);
 
     store.getState().setServerEnabled(true);
@@ -113,7 +120,7 @@ describe("turning company mode on offers it and does not enter it", () => {
 
     store.getState().setServerEnabled(true);
     expect(shown(store)).toBe("dev");
-    expect(storage.get(WORK_MODE_KEY)).toBe("dev");
+    expect(storage.getItem(WORK_MODE_KEY)).toBe("dev");
     expect(writtenModes()).toEqual(["company", "dev"]);
   });
 
@@ -126,8 +133,8 @@ describe("turning company mode on offers it and does not enter it", () => {
 
     store.getState().setPersonalEnabled(true);
     expect(shown(store)).toBe("dev");
-    expect(storage.get(WORK_MODE_KEY)).toBe("dev");
-    expect(putPrefs.mock.calls.map(([body]) => body)).toEqual([
+    expect(storage.getItem(WORK_MODE_KEY)).toBe("dev");
+    expect(sentPrefs()).toEqual([
       { workMode: "company" },
       { workMode: "dev" },
       { companyMode: false },
@@ -142,9 +149,9 @@ describe("the preferences as they arrive", () => {
     store.getState().setServerEnabled(false);
     store.getState().applyPrefs({ workMode: "company", lastOrgKey: "p1/acme" });
     expect(store.getState().workMode).toBe("dev");
-    expect(storage.get(WORK_MODE_KEY)).toBe("dev");
+    expect(storage.getItem(WORK_MODE_KEY)).toBe("dev");
     // Never through "company" on the way: the mirror follows the settled mode, not the stored one.
-    expect(modeWrites).not.toContain("company");
+    expect(modeWrites()).not.toContain("company");
     expect(writtenModes()).toEqual(["dev"]);
     expect(store.getState().lastOrgKey).toBe("p1/acme");
 
@@ -157,8 +164,8 @@ describe("the preferences as they arrive", () => {
     store.getState().applyPrefs({ workMode: "company", companyMode: false });
     expect(store.getState().personalEnabled).toBe(false);
     expect(store.getState().workMode).toBe("dev");
-    expect(storage.get(WORK_MODE_KEY)).toBe("dev");
-    expect(modeWrites).not.toContain("company");
+    expect(storage.getItem(WORK_MODE_KEY)).toBe("dev");
+    expect(modeWrites()).not.toContain("company");
     expect(writtenModes()).toEqual(["dev"]);
 
     store.getState().setPersonalEnabled(true);
@@ -170,9 +177,9 @@ describe("the preferences as they arrive", () => {
     store.getState().setServerEnabled(true);
     store.getState().applyPrefs({ workMode: "company" });
     expect(shown(store)).toBe("company");
-    expect(storage.get(WORK_MODE_KEY)).toBe("company");
+    expect(storage.getItem(WORK_MODE_KEY)).toBe("company");
     // One write, and it is the choice itself: nothing was adopted and then taken back.
-    expect(modeWrites).toEqual(["company"]);
+    expect(modeWrites()).toEqual(["company"]);
     expect(writtenModes()).toEqual([]);
   });
 });
@@ -188,7 +195,7 @@ describe("entering company mode", () => {
     expect(shown(store)).toBe("dev");
     store.getState().setWorkMode("company");
     expect(shown(store)).toBe("company");
-    expect(storage.get(WORK_MODE_KEY)).toBe("company");
+    expect(storage.getItem(WORK_MODE_KEY)).toBe("company");
     expect(writtenModes()).toEqual(["company"]);
   });
 });

@@ -8,9 +8,14 @@
  * tab never receives ⌘W; ⌘P takes over the browser's Print; the desktop menu also carries ⌘R).
  */
 import { useState } from "react";
-import { Button, GlyphIcon, ICON_SIZE, SettingsSection } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  ConfirmModal,
+  GlyphIcon,
+  ICON_SIZE,
+  SettingsSection,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { conflictsOf, findConflicts, type Conflict } from "../../lib/shortcuts/conflicts";
 import { currentHost, currentPlatform } from "../../lib/shortcuts/platform";
 import { SHORTCUT_COMMANDS, SHORTCUT_GROUPS, commandById } from "../../lib/shortcuts/registry";
@@ -163,6 +168,7 @@ export function ShortcutsSection() {
             setConfirmReset(false);
           }}
           confirmLabel={S.shortcuts.resetAll}
+          cancelLabel={S.common.cancel}
         >
           {S.shortcuts.resetAllBody(overriddenCount)}
         </ConfirmModal>

@@ -28,11 +28,16 @@ import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/pen
 import {
   Button,
   ChevronDown,
+  Dropdown,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  NoticeStrip,
+  PageFrame,
+  PageHeader,
   SearchInput,
   Skeleton,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
@@ -42,8 +47,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
-import { Dropdown } from "../../components/ui/dropdown";
-import { toastError } from "../../components/ui/toast";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
@@ -61,7 +64,6 @@ import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machin
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 import { SshHostDialog } from "./ssh-host-dialog";
 import type { HostFormMode } from "./ssh-host-dialog";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
@@ -325,11 +327,13 @@ export function MachinesPage() {
   const noImage = state !== null && imageVersion === null;
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="ui-display text-xl font-semibold">{S.machines.pageTitle}</h1>
-          <div className="flex items-center gap-2">
+    <PageFrame width="sm">
+      {/* The notices belong to the header: they sit under the title, and the selection bar
+          keeps one gap below whichever block ends the header. */}
+      <PageHeader
+        title={S.machines.pageTitle}
+        actions={
+          <>
             {behind.length > 0 && (
               <Button
                 size="sm"
@@ -466,21 +470,9 @@ export function MachinesPage() {
                 </div>
               )}
             </Dropdown>
-          </div>
-        </div>
-        {projectId !== null && hostForm !== null && (
-          <SshHostDialog
-            key={hostForm.kind === "edit" ? hostForm.host.alias : "add"}
-            mode={hostForm}
-            projectId={projectId}
-            onClose={() => setHostForm(null)}
-            onSaved={(next) => {
-              setState(next);
-              setError(null);
-            }}
-          />
-        )}
-
+          </>
+        }
+      >
         {error !== null && (
           <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {error}
@@ -491,85 +483,97 @@ export function MachinesPage() {
             {S.machines.noImage}
           </NoticeStrip>
         )}
+      </PageHeader>
+      {projectId !== null && hostForm !== null && (
+        <SshHostDialog
+          key={hostForm.kind === "edit" ? hostForm.host.alias : "add"}
+          mode={hostForm}
+          projectId={projectId}
+          onClose={() => setHostForm(null)}
+          onSaved={(next) => {
+            setState(next);
+            setError(null);
+          }}
+        />
+      )}
 
-        {/* The selection bar: a fixed slot between the title and the cards, so the cards
-            never move when a selection appears or goes. The count is the slot's label; on the
-            right, select all and none, then the two verbs — bare glyphs here (see Verb), each
-            dimmed when it would do nothing. */}
-        <div className="mt-3 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
-          <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
-          <span className="ml-auto flex flex-wrap items-center gap-1">
-            <Verb
-              wordless
-              label={S.machines.pickAll}
-              d={SELECT_ALL_PATH}
-              disabled={inUse.length === 0 || selectedIds.length === inUse.length}
-              onClick={pickAll}
-            />
-            <Verb
-              wordless
-              label={S.machines.pickNone}
-              d={SELECT_NONE_PATH}
-              disabled={selectedIds.length === 0}
-              onClick={pickNone}
-            />
-            <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-            <Verb
-              wordless
-              label={S.machines.use}
-              d={PLUG_PATH}
-              disabled={selectedIds.length === 0 || posting || noImage}
-              onClick={() => void use(selectedIds)}
-            />
-            <Verb
-              wordless
-              label={S.machines.stopUsing}
-              d={UNPLUG_PATH}
-              disabled={selectedIds.length === 0 || posting}
-              onClick={() => void stopUsing(selectedIds)}
-            />
-          </span>
-        </div>
-
-        {state === null ? (
-          <Skeleton className="h-40 w-full rounded-xl" />
-        ) : (
-          <ul className="space-y-2">
-            {local !== null && (
-              <LocalCard
-                machine={local}
-                locale={locale}
-                open={expanded.has(local.id)}
-                onToggleOpen={() => toggleExpanded(local.id)}
-              />
-            )}
-            {inUse.map((machine) => (
-              <MachineCard
-                key={machine.id}
-                machine={machine}
-                job={jobFor(jobs, machine.id)}
-                imageVersion={imageVersion}
-                locale={locale}
-                selected={selection.has(machine.id)}
-                onToggle={() => togglePicked(machine.id)}
-                open={expanded.has(machine.id)}
-                onToggleOpen={() => toggleExpanded(machine.id)}
-                busy={posting}
-                onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
-                onStopUsing={() => void stopUsing([machine.id])}
-                onConfigure={() => void configure(machine.alias)}
-              />
-            ))}
-            {inUse.length === 0 && (
-              <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700">
-                <p>{S.machines.noneInUse}</p>
-                <p className="mt-1 text-xs">{S.machines.sshHint}</p>
-              </li>
-            )}
-          </ul>
-        )}
+      {/* The selection bar: a fixed slot between the title and the cards, so the cards
+          never move when a selection appears or goes. The count is the slot's label; on the
+          right, select all and none, then the two verbs — bare glyphs here (see Verb), each
+          dimmed when it would do nothing. */}
+      <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
+        <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
+        <span className="ml-auto flex flex-wrap items-center gap-1">
+          <Verb
+            wordless
+            label={S.machines.pickAll}
+            d={SELECT_ALL_PATH}
+            disabled={inUse.length === 0 || selectedIds.length === inUse.length}
+            onClick={pickAll}
+          />
+          <Verb
+            wordless
+            label={S.machines.pickNone}
+            d={SELECT_NONE_PATH}
+            disabled={selectedIds.length === 0}
+            onClick={pickNone}
+          />
+          <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
+          <Verb
+            wordless
+            label={S.machines.use}
+            d={PLUG_PATH}
+            disabled={selectedIds.length === 0 || posting || noImage}
+            onClick={() => void use(selectedIds)}
+          />
+          <Verb
+            wordless
+            label={S.machines.stopUsing}
+            d={UNPLUG_PATH}
+            disabled={selectedIds.length === 0 || posting}
+            onClick={() => void stopUsing(selectedIds)}
+          />
+        </span>
       </div>
-    </div>
+
+      {state === null ? (
+        <Skeleton className="h-40 w-full rounded-xl" />
+      ) : (
+        <ul className="space-y-2">
+          {local !== null && (
+            <LocalCard
+              machine={local}
+              locale={locale}
+              open={expanded.has(local.id)}
+              onToggleOpen={() => toggleExpanded(local.id)}
+            />
+          )}
+          {inUse.map((machine) => (
+            <MachineCard
+              key={machine.id}
+              machine={machine}
+              job={jobFor(jobs, machine.id)}
+              imageVersion={imageVersion}
+              locale={locale}
+              selected={selection.has(machine.id)}
+              onToggle={() => togglePicked(machine.id)}
+              open={expanded.has(machine.id)}
+              onToggleOpen={() => toggleExpanded(machine.id)}
+              busy={posting}
+              onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
+              onStopUsing={() => void stopUsing([machine.id])}
+              onConfigure={() => void configure(machine.alias)}
+            />
+          ))}
+          {inUse.length === 0 && (
+            <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700">
+              <p>{S.machines.noneInUse}</p>
+              <p className="mt-1 text-xs">{S.machines.sshHint}</p>
+            </li>
+          )}
+        </ul>
+      )}
+    </PageFrame>
   );
 }
 

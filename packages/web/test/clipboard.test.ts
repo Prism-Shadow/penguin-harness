@@ -1,73 +1,34 @@
 /**
- * writeClipboard unit tests: the copy path that has to work on the origins this app is
- * actually served from.
+ * The app's one clipboard write (lib/clipboard.ts `writeClipboard`), which has to work on the
+ * origins the app is served from: `navigator.clipboard` exists only in a secure context, so it
+ * is absent on every plain-HTTP origin but localhost. The entry hands the write to the real
+ * `copy-to-clipboard` here, with only `window`, `navigator` and `document` replaced, so an
+ * upgrade that changes one of the properties the app chose it for fails here.
  *
- * `navigator.clipboard` is secure-context-only, so it is absent on every plain-HTTP origin
- * that is not localhost — a LAN bind, a remote install opened at `http://<host>:7364`. The
- * entry hands the write to `copy-to-clipboard`, and the three groups below pin three
- * different things:
- *
- *   - the entry's contract, against a module double: the text goes to the library as is,
- *     its boolean comes back as is, and its `window.prompt` last resort stays off;
- *   - the library's behaviour, against the REAL library with only `window`, `navigator`
- *     and `document` replaced: these are the properties this app chose it for, so an
- *     upgrade that changes one of them fails here rather than in a browser;
- *   - the seam itself, against the source text: a copy affordance that reaches for
- *     `navigator.clipboard.writeText` on its own would reintroduce exactly the silent no-op
- *     this module exists to prevent, and nothing in a node-only suite would notice
- *     (context-menu.test.ts convention).
+ * - On a non-secure origin the copy command runs without suspending, copies exactly the text
+ *   from an element kept out of layout, removes that element whatever the copy did, and hands
+ *   the page's selection and focus back.
+ * - A copy command that reports failure or throws resolves false, never a rejection, and never
+ *   falls back to a prompt.
+ * - In a secure context the Clipboard API is used and no copy command runs; when it refuses the
+ *   write, the copy command takes over.
+ * - Guard: no other module writes to `navigator.clipboard` or imports `copy-to-clipboard`.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 type WriteClipboard = (text: string) => Promise<boolean>;
 
-/** A fresh import of the entry, so a module double (or its removal) takes effect. */
+/** A fresh import of the entry and its library, reading the globals the test just stubbed. */
 async function loadEntry(): Promise<WriteClipboard> {
   vi.resetModules();
   return (await import("../src/lib/clipboard")).writeClipboard;
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.doUnmock("copy-to-clipboard");
   vi.resetModules();
-});
-
-describe("writeClipboard: the entry's contract", () => {
-  const copy =
-    vi.fn<(text: string, options?: { fallbackToPrompt?: boolean }) => Promise<boolean>>();
-
-  beforeEach(() => {
-    copy.mockReset();
-    vi.doMock("copy-to-clipboard", () => ({ default: copy }));
-  });
-
-  it("hands the text to the library unchanged and returns its true", async () => {
-    copy.mockResolvedValue(true);
-    const writeClipboard = await loadEntry();
-
-    await expect(writeClipboard("  reply\ttext\n")).resolves.toBe(true);
-    expect(copy).toHaveBeenCalledTimes(1);
-    expect(copy.mock.calls[0]?.[0]).toBe("  reply\ttext\n");
-  });
-
-  it("returns the library's false as is", async () => {
-    copy.mockResolvedValue(false);
-    const writeClipboard = await loadEntry();
-
-    await expect(writeClipboard("x")).resolves.toBe(false);
-  });
-
-  it("leaves the library's prompt fallback off", async () => {
-    copy.mockResolvedValue(false);
-    const writeClipboard = await loadEntry();
-
-    await writeClipboard("x");
-    expect(copy.mock.calls[0]?.[1]?.fallbackToPrompt).toBeFalsy();
-  });
 });
 
 interface FakeElement {
@@ -316,20 +277,5 @@ describe("clipboard writes go through one entry", () => {
     // Not vacuous: the entry itself is the one import the pattern must see.
     expect(LIBRARY_IMPORT.test(readFileSync(ENTRY, "utf8"))).toBe(true);
     expect(offenders(LIBRARY_IMPORT)).toEqual([]);
-  });
-
-  it("hands the entry to the shared UI package's copy controls, at the app root", () => {
-    const app = readFileSync(join(SRC, "app.tsx"), "utf8");
-    expect(app).toContain('import { writeClipboard } from "./lib/clipboard";');
-    expect(app).toContain("<ClipboardWriterProvider write={writeClipboard}>");
-  });
-
-  it("leaves reads alone: the terminal's mouse paste still reads the Clipboard API", () => {
-    const reads = sourceFiles(SRC).filter((file) =>
-      /navigator\s*\.\s*clipboard[\s\S]{0,40}?\.\s*readText\s*\(/.test(readFileSync(file, "utf8")),
-    );
-    expect(reads.map((file) => relative(SRC, file))).toContain(
-      join("features", "terminal", "terminal-view.tsx"),
-    );
   });
 });

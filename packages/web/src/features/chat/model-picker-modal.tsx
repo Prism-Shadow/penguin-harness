@@ -38,11 +38,11 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Modal,
   ProviderLogo,
   SearchInput,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Modal } from "../../components/ui/modal";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { TAG_SHAPE } from "../models/model-tags";

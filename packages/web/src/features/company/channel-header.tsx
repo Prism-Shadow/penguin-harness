@@ -21,17 +21,22 @@ import {
   AgentAvatar,
   AvatarStack,
   Button,
+  ConfirmModal,
+  Dropdown,
   GlyphIcon,
+  Heading,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   InfoPopover,
   Input,
+  Menu,
+  MenuItem,
   UserAvatar,
   menuPanelClass,
-  menuRowClass,
-  menuRowTone,
   noAutofill,
+  toastError,
+  toastSuccess,
   usePortalPanel,
 } from "@prismshadow/penguin-ui";
 import type { AvatarStackItem } from "@prismshadow/penguin-ui";
@@ -39,10 +44,6 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Dropdown } from "../../components/ui/dropdown";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
@@ -157,15 +158,16 @@ function MemberPopover({
                   <MemberAvatar member={m} size={ICON_SIZE.rowLead} />
                   <Truncated text={m.name} className="min-w-0 flex-1" />
                   {m.kind === "agent" && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="shrink-0"
                       disabled={openingDesk !== null}
                       onClick={() => onOpenDesk(m.principal)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} rounded px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+                      leading={<GlyphIcon d={DESK_ICON} size={ICON_SIZE.inlineGlyph} />}
                     >
-                      <GlyphIcon d={DESK_ICON} size={ICON_SIZE.inlineGlyph} />
                       {S.company.openDesk}
-                    </button>
+                    </Button>
                   )}
                 </div>
               ))
@@ -226,28 +228,24 @@ function InvitePicker({
             </p>
           ) : (
             candidates.map((c) => (
-              <button
+              <MenuItem
                 key={c.principal}
-                type="button"
+                density="sm"
                 disabled={busy}
-                onClick={() => {
+                onSelect={() => {
                   setOpen(false);
                   onQuery("");
                   onPick(c);
                 }}
-                className={`flex items-center justify-between gap-3 ${menuRowClass} text-xs disabled:opacity-60 ${menuRowTone()}`}
-              >
-                <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
+                glyph={
                   <MemberAvatar
                     member={{ principal: c.principal, name: c.name, kind: c.kind }}
                     size={ICON_SIZE.rowLead}
                   />
-                  <span className="min-w-0 truncate">{c.name}</span>
-                </span>
-                <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                  {c.detail ?? (c.kind === "user" ? S.company.channels.members : "")}
-                </span>
-              </button>
+                }
+                label={c.name}
+                trailing={c.detail ?? (c.kind === "user" ? S.company.channels.members : "")}
+              />
             ))
           )}
         </div>
@@ -388,11 +386,14 @@ export function ChannelHeader({
         <div className="flex min-w-0 flex-1 items-baseline gap-x-3 gap-y-1">
           {/* The name is a direct child of the heading, with the "?" right after it — the
               anchoring every other title in the app uses (OrgPage's own header included), and
-              what test/disclosure-anchor.test.ts reads. The row clips rather than wraps: the
-              server caps a channel name at 100 characters and the tooltip carries it whole. */}
-          <h1
+              what test/disclosure-anchor.test.ts reads. The page's one h1, set on the h4 rung:
+              a header row's title, not a page's display title. The row clips rather than wraps:
+              the server caps a channel name at 100 characters and the tooltip carries it whole. */}
+          <Heading
+            level={4}
+            as="h1"
             data-tooltip={label}
-            className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row} text-[15px] font-semibold`}
+            className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row}`}
           >
             <span className="shrink-0 text-gray-400 dark:text-gray-500">
               <GlyphIcon d={channelGlyph(detail.channelId)} size={ICON_SIZE.rowLead} />
@@ -407,7 +408,7 @@ export function ChannelHeader({
               </span>
               <span className="mt-1.5 block">{S.company.channels.hopSummary}</span>
             </InfoPopover>
-          </h1>
+          </Heading>
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
           {purpose !== null && (
             <span
@@ -466,65 +467,55 @@ export function ChannelHeader({
               </button>
             }
           >
-            {!detail.archived && (
-              <>
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setRenameOpen(true);
-                  }}
-                >
-                  {overflowMenuGlyph(ICONS.pencil)}
-                  {S.company.channels.rename}
-                </button>
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setPurposeOpen(true);
-                  }}
-                >
-                  {overflowMenuGlyph(PURPOSE_ICON)}
-                  {S.company.channels.editPurpose}
-                </button>
-              </>
-            )}
-            {/* Archiving is a people-only action, and the Web App's caller is always a
-                person — an employee reaches channels through the CLI. */}
-            {!allHands &&
-              (detail.archived ? (
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void setArchived(false);
-                  }}
-                >
-                  {overflowMenuGlyph(ICONS.archiveRestore)}
-                  {S.company.channels.unarchive}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setArchiveOpen(true);
-                  }}
-                >
-                  {overflowMenuGlyph(ICONS.archive)}
-                  {S.company.channels.archive}
-                </button>
-              ))}
+            <Menu density="sm">
+              {!detail.archived && (
+                <>
+                  <MenuItem
+                    glyph={ICONS.pencil}
+                    label={S.company.channels.rename}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      setRenameOpen(true);
+                    }}
+                  />
+                  <MenuItem
+                    glyph={PURPOSE_ICON}
+                    label={S.company.channels.editPurpose}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      setPurposeOpen(true);
+                    }}
+                  />
+                </>
+              )}
+              {/* Archiving is a people-only action, and the Web App's caller is always a
+                  person — an employee reaches channels through the CLI. */}
+              {!allHands &&
+                (detail.archived ? (
+                  <MenuItem
+                    glyph={ICONS.archiveRestore}
+                    label={S.company.channels.unarchive}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      void setArchived(false);
+                    }}
+                  />
+                ) : (
+                  <MenuItem
+                    glyph={ICONS.archive}
+                    label={S.company.channels.archive}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      setArchiveOpen(true);
+                    }}
+                  />
+                ))}
+            </Menu>
             {/* The all-hands channel simply has no archive row; one short line says why it is
                 missing. What that channel IS belongs to the header's "?", and repeating the
                 whole paragraph here made a menu out of an explanation. */}
             {allHands && detail.archived === false && (
-              <p className="px-2.5 py-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+              <p className="px-2.5 py-1.5 text-xs text-fg-subtle">
                 {S.company.channels.allHandsNoArchive}
               </p>
             )}
@@ -555,6 +546,7 @@ export function ChannelHeader({
         open={leaveOpen}
         title={S.company.channels.leaveTitle}
         confirmLabel={S.company.channels.leave}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setLeaveOpen(false))}
         onConfirm={() => void leave(me)}
@@ -567,6 +559,7 @@ export function ChannelHeader({
         open={archiveOpen}
         title={S.company.channels.archiveTitle}
         confirmLabel={S.company.channels.archive}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setArchiveOpen(false))}
         onConfirm={() => void setArchived(true)}

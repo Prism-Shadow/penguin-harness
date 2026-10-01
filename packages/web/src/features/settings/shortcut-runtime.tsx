@@ -7,9 +7,9 @@
  * mirror standing — the next hydrate reconciles.
  */
 import { useEffect } from "react";
+import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { toastError } from "../../components/ui/toast";
 import { hydrateFromServer, setKeybindingsPersister } from "../../lib/shortcuts/store";
 import { useAuth } from "../../state/auth";
 

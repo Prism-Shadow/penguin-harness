@@ -27,21 +27,23 @@ import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "../chat/skill-use";
 import { apiErrorText } from "../../lib/api-error";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { toneInk } from "../../lib/tone";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker } from "../machines/machine-picker";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 import {
   Button,
   Checkbox,
   Input,
+  NoticeStrip,
   PasswordInput,
   Select,
   SettingsSection,
   Spinner,
   Textarea,
   ToggleRow,
+  toastError,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 
 /** The picker's value for this server; a machine id is never this short. */

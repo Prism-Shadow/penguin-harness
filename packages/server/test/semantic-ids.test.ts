@@ -1,15 +1,22 @@
 /**
- * Integration tests for semantic ids: Project / Agent id
- * is chosen by the creator — must start with a lowercase letter and contain
- * only lowercase letters, digits, and underscores; checked for collisions
- * against both the DB and the directory (including built-in reserved ids),
- * returning 409 when taken.
- * The hyphen is a reserved separator: a non-admin's Project id is forced to
- * "<username>-<suffix>"; the admin's Project id contains no hyphen.
+ * Semantic ids through the create routes: a Project or Agent id is chosen by its creator —
+ * a lowercase letter first, then lowercase letters, digits and underscores — and checked for
+ * collisions against the DB and the directory (built-in reserved ids included). The hyphen is
+ * a reserved separator: a non-admin's Project id is "<username>-<suffix>", an admin's has none.
+ *
+ * - An admin creates a Project under a valid id (its display name defaulting to the id) and is
+ *   refused an invalid one; a DB-taken, directory-only-taken or reserved id is a 409.
+ * - A non-admin's Project id must carry their own prefix and a valid suffix.
+ * - A Project creation that fails midway rolls back its row and directory, so the same id can
+ *   be retried; an Agent creation that fails midway rolls back its directory the same way.
+ * - An Agent id is validated the same way, initializes the Agent, collides within its Project
+ *   (built-ins included) but not across Projects, and its display name is free-form.
+ *
+ * Every case creates distinct ids, so one app serves them all.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AgentCreateResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -22,16 +29,16 @@ describe("semantic ids", () => {
   let admin: ReturnType<typeof apiClient>;
   let api: ReturnType<typeof apiClient>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     api = apiClient(t.app, (await provisionUser(t.app, "ida")).cookie);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
   });
 
-  it("create Project (admin: no prefix, no hyphen): invalid ids 400; a valid id lands a directory; display name defaults to the id", async () => {
+  it("gives an admin's Project a valid bare id, its name defaulting to the id, and refuses an invalid one", async () => {
     for (const bad of BAD_IDS) {
       const res = await admin.post("/api/projects", { projectId: bad, name: "x" });
       expect(res.status, `projectId=${bad}`).toBe(400);
@@ -45,7 +52,7 @@ describe("semantic ids", () => {
     await expect(fs.access(path.join(t.root, "my_proj_2"))).resolves.toBeUndefined();
   });
 
-  it("create Project: DB-taken, directory-only-taken, and reserved ids are all 409", async () => {
+  it("refuses a DB-taken, directory-only or reserved Project id as taken", async () => {
     expect((await admin.post("/api/projects", { projectId: "taken", name: "a" })).status).toBe(201);
     expect((await admin.post("/api/projects", { projectId: "taken", name: "b" })).status).toBe(409);
     // A directory that exists but isn't tracked (e.g. created by the CLI) is also considered taken.
@@ -59,7 +66,7 @@ describe("semantic ids", () => {
     ).toBe(409);
   });
 
-  it("non-admin Project creation: id forced to <username>-<suffix>; the suffix allows only lowercase letters, digits, underscores", async () => {
+  it("makes a non-admin's Project id carry their own prefix and a valid suffix", async () => {
     // No prefix / prefix only / suffix with a hyphen or an invalid character: 400.
     for (const bad of ["blog", "ida", "ida-", "idablog", "proj_ida", "ida-sub-x", "ida-Bad"]) {
       const res = await api.post("/api/projects", { projectId: bad, name: "x" });
@@ -73,46 +80,51 @@ describe("semantic ids", () => {
     await expect(fs.access(path.join(t.root, "ida-blog"))).resolves.toBeUndefined();
   });
 
-  it("mid-flight Project creation failure: the DB row and directory roll back; retrying the same id succeeds", async () => {
-    // Inject a config write failure (handleError logs the stack trace: silence it so it doesn't clutter output).
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const original = t.deps.projectConfigService.writeInitialConfig.bind(
-      t.deps.projectConfigService,
-    );
+  it("rolls back a Project creation that fails midway, so the same id can be retried", async () => {
+    // Inject a config write failure (handleError logs the stack trace: silence it so it doesn't
+    // clutter output). The app is shared, so the real writer goes back whatever happens.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const original = t.deps.projectConfigService.writeInitialConfig;
     t.deps.projectConfigService.writeInitialConfig = async () => {
       throw new Error("config write blew up");
     };
-    expect((await admin.post("/api/projects", { projectId: "flaky", name: "x" })).status).toBe(500);
-    spy.mockRestore();
+    try {
+      expect((await admin.post("/api/projects", { projectId: "flaky", name: "x" })).status).toBe(
+        500,
+      );
+    } finally {
+      t.deps.projectConfigService.writeInitialConfig = original;
+    }
     // No leftovers: neither the directory nor the DB row exist, so the id isn't held by an orphaned directory.
     await expect(fs.access(path.join(t.root, "flaky"))).rejects.toThrow();
     expect(
       t.deps.db.prepare("SELECT 1 AS x FROM projects WHERE project_id = ?").get("flaky"),
     ).toBeUndefined();
-    t.deps.projectConfigService.writeInitialConfig = original;
     expect((await admin.post("/api/projects", { projectId: "flaky", name: "x" })).status).toBe(201);
   });
 
-  it("mid-flight Agent creation failure: the directory rolls back; retrying the same id succeeds", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const original = t.deps.agentConfigService.updateConfig.bind(t.deps.agentConfigService);
+  it("rolls back an Agent creation that fails midway, so the same id can be retried", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const original = t.deps.agentConfigService.updateConfig;
     t.deps.agentConfigService.updateConfig = async () => {
       throw new Error("config write blew up");
     };
-    expect(
-      (await api.post("/api/projects/ida-default_project/agents", { agentId: "flaky" })).status,
-    ).toBe(500);
-    spy.mockRestore();
+    try {
+      expect(
+        (await api.post("/api/projects/ida-default_project/agents", { agentId: "flaky" })).status,
+      ).toBe(500);
+    } finally {
+      t.deps.agentConfigService.updateConfig = original;
+    }
     await expect(
       fs.access(path.join(t.root, "ida-default_project", "agents", "flaky")),
     ).rejects.toThrow();
-    t.deps.agentConfigService.updateConfig = original;
     expect(
       (await api.post("/api/projects/ida-default_project/agents", { agentId: "flaky" })).status,
     ).toBe(201);
   });
 
-  it("create Agent: invalid ids 400; a valid id initializes; duplicates and built-in ids 409; no conflicts across Projects", async () => {
+  it("validates an Agent id, initializes the Agent, and checks collisions within its Project only", async () => {
     for (const bad of BAD_IDS) {
       const res = await api.post("/api/projects/ida-default_project/agents", {
         agentId: bad,

@@ -3,20 +3,18 @@
  * names where the flow stands (check / checking / a release offered / downloading with its
  * percentage / restart to update / restarting / cannot update), and every state opens the
  * update modal, which is where the flow is explained and acted on. The running version
- * sits muted on the right. Renders nothing where this session can update nothing.
+ * sits muted on the right. Renders nothing where this session can update nothing. A Menu row,
+ * like the menu's other entries.
  */
-import { Spinner } from "@prismshadow/penguin-ui";
+import { MenuItem, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { updateRowModel } from "../../lib/update-flow";
 import type { UpdateFlow } from "../../lib/update-flow";
 import { useUpdateFlow } from "../../lib/use-update-flow";
 
 export function UpdateRow({
-  menuItemClass,
   onOpen,
 }: {
-  /** The menu's shared row class (dropdown.tsx's `menuItemClass`). */
-  menuItemClass: string;
   /** Click: the account menu closes and the update modal opens. */
   onOpen: () => void;
 }) {
@@ -24,28 +22,22 @@ export function UpdateRow({
   if (mode === "none") return null;
   const row = updateRowModel(flow);
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`${menuItemClass} flex items-center justify-between gap-2`}
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        {/* The row's words already say what is running; hidden, the spinner stays out of the
-            menu item's accessible name. */}
-        {row.busy && (
+    <MenuItem
+      glyph={
+        row.busy ? (
+          // The row's words already say what is running; hidden, the spinner stays out of the
+          // menu item's accessible name.
           <span aria-hidden className="flex shrink-0">
             <Spinner size="sm" label={S.common.loading} />
           </span>
-        )}
-        {row.dot && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent" />}
-        <span className="min-w-0 truncate">{rowLabel(flow)}</span>
-      </span>
-      {currentVersion !== null && (
-        <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-          {`v${currentVersion}`}
-        </span>
-      )}
-    </button>
+        ) : row.dot ? (
+          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent" />
+        ) : undefined
+      }
+      label={rowLabel(flow)}
+      trailing={currentVersion !== null ? `v${currentVersion}` : undefined}
+      onSelect={onOpen}
+    />
   );
 }
 

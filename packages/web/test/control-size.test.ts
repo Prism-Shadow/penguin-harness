@@ -1,6 +1,12 @@
 /**
- * The form-control size scale (the UI package's `sizeTextClass`, in
+ * Guard: the form-control size scale (the UI package's `sizeTextClass`, in
  * packages/ui/src/components/forms/input/input.tsx).
+ *
+ * - No control call site spells a font size in its own className (checked on known shapes too,
+ *   so the check itself cannot go blind).
+ * - A Modal footer's Buttons, and the Buttons of a module that is only ever dialog content, sit
+ *   on the fields' sm rung.
+ * - The control family spells a font size in its two records and nowhere else.
  *
  * A control's font size comes from its `size` prop and nowhere else. A `text-*` in a caller's
  * `className` does not reliably override the component's own — both are single-class font-size
@@ -45,7 +51,7 @@ const FAMILY: Record<string, string> = {
   "input.tsx": "packages/ui/src/components/forms/input/input.tsx",
   "select.tsx": "packages/ui/src/components/forms/select/select.tsx",
   "option-menu.tsx": "packages/ui/src/components/forms/select/option-menu.tsx",
-  "form-picker.tsx": "packages/web/src/components/ui/form-picker.tsx",
+  "form-picker.tsx": "packages/ui/src/components/forms/select/form-picker.tsx",
   "search-input.tsx": "packages/ui/src/components/forms/search-input/search-input.tsx",
 };
 
@@ -58,14 +64,23 @@ const FONT_SIZE_CLASS = /\btext-(?:xs|sm|base|lg|xl|\d?xl|\[[^\]]+])(?![\w-])/;
 
 const tsxFiles = (): SourceFile[] => SCAN.files.filter((file) => file.name.endsWith(".tsx"));
 
-const parse = (file: SourceFile) =>
-  ts.createSourceFile(
-    file.path,
-    file.text,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX,
-  );
+const parsed = new Map<string, ts.SourceFile>();
+
+/** A file's syntax tree, parsed once however many checks walk it. */
+const parse = (file: SourceFile): ts.SourceFile => {
+  let tree = parsed.get(file.id);
+  if (tree === undefined) {
+    tree = ts.createSourceFile(
+      file.path,
+      file.text,
+      ts.ScriptTarget.Latest,
+      /* setParentNodes */ true,
+      ts.ScriptKind.TSX,
+    );
+    parsed.set(file.id, tree);
+  }
+  return tree;
+};
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -284,7 +299,7 @@ describe("control font size", () => {
     expect(
       findLooseFooterButtons(),
       'A Button in a Modal footer passes size="sm", so the dialog\'s buttons read at the same ' +
-        "size as its fields (compare components/ui/confirm-modal.tsx).",
+        "size as its fields (compare the UI package's ConfirmModal).",
     ).toEqual([]);
   });
 

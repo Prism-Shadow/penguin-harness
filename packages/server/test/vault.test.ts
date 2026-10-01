@@ -1,32 +1,23 @@
 /**
- * Integration tests for the Vault environment variable routes (Agent-level
- * agent_state/.vault.toml): GET masks values (plaintext
- * is never sent), PUT is owner-only, whole-table replace semantics (omitting
- * value keeps the original, an absent key is deleted, a new key must supply a
- * value), 400 on key/shape validation, 404 for a nonexistent Agent, vaults of
- * different Agents are independent of each other, and PUT leaves the Agent's cached
- * Session runtimes alone (core reads the vault into each Session's next model context).
+ * The Vault routes: an Agent's environment variables (agent_state/.vault.toml).
+ *
+ * - GET masks every value (short ones entirely) and never sends plaintext, the PUT response
+ *   included; members read, outsiders get 404; an empty vault is an empty table.
+ * - PUT is owner-only: a member gets 403, an outsider 404.
+ * - PUT replaces the whole table: an entry without a value keeps its stored one, an absent key
+ *   is deleted, and a new key without a value is a 400.
+ * - A vault write leaves the Project's model credentials alone.
+ * - A vault write leaves the Agent's cached Session runtimes alone: core reads the vault into
+ *   each Session's next model context, so nothing is rebuilt.
+ * - Each Agent's vault is its own; an Agent that does not exist is a 404.
+ * - Malformed keys, values and bodies are 400s.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { userText } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, VaultResponse } from "../src/api/types.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
-/** Minimal fake runtime Session: one assistant reply, no approvals (keeps the loader-count test free of LLM calls). */
-function fakeRuntimeSession(sessionId: string): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run() {},
-    async *compact() {},
-  };
-}
 
 describe("vault api", () => {
   let t: TestApp;
@@ -38,13 +29,14 @@ describe("vault api", () => {
   /** Loader call count: how many times the manager (re)built a runtime from the index. */
   let loads: number;
 
-  beforeEach(async () => {
-    loads = 0;
+  beforeAll(async () => {
+    // The loader counts how many times the manager (re)built a runtime from the index; the
+    // runtime it builds answers with nothing, so no case reaches an LLM.
     t = await createTestApp({
       loader: {
         load: async (row) => {
           loads++;
-          return fakeRuntimeSession(row.sessionId);
+          return fakeSession(row.sessionId);
         },
       },
     });
@@ -62,8 +54,12 @@ describe("vault api", () => {
     const add = await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" });
     expect(add.status).toBe(201);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(async () => {
+    loads = 0;
+    expect((await owner.put(vaultPath, { entries: [] })).status).toBe(200);
   });
 
   it("GET masks values and never sends plaintext; members can read, outsiders 404; an empty vault returns an empty table", async () => {
@@ -140,24 +136,14 @@ describe("vault api", () => {
   });
 
   it("PUT leaves the Agent's cached Session runtimes alone: the vault reaches a running Session at its next compaction, not by a rebuild", async () => {
-    t.deps.sessionsRepo.insert({
-      sessionId: "vault-sess-1",
-      projectId,
-      agentId: "default_agent",
-      modelId: "m1",
-      provider: "custom",
-      workspace: t.root,
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    });
-    const idle = () => t.deps.manager.statusOf("vault-sess-1") === "idle";
+    const sid = uniqueSessionId();
+    t.deps.sessionsRepo.insert(sessionRow(sid, { projectId, workspace: t.root }));
+    const idle = () => t.deps.manager.statusOf(sid) === "idle";
 
     // First Task builds the runtime (load #1); the second reuses the active-table entry.
-    await t.deps.manager.startTask("vault-sess-1", [userText("a")]);
+    await t.deps.manager.startTask(sid, [userText("a")]);
     await waitFor(idle);
-    await t.deps.manager.startTask("vault-sess-1", [userText("b")]);
+    await t.deps.manager.startTask(sid, [userText("b")]);
     await waitFor(idle);
     expect(loads).toBe(1);
 
@@ -167,11 +153,11 @@ describe("vault api", () => {
     // next context it opens, exactly as the CLI's in-process Session does.
     const put = await owner.put(vaultPath, { entries: [{ key: "NEW_KEY", value: "v-secret-1" }] });
     expect(put.status).toBe(200);
-    await t.deps.manager.startTask("vault-sess-1", [userText("c")]);
+    await t.deps.manager.startTask(sid, [userText("c")]);
     await waitFor(idle);
     expect(loads).toBe(1);
     expect((await owner.get(vaultPath)).status).toBe(200);
-    await t.deps.manager.startTask("vault-sess-1", [userText("d")]);
+    await t.deps.manager.startTask(sid, [userText("d")]);
     await waitFor(idle);
     expect(loads).toBe(1);
   });

@@ -54,12 +54,11 @@ import type {
 import {
   AgentAvatar,
   Chevron,
-  ChoiceCheck,
+  Dropdown,
   ICONS,
-  ICON_GAP,
+  MenuItem,
   PenguinLogo,
-  menuRowClass,
-  menuRowTone,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -72,8 +71,6 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { Dropdown } from "../../components/ui/dropdown";
-import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { versionBadgeFor } from "../../lib/update-flow";
 import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
@@ -934,6 +931,7 @@ export function DraftView({
             machineId={workspaceMachine}
             onChange={changeWorkspace}
             chooseMachine
+            {...(agentId ? { agentId } : {})}
           />
         </div>
 
@@ -965,7 +963,7 @@ export function DraftView({
                 />
 
                 {open && (
-                  <ul className="mt-0.5 space-y-0.5 pl-4">
+                  <ul className="mt-0.5 space-y-1 pl-4">
                     {folder.tasks.map((task) => {
                       const copy = S.chat.exampleTasks[task.id];
                       return (
@@ -1011,7 +1009,7 @@ export function DraftView({
  * new version.
  */
 const versionBadgeClass =
-  "ml-1.5 inline-block align-super text-[10px] leading-4 text-gray-400 dark:text-gray-500";
+  "ml-1.5 inline-block align-super text-xs leading-4 text-gray-400 dark:text-gray-500";
 
 /**
  * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
@@ -1125,32 +1123,28 @@ function AgentSelect({
         {agents.map((a) => {
           const active = a.agentId === selected?.agentId;
           return (
-            <button
+            <MenuItem
               key={a.agentId}
-              type="button"
+              density="sm"
               aria-pressed={active}
-              onClick={() => {
+              checked={active}
+              onSelect={() => {
                 onSelect(a);
                 setOpen(false);
               }}
-              className={`flex items-center ${ICON_GAP.menu} ${menuRowClass} ${menuRowTone(active)}`}
-            >
-              <AgentAvatar
-                id={a.agentId}
-                name={agentDisplayName(a)}
-                size={20}
-                className="shrink-0 rounded"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs">{agentDisplayName(a)}</span>
-                {a.description && (
-                  <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
-                    {a.description}
-                  </span>
-                )}
-              </span>
-              <ChoiceCheck on={active} />
-            </button>
+              glyph={
+                <AgentAvatar
+                  id={a.agentId}
+                  name={agentDisplayName(a)}
+                  size={20}
+                  className="shrink-0 rounded"
+                />
+              }
+              label={agentDisplayName(a)}
+              description={
+                a.description ? <span className="block truncate">{a.description}</span> : undefined
+              }
+            />
           );
         })}
       </div>

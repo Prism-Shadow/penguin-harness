@@ -24,18 +24,31 @@ import type {
 import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
+  Card,
+  ConfirmModal,
   CopyButton,
   GlyphIcon,
   HiddenFileInput,
   ICONS,
-  ICON_SIZE,
   InfoPopover,
   Input,
   OptionMenu,
+  PageFrame,
+  PageHeader,
   Skeleton,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  Tabs,
   Textarea,
   UpdateDot,
+  toastError,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -44,9 +57,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { Tabs } from "../../components/ui/tabs";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
+import { useSaveConfirm } from "./save-confirm";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";
 import { MemoryTab } from "./memory-tab";
@@ -258,61 +269,53 @@ export function AgentSettingsPage() {
   return (
     /* relative: a scroller is its own containing block (see the invariant in styles.css) —
        this page's snapshot-import control used to grow the document from below the fold. */
-    <div className="no-scrollbar relative h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate("/agents")}
-          className="-ml-2 mb-3 text-gray-500 dark:text-gray-400"
-        >
-          <GlyphIcon d={ICONS.arrowLeft} size={ICON_SIZE.rowLead} />
-          {S.agent.backToList}
-        </Button>
-        <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
-        <p className="mb-4 font-mono text-xs text-gray-400">{agentId}</p>
-        {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
-            from the Agents list has to cross the tab strip to reach it. */}
-        <Tabs
-          items={TABS.map((t) =>
-            t.key === "overview" && data.config.kernelOutdated
-              ? { ...t, badge: S.agent.kernelOutdatedHint }
-              : t,
-          )}
-          active={tab}
-          onChange={switchTab}
-        />
-        <div className="py-4">
-          {tab === "overview" && (
-            <OverviewTab
-              data={data}
-              agentId={agentId}
-              onSave={save}
-              onImported={onImported}
-              onConfigReset={onConfigReset}
-              onKernelUpdated={onKernelUpdated}
-            />
-          )}
-          {tab === "prompt" && <PromptTab data={data} onSave={save} />}
-          {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
-          {tab === "tools" && (
-            <div className="space-y-8">
-              <ToolsTab data={data} onSave={save} />
-              {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
-                  builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
-              <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
-            </div>
-          )}
-          {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "schedules" && (
-            <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />
-          )}
-        </div>
+    <PageFrame width="sm" className="no-scrollbar relative">
+      <PageHeader
+        title={data.config.name ?? agentId}
+        back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
+        // The id is data: mono on the small rung. A block keeps its line box at its own
+        // 16px rather than the description line's body height.
+        description={<span className="block font-mono text-xs text-gray-400">{agentId}</span>}
+      />
+      {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
+          from the Agents list has to cross the tab strip to reach it. */}
+      <Tabs
+        items={TABS.map((t) =>
+          t.key === "overview" && data.config.kernelOutdated
+            ? { ...t, badge: S.agent.kernelOutdatedHint }
+            : t,
+        )}
+        active={tab}
+        onChange={switchTab}
+      />
+      <div className="py-4">
+        {tab === "overview" && (
+          <OverviewTab
+            data={data}
+            agentId={agentId}
+            onSave={save}
+            onImported={onImported}
+            onConfigReset={onConfigReset}
+            onKernelUpdated={onKernelUpdated}
+          />
+        )}
+        {tab === "prompt" && <PromptTab data={data} onSave={save} />}
+        {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
+        {tab === "tools" && (
+          <div className="space-y-6">
+            <ToolsTab data={data} onSave={save} />
+            {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
+                builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
+            <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
+          </div>
+        )}
+        {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "schedules" && <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />}
       </div>
-    </div>
+    </PageFrame>
   );
 }
 
@@ -483,7 +486,7 @@ function OverviewTab({
             )}
           </div>
         </div>
-        <div className="mt-3 space-y-2.5">
+        <div className="mt-3 space-y-3">
           <div>
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
               {S.agent.stateVersion}
@@ -561,7 +564,7 @@ function OverviewTab({
             </Button>
           </div>
         </div>
-        <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm">
+        <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-sm">
           {data.config.kernelOutdated ? (
             <>
               <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -611,6 +614,8 @@ function OverviewTab({
         onConfirm={() => {
           if (conflict !== null) void runImport(conflict, true);
         }}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
       </ConfirmModal>
@@ -626,6 +631,7 @@ function OverviewTab({
         onClose={() => setKernelOpen(false)}
         onConfirm={() => void runKernelUpdate()}
         confirmLabel={S.agent.kernelUpdateAction}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.agent.kernelUpdateConfirmBody}
@@ -640,6 +646,7 @@ function OverviewTab({
         onClose={() => setResetOpen(false)}
         onConfirm={() => void runReset()}
         confirmLabel={S.agent.resetConfigAction}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.resetConfigConfirmBody}</p>
       </ConfirmModal>
@@ -818,7 +825,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <Card padding="none">
         <div className="p-3">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Input
@@ -917,7 +924,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
             onChange={(e) => setPrompt(e.target.value)}
           />
         </div>
-      </div>
+      </Card>
 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
@@ -1039,77 +1046,73 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
 
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-              <th className="px-3 py-2">{S.common.name}</th>
-              <th className="px-3 py-2">{S.agent.toolPermission}</th>
-              <th className="px-3 py-2">{S.agent.toolTimeout}</th>
-              <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
-              <th className="px-3 py-2">
-                <span className="flex items-center gap-1.5">
-                  {S.agent.toolCallDescription}
-                  <InfoPopover label={S.agent.toolCallDescription}>
-                    {S.agent.callDescriptionHint}
-                  </InfoPopover>
-                </span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={row.base.name} className="border-b border-gray-100 dark:border-gray-800/60">
-                <td className="px-3 py-2 align-top font-mono text-xs">{row.base.name}</td>
-                <td className="px-3 py-2 align-top">
-                  <OptionMenu
-                    mono
-                    size="sm"
-                    aria-label={S.agent.toolPermission}
-                    placeholder={S.agent.defaultValue}
-                    options={permissionOptions}
-                    value={row.base.permission}
-                    onChange={(v) => update(i, { base: { ...row.base, permission: v } })}
+      <Table tableClassName="min-w-[640px]">
+        <TableHead>
+          <TableHeaderCell>{S.common.name}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolPermission}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolTimeout}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolMaxOutput}</TableHeaderCell>
+          <TableHeaderCell>
+            <span className="flex items-center gap-1.5">
+              {S.agent.toolCallDescription}
+              <InfoPopover label={S.agent.toolCallDescription}>
+                {S.agent.callDescriptionHint}
+              </InfoPopover>
+            </span>
+          </TableHeaderCell>
+        </TableHead>
+        <TableBody>
+          {rows.map((row, i) => (
+            <TableRow key={row.base.name}>
+              <TableCell className="align-top font-mono text-xs">{row.base.name}</TableCell>
+              <TableCell className="align-top">
+                <OptionMenu
+                  mono
+                  size="sm"
+                  aria-label={S.agent.toolPermission}
+                  placeholder={S.agent.defaultValue}
+                  options={permissionOptions}
+                  value={row.base.permission}
+                  onChange={(v) => update(i, { base: { ...row.base, permission: v } })}
+                />
+              </TableCell>
+              <TableCell className="align-top">
+                <Input
+                  size="sm"
+                  value={row.timeoutMs}
+                  error={fieldErrors[`${i}-timeoutMs`]}
+                  inputMode="numeric"
+                  className="font-mono"
+                  onChange={(e) => update(i, { timeoutMs: e.target.value })}
+                />
+              </TableCell>
+              <TableCell className="align-top">
+                <Input
+                  size="sm"
+                  value={row.maxOutputLength}
+                  error={fieldErrors[`${i}-maxOutputLength`]}
+                  inputMode="numeric"
+                  className="font-mono"
+                  onChange={(e) => update(i, { maxOutputLength: e.target.value })}
+                />
+              </TableCell>
+              <TableCell className="align-top">
+                {/* Per-tool call_description switch (missing = on): shown only for tools whose
+                    config schema actually declares the description argument. */}
+                {hasDescriptionProperty(row.base) ? (
+                  <Switch
+                    checked={row.base.call_description !== false}
+                    onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
+                    aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
                   />
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <Input
-                    size="sm"
-                    value={row.timeoutMs}
-                    error={fieldErrors[`${i}-timeoutMs`]}
-                    inputMode="numeric"
-                    className="font-mono"
-                    onChange={(e) => update(i, { timeoutMs: e.target.value })}
-                  />
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <Input
-                    size="sm"
-                    value={row.maxOutputLength}
-                    error={fieldErrors[`${i}-maxOutputLength`]}
-                    inputMode="numeric"
-                    className="font-mono"
-                    onChange={(e) => update(i, { maxOutputLength: e.target.value })}
-                  />
-                </td>
-                <td className="px-3 py-2 align-top">
-                  {/* Per-tool call_description switch (missing = on): shown only for tools whose
-                      config schema actually declares the description argument. */}
-                  {hasDescriptionProperty(row.base) ? (
-                    <Switch
-                      checked={row.base.call_description !== false}
-                      onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
-                      aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
-                    />
-                  ) : (
-                    <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                ) : (
+                  <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}

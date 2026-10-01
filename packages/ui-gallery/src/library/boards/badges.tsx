@@ -1,6 +1,7 @@
 /**
  * 徽标与状态: Badge in every tone and weight, the count, the state dot, StatusIcon in every run
- * state, the session activity marks, and the update dot and pill.
+ * state, the session activity marks, the update dot and pill, and the two readings — the stat
+ * tile and the stat chip.
  */
 import {
   ActivityIcon,
@@ -8,8 +9,11 @@ import {
   Badge,
   Count,
   Dot,
+  ICONS,
   ICON_SIZE,
   ScheduleMark,
+  StatChip,
+  StatTile,
   StatusIcon,
   TONES,
   UpdateDot,
@@ -104,6 +108,25 @@ export function BadgesBoard() {
             <UpdatePill onClick={() => undefined}>{t.pillText}</UpdatePill>
             <span className="lib-caption">{t.pill}</span>
           </span>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.statTile}>
+        <div className="grid max-w-xl grid-cols-2 gap-3">
+          <StatTile icon={ICONS.coin} label={t.spend} value="$12.40" detail={t.spendDetail} />
+          <StatTile
+            icon={ICONS.info}
+            label={t.alerts}
+            value={2}
+            tone="danger"
+            detail={t.alertsDetail}
+          />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.statChip}>
+        <div className="lib-row text-xs text-fg-subtle">
+          <StatChip glyph={ICONS.arrowUpFromLine} value="18.2k" label={t.input} />
+          <StatChip glyph={ICONS.arrowDownToLine} value="1.4k" label={t.output} />
+          <StatChip glyph={ICONS.clockCompact} value="12.7s" compactValue="13s" label={t.elapsed} />
         </div>
       </BoardGroup>
     </div>

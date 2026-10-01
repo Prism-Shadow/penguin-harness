@@ -9,12 +9,10 @@
  * opening starts from the homepage as saved.
  */
 import { useState } from "react";
-import { Button, Input } from "@prismshadow/penguin-ui";
+import { Button, Input, Modal, toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { Modal } from "../../components/ui/modal";
-import { toastError } from "../../components/ui/toast";
 import { homepageFromInput } from "./address";
 import { dispatchBrowser } from "./browser-store";
 

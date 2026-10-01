@@ -21,19 +21,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
+  ConfirmModal,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   Input,
+  Modal,
   PlusIcon,
   Textarea,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Modal } from "../../components/ui/modal";
-import { toastError } from "../../components/ui/toast";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
 import {
   SHORTCUT_MAX_COUNT,
@@ -170,7 +170,7 @@ export function ShortcutsFolder({
            folder's height plus the New-shortcut row. */
         <div className="mt-0.5 pl-4">
           {loaded && (
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {shortcuts.map((shortcut) => (
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button
@@ -278,6 +278,7 @@ export function ShortcutsFolder({
         open={deleting !== null}
         title={S.chat.shortcuts.deleteTitle}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         onClose={() => setDeleting(null)}
         onConfirm={() => {
           if (deleting !== null) persist(removeShortcut(shortcuts, deleting.id));

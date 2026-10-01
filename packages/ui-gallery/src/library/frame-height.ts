@@ -16,8 +16,12 @@
  *   otherwise grow it without end.
  * The height shrinks back as soon as an overlay closes; it is a function of what is there.
  *
- * `measureFrameHeight` reads those rects off a document; only the direct children of the body
- * other than the app's root count as overlays.
+ * `measureFrameHeight` reads those rects off a document. The overlays are the direct children of
+ * the body other than the app's root, and the outermost fixed-position boxes inside the board: a
+ * panel the app renders in place rather than in a portal (the bottom sheet, the drawer) is
+ * anchored to the viewport, not laid out in the board, so it is measured as an overlay. Counted as
+ * board content, a sheet parked below the viewport before it slides in would put the board's
+ * bottom near twice the frame's height, and the frame would double on every measure.
  */
 
 export interface MeasuredMain {
@@ -71,12 +75,13 @@ export function coversViewport(
 /** A painted box: anything with no size is not on screen and says nothing about the height. */
 const painted = (rect: DOMRect) => rect.width > 0 && rect.height > 0;
 
-/** The lowest visible edge of an element and everything inside it. */
-function lowestEdge(el: Element): number {
+/** The lowest visible edge of an element and everything inside it, bar the `skip` subtrees. */
+function lowestEdge(el: Element, skip: readonly Element[] = []): number {
   let bottom = -Infinity;
   const rect = el.getBoundingClientRect();
   if (painted(rect)) bottom = rect.bottom;
   for (const child of el.querySelectorAll("*")) {
+    if (skip.some((s) => s.contains(child))) continue;
     const r = child.getBoundingClientRect();
     if (painted(r)) bottom = Math.max(bottom, r.bottom);
   }
@@ -93,6 +98,18 @@ function panelHeightIn(el: Element, viewportHeight: number): number {
   return tallest;
 }
 
+/** The outermost fixed-position boxes inside an element, in document order. */
+function fixedBoxesIn(el: Element): Element[] {
+  const view = el.ownerDocument.defaultView;
+  if (!view) return [];
+  const found: Element[] = [];
+  for (const child of el.querySelectorAll("*")) {
+    if (found.some((f) => f.contains(child))) continue;
+    if (view.getComputedStyle(child).position === "fixed") found.push(child);
+  }
+  return found;
+}
+
 /** Reads the board and the overlays off a document and applies the rule. */
 export function measureFrameHeight(
   doc: Document,
@@ -101,13 +118,16 @@ export function measureFrameHeight(
   options: FrameHeightOptions = FRAME_HEIGHT_OPTIONS,
 ): number {
   const viewportHeight = doc.defaultView?.innerHeight ?? 0;
+  const inPlace = fixedBoxesIn(main);
   const measuredMain: MeasuredMain = {
     bottom: main.getBoundingClientRect().bottom,
-    contentBottom: lowestEdge(main),
+    contentBottom: lowestEdge(main, inPlace),
   };
+  const portals = Array.from(doc.body.children).filter(
+    (el) => el !== root && el.tagName !== "SCRIPT" && el.tagName !== "STYLE",
+  );
   const overlays: MeasuredOverlay[] = [];
-  for (const el of Array.from(doc.body.children)) {
-    if (el === root || el.tagName === "SCRIPT" || el.tagName === "STYLE") continue;
+  for (const el of [...portals, ...inPlace]) {
     const rect = el.getBoundingClientRect();
     if (coversViewport(rect, viewportHeight)) {
       overlays.push({

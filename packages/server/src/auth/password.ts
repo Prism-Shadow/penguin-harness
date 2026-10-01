@@ -113,9 +113,10 @@ export async function verifyAccountPassword(
 }
 
 /** Hashes the passwords this server writes; a test stands in a cheap one. */
-export abstract class PasswordHasher extends Interface<{
-  hash(password: string): Promise<string>;
-}>() {}
+@Interface()
+export abstract class PasswordHasher {
+  abstract hash(password: string): Promise<string>;
+}
 
 /** scrypt at full strength. */
 @Component()

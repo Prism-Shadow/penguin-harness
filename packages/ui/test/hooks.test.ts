@@ -70,19 +70,22 @@ const APPENDIX_A = [
  * gallery frames as they are (the package itself renders none). A component is listed only while
  * it exists: the last test below fails on a host no scanned file declares.
  *
- * Glass is for the layers that float over the page (the composer card, dialogs, menus, popovers,
- * tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
- * marks for the spinner, a pulsing state dot and the machines page's working marks; frames for
- * the transcript's cards; the shell for the app layout; a decorative icon for the rows and headers
- * whose label already says what the icon says (sidebar rows and group headers, the settings rail,
- * a menu row's glyph, a tab, an empty state) — a session row is not a host, its avatar and marks
- * carry information; a tree for a file tree and a work group's steps; a field for a settings row;
- * activity for the transcript's work in progress (the work group's header, a tool call, the
- * thinking row).
+ * Glass is for the layers that float over the page (the composer card and its slash list, dialogs,
+ * menus, popovers, tooltips, the floating launcher); the eyebrow and display rungs for the
+ * sidebar's list label and the page titles; live marks for the spinner, a pulsing state dot, the
+ * machines page's working marks and the caret of a reply still streaming in; frames for the
+ * transcript's cards, the code block, the page's cards and a table that is its own box; the shell
+ * for the app window; a decorative icon for the rows and headers whose label already says what the
+ * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
+ * tab, an empty state) — a session row is not a host, its avatar and marks carry information; a
+ * tree for a file tree and a work group's steps; a field for a settings row; activity for the
+ * transcript's work in progress (the work group's header, a tool call, the thinking row).
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
+  // The composer's card and the slash list that opens over it (W6) float with the menus.
   "ui-glass": [
-    "ChatInput",
+    "ComposerCard",
+    "SlashMenu",
     "Modal",
     "Dropdown",
     "Select",
@@ -91,29 +94,29 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "Tooltip",
     "TooltipLayer",
     "TooltipPanel",
+    // The floating launcher (W7): its ball and caption, and the fan's entries, float over the
+    // conversation with content moving underneath.
+    "LauncherBall",
+    "LauncherFan",
   ],
-  "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog"],
-  "ui-display": [
-    "Heading",
-    "EmptyState",
-    "AgentsPage",
-    "ModelsPage",
-    "PluginsPage",
-    "UsagePage",
-    "BenchmarkPage",
-    "MachinesPage",
-    "DraftView",
-  ],
-  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard"],
-  "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock"],
-  "ui-underline-nav": ["Tabs"],
-  "ui-shell": ["AppLayout"],
+  // `Text` carries it for its eyebrow role (W7), the one door a group label takes in new code —
+  // the sidebar's list label among them (W7).
+  "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text"],
+  // The page titles are `PageHeader`'s; the draft view's hero writes its own.
+  "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
+  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar", "StreamingCaret"],
+  // The transcript's cards (the tool call, the work group, the changes card at a Task's foot) and
+  // the code block, and the page-level boxes (W4): the card and a table that is its own box.
+  "ui-frame": ["ToolCallCard", "WorkGroup", "ChangesCard", "CodeBlock", "Card", "Table"],
+  // The page tab bar, and a dock's tab strip (W7).
+  "ui-underline-nav": ["Tabs", "DockTabs"],
+  // The app window (W7: the package's shell; the web's layout route renders it).
+  "ui-shell": ["AppShell"],
   "ui-icon-decor": [
     "GlyphIcon",
-    "Sidebar",
-    "PagedDialog",
+    "NavRow",
     "SettingsDialog",
-    "MenuItemGlyph",
+    "MenuItem",
     "GroupHeader",
     "Tabs",
     "EmptyState",
@@ -122,19 +125,19 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-field": ["Field", "PrefRow", "SettingRow"],
   "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow"],
   // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
-  // renders through. The charts: the usage charts' frame (its children — the trend, requests and
-  // token-bar charts — carry parts, not the hook), the token donut and the two sparklines.
+  // renders through. The charts: the plot frame (its children — the trend, requests, token-bar
+  // and score charts — carry parts, not the hook), the token donut, the sparkline and the ring.
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
   // SVG ones.
-  "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline", "ActivitySparkline", "TimelineChart"],
+  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart"],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
   // An assistant reply as it arrives (2026-09-30): the reply body the transcript renders and the
   // gallery frames on its own.
-  "ui-stream": ["AssistantReplyBody"],
+  "ui-stream": ["AssistantText"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -143,11 +146,11 @@ const NOT_HOOKS = new Set(["ui-sans-serif", "ui-serif", "ui-monospace", "ui-roun
 const FRAME_SLOTS = new Set(["head", "body", "foot", "pane"]);
 const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
 const FIELD_SLOTS = new Set(["label", "control", "hint"]);
-const LIVE_SIGNALS = new Set(["dot", "caret", "spinner"]);
+const LIVE_SIGNALS = new Set(["dot", "caret", "spinner", "bar"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
 const ACTIVITY_KINDS = new Set(["thinking", "tool"]);
 const ACTIVITY_STATES = new Set(["running", "done", "error"]);
-const ACTIVITY_SLOTS = new Set(["label", "detail", "progress"]);
+const ACTIVITY_SLOTS = new Set(["label", "detail", "progress", "mark", "toggle", "toggle-end"]);
 const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]);
 const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
 const STREAM_STATES = new Set(["streaming", "done"]);
@@ -279,7 +282,9 @@ describe("style hooks", () => {
         const problems: string[] = [];
         const live = element.attributes.get("data-live");
         if (names.has("ui-live") && live !== null && !LIVE_SIGNALS.has(String(live))) {
-          problems.push(`${at} .ui-live needs data-live="dot|caret|spinner", has ${String(live)}`);
+          problems.push(
+            `${at} .ui-live needs data-live="dot|caret|spinner|bar", has ${String(live)}`,
+          );
         }
         const level = element.attributes.get("aria-level");
         if (names.has("ui-display") && element.intrinsic && element.tag !== "h1" && level !== "1") {
@@ -328,7 +333,9 @@ describe("style hooks", () => {
           }
           for (const { slot } of childSlots(element)) {
             if (!ACTIVITY_SLOTS.has(slot)) {
-              problems.push(`${at} .ui-activity slot "${slot}" is not label, detail or progress`);
+              problems.push(
+                `${at} .ui-activity slot "${slot}" is not label, detail, progress, mark, toggle or toggle-end`,
+              );
             }
           }
         }
@@ -502,7 +509,7 @@ describe("the hook checks, on known shapes", () => {
       file(
         "d.tsx",
         [
-          "export function AssistantReplyBody({ revealing }: { revealing: boolean }) {",
+          "export function AssistantText({ revealing }: { revealing: boolean }) {",
           "  return (",
           '    <div className="ui-stream" data-state={revealing ? "streaming" : "done"}>',
           "      <p>text</p>",

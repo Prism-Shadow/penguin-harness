@@ -4,13 +4,11 @@
  * on each opening; the confirm stays disabled while none is.
  */
 import { useEffect, useState } from "react";
-import { Checkbox } from "@prismshadow/penguin-ui";
+import { Checkbox, ConfirmModal, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { BuiltinBrowserStorage } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 
 type ClearKind = BuiltinBrowserStorage | "history";
 
@@ -69,6 +67,7 @@ export function ClearDataDialog({ open, onClose }: { open: boolean; onClose: () 
       onClose={onClose}
       onConfirm={() => void run()}
       confirmLabel={S.builtinBrowser.clearConfirm}
+      cancelLabel={S.common.cancel}
       confirmDisabled={chosen.size === 0}
       busy={busy}
     >

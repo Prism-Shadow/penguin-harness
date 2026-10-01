@@ -1,11 +1,18 @@
 /**
- * A pty on a machine is named in the terminal id (machines/terminal-relay.ts).
+ * A pty on a machine, reached through this server (machines/terminal-relay.ts).
  *
  * The runtime serves one socket path and asks the platform for the session by id, so the
- * whole of "which machine, which pty, which user" has to fit in that id. Pinned: the spelling
- * round-trips, an ordinary id is never mistaken for a remote one, and the owner the runtime
- * checks is exactly the user the client named — which is what makes naming anyone else
- * refusable before the relay runs.
+ * whole of "which machine, which pty, which user" has to fit in that id:
+ * - The `<terminalId>@<machineId>@<userId>` spelling round-trips (a percent-encoded separator
+ *   included); a plain local id, or anything half-spelled, is never read as a remote one; the
+ *   owner the runtime checks is exactly the user the client named, so naming anyone else is
+ *   refusable before the relay runs.
+ *
+ * The relay itself:
+ * - A viewer that left while the machine was being reached dials nobody, so no stream is left
+ *   attached to a pty over there with no reader.
+ * - Frames typed before the machine's stream opened are held and delivered, and the machine's
+ *   output reaches the viewer once both ends are up.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EventEmitter, once } from "node:events";
@@ -113,8 +120,9 @@ describe("relaying a viewer to a machine's stream", () => {
     isAdmin: () => true,
   });
 
-  const settle = async (predicate: () => boolean): Promise<void> => {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
+  /** Waits for `predicate`, giving up after `attempts` × 10 ms. */
+  const settle = async (predicate: () => boolean, attempts = 100): Promise<void> => {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (predicate()) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
@@ -137,7 +145,9 @@ describe("relaying a viewer to a machine's stream", () => {
     viewer.drop();
     reached({ agent: new http.Agent(), port: machinePort, cookie: "" });
     await relaying;
-    await settle(() => accepted.length > 0);
+    // No event marks a dial that never happens; one to this loopback server is accepted within
+    // a few milliseconds, so a quarter of a second of quiet is the proof.
+    await settle(() => accepted.length > 0, 25);
     // Nothing was opened, so nothing is attached to a pty over there with no reader. Before
     // the viewer's close was listened to from the start, this left one stream per pane.
     expect(accepted).toHaveLength(0);

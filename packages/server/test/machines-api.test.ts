@@ -7,12 +7,40 @@
  * read the developer's own ~/.ssh/config and spawn ssh against whatever it names. What the
  * push actually does over ssh is covered by machines-push.test.ts, against a fake ssh
  * binary and the real installOnRemote.
+ *
+ * One App serves the file; each case builds its own service (data root, store, effects),
+ * which the App's machines node forwards to. The one case about the App's own boot boots
+ * an App of its own.
+ *
+ * Scenarios:
+ * - Given a member, a stranger or an admin, only the admin reaches the routes and a machine's
+ *   proxied API.
+ * - Given an ssh config, the list is its aliases with the version this server would push; an
+ *   empty or unreadable config leaves this machine alone, and no image is said as such.
+ * - Given an install, the job narrates, finishes and is remembered per Project; every failure
+ *   (far-side words, a refused build, a throw, an unwritten version) ends the job and records
+ *   nothing; a machine already on this build is a result, and still gets pushed state.
+ * - Given installed machines, status is probed only when asked, once per round, and a stopped
+ *   server or an unreachable machine is an answer; a restart follows an install only where a
+ *   server was running.
+ * - Given a connect, the remembered port is the one used, a dead server is started, a live one
+ *   is left alone, and a held session is re-held at start() and at the App's boot — never
+ *   after a disconnect.
+ * - Given a model edit during a sync, it is written once afterwards, never dropped.
+ * - Given a connected machine, its directories are listed through the alias holding it.
+ * - Given a probe, the machine's own id is learned and kept; this machine's id is minted once.
+ * - Given a batch to use, machines work side by side and each ends connected; stop using keeps
+ *   the install.
+ * - Given an ssh-config edit, a new block is appended, this app's block is rewritten in place,
+ *   and a hand-written one is refused.
+ * - Given a refusal decidable without ssh (self-install, a second install, an unknown host, no
+ *   image), nothing runs.
  */
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { MachinesUseResponse, MachinesResponse } from "../src/api/types.js";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
@@ -32,6 +60,7 @@ import {
   waitFor,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
 
 /** Every route is under a Project; the seeded one every server has. */
 const PROJECT = "default_project";
@@ -100,7 +129,12 @@ describe("machines API", () => {
   let machinesRoot: string;
   let machinesRepo: MachinesRepo;
   let store: DatabaseSync;
+  /** The case's service: what the App's routes and `t.deps.machines` reach. */
+  let service: MachinesService;
+  /** Every service built so far (the App's first included), retired after the case. */
+  const built: Array<{ service: MachinesService; store: DatabaseSync; root: string }> = [];
 
+  /** Builds the case's service over a fresh data root and store, with its effects overridden. */
   const boot = async (over: Partial<MachinesEffects> = {}, layout?: RemoteLayout) => {
     connected.clear();
     machinesRoot = await makeTempRoot();
@@ -116,18 +150,35 @@ describe("machines API", () => {
       .prepare("INSERT INTO projects (project_id, owner_user_id, created_at) VALUES (?, ?, ?)")
       .run("default_project", "admin", "2026-08-24T00:00:00.000Z");
     machinesRepo = new MachinesRepo(store);
-    t = await createTestApp({
-      machines: new MachinesService(
-        machinesRoot,
-        LOCAL_ID,
-        machinesRepo,
-        effects(over),
-        undefined,
-        layout,
-      ),
-    });
-    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    service = new MachinesService(
+      machinesRoot,
+      LOCAL_ID,
+      machinesRepo,
+      effects(over),
+      undefined,
+      layout,
+    );
+    built.push({ service, store, root: machinesRoot });
   };
+
+  beforeAll(async () => {
+    await boot();
+    t = await createTestApp({ machines: forwardingTo(() => service) });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  afterEach(async () => {
+    for (const retired of built.splice(0)) {
+      // Its jobs finish before the next case's service takes over, so nothing a job does
+      // lands in another case.
+      await waitFor(() => retired.service.jobs().every((job) => !job.running && !job.queued));
+      retired.service.stop();
+      retired.store.close();
+      fs.rmSync(retired.root, { recursive: true, force: true });
+    }
+  });
 
   /** What the store holds for each machine, as the service left it. */
   const recordsInStore = (): Record<string, { version: string; at: string }> =>
@@ -138,17 +189,14 @@ describe("machines API", () => {
         .map((row) => [row.address, { version: row.version!, at: row.installedAt! }]),
     );
 
-  afterEach(async () => {
-    await t.cleanup();
-    fs.rmSync(machinesRoot, { recursive: true, force: true });
-  });
-
   describe("permission", () => {
+    let member: ReturnType<typeof apiClient>;
+    beforeAll(async () => {
+      member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
+    });
     beforeEach(() => boot());
 
     it("is admin-only: a provisioned user gets 403", async () => {
-      const user = await provisionUser(t.app, "member");
-      const member = apiClient(t.app, user.cookie);
       expect((await member.get("/api/projects/default_project/machines")).status).toBe(403);
       expect(
         (await member.post("/api/projects/default_project/machines/ssh:nas/install")).status,
@@ -164,8 +212,6 @@ describe("machines API", () => {
       // the user on the context, and an ungated prefix left the handler reading isAdmin off
       // nothing — a 500, for the admin who was allowed and the stranger who was not.
       expect((await t.app.request("/server/tXIvjrl0pgKa5_dD/api/version")).status).toBe(401);
-      const user = await provisionUser(t.app, "member");
-      const member = apiClient(t.app, user.cookie);
       expect((await member.get("/server/tXIvjrl0pgKa5_dD/api/version")).status).toBe(403);
       // An admin reaches the proxy itself, which answers for a machine it does not hold.
       const res = await admin.get("/server/tXIvjrl0pgKa5_dD/api/version");
@@ -1041,42 +1087,28 @@ describe("machines API", () => {
       // What a hot push or a restart finds: a record written by the generation before. Nobody
       // calls start() here — the Startup component does, as the App comes up.
       const heldNow: string[] = [];
-      connected.clear();
-      machinesRoot = await makeTempRoot();
-      store = openDatabase(":memory:");
-      store
-        .prepare(
-          "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)",
-        )
-        .run("admin", "x", "2026-08-24T00:00:00.000Z");
-      store
-        .prepare("INSERT INTO projects (project_id, owner_user_id, created_at) VALUES (?, ?, ?)")
-        .run("default_project", "admin", "2026-08-24T00:00:00.000Z");
-      machinesRepo = new MachinesRepo(store);
+      await boot({
+        hold: async (target) => {
+          heldNow.push(target.alias);
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
       machinesRepo.patch("ssh:nas", {
         version: "9.9.9",
         installedAt: "2026-08-01T00:00:00.000Z",
         sessionPid: 424242,
         remotePort: 7364,
       });
-      t = await createTestApp({
-        machines: new MachinesService(
-          machinesRoot,
-          LOCAL_ID,
-          machinesRepo,
-          effects({
-            hold: async (target) => {
-              heldNow.push(target.alias);
-              connected.add(`ssh:${target.alias}`);
-              return { ok: true, session: { pid: process.pid, socksPort: 1 } };
-            },
-          }),
-        ),
-      });
-      admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-      await waitFor(() => heldNow.length > 0);
-      expect(heldNow).toEqual(["nas"]);
-      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(process.pid);
+      // An App of its own, booted over that record: its boot is the behaviour.
+      const booted = await createTestApp({ machines: service });
+      try {
+        await waitFor(() => heldNow.length > 0);
+        expect(heldNow).toEqual(["nas"]);
+        expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(process.pid);
+      } finally {
+        await booted.cleanup();
+      }
     });
 
     it("disconnect clears the record, so a later boot leaves the machine alone", async () => {

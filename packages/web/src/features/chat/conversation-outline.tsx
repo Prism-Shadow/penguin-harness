@@ -36,9 +36,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, MouseEvent, RefObject } from "react";
-import { Dot, GlyphIcon } from "@prismshadow/penguin-ui";
+import { Dot, Dropdown, GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Dropdown } from "../../components/ui/dropdown";
 import type { OutlineEntry } from "./outline-model";
 import {
   globalTurnNumber,
@@ -181,7 +180,7 @@ function RailOverflowMark({ edge }: { edge: "above" | "below" }) {
     <div
       data-outline-overflow={edge}
       aria-hidden
-      className={`flex w-10 flex-col items-start gap-[3px] pl-4 ${edge === "above" ? "pb-1.5" : "pt-1.5"}`}
+      className={`flex w-10 flex-col items-start gap-1 pl-4 ${edge === "above" ? "pb-1.5" : "pt-1.5"}`}
     >
       {[0, 1, 2].map((i) => (
         <span key={i} className="h-[2px] w-[2px] rounded-full bg-gray-300 dark:bg-gray-700" />
