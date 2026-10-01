@@ -145,11 +145,11 @@ describe("theme values the rules reach", () => {
   // §2.4: a theme may uppercase its h1 (through .ui-display) and h6, the group-label rung
   // (through .ui-eyebrow); nothing between is uppercased. Headings are set in the theme's chrome
   // face (`--ui-font-ui`), its reading face or its display face — never in `--ui-font-mono`, the
-  // DATA face, and never in a literal monospace stack. Console's chrome face is itself
-  // monospaced (user decision, 2026-09-19), and that is the one door: a heading rung reaches a
-  // mono face only by reading `--ui-font-ui`, so a theme that wants mono titles says so once,
-  // in the face, and a component still never writes `font-mono` on a label (rule 16). The
-  // reading face stays proportional in every theme: prose is not set in mono.
+  // DATA face, and never in a literal monospace stack. A theme may set its chrome face in a
+  // monospaced family (Console did from 2026-09-19 to 2026-09-30), and that is the one door: a
+  // heading rung reaches a mono face only by reading `--ui-font-ui`, so a theme that wants mono
+  // titles says so once, in the face, and a component still never writes `font-mono` on a label
+  // (rule 16). The reading face stays proportional in every theme: prose is not set in mono.
   const themes = THEME_IDS.map((id) => {
     const rel = `themes/${id}.css`;
     const path = join(SRC_DIR, rel);
@@ -486,6 +486,15 @@ describe("the rule checks, on known shapes", () => {
     expect(
       found("t.css", ".x .ui-frame > [data-slot=head] { font-family: var(--ui-font-mono); }"),
     ).toEqual(["16:.x .ui-frame > [data-slot=head] { font-family: var(--ui-font-mono) }"]);
+    // The technical marks may take the mono face; the text beside them may not.
+    expect(
+      found(
+        "t.css",
+        ".x .ui-notice::before { font-family: var(--ui-font-mono); }\n" +
+          '.x .ui-activity [data-slot="label"] { font-family: var(--ui-font-mono); }\n' +
+          '.x .ui-activity [data-slot="detail"] { font-family: var(--ui-font-mono); }',
+      ),
+    ).toEqual(['16:.x .ui-activity [data-slot="detail"] { font-family: var(--ui-font-mono) }']);
     expect(
       found(
         "page-header.tsx",

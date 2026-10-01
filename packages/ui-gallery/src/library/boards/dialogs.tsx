@@ -1,24 +1,58 @@
-/** 对话框: Modal, ConfirmModal, Drawer and Sheet, each opened from a button and closed as the app closes it. */
+/**
+ * 对话框: Modal, ConfirmModal in both tones, PagedDialog, Drawer, Sheet, the Lightbox and the
+ * CommandPalette, each opened from a button (the lightbox from its thumbnail) and closed as the app
+ * closes it. The palette's actions open the board's other dialogs, the way an app action opens its
+ * own overlay once the palette has gone.
+ */
 import { useState } from "react";
-import { Button } from "../../../../web/src/components/ui/button";
-import { ConfirmModal } from "../../../../web/src/components/ui/confirm-modal";
-import { Drawer } from "../../../../web/src/components/ui/drawer";
-import { Input } from "../../../../web/src/components/ui/input";
-import { Modal } from "../../../../web/src/components/ui/modal";
-import { Sheet } from "../../../../web/src/components/ui/sheet";
-import type { SheetSnap } from "../../../../web/src/components/ui/sheet";
+import {
+  Button,
+  CommandPalette,
+  ConfirmModal,
+  Drawer,
+  Input,
+  Modal,
+  PagedDialog,
+  Sheet,
+  ZoomableImage,
+} from "@prismshadow/penguin-ui";
+import type { PagedDialogGroup, PaletteAction, SheetSnap } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
+import { BASE } from "../../lib/location";
 import { useGallery } from "../../state";
+
+type Page = "general" | "appearance" | "account";
 
 export function DialogsBoard() {
   const { S } = useGallery();
   const t = S.library.dialogs;
   const [modal, setModal] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [saveConfirm, setSaveConfirm] = useState(false);
+  const [paged, setPaged] = useState(false);
+  const [page, setPage] = useState<Page>("general");
   const [drawer, setDrawer] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [snap, setSnap] = useState<SheetSnap>("half");
+  const [palette, setPalette] = useState(false);
   const [name, setName] = useState(t.modalTitle);
+  const groups: PagedDialogGroup<Page>[] = [
+    {
+      key: "app",
+      label: t.pagedGroups.app,
+      items: [
+        { key: "general", label: t.pages.general },
+        { key: "appearance", label: t.pages.appearance, info: t.appearanceInfo },
+      ],
+    },
+    { key: "you", label: t.pagedGroups.you, items: [{ key: "account", label: t.pages.account }] },
+  ];
+  const actions: PaletteAction[] = [
+    { id: "modal", label: t.modalTitle, run: () => setModal(true) },
+    { id: "paged", label: t.openPaged, run: () => setPaged(true) },
+    { id: "drawer", label: t.openDrawer, run: () => setDrawer(true) },
+    { id: "sheet", label: t.openSheet, run: () => setSheet(true) },
+  ];
   return (
     <div className="gf-board">
       <BoardGroup title={t.modal}>
@@ -51,16 +85,44 @@ export function DialogsBoard() {
           <Button variant="danger" onClick={() => setConfirm(true)}>
             {t.openConfirm}
           </Button>
+          <Button onClick={() => setSaveConfirm(true)}>{t.openSaveConfirm}</Button>
         </div>
         <ConfirmModal
           open={confirm}
           title={t.confirmTitle}
           confirmLabel={t.confirmLabel}
+          cancelLabel={t.cancel}
           onClose={() => setConfirm(false)}
           onConfirm={() => setConfirm(false)}
         >
           {t.confirmBody}
         </ConfirmModal>
+        <ConfirmModal
+          open={saveConfirm}
+          title={t.saveConfirmTitle}
+          tone="primary"
+          confirmLabel={t.save}
+          cancelLabel={t.cancel}
+          onClose={() => setSaveConfirm(false)}
+          onConfirm={() => setSaveConfirm(false)}
+        >
+          {t.saveConfirmBody}
+        </ConfirmModal>
+      </BoardGroup>
+      <BoardGroup title={t.paged}>
+        <div className="lib-row">
+          <Button onClick={() => setPaged(true)}>{t.openPaged}</Button>
+        </div>
+        <PagedDialog
+          open={paged}
+          onClose={() => setPaged(false)}
+          title={t.pagedTitle}
+          groups={groups}
+          active={page}
+          onSelect={setPage}
+        >
+          <p className="text-sm">{t.pageBody}</p>
+        </PagedDialog>
       </BoardGroup>
       <BoardGroup title={t.drawer}>
         <div className="lib-row">
@@ -83,6 +145,29 @@ export function DialogsBoard() {
         >
           <p className="p-4 text-sm">{t.sheetBody}</p>
         </Sheet>
+      </BoardGroup>
+      <BoardGroup title={t.lightbox} aside={t.lightboxHint}>
+        <div className="lib-row">
+          <ZoomableImage
+            src={`${BASE}/penguin-logo.svg`}
+            alt={t.lightboxAlt}
+            className="h-16 w-16"
+          />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.palette} aside={t.paletteAside}>
+        <div className="lib-row">
+          <Button onClick={() => setPalette(true)}>{t.openPalette}</Button>
+        </div>
+        <CommandPalette
+          open={palette}
+          onClose={() => setPalette(false)}
+          actions={actions}
+          title={t.palette}
+          placeholder={t.palettePlaceholder}
+          emptyText={t.paletteEmpty}
+          hint={t.paletteHint}
+        />
       </BoardGroup>
     </div>
   );

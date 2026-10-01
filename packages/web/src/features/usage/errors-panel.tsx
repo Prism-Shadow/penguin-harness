@@ -5,19 +5,21 @@
  * message). What an error needs to answer is "what exactly went wrong" — a
  * detail table is more direct than a chart here: the count alone in the stats already covers the summary.
  *
+ * The server folds a day's repeats of one error into one row: the stats count records, the
+ * table and its pager count rows, and a row standing for several records says how many after
+ * its message.
+ *
  * Color semantics are consistent site-wide: unexpected (500s / runtime
  * exceptions) is a prominent rose; expected (HttpError, business 4xx) recedes into gray.
  * The outer frame is provided by the caller's ChartCard (full width, below the four business charts).
  */
 import { useEffect, useState } from "react";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
+import { Badge, ConfirmModal, Pager, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { Badge } from "../../components/ui/badge";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Empty } from "./usage-charts";
 import { toneInk } from "../../lib/tone";
 
@@ -129,7 +131,7 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
 
 /**
  * Error panel: stats + a recent-errors table (the server already takes the top N, newest first).
- * The message column shows **one line per error by default** (kept compact — an error storm can
+ * The message column shows **one line per row by default** (kept compact — an error storm can
  * fill the table); clicking a message expands it in place to the full text (wrapping, newlines
  * preserved — the upstream detail after the code, e.g. a provider's 402 body, is what matters),
  * and clicking again collapses it. The full text is also in the hover title. Cells align to the
@@ -139,9 +141,9 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
  * sideways inside its own box rather than dragging the page along with it.
  *
  * The footer under the table carries the pager and, for a Project owner, the clear action.
- * Clearing deletes the rows the current filter selects — the set the reader is looking at,
- * not the Project's whole history — and the confirmation says which set that is, because a
- * deleted error record has no other copy anywhere.
+ * Clearing deletes the records the current filter selects — the set the reader is looking at,
+ * not the Project's whole history — and the confirmation says which set that is and how many
+ * records it holds, because a deleted error record has no other copy anywhere.
  */
 export function ErrorsPanel({
   errors,
@@ -169,7 +171,7 @@ export function ErrorsPanel({
   /** Reload the dashboard after a clear — the stats above the table are the caller's data. */
   onCleared: () => void;
 }) {
-  const { total, unexpected, topCode, recent } = errors;
+  const { total, unexpected, topCode, recent, rows } = errors;
   // Page size is read off the first page rather than duplicating the server's ERROR_RECENT_N:
   // whenever a second page exists at all, `recent` is exactly that many rows, so the two cannot
   // drift apart into skipping or repeating rows. (Empty means a single empty page anyway.)
@@ -179,10 +181,10 @@ export function ErrorsPanel({
   const [page, setPage] = useState(0);
   const [items, setItems] = useState<UsageErrorItem[]>(recent);
   // The row count the pager counts pages against: seeded from the dashboard snapshot, then
-  // replaced by each page's own total. The snapshot goes stale (rows evicted by the row cap, an
+  // replaced by each page's own count. The snapshot goes stale (rows evicted by the row cap, an
   // Agent deleted between load and click), and pinning to it computes a page count that can
-  // strand the caller on a page the data no longer has.
-  const [pagedTotal, setPagedTotal] = useState(total);
+  // strand the caller on a page the data no longer has. Rows, not records: a page holds rows.
+  const [pagedRows, setPagedRows] = useState(rows);
   const [pageError, setPageError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // A new dashboard response invalidates the offsets being paged through, so paging goes back to
@@ -199,7 +201,7 @@ export function ErrorsPanel({
     // changing a filter.
     if (page === 0) {
       setItems(recent);
-      setPagedTotal(total);
+      setPagedRows(rows);
       setPageError(null);
       return;
     }
@@ -211,7 +213,7 @@ export function ErrorsPanel({
       .then((res) => {
         if (cancelled) return;
         setItems(res.items);
-        setPagedTotal(res.total);
+        setPagedRows(res.rows);
       })
       .catch((e: unknown) => {
         // Keep the rows already on screen rather than blanking the table under an error.
@@ -223,9 +225,9 @@ export function ErrorsPanel({
     return () => {
       cancelled = true;
     };
-  }, [page, pageSize, projectId, filters, recent, total]);
+  }, [page, pageSize, projectId, filters, recent, rows]);
 
-  const pageCount = Math.max(1, Math.ceil(pagedTotal / pageSize));
+  const pageCount = Math.max(1, Math.ceil(pagedRows / pageSize));
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
 
@@ -306,27 +308,47 @@ export function ErrorsPanel({
                     key={`${e.ts}-${i}`}
                     className="border-t border-gray-100 dark:border-gray-800/60"
                   >
-                    <td className="py-1.5 pr-2 align-top font-mono tabular-nums text-gray-400">
+                    {/* The latest of the row's records; the first is in the tooltip. */}
+                    <td
+                      className="py-1.5 pr-2 align-top font-mono tabular-nums text-gray-400"
+                      data-tooltip={
+                        e.count > 1 ? S.usage.errorsFirstAt(formatDateTime(e.firstTs)) : undefined
+                      }
+                    >
                       {formatDateTime(e.ts)}
                     </td>
                     <td className="py-1.5 pr-2 align-top font-mono text-gray-500 dark:text-gray-400">
                       <span className="block break-words">{sourceCode(e.source, e.code)}</span>
                     </td>
                     <td className="py-1.5 pr-2 align-top">
-                      <Badge tone={key === "unexpected" ? "red" : "gray"}>{kindLabel(key)}</Badge>
+                      <Badge tone={key === "unexpected" ? "danger" : "neutral"}>
+                        {kindLabel(key)}
+                      </Badge>
                     </td>
                     <td className="py-1.5 align-top text-gray-500 dark:text-gray-400">
-                      {/* One line by default; click to expand to the full message (wrapping), click again to collapse. */}
+                      {/* One line by default; click to expand to the full message (wrapping), click
+                          again to collapse. How many of the day's records the row stands for
+                          follows as a muted count, outside the truncated text so a long message
+                          cannot push it out of sight. */}
                       <button
                         type="button"
                         data-tooltip={e.message}
                         data-tooltip-content="text"
                         onClick={() => toggle(i)}
-                        className={`block w-full cursor-pointer text-left transition-colors hover:text-gray-700 dark:hover:text-gray-300 ${
-                          expanded.has(i) ? "whitespace-pre-wrap break-words" : "truncate"
-                        }`}
+                        className="flex w-full min-w-0 cursor-pointer items-baseline gap-1.5 text-left transition-colors hover:text-gray-700 dark:hover:text-gray-300"
                       >
-                        {e.message}
+                        <span
+                          className={`min-w-0 ${
+                            expanded.has(i) ? "whitespace-pre-wrap break-words" : "truncate"
+                          }`}
+                        >
+                          {e.message}
+                        </span>
+                        {e.count > 1 && (
+                          <span className="shrink-0 tabular-nums text-gray-400 dark:text-gray-500">
+                            ×{e.count}
+                          </span>
+                        )}
                       </button>
                     </td>
                   </tr>
@@ -361,21 +383,17 @@ export function ErrorsPanel({
             <span className="text-red-600 dark:text-red-400">{pageError}</span>
           )}
           {(pageCount > 1 || page > 0) && (
-            <>
-              <span className="ml-auto tabular-nums">
-                {S.usage.errorsPageOf(page + 1, pageCount, pagedTotal)}
-              </span>
-              <PagerButton
-                label={S.usage.errorsNewer}
-                disabled={page === 0 || loading}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              />
-              <PagerButton
-                label={S.usage.errorsOlder}
-                disabled={page + 1 >= pageCount || loading}
-                onClick={() => setPage((p) => p + 1)}
-              />
-            </>
+            <Pager
+              variant="labelled"
+              className="ml-auto"
+              page={page}
+              pageCount={pageCount}
+              onChange={setPage}
+              previousLabel={S.usage.errorsNewer}
+              nextLabel={S.usage.errorsOlder}
+              readout={S.usage.errorsPageOf(page + 1, pageCount, pagedRows)}
+              disabled={loading}
+            />
           )}
         </div>
       )}
@@ -387,6 +405,7 @@ export function ErrorsPanel({
         tone="danger"
         title={S.usage.errorsClearTitle}
         confirmLabel={S.usage.errorsClear}
+        cancelLabel={S.common.cancel}
         busy={clearing}
         onClose={() => setConfirmingClear(false)}
         onConfirm={() => void runClear()}
@@ -399,27 +418,5 @@ export function ErrorsPanel({
         </div>
       </ConfirmModal>
     </div>
-  );
-}
-
-/** Pager step button: same recessive treatment as the rest of the panel's chrome. */
-function PagerButton({
-  label,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="rounded-md border border-gray-200 px-2 py-0.5 transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-800 dark:hover:bg-gray-800/60 dark:disabled:hover:bg-transparent"
-    >
-      {label}
-    </button>
   );
 }

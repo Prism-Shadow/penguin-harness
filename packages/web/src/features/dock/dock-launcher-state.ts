@@ -12,7 +12,7 @@
  * toolbar and the composer — and its horizontal offset from the resting edge: 0 on the
  * edge, negative when pulled into the conversation.
  */
-import { rubberband } from "../../lib/sheet-physics";
+import { rubberband } from "@prismshadow/penguin-ui";
 
 /** localStorage key of the resting position: the ball's centre as a ratio of the body's height. */
 export const LAUNCHER_Y_KEY = "penguin.dock.launcherY";

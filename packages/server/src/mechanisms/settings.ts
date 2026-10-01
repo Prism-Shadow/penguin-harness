@@ -4,26 +4,28 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** Settings: the mechanism ServerSettingsRepo implements. */
-export abstract class Settings extends Interface<{
-  get(key: string): string | null;
-  set(key: string, value: string): void;
-  getProxyForApp(): boolean;
-  setProxyForApp(value: boolean): void;
-  getProxyForAgent(): boolean;
-  setProxyForAgent(value: boolean): void;
-  getProxyUrl(): string | null;
-  setProxyUrl(value: string | null): void;
-  getAttachmentMaxMb(): number;
-  setAttachmentMaxMb(value: number): void;
-  getAttachmentTotalMb(): number;
-  setAttachmentTotalMb(value: number): void;
-  getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number };
-  getCompanyMode(): boolean;
-  setCompanyMode(value: boolean): void;
-}>() {}
+@Interface()
+export abstract class Settings {
+  abstract get(key: string): string | null;
+  abstract set(key: string, value: string): void;
+  abstract getProxyForApp(): boolean;
+  abstract setProxyForApp(value: boolean): void;
+  abstract getProxyForAgent(): boolean;
+  abstract setProxyForAgent(value: boolean): void;
+  abstract getProxyUrl(): string | null;
+  abstract setProxyUrl(value: string | null): void;
+  abstract getAttachmentMaxMb(): number;
+  abstract setAttachmentMaxMb(value: number): void;
+  abstract getAttachmentTotalMb(): number;
+  abstract setAttachmentTotalMb(value: number): void;
+  abstract getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number };
+  abstract getCompanyMode(): boolean;
+  abstract setCompanyMode(value: boolean): void;
+}
 
 /** UiPrefsStore: the mechanism UiPrefsRepo implements. */
-export abstract class UiPrefsStore extends Interface<{
-  get(userId: string): string | null;
-  set(userId: string, prefsJson: string): void;
-}>() {}
+@Interface()
+export abstract class UiPrefsStore {
+  abstract get(userId: string): string | null;
+  abstract set(userId: string, prefsJson: string): void;
+}

@@ -1,10 +1,12 @@
 /**
- * Agent config route: the per-tool `call_description` field on toolsBuiltin rows. The
- * default config writes `call_description: true` (plus the `description` property in
- * parameters) on the four command/subagent tools; PUT round-trips a flipped `false` into
- * system_config.yaml (preserving the rest of the file); a non-boolean value is a 400.
+ * The Agent config route's per-tool `call_description` field on toolsBuiltin rows.
+ *
+ * - The defaults carry `call_description: true` (and the `description` parameter) on the four
+ *   command and subagent tools; a PUT of `false` round-trips into system_config.yaml, keeping
+ *   the rest of the file.
+ * - A non-boolean value is a 400.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import { systemConfigPath } from "@prismshadow/penguin-core";
 import type { ToolDefinitionConfig } from "@prismshadow/penguin-core";
@@ -18,19 +20,27 @@ describe("agent config: per-tool call_description", () => {
   let projectId: string;
   let configPath: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_cd");
     owner = apiClient(t.app, a.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_cd-calldesc", name: "cd project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_cd-calldesc_${projects}`,
+        name: "cd project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     configPath = `/api/projects/${projectId}/agents/default_agent/config`;
-  });
-
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("defaults carry call_description: true and the description property; PUT false round-trips", async () => {

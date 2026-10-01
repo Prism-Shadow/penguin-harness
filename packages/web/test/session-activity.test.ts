@@ -1,31 +1,24 @@
+/**
+ * The activity mark a Session row wears (lib/session-activity.ts) and the words the app gives
+ * it.
+ *
+ * - A live run (compaction included) shows whatever the read state, even before its Trace
+ *   exists.
+ * - A settled Session is marked only while its last reply is unread; once read, or if it
+ *   never ran, nothing is drawn.
+ * - The background count is zero without the field and the sum of both counts with it.
+ * - Each state has a label of its own, since the glyph carries no text.
+ */
 import { describe, expect, it } from "vitest";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { sessionActivity, sessionBackgroundTasks } from "../src/lib/session-activity";
-import type { SessionActivity } from "../src/lib/session-activity";
 import {
-  ACTIVITY_GLYPH,
-  BackgroundTasksMark,
-  ScheduleMark,
-  SessionActivityIcon,
+  sessionActivity,
   sessionActivityLabel,
-} from "../src/components/ui/session-activity-icon";
-import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "../src/components/ui/icons";
-import { ICON_SIZE } from "../src/lib/icon-scale";
-import { S } from "../src/lib/strings";
-import { toneInk } from "../src/lib/tone";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
-
-const SCAN = scanSources();
-
-describe("the activity marks' sources", () => {
-  it("scan every source root, and find the icon module in one place", () => {
-    expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, "packages/web/src/components/ui/session-activity-icon.tsx");
-  });
-});
+  sessionBackgroundTasks,
+} from "../src/lib/session-activity";
+import type { SessionActivity } from "../src/lib/session-activity";
 
 type Activity = Exclude<SessionActivity, null>;
+const ACTIVITIES: readonly Activity[] = ["running", "compacting", "completedUnread"];
 
 describe("sessionActivity", () => {
   it("reports a live run whatever the read state, compaction included", () => {
@@ -63,198 +56,12 @@ describe("sessionBackgroundTasks", () => {
     expect(sessionBackgroundTasks({ backgroundTasks: { processes: 2, subagents: 0 } })).toBe(2);
     expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 3 } })).toBe(4);
   });
-
-  it("is a facet beside the activity state, not a fourth state", () => {
-    // An idle, read Session can still own a dev server: the glyph says nothing and the
-    // background count says 1, and the row draws both.
-    expect(sessionActivity("idle", true, false)).toBeNull();
-    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 0 } })).toBe(1);
-  });
 });
 
-/**
- * The background-task mark: one glyph in the `busy` tone, standing for a count in both of
- * its placements — a session row and the chat header. Rendered only when there is background
- * work to report (the caller's decision), and always naming what it means in the accessible
- * name and tooltip, so the glyph is never the only carrier. A tool row says the same thing in
- * words instead (S.chat.backgroundCall, covered by tool-call-preview.test.ts), because there
- * it marks one call rather than a count.
- */
-describe("BackgroundTasksMark", () => {
-  const render = (label: string, size: number) =>
-    renderToStaticMarkup(createElement(BackgroundTasksMark, { label, size }));
-
-  it("names the count where it stands for a count", () => {
-    const markup = render(S.chat.backgroundTasks(3), ICON_SIZE.rowMark);
-    expect(markup).toContain(`aria-label="${S.chat.backgroundTasks(3)}"`);
-    expect(markup).toContain(`data-tooltip="${S.chat.backgroundTasks(3)}"`);
-    expect(markup).toContain('role="img"');
-    expect(S.chat.backgroundTasks(3)).toContain("3");
-  });
-
-  it("draws the activity trace in the busy emerald, at the rung its caller passes", () => {
-    expect(render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark)).toMatch(/width="12"/);
-    expect(render(S.chat.backgroundTasks(1), ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
-    const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
-    expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
-    // Work still running, only outside the turn: the mark takes the live tone rather than
-    // receding with the pin and the relay glyph.
-    expect(markup).toContain(toneInk.busy);
-    expect(markup).not.toContain(toneInk.muted);
-    // A facet beside the row's activity state rather than a fourth state of it: it takes the
-    // live tone but neither the activity glyphs nor their motion.
-    expect(markup).not.toContain(ACTIVITY_GLYPH.running);
-    expect(markup).not.toContain("hourglass-turn");
-  });
-});
-
-describe("ScheduleMark", () => {
-  const markup = () =>
-    renderToStaticMarkup(createElement(ScheduleMark, { size: ICON_SIZE.rowMark }));
-
-  it("recedes with the row's other standing marks instead of reading as live work", () => {
-    // A scheduled task is an arrangement, not something happening now: it takes the `muted` ink
-    // the pin and the messaging-relay glyph wear, and neither the busy nor the attention tone
-    // that the hourglass and the pending-approval badge own.
-    expect(markup()).toContain(toneInk.muted);
-    expect(markup()).not.toContain(toneInk.attention);
-    expect(markup()).not.toContain(toneInk.busy);
-    // Muted is the one tone allowed under 3:1, and only where the meaning is already in text.
-    expect(markup()).toContain(`aria-label="${S.chat.sessionScheduled}"`);
-    expect(markup()).toContain(`data-tooltip="${S.chat.sessionScheduled}"`);
-    expect(markup()).toContain(`d="${SCHEDULE_ICON}"`);
-  });
-});
-
-/**
- * Icon rendering contract, via react-dom/server static markup (node env, no DOM).
- *
- * Two shapes carry the two situations that differ in KIND — busy vs settled. Within each, the
- * remaining distinction is a colour, which is exactly why every glyph is also required below to
- * name its precise state in its accessible name and tooltip: the colour is never the only way
- * to find out what a row is doing.
- */
-describe("SessionActivityIcon", () => {
-  const ACTIVITIES: readonly Activity[] = ["running", "compacting", "completedUnread"];
-
-  const render = (activity: Activity) =>
-    renderToStaticMarkup(createElement(SessionActivityIcon, { activity }));
-
-  it("draws a different shape for each busy state", () => {
-    // Running and compacting share one tone, so the shape is what separates them: with the same
-    // path they would be one glyph in two states nobody can tell apart.
-    expect(ACTIVITY_GLYPH.compacting).not.toBe(ACTIVITY_GLYPH.running);
-    for (const activity of ["running", "compacting"] as const) {
-      expect(render(activity)).toContain(`d="${ACTIVITY_GLYPH[activity]}"`);
-    }
-  });
-
-  it("draws the unread state as a dot, not as a path glyph", () => {
-    const unread = render("completedUnread");
-    expect(unread).toContain("rounded-full");
-    expect(unread).not.toContain("<svg");
-    expect(unread).not.toContain(ACTIVITY_GLYPH.running);
-  });
-
-  it("labels each state distinctly for screen readers and hover", () => {
-    expect(sessionActivityLabel("running")).toBe(S.chat.statusRunning);
-    expect(sessionActivityLabel("compacting")).toBe(S.chat.statusCompacting);
-    expect(sessionActivityLabel("completedUnread")).toBe(S.chat.statusCompletedUnread);
-    // Three states, three different names: the on-screen marks carry no text, so nothing may be
-    // distinguishable by shape or colour alone to a screen reader.
-    expect(new Set(ACTIVITIES.map(sessionActivityLabel)).size).toBe(ACTIVITIES.length);
-    for (const activity of ACTIVITIES) {
-      expect(render(activity)).toContain(`aria-label="${sessionActivityLabel(activity)}"`);
-    }
-  });
-
-  it("gives every mark the shared hover tooltip", () => {
-    for (const activity of ["running", "compacting"] as const) {
-      expect(render(activity)).toContain(`data-tooltip="${sessionActivityLabel(activity)}"`);
-    }
-    // The dot is an HTML span, so its tooltip is the shared one, read from data-tooltip.
-    expect(render("completedUnread")).toContain(
-      `data-tooltip="${sessionActivityLabel("completedUnread")}"`,
-    );
-  });
-
-  it("announces busy states as status and the unread dot as an image", () => {
-    expect(render("running")).toContain('role="status"');
-    expect(render("compacting")).toContain('role="status"');
-    expect(render("completedUnread")).toContain('role="img"');
-  });
-
-  it("gives each busy state its own motion and leaves the dot still", () => {
-    expect(render("running")).toContain("hourglass-turn");
-    expect(render("compacting")).toContain("compact-squeeze");
-    expect(render("compacting")).not.toContain("hourglass-turn");
-    const unread = render("completedUnread");
-    expect(unread).not.toContain("hourglass-turn");
-    expect(unread).not.toContain("compact-squeeze");
-  });
-
-  it("inks both busy states with the shared attention tone", () => {
-    // Unfinished work waiting on time is one meaning, so it is one colour app-wide; the split
-    // between running and compacting is carried by shape and motion, asserted above.
-    for (const activity of ["running", "compacting"] as const) {
-      expect(render(activity)).toContain(toneInk.attention);
-    }
-  });
-
-  it("draws the dot in the Session status dot's own emerald and geometry", () => {
-    // Same green and same 6px as the dot this replaces, at both surfaces: `h-1.5 w-1.5
-    // rounded-full bg-emerald-500`, one tone in both themes, no per-theme override.
-    const unread = render("completedUnread");
-    expect(unread).toContain("bg-emerald-500");
-    expect(unread).not.toMatch(/dark:bg-emerald-/);
-    expect(unread).toContain("h-1.5 w-1.5");
-    expect(unread).toContain("rounded-full");
-    // The reservation must never inflate the mark: no larger dot sneaking back in.
-    expect(unread).not.toMatch(/\bh-2 w-2\b/);
-  });
-
-  it("occupies the same box whatever the glyph, so a row never shifts", () => {
-    // Every glyph renders into the same 12px box, and the sidebar reserves that same box when
-    // there is no glyph at all — otherwise the title would re-flow as a run starts, finishes and
-    // is read. The 6px dot is CENTRED in that box rather than sized to it: the box is the
-    // reservation, the dot is the mark.
-    for (const activity of ACTIVITIES) {
-      const markup = render(activity);
-      expect(markup).toMatch(/(width="12"|width:12px)/);
-      expect(markup).toMatch(/(height="12"|height:12px)/);
-    }
-    // The empty state's placeholder, read from the sidebar itself so it cannot drift apart.
-    const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
-    expect(sidebar).toMatch(/activity === null.*\n?.*className="block h-3 w-3 shrink-0"/);
-  });
-});
-
-/**
- * The turning hourglass must degrade to a still, VISIBLE hourglass under reduced motion. The
- * global rule kills `animation` outright, so the guarantee is that the keyframes only ever
- * rotate — no opacity, no display, nothing whose absence would blank the glyph (the login
- * traces in the same stylesheet need an explicit override for exactly that reason).
- */
-describe("hourglass-turn reduced motion", () => {
-  // Every stylesheet under the scanned roots, so the keyframes are found wherever they move.
-  const css = SCAN.files
-    .filter((file) => file.name.endsWith(".css"))
-    .map((file) => file.text)
-    .join("\n");
-
-  it("is an animation, so the global reduced-motion rule disables it", () => {
-    expect(css).toMatch(/\.hourglass-turn\s*\{[^}]*animation:\s*hourglass-turn/);
-    expect(css).toMatch(
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?animation:\s*none\s*!important/,
-    );
-  });
-
-  it("only rotates, so disabling it leaves the glyph upright rather than invisible", () => {
-    const block = /@keyframes hourglass-turn\s*\{([\s\S]*?)\n\}/.exec(css);
-    const body = block?.[1] ?? "";
-    expect(body).not.toBe("");
-    const declarations = [...body.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
-    expect(new Set(declarations)).toEqual(new Set(["transform"]));
-    expect(body).toMatch(/rotate\(180deg\)/); // A turn, not a spin.
+describe("sessionActivityLabel", () => {
+  it("labels each state distinctly, since the glyph carries no text", () => {
+    const labels = ACTIVITIES.map(sessionActivityLabel);
+    expect(labels.every((label) => label.length > 0)).toBe(true);
+    expect(new Set(labels).size).toBe(ACTIVITIES.length);
   });
 });

@@ -14,11 +14,17 @@
  * chat input docked at the bottom of the screen opens upward.
  */
 import { useState } from "react";
-import type { ReactNode } from "react";
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
+import {
+  Dropdown,
+  GlyphIcon,
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuRadioItem,
+  MenuSeparator,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
@@ -27,19 +33,9 @@ import {
 } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
 import { SettingsDialog } from "../settings/settings-dialog";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
-
-/** A section's small heading inside the panel. */
-function Heading({ children }: { children: ReactNode }) {
-  return (
-    <div className="px-3 pt-2 pb-1 text-xs font-medium text-gray-400 dark:text-gray-500">
-      {children}
-    </div>
-  );
-}
 
 /**
  * One choice row: its text, and a check when it is the current value. An unavailable choice
@@ -58,22 +54,14 @@ function Choice({
 }) {
   const off = unavailable !== undefined;
   return (
-    <button
-      type="button"
-      role="menuitemradio"
-      aria-checked={selected}
-      aria-disabled={off || undefined}
+    <MenuRadioItem
+      label={label}
+      checked={selected}
       disabled={off}
       data-tooltip={unavailable}
-      onClick={onPick}
-      className={`flex items-center gap-2 ${menuRowClass} text-xs ${
-        off ? "cursor-not-allowed text-gray-400 dark:text-gray-600" : menuRowTone(selected)
-      }`}
-    >
-      <span className="min-w-0 flex-1 truncate whitespace-nowrap">{label}</span>
-      {off && <span className="shrink-0 text-xs">{S.chat.permission.unsupported}</span>}
-      <ChoiceCheck on={selected} />
-    </button>
+      trailing={off ? S.chat.permission.unsupported : undefined}
+      onSelect={onPick}
+    />
   );
 }
 
@@ -151,9 +139,10 @@ export function PermissionSelect({
             data-level={level}
             disabled={disabled}
             onClick={() => setOpen((v) => !v)}
-            // Icon only, the + button's square: the level is in the icon's shape and colour, and
-            // spelled out in the accessible name and the title.
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            // Icon only, the + button's square and its look (the package's ToolbarTrigger, which
+            // this cannot be: that one dims while disabled): the level is in the icon's shape and
+            // colour, and spelled out in the accessible name and the title.
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-surface-muted hover:text-fg"
           >
             {/* Keyed by level: a new level mounts a new icon, which swaps in. */}
             <span key={level} className={animate ? "anim-icon-swap" : undefined}>
@@ -166,8 +155,8 @@ export function PermissionSelect({
           </button>
         }
       >
-        <div role="menu" aria-label={P.label} className="pb-1">
-          <Heading>{P.fs}</Heading>
+        <Menu label={P.label} density="sm" className="pb-1">
+          <MenuLabel>{P.fs}</MenuLabel>
           {FS_MODES.map((mode) => (
             <Choice
               key={mode}
@@ -180,7 +169,7 @@ export function PermissionSelect({
               }
             />
           ))}
-          <Heading>{P.network}</Heading>
+          <MenuLabel>{P.network}</MenuLabel>
           {NETWORK_MODES.map((network) => (
             <Choice
               key={network}
@@ -197,7 +186,7 @@ export function PermissionSelect({
               }
             />
           ))}
-          <Heading>{P.approval}</Heading>
+          <MenuLabel>{P.approval}</MenuLabel>
           {approvalModes.map((mode) => (
             <Choice
               key={mode}
@@ -212,23 +201,19 @@ export function PermissionSelect({
           ))}
           {isAdmin && (
             <>
-              <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+              <MenuSeparator />
               {/* More…: the rest of the sandbox (masked paths, the temp directory, the backend)
                 is on the Settings page's Sandbox card, where this opens. */}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
+              <MenuItem
+                label={P.more}
+                onSelect={() => {
                   setOpen(false);
                   setSettingsOpen(true);
                 }}
-                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone()}`}
-              >
-                <span className="min-w-0 flex-1 truncate whitespace-nowrap">{P.more}</span>
-              </button>
+              />
             </>
           )}
-        </div>
+        </Menu>
       </Dropdown>
       {isAdmin && (
         <SettingsDialog

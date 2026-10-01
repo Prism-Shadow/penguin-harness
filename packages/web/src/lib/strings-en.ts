@@ -31,6 +31,9 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
+    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
+    pinEntry: "Pin",
+    unpinEntry: "Unpin",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
@@ -731,7 +734,7 @@ export const en: Strings = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
@@ -798,6 +801,13 @@ export const en: Strings = {
     moreInfo: "More info",
     /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
     moreInfoAbout: (subject: string) => `More info: ${subject}`,
+    /** The toast stack's name as a live region (the shared UI package's `Toaster`). */
+    notifications: "Notifications",
+    /** Read after a toast's text: pressing the toast dismisses it. */
+    dismiss: "Dismiss",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "Previous page",
+    nextPage: "Next page",
     name: "Name",
     username: "Username",
     role: "Role",
@@ -1043,7 +1053,7 @@ export const en: Strings = {
     createDirSkillsEmpty: "This directory carries no installable Skills",
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
-    createDirSkillsClear: "Clear the selected directory",
+    createDirSkillsClear: "Don't import from a directory",
     createSnapshot: "Initialize from a snapshot",
     createSnapshotPick: "Choose a snapshot package",
     createSnapshotHint:
@@ -2298,7 +2308,9 @@ export const en: Strings = {
       "no-identity": "not identified",
     },
     workspaceAuto: "Temporary workspace",
-    workspaceClear: "Use a temporary workspace instead",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "Start in a temporary workspace",
+    workspaceTempRule: "A new empty folder inside the agent's workspaces/ folder",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
     finder: {
@@ -2587,14 +2599,11 @@ Scenarios:
       },
     },
     sessionList: "Sessions",
+    sessionListByMode: { workspace: "Workspaces", agent: "Agents", time: "Recent" },
     defaultSessionTitle: "New chat",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint:
-      "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -3046,6 +3055,9 @@ Scenarios:
     dropFilesDesc: "Images and files are added to the message draft",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string =>
+      `The pasted text was long, so it was attached as ${name}.`,
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -3541,11 +3553,13 @@ Scenarios:
     errorsColKind: "Type",
     errorsColMessage: "Message",
     errorsEmpty: "No errors",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `First at ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "Newer",
     errorsOlder: "Older",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `Page ${page} / ${pages} · ${total} total`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `Page ${page} / ${pages} · ${rows} row${rows === 1 ? "" : "s"}`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
@@ -4046,11 +4060,8 @@ Scenarios:
     workspaceField: "Company workspace",
     workspaceInfo:
       "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",
-    workspaceHint:
-      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory on the server",
     workspaceEmpty: "The organization's own workspace/ directory",
-    workspaceMenuHint: "Pick an existing directory as the company workspace",
-    workspaceClear: "Back to the organization's own directory",
+    workspaceClear: "Use the organization's own directory",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO budget",
     ceoBudgetHint: "A monthly cap; the CEO's budget is the whole company's",

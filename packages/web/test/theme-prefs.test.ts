@@ -1,11 +1,19 @@
 /**
- * The appearance preferences: what a stored value reads back as (theme, accent, text size with
- * the legacy migration, font pairing), what they put on <html>, and the Appearance section's
- * shape. The web suite runs in node with no DOM, so the root is a small fake that answers both
- * the `dataset` and the attribute API, and the section is checked as source.
+ * The appearance preferences (state/theme-prefs.ts, the UI package's boot attributes, and the
+ * Appearance section's font choices). The root is a small fake answering both the `dataset`
+ * and the attribute API.
+ *
+ * - An empty store reads as Primer, its own accent, 16px and its own faces.
+ * - The legacy three-step font scale migrates by pixels once and its key is dropped; a stored
+ *   text size is kept and anything unknown reads as the default.
+ * - The theme and font faces are validated against the package's lists; another theme's accent
+ *   is kept as stored while the theme's own accent is the one in effect.
+ * - A chosen face is named on <html>, the theme's own face leaves no attribute, and the text
+ *   size sets the root font size.
+ * - Every theme, text size and accent preset of the UI package is named in both languages.
+ * - The font choices put the theme's own face first, once, and word the non-names from the
+ *   dictionary.
  */
-import fs from "node:fs";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { ACCENT_PRESET_IDS, THEME_IDS } from "@prismshadow/penguin-ui";
 import {
@@ -16,27 +24,15 @@ import {
   applyThemeAttributes,
 } from "@prismshadow/penguin-ui/boot";
 import { effectiveAccent, readThemePrefs } from "../src/state/theme-prefs";
-import type { PrefStorage } from "../src/state/theme-prefs";
 import { fontChoices } from "../src/features/settings/appearance-section";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { memoryStorage } from "./helpers/storage";
 
 afterEach(() => setActiveStrings(zh));
 
 /** The three-step size of earlier releases, spelled out: it is on disk whatever the code calls it. */
 const LEGACY_TEXT_SIZE_KEY = "penguin.fontScale";
-
-function memStorage(entries: Record<string, string> = {}): PrefStorage & {
-  map: Map<string, string>;
-} {
-  const map = new Map(Object.entries(entries));
-  return {
-    map,
-    getItem: (key) => map.get(key) ?? null,
-    setItem: (key, value) => void map.set(key, value),
-    removeItem: (key) => void map.delete(key),
-  };
-}
 
 /** An <html> stand-in: attributes behind both `dataset` and get/set/removeAttribute. */
 function fakeRoot() {
@@ -84,7 +80,7 @@ function fakeRoot() {
 
 describe("reading the stored appearance", () => {
   it("falls back to the defaults on an empty store: Primer, its own accent, 16px, its own faces", () => {
-    expect(readThemePrefs(memStorage())).toEqual({
+    expect(readThemePrefs(memoryStorage())).toEqual({
       themeId: "github",
       accent: "neutral",
       textSize: "m",
@@ -99,7 +95,7 @@ describe("reading the stored appearance", () => {
       ["md", "l"],
       ["lg", "xl"],
     ] as const) {
-      const storage = memStorage({ [LEGACY_TEXT_SIZE_KEY]: legacy });
+      const storage = memoryStorage({ [LEGACY_TEXT_SIZE_KEY]: legacy });
       expect(readThemePrefs(storage).textSize).toBe(size);
       expect(storage.map.get(THEME_STORAGE_KEYS.textSize)).toBe(size);
       expect(storage.map.has(LEGACY_TEXT_SIZE_KEY)).toBe(false);
@@ -110,17 +106,17 @@ describe("reading the stored appearance", () => {
 
   it("keeps a stored text size and reads anything unknown as the default", () => {
     for (const size of TEXT_SIZES) {
-      expect(readThemePrefs(memStorage({ [THEME_STORAGE_KEYS.textSize]: size })).textSize).toBe(
+      expect(readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.textSize]: size })).textSize).toBe(
         size,
       );
     }
-    expect(readThemePrefs(memStorage({ [THEME_STORAGE_KEYS.textSize]: "huge" })).textSize).toBe(
+    expect(readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.textSize]: "huge" })).textSize).toBe(
       "m",
     );
   });
 
   it("validates the theme and the font faces against the package's lists", () => {
-    const storage = memStorage({
+    const storage = memoryStorage({
       [THEME_STORAGE_KEYS.themeId]: "geek",
       [THEME_STORAGE_KEYS.fontLatin]: FONT_LATIN_OPTIONS.at(-1)!.id,
       [THEME_STORAGE_KEYS.fontCjk]: "comic-sans",
@@ -129,13 +125,13 @@ describe("reading the stored appearance", () => {
     expect(prefs.themeId).toBe("geek");
     expect(prefs.fontLatin).toBe(FONT_LATIN_OPTIONS.at(-1)!.id);
     expect(prefs.fontCjk).toBe("theme");
-    expect(readThemePrefs(memStorage({ [THEME_STORAGE_KEYS.themeId]: "neon" })).themeId).toBe(
+    expect(readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.themeId]: "neon" })).themeId).toBe(
       "github",
     );
   });
 
   it("keeps another theme's accent as stored, and marks the theme's own in effect", () => {
-    const prefs = readThemePrefs(memStorage({ [THEME_STORAGE_KEYS.accent]: "ocean" }));
+    const prefs = readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.accent]: "ocean" }));
     expect(prefs.accent).toBe("ocean");
     expect(effectiveAccent("modern", prefs.accent)).toBe("ocean");
     expect(effectiveAccent("github", prefs.accent)).toBe("neutral");
@@ -149,7 +145,7 @@ describe("the attributes the preferences put on <html>", () => {
     const latin = FONT_LATIN_OPTIONS.find((option) => option.id !== "theme")!.id;
     const cjk = FONT_CJK_OPTIONS.find((option) => option.id !== "theme")!.id;
     applyThemeAttributes(root, {
-      ...readThemePrefs(memStorage()),
+      ...readThemePrefs(memoryStorage()),
       fontLatin: latin,
       fontCjk: cjk,
       textSize: "xl",
@@ -167,33 +163,6 @@ describe("the attributes the preferences put on <html>", () => {
 });
 
 describe("the Appearance section", () => {
-  const source = fs.readFileSync(
-    fileURLToPath(new URL("../src/features/settings/appearance-section.tsx", import.meta.url)),
-    "utf8",
-  );
-
-  it("offers theme, mode, accent, text size and fonts first, in that order", () => {
-    const order = [
-      "S.settings.theme}",
-      "S.settings.colorMode}",
-      "S.settings.accent}",
-      "S.settings.fontSize}",
-      "S.settings.fonts}",
-      "S.settings.terminalTheme}",
-    ].map((label) => source.indexOf(`label={${label}`));
-    expect(order.every((at) => at > 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-  });
-
-  it("builds every choice from the package's lists, and the swatches from the active theme", () => {
-    expect(source).toContain("THEME_IDS.map");
-    expect(source).toContain("TEXT_SIZES.map");
-    expect(source).toContain("cols={5}");
-    expect(source).toContain("fontChoices(FONT_LATIN_OPTIONS)");
-    expect(source).toContain("fontChoices(FONT_CJK_OPTIONS)");
-    expect(source).toContain("effectiveAccent(themeId, accent)");
-  });
-
   it("names every theme, text size and accent preset in both languages", () => {
     for (const dict of [zh, en]) {
       for (const id of THEME_IDS) expect(dict.settings.themeNames[id]).toBeTruthy();

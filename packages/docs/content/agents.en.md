@@ -355,7 +355,7 @@ Only the Project owner can create a task manually.
 3. In **Period**, enter how often the task runs, such as `30m`, `12h` or `7d`. Leave it empty for a one-off task. The shortest period is 5 minutes.
 4. Set **Start at**, and optionally **End at**.
 5. Under **Target**, choose where the prompt goes:
-   - **New session each time**: every run starts a new Session. Optionally choose a **Model** (the Project default if you choose none) and a **Workspace** (a temporary Workspace if you leave it empty).
+   - **New session each time**: every run starts a new Session. Optionally choose a **Model** (the Project default if you choose none) and a **Workspace** (a temporary Workspace if you choose none).
    - **Bound Session**: every run goes to one existing Session. Choose it in **Session**.
 6. In **Prompt**, enter what to send.
 7. Leave **Enabled** selected to activate the task, then select **Create**.

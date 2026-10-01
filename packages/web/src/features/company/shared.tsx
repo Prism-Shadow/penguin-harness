@@ -3,8 +3,8 @@
  * budget bar and ring, the budget field and the two marks a budget box wears (its unit, and
  * what a converted amount will be stored as), the ticket status and priority pills, the
  * blocked badge, the failed-refresh line, the two ways out of a summary — the title that
- * opens what it names, and the corner button a titleless card or row uses instead — the
- * labelled value and the bordered KPI tile, and principal naming.
+ * opens what it names, and the corner button a titleless card or row uses instead — and
+ * principal naming. The bordered KPI tile is the shared UI package's `StatTile`.
  * Every status colour here is a tone from lib/tone.ts, picked by meaning.
  */
 import { useId } from "react";
@@ -14,25 +14,30 @@ import type {
   OrgTicketPriority,
   OrgTicketStatus,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Badge,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  GlyphIcon,
+  ICON_SIZE,
+  Input,
+  Notice,
+  ProgressBar,
+  Ring,
+} from "@prismshadow/penguin-ui";
+import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Badge } from "../../components/ui/badge";
-import type { BadgeTone } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Input } from "../../components/ui/input";
 import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
+import type { BudgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Circled exclamation (lucide circle-alert): the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
 export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";
@@ -120,10 +125,10 @@ export function orgStatusText(org: { status: OrgStatus; invalid?: string }): str
   return orgStatusLabel(orgStatusKind(org));
 }
 
-const ORG_STATUS_BADGE: Record<OrgStatusKind, BadgeTone> = {
-  invalid: "red",
-  paused: "amber",
-  active: "green",
+const ORG_STATUS_BADGE: Record<OrgStatusKind, ToneName> = {
+  invalid: "danger",
+  paused: "attention",
+  active: "success",
 };
 
 /** An organization's headline state as a pill: invalid configuration outranks paused, paused outranks active. The reason rides in the tooltip when the configuration is invalid. */
@@ -169,29 +174,25 @@ export function ErrorLine({
   className?: string;
 }) {
   return (
-    <NoticeStrip
+    <Notice
       tone="danger"
       role="alert"
-      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${className}`}
+      className={className}
+      retry={{ label: S.common.retry, onClick: onRetry }}
     >
-      <span data-slot="body" className="min-w-0">
-        <span className="font-medium">{message}</span>
-        {detail !== undefined && detail !== message && (
-          <span className="ml-2 opacity-80">{detail}</span>
-        )}
-      </span>
-      <Button size="sm" data-slot="actions" onClick={onRetry}>
-        {S.common.retry}
-      </Button>
-    </NoticeStrip>
+      <span className="font-medium">{message}</span>
+      {detail !== undefined && detail !== message && (
+        <span className="ml-2 opacity-80">{detail}</span>
+      )}
+    </Notice>
   );
 }
 
 /**
- * Spend against a budget as a ring: the used share drawn clockwise from the top in the
- * budget's tone (attention from 80%, danger from 100%, the ring full when over), the percent
- * inside; a muted, empty ring with a dash when there is no budget. The exact amounts ride in
- * the accessible name and tooltip.
+ * Spend against a budget as a ring (the package's `Ring`): the used share drawn clockwise from
+ * the top in the budget's tone (attention from 80%, danger from 100%, the ring full when over)
+ * over a track of that tone faded, the percent inside; a muted, empty ring with a dash when there
+ * is no budget. The exact amounts ride in the accessible name and tooltip.
  */
 export function SpendRing({
   cost,
@@ -207,64 +208,46 @@ export function SpendRing({
   size?: number;
 }) {
   const tone = budgetTone(ratio);
-  const strokeWidth = Math.max(3, Math.round(size * 0.1));
-  const center = size / 2;
-  const r = (size - strokeWidth) / 2;
-  const c = 2 * Math.PI * r;
   const share = ratio === undefined ? 0 : Math.min(1, Math.max(0, ratio));
   const label =
     budget === undefined
       ? `${formatMoney(cost, currency)} · ${S.company.noBudget}`
       : `${S.company.spendOfBudget(formatMoney(cost, currency), formatMoney(budget, currency))} · ${formatPercent(ratio)}`;
-  const ink = tone === "muted" ? "text-gray-300 dark:text-gray-700" : toneInk[tone];
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label={label}
-      data-tooltip={label}
-      className={`block shrink-0 ${ink}`}
-    >
-      <circle
-        cx={center}
-        cy={center}
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.25}
-        strokeWidth={strokeWidth}
+    // Without a budget the ring has no tone and takes this span's line ink, track only.
+    <span className={`relative block shrink-0 ${tone === "muted" ? "text-line-emphasis" : ""}`}>
+      <Ring
+        segments={share > 0 ? [{ value: share }] : []}
+        max={1}
+        size={size}
+        width={Math.max(3, Math.round(size * 0.1))}
+        {...(tone !== "muted" ? { tone } : {})}
+        trackOpacity={0.25}
+        label={label}
       />
-      {share > 0 && (
-        <circle
-          cx={center}
-          cy={center}
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={`${share * c} ${c}`}
-          transform={`rotate(-90 ${center} ${center})`}
-        />
-      )}
-      <text
-        x={center}
-        y={center}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={Math.round(size * 0.22)}
-        fontWeight="600"
-        className="fill-gray-700 dark:fill-gray-200"
+      {/* Sized to the ring rather than to a text rung: at the overview's 40px it must fit
+          "100%" inside the stroke. The ring carries the name, so the figure is hidden from
+          assistive technology and lets the pointer through to the ring's tooltip. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 flex items-center justify-center leading-none font-semibold text-gray-700 dark:text-gray-200"
+        style={{ fontSize: Math.round(size * 0.22) }}
       >
         {budget === undefined ? "—" : formatPercent(ratio)}
-      </text>
-    </svg>
+      </span>
+    </span>
   );
 }
 
-/** Spend against a budget as a bar: attention from 80%, danger from 100%; a muted rule when there is no budget. */
+/** A budget reading as the progress bar's fill; no budget draws an empty neutral bar. */
+const BUDGET_FILL: Record<BudgetTone, ToneName> = {
+  muted: "neutral",
+  success: "success",
+  attention: "attention",
+  danger: "danger",
+};
+
+/** Spend against a budget as a bar: attention from 80%, danger from 100%; an empty bar when there is no budget. */
 export function BudgetBar({
   cost,
   budget,
@@ -293,17 +276,12 @@ export function BudgetBar({
           {label}
         </p>
       )}
-      <div
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(width)}
+      <ProgressBar
+        value={Math.round(width)}
+        tone={BUDGET_FILL[tone]}
+        label={label}
         data-tooltip={label}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
-      >
-        <div className={`h-full rounded-full ${toneDot[tone]}`} style={{ width: `${width}%` }} />
-      </div>
+      />
     </div>
   );
 }
@@ -330,7 +308,7 @@ export function MoneyPerMonthUnit({ currency }: { currency: Currency }) {
 export function StoredUsdNote({ usd, currency }: { usd: number | null; currency: Currency }) {
   if (currency === "USD" || usd === null) return null;
   return (
-    <span className="mt-1 block text-[11px] text-gray-400 dark:text-gray-500">
+    <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">
       {S.company.budgetStoredAs(formatMoney(usd, "USD"))}
     </span>
   );
@@ -402,19 +380,24 @@ export function MoneyPerMonthInput({
   );
 }
 
-const STATUS_TONE: Record<OrgTicketStatus, BadgeTone> = {
-  proposed: "gray",
-  in_progress: "green",
-  review: "amber",
-  done: "brand",
-  rejected: "red",
+/** A finished ticket is settled, neither good nor bad news: a neutral tag, solid so it reads. */
+const STATUS_BADGE: Record<OrgTicketStatus, BadgeStyle> = {
+  proposed: { tone: "neutral" },
+  in_progress: { tone: "success" },
+  review: { tone: "attention" },
+  done: { tone: "neutral", variant: "solid" },
+  rejected: { tone: "danger" },
 };
 
 export function TicketStatusBadge({ status }: { status: OrgTicketStatus }) {
-  return <Badge tone={STATUS_TONE[status]}>{S.company.tickets.columns[status] ?? status}</Badge>;
+  return <Badge {...STATUS_BADGE[status]}>{S.company.tickets.columns[status] ?? status}</Badge>;
 }
 
-const PRIORITY_TONE: Record<OrgTicketPriority, BadgeTone> = { P0: "red", P1: "amber", P2: "gray" };
+const PRIORITY_TONE: Record<OrgTicketPriority, ToneName> = {
+  P0: "danger",
+  P1: "attention",
+  P2: "neutral",
+};
 
 export function PriorityBadge({ priority }: { priority: OrgTicketPriority }) {
   return <Badge tone={PRIORITY_TONE[priority]}>{priority}</Badge>;
@@ -427,7 +410,7 @@ export function BlockedBadge({ reason, by }: { reason: string; by?: string }) {
       data-tooltip={S.company.tickets.blockedTooltip(reason, by ?? "—")}
       className="inline-flex"
     >
-      <Badge tone="amber">{S.company.tickets.blocked}</Badge>
+      <Badge tone="attention">{S.company.tickets.blocked}</Badge>
     </span>
   );
 }
@@ -476,54 +459,5 @@ export function PrincipalChip({
       )}
       <span className="truncate">{label}</span>
     </span>
-  );
-}
-
-/**
- * One KPI as its own bordered card, the shape the cost center's summary uses: a small glyph
- * beside the label, the value bold beneath it, and a line of detail under that. A tone inks
- * the glyph and the value together, so the reading and its mark say the same thing. The card
- * is plain elements — a KPI is a reading, not a control, and a whole-card click would swallow
- * whatever sits inside it; anything extra rides beside the value as children (the finance
- * page hangs its gauge there).
- */
-export function StatTile({
-  icon,
-  label,
-  value,
-  tone,
-  detail,
-  children,
-}: {
-  /** A 24x24 line path, drawn through GlyphIcon like every other mark in the app. */
-  icon: string;
-  label: string;
-  value: ReactNode;
-  tone?: Tone;
-  /** One quiet line under the value: what the number is measured against. */
-  detail?: string;
-  children?: ReactNode;
-}) {
-  const ink = tone !== undefined ? toneInk[tone] : "";
-  return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <p
-        className={`mb-1.5 flex items-center ${ICON_GAP.row} text-[11px] text-gray-500 dark:text-gray-400`}
-      >
-        <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} className={ink} />
-        <span className="truncate">{label}</span>
-      </p>
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className={`truncate text-lg font-semibold tabular-nums ${ink}`}>{value}</p>
-          {detail !== undefined && (
-            <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-              {detail}
-            </p>
-          )}
-        </div>
-        {children}
-      </div>
-    </div>
   );
 }

@@ -4,11 +4,10 @@
  * Pure rendering over the table — the same data the CI page draws.
  */
 import { useEffect, useMemo, useState } from "react";
+import { Badge, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
+import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { Badge } from "../../components/ui/badge";
-import { Skeleton } from "../../components/ui/skeleton";
 import { S } from "../../lib/strings";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 interface Manifest {
   name: string;
@@ -28,10 +27,10 @@ interface Table {
 type NodeKind = "group" | "module" | "component";
 const kindOf = (m: Manifest): NodeKind =>
   m.kind === "component" ? "component" : m.exports?.length ? "group" : "module";
-const kindTone: Record<NodeKind, "gray" | "brand" | "green"> = {
-  group: "gray",
-  module: "brand",
-  component: "green",
+const kindBadge: Record<NodeKind, BadgeStyle> = {
+  group: { tone: "neutral" },
+  module: { tone: "neutral", variant: "solid" },
+  component: { tone: "success" },
 };
 const short = (key: string) => key.slice(key.indexOf("#") + 1);
 
@@ -83,7 +82,7 @@ function Node({
         ) : (
           <span className="w-4" />
         )}
-        <Badge tone={kindTone[kind]}>{S.harnessHistory.kind[kind]}</Badge>
+        <Badge {...kindBadge[kind]}>{S.harnessHistory.kind[kind]}</Badge>
         <button type="button" onClick={() => onSelect(name)} className="font-mono text-left">
           {name}
         </button>
@@ -132,7 +131,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Badge tone={kindTone[kind]}>{t.kind[kind]}</Badge>
+        <Badge {...kindBadge[kind]}>{t.kind[kind]}</Badge>
         <span className="font-mono text-sm">{name}</span>
       </div>
       {row(

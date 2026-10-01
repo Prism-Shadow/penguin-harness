@@ -4,6 +4,9 @@
  * choosing what to open here. The chat page renders one per open dock — right and/or
  * bottom — or a single merged bottom surface below the desktop breakpoint.
  *
+ * The drawing is the UI package's (`DockFrame`, `DockTabs`, `DockPicker`); this container
+ * binds it to the dock store, the terminal list and the page's panel bodies.
+ *
  * Panel tabs' bodies come from the page through `renderPanel` (they need the page's
  * session/stream state); terminal tabs' bodies are the pooled xterm views
  * (terminal-view-pool.tsx), adopted by DOM handoff so tab churn never reconnects a shell.
@@ -32,22 +35,29 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
-import { S } from "../../lib/strings";
 import {
-  ADD_ICON,
   CloseIcon,
-  NAV_ICONS,
-  PANEL_BOTTOM_ICON,
-  PANEL_RIGHT_ICON,
-} from "../../components/ui/icons";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Kbd } from "../../components/ui/kbd";
-import { ICON_SIZE } from "../../lib/icon-scale";
+  ConfirmModal,
+  DockFrame,
+  DockHeaderButton,
+  DockPicker,
+  DockTabs,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  ResizeHandle,
+  usePointerDrag,
+} from "@prismshadow/penguin-ui";
+import type { DockPickerChoice, DockTabItem } from "@prismshadow/penguin-ui";
+import { S } from "../../lib/strings";
+import { NAV_ICONS } from "../../lib/nav-icons";
+import { chordKeys } from "../../components/ui/chord-kbd";
 import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { toneDot } from "../../lib/tone";
 import { useTerminalChrome } from "../terminal/terminal-appearance";
 import {
   displayTitle,
@@ -66,7 +76,7 @@ import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-s
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
-import { panelGlyph, panelLabel } from "./panel-meta";
+import { panelGlyph, panelGlyphPath, panelLabel } from "./panel-meta";
 import {
   DOCK_MIN_HEIGHT_PX,
   DOCK_RATIO_MAX,
@@ -98,105 +108,18 @@ import {
   setPanelWidth,
   usePanelWidthValue,
 } from "../chat/use-panel-width";
-import { usePointerDrag } from "./use-pointer-drag";
-
-/** Four corners pushed outward / pulled inward: the touch height toggle (see maximize). */
-const MAXIMIZE_ICON = "M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5";
-const RESTORE_ICON = "M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5";
-/** Box with an arrow escaping to the top right: detach to its own window. */
-const DETACH_ICON = "M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5";
-
-/** Small icon-sized header button shared by the dock's controls. */
-function DockButton(props: {
-  label: string;
-  testId: string;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  // A 24px box is a comfortable mouse target and a poor finger one; the glyph inside keeps
-  // its size either way, so only the box a finger has to land in grows.
-  const coarsePointer = useCoarsePointer();
-  return (
-    <button
-      type="button"
-      data-tooltip={props.label}
-      aria-label={props.label}
-      data-testid={props.testId}
-      onClick={props.onClick}
-      className={`flex ${coarsePointer ? "h-8 w-8" : "h-6 w-6"} shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
-    >
-      {props.children}
-    </button>
-  );
-}
 
 /**
- * One tab in the strip: glyph + name + an always-visible ×. Two sibling buttons, not
- * nested — a button inside a button is invalid and unclickable. The × has a reserved
- * slot of its own after the label, never overlapping it: crowded tabs shrink by
- * truncating the label (ellipsis) while the glyph and the × keep their width, so the
- * close target stays where the pointer expects it.
+ * The picker's order after the agents, the terminal and the built-in browser (each shown only
+ * where it can run): the rest of the panels.
  */
-function DockTabButton(props: {
-  tabId: string;
-  label: string;
-  title: string;
-  glyph: ReactNode;
-  active: boolean;
-  /** Attention dot (e.g. a pending approval inside a subagent) shown beside the name. */
-  badge: boolean;
-  closeLabel: string;
-  /** The keyboard shortcut that runs the same close, named after the label in the ×'s tooltip. */
-  closeShortcut?: string;
-  onSelect: () => void;
-  onClose: () => void;
-  /** Terminal tabs keep their id on the node for tests and the strip's drag targeting. */
-  terminalId?: string;
-}) {
-  const coarsePointer = useCoarsePointer();
-  return (
-    <div
-      data-testid="dock-tab"
-      data-tab-id={props.tabId}
-      {...(props.terminalId !== undefined ? { "data-terminal-id": props.terminalId } : {})}
-      data-active={props.active}
-      className={`flex ${coarsePointer ? "h-8" : "h-6"} max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
-        props.active
-          ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-          : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-      }`}
-    >
-      <button
-        type="button"
-        data-tooltip={props.title}
-        onClick={props.onSelect}
-        className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1 text-left text-xs"
-      >
-        <span aria-hidden className="shrink-0">
-          {props.glyph}
-        </span>
-        <span className="min-w-0 truncate">{props.label}</span>
-        {props.badge && (
-          <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.attention}`} />
-        )}
-      </button>
-      <button
-        type="button"
-        data-tooltip={
-          props.closeShortcut !== undefined
-            ? `${props.closeLabel} (${props.closeShortcut})`
-            : props.closeLabel
-        }
-        aria-label={`${props.closeLabel}: ${props.label}`}
-        data-testid="dock-tab-close"
-        onClick={props.onClose}
-        className={`flex ${coarsePointer ? "h-6 w-6" : "h-4 w-4"} shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200`}
-      >
-        <CloseIcon size={10} />
-      </button>
-    </div>
-  );
-}
+const PICKER_PANELS: readonly PanelKind[] = [
+  "workspace",
+  "memory",
+  "trace",
+  "messaging",
+  "schedules",
+];
 
 /**
  * A terminal tab's body: adopts the shown terminal's pooled container. Only while shown —
@@ -239,81 +162,6 @@ function terminalLabel(info: TerminalInfo | undefined, id: string, ordinal: numb
   return `${info.seq ?? ordinal}: ${displayTitle(info.title) || info.name}`;
 }
 
-/**
- * The body of an open dock with no tabs: a centered choice list (Codex-style) — pick what
- * to open here. Every side element is a row; the terminal row adopts the newest shell no
- * conversation holds, or starts a fresh one, and names its hotkey.
- */
-function DockPicker({
-  choose,
-  chooseTerminal,
-  terminalSupported,
-  browserOffered,
-  horizontal,
-}: {
-  choose: (kind: PanelKind) => void;
-  chooseTerminal: () => void;
-  terminalSupported: boolean;
-  /** The built-in browser can be shown here (the desktop app's own window, with a shell that hosts it). */
-  browserOffered: boolean;
-  /** The bottom (and merged) surface lays its choices out in a row, the right one as a list. */
-  horizontal: boolean;
-}) {
-  const toggleChord = useDisplayedBinding("terminal.toggle");
-  const rowClass =
-    "flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
-  const row = (kind: PanelKind) => (
-    <button
-      key={kind}
-      type="button"
-      data-testid={`dock-pick-${kind}`}
-      onClick={() => choose(kind)}
-      className={rowClass}
-    >
-      <span className="shrink-0 text-gray-500 dark:text-gray-400">{panelGlyph(kind)}</span>
-      <span className="min-w-0 truncate">{panelLabel(kind)}</span>
-    </button>
-  );
-  return (
-    <div
-      data-testid="dock-picker"
-      className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4"
-    >
-      <div
-        className={
-          horizontal
-            ? "flex max-w-full flex-wrap items-center justify-center gap-1"
-            : "flex w-60 flex-col gap-0.5"
-        }
-      >
-        {row("agents")}
-        {terminalSupported && (
-          <button
-            type="button"
-            data-testid="dock-pick-terminal"
-            onClick={chooseTerminal}
-            className={rowClass}
-          >
-            <span className="shrink-0 text-gray-500 dark:text-gray-400">
-              <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />
-            </span>
-            <span className="min-w-0 flex-1 truncate">{S.terminal.title}</span>
-            {toggleChord !== null && (
-              <Kbd chord={toggleChord} className="shrink-0 text-gray-400 dark:text-gray-500" />
-            )}
-          </button>
-        )}
-        {browserOffered && row("builtin-browser")}
-        {row("workspace")}
-        {row("memory")}
-        {row("trace")}
-        {row("messaging")}
-        {row("schedules")}
-      </div>
-    </div>
-  );
-}
-
 export interface DockPanelProps {
   view: DockView;
   /** The page's panel bodies (they need its session/stream state); null hides that kind from the add menu too. */
@@ -339,6 +187,7 @@ export function DockPanel({
   useSyncExternalStore(subscribeDock, dockVersion);
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
   const closeShortcut = useShortcutLabel("terminal.close");
+  const toggleChord = useDisplayedBinding("terminal.toggle");
   const browserOffered = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
   const terminalById = new Map(terminals.map((t) => [t.id, t]));
   const { position, merged, tabs, activeKey } = view;
@@ -386,31 +235,9 @@ export function DockPanel({
     detachTerminal(activeTab.terminalId, home);
   }, [activeTab, merged, position]);
 
-  // The shown tab keeps itself in view: with many tabs the strip scrolls, and a
-  // half-clipped active tab reads as a stray × button at the strip's edge.
+  // The strip's node: the drag below hit-tests its tabs (the strip itself keeps the shown
+  // tab in view and scrolls sideways under the wheel).
   const stripRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (activeKey === null) return;
-    stripRef.current
-      ?.querySelector(`[data-tab-id="${CSS.escape(activeKey)}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeKey, tabs]);
-
-  // Wheel over the strip scrolls it sideways (there is no vertical axis to scroll, and a
-  // trackpad's deltaX works too). Native non-passive listener: React's synthetic onWheel
-  // is passive, so preventDefault there cannot stop the page handling the event.
-  useEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return;
-    const onWheel = (event: WheelEvent): void => {
-      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-      if (delta === 0 || strip.scrollWidth <= strip.clientWidth) return;
-      event.preventDefault();
-      strip.scrollLeft += delta;
-    };
-    strip.addEventListener("wheel", onWheel, { passive: false });
-    return () => strip.removeEventListener("wheel", onWheel);
-  }, []);
 
   // ------------------------------------------------------------------ header drag: move dock
   const [headerDrag, setHeaderDrag] = useState<{
@@ -507,32 +334,25 @@ export function DockPanel({
   // dock — the ref is how both handles reach the box they resize.
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const resizerDragProps = usePointerDrag<object>({
-    threshold: 0,
-    begin: (event) => {
-      event.preventDefault(); // no text selection while dragging the boundary
-      setResizing(true);
-      return {};
-    },
-    onMove: (event) => {
-      const pane = rootRef.current?.getBoundingClientRect();
-      if (!pane) return;
-      if (horizontal) {
-        // The ratio's basis is the chat page column ([data-dock-host]), the same box the
-        // rendered height is computed from below.
-        const host = document.querySelector("[data-dock-host]")?.getBoundingClientRect();
-        if (!host || host.height === 0) return;
-        setBottomRatio((pane.bottom - event.clientY) / host.height);
-      } else {
-        setPanelWidth(pane.right - event.clientX);
-      }
-    },
-    onEnd: () => {
-      setResizing(false);
-      if (!horizontal) persistPanelWidth(); // once per drag, not per frame
-    },
-    onCancel: () => setResizing(false),
-  });
+  /** One move of a boundary drag: the pointer's position, as the dock's new size. */
+  const resizeTo = (event: PointerEvent): void => {
+    const pane = rootRef.current?.getBoundingClientRect();
+    if (!pane) return;
+    if (horizontal) {
+      // The ratio's basis is the chat page column ([data-dock-host]), the same box the
+      // rendered height is computed from below.
+      const host = document.querySelector("[data-dock-host]")?.getBoundingClientRect();
+      if (!host || host.height === 0) return;
+      setBottomRatio((pane.bottom - event.clientY) / host.height);
+    } else {
+      setPanelWidth(pane.right - event.clientX);
+    }
+  };
+  const resizeEnd = (committed: boolean): void => {
+    setResizing(false);
+    // Once per drag, not per frame; an abandoned drag stores nothing.
+    if (committed && !horizontal) persistPanelWidth();
+  };
 
   // The bottom dock's height in PIXELS: ratio × the measured chat column, with the same
   // clamps the drag applies. Pixels rather than a CSS percentage so the expand/collapse
@@ -541,7 +361,7 @@ export function DockPanel({
   // refit its grid on every intermediate height).
   // Lazy initial measurement: on every mount but the app's very first commit the host is
   // already in the DOM, so the first paint uses the real height — a 0 start would make
-  // the height jump 0→target one commit later, which the transition class turns into an
+  // the height jump 0→target one commit later, which the transition turns into an
   // unasked-for slide (and an instant mount is exactly the case that must not slide).
   // On the first commit the host is not attached yet; that mount is the animated initial
   // restore, whose entrance starts at 0 by design.
@@ -610,59 +430,56 @@ export function DockPanel({
       portal={{ direction: "down", align: "right" }}
       menuClass="w-56"
       button={
-        <DockButton label={S.dock.addTab} testId="dock-add" onClick={() => setAddOpen(!addOpen)}>
-          <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
-        </DockButton>
+        <DockHeaderButton
+          label={S.dock.addTab}
+          coarse={coarsePointer}
+          data-testid="dock-add"
+          onClick={() => setAddOpen(!addOpen)}
+        >
+          <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
+        </DockHeaderButton>
       }
     >
-      {PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered).map((kind) => (
-        <button
-          key={kind}
-          type="button"
-          data-testid={`dock-add-${kind}`}
-          onClick={() => openPanelHere(kind)}
-          className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-        >
-          <span className="shrink-0 text-gray-500 dark:text-gray-400">{panelGlyph(kind)}</span>
-          <span className="min-w-0 truncate">{panelLabel(kind)}</span>
-        </button>
-      ))}
-      {terminalSupported && (
-        <>
-          <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />
-          <button
-            type="button"
-            data-testid="dock-add-terminal"
-            onClick={() => {
-              setAddOpen(false);
-              void createShellInDock(merged ? undefined : position);
-            }}
-            className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-          >
-            <span className="shrink-0 text-gray-500 dark:text-gray-400">
-              <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
-            </span>
-            <span className="min-w-0 truncate">{S.terminal.newShell}</span>
-          </button>
-          {adoptable.map((terminal, index) => (
-            <button
-              key={terminal.id}
-              type="button"
-              data-testid="dock-add-shell"
-              data-terminal-id={terminal.id}
-              onClick={() => {
+      <Menu>
+        {PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered).map((kind) => (
+          <MenuItem
+            key={kind}
+            data-testid={`dock-add-${kind}`}
+            glyph={panelGlyphPath(kind)}
+            label={panelLabel(kind)}
+            onSelect={() => openPanelHere(kind)}
+          />
+        ))}
+        {terminalSupported && (
+          <>
+            <MenuSeparator />
+            <MenuItem
+              data-testid="dock-add-terminal"
+              glyph={ICONS.plus}
+              label={S.terminal.newShell}
+              onSelect={() => {
                 setAddOpen(false);
-                addTerminalTab(terminal.id, merged ? undefined : position);
+                void createShellInDock(merged ? undefined : position);
               }}
-              className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-            >
-              <span className="min-w-0 truncate">
-                {terminalLabel(terminal, terminal.id, index + 1)}
-              </span>
-            </button>
-          ))}
-        </>
-      )}
+            />
+            {/* Live shells no conversation holds, on the small rung: they are entries of the
+                row above rather than panels of their own. */}
+            {adoptable.map((terminal, index) => (
+              <MenuItem
+                key={terminal.id}
+                density="sm"
+                data-testid="dock-add-shell"
+                data-terminal-id={terminal.id}
+                label={terminalLabel(terminal, terminal.id, index + 1)}
+                onSelect={() => {
+                  setAddOpen(false);
+                  addTerminalTab(terminal.id, merged ? undefined : position);
+                }}
+              />
+            ))}
+          </>
+        )}
+      </Menu>
     </Dropdown>
   );
 
@@ -689,8 +506,8 @@ export function DockPanel({
 
   // A flip the store marks instant (a scope switch, a cross-dock move) must apply without
   // sliding. Leaving the tree is no longer what makes that instant — the node outlives a
-  // collapse now — so the transition class is left off for the commit that carries the flip
-  // and restored two frames later, once the new size has been painted.
+  // collapse now — so the animation is left off for the commit that carries the flip and
+  // restored two frames later, once the new size has been painted.
   const [snap, setSnap] = useState(false);
   const lastOpen = useRef(open);
   if (lastOpen.current !== open) {
@@ -731,112 +548,67 @@ export function DockPanel({
   };
   useEffect(() => subscribeTerminalCloseRequests((id) => closeRequest.current(id)), []);
 
-  const header = (
-    <header
-      data-testid="dock-header"
-      {...headerDragProps}
-      className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-2 py-1.5 text-xs dark:border-gray-800 ${
-        merged ? "" : "cursor-grab select-none"
-      }`}
-    >
-      {/* Tab strip: this dock's tabs, current one highlighted; drag sideways to reorder,
-          drag out to move onto the other edge. Scrolls when the tabs outgrow the header. */}
-      <div
-        ref={stripRef}
-        data-testid="dock-tab-strip"
-        {...stripDragProps}
-        className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
-      >
-        {tabs.map((tab) => {
-          const key = tabKey(tab);
-          if (tab.kind === "panel") {
-            return (
-              <DockTabButton
-                key={key}
-                tabId={key}
-                label={panelLabel(tab.panel)}
-                title={panelLabel(tab.panel)}
-                glyph={panelGlyph(tab.panel, ICON_SIZE.inlineGlyph)}
-                active={key === activeKey}
-                badge={panelBadges?.[tab.panel] === true}
-                closeLabel={S.dock.closeTab}
-                onSelect={() => activateTab(key)}
-                onClose={() => closeTab(tab, panelLabel(tab.panel))}
-              />
-            );
-          }
-          const info = terminalById.get(tab.terminalId);
-          const label = terminalLabel(
-            info,
-            tab.terminalId,
-            terminalOrdinals.get(tab.terminalId) ?? 1,
-          );
-          return (
-            <DockTabButton
-              key={key}
-              tabId={key}
-              terminalId={tab.terminalId}
-              label={label}
-              title={info ? `${info.name} — ${info.cwd}` : label}
-              glyph={<GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.inlineGlyph} />}
-              active={key === activeKey}
-              badge={false}
-              closeLabel={S.terminal.killShell}
-              closeShortcut={closeShortcut ?? undefined}
-              onSelect={() => activateTab(key)}
-              onClose={() => closeTab(tab, label)}
-            />
-          );
-        })}
-      </div>
-      <span className="min-w-0 flex-1" />
+  // The strip's items: panel tabs by their panel's name and mark, terminal tabs by their
+  // shell's seq and title, closed by killing the shell.
+  const stripTabs: DockTabItem[] = tabs.map((tab) => {
+    const key = tabKey(tab);
+    if (tab.kind === "panel") {
+      return {
+        key,
+        label: panelLabel(tab.panel),
+        glyph: panelGlyph(tab.panel, ICON_SIZE.inlineGlyph),
+        badge: panelBadges?.[tab.panel] === true,
+        closeLabel: S.dock.closeTab,
+      };
+    }
+    const info = terminalById.get(tab.terminalId);
+    const label = terminalLabel(info, tab.terminalId, terminalOrdinals.get(tab.terminalId) ?? 1);
+    return {
+      key,
+      label,
+      title: info ? `${info.name} — ${info.cwd}` : label,
+      glyph: <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.inlineGlyph} />,
+      closeLabel: S.terminal.killShell,
+      closeShortcut: closeShortcut ?? undefined,
+      terminalId: tab.terminalId,
+    };
+  });
+  const closeByKey = (key: string): void => {
+    const tab = tabs.find((t) => tabKey(t) === key);
+    const item = stripTabs.find((t) => t.key === key);
+    if (tab && item) closeTab(tab, item.label);
+  };
 
-      {/* Right-hand action cluster with uniform spacing, ending in close. */}
-      <div className="flex shrink-0 items-center gap-1.5">
-        {activeTab?.kind === "terminal" && (
-          <DockButton label={S.terminal.detach} testId="dock-detach" onClick={detach}>
-            <GlyphIcon d={DETACH_ICON} size={ICON_SIZE.rowLead} />
-          </DockButton>
-        )}
-        {addMenu}
-        {!merged && tabs.length > 0 && (
-          <DockButton
-            label={position === "right" ? S.dock.moveToBottom : S.dock.moveToRight}
-            testId="dock-move"
-            onClick={() => moveDock(position, other)}
-          >
-            <GlyphIcon
-              d={position === "right" ? PANEL_BOTTOM_ICON : PANEL_RIGHT_ICON}
-              size={ICON_SIZE.rowLead}
-            />
-          </DockButton>
-        )}
-        {horizontal && coarsePointer && tabs.length > 0 && (
-          <DockButton
-            label={maximized ? S.dock.restore : S.dock.maximize}
-            testId="dock-maximize"
-            onClick={toggleMaximized}
-          >
-            <GlyphIcon d={maximized ? RESTORE_ICON : MAXIMIZE_ICON} size={ICON_SIZE.rowLead} />
-          </DockButton>
-        )}
-        <DockButton label={S.dock.hideDock} testId="dock-close" onClick={hide}>
-          <CloseIcon size={12} />
-        </DockButton>
-      </div>
-    </header>
-  );
+  // An open dock with nothing in it yet: the picker chooses what this dock opens. The
+  // terminal row adopts the newest shell no conversation holds, or starts a fresh one, and
+  // names its hotkey while one is bound; the built-in browser is offered only where it can
+  // be shown (the desktop app's own window, with a shell that hosts it).
+  const pickPanel = (kind: PanelKind): DockPickerChoice => ({
+    key: kind,
+    label: panelLabel(kind),
+    glyph: panelGlyph(kind),
+    onChoose: () => openPanel(kind, merged ? undefined : position),
+  });
+  const pickerChoices: DockPickerChoice[] = [
+    pickPanel("agents"),
+    ...(terminalSupported
+      ? [
+          {
+            key: "terminal",
+            label: S.terminal.title,
+            glyph: <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />,
+            ...(toggleChord !== null ? { keys: chordKeys(toggleChord) } : {}),
+            onChoose: () => void openTerminalInDock(merged ? undefined : position),
+          },
+        ]
+      : []),
+    ...(browserOffered ? [pickPanel("builtin-browser")] : []),
+    ...PICKER_PANELS.map(pickPanel),
+  ];
 
   const bodies =
     tabs.length === 0 ? (
-      // An open dock with nothing in it yet: the picker chooses what this dock opens.
-      <DockPicker
-        choose={(kind) => openPanel(kind, merged ? undefined : position)}
-        chooseTerminal={() => void openTerminalInDock(merged ? undefined : position)}
-        terminalSupported={terminalSupported}
-        browserOffered={browserOffered}
-        horizontal={horizontal}
-      />
+      <DockPicker choices={pickerChoices} horizontal={horizontal} />
     ) : (
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => {
@@ -865,6 +637,7 @@ export function DockPanel({
       onClose={() => setConfirmKill(null)}
       onConfirm={killConfirmed}
       confirmLabel={S.terminal.killShell}
+      cancelLabel={S.common.cancel}
     >
       {confirmKill !== null && (
         <p className="break-words text-sm text-gray-600 dark:text-gray-300">
@@ -874,95 +647,105 @@ export function DockPanel({
     </ConfirmModal>
   );
 
-  if (horizontal) {
-    return (
-      <div
-        ref={rootRef}
-        data-testid="dock"
-        data-position="bottom"
-        // A closed dock stays in the tree at zero size, so what is on screen is data-open,
-        // not the node's presence (dock-drag.tsx and the e2e specs select on it).
-        data-open={open}
-        // Collapsed to 0 while closing/entering; the border belongs to the open state
-        // only — with border-box sizing a collapsed dock would still paint its 1px,
-        // leaving a hairline where nothing is.
-        style={{ height: open && entered ? bottomHeight : 0 }}
-        inert={!open}
-        className={`relative flex w-full shrink-0 flex-col overflow-hidden bg-white dark:bg-gray-950 ${
-          open ? "border-t border-gray-200 dark:border-gray-800" : ""
-        } ${resizing || snap ? "" : "transition-[height] duration-200"}`}
-      >
-        {/* The handle straddles the boundary as an overlay, costing no height. Only while
-            open — a collapsing dock must not keep a grabbable edge behind. */}
-        {open && (
-          <div
-            data-testid="dock-resizer"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label={S.dock.resize}
-            data-tooltip={S.dock.resize}
-            {...resizerDragProps}
-            onDoubleClick={onResizerDoubleClick}
-            className={`absolute -top-[3px] left-0 right-0 z-20 h-1.5 cursor-ns-resize transition-colors duration-150 ${
-              resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
-            }`}
-          />
-        )}
-        {/* Content fixed at the settled height inside the clipping window: while the
-            outer box animates through intermediate heights, nothing reflows — xterm
-            keeps its grid, panels keep their layout — the surface just slides. */}
-        <div style={{ height: bottomHeight }} className="flex min-h-0 shrink-0 flex-col">
-          {header}
-          {bodies}
-        </div>
-        {overlayActive && <DockDragOverlay candidate={overlayCandidate} />}
-        {killConfirm}
-      </div>
-    );
-  }
+  // The boundary handle: on the bottom dock an overlay straddling the top edge (it costs no
+  // height), on the right dock a layout sibling (it must cost real width). The store clamps
+  // the size a drag asks for.
+  const handle = (
+    <ResizeHandle
+      data-testid="dock-resizer"
+      axis={horizontal ? "y" : "x"}
+      edge={horizontal ? "start" : undefined}
+      label={S.dock.resize}
+      onResizeStart={() => setResizing(true)}
+      onResize={resizeTo}
+      onResizeEnd={resizeEnd}
+      onReset={onResizerDoubleClick}
+    />
+  );
+
+  const settledSize = horizontal ? bottomHeight : sideWidth;
 
   return (
-    <>
-      {/* A layout-sibling handle, not an overlay: it must cost real width so the chat
-          column measures the same under every surface. Only while open — a collapsing
-          dock must not leave a bare strip behind. */}
-      {open && (
-        <div
-          data-testid="dock-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={S.dock.resize}
-          data-tooltip={S.dock.resize}
-          {...resizerDragProps}
-          onDoubleClick={onResizerDoubleClick}
-          className={`w-1.5 shrink-0 cursor-col-resize transition-colors duration-150 ${
-            resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
-          }`}
+    <DockFrame
+      position={horizontal ? "bottom" : "right"}
+      open={open}
+      // Collapsed to 0 while closing or entering.
+      size={open && entered ? settledSize : 0}
+      contentSize={settledSize}
+      animate={!resizing && !snap}
+      rootRef={rootRef}
+      headerProps={headerDragProps}
+      movable={!merged}
+      tabs={
+        // Drag sideways to reorder, drag out to move onto the other edge.
+        <DockTabs
+          tabs={stripTabs}
+          active={activeKey}
+          onSelect={activateTab}
+          onClose={closeByKey}
+          coarse={coarsePointer}
+          stripRef={stripRef}
+          {...stripDragProps}
         />
-      )}
-      <div
-        ref={rootRef}
-        data-testid="dock"
-        data-position="right"
-        // What is on screen is data-open, not the node's presence (see the bottom branch).
-        data-open={open}
-        // The border belongs to the open state only (see the bottom branch's note).
-        style={{ width: open && entered ? sideWidth : 0 }}
-        inert={!open}
-        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-white dark:bg-gray-950 ${
-          open ? "border-l border-gray-200 dark:border-gray-800" : ""
-        } ${resizing || snap ? "" : "transition-[width] duration-200"}`}
-      >
-        {/* Fixed-width content inside the clipping window: while the outer element
-            animates through intermediate widths, the content must not reflow frame by
-            frame — text would squeeze, and xterm would refit its grid on every one. */}
-        <div style={{ width: sideWidth }} className="flex min-h-0 flex-1 flex-col">
-          {header}
-          {bodies}
-        </div>
-        {overlayActive && <DockDragOverlay candidate={overlayCandidate} />}
-        {killConfirm}
-      </div>
-    </>
+      }
+      actions={
+        <>
+          {activeTab?.kind === "terminal" && (
+            <DockHeaderButton
+              label={S.terminal.detach}
+              coarse={coarsePointer}
+              data-testid="dock-detach"
+              onClick={detach}
+            >
+              <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
+            </DockHeaderButton>
+          )}
+          {addMenu}
+          {!merged && tabs.length > 0 && (
+            <DockHeaderButton
+              label={position === "right" ? S.dock.moveToBottom : S.dock.moveToRight}
+              coarse={coarsePointer}
+              data-testid="dock-move"
+              onClick={() => moveDock(position, other)}
+            >
+              <GlyphIcon
+                d={position === "right" ? ICONS.panelBottom : ICONS.panelRight}
+                size={ICON_SIZE.rowLead}
+              />
+            </DockHeaderButton>
+          )}
+          {horizontal && coarsePointer && tabs.length > 0 && (
+            <DockHeaderButton
+              label={maximized ? S.dock.restore : S.dock.maximize}
+              coarse
+              data-testid="dock-maximize"
+              onClick={toggleMaximized}
+            >
+              <GlyphIcon
+                d={maximized ? ICONS.cornersIn : ICONS.cornersOut}
+                size={ICON_SIZE.rowLead}
+              />
+            </DockHeaderButton>
+          )}
+          <DockHeaderButton
+            label={S.dock.hideDock}
+            coarse={coarsePointer}
+            data-testid="dock-close"
+            onClick={hide}
+          >
+            <CloseIcon size={12} />
+          </DockHeaderButton>
+        </>
+      }
+      handle={handle}
+      overlays={
+        <>
+          {overlayActive && <DockDragOverlay candidate={overlayCandidate} />}
+          {killConfirm}
+        </>
+      }
+    >
+      {bodies}
+    </DockFrame>
   );
 }

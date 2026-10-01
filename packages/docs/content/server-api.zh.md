@@ -637,7 +637,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | --- | --- | --- |
 | GET | `/usage` | 用量统计 |
 | GET | `/usage/model-totals` | 每个模型的历史累计 Token 总量；不接受任何过滤参数 |
-| GET | `/usage/errors` | 错误详情表的一页，按时间倒序：→ `{items, total}` |
+| GET | `/usage/errors` | 错误详情表的一页，按时间倒序：→ `{items, total, rows}` |
 | DELETE | `/usage/errors` | 按当前过滤条件清空错误表：→ `{deleted}`（仅限 Project 所有者） |
 | GET | `/agents/:agentId/traces` | Trace 文件，按日期 → Session 逐级下钻 |
 | GET | `/agents/:agentId/traces/:sessionId/:index` | 读取 Trace 事件（`offset` / `limit` 分页） |
@@ -656,6 +656,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | `agentId`、`provider`、`modelId` | 过滤条件 |
 
 - `GET /usage/errors` 接受 `offset`、`limit`、同样的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤条件，以及可选的 `kind`（`unexpected` 或 `expected`）。
+- 错误表把同一天里来源、错误码、分类和消息都相同的记录合为一行，带上次数 `count`、最近一次的时间 `ts` 和首次的时间 `firstTs`。`offset`、`limit` 和 `rows` 按行计；`total` 和仪表盘的汇总数字按记录计。`GET /usage` 与 `GET /usage/errors` 都接受可选的 `utcOffsetMinutes`，即读者所在时区相对 UTC 向东的分钟数（−840 到 840），它决定「同一天」按哪一天算；不传时按服务器自己的日期。
 - `DELETE /usage/errors` 接受与读取相同的过滤条件（`from` / `to` / `fromTs` / `toTs` / `agentId`），但不接受 `kind`，因为面板上没有这个控件。这里 `from` 和 `to` 都必填（否则返回 400），因为少一个边界，清空的就是整段历史，而不是过滤后的一部分。清空的范围与调用者读取的范围完全一致：管理员清空时，也会删掉只有管理员读取才能看到的未归属行；成员清空时则永远不会。
 - `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。
 - 任何成员都可以下载 Trace。导入只有所有者能做，与 Agent State 快照导入一样，上限 14MB。导入的文件必须是有效的 Trace JSONL，首条记录必须是 `session_meta`，`session_id` 须可安全用作文件名。session id 与 Agent 已有的重复时拒绝导入（409 `trace_session_exists`），所以导入的文件总是成为新 Session 的 index 001，按首条记录的时间戳存入对应的本地日期目录。
@@ -1004,6 +1005,8 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 - `lastConnectionError`：`{at, detail}`，记录最近一次连接失败，连接恢复后仍保留。相比之下，`lastError` 属于 `error` 状态，状态一离开它就消失。
 
 这三个字段都保存在服务器进程中，每次连接或重连都会重置；重新启用渠道或保存凭据都会开启新连接。因此 `lastInboundAt` 缺失意味着「本次连接建立以来没有消息」，绝不是「从来没有过消息」。提供这些字段，是因为一个扣着消息不投递的渠道，照样显示 `connected`，而且没有任何报错。
+
+连接失败还会记一条错误记录 `messaging_connect_failed`，每次故障一条；从未到达聊天的回复记为 `messaging_send_failed`。在 Telegram、QQ 和微信上，下一次尝试就能自行解决的失败属于 `expected`：请求根本没有完成、超时、HTTP 408、429 或 5xx、QQ 网关不再响应心跳或要求重连，以及微信的会话超时。会一直重复、直到有人处理的失败属于 `unexpected`，例如凭据被拒、缺少权限，或者 Telegram 机器人上登记了 webhook、另有程序在轮询同一个机器人。一次故障以 `expected` 的失败开头时，随后第一个 `unexpected` 的失败也会记录。
 
 ## 终端
 

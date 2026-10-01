@@ -28,27 +28,31 @@
 import { useState } from "react";
 import type { ChangeEvent } from "react";
 import type { UpdateProfileRequest } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  HiddenFileInput,
+  Input,
+  PrefRow,
+  USER_AVATAR_SIZE,
+  UserAvatar,
+  buttonClass,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { avatarDataUrlFromFile } from "../../lib/avatar-image";
 import { profileControls } from "../../lib/profile-form";
 import { useAuth } from "../../state/auth";
-import { Button, labelButtonClass } from "../../components/ui/button";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { Input } from "../../components/ui/input";
-import { UserAvatar, USER_AVATAR_SIZE } from "../../components/ui/user-avatar";
-import { toastSuccess } from "../../components/ui/toast";
-import { PrefRow } from "./setting-row";
 
 /** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
 
-const CHANGE_AVATAR_CLASS = labelButtonClass("secondary", "sm");
+const CHANGE_AVATAR_CLASS = buttonClass("secondary", "sm");
 
 /**
  * The same control while a write is running. `Button`'s `disabled:` rules cannot help here — a
- * `<label>` takes no disabled state — and a `cursor-not-allowed` beside `labelButtonClass`'s
+ * `<label>` takes no disabled state — and a `cursor-not-allowed` beside `buttonClass`'s
  * `cursor-pointer` would be decided by the order the stylesheet was generated in rather than by
  * this string. `pointer-events-none` has no counterpart to lose to, and it removes the hover
  * colour and the pointer cursor together; the input inside is `disabled`, so Tab skips it too.

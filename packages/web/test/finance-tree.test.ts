@@ -1,9 +1,21 @@
 /**
- * finance-tree.ts unit tests: the spend tree along the reporting line, the ticket ledger
- * along parent tickets and the rows its fold leaves visible, period arithmetic, the budget
- * tone thresholds, the marks the state column carries, the trend series and its axis breaks,
- * the KPI row's numbers, the alert grouping, and the two row tooltips that carry what the
- * tables dropped a column for.
+ * A company's finance page, as pure data (features/company/finance-tree.ts).
+ *
+ * - The spend tree walks the reporting line depth first; an unknown manager starts a tree of
+ *   its own. The ticket ledger nests children under parents the same way.
+ * - The ledger shows the roots alone until a parent is expanded, one level per expanded
+ *   parent, never below a folded ancestor, and a childless row has nothing to fold.
+ * - Periods move by whole months across years; other shapes are refused.
+ * - A budget reads success under 80%, attention from 80%, danger from 100%, muted without one.
+ * - Each day becomes a trend point on its date carrying its cost; the axis breaks after a
+ *   skipped calendar day (across months too) and never around an unparsable date.
+ * - The KPI row measures the total against the root's budget (leaving budget and ratio out
+ *   without one) and counts budgets, warnings and pauses.
+ * - Alerts group into paused and warned, a paused alert under paused only, newest first.
+ * - The row tooltips name every figure the tables dropped a column for, with stand-ins for a
+ *   missing budget or owner.
+ * - The state column leads with the live state and adds what the budget did, says paused
+ *   once however it is spelled, and stands on the budget alone without a live state.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
@@ -142,19 +154,14 @@ describe("budgetTone", () => {
 });
 
 describe("financeSeries", () => {
-  it("shapes daily costs as the trend chart's points", () => {
-    expect(financeSeries([{ date: "2026-09-01", cost: 2.5 }])).toEqual([
-      {
-        bucket: "2026-09-01",
-        cacheRead: 0,
-        cacheWrite: 0,
-        output: 0,
-        total: 0,
-        cost: 2.5,
-        requests: 0,
-        completed: 0,
-        denominator: 0,
-      },
+  it("makes each day a trend point on its date carrying its cost", () => {
+    const points = financeSeries([
+      { date: "2026-09-01", cost: 2.5 },
+      { date: "2026-09-02", cost: 0 },
+    ]);
+    expect(points.map((p) => [p.bucket, p.cost])).toEqual([
+      ["2026-09-01", 2.5],
+      ["2026-09-02", 0],
     ]);
   });
 });

@@ -1,3 +1,19 @@
+/**
+ * Forking a Session at one of its replies (POST /api/sessions/:id/fork).
+ *
+ * - A fork copies the history through the selected reply, snapshots the scratchpad, rewrites
+ *   the local attachment markers to its own copy, and outlives the source's deletion.
+ * - Forks of one source share a persistent number sequence, whatever reply they start from; a
+ *   source with no title forks under a readable numbered fallback.
+ * - A fork that fails after its row was committed removes the row and the cloned files.
+ * - A user message, an intermediate assistant segment and a hidden compaction summary are not
+ *   fork points; a running source is a 409 task_in_progress.
+ * - A missing scratchpad forks as empty, and deleting the fork leaves the source intact.
+ * - Completed earlier shards are cloned and the selected one cut, with stable positions on a
+ *   tail page.
+ * - Concurrent forks get unique Sessions and never overwrite the source.
+ * - A user without Project access is not told the endpoint exists.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +41,7 @@ import { apiClient, createTestApp, provisionUser, writeTraceFile, waitFor } from
 import type { TestApp } from "./helpers.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { fakeSession } from "./fixtures/session.js";
 
 const SID = "session-2026-08-14-10-00-00-aabbcc01";
 
@@ -37,19 +54,12 @@ function at(timestamp: string, message: OmniMessage): OmniMessage {
 }
 
 function parkingFakeSession(sessionId: string, until: Promise<void>): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run() {
       await until;
       yield assistantText("done");
     },
-    async *compact() {},
-  };
+  });
 }
 
 describe("session fork", () => {

@@ -1,71 +1,61 @@
 /**
- * Integration tests for the follow-up queue (POST /api/sessions/:id/tasks with
- * `queueIfBusy`):
- *   - busy session → 202 `{queued: true}`, input held server-side, auto-started as an
- *     ordinary task once the current run finishes;
- *   - idle session → the flag is a no-op (`queued: false`, task starts directly);
- *   - one queued input starts exactly one task, and recall works whichever path queued it.
- * (The queued count on task_state events is covered by the session-manager unit tests.)
+ * The follow-up queue: POST /api/sessions/:id/tasks with `queueIfBusy`, and its recall.
+ *
+ * - Given an idle Session the flag is a no-op (`queued: false`, the task starts at once);
+ *   given a busy one the input is held server-side (`queued: true`, where a plain POST is a
+ *   409) and auto-starts as an ordinary task once the current run finishes.
+ * - A queued follow-up can be recalled with its content, and then never starts; one already
+ *   started (or recalled) answers 409 `follow_up_started`.
+ * - The SSE subscribe snapshot carries the queued list, so a reloaded page can still recall.
+ * - A recall racing the auto-start in the idle gap wins exactly once: nothing starts.
+ * - One queued follow-up starts exactly one task, whether the run before it completes or is
+ *   aborted.
+ * - A follow-up queued straight through the manager (the messaging bridge's door) is
+ *   recallable the same way.
+ *
+ * The queued count on task_state events is covered by the session-manager suite.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { TaskCreateResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
-import type { RecallStore, RuntimeSession } from "../src/runtime/session-manager.js";
+import type { RecallStore } from "../src/runtime/session-manager.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
-const SID = "session-2026-07-06-10-00-00-eeff0001";
-
-/** Fake Session that parks on one approval per run (keeps the Task running) and records each run's input. */
-function parkingFakeSession(sessionId: string, runs: string[][]): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run(input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
-      runs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
-      const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-fu" });
-      yield tc;
-      const decision = await opts.approve(tc);
-      yield approvalDecision(decision, "tc-fu");
-      yield assistantText("done");
-    },
-    async *compact() {},
-  };
-}
 
 describe("follow-up queue route", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
+  let SID: string;
   let runs: string[][];
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "queuer");
-    api = apiClient(t.app, cookie);
-    const row: SessionRow = {
-      sessionId: SID,
-      projectId: "queuer-default_project",
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m1",
-      workspace: "/tmp/w",
-      approvalMode: "always-ask",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
-    t.deps.sessionsRepo.insert(row);
-    runs = [];
-    t.deps.manager.adopt(row, parkingFakeSession(SID, runs));
+    api = apiClient(t.app, (await provisionUser(t.app, "queuer")).cookie);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+
+  // A Session that parks on one approval per run (keeping the Task running) and records each
+  // run's input.
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    runs = [];
+    const session = fakeSession(SID, {
+      async *run(input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+        runs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
+        const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-fu" });
+        yield tc;
+        yield approvalDecision(await opts.approve(tc), "tc-fu");
+        yield assistantText("done");
+      },
+    });
+    adoptSession(t.deps, session, {
+      projectId: "queuer-default_project",
+      approvalMode: "always-ask",
+    });
   });
 
   it("busy → 202 queued:true and auto-starts after the current run; idle → queued:false", async () => {

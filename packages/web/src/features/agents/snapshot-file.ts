@@ -1,12 +1,12 @@
 /** Picking and reading Agent State snapshot packages (`<agentId>-v<n>.tar.gz`). */
-import { labelButtonClass } from "../../components/ui/button";
+import { buttonClass } from "@prismshadow/penguin-ui";
 
 /**
  * The button look on the `<a download>` / `<label>` the transfer actions and the snapshot picker
  * need — the settings page's transfers and the create dialog's picker, neither of which can be a
  * `<button>`.
  */
-export const SNAPSHOT_BUTTON_CLASS = labelButtonClass("secondary", "sm");
+export const SNAPSHOT_BUTTON_CLASS = buttonClass("secondary", "sm");
 
 /**
  * Accept list for the snapshot file pickers.

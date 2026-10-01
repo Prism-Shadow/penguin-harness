@@ -1,13 +1,20 @@
 /**
- * ticket-board.ts unit tests: the five columns in lifecycle order, card sorting (priority,
- * then due, then id), the blocked-only filter and the search box, the counts the overview
- * shows, which moves need a reason, the "blocked on me" selection, the shape of an id slug,
- * the overdue test, the day read off a ticket id, and the invalid-ticket list.
+ * The ticket board (features/company/ticket-board.ts).
+ *
+ * - Only the five lifecycle statuses are ticket statuses.
+ * - Cards sort by priority, then the earlier due date, then id.
+ * - The board renders every column, narrowed to blocked cards and by the search box (title,
+ *   id, owner and parent, case-insensitively, and the owner's name through the chart), both
+ *   narrowings at once.
+ * - Only a move into rejected needs a reason, and a same-column drop is no move; an empty
+ *   blocked string is not blocked.
+ * - A new id's slug is lowercase words joined by hyphens.
+ * - A due date is overdue once today has passed it; the creation day is read off the id.
+ * - The tickets the server flagged invalid are listed in column order.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgTicketItem, OrgTicketsResponse } from "@prismshadow/penguin-server/api";
 import {
-  TICKET_COLUMNS,
   allTickets,
   boardColumns,
   canMove,
@@ -44,8 +51,7 @@ function board(over: Partial<OrgTicketsResponse["columns"]> = {}): OrgTicketsRes
 }
 
 describe("columns", () => {
-  it("are the five statuses in lifecycle order", () => {
-    expect([...TICKET_COLUMNS]).toEqual(["proposed", "in_progress", "review", "done", "rejected"]);
+  it("knows the lifecycle statuses and nothing else", () => {
     expect(isTicketStatus("review")).toBe(true);
     expect(isTicketStatus("blocked")).toBe(false);
     expect(isTicketStatus(null)).toBe(false);

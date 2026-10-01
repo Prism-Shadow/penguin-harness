@@ -16,10 +16,13 @@ import { AvatarsBoard } from "./boards/avatars";
 import { BadgesBoard } from "./boards/badges";
 import { ButtonsBoard } from "./boards/buttons";
 import { ChartsBoard } from "./boards/charts";
+import { ContentBoard } from "./boards/content";
+import { DataBoard } from "./boards/data";
 import { DialogsBoard } from "./boards/dialogs";
 import { EmptyBoard } from "./boards/empty";
 import { FilesBoard } from "./boards/files";
 import { InputsBoard } from "./boards/inputs";
+import { LayoutBoard } from "./boards/layout";
 import { LoadingBoard } from "./boards/loading";
 import { NoticesBoard } from "./boards/notices";
 import { PickersBoard } from "./boards/pickers";
@@ -45,6 +48,9 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   charts: ChartsBoard,
   avatars: AvatarsBoard,
   files: FilesBoard,
+  content: ContentBoard,
+  layout: LayoutBoard,
+  data: DataBoard,
   colour: ColourBoard,
   type: TypeBoard,
   shape: ShapeBoard,

@@ -10,6 +10,15 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import {
+  Button,
+  Input,
+  Modal,
+  Notice,
+  PasswordInput,
+  PenguinLogo,
+  Segmented,
+} from "@prismshadow/penguin-ui";
 import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
@@ -18,12 +27,6 @@ import { useLocale } from "../state/locale";
 import type { LangPref } from "../state/locale";
 import { useTheme } from "../state/theme";
 import type { ThemeMode } from "../state/theme";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { PasswordInput } from "../components/ui/password-input";
-import { Modal } from "../components/ui/modal";
-import { PenguinLogo } from "../components/ui/penguin-logo";
-import { Segmented } from "../components/ui/segmented";
 import { LoginCircuit } from "./login-circuit";
 
 /** Which advice a failed claim asks for; the server decides it from the deployment, not from the token. */
@@ -107,7 +110,7 @@ export function LoginPage() {
       </div>
       <div className="anim-rise relative w-full max-w-sm">
         {/* Brand penguin logo (part of the form area, not background graphics, so it doesn't clash with the trace animation) */}
-        <PenguinLogo className="mx-auto mb-3 h-16 w-16 rounded-2xl" />
+        <PenguinLogo src="/penguin-logo.svg" className="mx-auto mb-3 h-16 w-16 rounded-2xl" />
         <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight">{S.appName}</h1>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -146,11 +149,7 @@ export function LoginPage() {
               error={errors.password}
               autoComplete="current-password"
             />
-            {errors.form && (
-              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-                {errors.form}
-              </p>
-            )}
+            {errors.form && <Notice tone="danger">{errors.form}</Notice>}
             <Button
               type="submit"
               variant="primary"

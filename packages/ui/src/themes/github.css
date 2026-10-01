@@ -1,12 +1,16 @@
 /**
  * Primer (`github`) — the default theme. Reference: github.com and primer.style.
  *
- * W0 status: every LIGHT value is the app's CURRENT computed value, so adopting the token layer
- * moves no pixel there — system font stacks, stock Tailwind gray, emerald / amber / red status
- * tones, the 6px control radius, Tailwind's stock shadow recipes and the 3px gray focus ring.
- * Values the app had no equivalent for (the `done` and `info` tones, diff surfaces, glass, the
- * type and density roles) are proposals in the same palette, consumed by nothing yet. The Primer
- * unification — Mona Sans + Noto, one border grey, Primer's tone hues — lands as W1a.
+ * W0 status: the LIGHT values are the app's own look — emerald / amber / red status tones, the
+ * 6px control radius, Tailwind's stock shadow recipes and the 3px gray focus ring — with two
+ * changes made on purpose since. The typefaces are GitHub Primer's own since 2026-09-30 (Mona
+ * Sans, JetBrains Mono and Noto Sans SC in place of the system stacks). And the blacks, whites
+ * and grays are pure neutral since the same day: Tailwind's stock gray carries a slate tint (hue
+ * about 264, chroma up to 0.034) that made them read off to the owner, whose reference was the
+ * zero-chroma grays of Vercel's Geist (turborepo.dev). So the light bridge is Tailwind's
+ * `neutral` scale at the same rungs, and the accent is the neutral near-black. Values the app
+ * had no equivalent for (the `done` and `info` tones, diff surfaces, glass, the type and density
+ * roles) are proposals in the same palette, consumed by nothing yet.
  *
  * Dark is no longer the app's white-on-pure-black inversion (user decision, 2026-09-29): the
  * canvas lifts to #121212, the body ink sits at about 12:1 with the muted ink at 6:1 and the
@@ -39,24 +43,28 @@
 @layer ui-theme {
   :root,
   :root[data-theme="github"] {
-    /* ---- Gray bridge: stock Tailwind v4 gray ---- */
+    /* ---- Gray bridge: Tailwind v4's `neutral` scale, zero chroma. Every `gray-*` class the app
+       spells lands on the same rung it always did, only without the slate tint, and every token
+       below that reads a gray (lines, inks, the sidebar's muted fill) follows it. The rungs hold
+       the light floors: 900 on white is 17.9:1, 500 on the 50 fill 4.53:1. ---- */
     --color-white: var(--ui-surface);
-    --color-gray-50: oklch(98.5% 0.002 247.839);
-    --color-gray-100: oklch(96.7% 0.003 264.542);
-    --color-gray-200: oklch(92.8% 0.006 264.531);
-    --color-gray-300: oklch(87.2% 0.01 258.338);
-    --color-gray-400: oklch(70.7% 0.022 261.325);
-    --color-gray-500: oklch(55.1% 0.027 264.364);
-    --color-gray-600: oklch(44.6% 0.03 256.802);
-    --color-gray-700: oklch(37.3% 0.034 259.733);
-    --color-gray-800: oklch(27.8% 0.033 256.848);
-    --color-gray-900: oklch(21% 0.034 264.665);
-    --color-gray-950: oklch(13% 0.028 261.692);
+    --color-gray-50: oklch(98.5% 0 0); /* #fafafa */
+    --color-gray-100: oklch(97% 0 0); /* #f5f5f5 */
+    --color-gray-200: oklch(92.2% 0 0); /* #e5e5e5 */
+    --color-gray-300: oklch(87% 0 0); /* #d4d4d4 */
+    --color-gray-400: oklch(70.8% 0 0); /* #a1a1a1 */
+    --color-gray-500: oklch(55.6% 0 0); /* #737373 */
+    --color-gray-600: oklch(43.9% 0 0); /* #525252 */
+    --color-gray-700: oklch(37.1% 0 0); /* #404040 */
+    --color-gray-800: oklch(26.9% 0 0); /* #262626 */
+    --color-gray-900: oklch(20.5% 0 0); /* #171717 */
+    --color-gray-950: oklch(14.5% 0 0); /* #0a0a0a */
 
     /* ---- Colour — surfaces ---- */
     --ui-canvas: #ffffff;
     --ui-surface: #ffffff;
     --ui-surface-muted: var(--color-gray-50);
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: var(--color-gray-50);
     --ui-overlay: #ffffff;
     --ui-overlay-backdrop: oklab(0% 0 0 / 0.45); /* = bg-black/45, alpha exactly .45 */
@@ -75,18 +83,20 @@
     --ui-line-emphasis: var(--color-gray-300);
     --ui-divider: var(--color-gray-200);
 
-    /* ---- Colour — accent (neutral: near-black on white) ---- */
-    --ui-accent: #111827;
-    --ui-accent-hover: #1f2937;
-    --ui-accent-active: #374151;
+    /* ---- Colour — accent (neutral: near-black on white). The ink's own rung, neutral-900, with
+       800 and 700 as hover and active: the same steps the slate accent took from its scale ---- */
+    --ui-accent: #171717;
+    --ui-accent-hover: #262626;
+    --ui-accent-active: #404040;
     --ui-accent-fg: #ffffff;
-    --ui-accent-muted: rgb(17 24 39 / 0.08);
-    --ui-accent-line: rgb(17 24 39 / 0.4);
+    --ui-accent-muted: rgb(23 23 23 / 0.08);
+    --ui-accent-line: rgb(23 23 23 / 0.4);
 
     /* ---- Colour — semantic tones ----
        Ink on a tint and a solid fill's label clear 4.5:1 (badge text is the 700 step, as the app's
        tinted pills draw it); fg on the page surfaces clears 3:1. `neutral` ink is the muted pill's
-       gray-600. Nothing in the app reads these yet — its tones still come from tone.ts classes. */
+       gray-600. The package's badges, dots and status marks read these; the app's own call sites
+       still take their tones from tone.ts classes until their components move. */
     --ui-tone-success-fg: oklch(50.8% 0.118 165.612); /* emerald-700 */
     --ui-tone-success-bg: oklch(97.9% 0.021 166.113); /* emerald-50 */
     --ui-tone-success-line: oklch(84.5% 0.143 164.978); /* emerald-300 */
@@ -118,13 +128,17 @@
     --ui-tone-info-emphasis: oklch(50% 0.134 242.749); /* sky-700 */
     --ui-tone-info-emphasis-fg: #ffffff;
 
+    /* ---- Colour — marks: the update dot's notification red, the pale rung so it reads as news
+       rather than as an alarm; the app's value, one in both modes ---- */
+    --ui-mark-new: oklch(70.4% 0.191 22.216); /* red-400 */
+
     /* ---- Charts: the series palette in its roles (violet, amber, sky, rose, emerald, fuchsia,
        then teal and orange from the employee palette). Amber, sky, emerald, teal and orange sit
        at their 600 steps — the steps the app's dark series already used — since their 500s read
-       at 2.2–2.9:1 on white (lifted 2026-09-30, the one Primer change of the theme work; violet,
-       rose and fuchsia clear 3:1 at 500). The reference curve is amber like the second series;
-       the token-kind blues and today's geometry — bars at 60% of their band with square tops,
-       2px lines joined straight, 2.5px points, a 10% fill under a line. ---- */
+       at 2.2–2.9:1 on white (lifted 2026-09-30 to clear the floor; violet, rose and fuchsia clear
+       3:1 at 500). The reference curve is amber like the second series; the token-kind blues and
+       today's geometry — bars at 60% of their band with square tops, 2px lines joined straight,
+       2.5px points, a 10% fill under a line. ---- */
     --ui-chart-1: oklch(60.6% 0.25 292.717); /* violet-500 */
     --ui-chart-2: oklch(66.6% 0.179 58.318); /* amber-600 */
     --ui-chart-3: oklch(58.8% 0.158 241.966); /* sky-600 */
@@ -215,17 +229,21 @@
     --ui-switch-knob-on: var(--ui-accent-fg);
     --ui-switch-knob-line: var(--color-gray-500);
 
-    /* ---- Typography — families: the system stacks the app ships today; chrome and reading text
-       share the one face. The sans stack reads the CJK face where the app's stack names the two
-       system CJK faces, so the computed list is the same and a chosen CJK face reaches it. ---- */
+    /* ---- Typography — families: GitHub Primer's faces (Mona Sans, JetBrains Mono for code,
+       Noto Sans SC for Han), each in front of the system stack the app shipped before, which
+       stays behind it as the fallback; chrome and reading text share the one face. Latin first,
+       then the CJK face, then the system stack — the order every theme keeps — so Han text
+       renders in Noto Sans SC (or the chosen CJK face, through `--ui-font-cjk`) on every
+       platform rather than in whichever system face carries CJK glyphs. ---- */
     --ui-font-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, var(--ui-font-cjk), sans-serif;
+      "Mona Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+      Roboto, sans-serif;
     --ui-font-ui: var(--ui-font-sans);
     --ui-font-mono:
-      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-      monospace;
+      "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
     --ui-font-display: var(--ui-font-sans);
-    --ui-font-cjk: "PingFang SC", "Microsoft YaHei";
+    --ui-font-cjk: "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
 
     /* ---- Typography — scale and roles: Tailwind's stock text-sm / text-xs rungs, which is what
        the app's classes render today (theme.css bridges `text-sm` and `text-xs` to these). The two
@@ -358,13 +376,13 @@
     --ui-icon-join: round;
 
     /* ---- Focus, selection and scrollbar ---- */
-    --ui-focus-ring: 3px solid rgb(107 114 128 / 0.4);
+    --ui-focus-ring: 3px solid rgb(115 115 115 / 0.4); /* neutral-500 */
     --ui-focus-ring-offset: 2px;
     --ui-focus-ring-input: 0 0 0 2px color-mix(in oklab, var(--color-gray-400) 30%, transparent);
     --ui-selection-bg: rgb(0 0 0 / 0.1);
     --ui-scrollbar-w: thin;
-    --ui-scrollbar-thumb: rgb(60 64 67 / 0.28);
-    --ui-scrollbar-thumb-hover: rgb(60 64 67 / 0.45);
+    --ui-scrollbar-thumb: rgb(64 64 64 / 0.28); /* neutral-700 */
+    --ui-scrollbar-thumb-hover: rgb(64 64 64 / 0.45);
     --ui-scrollbar-track: transparent;
     --ui-scrollbar-visibility: auto;
   }
@@ -404,6 +422,7 @@
     --ui-canvas: var(--color-gray-950);
     --ui-surface: var(--color-gray-900);
     --ui-surface-muted: #202020;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #0e0e0e;
     --ui-overlay: var(--color-gray-900);
 
@@ -421,13 +440,14 @@
     --ui-line-emphasis: var(--color-gray-700);
     --ui-divider: var(--color-gray-800);
 
-    /* ---- Colour — accent (neutral: light gray with dark text) ---- */
-    --ui-accent: #f3f4f6;
-    --ui-accent-hover: #e5e7eb;
-    --ui-accent-active: #d1d5db;
-    --ui-accent-fg: #111827;
-    --ui-accent-muted: rgb(243 244 246 / 0.12);
-    --ui-accent-line: rgb(243 244 246 / 0.4);
+    /* ---- Colour — accent (neutral: light gray with dark text): neutral-100, with 200 and 300
+       as hover and active and the light accent's neutral-900 as its label ---- */
+    --ui-accent: #f5f5f5;
+    --ui-accent-hover: #e5e5e5;
+    --ui-accent-active: #d4d4d4;
+    --ui-accent-fg: #171717;
+    --ui-accent-muted: rgb(245 245 245 / 0.12);
+    --ui-accent-line: rgb(245 245 245 / 0.4);
 
     /* ---- Colour — semantic tones: 400 ink on the 950/40 tints the app's dark notices use; the
        solid fills and their labels are the light ones ---- */
@@ -476,8 +496,8 @@
 
     /* ---- Selection and scrollbar ---- */
     --ui-selection-bg: rgb(255 255 255 / 0.18);
-    --ui-scrollbar-thumb: rgb(232 234 237 / 0.2);
-    --ui-scrollbar-thumb-hover: rgb(232 234 237 / 0.35);
+    --ui-scrollbar-thumb: rgb(229 229 229 / 0.2); /* neutral-200 */
+    --ui-scrollbar-thumb-hover: rgb(229 229 229 / 0.35);
   }
 
   /*
@@ -489,10 +509,10 @@
    * agent's work, a plain dim behind a dialog, a streaming reply under the host's own pulsing
    * caret glyph — so no recipe is written for those, and none may
    * be until a Primer polish wave changes that look on purpose (the 2026-09-30 lift of the light
-   * chart steps and the knob's hairline was such a change, made in tokens, not recipes). The
-   * two rules every theme shares (the eyebrow on the h6 rung,
-   * the display title in the emphasis ink) live in theme.css and are what the app's group labels
-   * and page titles already draw: 11px semibold tracked capitals, and the body ink in light.
+   * chart steps, the knob's hairline and the neutral grays were such changes, made in tokens,
+   * not recipes). The two rules every theme shares (the eyebrow on the h6 rung, the display
+   * title in the emphasis ink) live in theme.css and are what the app's group labels and page
+   * titles already draw: 11px semibold tracked capitals, and the body ink in light.
    */
 }
 

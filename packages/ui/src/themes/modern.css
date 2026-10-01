@@ -58,6 +58,7 @@
     --ui-canvas: #fafafa;
     --ui-surface: #ffffff;
     --ui-surface-muted: #f3f4f5;
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: #f5f6f7;
     --ui-overlay: #ffffff;
     --ui-overlay-backdrop: rgb(24 25 27 / 0.4);
@@ -119,6 +120,10 @@
     --ui-tone-info-line: var(--ui-tone-info-bg);
     --ui-tone-info-emphasis: #2f66c4;
     --ui-tone-info-emphasis-fg: #ffffff;
+
+    /* Colour — marks: the update dot in a soft coral, the danger hue lifted so it reads as news;
+       one value on both pages */
+    --ui-mark-new: #f0765a;
 
     /* Charts: soft. A low-chroma palette in the roles (heather, ochre, dusk blue, rose, sage,
        mauve, teal, clay), each just clearing 3:1 on the canvas so a line and a point read; the
@@ -385,6 +390,7 @@
     --ui-canvas: #1b1c1e;
     --ui-surface: #232426;
     --ui-surface-muted: #2a2b2e;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #161718;
     --ui-overlay: #262729;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.55);
@@ -615,6 +621,8 @@
   /* Tabs: a rounded accent bar under the selected tab. */
   :root[data-theme="modern"] .ui-underline-nav [role="tab"] {
     position: relative;
+    /* The marker below is the only one: the host's own bottom border (Primer's) gives way. */
+    border-bottom-color: transparent;
   }
   :root[data-theme="modern"] .ui-underline-nav [role="tab"]::after {
     content: "";
@@ -788,7 +796,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background-size: 100% 3lh;
+    background-size: 100% 1.5lh;
     background-position: bottom;
     background-repeat: no-repeat;
     opacity: 0;
@@ -803,9 +811,13 @@
       linear-gradient(
         to bottom,
         transparent,
-        color-mix(in srgb, var(--ui-canvas) 55%, transparent)
+        color-mix(in srgb, var(--ui-canvas) 40%, transparent)
       ),
-      radial-gradient(closest-side, var(--ui-accent-muted), transparent);
+      radial-gradient(
+        closest-side,
+        color-mix(in srgb, var(--ui-overlay) 60%, transparent),
+        transparent
+      );
     transition: opacity var(--ui-dur-reveal) var(--ui-ease-out);
   }
   :root[data-theme="modern"][data-motion="reduced"] .ui-stream::after {
@@ -847,6 +859,22 @@
     margin-top: -0.25em;
     border-radius: var(--ui-radius-pill);
     background-color: var(--_tone-fg);
+  }
+
+  /* A notice laid edge to edge (a banner) is still a rounded card here, so it stands off the
+     column's edges and whatever sits beside it instead of butting its corners against them. */
+  :root[data-theme="modern"] .ui-notice[data-banner] {
+    margin: calc(var(--ui-space-unit) * 2) calc(var(--ui-space-unit) * 3) 0;
+  }
+
+  /* Folds: the chevron sits right after the row's words rather than at its far edge; a tool row
+     shows its inline chevron and drops the one at its end. */
+  :root[data-theme="modern"] .ui-activity [data-slot="toggle"] {
+    order: 0;
+    display: flex;
+  }
+  :root[data-theme="modern"] .ui-activity [data-slot="toggle-end"] {
+    display: none;
   }
 
   /* Charts: the chart primitives write everything a token can say — colours, widths, radii,

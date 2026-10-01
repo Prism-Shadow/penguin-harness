@@ -29,12 +29,15 @@ function agent(
 function errorPage(total: number, ...timestamps: string[]): UsageErrorsPage {
   return {
     total,
+    rows: timestamps.length,
     items: timestamps.map((ts) => ({
       ts,
       source: "runtime",
       code: "boom",
       kind: "unexpected",
       message: "boom",
+      count: 1,
+      firstTs: ts,
     })),
   };
 }

@@ -17,8 +17,8 @@ describe("colour maths", () => {
     const black = parseCssColor("#000000")!;
     expect(contrastRatio(white, black)).toBeCloseTo(21, 5);
     expect(contrastRatio(black, white)).toBeCloseTo(21, 5);
-    // Tailwind gray-500 on white: the app's muted text.
-    expect(contrastRatio(parseCssColor("#6a7282")!, white)).toBeCloseTo(4.83, 1);
+    // Tailwind neutral-500 on white: Primer's muted text.
+    expect(contrastRatio(parseCssColor("#737373")!, white)).toBeCloseTo(4.74, 1);
     expect(wcagGrade(7.1)).toBe("AAA");
     expect(wcagGrade(4.5)).toBe("AA");
     expect(wcagGrade(3.2)).toBe("AA large");

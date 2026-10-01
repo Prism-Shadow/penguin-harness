@@ -21,18 +21,19 @@
 import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 
 /** LiveStreams: the mechanism LiveStreamRegistry implements. */
-export abstract class LiveStreams extends Interface<{
+@Interface()
+export abstract class LiveStreams {
   /**
    * Track a live stream for `userId`. The returned call removes it again and must run on
    * every exit path of the connection — an entry left behind names a stream nobody can
    * close, and its `end` would be called on a connection that is already gone.
    */
-  add(userId: string, end: () => void): () => void;
+  abstract add(userId: string, end: () => void): () => void;
   /** End every stream this user is holding open; returns how many were ended. */
-  endForUser(userId: string): number;
+  abstract endForUser(userId: string): number;
   /** How many streams this user is holding open. */
-  countFor(userId: string): number;
-}>() {}
+  abstract countFor(userId: string): number;
+}
 
 /** One tracked stream. An object rather than the bare callback, so two streams sharing a callback identity stay two entries. */
 interface TrackedStream {

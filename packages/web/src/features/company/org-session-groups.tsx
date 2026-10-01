@@ -29,31 +29,41 @@
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import {
+  ActivityIcon,
+  AgentAvatar,
+  Button,
+  CloseIcon,
+  Dropdown,
+  FolderSection,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  NAV_FILL,
+  RailDivider,
+  SkeletonList,
+  railItemClass,
+  toastError,
+  toastSuccess,
+  useRowContextMenu,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { sessionActivityLabel } from "../../lib/session-activity";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { useRowContextMenu } from "../../components/ui/context-menu";
 import { writeClipboard } from "../../lib/clipboard";
-import { Dropdown } from "../../components/ui/dropdown";
-import { FolderSection, Icon } from "../../components/ui/group-list";
-import { CloseIcon, MESSAGING_RELAY_ICON } from "../../components/ui/icons";
-import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
+import { Icon } from "../../components/ui/group-list";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
 } from "../../components/ui/session-row-menu";
 import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
@@ -74,7 +84,7 @@ import type { TempSessionRow } from "./temp-session";
  */
 const rowSurface = (active: boolean) =>
   `group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
-    active ? "bg-gray-200/70 dark:bg-gray-800" : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
+    active ? NAV_FILL.selected : NAV_FILL.hover
   }`;
 
 /** The row's own button, at the channel rows' density so the whole sidebar reads as one list. */
@@ -219,11 +229,13 @@ function DeskRow({
               data-tooltip={S.messaging.enabledIndicator[messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
+              <Icon d={ICONS.paperPlane} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[messagingChannel]}</span>
             </span>
           )}
-          {activity !== null && <SessionActivityIcon activity={activity} />}
+          {activity !== null && (
+            <ActivityIcon activity={activity} label={sessionActivityLabel(activity)} />
+          )}
         </button>
         {/* The menu affordance's slot, laid out rather than overlaid and reserved on every row
             — including a desk that does not exist yet — so the names line up down the group
@@ -339,7 +351,9 @@ function TempRow({
             className="shrink-0 rounded"
           />
           <Truncated text={row.title} className="min-w-0 flex-1" />
-          {row.activity !== null && <SessionActivityIcon activity={row.activity} />}
+          {row.activity !== null && (
+            <ActivityIcon activity={row.activity} label={sessionActivityLabel(row.activity)} />
+          )}
         </button>
         {/* The same trailing slot a desk row keeps for its menu, so the run marks line up
             across the two groups. */}
@@ -370,7 +384,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
   if (rows.length === 0) return null;
   return (
     <>
-      <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
+      <RailDivider />
       {rows.map((row) => {
         const entry = S.company.sessionList.temporaryEntry(row.title);
         const name = row.activity !== null ? `${entry} · ${S.company.sessionList.running}` : entry;
@@ -381,7 +395,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
             data-tooltip={name}
             aria-label={name}
             onClick={() => openSession(row.sessionId, row.agentId)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
+            className={railItemClass()}
           >
             <AgentAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
             {row.activity !== null && (
@@ -445,7 +459,7 @@ export function OrgSessionGroups({
             {S.company.sessionList.noEmployees}
           </p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {desks.map((d) => (
               <DeskRow
                 key={d.agentId}
@@ -470,13 +484,13 @@ export function OrgSessionGroups({
             <button
               type="button"
               onClick={() => dismissAllTempSessions(user?.userId ?? null, projectId, orgId)}
-              className="shrink-0 rounded px-1.5 py-1 text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+              className="shrink-0 rounded px-1.5 py-1 text-xs font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
             >
               {S.company.sessionList.closeAllTemporary}
             </button>
           }
         >
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {tempRows.map((row) => (
               <TempRow
                 key={row.sessionId}
@@ -532,7 +546,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             aria-label={name}
             disabled={opening === d.agentId}
             onClick={() => void openDesk(d.agentId, d.sessionId)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 disabled:opacity-60 dark:hover:bg-gray-800"
+            className={`${railItemClass()} disabled:opacity-60`}
           >
             <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
             {running && (

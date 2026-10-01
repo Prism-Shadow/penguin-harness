@@ -8,6 +8,8 @@
  * anything not on it falls back to the first page they can actually open.
  */
 import { useEffect, useState } from "react";
+import { ICONS, PagedDialog } from "@prismshadow/penguin-ui";
+import type { PagedDialogGroup } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   resolveSettingsSection,
@@ -16,10 +18,7 @@ import {
 } from "../../lib/settings-sections";
 import type { SettingsGroupKey, SettingsSectionKey } from "../../lib/settings-sections";
 import { useAuth } from "../../state/auth";
-import { PagedDialog } from "../../components/ui/paged-dialog";
-import type { PagedDialogGroup } from "../../components/ui/paged-dialog";
 import { Icon } from "../../components/ui/group-list";
-import { COMPANY_MODE_ICON, GEAR_ICON } from "../../components/ui/icons";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
@@ -37,7 +36,7 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   /** Person in a circle: the account's own identity, distinct from the bust used for credentials. */
   profile:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6.2 18.4a6 6 0 0 1 11.6 0",
-  general: GEAR_ICON,
+  general: ICONS.gear,
   /** Sun: appearance. */
   appearance:
     "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4",
@@ -54,7 +53,7 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   /** Up arrow over a base: uploads. */
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
   /** The building the mode switch wears: company mode. */
-  company: COMPANY_MODE_ICON,
+  company: ICONS.building,
   /** Puzzle piece: plugins. */
   plugins:
     "M10 4a2 2 0 1 1 4 0v2h3a1 1 0 0 1 1 1v3h-2a2 2 0 1 0 0 4h2v3a1 1 0 0 1-1 1h-3v-2a2 2 0 1 0-4 0v2H7a1 1 0 0 1-1-1v-3h2a2 2 0 1 0 0-4H6V7a1 1 0 0 1 1-1h3V4z",

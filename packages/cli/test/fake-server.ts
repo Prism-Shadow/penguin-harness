@@ -226,7 +226,7 @@ export class FakeServer {
     series: [],
     byAgentSeries: [],
     byModelSeries: [],
-    errors: { total: 0, unexpected: 0, topCode: null, recent: [] },
+    errors: { total: 0, unexpected: 0, topCode: null, recent: [], rows: 0 },
     agentIds: [],
     models: [],
   };

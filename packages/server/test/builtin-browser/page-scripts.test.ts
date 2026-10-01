@@ -1,11 +1,17 @@
 /**
- * The page scripts. Every script parses (always). Then, when a Chromium is at hand — a
- * Playwright download, or PENGUIN_TEST_CHROMIUM — they run for real: a headless Chromium is
- * driven over its DevTools socket through the same link, driver and actions the routes use,
- * with a small fake shell in between that forwards `cdp` to the page. A fixture page has
- * visible and hidden text, a long list, a toast, a field and a form, so the port is checked on
- * what GenericAgent's own behaviour hinges on: hidden elements dropped, the list folded to a
- * `[FAKE ELEMENT]` hint, truncation to the budget, a trusted click, transients and the diff.
+ * The page scripts: the half of the built-in browser that runs inside the page.
+ *
+ * - Every script parses as the driver wraps it, always; exec's rules that need no page run in
+ *   Node: the outcome as JSON text, the explicit return or else the last expression, a last
+ *   line that returns after a statement, a return inside a callback, a string or a comment.
+ * - Given a Chromium (a Playwright download, or PENGUIN_TEST_CHROMIUM) they run for real, over
+ *   its DevTools socket through the same link, driver and actions the routes use, a small fake
+ *   shell forwarding `cdp` to the page: a scan keeps the visible page, folds the long list to a
+ *   `[FAKE ELEMENT]` hint (keeping the items that match the instruction), drops what is hidden,
+ *   truncates to the budget and never makes the page load a shortened address; scripts run
+ *   GenericAgent's way; a script's change and a toast that came and went are reported; typing
+ *   and a trusted click land; dialogs are answered; a navigation is a reload; a page that
+ *   enforces Trusted Types and forbids eval still works; screenshots are taken.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -143,6 +149,16 @@ function findChromium(): string | null {
 }
 
 const CHROMIUM = findChromium();
+
+/**
+ * The pause after an action before the page is measured. The product waits a second
+ * (GenericAgent's sleep(1)) for a real site to react; these fixture pages react at once, so a
+ * shorter window measures the same diff. Transients are the exception: the monitor samples the
+ * page's text every 450 ms, so a toast has to outlive one sample and be gone before the
+ * product's own second is up, and that case runs on the product's timing.
+ */
+const SETTLE_MS = 300;
+const TOAST_MS = 700;
 
 type CdpEventListener = (
   method: string,
@@ -297,7 +313,7 @@ ${Array.from(
     const t = document.createElement('div');
     t.textContent = 'Added to cart successfully';
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 700);
+    setTimeout(() => t.remove(), ${TOAST_MS});
   });
   document.getElementById('f').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -411,7 +427,11 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     );
     link = new ShellLink(new ForwardingPort(cdp, sessionId));
     driver = new BrowserDriver(link);
-    actions = new BrowserActions({ driver, tabs: new TabRegistry(), timing: { popupClaimMs: 0 } });
+    actions = new BrowserActions({
+      driver,
+      tabs: new TabRegistry(),
+      timing: { popupClaimMs: 0, settleMs: SETTLE_MS },
+    });
   }, 60_000);
 
   afterAll(async () => {
@@ -520,14 +540,20 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     expect(changed.diff?.changed).toBeGreaterThan(0);
     expect(changed.diff?.topChange).toContain("Changed by the script");
 
-    const toast = await actions.exec(TAB, "document.getElementById('toast').click()");
+    // The product's own settle, so the monitor's sampling catches the toast in between.
+    const monitored = new BrowserActions({
+      driver,
+      tabs: new TabRegistry(),
+      timing: { popupClaimMs: 0 },
+    });
+    const toast = await monitored.exec(TAB, "document.getElementById('toast').click()");
     expect(toast.transients).toContain("Added to cart successfully");
     // A longer message is reported with its first 80 characters.
     const message =
       "Your order of wireless headphones has shipped and should arrive by Thursday, 2 October, at your door";
-    const shipped = await actions.exec(
+    const shipped = await monitored.exec(
       TAB,
-      `const t = document.createElement('div');\nt.textContent = ${JSON.stringify(message)};\ndocument.body.appendChild(t);\nsetTimeout(() => t.remove(), 700);\nreturn 1`,
+      `const t = document.createElement('div');\nt.textContent = ${JSON.stringify(message)};\ndocument.body.appendChild(t);\nsetTimeout(() => t.remove(), ${TOAST_MS});\nreturn 1`,
     );
     expect(shipped.transients).toContain(message.slice(0, 80));
 

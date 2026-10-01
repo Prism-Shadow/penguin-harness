@@ -5,56 +5,64 @@
  * exactly the case the gate exists to block. It is honored only when the deployment
  * explicitly opts in (`trustProxy` / PENGUIN_TRUST_PROXY=1), same as a real reverse-proxy
  * setup requires.
+ *
+ * - On a non-loopback bind a spoofed `x-forwarded-proto` is refused by default, while real
+ *   HTTPS on the request URL passes whatever trustProxy says.
+ * - With trustProxy on, plain HTTP without the header is still refused, and the header is
+ *   honored.
+ * - A loopback bind needs neither HTTPS nor the header.
+ *
+ * A request past the gate meets the cookie check instead, so its 401 is the proof the gate let
+ * it through.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp } from "./helpers.js";
-import type { TestApp } from "./helpers.js";
+import type { TestApp, TestAppOptions } from "./helpers.js";
 
-describe("hmr network gate: non-loopback binds require real HTTPS", () => {
-  let t: TestApp | undefined;
-  afterEach(async () => {
-    if (t) await t.cleanup();
-    t = undefined;
+/** One app per bind configuration: the gate reads only the request, so the cases share it. */
+function bound(opts: TestAppOptions) {
+  const app = { t: undefined as TestApp | undefined };
+  beforeAll(async () => {
+    app.t = await createTestApp(opts);
   });
+  afterAll(async () => {
+    await app.t?.cleanup();
+  });
+  return (url: string, headers: Record<string, string> = {}) =>
+    app.t!.app.request(url, { method: "POST", headers });
+}
 
-  it("rejects a spoofed x-forwarded-proto header by default (trustProxy off)", async () => {
-    t = await createTestApp({ config: { host: "0.0.0.0" } });
-    const res = await t.app.request("/api/hmr/upgrade", {
-      method: "POST",
-      headers: { "x-forwarded-proto": "https" },
-    });
+describe("hmr network gate: a non-loopback bind, trustProxy off (the default)", () => {
+  const upgrade = bound({ config: { host: "0.0.0.0" } });
+
+  it("rejects a spoofed x-forwarded-proto header", async () => {
+    const res = await upgrade("/api/hmr/upgrade", { "x-forwarded-proto": "https" });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("hmr_disabled");
   });
 
-  it("real HTTPS on the request URL itself passes the gate regardless of trustProxy", async () => {
-    t = await createTestApp({ config: { host: "0.0.0.0" } });
-    const res = await t.app.request("https://example.test/api/hmr/upgrade", { method: "POST" });
-    // Past the network gate now — falls through to cookie auth, which rejects with 401
-    // (no cookie sent), proving the gate itself let the request through.
-    expect(res.status).toBe(401);
+  it("lets real HTTPS on the request URL itself through", async () => {
+    expect((await upgrade("https://example.test/api/hmr/upgrade")).status).toBe(401);
+  });
+});
+
+describe("hmr network gate: a non-loopback bind with trustProxy on", () => {
+  const upgrade = bound({ config: { host: "0.0.0.0", trustProxy: true } });
+
+  it("still refuses plain HTTP when no header is sent", async () => {
+    expect((await upgrade("/api/hmr/upgrade")).status).toBe(403);
   });
 
-  it("plain HTTP on the request URL is still refused when trustProxy is on (no header sent)", async () => {
-    t = await createTestApp({ config: { host: "0.0.0.0", trustProxy: true } });
-    const res = await t.app.request("/api/hmr/upgrade", { method: "POST" });
-    expect(res.status).toBe(403);
+  it("honors x-forwarded-proto", async () => {
+    expect((await upgrade("/api/hmr/upgrade", { "x-forwarded-proto": "https" })).status).toBe(401);
   });
+});
 
-  it("honors x-forwarded-proto once trustProxy is explicitly enabled", async () => {
-    t = await createTestApp({ config: { host: "0.0.0.0", trustProxy: true } });
-    const res = await t.app.request("/api/hmr/upgrade", {
-      method: "POST",
-      headers: { "x-forwarded-proto": "https" },
-    });
-    // Past the network gate — rejected by the (missing) cookie instead.
-    expect(res.status).toBe(401);
-  });
+describe("hmr network gate: a loopback bind", () => {
+  const upgrade = bound({}); // the default test config binds 127.0.0.1
 
-  it("a loopback bind needs neither HTTPS nor the header", async () => {
-    t = await createTestApp(); // default test config binds 127.0.0.1
-    const res = await t.app.request("/api/hmr/upgrade", { method: "POST" });
-    expect(res.status).toBe(401); // past the gate, rejected only by the missing cookie
+  it("needs neither HTTPS nor the header", async () => {
+    expect((await upgrade("/api/hmr/upgrade")).status).toBe(401);
   });
 });

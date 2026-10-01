@@ -7,14 +7,14 @@
  * tail) renders in the tool cards' output styling. The Trace page shows the raw marker text
  * as-is.
  */
-import { S } from "../../lib/strings";
-import type { BackgroundTaskDone } from "./agent-handoff";
-import { StatusIcon } from "../../components/ui/status-icon";
 import {
   DISCLOSURE_CARD_CLASS,
   DISCLOSURE_OUTPUT_PRE_CLASS,
   DisclosureRow,
-} from "./disclosure-row";
+  StatusIcon,
+} from "@prismshadow/penguin-ui";
+import { S } from "../../lib/strings";
+import type { BackgroundTaskDone } from "./agent-handoff";
 
 export function BackgroundDoneBanner({ done, body }: { done: BackgroundTaskDone; body: string }) {
   const state =

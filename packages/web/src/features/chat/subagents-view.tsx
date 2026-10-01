@@ -33,19 +33,22 @@ import type {
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  EmptyState,
+  GlyphIcon,
+  ICON_SIZE,
+  StatusIcon,
+  Text,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
-import { toastError } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { StatusIcon } from "../../components/ui/status-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -208,9 +211,9 @@ export function SubagentsView({
     <div className="flex h-full min-h-0 flex-col">
       {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned (capped height; scrolls both ways for deep/wide trees). */}
       <div className="shrink-0 border-b border-gray-200 px-3 pb-2 pt-1.5 dark:border-gray-800">
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <Text variant="eyebrow" className="mb-1.5">
           {S.subagentPanel.topologyLabel}
-        </p>
+        </Text>
         {nodes.length > 1 ? (
           <div className="max-h-48 overflow-y-auto">
             <AgentTopologyView
@@ -256,12 +259,12 @@ export function SubagentsView({
             </span>
             <span
               data-tooltip={active.sessionId}
-              className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500"
+              className="shrink-0 font-mono text-xs text-fg-subtle"
             >
               {shortSessionId(active.sessionId)}
             </span>
             {activeRunning && (
-              <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
+              <StatusIcon state="running" size="xs" label={S.chat.subagentRunning} />
             )}
             <span className="min-w-0 flex-1" />
             {/* Jump out of the panel: the child conversation as a full Session. */}

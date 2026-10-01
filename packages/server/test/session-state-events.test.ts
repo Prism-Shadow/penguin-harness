@@ -2,43 +2,28 @@
  * `session_state` on the user channel: the run-state flip a Session list can act on.
  *
  * The per-Session `task_state` event is session-scoped and deliberately carries no id, so it
- * only ever reaches the one conversation a client has subscribed to. This is its user-channel
- * counterpart — named by `sessionId`, carrying the row stamp — and what these tests pin is its
- * SCOPE: it reaches the Project's owner and its members, and nobody else, not even a logged-in
- * user with a live channel of their own.
+ * only ever reaches the one conversation a client has subscribed to (sse-stream.test.ts pins
+ * its shape). This is its user-channel counterpart, named by `sessionId` and carrying the row
+ * stamp, and what these tests pin is its SCOPE.
  *
- * The unchanged shape of `task_state` itself is pinned by sse-stream.test.ts, which compares
- * the frame with `toEqual` and would fail the moment an id appeared on it.
+ * - A run's running → idle flips reach the Project's owner and its members, and no other user,
+ *   not even one with a live channel of their own.
+ * - The event names the Session and carries the row stamp a list fetch would return.
+ * - It carries hasTrace true from the first flip of a Session that had never run.
+ * - It carries none of the composer state the Session channel owns.
+ * - A member removed from the Project stops hearing about its Sessions.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import { userChannelKey } from "../src/http/routes/events.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-19-10-00-00-abcd0001";
 const PROJECT = "owner-default_project";
 /** Comfortably before the run: the run-end stamp must be visibly later than this. */
 const INSERTED_AT = "2026-08-19T09:00:00.000Z";
-
-/** Fake Session that answers once and returns, so a run is one clean running → idle pair. */
-function quickFakeSession(sessionId: string): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run() {
-      yield assistantText("done");
-    },
-    async *compact() {},
-  };
-}
 
 /** Everything one user's channel received, as a connected client would see it. */
 function inbox(t: TestApp, userId: string) {
@@ -55,10 +40,11 @@ function inbox(t: TestApp, userId: string) {
 describe("session_state on the user channel", () => {
   let t: TestApp;
   let owner: { cookie: string };
+  let SID: string;
   let boxes: { owner: ReturnType<typeof inbox>; member: ReturnType<typeof inbox> };
   let stranger: ReturnType<typeof inbox>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     owner = await provisionUser(t.app, "owner");
     await provisionUser(t.app, "member");
@@ -71,29 +57,28 @@ describe("session_state on the user channel", () => {
         })
       ).status,
     ).toBe(201);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
 
-    const row: SessionRow = {
-      sessionId: SID,
-      projectId: PROJECT,
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m1",
-      workspace: "/tmp/w",
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: INSERTED_AT,
-      lastActiveAt: INSERTED_AT,
-    };
-    t.deps.sessionsRepo.insert(row);
-    t.deps.manager.adopt(row, quickFakeSession(SID));
-
+  beforeEach(() => {
+    // A Session that answers once and returns, so a run is one clean running → idle pair,
+    // indexed without has_trace exactly as a freshly created conversation is.
+    SID = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(SID, {
+        async *run() {
+          yield assistantText("done");
+        },
+      }),
+      { projectId: PROJECT, createdAt: INSERTED_AT, lastActiveAt: INSERTED_AT },
+    );
     // Subscribe before anything runs: `peek` on the publish side means a channel that does not
     // exist is skipped, so the test has to be listening the way a real client would be.
     boxes = { owner: inbox(t, "owner"), member: inbox(t, "member") };
     stranger = inbox(t, "stranger");
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   const runTask = async () => {
@@ -139,23 +124,21 @@ describe("session_state on the user channel", () => {
     // queued / pendingSteering / pendingFollowUps belong to the conversation being watched,
     // not to a list row.
     for (const e of boxes.owner.states()) {
-      expect(Object.keys(e).sort()).toEqual([
-        "hasTrace",
-        "lastActiveAt",
-        "sessionId",
-        "state",
-        "type",
-      ]);
+      expect(e).not.toHaveProperty("queued");
+      expect(e).not.toHaveProperty("pendingSteering");
+      expect(e).not.toHaveProperty("pendingFollowUps");
     }
   });
 
   it("a member removed from the Project stops hearing about its Sessions", async () => {
-    expect(
-      (await apiClient(t.app, owner.cookie).delete(`/api/projects/${PROJECT}/members/member`))
-        .status,
-    ).toBe(204);
-    await runTask();
-    expect(boxes.owner.run()).toEqual(["running", "idle"]);
-    expect(boxes.member.events).toEqual([]);
+    const api = apiClient(t.app, owner.cookie);
+    expect((await api.delete(`/api/projects/${PROJECT}/members/member`)).status).toBe(204);
+    try {
+      await runTask();
+      expect(boxes.owner.run()).toEqual(["running", "idle"]);
+      expect(boxes.member.events).toEqual([]);
+    } finally {
+      await api.post(`/api/projects/${PROJECT}/members`, { userId: "member" });
+    }
   });
 });

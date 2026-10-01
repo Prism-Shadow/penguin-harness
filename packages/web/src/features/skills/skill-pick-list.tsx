@@ -18,13 +18,11 @@
  */
 import { useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import { ICON_SIZE, MenuItem, SearchInput } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { filterSkills, localizedShortText } from "../chat/skill-use";
 import { SkillIcon } from "./skill-icon-view";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** A bulk-row action: a plain text button, sized to sit inside the panel's chrome without competing with the rows. */
 const bulkActionClass =
@@ -64,14 +62,13 @@ export function SkillPickList({
     <>
       {/* Quick search: filters by skill name and localized description */}
       <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
-        <input
+        <SearchInput
+          variant="menu"
           autoFocus
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
           placeholder={searchLabel}
           aria-label={searchLabel}
-          {...noAutofill}
-          className={`${menuSearchClass} px-1 py-0.5`}
         />
       </div>
       {bulk && skills.length > 0 && (
@@ -79,7 +76,7 @@ export function SkillPickList({
           <span className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">
             {S.skills.selectedCount(selected.length)}
           </span>
-          <span className="flex shrink-0 items-center gap-0.5">
+          <span className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               className={bulkActionClass}
@@ -106,27 +103,32 @@ export function SkillPickList({
           filtered.map((s) => {
             const on = selected.includes(s.name);
             return (
-              <button
+              <MenuItem
                 key={s.name}
-                type="button"
+                density="sm"
                 aria-pressed={on}
-                onClick={() => onToggle(s.name)}
-                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(on)}`}
-              >
-                {/* Each row's icon (icon.svg, sanitized and inlined), else the kind's glyph. */}
-                <SkillIcon
-                  icon={s.icon}
-                  fallback={s.fallbackIcon}
-                  size={ICON_SIZE.inlineGlyph}
-                  className="shrink-0 text-gray-400 dark:text-gray-500"
-                />
-                <span className="shrink-0 font-mono">{s.name}</span>
-                {/* Prefers the short description (falls back to the full description if missing), per the UI language. */}
-                <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-                  {localizedShortText(locale, s)}
-                </span>
-                <ChoiceCheck on={on} />
-              </button>
+                checked={on}
+                onSelect={() => onToggle(s.name)}
+                // Each row's icon (icon.svg, sanitized and inlined), else the kind's glyph.
+                glyph={
+                  <SkillIcon
+                    icon={s.icon}
+                    fallback={s.fallbackIcon}
+                    size={ICON_SIZE.inlineGlyph}
+                    className="shrink-0 text-gray-400 dark:text-gray-500"
+                  />
+                }
+                // The name, then the short description (falls back to the full description if
+                // missing, per the UI language), muted, which gives way when the row runs out.
+                label={
+                  <>
+                    <span className="font-mono">{s.name}</span>{" "}
+                    <span className="text-gray-400 dark:text-gray-500">
+                      {localizedShortText(locale, s)}
+                    </span>
+                  </>
+                }
+              />
             );
           })
         )}
