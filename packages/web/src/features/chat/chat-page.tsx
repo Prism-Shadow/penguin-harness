@@ -2730,6 +2730,7 @@ export function ChatPage() {
             ? S.chat.modelSwitchInSessionConfirm
             : S.chat.modelSwitchInSessionDirectConfirm
         }
+        cancelLabel={S.common.cancel}
         confirmDisabled={stream.taskState !== "idle"}
         busy={modelSwitchPosting}
         onConfirm={() => void confirmModelSwitch()}
