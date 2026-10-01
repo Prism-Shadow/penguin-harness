@@ -38,7 +38,13 @@ import { useLocale } from "../../state/locale";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
 import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, TitleButton } from "../company/shared";
-import { baseStacks, focusedProposal, layoutGraph, rowOfProposal } from "./pr-graph-model";
+import {
+  baseStacks,
+  focusedProposal,
+  layoutGraph,
+  rowOfProposal,
+  rowWidths,
+} from "./pr-graph-model";
 import type { GraphRow } from "./pr-graph-model";
 import {
   FOCUS_WASH,
@@ -52,7 +58,7 @@ import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
 
 /** Row height and lane pitch of the drawn graph, in px. */
-const ROW = 44;
+const ROW = 52;
 const LANE = 16;
 const DOT = 4.5;
 
@@ -105,6 +111,7 @@ export function GraphPage() {
     () => (graph === null ? null : layoutGraph(graph.nodes, graph.top)),
     [graph],
   );
+  const widths = useMemo(() => (layout === null ? [] : rowWidths(layout.rows)), [layout]);
   const focusRow = layout === null || focus === null ? -1 : rowOfProposal(layout.rows, focus);
   const focusUnplaced =
     graph !== null && focus !== null && graph.unplaced.some((u) => u.number === focus);
@@ -220,13 +227,12 @@ export function GraphPage() {
             className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800"
           >
             <div className="relative" style={{ height: layout.rows.length * ROW }}>
-              <Lanes rows={layout.rows} lanes={layout.lanes} />
-              <ol className="absolute inset-y-0 right-0" style={{ left: layout.lanes * LANE + 8 }}>
+              <ol className="absolute inset-0">
                 {layout.rows.map((row, i) => (
                   <li
                     key={row.node === null ? "base" : row.node.number}
                     data-focus={i === focusRow ? "true" : undefined}
-                    style={{ height: ROW }}
+                    style={{ height: ROW, paddingLeft: widths[i]! * LANE + 10 }}
                     className={`flex items-center pr-3 ${i === focusRow ? FOCUS_WASH : ""}`}
                   >
                     {row.node === null ? (
@@ -240,6 +246,8 @@ export function GraphPage() {
                   </li>
                 ))}
               </ol>
+              {/* Over the rows (a focused row's wash stays under the dots), never taking a click. */}
+              <Lanes rows={layout.rows} lanes={layout.lanes} />
             </div>
           </div>
 
@@ -283,7 +291,7 @@ function Lanes({ rows, lanes }: { rows: readonly GraphRow[]; lanes: number }) {
       aria-hidden="true"
       width={lanes * LANE + 4}
       height={rows.length * ROW}
-      className="absolute top-0 left-0"
+      className="pointer-events-none absolute top-0 left-0"
     >
       {rows.map((row, i) =>
         row.parentRow === null ? null : (

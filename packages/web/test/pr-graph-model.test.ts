@@ -15,8 +15,10 @@ import {
   graphTops,
   layoutGraph,
   rowOfProposal,
+  rowWidths,
   splitArgs,
 } from "../src/features/proposals/pr-graph-model";
+import type { GraphRow } from "../src/features/proposals/pr-graph-model";
 
 const node = (number: number, parent: number | null, over: Partial<ProposalGraphNode> = {}) =>
   ({
@@ -191,5 +193,26 @@ describe("splitArgs", () => {
   it("splits a deploy's extra arguments at whitespace and drops the empty ones", () => {
     expect(splitArgs("  --extra-args   x\ty \n")).toEqual(["--extra-args", "x", "y"]);
     expect(splitArgs("")).toEqual([]);
+  });
+});
+
+describe("rowWidths", () => {
+  const row = (lane: number, parentRow: number | null): GraphRow => ({
+    node: null,
+    lane,
+    parentRow,
+    stacked: true,
+  });
+
+  it("gives each row only the lanes it crosses, so a stack forking near the base indents only there", () => {
+    // 0, 1: the main stack (lane 0); 2: a side stack (lane 1) hanging from the fork at 3; 4: base.
+    const rows = [row(0, 1), row(0, 3), row(1, 3), row(0, 4), row(0, null)];
+    expect(rowWidths(rows)).toEqual([1, 1, 2, 1, 1]);
+  });
+
+  it("counts an edge's lane on every row it passes", () => {
+    // 0: lane 1, hanging from row 3; rows 1 and 2 sit on lane 0 but the edge passes them.
+    const rows = [row(1, 3), row(0, 2), row(0, 3), row(0, null)];
+    expect(rowWidths(rows)).toEqual([2, 2, 2, 1]);
   });
 });

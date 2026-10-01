@@ -163,3 +163,20 @@ export function focusedProposal(params: URLSearchParams): number | null {
 export function splitArgs(text: string): string[] {
   return text.split(/\s+/).filter((a) => a !== "");
 }
+
+/**
+ * How many lanes each row actually crosses — its own dot's, and every edge passing through it
+ * (an edge runs down the child's lane to the row above its parent, then bends into the parent's
+ * lane). A row's text starts after its own lanes, the way `git log --graph` indents: a short
+ * stack forking near the base no longer pushes every row above it to the right.
+ */
+export function rowWidths(rows: readonly GraphRow[]): number[] {
+  const widest = rows.map((r) => r.lane);
+  rows.forEach((row, child) => {
+    if (row.parentRow === null) return;
+    for (let i = child + 1; i < row.parentRow; i++) {
+      widest[i] = Math.max(widest[i]!, row.lane);
+    }
+  });
+  return widest.map((w) => w + 1);
+}

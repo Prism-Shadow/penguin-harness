@@ -94,7 +94,7 @@ export function NodeRow({
   const t = S.company.proposals.graph;
   const relationWord = (r: ProposalGraphRelation) => t.relation[r] ?? r;
   return (
-    <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+    <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
       <div className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs`}>
         <a
           href={node.url}
@@ -119,7 +119,7 @@ export function NodeRow({
             <StatusPill status={node.proposal.status} />
           </>
         )}
-        <span className="min-w-0 truncate" data-tooltip={node.title}>
+        <span className="min-w-0 flex-1 truncate" data-tooltip={node.title}>
           {node.title}
         </span>
         {graphTops(graph).includes(node.number) && <Mark tone="success">{t.top}</Mark>}
