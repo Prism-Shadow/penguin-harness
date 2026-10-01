@@ -24,9 +24,10 @@ import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
 
 /** The desktop shell's message port as the built-in browser reaches it; null outside the shell. */
-export abstract class BuiltinBrowserPort extends Interface<{
-  current(): Opaque<"BrowserShellPort", BrowserShellPort> | null;
-}>() {}
+@Interface()
+export abstract class BuiltinBrowserPort {
+  abstract current(): Opaque<"BrowserShellPort", BrowserShellPort> | null;
+}
 
 /** The real port: the one Electron gives a utilityProcess. */
 @Component()

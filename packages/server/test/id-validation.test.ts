@@ -1,15 +1,22 @@
 /**
- * Integration tests for path-parameter id validation (FD-4, path
- * traversal prevention): Hono decodes URL-encoded `%2F` into a single path
- * parameter — a traversal-style agentId (`../<victim>/...`), if passed through
- * to path construction unchanged, would let an attacker read/write another
- * user's Agent config and Trace across Projects.
- * Every route that takes :agentId (config / traces / sessions / trace detail)
- * must return 404.
+ * Path-parameter id validation (FD-4, path traversal): Hono decodes a URL-encoded `%2F` into a
+ * single path parameter, so a traversal-style agentId (`../<victim>/...`) passed through to
+ * path construction unchanged would let an attacker read or write another user's Agent config
+ * and Traces across Projects.
+ *
+ * Given an attacker with a Project of their own and a victim with another:
+ * - Reading the victim's Agent config through a traversal agentId is a 404 that leaks nothing,
+ *   while the attacker's own Agent config still reads.
+ * - Writing it the same way is a 404 that leaves the victim's file untouched.
+ * - The traces and sessions routes answer a traversal agentId with 404.
+ * - The Trace detail routes answer a traversal sessionId or agentId with 404.
+ * - A traversal or invalid-character projectId is a 404 on every Project route.
+ *
+ * Every case is a refused request, so one app serves them all.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -24,7 +31,7 @@ describe("id-validation", () => {
   const traversal = () => `..%2F${victimProject}%2Fdefault_agent`;
   const agentBase = () => `/api/projects/${attackerProject}/agents`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "attacker");
     const v = await provisionUser(t.app, "victim");
@@ -39,7 +46,7 @@ describe("id-validation", () => {
     ).json()) as ProjectCreateResponse;
     victimProject = victimCreated.project.projectId;
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
   });
 
