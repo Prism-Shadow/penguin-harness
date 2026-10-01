@@ -180,6 +180,11 @@ if (plaintextProblem) usage(`[deploy] ${plaintextProblem}`);
 const hostOverride =
   baseUrl !== null && new URL(baseUrl).hostname === "127.0.0.1" ? "localhost" : undefined;
 
+/** A missing part up to this size is PUT into the target's blob store; larger ones go inline. */
+const PUT_MAX_BYTES = 1024 * 1024;
+/** PUTs in flight at once: the push is bound by request latency, not bandwidth. */
+const PUT_CONCURRENCY = 8;
+
 /**
  * node:http rather than the global fetch: fetch (undici) silently derives Host from the
  * URL and ignores an explicit `headers.host`, which breaks the override above.
@@ -490,21 +495,48 @@ async function main() {
     body: JSON.stringify({ hashes: [...blobs.keys()] }),
   });
   if (probe.status === 200) {
-    let sent = 0;
-    for (const sha of JSON.parse(probe.body.toString("utf8")).missing) {
-      const bytes = blobs.get(sha);
-      if (bytes === undefined) continue;
-      const put = await request(`${baseUrl}/api/hmr/blobs/${sha}`, {
-        method: "PUT",
-        headers: { "content-type": "application/octet-stream", ...auth },
-        body: bytes,
-      });
-      if (put.status !== 200) {
-        throw new Error(`PUT /api/hmr/blobs/${sha} → ${put.status}: ${put.body.toString("utf8")}`);
-      }
-      sent += bytes.length;
-    }
-    log(`${blobs.size} blobs; ${(sent / 1048576).toFixed(1)} MB were new to the target`);
+    // What the target lacks travels two ways. Small parts go as their own PUTs (a few at a
+    // time), because a PUT is the only way a part reaches the target's blob store: a part sent
+    // inline in the upgrade body is used and dropped by the runtimes in the field (v0.2.13), so
+    // the next push would send it again — every web file, every time (~49 MB per push, measured
+    // 2026-10-01). The two bundles and anything large change with every commit and gzip well,
+    // so they ride inline in the one gzip body. A refused PUT falls back to inline.
+    const missing = new Set(JSON.parse(probe.body.toString("utf8")).missing);
+    const bundleShas = new Set(
+      [platform, cli].map((b) => createHash("sha256").update(b).digest("hex")),
+    );
+    const putShas = [...missing].filter(
+      (sha) => !bundleShas.has(sha) && (blobs.get(sha)?.length ?? Infinity) <= PUT_MAX_BYTES,
+    );
+    const stored = new Set();
+    let putBytes = 0;
+    const queue = [...putShas];
+    await Promise.all(
+      Array.from({ length: Math.min(PUT_CONCURRENCY, queue.length) }, async () => {
+        for (let sha = queue.shift(); sha !== undefined; sha = queue.shift()) {
+          const bytes = blobs.get(sha);
+          const put = await request(`${baseUrl}/api/hmr/blobs/${sha}`, {
+            method: "PUT",
+            headers: { "content-type": "application/octet-stream", ...auth },
+            body: bytes,
+          }).catch(() => null);
+          if (put?.status === 200) {
+            stored.add(sha);
+            putBytes += bytes.length;
+          }
+        }
+      }),
+    );
+    let inlineBytes = 0;
+    payload = body((bytes, encoding) => {
+      const sha = createHash("sha256").update(bytes).digest("hex");
+      if (!missing.has(sha) || stored.has(sha)) return { sha };
+      inlineBytes += bytes.length;
+      return bytes.toString(encoding);
+    });
+    log(
+      `${blobs.size} blobs; ${missing.size} new to the target: ${stored.size} stored by PUT (${(putBytes / 1048576).toFixed(1)} MB), ${missing.size - stored.size} inline (${(inlineBytes / 1048576).toFixed(1)} MB raw)`,
+    );
   } else {
     log("target has no probe: pushing everything inline");
     payload = body((bytes, encoding) => bytes.toString(encoding));
