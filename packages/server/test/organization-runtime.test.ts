@@ -11,6 +11,7 @@
  * refuses leaves the ticket as it was; and every pass brings an employee whose company
  * plugins fell behind the library back up to it.
  */
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
@@ -484,6 +485,59 @@ describe("organization runtime", () => {
     await expect(
       service.create(P, { orgId: "bad id", mission: "x" }, "alice"),
     ).rejects.toMatchObject({ code: "invalid_org_id" });
+  });
+
+  it("writes the creation layout under the org lock, so a delete landing mid-creation cannot leave a half-made directory behind", async () => {
+    // A delete cannot be timed into the real millisecond window, so the test opens one: the
+    // first writeConfig fires a delete, and — while the layout is written unlocked — holds
+    // create right there until the trash rename has landed, the worst point the race allows.
+    // Under the lock the hold is skipped (create is inside it) and the delete queues behind
+    // the layout instead: the directory is then moved whole, or not at all.
+    const realWriteConfig = store.writeConfig.bind(store);
+    const realTrash = store.trash.bind(store);
+    const realWithLock = scheduler.withLock.bind(scheduler);
+    let trashLanded: () => void = () => {};
+    const trashDone = new Promise<void>((resolve) => {
+      trashLanded = resolve;
+    });
+    let insideOrgLock = false;
+    scheduler.withLock = ((projectId: string, orgId: string, fn: () => Promise<unknown>) =>
+      realWithLock(projectId, orgId, async () => {
+        const restore = insideOrgLock;
+        if (projectId === P && orgId === ORG) insideOrgLock = true;
+        try {
+          return await fn();
+        } finally {
+          insideOrgLock = restore;
+        }
+      })) as typeof scheduler.withLock;
+    store.trash = async (projectId, orgId, stamp) => {
+      const target = await realTrash(projectId, orgId, stamp);
+      trashLanded();
+      return target;
+    };
+    let triggered = false;
+    store.writeConfig = async (dir, cfg) => {
+      await realWriteConfig(dir, cfg);
+      if (triggered) return;
+      triggered = true;
+      void service.delete(P, ORG).catch(() => {});
+      const wasInsideLock = insideOrgLock;
+      if (!wasInsideLock) await trashDone;
+    };
+
+    await expect(
+      service.create(P, { orgId: ORG, mission: "Build it" }, "alice"),
+    ).rejects.toMatchObject({ status: 404, code: "org_not_found" });
+    // The delete may still be queued behind the layout when create fails; wait it out so the
+    // assertions below see the final state of the directory either way.
+    await trashDone;
+    // Either way the caller loses the organization. What must never happen is the leftover:
+    // a directory without its config, which every listing skips while the CEO Agent it
+    // already created keeps the id from being reused.
+    expect(await store.exists(P, ORG)).toBe(false);
+    expect(existsSync(orgDir())).toBe(false);
+    expect(existingAgents.has(CEO)).toBe(true);
   });
 
   it("hires through the API, writes the chart and announces it in the all-hands channel", async () => {
