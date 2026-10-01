@@ -55,7 +55,7 @@ describe("the page's look", () => {
     const appRoot = app.document.documentElement;
     appRoot.classList.add("dark");
     appRoot.style.fontSize = "20px";
-    appRoot.style.setProperty("--accent-bg", "rgb(1, 2, 3)");
+    appRoot.style.setProperty("--ui-accent", "rgb(1, 2, 3)");
     appRoot.style.setProperty("--color-gray-950", "#000000");
 
     const html = pageHtml();
@@ -84,15 +84,15 @@ describe("the page's look", () => {
     const root = frame.document.documentElement;
     expect(root.classList.contains("dark")).toBe(true);
     expect(root.style.fontSize).toBe("20px");
-    expect(root.style.getPropertyValue("--accent-bg").trim()).toBe("rgb(1, 2, 3)");
+    expect(root.style.getPropertyValue("--ui-accent").trim()).toBe("rgb(1, 2, 3)");
     expect(root.style.getPropertyValue("--color-gray-950").trim()).toBe("#000000");
 
     // The person switches the app to light and picks another accent: the page follows.
     appRoot.classList.remove("dark");
-    appRoot.style.setProperty("--accent-bg", "rgb(4, 5, 6)");
+    appRoot.style.setProperty("--ui-accent", "rgb(4, 5, 6)");
     await settle();
     expect(root.classList.contains("dark")).toBe(false);
     expect(root.classList.contains("light")).toBe(true);
-    expect(root.style.getPropertyValue("--accent-bg").trim()).toBe("rgb(4, 5, 6)");
+    expect(root.style.getPropertyValue("--ui-accent").trim()).toBe("rgb(4, 5, 6)");
   });
 });

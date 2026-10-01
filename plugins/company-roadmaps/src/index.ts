@@ -171,9 +171,9 @@ export const CLAIM_ID = "company-roadmaps.channel-claim";
       {
         id: "company-roadmaps.quick-start",
         prompt:
-          "Explain how a roadmap works in this organization — the room it is discussed in, the moderator's draft, establishing it, and how its proposals reach their owners — and walk me through opening one over a channel.",
+          "Explain how roadmaps work in this organization — how an item is drafted in its room, who has to approve it, and how an established item becomes a delegated proposal — then list the roadmaps this organization has and where each one stands.",
         promptZh:
-          "讲一讲这个组织里的路线图是怎么运转的——在哪个讨论室里讨论、主持人的草案、确立，以及它的提案如何交到负责人手上——并带我在一个频道上开一份。",
+          "讲一讲这个组织里的路线图是怎么运转的——条目如何在讨论室里起草、需要谁批准、确立后的条目如何变成委托出去的提案——再列出这个组织现有的路线图以及各自进展到哪一步。",
       },
     ],
   },

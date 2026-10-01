@@ -67,8 +67,8 @@ export const PAGE_TIMEOUT_MS = 15_000;
  */
 export const THEME_VARS = [
   "--font-app-sans",
-  "--accent-bg",
-  "--accent-fg",
+  "--ui-accent",
+  "--ui-accent-fg",
   "--color-gray-50",
   "--color-gray-100",
   "--color-gray-200",

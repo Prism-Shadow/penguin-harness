@@ -90,7 +90,7 @@ export function RoadmapsSidebar({
           <Icon d={NAV_ICONS.orgRoadmaps} size={ICON_SIZE.rowLead} />
         </span>
         <Truncated text={r.name} className="min-w-0 flex-1" />
-        <span className="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
           #{r.number}
         </span>
       </NavLink>
@@ -100,12 +100,12 @@ export function RoadmapsSidebar({
   return (
     <section aria-label={S.company.roadmaps.listTitle}>
       <div className="mt-3 flex items-center justify-between gap-2 px-1 pt-2">
-        <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        <span className="px-1 text-xs font-semibold text-gray-400 dark:text-gray-500">
           {S.company.roadmaps.listTitle}
         </span>
         <button
           type="button"
-          title={S.company.roadmaps.open}
+          data-tooltip={S.company.roadmaps.open}
           aria-label={S.company.roadmaps.open}
           onClick={() => {
             navigate(`${pagePath}?open=1`);
@@ -123,7 +123,7 @@ export function RoadmapsSidebar({
           {S.company.roadmaps.none}
         </p>
       ) : (
-        <ul className="space-y-0.5 pt-1">
+        <ul className="space-y-1 pt-1">
           {shown.map(row)}
           {expanded && more.map(row)}
         </ul>
@@ -134,7 +134,7 @@ export function RoadmapsSidebar({
             type="button"
             aria-expanded={expanded}
             onClick={() => setExpanded((v) => !v)}
-            className="rounded-md px-1.5 py-1 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-200/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            className="rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-200/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             {expanded ? S.company.roadmaps.showFewer : S.company.roadmaps.showMore(more.length)}
           </button>
@@ -142,7 +142,7 @@ export function RoadmapsSidebar({
         <NavLink
           to={pagePath}
           onClick={() => onNavigate?.()}
-          className="rounded-md px-1.5 py-1 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-200/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          className="rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-200/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           {S.company.roadmaps.all}
         </NavLink>
