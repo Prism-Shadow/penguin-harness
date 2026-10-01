@@ -18,6 +18,7 @@
  * changed, so the draft follows the discussion without the column redrawing under the reader.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { ProposalItem } from "@prismshadow/penguin-server/api";
 import { useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
@@ -149,6 +150,14 @@ export function RoadmapDetail({
   );
 }
 
+/**
+ * Whether a linked proposal is finished — merged or rejected. The column leaves those rows out
+ * until asked, so the list shows what is still moving; the order of what is shown never changes.
+ */
+export function finishedProposal(status: string | null | undefined): boolean {
+  return status === "merged" || status === "rejected";
+}
+
 /** The column's content for one roadmap, with everything it reads passed in. */
 export function RoadmapDetailView({
   roadmap: r,
@@ -166,29 +175,39 @@ export function RoadmapDetailView({
   onOpenProposal: (number: number) => void;
 }) {
   const t = S.company.roadmaps;
+  const [showFinished, setShowFinished] = useState(false);
   const rows = roadmapRows(r);
-  const proposalRows = rows.filter((row) => row.kind === "proposal");
+  const isFinished = (row: RoadmapRow) =>
+    row.proposal !== null && finishedProposal(proposals.get(row.proposal)?.status);
+  const allProposalRows = rows.filter((row) => row.kind === "proposal");
+  const finishedCount = allProposalRows.filter(isFinished).length;
+  const proposalRows = showFinished
+    ? allProposalRows
+    : allProposalRows.filter((row) => !isFinished(row));
   const roadmapItemRows = rows.filter((row) => row.kind === "roadmap");
-  const list = (title: string, items: RoadmapRow[]) => (
+  const list = (title: string, items: RoadmapRow[], toggle?: ReactNode) => (
     <section className="mt-4">
-      <h3 className="mb-1.5">
+      <h3 className="mb-1.5 flex items-baseline justify-between gap-2">
         <Text variant="eyebrow" as="span">
           {title}
         </Text>
+        {toggle}
       </h3>
-      <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-        {items.map((row) => (
-          <RoadmapItemRow
-            key={row.key}
-            row={row}
-            names={names}
-            proposal={row.proposal === null ? null : (proposals.get(row.proposal) ?? null)}
-            approving={approving === row.key}
-            onApprove={() => onApprove(row.key)}
-            onOpenProposal={onOpenProposal}
-          />
-        ))}
-      </ul>
+      {items.length > 0 && (
+        <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+          {items.map((row) => (
+            <RoadmapItemRow
+              key={row.key}
+              row={row}
+              names={names}
+              proposal={row.proposal === null ? null : (proposals.get(row.proposal) ?? null)}
+              approving={approving === row.key}
+              onApprove={() => onApprove(row.key)}
+              onOpenProposal={onOpenProposal}
+            />
+          ))}
+        </ul>
+      )}
     </section>
   );
   return (
@@ -221,7 +240,20 @@ export function RoadmapDetailView({
         <p className="mt-4 text-xs text-gray-400 dark:text-gray-500">{t.noItems}</p>
       ) : (
         <>
-          {proposalRows.length > 0 && list(t.proposals, proposalRows)}
+          {allProposalRows.length > 0 &&
+            list(
+              t.proposals,
+              proposalRows,
+              finishedCount > 0 ? (
+                <TitleButton
+                  onClick={() => setShowFinished((v) => !v)}
+                  hint={t.finishedToggleTitle}
+                  className="text-xs"
+                >
+                  {showFinished ? t.hideFinished(finishedCount) : t.showFinished(finishedCount)}
+                </TitleButton>
+              ) : undefined,
+            )}
           {roadmapItemRows.length > 0 && list(t.roadmapItems, roadmapItemRows)}
           {rows.some((row) => row.stage === "brief") && (
             <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">{t.approveHint}</p>

@@ -20,7 +20,8 @@ vi.mock("../src/features/company/employee-avatar", () => ({
 }));
 vi.mock("../src/state/locale", () => ({ useLocale: () => ({ locale: "en" }) }));
 
-const { RoadmapBody, RoadmapDetailView } = await import("../src/features/company/roadmap-detail");
+const roadmapDetail = await import("../src/features/company/roadmap-detail");
+const { RoadmapBody, RoadmapDetailView } = roadmapDetail;
 const { personMayApprove, roadmapRows } = await import("../src/features/company/roadmaps");
 const { S } = await import("../src/lib/strings");
 
@@ -209,5 +210,29 @@ describe("the body", () => {
 
   it("draws nothing for an empty body", () => {
     expect(renderToStaticMarkup(createElement(RoadmapBody, { text: "  " }))).toBe("");
+  });
+});
+
+describe("finished proposals in the column", () => {
+  const { finishedProposal } = roadmapDetail;
+
+  it("counts merged and rejected as finished, and nothing else", () => {
+    expect(finishedProposal("merged")).toBe(true);
+    expect(finishedProposal("rejected")).toBe(true);
+    for (const s of ["ready", "approved", "drafting", "implementing", undefined]) {
+      expect(finishedProposal(s)).toBe(false);
+    }
+  });
+
+  it("leaves a finished proposal's row out until asked, and offers the toggle with its count", () => {
+    const merged = { number: 105, title: "Merged column work", status: "merged" } as ProposalItem;
+    const html = render(roadmap(), new Map([[105, merged]]));
+    expect(html).not.toContain("Merged column work");
+    expect(html).toContain("Sidebar");
+    expect(html).toContain(S.company.roadmaps.showFinished(1));
+  });
+
+  it("offers no toggle when nothing is finished", () => {
+    expect(render(roadmap())).not.toContain(S.company.roadmaps.showFinished(1));
   });
 });
