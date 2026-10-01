@@ -675,10 +675,11 @@ export interface Messages {
     deployScriptRemoved: (id: string) => string;
     deployScriptNone: string;
     deployScriptHeader: string[];
-    /** `proposal server add|ls`: the registry of penguin servers the graph places. */
-    proposalServerDesc: string;
-    proposalServerAddDesc: string;
-    proposalServerLsDesc: string;
+    /** `proposal deployment add|ls`: the registry of deployments the graph places. */
+    proposalDeploymentDesc: string;
+    proposalDeploymentAddDesc: string;
+    proposalDeploymentUrlOpt: string;
+    proposalDeploymentLsDesc: string;
     proposalFeedbackDesc: string;
     /** `proposal conclude <n>`: a discussion's conclusion, to the owner's desk. */
     proposalConcludeDesc: string;
@@ -742,8 +743,8 @@ export interface Messages {
     /** Why an impl PR is not on the graph; `at` is `#n`, `into` the branch merged into, `base` the base branch. */
     graphUnplacedReason(reason: string, at: string, into: string, base: string): string;
     graphErrors(): string;
-    graphServersOff(): string;
-    serverRegistered(name: string, url: string): string;
+    graphDeploymentsOff(): string;
+    deploymentRegistered(id: string, url: string | null): string;
     proposalFeedbackRecorded(number: number): string;
     proposalConcluded(number: number, owner: string): string;
     proposalCommentResolved(number: number, commentId: string): string;
@@ -1955,11 +1956,13 @@ const en: Messages = {
     deployScriptNone:
       "No deploy scripts. A server admin registers one with: penguin org proposal deploy-script add <id> -- <command>",
     deployScriptHeader: ["ID", "COMMAND", "DESCRIPTION", "BY"],
-    proposalServerDesc:
-      "The penguin servers somebody registered, which the PR graph places at the commit each one runs",
-    proposalServerAddDesc:
-      "Register a penguin server by a name and its address; a server already on the registry is refused",
-    proposalServerLsDesc: "List the registered servers",
+    proposalDeploymentDesc:
+      "The deployments somebody registered, which the PR graph places at the commit each one runs",
+    proposalDeploymentAddDesc:
+      "Register a deployment by its id; a deployment already on the registry is refused",
+    proposalDeploymentUrlOpt:
+      "The deployment is a penguin server at this url; the graph reads the commit it runs from there",
+    proposalDeploymentLsDesc: "List the registered deployments",
     proposalFeedbackDesc:
       "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
     proposalConcludeDesc:
@@ -2035,8 +2038,11 @@ const en: Messages = {
         unread: "not read",
       })[reason] ?? reason,
     graphErrors: () => "Not read from GitHub:",
-    graphServersOff: () => "Servers on no layer:",
-    serverRegistered: (name, url) => `Registered server ${name} at ${url}.`,
+    graphDeploymentsOff: () => "Deployments on no layer:",
+    deploymentRegistered: (id, url) =>
+      url === null
+        ? `Registered deployment ${id}.`
+        : `Registered deployment ${id}, a server at ${url}.`,
     proposalFeedbackRecorded: (number) => `Feedback recorded on proposal #${number}.`,
     proposalConcluded: (number, owner) =>
       `Sent the discussion's conclusion to ${owner}'s desk (proposal #${number}).`,
@@ -3216,9 +3222,11 @@ const zh: Messages = {
     deployScriptNone:
       "还没有部署脚本。服务器管理员可以这样登记：penguin org proposal deploy-script add <id> -- <command>",
     deployScriptHeader: ["ID", "命令", "说明", "登记人"],
-    proposalServerDesc: "员工登记的 penguin server，关系图按各自所跑的 commit 标出它们",
-    proposalServerAddDesc: "按名字与地址登记一台 penguin server；已在名单上的会被挡住",
-    proposalServerLsDesc: "列出已登记的 server",
+    proposalDeploymentDesc: "员工登记的部署（deployment），关系图按各自所跑的 commit 标出它们",
+    proposalDeploymentAddDesc: "按 id 登记一个部署；已在名单上的会被挡住",
+    proposalDeploymentUrlOpt:
+      "这个部署是位于该 url 的 penguin server；关系图从那里读它所跑的 commit",
+    proposalDeploymentLsDesc: "列出已登记的部署",
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
     proposalConcludeDesc:
       "把一次讨论的结论送到负责人的工位，只送一次（在讨论会话里执行，或由人加 --discussion 指定）",
@@ -3287,8 +3295,9 @@ const zh: Messages = {
         unread: "没读到",
       })[reason] ?? reason,
     graphErrors: () => "没能从 GitHub 读到：",
-    graphServersOff: () => "不在图上的 server：",
-    serverRegistered: (name, url) => `已登记 server ${name}（${url}）。`,
+    graphDeploymentsOff: () => "不在图上的部署：",
+    deploymentRegistered: (id, url) =>
+      url === null ? `已登记部署 ${id}。` : `已登记部署 ${id}（server，${url}）。`,
     proposalFeedbackRecorded: (number) => `已记录对提案 #${number} 的反馈。`,
     proposalConcluded: (number, owner) => `已把讨论的结论送到 ${owner} 的工位（提案 #${number}）。`,
     proposalCommentResolved: (number, commentId) => `已解决提案 #${number} 的评论 ${commentId}。`,

@@ -44,7 +44,7 @@ const graph: ProposalGraphResponse = {
   unplaced: [],
   errors: [],
   checkedAt: "2026-10-01T00:00:00.000Z",
-  servers: [],
+  deployments: [],
 };
 
 const list = (wrapRow?: (n: ProposalGraphNode, row: ReactNode) => ReactNode) =>

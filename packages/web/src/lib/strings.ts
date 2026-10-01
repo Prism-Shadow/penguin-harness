@@ -6538,17 +6538,17 @@ Benchmark：
         detachedHint:
           "声明的 base 既走不到底座分支，也走不到任何一张 open PR（穿过已合并、已关闭的 PR 也不行），或者 base 互相成环。这与「不在链上」不是一回事。",
         unplaced: "impl PR 不在图上的提案",
-        serversOff: "不在图上的 server",
-        serversOffHint:
-          "读不到它此刻跑的 commit，或这个 commit 与图上任何一层都比不出来（例如只在某台机器本地部署线上的提交）。",
-        serverTitle: (
-          name: string,
+        deploymentsOff: "不在图上的部署",
+        deploymentsOffHint:
+          "读不到它此刻跑的 commit（没有 url 的部署不报 commit），或这个 commit 与图上任何一层都比不出来（例如只在某台机器本地部署线上的提交）。",
+        deploymentTitle: (
+          id: string,
           commit: string,
           describe: string | null,
           ahead: number | null,
         ): string =>
-          `server ${name} 跑在 ${describe ?? commit}${ahead !== null && ahead > 0 ? `，比这一层多 ${ahead} 个提交` : ""}`,
-        serverUnread: "读不到 commit",
+          `部署 ${id} 跑在 ${describe ?? commit}${ahead !== null && ahead > 0 ? `，比这一层多 ${ahead} 个提交` : ""}`,
+        deploymentUnread: "读不到 commit",
         unplacedHint:
           "登记了 impl PR，但它不是交付仓库上的 open PR；每行写明原因：已合并、已在底座分支里、已关闭、开在别的仓库，或者这里有一张 open PR 带着它的分支（登记的是另一张）。",
         unplacedReason: (reason: string, at: string, into: string, base: string): string =>

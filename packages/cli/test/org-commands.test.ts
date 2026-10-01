@@ -1816,35 +1816,64 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     );
   });
 
-  it("server add registers under the caller's identity, a repeat fails, and server ls lists what was registered and nothing else", async () => {
+  it("deployment add registers under the caller's identity, with or without a url; a repeat fails, and deployment ls lists what was registered and nothing else", async () => {
     server.addProposal("acme", { number: 1 });
     // Nothing is on the registry by default: this server does not register itself.
-    expect(await cli(["org", "proposal", "server", "ls"])).toBe(0);
+    expect(await cli(["org", "proposal", "deployment", "ls"])).toBe(0);
     expect(out()).toBe("");
-    expect(await cli(["org", "proposal", "server", "add", "desk", "http://localhost:53531"])).toBe(
-      0,
-    );
-    expect(out()).toContain(t.org.serverRegistered("desk", "http://localhost:53531"));
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "deployment",
+        "add",
+        "desk",
+        "--url",
+        "http://localhost:53531",
+      ]),
+    ).toBe(0);
+    expect(out()).toContain(t.org.deploymentRegistered("desk", "http://localhost:53531"));
     const post = server.requests.find(
-      (r) => r.method === "POST" && r.path.endsWith("/proposals/servers"),
+      (r) => r.method === "POST" && r.path.endsWith("/proposals/deployments"),
     );
     expect(post?.body).toMatchObject({
-      name: "desk",
+      id: "desk",
       url: "http://localhost:53531",
       agentId: "dev1",
     });
     stdout.length = 0;
-    expect(await cli(["org", "proposal", "server", "add", "desk", "http://127.0.0.1:53531"])).toBe(
-      1,
-    );
+    // A deployment that is not a penguin server: an id and nothing else.
+    expect(await cli(["org", "proposal", "deployment", "add", "firmware"])).toBe(0);
+    expect(out()).toContain(t.org.deploymentRegistered("firmware", null));
+    const bare = server.requests.filter(
+      (r) => r.method === "POST" && r.path.endsWith("/proposals/deployments"),
+    )[1];
+    expect(bare?.body).toMatchObject({ id: "firmware", agentId: "dev1" });
+    expect(bare?.body).not.toHaveProperty("url");
     stdout.length = 0;
-    expect(await cli(["org", "proposal", "server", "ls"])).toBe(0);
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "deployment",
+        "add",
+        "desk",
+        "--url",
+        "http://127.0.0.1:53531",
+      ]),
+    ).toBe(1);
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "deployment", "ls"])).toBe(0);
     expect(out()).toBe(
-      "desk  http://localhost:53531  desk-id  agent:dev1  2026-09-02T10:00:00.000Z\n",
+      [
+        "desk  http://localhost:53531  desk-id  agent:dev1  2026-09-02T10:00:00.000Z",
+        "firmware  -  -  agent:dev1  2026-09-02T10:00:00.000Z",
+        "",
+      ].join("\n"),
     );
   });
 
-  it("graph marks each server on its layer and lists the ones on no layer", async () => {
+  it("graph marks each deployment on its layer and lists the ones on no layer", async () => {
     server.addProposal("acme", { number: 1 });
     server.orgs.get("acme")!.proposalGraph = {
       repo: "acme/site",
@@ -1877,9 +1906,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       unplaced: [],
       errors: [],
       checkedAt: "2026-09-30T00:00:00.000Z",
-      servers: [
+      deployments: [
         {
-          name: "here",
+          id: "here",
           url: "http://h:0",
           commit: "bbbbbbbbbbbb",
           describe: "v1-1-gbbbbbbb",
@@ -1889,7 +1918,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           error: null,
         },
         {
-          name: "old",
+          id: "old",
           url: "http://h:1",
           commit: "aaaaaaaaaaaa",
           describe: "v1",
@@ -1899,7 +1928,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           error: null,
         },
         {
-          name: "late",
+          id: "late",
           url: "http://h:2",
           commit: "eeeeeeeeeeee",
           describe: "v1-9-geeeeeee",
@@ -1909,7 +1938,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           error: null,
         },
         {
-          name: "local",
+          id: "local",
           url: "http://h:3",
           commit: "fffffffff",
           describe: "v1-5-gfffffffff",
@@ -1919,7 +1948,17 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           error: null,
         },
         {
-          name: "dark",
+          id: "firmware",
+          url: null,
+          commit: null,
+          describe: null,
+          at: null,
+          relation: null,
+          ahead: null,
+          error: "the deployment has no url, so nothing reports the commit it runs",
+        },
+        {
+          id: "dark",
           url: "http://h:4",
           commit: null,
           describe: null,
@@ -1936,8 +1975,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         "acme/site dev aaaaaaaaa  @old aaaaaaaaa",
         `  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  @here bbbbbbbbb  @late eeeeeeeee +3`,
         "",
-        t.org.graphServersOff(),
+        t.org.graphDeploymentsOff(),
         "  @local fffffffff  v1-5-gfffffffff  http://h:3",
+        "  @firmware ?  -  -  (the deployment has no url, so nothing reports the commit it runs)",
         "  @dark ?  -  http://h:4  (/api/install answered 404)",
         "",
       ].join("\n"),

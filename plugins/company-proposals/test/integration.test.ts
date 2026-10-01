@@ -20,7 +20,7 @@ import {
   type HarnessApiError,
 } from "@prismshadow/penguin-plugin-test";
 import { DEFAULT_TEST_GROUPS } from "../src/config.js";
-import { fetchProbe } from "../src/servers.js";
+import { fetchProbe } from "../src/deployments.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = "/api/projects/default_project/organizations/acme/proposals";
@@ -67,7 +67,7 @@ describe("the company-proposals plugin on a real server", () => {
     });
   });
 
-  it("reads a real server's identity and commit over its public /api/install, as the registry does", async () => {
+  it("reads a real server's identity and commit over its public /api/install, as the registry does for a server deployment", async () => {
     const identity = await fetchProbe()(harness.baseUrl);
     const version = await api.get<{ commit: string | null; describe: string }>("/api/version");
     expect(identity.installId).toMatch(/\S/);

@@ -127,7 +127,8 @@ export interface InstallResponse {
    * The commit this server runs: the pushed harness's source revision when a hot update put
    * one here (the sha of its `g<sha>`, as short as the pusher's describe spelt it), else the
    * build's own commit; null when neither is known. Public with the id: it names a commit
-   * and nothing about the machine (company-proposals reads it to place the server on the PR graph).
+   * and nothing about the machine (company-proposals reads it to place a server deployment on
+   * the PR graph).
    */
   commit: string | null;
   /** The describe that commit came from (the harness revision, else the build's). */
@@ -6999,18 +7000,19 @@ export interface ProposalGraphResponse {
   /** What could not be read from GitHub; the graph is partial when present. */
   errors: string[];
   checkedAt: string;
-  /** Every registered server with the commit it runs and the layer that commit sits on. */
-  servers: ProposalGraphServer[];
+  /** Every registered deployment with the commit it runs and the layer that commit sits on. */
+  deployments: ProposalGraphDeployment[];
 }
 
 /**
- * A registered penguin server as the graph places it. `at` is the node whose head the
- * server's commit is (`relation: "same"`) or contains (`"ahead"`, `ahead` commits past it);
+ * A registered deployment as the graph places it. `at` is the node whose head the
+ * deployment's commit is (`relation: "same"`) or contains (`"ahead"`, `ahead` commits past it);
  * 0 is the base branch; null when the commit is unknown or compares with no layer.
  */
-export interface ProposalGraphServer {
-  name: string;
-  url: string;
+export interface ProposalGraphDeployment {
+  id: string;
+  /** A penguin server deployment's url; null for any other deployment. */
+  url: string | null;
   commit: string | null;
   describe: string | null;
   at: number | null;
@@ -7020,24 +7022,28 @@ export interface ProposalGraphServer {
   error: string | null;
 }
 
-/** A server on the organization's registry: only servers somebody registered; none registers itself. */
-export interface ProposalServer {
-  name: string;
-  url: string;
-  installId: string;
+/**
+ * A deployment on the organization's registry: only deployments somebody registered; none
+ * registers itself. A penguin server deployment carries its `url` and the install id it
+ * answered with; any other deployment carries neither.
+ */
+export interface ProposalDeployment {
+  id: string;
+  url: string | null;
+  installId: string | null;
   registeredAt: string;
   by: string;
 }
 
-/** GET …/proposals/servers, and the answer to POST …/proposals/servers. */
-export interface ProposalServersResponse {
-  servers: ProposalServer[];
+/** GET …/proposals/deployments, and the answer to POST …/proposals/deployments. */
+export interface ProposalDeploymentsResponse {
+  deployments: ProposalDeployment[];
 }
 
-/** POST …/proposals/servers: register one server by a name and its address. */
-export interface ProposalServerRegisterRequest {
-  name: string;
-  url: string;
+/** POST …/proposals/deployments: register one deployment by its id; `url` makes it a penguin server deployment. */
+export interface ProposalDeploymentRegisterRequest {
+  id: string;
+  url?: string;
 }
 
 /**

@@ -35,8 +35,8 @@ import type {
   ProposalMaterial,
   ProposalRevision,
   ProposalRevisionsResponse,
-  ProposalServerRegisterRequest,
-  ProposalServersResponse,
+  ProposalDeploymentRegisterRequest,
+  ProposalDeploymentsResponse,
   ProposalMaterialKind,
   ProposalPluginEvent,
   ProposalStatus,
@@ -58,15 +58,15 @@ import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
 import { pullKey } from "./pr-chain.js";
 import { PrGraphReader } from "./pr-graph.js";
 import {
+  deploymentIdOf,
+  DeploymentRegistryError,
   fetchProbe,
   normalizeServerUrl,
-  readServers,
+  readDeployments,
   registryOf,
   requireUnregistered,
-  serverNameOf,
-  ServerRegistryError,
   type ProbeServer,
-} from "./servers.js";
+} from "./deployments.js";
 import { gitRunner, type RunGit } from "./workspace-remotes.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import type { DeployScope } from "./deploy.js";
@@ -126,7 +126,7 @@ export interface ServiceDeps {
   gh?: RunGh;
   /** How the shared workspace's remotes are read; the machine's `git` by default (a test feeds answers). */
   git?: RunGit;
-  /** How a server's `/api/install` is read (servers.ts); the machine's `fetch` by default. */
+  /** How a server deployment's `/api/install` is read (deployments.ts); the machine's `fetch` by default. */
   probe?: ProbeServer;
 }
 
@@ -1468,58 +1468,62 @@ export class ProposalService {
   }
 
   // ---------------------------------------------------------------------------
-  // Servers (servers.ts)
+  // Deployments (deployments.ts)
   // ---------------------------------------------------------------------------
 
   private probe(): ProbeServer {
     return this.deps.probe ?? fetchProbe();
   }
 
-  /** The registry: every registered server, in order; none is on it by default. */
-  async servers(
+  /** The registry: every registered deployment, in order; none is on it by default. */
+  async deployments(
     projectId: string,
     orgId: string,
     actor: OrgActor,
-  ): Promise<ProposalServersResponse> {
+  ): Promise<ProposalDeploymentsResponse> {
     const { ledger } = await this.open(projectId, orgId, actor);
-    return { servers: registryOf(ledger.servers()) };
+    return { deployments: registryOf(ledger.deployments()) };
   }
 
   /**
-   * Registers a server, anyone in the organization: refused when it repeats a registered
-   * server by name, address or install id (read from the address now).
+   * Registers a deployment, anyone in the organization: refused when it repeats a registered
+   * deployment by id, by url, or by the install id a server deployment's url answers now.
    */
-  async registerServer(
+  async registerDeployment(
     projectId: string,
     orgId: string,
-    req: ProposalServerRegisterRequest,
+    req: ProposalDeploymentRegisterRequest,
     actor: OrgActor,
-  ): Promise<ProposalServersResponse> {
+  ): Promise<ProposalDeploymentsResponse> {
     const { ledger, caller } = await this.open(projectId, orgId, actor);
     try {
-      const name = serverNameOf(typeof req.name === "string" ? req.name : "");
-      const url = normalizeServerUrl(typeof req.url === "string" ? req.url : "");
-      // Name and address first: a repeat of either is refused without asking the address.
-      requireUnregistered(ledger.servers(), { name, url, installId: null });
-      let identity;
-      try {
-        identity = await this.probe()(url);
-      } catch (err) {
-        throw new ServerRegistryError(
-          422,
-          "server_unreachable",
-          `${url} was not read as a penguin server: ${err instanceof Error ? err.message : String(err)}`,
-        );
+      const id = deploymentIdOf(typeof req.id === "string" ? req.id : "");
+      const url =
+        typeof req.url === "string" && req.url.trim() !== "" ? normalizeServerUrl(req.url) : null;
+      // Id and url first: a repeat of either is refused without asking the url.
+      requireUnregistered(ledger.deployments(), { id, url, installId: null });
+      let installId: string | null = null;
+      if (url !== null) {
+        try {
+          installId = (await this.probe()(url)).installId;
+        } catch (err) {
+          throw new DeploymentRegistryError(
+            422,
+            "deployment_unreachable",
+            `${url} was not read as a penguin server: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
-      const candidate = { name, url, installId: identity.installId };
-      await ledger.appendChecked(() => requireUnregistered(ledger.servers(), candidate), {
-        kind: "server",
-        ...candidate,
+      const candidate = { id, url, installId };
+      await ledger.appendChecked(() => requireUnregistered(ledger.deployments(), candidate), {
+        kind: "deployment",
+        id,
+        ...(url !== null && installId !== null ? { url, installId } : {}),
         by: caller.principal,
       });
-      return { servers: registryOf(ledger.servers()) };
+      return { deployments: registryOf(ledger.deployments()) };
     } catch (err) {
-      if (err instanceof ServerRegistryError) {
+      if (err instanceof DeploymentRegistryError) {
         throw new ProposalError(err.status, err.code, err.message);
       }
       throw err;
@@ -1534,15 +1538,15 @@ export class ProposalService {
   async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
     const { org, ledger } = await this.open(projectId, orgId, actor);
     const errors: string[] = [];
-    const [config, servers] = await Promise.all([
+    const [config, deployments] = await Promise.all([
       this.deliveryRepo(org, ledger, errors),
-      readServers(ledger.servers(), this.probe()),
+      readDeployments(ledger.deployments(), this.probe()),
     ]);
     return this.prGraph.read({
       repo: config.repo ?? "",
       base: config.base,
       origins: config.origins,
-      servers,
+      deployments,
       errors,
       proposals: ledger.proposals().map((p) => ({
         number: p.number,

@@ -1,8 +1,9 @@
 /**
- * The server registry (servers.ts): nothing on it by default — no server registers itself;
- * a repeat refused by name, by normalised address, or by the install id the address answers
- * with; a registration written as one `server` line under the caller's name — and a check
- * that no concurrent registration can slip between.
+ * The deployment registry (deployments.ts): nothing on it by default — no server registers
+ * itself; a deployment is an id, and a penguin server deployment also has a url; a repeat
+ * refused by id, by normalised url, or by the install id the url answers with; a registration
+ * written as one `deployment` line under the caller's name — and a check that no concurrent
+ * registration can slip between.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -13,19 +14,20 @@ import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/
 import { Ledger, ledgerPath } from "../src/ledger.js";
 import { DeployService, ProposalService, proposalRoutes } from "../src/index.js";
 import {
+  deploymentIdOf,
   identityOf,
   normalizeServerUrl,
-  placeServer,
+  placeDeployment,
+  readDeployments,
   requireUnregistered,
-  serverNameOf,
+  type DeploymentReading,
   type ProbeServer,
-  type ServerReading,
-} from "../src/servers.js";
+} from "../src/deployments.js";
 
 const PROJECT = "default_project";
 const ORG = "acme";
 
-describe("names and addresses", () => {
+describe("ids and urls", () => {
   it("normalises an address so two spellings of one compare equal", () => {
     expect(normalizeServerUrl("HTTP://LocalHost:80/")).toBe("http://localhost");
     expect(normalizeServerUrl(" http://localhost:53531/ ")).toBe("http://localhost:53531");
@@ -38,10 +40,10 @@ describe("names and addresses", () => {
     }
   });
 
-  it("refuses a malformed name; `this` is a name like any other", () => {
-    expect(serverNameOf(" desk-1 ")).toBe("desk-1");
-    expect(serverNameOf("this")).toBe("this");
-    expect(() => serverNameOf("a b")).toThrow(expect.objectContaining({ code: "bad_request" }));
+  it("refuses a malformed id; `this` is an id like any other", () => {
+    expect(deploymentIdOf(" desk-1 ")).toBe("desk-1");
+    expect(deploymentIdOf("this")).toBe("this");
+    expect(() => deploymentIdOf("a b")).toThrow(expect.objectContaining({ code: "bad_request" }));
   });
 
   it("reads an install answer, and refuses one without an id", () => {
@@ -63,9 +65,10 @@ describe("names and addresses", () => {
 
 describe("requireUnregistered", () => {
   const registered = [
-    { name: "desk", url: "http://localhost:53531", installId: "desk-id", at: "t", by: "agent:a" },
+    { id: "desk", url: "http://localhost:53531", installId: "desk-id", at: "t", by: "agent:a" },
+    { id: "firmware", url: null, installId: null, at: "t", by: "agent:a" },
   ];
-  const refused = (candidate: { name: string; url: string; installId: string | null }) => {
+  const refused = (candidate: { id: string; url: string | null; installId: string | null }) => {
     try {
       requireUnregistered(registered, candidate);
     } catch (err) {
@@ -74,28 +77,31 @@ describe("requireUnregistered", () => {
     return null;
   };
 
-  it("refuses a repeat by name, by address, and by install id — naming the entry there", () => {
-    expect(refused({ name: "DESK", url: "http://h:1", installId: "n" })?.message).toContain("desk");
+  it("refuses a repeat by id, by url, and by install id — naming the entry there", () => {
+    expect(refused({ id: "DESK", url: "http://h:1", installId: "n" })?.message).toContain("desk");
+    expect(refused({ id: "Firmware", url: null, installId: null })?.message).toContain("firmware");
+    expect(refused({ id: "y", url: "http://localhost:53531", installId: "n" })?.message).toContain(
+      "as desk",
+    );
     expect(
-      refused({ name: "y", url: "http://localhost:53531", installId: "n" })?.message,
-    ).toContain("as desk");
-    expect(
-      refused({ name: "y", url: "http://127.0.0.1:53531", installId: "desk-id" })?.message,
+      refused({ id: "y", url: "http://127.0.0.1:53531", installId: "desk-id" })?.message,
     ).toContain("same server as desk");
-    expect(refused({ name: "y", url: "http://h:2", installId: "n" })).toBeNull();
+    expect(refused({ id: "y", url: "http://h:2", installId: "n" })).toBeNull();
+    // Two deployments without a url are two deployments: only the id tells them apart.
+    expect(refused({ id: "board", url: null, installId: null })).toBeNull();
   });
 
-  it("checks name and address alone before the address is read", () => {
-    expect(refused({ name: "y", url: "http://localhost:53531", installId: null })?.code).toBe(
-      "server_registered",
+  it("checks id and url alone before the url is read", () => {
+    expect(refused({ id: "y", url: "http://localhost:53531", installId: null })?.code).toBe(
+      "deployment_registered",
     );
-    expect(refused({ name: "y", url: "http://127.0.0.1:53531", installId: null })).toBeNull();
+    expect(refused({ id: "y", url: "http://127.0.0.1:53531", installId: null })).toBeNull();
   });
 });
 
-describe("placeServer", () => {
-  const reading = (commit: string | null): ServerReading => ({
-    name: "s",
+describe("placeDeployment", () => {
+  const reading = (commit: string | null): DeploymentReading => ({
+    id: "s",
     url: "http://h",
     commit,
     describe: null,
@@ -116,7 +122,7 @@ describe("placeServer", () => {
     )[`${from}...${to}`];
 
   it("sits on the layer whose head the commit is, by a short sha too", () => {
-    expect(placeServer(reading("AAAAAAA"), layers, compare)).toMatchObject({
+    expect(placeDeployment(reading("AAAAAAA"), layers, compare)).toMatchObject({
       at: 11,
       relation: "same",
       ahead: 0,
@@ -124,7 +130,7 @@ describe("placeServer", () => {
   });
 
   it("sits on the nearest layer the commit contains, with the commits past it", () => {
-    expect(placeServer(reading("c"), layers, compare)).toMatchObject({
+    expect(placeDeployment(reading("c"), layers, compare)).toMatchObject({
       at: 11,
       relation: "ahead",
       ahead: 3,
@@ -132,8 +138,42 @@ describe("placeServer", () => {
   });
 
   it("sits on no layer when the commit is unknown or compares with none", () => {
-    expect(placeServer(reading(null), layers, compare)).toMatchObject({ at: null, relation: null });
-    expect(placeServer(reading("d"), layers, compare)).toMatchObject({ at: null, relation: null });
+    expect(placeDeployment(reading(null), layers, compare)).toMatchObject({
+      at: null,
+      relation: null,
+    });
+    expect(placeDeployment(reading("d"), layers, compare)).toMatchObject({
+      at: null,
+      relation: null,
+    });
+  });
+});
+
+describe("readDeployments", () => {
+  it("reads a server deployment over its url, and says why a deployment without one has no commit", async () => {
+    const asked: string[] = [];
+    const probe: ProbeServer = async (url) => {
+      asked.push(url);
+      return { installId: "desk-id", commit: "abc1234", describe: "v1-1-gabc1234" };
+    };
+    const read = await readDeployments(
+      [
+        { id: "desk", url: "http://h:1", installId: "desk-id", at: "t", by: "agent:a" },
+        { id: "firmware", url: null, installId: null, at: "t", by: "agent:a" },
+      ],
+      probe,
+    );
+    expect(asked).toEqual(["http://h:1"]);
+    expect(read).toEqual([
+      { id: "desk", url: "http://h:1", commit: "abc1234", describe: "v1-1-gabc1234", error: null },
+      {
+        id: "firmware",
+        url: null,
+        commit: null,
+        describe: null,
+        error: "the deployment has no url, so nothing reports the commit it runs",
+      },
+    ]);
   });
 });
 
@@ -164,7 +204,7 @@ describe("registering over the routes", () => {
   };
 
   beforeEach(async () => {
-    root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-servers-"));
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-deployments-"));
     answers = {
       "http://localhost": { installId: "self-id", commit: "a".repeat(40), describe: "v1" },
       "http://localhost:53531": {
@@ -221,31 +261,33 @@ describe("registering over the routes", () => {
       .map((l) => JSON.parse(l) as Record<string, unknown>);
 
   it("lists nothing before anything is registered: no server registers itself", async () => {
-    const res = await call("GET", "/servers");
+    const res = await call("GET", "/deployments");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ servers: [] });
-    // The answering server's own address is registered like any other, once.
-    const own = await call("POST", "/servers", { name: "here", url: "http://localhost" });
+    expect(await res.json()).toEqual({ deployments: [] });
+    // The answering server's own url is registered like any other, once.
+    const own = await call("POST", "/deployments", { id: "here", url: "http://localhost" });
     expect(own.status).toBe(200);
-    const again = await call("POST", "/servers", { name: "loop", url: "http://127.0.0.1:9" });
+    const again = await call("POST", "/deployments", { id: "loop", url: "http://127.0.0.1:9" });
     expect(again.status).toBe(409);
   });
 
-  it("registers a server as one `server` line under the caller, and refuses every kind of repeat without a line", async () => {
-    const ok = await call("POST", "/servers", {
-      name: "desk",
+  it("registers a server deployment as one `deployment` line with its url under the caller, and refuses every kind of repeat without a line", async () => {
+    const ok = await call("POST", "/deployments", {
+      id: "desk",
       url: "http://LOCALHOST:53531/",
       agentId: "acme_dev",
     });
     expect(ok.status).toBe(200);
-    const { servers } = (await ok.json()) as {
-      servers: Array<{ name: string; url: string }>;
+    const { deployments } = (await ok.json()) as {
+      deployments: Array<{ id: string; url: string | null; installId: string | null }>;
     };
-    expect(servers.map((s) => [s.name, s.url])).toEqual([["desk", "http://localhost:53531"]]);
+    expect(deployments.map((d) => [d.id, d.url, d.installId])).toEqual([
+      ["desk", "http://localhost:53531", "desk-id"],
+    ]);
     expect(await lines()).toEqual([
       expect.objectContaining({
-        kind: "server",
-        name: "desk",
+        kind: "deployment",
+        id: "desk",
         url: "http://localhost:53531",
         installId: "desk-id",
         by: "agent:acme_dev",
@@ -253,26 +295,50 @@ describe("registering over the routes", () => {
     ]);
 
     for (const [body, fragment] of [
-      [{ name: "desk", url: "http://h:1" }, "name desk"],
-      [{ name: "again", url: "http://localhost:53531" }, "as desk"],
-      [{ name: "tunnel", url: "http://127.0.0.1:53531" }, "same server as desk"],
+      [{ id: "desk", url: "http://h:1" }, "id desk"],
+      [{ id: "desk" }, "id desk"],
+      [{ id: "again", url: "http://localhost:53531" }, "as desk"],
+      [{ id: "tunnel", url: "http://127.0.0.1:53531" }, "same server as desk"],
     ] as const) {
-      const res = await call("POST", "/servers", body);
+      const res = await call("POST", "/deployments", body);
       expect(res.status, JSON.stringify(body)).toBe(409);
       const err = ((await res.json()) as { error: { code: string; message: string } }).error;
-      expect(err.code).toBe("server_registered");
+      expect(err.code).toBe("deployment_registered");
       expect(err.message).toContain(fragment);
     }
     expect(await lines()).toHaveLength(1);
   });
 
-  it("answers 422 for an address that is not read as a penguin server", async () => {
-    const res = await call("POST", "/servers", { name: "gone", url: "http://localhost:1" });
+  it("registers a deployment without a url as its id alone, reading nothing", async () => {
+    answers = {};
+    const ok = await call("POST", "/deployments", { id: "firmware", agentId: "acme_dev" });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({
+      deployments: [
+        {
+          id: "firmware",
+          url: null,
+          installId: null,
+          registeredAt: expect.any(String),
+          by: "agent:acme_dev",
+        },
+      ],
+    });
+    const written = await lines();
+    expect(written).toHaveLength(1);
+    expect(written[0]).not.toHaveProperty("url");
+    expect(written[0]).not.toHaveProperty("installId");
+    const repeat = await call("POST", "/deployments", { id: "FIRMWARE" });
+    expect(repeat.status).toBe(409);
+  });
+
+  it("answers 422 for a url that is not read as a penguin server", async () => {
+    const res = await call("POST", "/deployments", { id: "gone", url: "http://localhost:1" });
     expect(res.status).toBe(422);
     expect(
       ((await res.json()) as { error: { code: string; message: string } }).error,
     ).toMatchObject({
-      code: "server_unreachable",
+      code: "deployment_unreachable",
       message: expect.stringContaining("ECONNREFUSED"),
     });
     expect(await lines()).toEqual([]);
@@ -280,18 +346,22 @@ describe("registering over the routes", () => {
 
   it("lets only one of two concurrent registrations of the same server through", async () => {
     const both = await Promise.all([
-      call("POST", "/servers", { name: "a", url: "http://localhost:53531" }),
-      call("POST", "/servers", { name: "b", url: "http://127.0.0.1:53531" }),
+      call("POST", "/deployments", { id: "a", url: "http://localhost:53531" }),
+      call("POST", "/deployments", { id: "b", url: "http://127.0.0.1:53531" }),
     ]);
     expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
-    expect((await lines()).filter((l) => l.kind === "server")).toHaveLength(1);
+    expect((await lines()).filter((l) => l.kind === "deployment")).toHaveLength(1);
   });
 
   it("keeps the registry across a restart: the fold of the ledger file", async () => {
-    await call("POST", "/servers", { name: "desk", url: "http://localhost:53531" });
+    await call("POST", "/deployments", { id: "desk", url: "http://localhost:53531" });
+    await call("POST", "/deployments", { id: "firmware" });
     const again = new Ledger(ledgerPath(root, PROJECT, ORG));
     await again.load();
-    expect(again.servers().map((s) => [s.name, s.installId])).toEqual([["desk", "desk-id"]]);
+    expect(again.deployments().map((d) => [d.id, d.url, d.installId])).toEqual([
+      ["desk", "http://localhost:53531", "desk-id"],
+      ["firmware", null, null],
+    ]);
     // A line about no proposal leaves the proposals alone.
     expect(again.proposals()).toEqual([]);
   });

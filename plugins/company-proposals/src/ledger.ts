@@ -145,17 +145,19 @@ export type LedgerEntry =
    */
   | { kind: "discussion_concluded"; number: number; sessionId: string; text: string; by: string }
   /**
-   * A penguin server put on the organization's registry (servers.ts): the PR graph shows the
-   * commit it runs. About no proposal, so it carries no `number` — a build that predates the
-   * kind skips it like any line about a proposal it has not got.
+   * A deployment put on the organization's registry (deployments.ts): the PR graph shows the
+   * commit it runs. `url` and `installId` are there for a penguin server deployment only. About
+   * no proposal, so it carries no `number` — a build that predates the kind skips it like any
+   * line about a proposal it has not got.
    */
-  | { kind: "server"; name: string; url: string; installId: string; by: string };
+  | { kind: "deployment"; id: string; url?: string; installId?: string; by: string };
 
-/** A server on the registry, as its `server` line wrote it. */
-export interface RegisteredServer {
-  name: string;
-  url: string;
-  installId: string;
+/** A deployment on the registry, as its `deployment` line wrote it. */
+export interface RegisteredDeployment {
+  id: string;
+  /** The penguin server deployment's url; null for a deployment that is not a penguin server. */
+  url: string | null;
+  installId: string | null;
   at: string;
   by: string;
 }
@@ -197,21 +199,21 @@ export interface Proposal {
 /** The fold of a whole ledger: its proposals by number, and the last `seq` written. */
 export interface LedgerState {
   proposals: Map<number, Proposal>;
-  /** The registered servers, in the order they were registered. */
-  servers: RegisteredServer[];
+  /** The registered deployments, in the order they were registered. */
+  deployments: RegisteredDeployment[];
   lastSeq: number;
 }
 
 function emptyState(): LedgerState {
-  return { proposals: new Map(), servers: [], lastSeq: 0 };
+  return { proposals: new Map(), deployments: [], lastSeq: 0 };
 }
 
 /** Applies one line to the state; a line about a proposal the state has not got is skipped (a truncated file, never a crash). */
 export function applyLine(state: LedgerState, line: LedgerLine): void {
   state.lastSeq = Math.max(state.lastSeq, line.seq);
-  if (line.kind === "server") {
-    const { name, url, installId, by } = line;
-    state.servers.push({ name, url, installId, at: line.at, by });
+  if (line.kind === "deployment") {
+    const { id, url, installId, by } = line;
+    state.deployments.push({ id, url: url ?? null, installId: installId ?? null, at: line.at, by });
     return;
   }
   if (line.kind === "created") {
@@ -560,8 +562,8 @@ export class Ledger {
     return this.state.lastSeq;
   }
 
-  servers(): RegisteredServer[] {
-    return [...this.state.servers];
+  deployments(): RegisteredDeployment[] {
+    return [...this.state.deployments];
   }
 
   /**

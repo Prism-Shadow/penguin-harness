@@ -7,9 +7,9 @@
  *   POST   /                         start one: { author, brief, title? } (a person; an employee gets 403 roadmap_only —
  *                                   its new proposals come from approved roadmap items)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
- *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts), with the servers placed on it
- *   GET    /servers                  the server registry: the servers registered, none by default (servers.ts)
- *   POST   /servers                  anybody in the organization registers one: { name, url }; a repeat is 409 server_registered
+ *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts), with the deployments placed on it
+ *   GET    /deployments              the deployment registry: the deployments registered, none by default (deployments.ts)
+ *   POST   /deployments              anybody in the organization registers one: { id, url? } (url = a penguin server); a repeat is 409 deployment_registered
  *   GET    /deploy-scripts           the organization's deploy scripts (deploy-routes.ts)
  *   POST   /deploy-scripts           { id, command[], description? } register one (a person who is a server admin)
  *   DELETE /deploy-scripts/:id       remove one (a person who is a server admin)
@@ -102,15 +102,23 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
     c.json(await service.graph(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
   );
 
-  app.get("/servers", async (c) =>
-    c.json(await service.servers(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
+  app.get("/deployments", async (c) =>
+    c.json(await service.deployments(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
   );
 
-  app.post("/servers", async (c) => {
+  app.post("/deployments", async (c) => {
     const body = await jsonBody(c);
-    const req = { name: String(body.name ?? ""), url: String(body.url ?? "") };
+    const req = {
+      id: String(body.id ?? ""),
+      ...(body.url !== undefined && body.url !== null ? { url: String(body.url) } : {}),
+    };
     return c.json(
-      await service.registerServer(param(c, "projectId"), param(c, "orgId"), req, actorOf(c, body)),
+      await service.registerDeployment(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        req,
+        actorOf(c, body),
+      ),
     );
   });
 

@@ -44,9 +44,9 @@ penguin org proposal comments <n> [--pending]
 penguin org proposal resolve <n> <commentId> [-m …]
 penguin org proposal merged <n>                         # the implementer or a person; anybody once the impl PR is merged into its default branch
 penguin org proposal reject <n> --reason <text>         # any employee, as a person may: the reason and who are recorded
-penguin org proposal graph                              # the PR graph, each registered server marked at its commit
-penguin org proposal server add <name> <url>            # register a penguin server; a repeat (name, address or install id) is refused
-penguin org proposal server ls                          # the registry: only what was registered, no server registers itself
+penguin org proposal graph                              # the PR graph, each registered deployment marked at its commit
+penguin org proposal deployment add <id> [--url <url>]  # register a deployment (--url: it is a penguin server); a repeat (id, url or install id) is refused
+penguin org proposal deployment ls                      # the registry: only what was registered, no server registers itself
 ```
 
 An organization deploys with its own scripts. A server admin registers each one under an id, with the command it runs (an argument vector, no shell):
@@ -91,9 +91,9 @@ The ledger is one append-only file per organization, `<root>/<project>/organizat
 
 ## API
 
-`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`, a person; an employee gets 403 `roadmap_only` — its new proposals are created by [company-roadmaps](../company-roadmaps/README.md) when a roadmap item gets its second approval, through this plugin's module method `createFromRoadmap`, and their `created` line names the roadmap and the item), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read` (`reject` takes `{ reason }` from a person or any employee), `POST /:number/discussions` (a person; answers the session) and `POST /:number/discussions/:sessionId/conclude` (`{ text }`, a person or that session), `GET /graph` (with a `servers` array), `GET|POST /servers` (`{ name, url }`; anybody in the organization; 409 `server_registered` on a repeat, 422 `server_unreachable` when the address is not read as a penguin server). Every route answers 404 while company mode is off.
+`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`, a person; an employee gets 403 `roadmap_only` — its new proposals are created by [company-roadmaps](../company-roadmaps/README.md) when a roadmap item gets its second approval, through this plugin's module method `createFromRoadmap`, and their `created` line names the roadmap and the item), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read` (`reject` takes `{ reason }` from a person or any employee), `POST /:number/discussions` (a person; answers the session) and `POST /:number/discussions/:sessionId/conclude` (`{ text }`, a person or that session), `GET /graph` (with a `deployments` array), `GET|POST /deployments` (`{ id, url? }`; anybody in the organization; 409 `deployment_registered` on a repeat, 422 `deployment_unreachable` when the url is not read as a penguin server). Every route answers 404 while company mode is off.
 
-A server's commit is read from its public `GET /api/install` (`installId`, `commit`, `describe`) on every graph read. Registrations are `server` lines in the same ledger; nothing is on the registry by default.
+A deployment is an id; a penguin server deployment also has a `url`, and its commit is read from that server's public `GET /api/install` (`installId`, `commit`, `describe`) on every graph read. A deployment without a url reports no commit. Registrations are `deployment` lines in the same ledger; nothing is on the registry by default.
 
 ## Development
 
