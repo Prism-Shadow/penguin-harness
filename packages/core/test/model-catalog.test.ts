@@ -1441,14 +1441,16 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     );
   });
 
-  it("routedClientType: a pinned client type wins, else the family the id begins with names the official client", () => {
+  it("routedClientType: a pinned client type wins, else the family the id begins with names the official client, and an unknown pin routes nowhere", () => {
     expect(routedClientType("deepseek-flash")).toBe("deepseek-official");
     expect(routedClientType("DeepSeek-V4-Pro")).toBe("deepseek-official"); // case-insensitive
     expect(routedClientType("claude-opus-4-8")).toBe("anthropic-official");
     expect(routedClientType("gemini-3.8-flash")).toBe("gemini-official");
     expect(routedClientType("gemini-embedding-001")).toBe("gemini-official");
     expect(routedClientType("gpt-6-astra")).toBe("openai-official");
-    expect(routedClientType("text-embedding-3-large")).toBe("openai-official");
+    // OpenAI's official client hands its embedding ids to the Embeddings client, pinned or not.
+    expect(routedClientType("text-embedding-3-large")).toBe("openai-embedding");
+    expect(routedClientType("text-embedding-3-large", "openai-official")).toBe("openai-embedding");
     expect(routedClientType("glm-5.3-flash")).toBe("zai-official");
     expect(routedClientType("kimi-k3")).toBe("moonshot-official");
     expect(routedClientType("MiniMax-M3")).toBe("minimax-official");
@@ -1457,6 +1459,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     expect(routedClientType("deepseek-v4-pro", " OpenAI-Responses ")).toBe("openai-responses");
     expect(routedClientType("deepseek-v4-pro", "openai")).toBe("openai-chat");
     expect(routedClientType("deepseek-v4-pro", "")).toBe("deepseek-official");
+    // A pin MMSP does not have is refused, never routed by the id instead.
+    expect(routedClientType("deepseek-flash", "deepseek-v4")).toBeUndefined();
+    expect(routedClientType("deepseek-flash", "constructor")).toBeUndefined();
     // A family is a PREFIX: a gateway spelling that merely contains one routes nowhere...
     expect(routedClientType("anthropic/claude-fable-5")).toBeUndefined();
     expect(routedClientType("moonshotai/kimi-k3")).toBeUndefined();

@@ -37,9 +37,11 @@ It is a *catalog*, not a routing table — MMSP owns routing.
 - `routedClientType` mirrors MMSP's routing exactly: the pinned client type (lowercased, `openai`
   read as `openai-chat`), else the official client of the family prefix the lowercased id begins
   with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`,
-  `minimax-`), else nothing. `resolveModelEnv` and `fastModeProtocol` read it. MMSP does not
-  export its family table, so core keeps a copy: move it only with the MMSP release that changes
-  it, and never let it place an id MMSP refuses.
+  `minimax-`), with `openai-official` handing `text-embedding-` ids to `openai-embedding`; a pin
+  MMSP does not have, or an id of no family, gives nothing. `resolveModelEnv`,
+  `fastModeProtocol` and the web's protocol path look the result up in `MMSP_CLIENTS`. MMSP does
+  not export its family table, so core keeps a copy: move it only with the MMSP release that
+  changes it, and never let it place an id MMSP refuses.
 
 ## What a change touches
 

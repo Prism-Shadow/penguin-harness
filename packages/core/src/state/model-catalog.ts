@@ -2940,8 +2940,8 @@ export function isVendorGroup(providerId: string): boolean {
  * the configuration that produces `No client for model "<id>": its family is not known` on
  * the first request, and nothing before it.
  *
- * `resolveModelEnv` is the authority: it mirrors AutoLLMClient's routing rule and returns
- * undefined on exactly the ids that client rejects. A blank id is not a routing failure —
+ * `routedClientType` is the authority: it mirrors AutoLLMClient's routing rule and returns
+ * undefined on exactly the entries that client rejects. A blank id is not a routing failure —
  * the entry is still being typed, and the required-field validation is what has something
  * to say about it.
  */
@@ -2951,9 +2951,7 @@ export function unroutableVendorModel(
   clientType?: string,
 ): boolean {
   const id = modelId.trim();
-  if (id === "" || !isVendorGroup(provider)) return false;
-  const pinned = clientType?.trim();
-  return resolveModelEnv(id, pinned === "" ? undefined : pinned) === undefined;
+  return id !== "" && isVendorGroup(provider) && routedClientType(id, clientType) === undefined;
 }
 
 /**
@@ -3035,17 +3033,19 @@ export const MMSP_CLIENTS: Readonly<
 };
 
 /**
- * The client type an entry routes to, exactly as AutoLLMClient resolves it: the pinned
- * client type (lowercased; the bare `openai` alias canonicalized), else the official client
- * of the family the model id begins with, else `undefined` — an id MMSP refuses to start.
- * A pinned type MMSP does not know comes back as given; `resolveModelEnv` is what tells it
- * from a real one.
+ * The MMSP client that serves an entry, exactly as AutoLLMClient picks it: the pinned client
+ * type (lowercased; the bare `openai` alias canonicalized), else the official client of the
+ * family the model id begins with — where `openai-official` hands a `text-embedding-` id to
+ * the Embeddings client. `undefined` when MMSP refuses the entry: an id of no known family,
+ * or a pin MMSP does not have.
  */
 export function routedClientType(modelId: string, clientType?: string): string | undefined {
-  const pinned = canonicalClientType(clientType)?.trim().toLowerCase();
-  if (pinned) return pinned;
   const id = modelId.toLowerCase();
-  return MODEL_FAMILIES.find(([prefix]) => id.startsWith(prefix))?.[1];
+  const routed =
+    canonicalClientType(clientType)?.trim().toLowerCase() ||
+    MODEL_FAMILIES.find(([prefix]) => id.startsWith(prefix))?.[1];
+  if (routed === "openai-official" && id.startsWith("text-embedding-")) return "openai-embedding";
+  return routed !== undefined && Object.hasOwn(MMSP_CLIENTS, routed) ? routed : undefined;
 }
 
 /**
@@ -3360,10 +3360,6 @@ export function fastModeProtocol(
   baseUrl?: string,
 ): FastModeProtocol | undefined {
   const routed = routedClientType(modelId, clientType);
-  // OpenAI serves its embedding models through the Embeddings API, which has no fast tier.
-  if (routed === "openai-official" && modelId.toLowerCase().startsWith("text-embedding-")) {
-    return undefined;
-  }
   // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter; both
   // tests run against what the client was constructed with, as the client's own do.
   if (

@@ -55,12 +55,7 @@ const VENDOR_GROUP_CLIENT_TYPES: Readonly<Record<string, string>> = {
  * before anything is typed, so it never reads the current base URL value.
  */
 export function protocolPathForModel(provider: string, clientType: string, modelId = ""): string {
-  const id = modelId.trim();
-  const routed = routedClientType(id, clientType);
-  if (routed === "openai-official" && id.toLowerCase().startsWith("text-embedding-")) {
-    return "/embeddings";
-  }
   const client =
-    MMSP_CLIENTS[routed ?? ""] ?? MMSP_CLIENTS[VENDOR_GROUP_CLIENT_TYPES[provider] ?? ""];
-  return client?.path ?? "/chat/completions";
+    routedClientType(modelId.trim(), clientType) ?? VENDOR_GROUP_CLIENT_TYPES[provider] ?? "";
+  return MMSP_CLIENTS[client]?.path ?? "/chat/completions";
 }
