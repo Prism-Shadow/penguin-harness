@@ -25,8 +25,10 @@ import {
   configureKeybindingsStoreForTests,
   setBinding,
 } from "../src/lib/shortcuts/store";
-import { toneInk } from "../src/lib/tone";
 import { memoryStorage } from "./helpers/storage";
+
+/** The attention tone's ink, as the package's token class spells it. */
+const ATTENTION = "text-tone-attention-fg";
 
 /** A keybindings mirror holding `doc`, or nothing. */
 const keybindings = (doc?: object) =>
@@ -98,7 +100,7 @@ describe("ShortcutsSection", () => {
       setHostForTests(host);
       const html = render();
       expect(count(html, S.shortcuts.browserReserved), host).toBe(1);
-      expect(html, host).toContain(toneInk.attention);
+      expect(html, host).toContain(ATTENTION);
     }
   });
 
@@ -110,7 +112,7 @@ describe("ShortcutsSection", () => {
     });
     const browser = render();
     expect(count(browser, S.shortcuts.browserCommon)).toBe(2);
-    expect(browser).not.toContain(toneInk.attention);
+    expect(browser).not.toContain(ATTENTION);
     setHostForTests("desktop");
     const desktop = render();
     // Reload is the desktop menu's too, so that row names the menu; Save keeps the browser's note.
@@ -138,7 +140,7 @@ describe("ShortcutsSection", () => {
         ),
       ),
     ).toBe(1);
-    expect(html).toContain(toneInk.attention);
+    expect(html).toContain(ATTENTION);
   });
 
   it("reports a same-scope clash on both rows", () => {

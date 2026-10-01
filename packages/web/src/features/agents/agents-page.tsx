@@ -97,14 +97,13 @@ const CARD_ICONS = {
   /** Delete (trash can) */
   trash: ICONS.trash,
   /** Total session count (chat bubble) */
-  sessions: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
+  sessions: ICONS.bubbleLines,
   /** Vault key count (key: bow + teeth) */
   vaultKeys: ICONS.key,
   /** Schedule count: the alarm clock every scheduled-task surface wears. */
   schedules: ICONS.alarmClock,
-  /** Installed skill count (open book, same family as the plugin library) */
-  skills:
-    "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
+  /** Installed skill count: the open book every skill surface wears (skill-use's BOOK_ICON). */
+  skills: ICONS.bookOpen,
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: ICONS.barChart,
   /** Memory count: the brain every Memory surface wears; opens the settings tab. */
@@ -1045,7 +1044,7 @@ export function AgentsPage() {
           setDeleteError(null);
         }}
         onConfirm={() => void doDelete()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

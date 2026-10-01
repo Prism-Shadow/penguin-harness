@@ -5,19 +5,27 @@
  * (Round inputs themselves render as regular user messages with a harness-origin caption —
  * see message-item.tsx; no goal-specific message rendering remains.)
  */
-import { GlyphIcon } from "@prismshadow/penguin-ui";
+import { Badge, GlyphIcon } from "@prismshadow/penguin-ui";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeTokens } from "../../lib/format";
 import { GOAL_ICON, UNLIMITED_BUDGET } from "./goal-use";
 import type { GoalBannerState } from "./goal-use";
-import { toneSurface } from "../../lib/tone";
+
+/** A run still going is neutral; one that ended reached its goal or stopped short of it. */
+const STATUS_TONE: Record<GoalBannerState["status"], ToneName> = {
+  active: "neutral",
+  complete: "success",
+  blocked: "attention",
+  budget_limited: "attention",
+  aborted: "attention",
+};
 
 export function GoalStatusBanner({ goal }: { goal: GoalBannerState }) {
   const tokens =
     goal.budget > 0 && goal.budget !== UNLIMITED_BUDGET
       ? `${humanizeTokens(goal.used)}/${humanizeTokens(goal.budget)}`
       : humanizeTokens(goal.used);
-  const finished = goal.status !== "active";
   return (
     <div className="anim-fade mb-2 flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
       <GlyphIcon d={GOAL_ICON} className="shrink-0 text-gray-400 dark:text-gray-500" />
@@ -31,17 +39,9 @@ export function GoalStatusBanner({ goal }: { goal: GoalBannerState }) {
       <span className="shrink-0 text-gray-400 dark:text-gray-500">
         {S.chat.goalProgress(goal.rounds, tokens)}
       </span>
-      <span
-        className={`shrink-0 rounded px-1.5 py-0.5 ${
-          finished
-            ? goal.status === "complete"
-              ? toneSurface.success
-              : toneSurface.attention
-            : "bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-        }`}
-      >
+      <Badge tone={STATUS_TONE[goal.status]} size="sm">
         {S.chat.goalStatus[goal.status]}
-      </span>
+      </Badge>
     </div>
   );
 }

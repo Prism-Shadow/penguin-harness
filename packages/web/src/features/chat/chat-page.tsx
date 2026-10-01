@@ -345,6 +345,8 @@ export function ChatPage() {
   // flight (every exited row at once while "clear exited" runs).
   const [processes, setProcesses] = useState<SessionProcessInfo[]>([]);
   const [procBusy, setProcBusy] = useState<readonly string[] | null>(null);
+  /** A running process whose Stop awaits confirmation: it ends the process and drops its output. */
+  const [procToKill, setProcToKill] = useState<SessionProcessInfo | null>(null);
   // Session Token buckets from the last usage fetch (the popover's tokens-line breakdown):
   // server-recorded values — they can trail the live chip mid-run and reconcile on idle.
   const [usageBuckets, setUsageBuckets] = useState<{
@@ -2501,7 +2503,7 @@ export function ChatPage() {
                           <button
                             type="button"
                             disabled={procBusy !== null}
-                            onClick={() => void onKillProcess(p.processId)}
+                            onClick={() => setProcToKill(p)}
                             className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                           >
                             {procBusy?.includes(p.processId)
@@ -2729,6 +2731,23 @@ export function ChatPage() {
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.noCredentialBody}</p>
       </Modal>
+
+      <ConfirmModal
+        open={procToKill !== null}
+        title={S.chat.processStopTitle}
+        onClose={() => setProcToKill(null)}
+        onConfirm={() => {
+          if (procToKill !== null) void onKillProcess(procToKill.processId);
+          setProcToKill(null);
+        }}
+        confirmLabel={S.chat.processStop}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.chat.processStopConfirm}</p>
+        <p className="mt-2 line-clamp-3 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+          {procToKill?.cmd}
+        </p>
+      </ConfirmModal>
 
       {/* Mid-chat thinking-level switch confirmation (issue #310), three choices: compact
           first and switch when it finishes (primary — the recommended, cheap path), switch

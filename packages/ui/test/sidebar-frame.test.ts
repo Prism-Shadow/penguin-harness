@@ -195,9 +195,13 @@ describe("SidebarNavEntry", () => {
     );
   });
 
-  it("fills the tack only while pinned", () => {
-    expect(entry().match(/fill="currentColor"/g)).toHaveLength(1);
-    expect(entry({ pin: pin(false) })).not.toContain('fill="currentColor"');
+  it("draws the lock closed while pinned and open while not, the drawing carrying the state", () => {
+    const pinned = entry();
+    const unpinned = entry({ pin: pin(false) });
+    expect(pinned).toContain(`d="${ICONS.lock}"`);
+    expect(pinned).not.toContain(`d="${ICONS.lockOpen}"`);
+    expect(unpinned).toContain(`d="${ICONS.lockOpen}"`);
+    expect(unpinned).not.toContain(`d="${ICONS.lock}"`);
   });
 
   it("reveals the pin as the conversation rows reveal their hover buttons, and always shows it where nothing hovers", () => {
@@ -228,17 +232,20 @@ describe("SidebarNavEntry", () => {
     expect(entry()).not.toContain("draggable");
   });
 
-  it("puts a badge after the pin, giving way to it and moving clear of it where it always shows", () => {
+  it("never hides its badge: the badge steps just left of the pin wherever the pin shows", () => {
     const html = entry({ badge: createElement("i", { "data-dot": "" }) });
     expect(html.indexOf('aria-pressed="true"')).toBeLessThan(html.indexOf("data-dot"));
-    expect(classTokens(html)).toEqual(
+    expect(classTokens(html)).toContain("peer");
+    const holder = /<span class="([^"]*)"><i data-dot/.exec(html)?.[1]?.split(" ") ?? [];
+    expect(holder).toEqual(
       expect.arrayContaining([
-        "peer",
-        "group-hover:opacity-0",
-        "peer-focus-within:opacity-0",
-        "[@media(hover:none)]:right-6.5",
+        "right-0",
+        "group-hover:right-5.5",
+        "peer-focus-within:right-5.5",
+        "[@media(hover:none)]:right-5.5",
       ]),
     );
+    expect(holder.filter((t) => t.includes("opacity"))).toEqual([]);
   });
 });
 

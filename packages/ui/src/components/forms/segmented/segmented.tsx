@@ -9,10 +9,16 @@
  * when one appears, and it is hidden from the accessible name; the badge's `name` is what the
  * option's name gains instead, as ` · <name>`.
  *
- * The well is a pressable control's shape (`rounded-control`); the chips keep the small radius
- * inside it.
+ * The well is a pressable control's shape (`rounded-control`), and a chip's corner is concentric
+ * with it: the well's radius less the well's inset (`p-1`, one space unit), so the chip follows the
+ * well's curve at an even distance — a pill in a pill where controls are pills, a small corner in
+ * a small one, square in a square. Below zero it is zero.
  */
 import type { ReactNode } from "react";
+
+/** The chip's corner: the well's `rounded-control` less its `p-1` inset. */
+const SEGMENTED_CHIP_RADIUS =
+  "rounded-[max(0px,calc(var(--ui-radius-control)_-_var(--ui-space-unit)))]";
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -46,7 +52,7 @@ export function Segmented<T extends string>({
           // where there is a badge to fold in — otherwise the label's own text is the name.
           aria-label={opt.badge ? `${opt.label} · ${opt.badge.name}` : undefined}
           aria-pressed={value === opt.value}
-          className={`rounded-sm px-1 py-1 text-xs transition-colors duration-150 ${
+          className={`${SEGMENTED_CHIP_RADIUS} px-1 py-1 text-xs transition-colors duration-150 ${
             value === opt.value
               ? "bg-surface font-medium text-fg shadow-sm"
               : "text-fg-muted hover:text-fg"

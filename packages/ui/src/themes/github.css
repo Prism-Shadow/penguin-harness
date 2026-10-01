@@ -229,6 +229,12 @@
     --ui-switch-knob-on: var(--ui-accent-fg);
     --ui-switch-knob-line: var(--color-gray-500);
 
+    /* ---- Badges: the tag the app has always drawn — a soft tag is its tone's tint with no rule
+       round it, set in the semibold cut, and the md tag is padded half a space unit by two. ---- */
+    --ui-badge-soft-ring: 0px;
+    --ui-badge-weight: 600;
+    --ui-badge-pad-md: calc(var(--ui-space-unit) * 0.5) calc(var(--ui-space-unit) * 2);
+
     /* ---- Typography — families: GitHub Primer's faces (Mona Sans, JetBrains Mono for code,
        Noto Sans SC for Han), each in front of the system stack the app shipped before, which
        stays behind it as the fallback; chrome and reading text share the one face. Latin first,
@@ -370,10 +376,22 @@
     --ui-stream-reveal: instant;
     --ui-stream-rate: 0;
 
-    /* ---- Icons ---- */
+    /* ---- Icons: the Octicons carry no duotone body (0), and decorative icons stay
+       monochrome, so the hues are declared but unread — Tailwind's 600 steps (amber and green
+       at 700, the steps the accent presets take), each a 3:1 mark on the page ---- */
     --ui-icon-stroke: 1.7;
     --ui-icon-cap: round;
     --ui-icon-join: round;
+    --ui-icon-duo-opacity: 0;
+    --ui-icon-tint-blue: oklch(54.6% 0.245 262.881); /* blue-600 */
+    --ui-icon-tint-violet: oklch(54.1% 0.281 293.009); /* violet-600 */
+    --ui-icon-tint-pink: oklch(59.2% 0.249 0.584); /* pink-600 */
+    --ui-icon-tint-red: oklch(57.7% 0.245 27.325); /* red-600 */
+    --ui-icon-tint-orange: oklch(64.6% 0.222 41.116); /* orange-600 */
+    --ui-icon-tint-amber: oklch(55.5% 0.163 48.998); /* amber-700 */
+    --ui-icon-tint-green: oklch(52.7% 0.154 150.069); /* green-700 */
+    --ui-icon-tint-teal: oklch(60% 0.118 184.704); /* teal-600 */
+    --ui-icon-tint-slate: oklch(55.4% 0.046 257.417); /* slate-500 */
 
     /* ---- Focus, selection and scrollbar ---- */
     --ui-focus-ring: 3px solid rgb(115 115 115 / 0.4); /* neutral-500 */
@@ -388,9 +406,10 @@
   }
 
   /* Dark declares only what the mode changes. `:root.dark` also matches the rule above, so every
-     name not repeated here — the shape, type, density, motion and icon groups whole, the solid
-     fills and their labels, the backdrop — keeps its one value from there, and a `var()` in it
-     resolves against this rule's values (`--ui-glass-bg: var(--ui-overlay)` is the dark overlay). */
+     name not repeated here — the shape, type, density and motion groups whole, the icons' stroke
+     and duotone opacity, the solid fills and their labels, the backdrop — keeps its one value
+     from there, and a `var()` in it resolves against this rule's values (`--ui-glass-bg:
+     var(--ui-overlay)` is the dark overlay). */
   :root.dark,
   :root[data-theme="github"].dark {
     /* ---- Gray bridge: one neutral ramp (no indigo tint) for a calm dark. The four dark steps
@@ -494,6 +513,17 @@
     --ui-switch-knob: var(--ui-fg);
     --ui-switch-knob-line: rgb(0 0 0 / 0.1);
 
+    /* ---- Icons: the hues at Tailwind's 400 steps for the dark page ---- */
+    --ui-icon-tint-blue: oklch(70.7% 0.165 254.624); /* blue-400 */
+    --ui-icon-tint-violet: oklch(70.2% 0.183 293.541); /* violet-400 */
+    --ui-icon-tint-pink: oklch(71.8% 0.202 349.761); /* pink-400 */
+    --ui-icon-tint-red: oklch(70.4% 0.191 22.216); /* red-400 */
+    --ui-icon-tint-orange: oklch(75% 0.183 55.934); /* orange-400 */
+    --ui-icon-tint-amber: oklch(82.8% 0.189 84.429); /* amber-400 */
+    --ui-icon-tint-green: oklch(79.2% 0.209 151.711); /* green-400 */
+    --ui-icon-tint-teal: oklch(77.7% 0.152 181.912); /* teal-400 */
+    --ui-icon-tint-slate: oklch(70.4% 0.04 256.788); /* slate-400 */
+
     /* ---- Selection and scrollbar ---- */
     --ui-selection-bg: rgb(255 255 255 / 0.18);
     --ui-scrollbar-thumb: rgb(229 229 229 / 0.2); /* neutral-200 */
@@ -501,8 +531,8 @@
   }
 
   /*
-   * Style hooks (hooks.ts): every one is a no-op in Primer. The app's look is what the
-   * components' own classes render — an opaque overlay, a semibold h1, a linear pulse, a bordered
+   * Style hooks (hooks.ts): every one but `ui-glyph` is a no-op in Primer. The app's look is what
+   * the components' own classes render — an opaque overlay, a semibold h1, a linear pulse, a bordered
    * card with a muted head, the accent bar under a tab, the sidebar's muted fill beside the
    * canvas, monochrome icons, a bordered tree box with the host's own indent, a form's label
    * above its control and a settings row's label beside it, a plain row for a step of the
@@ -514,6 +544,18 @@
    * title in the emphasis ink) live in theme.css and are what the app's group labels and page
    * titles already draw: 11px semibold tracked capitals, and the body ink in light.
    */
+
+  /* Icons are GitHub's own: every glyph that has an Octicon drawing (the registry's and the
+     marks') shows it in place of the line drawing, a 16-grid filled shape that holds the same
+     weight at every size. Monochrome like every icon here, in the ink the host gives it. */
+  :root:not([data-theme]) .ui-glyph > [data-set="line"],
+  :root[data-theme="github"] .ui-glyph > [data-set="line"] {
+    display: none;
+  }
+  :root:not([data-theme]) .ui-glyph > [data-set="octicons"],
+  :root[data-theme="github"] .ui-glyph > [data-set="octicons"] {
+    display: inline;
+  }
 }
 
 /*

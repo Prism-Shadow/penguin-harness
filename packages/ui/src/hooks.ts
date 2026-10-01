@@ -14,11 +14,13 @@
  *
  * | hook               | the job                                                  | anatomy the recipes rely on                           |
  * | ------------------ | -------------------------------------------------------- | ----------------------------------------------------- |
- * | `ui-glass`         | a transient layer over content: menus, popovers, the     | —                                                     |
+ * | `ui-glass`         | a transient layer over content: menus, popovers, the     | a dialog is `[role="dialog"]`, its head and foot direct children `data-slot="head" \| "foot"`; a menu's rows are `[role="menu"] > [role^="menuitem"]`, a listbox panel's `[role="option"]` children; a tile carries `data-glass="tile"` and its hue as its ink |
  * |                    | modal card, the floating composer and launcher, a sticky |                                                       |
- * |                    | page header                                              |                                                       |
+ * |                    | page header — and a plugin or skill tile, the one glass  |                                                       |
+ * |                    | that is not transient                                    |                                                       |
  * |                    | hosts: `ComposerCard` and its `SlashMenu`, `Modal`,      |                                                       |
- * |                    | `Dropdown`, the selects, popovers and tooltips           |                                                       |
+ * |                    | `Dropdown`, the selects, popovers and tooltips,          |                                                       |
+ * |                    | `SkillTile`                                              |                                                       |
  * | `ui-eyebrow`       | a group label naming the items below it (never directly  | —                                                     |
  * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |
  * |                    | the sidebar's and group headers' labels                  |                                                       |
@@ -44,12 +46,22 @@
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
  * | `ui-stream`        | the body of an assistant reply, which may still be       | `data-state="streaming" \| "done"`; while streaming, the markdown blocks are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends |
  * |                    | streaming                                                |                                                       |
+ * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
+ * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
  *
- * `ui-shell` is the one place a theme may paint a field of colour: Frost paints the navigation
- * column a soft grey beside a near-white main column, flat (its earlier warm field and floating
- * sheet were retired at the owner's review of 2026-09-29); Console rules the columns off each
- * other with hairlines, full bleed; Primer changes nothing — the window's look is its own
- * classes.
+ * `ui-shell` is the one place a theme may paint a field of colour: Frost paints a soft pastel
+ * field behind the window (a sky wash from the top corner, a lilac one from the bottom) and
+ * sets the navigation column on it as milky, translucent glass with a lit inner edge, beside the
+ * opaque near-white main column — the glass takes no backdrop filter, since the field is all
+ * that lies behind it and the column must not become a stacking context; Console rules the
+ * columns off each other with hairlines, full bleed; Primer changes nothing — the window's look
+ * is its own classes.
+ *
+ * `ui-glass` is a floating layer's frost, and in Frost it also dresses the one glass that does
+ * not float: a plugin or skill tile (`SkillTile`, `data-glass="tile"`), a translucent square in
+ * the tile's own hue with a hairline edge, a lit top and a deeper foot. Primer and Console have
+ * no glass recipe, so a tile keeps its host's tinted square there. Frost's dialog is opaque, its
+ * head and foot draw no rule, and a menu's rows are inset bands concentric with the panel.
  *
  * The three structure hooks (2026-09-19) are how the themes differ in organisation, not only in
  * colour and radius:
@@ -57,14 +69,17 @@
  * - `ui-icon-decor` marks the icons a theme may recolour or drop: a nav row's glyph, a group
  *   header's, a menu row's, an empty state's illustration — never a status mark, a file kind, a
  *   tool glyph or an avatar, which carry information and stay in every theme. Primer keeps them
- *   monochrome; Frost draws them in the muted ink (a menu row's keeps the row's own ink — a
- *   danger row keeps its red); Console hides them, so the eyebrow and the selected row's weight
- *   carry the structure and it shows far fewer icons.
+ *   monochrome; Frost paints each in its glyph's hue — `data-tint`, one of the nine
+ *   `--ui-icon-tint-*` tokens, chosen per glyph by concept family (`ICON_TINTS`) so a concept
+ *   wears one colour everywhere — for the `nav`, `group` and `empty` roles, the muted ink for a
+ *   decorative path with no tint, and a menu row's icon keeps the row's own ink (a danger row
+ *   keeps its red); Console hides them, so the eyebrow and the selected row's weight carry the
+ *   structure and it shows far fewer icons.
  *   A call site applies it by passing `decor="<role>"` to an icon renderer (`GlyphIcon`,
- *   `Glyph`), which writes the class and `data-role` for it; the hook guard reads the prop on
- *   the call site and holds the enclosing row or header to the host list. A wrapper that holds
- *   only the icon may carry the class itself instead, so a hidden icon leaves no empty box
- *   behind in a flex row.
+ *   `Glyph`), which writes the class, `data-role` and, for a registry glyph, `data-tint` for
+ *   it; the hook guard reads the prop on the call site and holds the enclosing row or header to
+ *   the host list. A wrapper that holds only the icon may carry the class itself instead, so a
+ *   hidden icon leaves no empty box behind in a flex row.
  * - `ui-tree` marks a list whose rows nest: a file tree, a work group's tool rows under its head,
  *   a plan's sub-steps, the subagent call graph. A host indents its rows itself, by
  *   `calc(var(--ui-tree-inset) + var(--ui-tree-indent) * depth)`, so every theme's connector
@@ -113,10 +128,11 @@
  *
  * `ui-scrim` (2026-09-30) is the backdrop a dialog, drawer or sheet dims the page with: the host
  * paints its dim from `--ui-overlay-backdrop` and carries the hook, whether the scrim is a
- * sibling behind the panel or the full-viewport overlay the panel sits in. Primer and Console
- * leave the dim as it is; Frost blurs the page behind it, the reference's frosted backdrop — a
- * backdrop filter never reaches the element's own descendants, so a panel inside the scrim stays
- * sharp. It moves only with the host's fade, so reduced motion needs nothing from it.
+ * sibling behind the panel or the full-viewport overlay the panel sits in. All three themes leave
+ * the dim as it is — the page behind a dialog is dimmed, never blurred: Frost keeps its frost for
+ * the chrome (the navigation column, the plugin tiles) and the layers floating over content, and
+ * its dialogs are opaque. The hook stays the door a theme would take to treat the backdrop. It
+ * moves only with the host's fade, so reduced motion needs nothing from it.
  *
  * `ui-stream` (2026-09-30) is how a theme shows a reply arriving. The host is the reply's body
  * (`AssistantText`): it stays `data-state="streaming"` until its paced reveal
@@ -132,6 +148,19 @@
  * the caret as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and
  * runs a last paragraph in so the cursor follows its last character; nothing else moves. Under
  * reduced motion the caret holds still and Frost draws no veil.
+ *
+ * `ui-glyph` is how the themes draw icons in their own styles without a component knowing which
+ * runs. Its hosts are the two icon renderers: `GlyphIcon` for a registry glyph (a path the
+ * registry does not hold gets no hook and stays a line everywhere) and `GlyphMark` for the marks
+ * drawn as components (the caret, the check, the plus, the trays, the close cross, the collapse
+ * chevron). Each draws the glyph three times inside its `<svg>`, one direct child per set: the
+ * `line` group (the stroke drawing on the host's grid, with an optional `duo` body under it), the
+ * `octicons` svg (GitHub's 16-grid filled drawing, scaled to the box) and the `pixel` svg (a
+ * 16x16 drawing on crisp edges, laid out one cell to a CSS pixel from a 13px box up, so it spills
+ * a little past a box under 16px). The foundation shows the line set, hides the other two and sets
+ * the duo body's opacity from `--ui-icon-duo-opacity`; Primer shows the Octicons, Console the
+ * pixel drawings, and Frost keeps the line drawings with their duotone bodies. A host's
+ * transform (a chevron's turn, an activity mark's motion) moves all three together.
  */
 export const HOOKS = [
   "ui-glass",
@@ -149,6 +178,7 @@ export const HOOKS = [
   "ui-chart",
   "ui-scrim",
   "ui-stream",
+  "ui-glyph",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

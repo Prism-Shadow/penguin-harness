@@ -287,6 +287,7 @@ export const en: GalleryStrings = {
     iconSizes: "Icon sizes",
     iconRegistry: (icons, files) => `${icons} icons from ${files} files`,
     duplicateNames: "One path, several names",
+    iconMarks: "Marks drawn as components",
     durations: "Durations × easings",
     reducedNote: "Reduced motion: every change shows its end state at once.",
     liveSignal: "Live signals",
@@ -318,7 +319,8 @@ export const en: GalleryStrings = {
       sidebarRows: ["New chat", "Agents", "Models"],
     },
     hookJobs: {
-      "ui-glass": "a transient layer over content",
+      "ui-glass":
+        "a frosted surface: a transient layer over content, and Frost's plugin and skill tiles",
       "ui-eyebrow": "a group label naming the items below it",
       "ui-display": "the one display title of a page or hero",
       "ui-live": "motion for something running right now",
@@ -335,6 +337,7 @@ export const en: GalleryStrings = {
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
       "ui-stream": "a reply that is still streaming: each theme decides how new text appears",
+      "ui-glyph": "an icon each theme draws its own way: Octicons, duotone line or pixel art",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],

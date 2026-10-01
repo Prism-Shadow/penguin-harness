@@ -6,13 +6,12 @@
  * rendered as usual by the caller. It keeps the same visual language as message-level notices;
  * the caller owns its user-side alignment and timestamp footer.
  */
-import { GlyphIcon } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { attachmentFileName } from "../../lib/attachments";
 
-/** Paperclip glyph (24×24 line path), shared with the composer's file-attachment entry. */
-export const PAPERCLIP_ICON =
-  "M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48";
+/** The paperclip: the mark of attached files, shared with the composer's file-attachment entry. */
+export const PAPERCLIP_ICON = ICONS.paperclip;
 
 export function AttachedFilesBanner({ files }: { files: string[] }) {
   const label = S.chat.attachedFilesBanner(files.map(attachmentFileName));

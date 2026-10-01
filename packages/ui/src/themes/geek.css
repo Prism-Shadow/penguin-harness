@@ -245,6 +245,15 @@
     --ui-switch-knob-on: var(--ui-accent-fg);
     --ui-switch-knob-line: rgb(0 0 0 / 0.1);
 
+    /* Badges: one tag. The tones have no tint, so a soft tag draws the same 1px inset rule in its
+       tone's line as an outlined one — the two weights are one ruled word, and a solid tag is the
+       tone's ink filled in; the regular cut (the weight scale has no middle step to give a tag),
+       in the chrome face at the small rung; and the md tag takes the sm tag's padding, so a row
+       of tags and counts is one height. */
+    --ui-badge-soft-ring: 1px;
+    --ui-badge-weight: var(--ui-weight-body);
+    --ui-badge-pad-md: 1px calc(var(--ui-space-unit) * 1.5);
+
     /* Typography — families. Latin face first, so ASCII always renders in the theme's face; the
        chrome and reading text share Plex Sans — the chrome reads the sans by name, so a chosen
        Latin face reaches it as in every theme — with Noto behind it for Han, and JetBrains Mono
@@ -373,10 +382,22 @@
     --ui-stream-reveal: typewriter;
     --ui-stream-rate: 90;
 
-    /* Icons */
+    /* Icons: the pixel drawings carry no duotone body (0), and decorative icons are hidden, so
+       the hues are declared but unread — the chart palette's terminal hues, with a cool grey
+       for slate, each a 3:1 mark on the page */
     --ui-icon-stroke: 1.4;
     --ui-icon-cap: butt;
     --ui-icon-join: miter;
+    --ui-icon-duo-opacity: 0;
+    --ui-icon-tint-blue: #2f6bd8;
+    --ui-icon-tint-violet: #5b3fd6;
+    --ui-icon-tint-pink: #b0177e;
+    --ui-icon-tint-red: #c8123f;
+    --ui-icon-tint-orange: #d24b1f;
+    --ui-icon-tint-amber: #a87d00;
+    --ui-icon-tint-green: #1f7a1f;
+    --ui-icon-tint-teal: #0e7490;
+    --ui-icon-tint-slate: #5c6470;
 
     /* Focus, selection and scrollbar: a 1px accent outline off the edge; always-visible square
        thumbs on a tinted track. */
@@ -487,6 +508,17 @@
     --ui-switch-track: var(--color-gray-700);
     --ui-switch-knob: var(--ui-fg);
 
+    /* Icons: the hues lifted with the chart palette */
+    --ui-icon-tint-blue: #5696fd;
+    --ui-icon-tint-violet: #9b7bff;
+    --ui-icon-tint-pink: #ff6ac1;
+    --ui-icon-tint-red: #ff5c8a;
+    --ui-icon-tint-orange: #ff795b;
+    --ui-icon-tint-amber: #f2c230;
+    --ui-icon-tint-green: #3ddc84;
+    --ui-icon-tint-teal: #22d3ee;
+    --ui-icon-tint-slate: #9aa3ad;
+
     /* Focus, selection and scrollbar */
     --ui-selection-bg: color-mix(in srgb, var(--ui-accent) 32%, transparent);
     --ui-scrollbar-thumb: #2f2b2b;
@@ -501,9 +533,9 @@
    * `animate-spin` and `.ui-frame` redraw a card's box.
    *
    * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
-   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream. `.ui-glass`
-   * and `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens, and the page
-   * behind a dialog is dimmed, not blurred.
+   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream, glyph.
+   * `.ui-glass` and `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens,
+   * and the page behind a dialog is dimmed, not blurred.
    */
 
   /* Group label on the h6 rung (theme.css): the chrome face, uppercase, tracked — and muted. */
@@ -625,6 +657,20 @@
      information (status marks, file kinds, tool glyphs, avatars) never take the hook and stay. */
   :root[data-theme="geek"] .ui-icon-decor {
     display: none;
+  }
+
+  /* Icons are pixel drawings: every glyph that has one (the registry's and the marks') shows its
+     16x16 drawing on crisp edges in place of the line drawing, the way claude.dev draws its
+     marks. From a 13px box up the drawing keeps one cell to a CSS pixel and may spill a pixel or
+     two past the box, so the box must not clip it. */
+  :root[data-theme="geek"] .ui-glyph {
+    overflow: visible;
+  }
+  :root[data-theme="geek"] .ui-glyph > [data-set="line"] {
+    display: none;
+  }
+  :root[data-theme="geek"] .ui-glyph > [data-set="pixel"] {
+    display: inline;
   }
 
   /* Nested rows hang off `└` elbows, the way claude.dev prints its tree, and the box goes: the

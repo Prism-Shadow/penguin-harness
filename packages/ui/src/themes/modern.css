@@ -1,15 +1,14 @@
 /**
  * Frost (`modern`) — soft, roomy, quiet. A cool-neutral off-white with almost no lines: the
- * navigation column is a soft grey beside a near-white main column (flat — no field, no
- * floating sheet), grouping comes from soft grey fills rather than borders, a card's edge is a
- * hairline that barely exists, dialogs are opaque on a dimmed backdrop with large corners; pill
- * controls, regular-weight titles set large with negative tracking, a light frost on the small
- * layers that float over content, motion that springs and de-blurs, and work in progress shown
- * by nothing more than a highlight sweeping across its label. References: the owner's three
- * captures of 2026-09-29 (a grey sidebar beside a near-white transcript, an opaque About dialog
- * on a blurred page, a settings dialog whose rows sit in soft-filled groups), with Codex /
- * macOS for the lineless working state; the earlier sierra.ai warm field and floating sheet
- * were retired at that review.
+ * navigation column is frosted glass over a soft pastel field beside a near-white main column,
+ * grouping comes from soft grey fills rather than borders, a card's edge is a hairline that
+ * barely exists, dialogs are opaque on a dimmed backdrop with large corners; pill controls,
+ * regular-weight titles set large with negative tracking, a light frost on the small layers
+ * that float over content and on the plugin and skill tiles, motion that springs and de-blurs,
+ * and work in progress shown by nothing more than a highlight sweeping across its label.
+ * References: the owner's captures of 2026-09-29 (a sidebar beside a near-white transcript, an
+ * opaque About dialog, a settings dialog whose rows sit in soft-filled groups), with Codex /
+ * macOS for the lineless working state and the frosted sidebar.
  *
  * Status of each group:
  * - Light is a near-neutral grey ramp with a faint cool cast: the canvas `#fafafa` (never a
@@ -193,15 +192,18 @@
     --ui-glass-saturate: 1.2;
     --ui-glass-line: rgb(0 0 0 / 0.06);
 
-    /* Shell: flat. The navigation column is the muted grey, the main column the canvas, and the
-       change of fill is the whole edge between them — no field, no washes, no gap, no corner,
-       no shadow (the floating sheet was retired at the owner's review of 2026-09-29). */
-    --ui-shell-field: var(--ui-surface-muted);
-    --ui-shell-wash-1: transparent;
-    --ui-shell-wash-2: transparent;
-    --ui-shell-nav-bg: var(--ui-surface-muted);
+    /* Shell: the navigation column is frosted glass — milky white let through at a little over
+       half — over a soft pastel field, a cool sky wash from the top corner and a lilac one from
+       the bottom, and the main column the opaque canvas; no gap, corner or shadow. The washes
+       stop where the muted ink still clears 4.5:1 on the glass at their strongest (the contrast
+       suite measures that point), so the field stays a tint, never a colour. A faint cool rule
+       parts the column from the canvas. */
+    --ui-shell-field: #eef1f6;
+    --ui-shell-wash-1: rgb(143 189 245 / 0.38);
+    --ui-shell-wash-2: rgb(201 173 239 / 0.38);
+    --ui-shell-nav-bg: rgb(255 255 255 / 0.55);
     --ui-shell-main-bg: var(--ui-canvas);
-    --ui-shell-line: transparent;
+    --ui-shell-line: rgb(28 40 72 / 0.08);
     --ui-shell-gap: 0px;
     --ui-shell-radius: 0px;
     --ui-shell-shadow: 0 0 #0000;
@@ -221,6 +223,12 @@
     --ui-switch-knob: var(--ui-fg-muted);
     --ui-switch-knob-on: var(--ui-accent-fg);
     --ui-switch-knob-line: rgb(0 0 0 / 0.1);
+
+    /* Badges: a soft tag is its tint alone, with no rule round it (a tone's line is its tint
+       here anyway), set in the semibold cut, and the md tag is padded half a space unit by two. */
+    --ui-badge-soft-ring: 0px;
+    --ui-badge-weight: 600;
+    --ui-badge-pad-md: calc(var(--ui-space-unit) * 0.5) calc(var(--ui-space-unit) * 2);
 
     /* Typography — families. MiSans sets Latin and Chinese alike; the system CJK faces stay ahead
        of the generic fallbacks for the rare ideograph MiSans's slices do not carry. Chrome and
@@ -348,10 +356,23 @@
     --ui-stream-reveal: fade;
     --ui-stream-rate: 220;
 
-    /* Icons */
+    /* Icons: the line set at 1.6 with round ends, a soft duotone body under each glyph that has
+       one, and a hue per glyph for the decorative icons (the `ui-icon-decor` recipe below) —
+       low-to-mid chroma, all at one luminance so no hue outweighs another, each a 3.6:1 mark
+       or better on the glass column over its washes and on every page surface. */
     --ui-icon-stroke: 1.6;
     --ui-icon-cap: round;
     --ui-icon-join: round;
+    --ui-icon-duo-opacity: 0.18;
+    --ui-icon-tint-blue: oklch(58.5% 0.115 255);
+    --ui-icon-tint-violet: oklch(59.5% 0.12 295);
+    --ui-icon-tint-pink: oklch(60% 0.12 350);
+    --ui-icon-tint-red: oklch(60% 0.13 22);
+    --ui-icon-tint-orange: oklch(59.5% 0.125 48);
+    --ui-icon-tint-amber: oklch(59% 0.115 78);
+    --ui-icon-tint-green: oklch(57.5% 0.105 150);
+    --ui-icon-tint-teal: oklch(57.5% 0.085 190);
+    --ui-icon-tint-slate: oklch(58.5% 0.03 250);
 
     /* Focus, selection and scrollbar. The outline follows the element's radius, so pills get a
        round halo; inputs draw theirs as a box-shadow. */
@@ -474,13 +495,30 @@
     --ui-glass-bg: rgb(35 36 38 / 0.85);
     --ui-glass-line: rgb(255 255 255 / 0.08);
 
-    /* Shell: the navigation column a step below the canvas; the rest keeps its base values */
-    --ui-shell-field: #17181a;
-    --ui-shell-nav-bg: #17181a;
+    /* Shell: the same glass, smoked — the column a shade under the canvas, over a deep blue and
+       a plum wash — and a dark rule parting it from the canvas; the rest keeps its base values */
+    --ui-shell-field: #16171b;
+    --ui-shell-wash-1: rgb(64 104 168 / 0.4);
+    --ui-shell-wash-2: rgb(112 84 156 / 0.34);
+    --ui-shell-nav-bg: rgb(28 29 32 / 0.5);
+    --ui-shell-line: rgb(0 0 0 / 0.4);
 
     /* Controls: the dark off track, and the body ink as the knob on it */
     --ui-switch-track: var(--color-gray-700);
     --ui-switch-knob: var(--ui-fg);
+
+    /* Icons: the duotone body a little stronger on the dark page, and the hues lifted to the
+       muted ink's lightness, chroma eased so none glows */
+    --ui-icon-duo-opacity: 0.22;
+    --ui-icon-tint-blue: oklch(72% 0.095 255);
+    --ui-icon-tint-violet: oklch(72% 0.1 295);
+    --ui-icon-tint-pink: oklch(72% 0.1 350);
+    --ui-icon-tint-red: oklch(72% 0.11 22);
+    --ui-icon-tint-orange: oklch(72% 0.105 50);
+    --ui-icon-tint-amber: oklch(72% 0.1 80);
+    --ui-icon-tint-green: oklch(72% 0.09 150);
+    --ui-icon-tint-teal: oklch(72% 0.075 190);
+    --ui-icon-tint-slate: oklch(72% 0.025 250);
 
     /* Focus, selection and scrollbar */
     --ui-focus-ring: 3px solid color-mix(in srgb, var(--ui-accent) 40%, transparent);
@@ -497,15 +535,18 @@
    * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
    * window's columns.
    *
-   * Frost gives all fifteen a recipe: glass, eyebrow (its ink; the rung is theme.css's),
-   * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart,
-   * scrim, stream.
+   * Frost gives fourteen of the sixteen a recipe: glass, eyebrow (its ink; the rung is
+   * theme.css's), display, live, frame, underline-nav, shell, icon-decor, tree, field, activity,
+   * notice, chart, stream. `.ui-scrim` is a documented no-op: the page behind a dialog is the
+   * host's dim alone. `.ui-glyph` needs none: the line drawings theme.css shows are Frost's own,
+   * and their duotone bodies show through `--ui-icon-duo-opacity`.
    */
 
   /* Frosted transient layer: menus, popovers, tooltips and the floating composer — the small
-     layers with content moving underneath, which is what a light frost shows. Never on cards,
-     the sidebar or the login card, where nothing scrolls behind. Elevation stays the host's own
-     shadow token; the edge is the glass hairline, barely there. */
+     layers with content moving underneath, which is what a light frost shows. Not on cards or
+     the login card; the navigation column's glass is the shell's (below), a plugin tile's its
+     own anatomy (`data-glass="tile"`, below). Elevation stays the host's own shadow token; the
+     edge is the glass hairline, barely there. */
   :root[data-theme="modern"] .ui-glass {
     background-color: var(--ui-glass-bg);
     -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
@@ -525,6 +566,39 @@
     border-color: transparent;
     border-radius: var(--ui-radius-lg);
   }
+  /* Frost parts a dialog by space and type, not by rules — as it parts a frame's head from its
+     body — so the head and the foot draw none; a rule there would also stop short of the card's
+     sides by the card's own hairline. */
+  :root[data-theme="modern"]
+    .ui-glass[role="dialog"]
+    > :is([data-slot="head"], [data-slot="foot"]) {
+    border-color: transparent;
+  }
+  /* A plugin or skill tile is a small frosted tile in its own hue, on its host's corner. The
+     host sets the hue as its ink, so `currentColor` is the tile's colour: a tenth of it is the
+     glass, an inner glow of it deepens the tile toward its foot, a hairline of it is the edge, a
+     white inner highlight lights the top, and a soft drop of it sets the tile on the card. The
+     deepening is an inset shadow rather than a gradient — gradients belong to the hooks whose
+     job needs one. */
+  :root[data-theme="modern"] .ui-glass[data-glass="tile"] {
+    background-color: color-mix(in oklab, currentColor 11%, transparent);
+    border-color: transparent;
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.8),
+      inset 0 0 0 1px color-mix(in oklab, currentColor 16%, transparent),
+      inset 0 -10px 14px -10px color-mix(in oklab, currentColor 20%, transparent),
+      0 1px 2px color-mix(in oklab, currentColor 14%, transparent);
+    -webkit-backdrop-filter: blur(8px) saturate(1.4);
+    backdrop-filter: blur(8px) saturate(1.4);
+  }
+  :root[data-theme="modern"].dark .ui-glass[data-glass="tile"] {
+    background-color: color-mix(in oklab, currentColor 14%, transparent);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.1),
+      inset 0 0 0 1px color-mix(in oklab, currentColor 22%, transparent),
+      inset 0 -10px 14px -10px color-mix(in oklab, currentColor 22%, transparent),
+      0 1px 2px rgb(0 0 0 / 0.3);
+  }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :root[data-theme="modern"] .ui-glass {
       background-color: color-mix(in srgb, var(--ui-overlay) 96%, transparent);
@@ -535,30 +609,36 @@
       background-color: color-mix(in srgb, var(--ui-overlay) 96%, transparent);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+    }
+    /* The tile's tint is laid on the card's own surface instead of let through. */
+    :root[data-theme="modern"] .ui-glass[data-glass="tile"] {
+      background-color: color-mix(in oklab, currentColor 11%, var(--ui-surface));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    :root[data-theme="modern"].dark .ui-glass[data-glass="tile"] {
+      background-color: color-mix(in oklab, currentColor 14%, var(--ui-surface));
     }
   }
 
-  /* The scrim — the dimmed layer behind a dialog, drawer or sheet: the page blurs behind it
-     under the host's dim (--ui-overlay-backdrop), the reference's frosted backdrop, in both
-     modes. The blur is the scrim's backdrop only — a backdrop filter never reaches an element's
-     own descendants — so a dialog drawn inside the scrim stays sharp; and the scrim is already
-     fixed to the viewport, so becoming a containing block moves nothing. Without backdrop
-     filters, or under reduced transparency, the dim alone remains. */
-  :root[data-theme="modern"] .ui-scrim {
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
+  /* A menu's rows — a Menu's items in a dropdown, a select's options — are inset bands rather
+     than edge-to-edge ones: on the panel's large corner a full-width band is cut by the curve
+     where the first or last row lights up. Each row stands one space unit in from the panel's
+     sides (its block padding is the unit already) and is rounded concentric with the panel —
+     the panel's radius less its hairline and that unit; the inset comes out of the row's own
+     inline padding, so its text keeps the column a menu's label and separator line up with. */
+  :root[data-theme="modern"] .ui-glass:not([role="dialog"]) [role="menu"] > [role^="menuitem"],
+  :root[data-theme="modern"] .ui-glass[role="listbox"] > [role="option"] {
+    width: calc(100% - 2 * var(--ui-space-unit));
+    margin-inline: var(--ui-space-unit);
+    padding-inline: calc(var(--ui-space-unit) * 2);
+    border-radius: calc(var(--ui-radius-md) - var(--ui-border-w) - var(--ui-space-unit));
   }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    :root[data-theme="modern"] .ui-scrim {
-      background-color: var(--ui-overlay-backdrop);
-    }
-  }
-  @media (prefers-reduced-transparency: reduce) {
-    :root[data-theme="modern"] .ui-scrim {
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-  }
+
+  /* The scrim — the dimmed layer behind a dialog, drawer or sheet — is the host's dim
+     (--ui-overlay-backdrop) alone: the page behind a dialog is dimmed, never frosted. Frost's
+     frost is for the chrome a reader works in (the navigation column, the plugin tiles) and the
+     small layers floating over content, and the dialog itself is opaque. No recipe. */
 
   /* Group label, in sentence case on the h6 rung (theme.css), in the muted ink. */
   :root[data-theme="modern"] .ui-eyebrow {
@@ -642,26 +722,43 @@
     background-color: var(--ui-accent);
   }
 
-  /* The app window, flat: the navigation column on the muted grey, the main column and the dock
-     on the canvas, and the change of fill the whole edge between them — the shell tokens set no
-     gap, corner, shadow or wash, so the recipe below (which still reads them, as the tokens may
-     yet say otherwise) paints nothing but the two fills. A host's rule between the columns turns
-     transparent. */
+  /* The app window: the navigation column is frosted glass over the field, the main column and
+     the dock the opaque canvas — the reading surface — with no rule between those two. The field
+     is painted on the window, so the glass shows it only where the column is; the washes are
+     sized in rem rather than by the window, so the column reads the same at every width: the
+     sky from its top corner, the lilac from its bottom one. The column's edge is the host's rule
+     in the faint shell line, with a hairline highlight just inside it, the glass's lit edge.
+     The column carries no backdrop filter: the field is all that lies behind it, already soft,
+     so a blur would change no pixel — and a backdrop filter would make the column a stacking
+     context and a containing block for fixed descendants, which the window's columns must
+     never be (they open menus). Under reduced transparency the column is the opaque muted
+     surface. */
   :root[data-theme="modern"] .ui-shell {
     background-color: var(--ui-shell-field);
     background-image:
-      radial-gradient(70% 60% at 0% 0%, var(--ui-shell-wash-1), transparent 70%),
-      radial-gradient(60% 55% at 100% 100%, var(--ui-shell-wash-2), transparent 70%);
+      radial-gradient(36rem 30rem at 0% 0%, var(--ui-shell-wash-1), transparent 70%),
+      radial-gradient(34rem 32rem at 0% 100%, var(--ui-shell-wash-2), transparent 70%);
   }
   :root[data-theme="modern"] .ui-shell > [data-slot="nav"] {
     background-color: var(--ui-shell-nav-bg);
     border-color: var(--ui-shell-line);
+    box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.7);
+  }
+  :root[data-theme="modern"].dark .ui-shell > [data-slot="nav"] {
+    box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.05);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :root[data-theme="modern"] .ui-shell > [data-slot="nav"],
+    :root[data-theme="modern"].dark .ui-shell > [data-slot="nav"] {
+      background-color: var(--ui-surface-muted);
+      box-shadow: none;
+    }
   }
   :root[data-theme="modern"] .ui-shell > [data-slot="main"],
   :root[data-theme="modern"] .ui-shell > [data-slot="dock"] {
     margin: var(--ui-shell-gap);
     border-radius: var(--ui-shell-radius);
-    border-color: var(--ui-shell-line);
+    border-color: transparent;
     background-color: var(--ui-shell-main-bg);
     box-shadow: var(--ui-shell-shadow);
     overflow: clip;
@@ -670,11 +767,41 @@
   :root[data-theme="modern"] .ui-shell > [data-slot="main"] + [data-slot="dock"] {
     margin-inline-start: 0;
   }
-  /* Decorative icons are drawn in the muted ink, as the reference's sidebar draws its glyphs —
-     quiet, one colour, beside labels in the body ink; a menu row's icon keeps the row's own ink
-     (a danger row's stays as red as its label). Ink only: no tinted chip behind an icon. */
+  /* Decorative icons wear their glyph's hue (`data-tint`, from ICON_TINTS): a nav row's, a group
+     header's and an empty state's icon is coloured by the concept it stands for, soft beside a
+     label in the body ink, its duotone body following the same hue. A decorative icon whose
+     path is not a registry glyph has no tint and keeps the muted ink; a menu row's icon keeps
+     the row's own ink (a danger row's stays as red as its label). Ink only: no tinted chip
+     behind an icon. */
   :root[data-theme="modern"] .ui-icon-decor:not([data-role="menu"]) {
     color: var(--ui-fg-muted);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="blue"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-blue);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="violet"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-violet);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="pink"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-pink);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="red"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-red);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="orange"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-orange);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="amber"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-amber);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="green"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-green);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="teal"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-teal);
+  }
+  :root[data-theme="modern"] .ui-icon-decor[data-tint="slate"]:not([data-role="menu"]) {
+    color: var(--ui-icon-tint-slate);
   }
 
   /* Nested rows sit against a soft guide inside the host's own card: each row past its tree's
@@ -862,9 +989,23 @@
   }
 
   /* A notice laid edge to edge (a banner) is still a rounded card here, so it stands off the
-     column's edges and whatever sits beside it instead of butting its corners against them. */
+     column's edges and whatever sits beside it instead of butting its corners against them —
+     with the same room above and below. What the page renders after it paints over anything
+     reaching past its margin (a page's own header or background is positioned, the banner is
+     not raised: chrome makes no stacking context), so the banner's shadow is fitted to that
+     room: a contact shadow and a soft drop that fades out within about ten pixels below, inside
+     the two and a half units of margin at every font-size tier, instead of the overlay shadow
+     a toast floats on, which reaches twice as far. */
   :root[data-theme="modern"] .ui-notice[data-banner] {
-    margin: calc(var(--ui-space-unit) * 2) calc(var(--ui-space-unit) * 3) 0;
+    margin: calc(var(--ui-space-unit) * 2.5) calc(var(--ui-space-unit) * 3);
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 3px 10px -3px rgb(0 0 0 / 0.1);
+  }
+  :root[data-theme="modern"].dark .ui-notice[data-banner] {
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.3),
+      0 3px 10px -3px rgb(0 0 0 / 0.45);
   }
 
   /* Folds: the chevron sits right after the row's words rather than at its far edge; a tool row

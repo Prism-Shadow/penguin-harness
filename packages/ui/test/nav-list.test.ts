@@ -31,7 +31,7 @@ describe("NavList", () => {
   it("marks the glyph as a nav decoration and keeps labels in the text face", () => {
     const html = list();
     expect(html).toMatch(
-      /<span aria-hidden="true" class="ui-icon-decor shrink-0 text-fg-subtle" data-role="nav"><svg/,
+      /<span aria-hidden="true" class="ui-icon-decor shrink-0 text-fg-subtle" data-role="nav"( data-tint="[a-z]+")?><svg/,
     );
     expect(classTokens(html)).not.toContain("font-mono");
   });

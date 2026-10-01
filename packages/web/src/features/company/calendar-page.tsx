@@ -88,9 +88,9 @@ const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
 const OUTCOME_ICON: Record<OrgCalendarOutcome, string> = {
   fired: ICONS.check,
   queued: ICONS.hourglass,
-  paused: "M9 5v14M15 5v14",
-  missed: "M18 6 6 18M6 6l12 12",
-  error: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01",
+  paused: ICONS.pause,
+  missed: ICONS.cross,
+  error: ICONS.alertCircle,
 };
 
 /** Hour rows of the day and week columns (px per hour): a day is 24 × this tall. */
@@ -506,7 +506,7 @@ export function CalendarPage() {
         <div className="pointer-events-none relative pb-5">
           <p className="mb-1 flex h-5 items-center">
             <span
-              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums ${
+              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--ui-radius-pill)] px-1 text-xs tabular-nums ${
                 isToday
                   ? "bg-accent font-semibold text-accent-fg"
                   : day.inMonth
@@ -634,7 +634,7 @@ export function CalendarPage() {
                   >
                     {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
                     <span
-                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
+                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--ui-radius-pill)] px-1 tabular-nums ${
                         isToday ? "bg-accent text-accent-fg" : ""
                       }`}
                     >

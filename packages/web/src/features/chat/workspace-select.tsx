@@ -17,11 +17,15 @@ import { S } from "../../lib/strings";
 import { WorkspaceFinder } from "./workspace-finder";
 import { baseName } from "./workspace-finder-model";
 
-/** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
+/**
+ * Shared style for the draft page's pill triggers (a small capsule: icon, short name, collapse
+ * arrow). The capsule is the theme's pill radius, so it is round where pills are and square
+ * where they are not.
+ */
 export const pillClass =
-  "flex max-w-64 items-center gap-1.5 rounded-full border border-gray-300 bg-white py-1 pl-1.5 pr-2 " +
-  "text-xs text-gray-600 transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 " +
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+  "flex max-w-64 items-center gap-1.5 rounded-[var(--ui-radius-pill)] border border-line-emphasis " +
+  "bg-surface py-1 pl-1.5 pr-2 text-xs text-fg-muted transition-colors duration-150 " +
+  "hover:bg-surface-muted hover:text-fg";
 
 /**
  * Workspace selection: the trigger shows the selected directory's name (empty = a temporary
@@ -122,7 +126,7 @@ export function WorkspaceSelect({
     <GlyphIcon
       d={ICONS.folder}
       size={ICON_SIZE.rowLead}
-      className={`text-gray-400 ${extraClass}`}
+      className={`text-fg-subtle ${extraClass}`}
     />
   );
 
@@ -169,7 +173,7 @@ export function WorkspaceSelect({
       >
         {folderIcon("ml-0.5")}
         <span className={`min-w-0 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
-        <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
+        <Chevron open={open} size={ICON_SIZE.chevronDense} className="shrink-0 text-fg-subtle" />
       </button>
       {finder}
     </>

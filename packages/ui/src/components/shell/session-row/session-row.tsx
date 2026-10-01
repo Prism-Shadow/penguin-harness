@@ -36,6 +36,7 @@ import { AgentAvatar } from "../../icons/avatars/agent-avatar";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { NAV_FILL } from "../../navigation/nav-list/nav-list";
+import { setDragPreview } from "../../overlays/drag-preview/drag-preview";
 import { Dropdown } from "../../overlays/dropdown/dropdown";
 import { MenuItem } from "../../overlays/menu/menu";
 import type { AnchorRect } from "../../overlays/portal-panel/context-menu";
@@ -179,7 +180,11 @@ export interface SessionRowProps {
   /** The "more" button's name and hint. */
   moreLabel: string;
   onOpen: () => void;
-  /** Manual order: the row can be dragged (the caller wires the handlers). */
+  /**
+   * Manual order: the row can be dragged (the caller wires the handlers); its drag image is the
+   * row's opaque chip (`setDragPreview`), never the bare text the browser would lift off the
+   * column.
+   */
   draggable?: boolean;
   /** While another row is dragged over this one: the edge the drop would land on. */
   dropEdge?: "above" | "below" | null;
@@ -241,7 +246,17 @@ export function SessionRow({
     <li
       className="relative"
       {...(draggable
-        ? { draggable: true, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
+        ? {
+            draggable: true,
+            onDragStart: (e: ReactDragEvent) => {
+              if (e.target === e.currentTarget) setDragPreview(e);
+              onDragStart?.(e);
+            },
+            onDragEnd,
+            onDragOver,
+            onDragLeave,
+            onDrop,
+          }
         : {})}
     >
       {/* The drop line: a thin accent rule on the edge a dragged row would land on. */}

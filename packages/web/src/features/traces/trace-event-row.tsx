@@ -14,6 +14,7 @@
 import { Fragment, useState } from "react";
 import {
   Badge,
+  GlyphIcon,
   ICONS,
   REHYPE_PLUGINS,
   REMARK_PLUGINS,
@@ -34,47 +35,41 @@ export function typeBadge(type: string): BadgeStyle {
   return { tone: "attention" };
 }
 
-/** Icon for each event type (24×24 line path). */
+/**
+ * The glyph of each event type; a type not listed wears the circled exclamation. Where the chat
+ * already has a mark for the same thing, the event wears it: the stopped square for an abort,
+ * the squeeze for compaction, the agent pair for a subagent.
+ */
 const TYPE_ICON: Record<string, string> = {
-  text: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
-  thinking: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3 11v2h6v-2a6 6 0 0 0-3-11z",
-  image_url: "M3 5h18v14H3zM3 15l5-5 4 4 3-3 6 6",
-  inline_data: "M3 5h18v14H3zM3 15l5-5 4 4 3-3 6 6",
+  text: ICONS.bubbleLines,
+  thinking: ICONS.lightbulb,
+  image_url: ICONS.image,
+  inline_data: ICONS.image,
   tool_call: ICONS.wrench,
-  tool_call_output: "M4 6l4 4-4 4M12 18h8",
+  tool_call_output: ICONS.terminalPrompt,
   token_usage: ICONS.barChart,
-  request_begin: "M5 12h14M13 6l6 6-6 6",
-  request_end: "M19 12H5M11 6l-6 6 6 6",
-  approval_decision: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z",
-  compaction_begin: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
-  compaction_end: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
-  abort: "M6 6h12v12H6z",
-  subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
+  request_begin: ICONS.arrowRightCentered,
+  request_end: ICONS.arrowLeftCentered,
+  approval_decision: ICONS.shieldCheck,
+  compaction_begin: ICONS.compress,
+  compaction_end: ICONS.compress,
+  abort: ICONS.stopCircle,
+  subagent: ICONS.robotPair,
   // A hook's answer: the hook glyph the settings tab and the harness card use.
   hook: ICONS.fishHook,
-  // MCP connect pair: a plug shape; tool_list_ready reuses the wrench (a toolset record).
-  mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
-  mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
+  // MCP connect pair: a plug; tool_list_ready reuses the wrench (a toolset record).
+  mcp_connect_begin: ICONS.plug,
+  mcp_connect_end: ICONS.plug,
   tool_list_ready: ICONS.wrench,
 };
-const DEFAULT_ICON = "M12 8v5m0 3h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z";
 
 function TypeIcon({ type }: { type: string }) {
   return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="shrink-0 text-gray-400 dark:text-gray-500"
-      aria-hidden
-    >
-      <path d={TYPE_ICON[type] ?? DEFAULT_ICON} />
-    </svg>
+    <GlyphIcon
+      d={TYPE_ICON[type] ?? ICONS.alertCircle}
+      size={13}
+      className="text-gray-400 dark:text-gray-500"
+    />
   );
 }
 

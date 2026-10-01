@@ -78,11 +78,11 @@ export function ShortcutRecorder({
   } else if (chord !== null) {
     content = <ChordKbd chord={chord} />;
   } else {
-    content = <span className="text-gray-400 dark:text-gray-500">{S.shortcuts.unbound}</span>;
+    content = <span className="text-fg-subtle">{S.shortcuts.unbound}</span>;
   }
 
   return (
-    <div className="flex flex-col items-end gap-0.5">
+    <div className="flex flex-col items-end gap-1">
       <button
         ref={buttonRef}
         type="button"
@@ -92,16 +92,19 @@ export function ShortcutRecorder({
           if (!recording) update(recorderStart());
         }}
         onBlur={() => update(RECORDER_IDLE)}
-        className={`min-w-28 rounded-md border px-2 py-1 text-xs transition-colors duration-150 ${
+        // A control that holds a value rather than one that acts, so it wears the text-control
+        // box (the theme's field radius and line) rather than a button's; recording, it takes
+        // the focused field's line and ring.
+        className={`min-w-28 rounded-md border px-2 py-1 text-xs transition-[color,background-color,border-color,box-shadow] duration-150 ${
           recording
-            ? "border-gray-500 text-gray-500 ring-2 ring-gray-400/40 dark:border-gray-400 dark:text-gray-400"
-            : "border-gray-300 text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            ? "border-fg-muted text-fg-muted [box-shadow:var(--ui-focus-ring-input)]"
+            : "border-line-emphasis text-fg hover:bg-surface-muted"
         }`}
       >
         {content}
       </button>
       {state.phase === "recording" && (
-        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        <p className="text-xs text-fg-muted">
           {state.notice === "needsModifier" ? S.shortcuts.needsModifier : S.shortcuts.recordHint}
         </p>
       )}

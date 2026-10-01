@@ -92,6 +92,13 @@ export const en: Strings = {
     use: "Enable",
     stopUsing: "Disable",
     updateAll: (count: number) => `Update all (${count})`,
+    updateAllConfirm: (count: number) =>
+      `Update ${count === 1 ? "this machine" : `these ${count} machines`} to this server's version? Each one reinstalls the program, restarts its server and reconnects, so anyone using it is briefly cut off.`,
+    /** Asked before letting machines go: the connection drops, the install stays. */
+    stopUsingOne: (alias: string) =>
+      `Disable ${alias}? This Project disconnects from it and stops listing it; whatever is running through it is cut off. The program stays on that machine, so you can enable it again later.`,
+    stopUsingMany: (count: number) =>
+      `Disable these ${count} machines? This Project disconnects from them and stops listing them; whatever is running through them is cut off. The program stays on those machines, so you can enable them again later.`,
     selectedCount: (count: number) => `${count} selected`,
     pickAll: "all",
     pickNone: "none",
@@ -124,6 +131,8 @@ export const en: Strings = {
     replaceProgram: "Force install",
     replaceProgramWhy:
       "Whatever is on that machine now, put this build's program there and restart its server — anyone using it will be interrupted.",
+    replaceProgramConfirm: (alias: string) =>
+      `Force install on ${alias}? Whatever is on that machine now, this server's build is installed and its server restarted; anyone using it will be interrupted.`,
     refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
     refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
     details: "Details",
@@ -175,7 +184,8 @@ export const en: Strings = {
       "Hold Ctrl or Alt (⌘ or ⌃ on macOS); Shift only together with them. Or use an F key",
     resetRow: "Restore default",
     resetAll: "Reset all",
-    resetAllBody: (n: number): string => `Restore ${n} shortcuts to their defaults?`,
+    resetAllBody: (n: number): string =>
+      n === 1 ? "Restore 1 shortcut to its default?" : `Restore ${n} shortcuts to their defaults?`,
     conflictSame: (other: string): string =>
       `Shares its shortcut with "${other}"; only the first in the list fires`,
     conflictShadowed: (other: string, surface: string): string =>
@@ -371,6 +381,9 @@ export const en: Strings = {
     creditsLicense: "License",
     creditsSource: "Source",
     creditsLicenseText: "Full license text",
+    /** The Credits page's two groups: the bundled fonts, and the icon families the icons are drawn from. */
+    creditsFonts: "Fonts",
+    creditsIcons: "Icons",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -440,6 +453,12 @@ export const en: Strings = {
     pluginSecretClear: "Clear stored value",
     /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
     pluginConfigMachine: "Machine",
+    /** A plugin group's action: it runs once on the picked machine, and only the plugin knows what it does. */
+    pluginActionTitle: "Run plugin action",
+    pluginActionRun: "Run",
+    /** `machine` is the picked machine's name, null for this server. */
+    pluginActionConfirm: (action: string, machine: string | null): string =>
+      `Run "${action}" on ${machine ?? "this server"}? It runs on that machine right away; what it does is up to the plugin.`,
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
     uploadLimitsTitle: "Upload limits",
@@ -508,6 +527,11 @@ export const en: Strings = {
     companyModePersonalInfo:
       "Off only hides your own mode switch; organizations keep running. The admin master switch sits under Server.",
     companyModeServer: "Enable company mode",
+    /** Asked before the master switch goes off (turning it on does not ask). */
+    companyModeOffTitle: "Turn off company mode",
+    companyModeOff: "Turn off",
+    companyModeOffBody:
+      "Turn off company mode? The organization scheduler stops for the whole server, nobody can open organization pages, and triggers missed meanwhile are not run when it comes back on. Organizations on disk are untouched.",
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
     accentNames: {
@@ -561,6 +585,10 @@ export const en: Strings = {
     noHistory: "No versions recorded yet.",
     current: "current",
     restore: "Restore",
+    restoreTitle: "Restore version",
+    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    restoreConfirm: (revision: string) =>
+      `Restore version ${revision}? The workflow's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
     remove: "Remove",
     fillApp: "Fill the app",
     /** `palette` is the formatted palette.toggle chord, null while unbound. */
@@ -790,6 +818,10 @@ export const en: Strings = {
     confirmSaveTitle: "Save changes",
     confirmSaveBody:
       "Save these changes? They will be written to the configuration files on the server.",
+    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    discardTitle: "Discard unsaved changes",
+    discardBody: "Discard your unsaved changes? They cannot be recovered.",
+    discard: "Discard",
     none: "(none)",
     retry: "Retry",
     unknownError: "Request failed, please try again later",
@@ -898,6 +930,9 @@ export const en: Strings = {
     restoreDefault: "Restore default",
     /** The same, named for what it restores: two of these sit on one page. */
     restoreDefaultOf: (subject: string) => `Restore default: ${subject}`,
+    /** Asked before the avatar's restore: the uploaded picture is deleted, unlike the nickname's. */
+    avatarResetConfirm:
+      "Restore the default avatar? The uploaded picture is deleted from the server; to use it again, upload it again.",
     /** The picked image could not be brought under the size limit even as JPEG. */
     avatarTooLarge: "That image is too large. Please pick a smaller one.",
     /** The picked file could not be decoded as an image at all. */
@@ -954,6 +989,9 @@ export const en: Strings = {
     members: "Members",
     addMember: "Add member",
     removeMember: "Remove",
+    removeMemberTitle: "Remove member",
+    removeMemberConfirm: (user: string): string =>
+      `Remove ${user} from this Project? They lose access at once; you can add them back later.`,
     /** New-chat defaults section (Project settings): prefill for every new chat. */
     chatDefaultsTitle: "New chat defaults",
     chatDefaultsHint:
@@ -978,6 +1016,9 @@ export const en: Strings = {
     commandPolicyEnableDesc: "When off, no rule blocks anything.",
     commandPolicyRules: "Rules",
     commandPolicyRestore: "Restore defaults",
+    /** Buffered like every edit (Save writes it), but it replaces the whole list in one click. */
+    commandPolicyRestoreConfirm:
+      "Restore the default rules? Every rule in the list, custom ones included, is replaced once you save.",
     commandPolicyAddRule: "Add rule",
     commandPolicyEditRule: "Edit",
     commandPolicyApplyRule: "Apply",
@@ -1303,6 +1344,9 @@ export const en: Strings = {
     importing: "Importing…",
     importDone: (v: number): string => `Import finished, Agent State version v${v}`,
     importConflictTitle: "Version conflict",
+    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
+    importConfirmBody: (file: string): string =>
+      `Replace the whole Agent State with ${file}? Everything in it is replaced by the snapshot (the Vault is kept); the current version is snapshotted first.`,
     importConflictBody:
       "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
     resetConfigTitle: "Restore default configuration",
@@ -2824,6 +2868,9 @@ Scenarios:
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",
+    processStopTitle: "Stop process",
+    processStopConfirm:
+      "Stop this background process? It ends at once, and the output it captured is dropped with it.",
     processExited: "exited",
     processRemove: "Remove",
     /** Remove button tooltip: removal also drops the output captured from that process. */
@@ -2832,6 +2879,11 @@ Scenarios:
     processClearExited: "Clear exited",
     processClearExitedHint:
       "Clear every exited process — the output captured from them is discarded too",
+    /** An example task, a saved shortcut or a schedule's prompt about to replace text typed in the composer. */
+    replaceTypedTitle: "Replace composer text",
+    replaceTyped: "Replace",
+    replaceTypedBody:
+      "Replace what you typed with this prompt? Your text in the composer is cleared.",
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",
@@ -4117,6 +4169,9 @@ Scenarios:
     /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
     draftRestored: "Restored the draft you had not submitted",
     clearDraft: "Clear draft",
+    clearDraftConfirmLabel: "Clear",
+    clearDraftConfirm:
+      "Clear the draft? Everything filled in here and the saved draft are removed for good.",
     creating: "Creating…",
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "Organization settings",

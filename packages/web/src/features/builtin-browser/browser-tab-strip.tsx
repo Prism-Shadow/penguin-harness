@@ -4,18 +4,25 @@
  * shared by every conversation, so every dock that shows the browser shows the same strip.
  *
  * It is shaped like a browser's rather than like the dock's pills right above it, so the two
- * strips never read as one: it sits on the sidebar's surface, and the active tab takes the
- * toolbar's surface and joins it. Tabs shrink to a minimum before the strip scrolls. A page
- * still loading shows a spinner where its icon goes, and a tab's first page is named after the
- * address it is opening until the page has a title; a crashed page shows the warning glyph; a
- * page an agent is working in carries the busy dot, and one of the heaviest while the browser
- * warns about memory a small warning mark — each named in the tab's tooltip.
+ * strips never read as one: it sits on the muted surface, and the active tab takes the dock's
+ * canvas — the toolbar's surface — and joins it. Tabs shrink to a minimum before the strip
+ * scrolls. A page still loading shows a spinner where its icon goes, and a tab's first page is
+ * named after the address it is opening until the page has a title; a crashed page shows the
+ * warning glyph; a page an agent is working in carries the busy dot, and one of the heaviest
+ * while the browser warns about memory a small warning mark — each named in the tab's tooltip.
  */
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE, PlusIcon, Spinner } from "@prismshadow/penguin-ui";
+import {
+  CloseIcon,
+  Dot,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  PlusIcon,
+  Spinner,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { toneDot, toneInk } from "../../lib/tone";
 import { faviconSrc, isBlankUrl, tabLabel } from "./address";
 import { formatMemory } from "./load";
 
@@ -27,21 +34,19 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
       <span
         role="img"
         aria-label={S.builtinBrowser.crashedTab}
-        className={`shrink-0 ${toneInk.danger}`}
+        className="shrink-0 text-tone-danger-fg"
       >
         <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.inlineGlyph} />
       </span>
     );
   }
   if (tab.loading) {
-    return (
-      <Spinner size="md" label={S.common.loading} className="text-gray-400 dark:text-gray-500" />
-    );
+    return <Spinner size="md" label={S.common.loading} className="text-fg-subtle" />;
   }
   const src = faviconSrc(tab.favicon, window.location.origin);
   if (src === null || src === failed) {
     return (
-      <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
+      <span aria-hidden className="shrink-0 text-fg-subtle">
         <GlyphIcon d={ICONS.globe} size={ICON_SIZE.inlineGlyph} />
       </span>
     );
@@ -82,11 +87,11 @@ export function BrowserTabStrip({
   onNew: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-end gap-0.5 bg-gray-50 px-1.5 pt-1.5 dark:bg-gray-900">
+    <div className="flex shrink-0 items-end gap-1 bg-surface-muted px-1.5 pt-1.5">
       <div
         role="tablist"
         aria-label={S.builtinBrowser.tabs}
-        className="no-scrollbar flex min-w-0 items-end gap-0.5 overflow-x-auto"
+        className="no-scrollbar flex min-w-0 items-end gap-1 overflow-x-auto"
       >
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
@@ -111,9 +116,7 @@ export function BrowserTabStrip({
               data-tab-id={tab.id}
               data-active={active}
               className={`flex h-7 w-48 min-w-20 items-center rounded-t-md pr-1 transition-colors duration-150 ${
-                active
-                  ? "bg-white text-gray-800 dark:bg-gray-950 dark:text-gray-200"
-                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                active ? "bg-canvas text-fg" : "text-fg-muted hover:bg-line-muted hover:text-fg"
               }`}
             >
               <button
@@ -130,18 +133,14 @@ export function BrowserTabStrip({
               >
                 <TabIcon tab={tab} />
                 <span className="min-w-0 truncate">{label}</span>
-                {working && (
-                  <span
-                    aria-hidden
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.busy}`}
-                  />
-                )}
+                {/* Named in the tab's tooltip, so the dot itself is decoration. */}
+                {working && <Dot tone="success" />}
                 {heavy !== null && (
                   <span
                     role="img"
                     aria-label={heavy}
                     data-testid="builtin-browser-heavy-tab"
-                    className={`shrink-0 ${toneInk.attention}`}
+                    className="shrink-0 text-tone-attention-fg"
                   >
                     <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.inlineGlyph} />
                   </span>
@@ -152,7 +151,7 @@ export function BrowserTabStrip({
                 data-tooltip={S.builtinBrowser.closeTab}
                 aria-label={`${S.builtinBrowser.closeTab}: ${label}`}
                 onClick={() => onClose(tab.id)}
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:text-fg"
               >
                 <CloseIcon size={10} />
               </button>
@@ -166,7 +165,7 @@ export function BrowserTabStrip({
         aria-label={S.builtinBrowser.newTab}
         data-testid="builtin-browser-new-tab"
         onClick={onNew}
-        className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+        className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:text-fg"
       >
         <PlusIcon size={ICON_SIZE.rowLead} />
       </button>

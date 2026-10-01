@@ -13,9 +13,14 @@
  * strokes is several subpaths in the one string. Every glyph is stroked at the family's weight,
  * whatever weight it was first drawn at — the weight belongs to the set, not to the mark.
  *
- * The two marks drawn on their own smaller grids (the form-control caret and the close cross)
- * and the rotating chevron are components, not entries: their geometry depends on the grid they
- * are drawn on (`marks.tsx`, `chevron.tsx`).
+ * Every line glyph the apps draw is an entry here: a feature file reads `ICONS` and never spells
+ * out a path of its own (the web app's icon-registry test holds both packages to that), so a
+ * theme that redraws the set reaches every surface.
+ *
+ * The small marks drawn as components are not entries: the form-control caret and the close
+ * cross on their own smaller grids, and the menu check, the create plus and the download and
+ * upload trays at stroke weights of their own (`marks.tsx`); and the rotating collapse chevron
+ * (`chevron.tsx`). Their geometry depends on the grid and the weight they are drawn at.
  */
 
 /**
@@ -23,6 +28,15 @@
  * and the same eye struck through — so the pair cannot drift into looking unrelated.
  */
 const EYE_OUTLINE = "M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z";
+
+/**
+ * lucide's shield outline, shared by the three shields drawn on it (alert, half, check) so they
+ * read as one family. lucide draws each as several `<path>`s; here they are joined into one
+ * string, a relative `m` rewritten as the same absolute move, since a joined path would
+ * otherwise start it from the previous subpath.
+ */
+const SHIELD_OUTLINE =
+  "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z";
 
 export const ICONS = {
   // --- Objects and places -------------------------------------------------------------------
@@ -45,8 +59,24 @@ export const ICONS = {
    */
   robotPair:
     "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01",
+  /**
+   * `robot` shrunk toward the top-left, with a plus in the freed bottom-right corner: a new agent
+   * made. The shrink (0.82 about the origin, then one unit up and to the left) is baked into the
+   * coordinates, since the renderer has nowhere to put a transform; redraw it with `robot`.
+   */
+  robotPlus:
+    "M8.84 5.56V2.28H5.56M3.92 5.56h9.84a1.64 1.64 0 0 1 1.64 1.64v6.56a1.64 1.64 0 0 1-1.64 1.64H3.92a1.64 1.64 0 0 1-1.64-1.64v-6.56a1.64 1.64 0 0 1 1.64-1.64zM.64 10.48h1.64M15.4 10.48h1.64M6.38 9.66h.01M11.3 9.66h.01M7.2 12.53s.66.82 1.64.82 1.64-.82 1.64-.82M18.5 15.5v6M15.5 18.5h6",
   /** A person: head and shoulders (lucide user). The person at the keyboard, beside the agent. */
   user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+  /** A person in the status circle: an account's own identity, apart from the bare `user`. */
+  userCircle:
+    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6.2 18.4a6 6 0 0 1 11.6 0",
+  /** A person with a plus beside them (lucide user-plus): somebody added. */
+  userPlus:
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM19 8v6M22 11h-6",
+  /** Two people, one behind the other (lucide users): a group of people. */
+  users:
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   /**
    * The cerebrum from the side: the lobed outline, then the gyri inside it. The drawing was
    * authored with the whole figure shifted a little down the box; the shift is baked into the
@@ -71,13 +101,28 @@ export const ICONS = {
   chip: "M5 5h14v14H5zM9 9h6v6H9zM7.5 5V2.4M12 5V2.4M16.5 5V2.4M7.5 19v2.6M12 19v2.6M16.5 19v2.6M5 7.5H2.4M5 12H2.4M5 16.5H2.4M19 7.5h2.6M19 12h2.6M19 16.5h2.6",
   /** Two stacked server units, each with its own status lamp. */
   server: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
+  /** A display on its stand: a desktop computer's screen. */
+  monitor: "M3 4h18v12H3zM8 20h8M12 16v4",
+  /** A drive: a slab with its status lamp under a tapering top. */
+  hardDrive: "M3 13h18v6H3zM5 13l2-8h10l2 8M17 16h.01",
+  /** A keyboard: a rounded plate, two rows of keys and a space bar. */
+  keyboard:
+    "M3 6h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 12.5h.01M9.5 12.5h.01M13 12.5h.01M16.5 12.5h.01M8.5 15.5h7",
+  /** A smaller keyboard raised in the box, a chevron under it pointing down. */
+  keyboardChevronDown: "M4 4.5h16v10H4zM7.5 8h.01M12 8h.01M16.5 8h.01M8.5 11.5h7M9 18l3 2.5 3-2.5",
+  /** The same keyboard lowered in the box, a chevron above it pointing up. */
+  keyboardChevronUp: "M4 9.5h16v10H4zM7.5 13h.01M12 13h.01M16.5 13h.01M8.5 16.5h7M9 6.5 12 4l3 2.5",
   /** A trophy: cup, two handles and a base. */
   trophy: "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
   /** A `>_` prompt in a window frame. */
   terminalWindow: "M3 5h18v14H3zM7 9l3 3-3 3M13 15h4",
+  /** A bare `>_` prompt, without the window frame `terminalWindow` draws round it. */
+  terminalPrompt: "M4 6l4 4-4 4M12 18h8",
   /** A tower with wings and windows (lucide building-2). */
   building:
     "M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4",
+  /** A door standing open in its frame, its knob showing (after lucide door-open). */
+  doorOpen: "M13 4h3v16h-3M3 20h11V4L3 6zM10 12h.01",
   /** Two pages meeting at the spine (lucide book-open). */
   bookOpen: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
   /** A globe: the 9-radius circle, its equator and one meridian. */
@@ -101,8 +146,21 @@ export const ICONS = {
   gear: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
   /** A pushpin (lucide pin): head, body and stem. */
   pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z",
+  /** A closed padlock (lucide lock): the rounded body with its shackle seated in it. */
+  lock: "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4",
+  /** The same padlock with its shackle swung open (lucide lock-open). */
+  lockOpen:
+    "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 9.9-1",
   /** A wrench. */
   wrench: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
+  /** A plug: two prongs, the body and its cord trailing below. */
+  plug: "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6",
+  /**
+   * The same plug lifted clear of its socket: prongs up, a gap, and the empty socket cup below.
+   * It differs from `plug` in silhouette rather than in detail, because at icon size a detail is
+   * invisible.
+   */
+  plugLifted: "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4",
   /** A key: a round bow, the shaft and two teeth (feather key). */
   key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
   /**
@@ -111,6 +169,18 @@ export const ICONS = {
    */
   keyOff:
     "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20",
+  /** The shield with an exclamation mark inside (lucide shield-alert). */
+  shieldAlert: `${SHIELD_OUTLINE}M12 8v4M12 16h.01`,
+  /** The shield split down the middle (lucide shield-half). */
+  shieldHalf: `${SHIELD_OUTLINE}M12 22V2`,
+  /** The shield with a check inside (lucide shield-check). */
+  shieldCheck: `${SHIELD_OUTLINE}M9 12l2 2 4-4`,
+  /**
+   * The shield struck through corner to corner, its outline broken where the slash crosses it
+   * (lucide shield-off). Spelled out: the break leaves nothing of the shared outline whole.
+   */
+  shieldOff:
+    "M2 2l20 20M5 5a1 1 0 0 0-1 1v7c0 5 3.5 7.5 7.67 8.94a1 1 0 0 0 .67.01c2.35-.82 4.48-1.97 5.9-3.71M9.309 3.652A12.252 12.252 0 0 0 11.24 2.28a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1v7a9.784 9.784 0 0 1-.08 1.264",
   /** Stacked cylinders: a database. */
   database:
     "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
@@ -119,11 +189,23 @@ export const ICONS = {
   /** A bullseye: two rings and a centre. */
   target:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-5a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
+  /** A bullseye with an arrow lodged at its centre, both rings left open where it flew in. */
+  targetArrow: "M21 12A9 9 0 1 1 12 3M17 12A5 5 0 1 1 12 7M12 12L15 9V5L18 2V6H22L19 9H15",
   /** A coin: a circle stamped with a dollar sign. */
   coin: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-15v12m2.6-9.3c-.5-.8-1.5-1.2-2.6-1.2-1.5 0-2.7.8-2.7 2 0 2.7 5.4 1.3 5.4 4 0 1.2-1.2 2-2.7 2-1.2 0-2.2-.5-2.7-1.4",
   /** A dollar sign in a circle (lucide circle-dollar-sign). */
   dollarCircle:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6",
+  /** A light bulb: the glass, its neck and two lines of the base. */
+  lightbulb: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3 11v2h6v-2a6 6 0 0 0-3-11z",
+  /** A bell and its clapper (lucide bell). */
+  bell: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0",
+  /** A lightning bolt (lucide zap). */
+  zap: "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
+  /** A sun: a disc and eight rays. */
+  sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4",
+  /** Half a sun rising over the horizon, its rays out. */
+  sunrise: "M12 2v3M4.9 5.9l2.1 2.1M2 13h3M19 13h3M17 8l2.1-2.1M6 18a6 6 0 0 1 12 0M2 22h20",
 
   // --- Time ---------------------------------------------------------------------------------
 
@@ -187,6 +269,12 @@ export const ICONS = {
   arrowUpDown: "m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16",
   /** Two overlapping sheets. */
   copy: "M9 9h9v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9zM7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1",
+  /** A clipboard: the board, and the clip at its top edge. */
+  clipboard:
+    "M9 4h6v3H9zM9 5.5H6.5A1.5 1.5 0 0 0 5 7v12a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V7a1.5 1.5 0 0 0-1.5-1.5H15",
+  /** A paperclip (lucide paperclip). */
+  paperclip:
+    "M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48",
   /** A checkmark. */
   check: "M5 13l4 4L19 7",
   /** An archive box with a downward chevron. */
@@ -212,15 +300,30 @@ export const ICONS = {
    * returns with an arrow. The turn is the whole mark, so it keeps the full bulge.
    */
   wrapText: "M4 6h16M4 12h12a3 3 0 1 1 0 6h-3m2-2-2 2 2 2M4 18h5",
+  /** Three lines of text, each shorter than the one above. */
+  textLines: "M4 6h16M4 12h12M4 18h8",
+  /** A hash sign (lucide hash). */
+  hash: "M4 9h16M4 15h16M10 3L8 21M16 3l-2 18",
+  /** A percent sign: a slash between two small rings. */
+  percent:
+    "M19 5 5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+  /** A C in the status circle (lucide copyright). */
+  copyright: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15 9.5a3.5 3.5 0 1 0 0 5",
 
   // --- Messages and actions -----------------------------------------------------------------
 
   /** A speech bubble with a plus: putting something into a conversation rather than sending it. */
   messagePlus: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v6M9 10h6",
+  /** A round speech bubble, open at its upper right, with two lines of text inside. */
+  bubbleLines: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** A paper plane. */
   paperPlane: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
   /** A pane with an arrow leaving it: this opens outside the app, in a tab of its own. */
   externalLink: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3",
+  /** An arrow entering a doorway (lucide log-in). */
+  signIn: "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3",
+  /** An arrow leaving a doorway (lucide log-out). */
+  signOut: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   /** Two links of a chain (lucide link): an address. */
   chainLink:
     "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
@@ -237,8 +340,21 @@ export const ICONS = {
    * has two. The head reaches x=23, past the other glyphs' margin, as drawn upstream.
    */
   rotateCw: "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10",
+  /** One arc turning anticlockwise into an arrowhead at its upper left: `rotateCw` mirrored. */
+  rotateCcw: "M3 12a9 9 0 1 0 2.64-6.36M3 4v5h5",
   /** A plus. `PlusIcon` (marks.tsx) draws this path with a stroke weight of its own. */
   plus: "M12 5v14M5 12h14",
+  /** A minus: the plus's crossbar alone. */
+  minus: "M5 12h14",
+  /**
+   * An X, two strokes corner to corner, on the 24 grid. The close button's cross is a different
+   * mark (`CloseIcon`, drawn on its own smaller grid).
+   */
+  cross: "M18 6 6 18M6 6l12 12",
+  /** A play triangle; drawn with `GlyphIcon`'s `filled` mode where it should read solid. */
+  play: "M7 4l13 8-13 8z",
+  /** Two upright bars: paused. */
+  pause: "M8 4v16M16 4v16",
   /** A magnifier: a lens and its handle. The search box's leading mark and the toggle that opens one. */
   search: "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z",
   /**
@@ -254,6 +370,12 @@ export const ICONS = {
   sliders: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6",
   /** A four-pointed spark: effort and thought, the dial a model thinks harder on. */
   sparkle: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z",
+  /**
+   * A larger four-pointed star with two small plus-shaped companions (lucide sparkles): a fuller
+   * mark than the single `sparkle`.
+   */
+  sparkles:
+    "M12 3l-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275zM5 3v4M19 17v4M3 5h4M17 19h4",
 
   // --- Direction ----------------------------------------------------------------------------
 
@@ -270,6 +392,13 @@ export const ICONS = {
   /** The same chevron pointing right: the next page. */
   chevronRight: "M9 18l6-6-6-6",
   /**
+   * The same chevron pointing down: more below. Not the form-control caret, which is the
+   * `ChevronDown` mark on a grid of its own.
+   */
+  chevronDown: "M6 9l6 6 6-6",
+  /** Two chevrons closing on each other across the middle (lucide chevrons-down-up). */
+  chevronsDownUp: "M7 20l5-5 5 5M7 4l5 5 5-5",
+  /**
    * A chevron pointing left at an upright bar on the left edge: fold a column away against that
    * edge — the sidebar collapsing to its rail.
    */
@@ -284,6 +413,14 @@ export const ICONS = {
   arrowLeftCentered: "M19 12H5m6-6-6 6 6 6",
   /** The mirror of `arrowLeftCentered`, pointing right. */
   arrowRightCentered: "M5 12h14m-6-6 6 6-6 6",
+  /** An arrow pointing straight up, shaft and head centred in the box. */
+  arrowUp: "M12 19V5m-6 6 6-6 6 6",
+  /** The mirror of `arrowUp`, pointing down. */
+  arrowDown: "M12 5v14m-6-6 6 6 6-6",
+  /** An arrow leaving to the upper right (lucide arrow-up-right). */
+  arrowUpRight: "M7 7h10v10M7 17 17 7",
+  /** A capital M with an arrow leaving its top-right shoulder. */
+  letterMArrow: "M4 17V7l4 4 4-4v10M16 7h4v4m0-4-6 6",
 
   // --- Layout -------------------------------------------------------------------------------
 
@@ -291,6 +428,18 @@ export const ICONS = {
   panelBottom: "M4 5h16v14H4zM4 14h16",
   /** A window with a right pane. */
   panelRight: "M4 5h16v14H4zM14 5v14",
+  /** A window with a left pane: the mirror of `panelRight`. */
+  panelLeft: "M4 5h16v14H4zM10 5v14",
+  /** A rounded window with a left pane, and two lines of text in the space beside it. */
+  panelLeftText:
+    "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm4 0v16M12 9h5m-5 4h5",
+  /** The bare window outline the pane glyphs are drawn on: an empty frame. */
+  rectangle: "M4 5h16v14H4z",
+  /** The same frame with a check inside it. */
+  rectangleCheck: "M4 5h16v14H4zM8 12l3 3 5-6",
+  /** A browser window: the rounded frame, its chrome bar and two dots on the bar. */
+  appWindow:
+    "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
   /**
    * A pane with an arrow escaping its top-right corner: this moves out into a window of its own.
    * A different drawing from `externalLink`, whose arrow leaves from the pane's edge.
@@ -311,6 +460,9 @@ export const ICONS = {
   cornersIn: "M3 9h6V3M21 9h-6V3M21 15h-6v6M3 15h6v6",
   /** One box over two, joined by a bus (lucide network). */
   network: "M9 3h6v5H9zM2 16h6v5H2zM16 16h6v5h-6zM5 16v-3h14v3M12 13V8",
+  /** Three nodes: a trunk, and a branch curving off it to a node of its own (lucide git-branch). */
+  gitBranch:
+    "M8 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM20 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM8 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM6 7v8M8 11h4a6 6 0 0 0 6-2",
   /** Three columns of unequal height in a frame (lucide square-kanban). */
   kanban:
     "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM8 7v7M12 7v4M16 7v9",
@@ -325,6 +477,8 @@ export const ICONS = {
 
   /** An info circle: the 9-radius status circle with a bar and a dot inside it. */
   info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01",
+  /** An exclamation mark in the status circle: `info` turned over, a fault rather than a note. */
+  alertCircle: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01",
   /** A question mark in the status circle: the "?" that discloses an explanation (InfoPopover). */
   helpCircle:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 0 1 4.9.8c0 1.7-2.5 2.5-2.5 2.5M12 16.8h.01",

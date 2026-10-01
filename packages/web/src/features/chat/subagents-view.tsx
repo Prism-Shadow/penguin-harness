@@ -37,6 +37,7 @@ import {
   AgentAvatar,
   EmptyState,
   GlyphIcon,
+  ICONS,
   ICON_SIZE,
   StatusIcon,
   Text,
@@ -276,10 +277,7 @@ export function SubagentsView({
               onClick={openAsSession}
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             >
-              <GlyphIcon
-                d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
-                size={ICON_SIZE.rowLead}
-              />
+              <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
             </button>
           </div>
           <div className="min-h-0 flex-1">

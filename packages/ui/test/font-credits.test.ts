@@ -5,13 +5,19 @@
  * Credits page renders to the mirror: every text credited exactly once, every credit's text the
  * file's own, every credit naming the licence its text carries, the vendored face's title and
  * source what `vendored-fonts.json` declares, and the themes a face is credited to the themes
- * whose stacks name it.
+ * whose stacks name it. The icon families' credits are held the same way to the icon sets'
+ * licence texts (src/components/icons/sets/LICENSES/).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BUNDLED_FONT_FAMILIES, THEME_FONTS } from "../src/boot";
-import { FONT_CREDITS, MISANS_LICENSE_TITLE, MISANS_SOURCE } from "../src/fonts/credits";
+import {
+  FONT_CREDITS,
+  ICON_CREDITS,
+  MISANS_LICENSE_TITLE,
+  MISANS_SOURCE,
+} from "../src/fonts/credits";
 import { THEME_IDS } from "../src/tokens";
 import { SRC_DIR } from "./helpers/paths";
 
@@ -57,6 +63,22 @@ describe("FONT_CREDITS", () => {
       expect([...credit!.themes]).toEqual(
         THEME_IDS.filter((id) => Object.values(THEME_FONTS[id]).includes(family)),
       );
+    }
+  });
+});
+
+describe("ICON_CREDITS", () => {
+  it("credits every icon licence in the package once, with the file's own text", () => {
+    const dir = join(SRC_DIR, "components", "icons", "sets", "LICENSES");
+    const files = readdirSync(dir)
+      .filter((name) => name.endsWith(".txt"))
+      .map((name) => name.slice(0, -".txt".length))
+      .sort();
+    expect(ICON_CREDITS.map((credit) => credit.id).sort()).toEqual(files);
+    for (const credit of ICON_CREDITS) {
+      const text = readFileSync(join(dir, `${credit.id}.txt`), "utf8");
+      expect(credit.licenseText, credit.id).toBe(text);
+      expect(credit.licenseText, credit.id).toContain(credit.licenseTitle);
     }
   });
 });

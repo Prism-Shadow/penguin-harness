@@ -393,6 +393,7 @@ export function SkillsTab({
       <ConfirmModal
         open={overwriting !== null}
         title={S.skills.importOverwriteTitle}
+        tone="primary"
         confirmLabel={S.skills.importOverwriteAction}
         cancelLabel={S.common.cancel}
         busy={uploading}
@@ -413,7 +414,7 @@ export function SkillsTab({
         busy={busy}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.skills.uninstall}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

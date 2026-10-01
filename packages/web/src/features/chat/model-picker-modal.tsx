@@ -5,9 +5,11 @@
  * `/model` switch.
  *
  * - **Rows** read as the provider's logo, the model's name and its marks (pickerRowTags: the
- *   models page's default / vision / fast / free / discount pills), then the no-key glyph and
- *   Select's check. The upstream id is not printed; it is the row's tooltip, which also tells apart two
- *   groups' models of the same name.
+ *   models page's default / vision / fast / free / discount marks, drawn as badges), then the
+ *   no-key glyph and Select's check. The upstream id is not printed; it is the row's tooltip,
+ *   which also tells apart two groups' models of the same name. Rail entries and list rows are
+ *   bands inset from the dialog's edges on the row radius, so a theme's rows look the same on
+ *   both sides.
  * - **Opens on the current model**: its group is active and its row highlighted and scrolled
  *   into view. With nothing chosen, the first group with a configured key is active.
  * - **Search** replaces the right side with matches from every group, grouped by provider,
@@ -23,29 +25,33 @@
  *   Enter chooses, Escape empties a typed query first (the shared search box) and then closes
  *   (the Modal's esc layer, so a picker opened from a dialog closes alone). Rows and rail
  *   entries are not in the Tab order, and no click takes focus away from the search field.
- * - **Phone width**: the dialog fills the screen and the rail becomes a strip of group chips
+ * - **Phone width**: the dialog fills the screen and the rail becomes a strip of group entries
  *   scrolling sideways above the list.
  *
  * The state (query, toggle, highlight) lives in the body, which Modal mounts only while open,
- * so each opening starts fresh on the current model.
+ * so each opening starts fresh on the current model. The body is three bands — the search head,
+ * the rail and list, the foot — laid straight into the dialog, so a theme's dialog recipe finds
+ * its head and foot the way it finds Modal's own.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   ChoiceCheck,
   CloseButton,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   Modal,
+  NavList,
   ProviderLogo,
   SearchInput,
+  navRowClass,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
-import { TAG_SHAPE } from "../models/model-tags";
 import { useProject } from "../../state/project";
 import {
   entryRow,
@@ -94,10 +100,11 @@ export function ModelPickerModal({ open, onClose, title, ...body }: ModelPickerM
       title={title}
       headerless
       bare
-      // Sized to its rows — a logo, a name and a few pills on one line — so the list does not
+      // Sized to its rows — a logo, a name and a few marks on one line — so the list does not
       // open an empty band between a name and its check. Full screen on a phone: the rail needs a
       // strip of its own above the list, and a bottom sheet leaves too little height for both.
-      widthClass="sm:max-w-xl max-sm:rounded-none max-sm:border-0"
+      fullScreenOnPhone
+      widthClass="sm:h-[min(32rem,80vh)] sm:max-w-xl max-sm:border-0"
     >
       <ModelPickerBody {...body} onClose={onClose} />
     </Modal>
@@ -262,9 +269,12 @@ function ModelPickerBody({
           // keyboard drives the list must not steal the highlight.
           onMouseMove={isHighlighted ? undefined : onHover}
           onClick={() => onPick(m)}
-          className={`flex w-full items-center gap-2 px-4 py-2 text-left transition-colors duration-150 ${
-            current ? "text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300"
-          }${isHighlighted ? " bg-gray-100 dark:bg-gray-800" : ""}`}
+          // The highlight is the keyboard's and the pointer's at once, so it takes the fill a
+          // picker's highlighted row takes (PickerList); the current model is told by its weight
+          // and its check.
+          className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-fg transition-colors duration-150${
+            isHighlighted ? " bg-line-muted" : ""
+          }`}
         >
           <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
           {/* The marks follow the name rather than the row's far edge, so each reads as part of
@@ -274,13 +284,9 @@ function ModelPickerBody({
               {label}
             </span>
             {pickerRowTags(m, defaultModel, now).map((tag) => (
-              <span
-                key={tag.key}
-                data-tooltip={tag.title}
-                className={`${TAG_SHAPE} shrink-0 ${tag.className}`}
-              >
+              <Badge key={tag.key} tone={tag.tone} size="sm" tooltip={tag.title}>
                 {tag.label}
-              </span>
+              </Badge>
             ))}
           </span>
           {!hasConfiguredKey(m) && (
@@ -288,7 +294,7 @@ function ModelPickerBody({
               role="img"
               data-tooltip={S.models.noKey}
               aria-label={S.models.noKey}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
+              className="shrink-0 text-fg-subtle"
             >
               <GlyphIcon d={ICONS.keyOff} size={ICON_SIZE.inlineGlyph} />
             </span>
@@ -301,20 +307,23 @@ function ModelPickerBody({
 
   const mod = isMacPlatform() ? "⌥" : "Alt+";
   const showToggle = hidden > 0 || showAll;
+  // Every band carries the same two handlers, which the body as a whole needs.
+  const band = {
+    onKeyDown,
+    // The search field keeps focus through every click inside the dialog — a row, a rail
+    // entry, the toggle, or the blank space around them, which would otherwise focus the
+    // panel itself and leave the next keystroke with nowhere to go. Clicks still fire.
+    onMouseDown: (e: ReactMouseEvent<HTMLDivElement>) => {
+      if (e.target !== inputRef.current) e.preventDefault();
+    },
+  };
   return (
-    <div
-      onKeyDown={onKeyDown}
-      // The search field keeps focus through every click inside the dialog — a row, a rail
-      // entry, the toggle, or the blank space around them, which would otherwise focus the
-      // panel itself and leave the next keystroke with nowhere to go. Clicks still fire.
-      onMouseDown={(e) => {
-        if (e.target !== inputRef.current) e.preventDefault();
-      }}
-      // The Modal panel adds the bottom safe-area inset below this, so the phone height leaves
-      // room for it rather than pushing the search field under the status bar.
-      className="flex h-[calc(100dvh_-_env(safe-area-inset-bottom))] flex-col pt-[env(safe-area-inset-top)] sm:h-[min(32rem,80vh)] sm:pt-0"
-    >
-      <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2.5 dark:border-gray-800">
+    <>
+      <div
+        data-slot="head"
+        {...band}
+        className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2.5"
+      >
         <SearchInput
           ref={inputRef}
           variant="panel"
@@ -336,17 +345,20 @@ function ModelPickerBody({
         <CloseButton onClose={onClose} />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-        {/* Rail: a column beside the list, a sideways-scrolling strip of chips on a phone. */}
-        <nav
-          aria-label={S.modelPicker.groups}
-          className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-gray-100 px-3 py-2 sm:w-52 sm:flex-col sm:gap-0.5 sm:overflow-x-visible sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-2 dark:border-gray-800"
+      <div {...band} className="flex min-h-0 flex-1 flex-col sm:flex-row">
+        {/* Rail: a column beside the list, a sideways-scrolling strip on a phone. */}
+        <NavList
+          label={S.modelPicker.groups}
+          orientation="responsive"
+          className="shrink-0 border-b border-line-muted px-3 py-2 sm:w-52 sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-2"
         >
           {groups.map((g, i) => {
             // No group is active in the results view: they span every group.
             const active = !searching && i === groupIndex;
             const keyboardHere = active && region === "rail";
             return (
+              // A rail row's look on a button of its own: an entry is out of the Tab order (the
+              // search field drives the rail) and marks the group shown, not a page.
               <button
                 key={g.id}
                 ref={active ? activeRailRef : undefined}
@@ -355,21 +367,19 @@ function ModelPickerBody({
                 aria-current={active ? "true" : undefined}
                 data-tooltip={i < 9 ? `${g.provider.label} · ${mod}${i + 1}` : g.provider.label}
                 onClick={() => activateGroup(i, "rail")}
-                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-sm transition-colors duration-150 sm:w-full sm:rounded-md sm:border-transparent sm:py-1.5 sm:dark:border-transparent ${
-                  active
-                    ? "border-gray-300 bg-gray-200/70 font-medium text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                    : "border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-                }${keyboardHere ? " ring-1 ring-inset ring-gray-400 dark:ring-gray-500" : ""}`}
+                className={`${navRowClass({ active, orientation: "responsive" })}${
+                  keyboardHere ? " ring-1 ring-inset ring-fg-subtle" : ""
+                }`}
               >
                 <ProviderLogo provider={g.id} className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 truncate sm:flex-1 sm:text-left">{g.provider.label}</span>
-                <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                <span className="min-w-0 truncate sm:flex-1">{g.provider.label}</span>
+                <span className="shrink-0 text-xs tabular-nums text-fg-subtle">
                   {g.rows.length}
                 </span>
               </button>
             );
           })}
-        </nav>
+        </NavList>
 
         <div
           id={listId}
@@ -379,23 +389,21 @@ function ModelPickerBody({
               ? S.models.searchPlaceholder
               : (activeGroup?.provider.label ?? S.chat.chooseModel)
           }
-          className="min-h-0 flex-1 overflow-y-auto py-1"
+          className="min-h-0 flex-1 overflow-y-auto px-2 py-1"
         >
           {searching ? (
             flatResults.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-gray-400">{S.models.noSearchResults}</p>
+              <p className="px-2 py-3 text-sm text-fg-subtle">{S.models.noSearchResults}</p>
             ) : (
               results.map((g) => (
                 <ul key={g.id} role="group" aria-label={g.provider.label}>
                   <li
                     role="presentation"
-                    className="flex items-center gap-2 px-4 pb-1 pt-2.5 text-xs font-medium text-gray-500 dark:text-gray-400"
+                    className="flex items-center gap-2 px-2 pb-1 pt-2.5 text-xs font-medium text-fg-muted"
                   >
                     <ProviderLogo provider={g.id} className="h-4 w-4 shrink-0" />
                     <span className="min-w-0 truncate">{g.provider.label}</span>
-                    <span className="tabular-nums text-gray-400 dark:text-gray-500">
-                      {g.rows.length}
-                    </span>
+                    <span className="tabular-nums text-fg-subtle">{g.rows.length}</span>
                   </li>
                   {g.rows.map((m) => {
                     const at = flatResults.indexOf(m);
@@ -405,7 +413,7 @@ function ModelPickerBody({
               ))
             )
           ) : groups.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-gray-400">{S.models.empty}</p>
+            <p className="px-2 py-3 text-sm text-fg-subtle">{S.models.empty}</p>
           ) : (
             <ul role="group" aria-label={activeGroup?.provider.label}>
               {groupRows.map((m, i) =>
@@ -421,7 +429,9 @@ function ModelPickerBody({
 
       {/* On a phone the bar exists only for the toggle: the keyboard legend is desktop-only. */}
       <div
-        className={`${showToggle ? "flex" : "hidden sm:flex"} shrink-0 items-center gap-3 border-t border-gray-200 px-4 py-2 text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500`}
+        data-slot="foot"
+        {...band}
+        className={`${showToggle ? "flex" : "hidden sm:flex"} shrink-0 items-center gap-3 border-t border-line px-4 py-2 text-xs text-fg-subtle`}
       >
         {/* Models without a key: listed on request, as the dropdown's bottom row did. It turns
             back off too, since the rail grows by every key-less group while it is on. */}
@@ -429,13 +439,13 @@ function ModelPickerBody({
           <button
             type="button"
             onClick={() => setShowAll(!showAll)}
-            className="shrink-0 rounded transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
+            className="shrink-0 rounded-sm transition-colors duration-150 hover:text-fg"
           >
             {showAll ? S.modelPicker.hideModelsWithoutKey : S.models.showModelsWithoutKey(hidden)}
           </button>
         )}
         <span className="ml-auto hidden truncate sm:block">{S.modelPicker.hint(mod)}</span>
       </div>
-    </div>
+    </>
   );
 }

@@ -407,6 +407,7 @@ export function HooksTab({
       <ConfirmModal
         open={overwriting !== null}
         title={S.hooks.importOverwriteTitle}
+        tone="primary"
         confirmLabel={S.hooks.importOverwriteAction}
         cancelLabel={S.common.cancel}
         busy={uploading}
@@ -427,7 +428,7 @@ export function HooksTab({
         busy={busy}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.skills.uninstall}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

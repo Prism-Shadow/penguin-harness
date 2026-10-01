@@ -6,8 +6,8 @@
  * `themes/geek.css` gives **every** name below a value in **both** modes (light and dark): its
  * base rule declares all of them with the light values, and its dark rule declares only the names
  * whose value dark changes — a group that does not vary by mode (shape, families, type scale,
- * density, motion, streaming, icons) lives once, in the base rule. The contract test parses the
- * three files and diffs each mode (the base rule plus that mode's own) against
+ * density, motion, streaming, the icons' stroke) lives once, in the base rule. The contract test
+ * parses the three files and diffs each mode (the base rule plus that mode's own) against
  * {@link TOKEN_NAMES}. Components
  * read these names only — through the semantic Tailwind utilities `theme.css` bridges
  * (`bg-surface`, `text-fg-muted`, `border-line`, …) or through `var(--ui-*)` directly — and never
@@ -394,6 +394,17 @@ export const TOKEN_GROUPS = [
     ],
   },
   {
+    id: "badge",
+    title: "Badges — the tag",
+    // What `Badge` and `Count` draw a tag with, so a theme decides what a tag looks like without
+    // the component asking which theme runs: the width of the inset rule a soft tag draws in its
+    // tone's line (0px where the tone's tint alone sets the tag off its row — a length, never a
+    // bare 0, since the ring adds it to an offset), the tag's weight, and the md tag's padding as
+    // `<block> <inline>` (a theme with one tag size gives it the sm tag's `1px` by one and a half
+    // space units).
+    names: ["--ui-badge-soft-ring", "--ui-badge-weight", "--ui-badge-pad-md"],
+  },
+  {
     id: "type-families",
     title: "Typography — families",
     names: [
@@ -531,7 +542,26 @@ export const TOKEN_GROUPS = [
   {
     id: "icons",
     title: "Icons",
-    names: ["--ui-icon-stroke", "--ui-icon-cap", "--ui-icon-join"],
+    // The line set's stroke; the opacity of its duotone body (`DUOTONE`, icons/sets/duotone.ts),
+    // 0 in a theme that draws no such layer; and the nine hues a decorative icon may wear
+    // (`ICON_TINTS`), which a theme that colours decorative icons paints them in by
+    // `data-tint`. The hues are declared in every theme, each a mark that reads at 3:1 on the
+    // theme's page surfaces and its navigation column, whether or not the theme uses them.
+    names: [
+      "--ui-icon-stroke",
+      "--ui-icon-cap",
+      "--ui-icon-join",
+      "--ui-icon-duo-opacity",
+      "--ui-icon-tint-blue",
+      "--ui-icon-tint-violet",
+      "--ui-icon-tint-pink",
+      "--ui-icon-tint-red",
+      "--ui-icon-tint-orange",
+      "--ui-icon-tint-amber",
+      "--ui-icon-tint-green",
+      "--ui-icon-tint-teal",
+      "--ui-icon-tint-slate",
+    ],
   },
   {
     id: "focus",

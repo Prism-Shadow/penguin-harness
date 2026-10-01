@@ -223,3 +223,6 @@ export * from "./components/shell/rail/rail";
 export * from "./components/shell/mobile-top-bar/mobile-top-bar";
 export * from "./components/shell/sidebar-frame/sidebar-frame";
 export * from "./components/shell/session-row/session-row";
+
+// The drag image every draggable row hands the browser: an opaque, themed copy of the row.
+export * from "./components/overlays/drag-preview/drag-preview";

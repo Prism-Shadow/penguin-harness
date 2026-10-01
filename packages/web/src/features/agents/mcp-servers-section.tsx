@@ -584,7 +584,7 @@ export function McpServersSection({
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmDelete()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

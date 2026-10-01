@@ -16,7 +16,7 @@
  *   arms it and the next character typed on the soft keyboard consumes it (the composition
  *   happens on the data path in terminal-view.tsx). Tapping again disarms.
  */
-import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { useTerminalChrome } from "./terminal-appearance";
 import { S } from "../../lib/strings";
 import {
@@ -25,16 +25,6 @@ import {
   type ArrowKey,
   type TerminalModifiers,
 } from "./terminal-keys";
-
-/** Clipboard with a sheet on it: paste from the system clipboard. */
-const PASTE_ICON =
-  "M9 4h6v3H9zM9 5.5H6.5A1.5 1.5 0 0 0 5 7v12a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V7a1.5 1.5 0 0 0-1.5-1.5H15";
-/** Keyboard with a chevron under it: dismiss the soft keyboard. */
-const KEYBOARD_HIDE_ICON =
-  "M4 4.5h16v10H4zM7.5 8h.01M12 8h.01M16.5 8h.01M8.5 11.5h7M9 18l3 2.5 3-2.5";
-/** Keyboard with a chevron above it: bring the soft keyboard back. */
-const KEYBOARD_SHOW_ICON =
-  "M4 9.5h16v10H4zM7.5 13h.01M12 13h.01M16.5 13h.01M8.5 16.5h7M9 6.5 12 4l3 2.5";
 
 /** What the bar needs from the live terminal; null while none is attached. */
 export interface TerminalControl {
@@ -65,10 +55,10 @@ export function TerminalKeyBar({ control, modifiers, onModifiers, focused }: Ter
   // it is what makes the row overflow (and scroll) on the narrowest phones instead of
   // squeezing the caps down to slivers.
   // Shape here, colour from the chrome — and the two tones REPLACE each other rather than
-  // stacking: this app has no class merger, so `border-gray-300` and `border-amber-600` on
-  // one element resolve by stylesheet order, not by which was written last.
+  // stacking: this app has no class merger, so two border colours on one element resolve by
+  // stylesheet order, not by which was written last. The corner is the theme's.
   const capShape =
-    "flex h-9 min-w-8 flex-1 basis-0 items-center justify-center rounded border px-1 text-xs font-medium";
+    "flex h-9 min-w-8 flex-1 basis-0 items-center justify-center rounded-sm border px-1 text-xs font-medium";
 
   /** Sends a sequence the bar composed itself, then spends any armed modifier. */
   const send = (data: string): void => {
@@ -114,7 +104,8 @@ export function TerminalKeyBar({ control, modifiers, onModifiers, focused }: Ter
       role="toolbar"
       aria-label={S.terminal.touchKeys.label}
       data-testid="terminal-key-bar"
-      className={`no-scrollbar flex shrink-0 items-center gap-0.5 overflow-x-auto border-t pt-1 ${chrome.border}`}
+      // A hairline between caps: the row's width is budgeted to the cap, so the gap stays thin.
+      className={`no-scrollbar flex shrink-0 items-center gap-px overflow-x-auto border-t pt-1 ${chrome.border}`}
     >
       {cap({
         testId: "terminal-key-esc",
@@ -151,7 +142,7 @@ export function TerminalKeyBar({ control, modifiers, onModifiers, focused }: Ter
         testId: "terminal-key-paste",
         label: S.terminal.touchKeys.paste,
         onPress: () => control.current?.paste(),
-        children: <GlyphIcon d={PASTE_ICON} size={ICON_SIZE.rowLead} />,
+        children: <GlyphIcon d={ICONS.clipboard} size={ICON_SIZE.rowLead} />,
       })}
       {cap({
         testId: "terminal-key-keyboard",
@@ -159,7 +150,7 @@ export function TerminalKeyBar({ control, modifiers, onModifiers, focused }: Ter
         onPress: () => (focused ? control.current?.blur() : control.current?.focus()),
         children: (
           <GlyphIcon
-            d={focused ? KEYBOARD_HIDE_ICON : KEYBOARD_SHOW_ICON}
+            d={focused ? ICONS.keyboardChevronDown : ICONS.keyboardChevronUp}
             size={ICON_SIZE.rowLead}
           />
         ),

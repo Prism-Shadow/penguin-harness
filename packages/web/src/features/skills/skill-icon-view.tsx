@@ -104,10 +104,13 @@ export function SkillTile({
   glyph?: number;
 }) {
   return (
+    // ui-glass with the tile anatomy: a theme may frost the square in its own hue (the palette
+    // colour's ink is the hue); without a recipe the tinted square stays as it is.
     <span
       aria-hidden
+      data-glass="tile"
       style={{ width: size, height: size }}
-      className={`flex shrink-0 items-center justify-center rounded-lg ${skillTileColor(name)}`}
+      className={`ui-glass flex shrink-0 items-center justify-center rounded-lg ${skillTileColor(name)}`}
     >
       <SkillIcon icon={icon} fallback={fallback} size={glyph} />
     </span>

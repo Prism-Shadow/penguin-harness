@@ -9,8 +9,8 @@
  * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge
  * from the `--ui-*` token contract (tokens.ts) to Tailwind utilities, the base rules that read
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
- * `data-layout-motion` attributes, the activity marks' turn and squeeze, and the depth ladder the
- * `ui-tree` recipes measure with. Token VALUES live only in `themes/*.css`, and so do the user's
+ * `data-layout-motion` attributes, the activity marks' turn and squeeze, the depth ladder the
+ * `ui-tree` recipes measure with, and which icon set a `ui-glyph` shows until a theme says. Token VALUES live only in `themes/*.css`, and so do the user's
  * accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
  * `ACCENT_PRESETS`).
  *
@@ -538,6 +538,17 @@
   }
   .ui-tree [data-depth="7"] {
     --_depth: 7;
+  }
+
+  /* A glyph is drawn in all three icon sets (the `ui-glyph` hook): every theme starts from the
+     line drawing, and a theme that draws another set swaps the two in its own file. The duotone
+     body under a line drawing shows at the theme's own opacity, none where a theme sets none. */
+  .ui-glyph > [data-set="octicons"],
+  .ui-glyph > [data-set="pixel"] {
+    display: none;
+  }
+  .ui-glyph [data-part="duo"] {
+    opacity: var(--ui-icon-duo-opacity, 0);
   }
 }
 

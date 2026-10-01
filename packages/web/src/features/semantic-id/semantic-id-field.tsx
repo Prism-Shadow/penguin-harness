@@ -33,6 +33,7 @@ import {
   FieldHint,
   FieldLabel,
   GlyphIcon,
+  ICONS,
   ICON_SIZE,
   Input,
   toastError,
@@ -43,10 +44,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
 import type { IdSuggestNotice } from "./id-suggest-notice";
-
-/** Generate (lucide sparkles): the four-pointed star with its two smaller companions. */
-const SPARKLES_ICON =
-  "m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275zM5 3v4M19 17v4M3 5h4M17 19h4";
 
 export function SemanticIdField({
   projectId,
@@ -172,7 +169,7 @@ export function SemanticIdField({
           disabled={disabled || !derivable || projectId === null}
           onClick={() => void generate()}
           className="shrink-0 whitespace-nowrap"
-          leading={<GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.inlineGlyph} />}
+          leading={<GlyphIcon d={ICONS.sparkles} size={ICON_SIZE.inlineGlyph} />}
         >
           {S.semanticId.generateIdLabel}
         </Button>

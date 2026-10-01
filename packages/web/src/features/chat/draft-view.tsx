@@ -145,10 +145,9 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * "fires on a timer", and distinct from the hourglass that already means a Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
-  webapps:
-    "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
+  webapps: ICONS.appWindow,
   agents: ICONS.robot,
-  schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
+  schedules: ICONS.clock,
 };
 
 export function DraftView({

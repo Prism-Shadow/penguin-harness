@@ -106,6 +106,13 @@ export const zh = {
     stopUsing: "停用",
     /** One tap brings every machine behind this build forward (and reconnects it). */
     updateAll: (count: number) => `全部更新（${count}）`,
+    updateAllConfirm: (count: number) =>
+      `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
+    /** Asked before letting machines go: the connection drops, the install stays. */
+    stopUsingOne: (alias: string) =>
+      `停用 ${alias}？本 Project 会断开与它的连接并不再列出它，正在经它进行的工作会中断。程序仍留在那台机器上，之后可以重新启用。`,
+    stopUsingMany: (count: number) =>
+      `停用这 ${count} 台机器？本 Project 会断开与它们的连接并不再列出它们，正在经它们进行的工作会中断。程序仍留在那些机器上，之后可以重新启用。`,
     /** The floating bar over a selection. */
     selectedCount: (count: number) => `已选 ${count} 台`,
     pickAll: "全选",
@@ -142,6 +149,8 @@ export const zh = {
     replaceProgram: "强制安装",
     replaceProgramWhy:
       "无论那台机器上现在是什么，都把这个构建的程序装上去并重启它的服务——正在用它的人会被打断。",
+    replaceProgramConfirm: (alias: string) =>
+      `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
@@ -437,6 +446,9 @@ export const zh = {
     creditsLicense: "许可",
     creditsSource: "来源",
     creditsLicenseText: "许可全文",
+    /** The Credits page's two groups: the bundled fonts, and the icon families the icons are drawn from. */
+    creditsFonts: "字体",
+    creditsIcons: "图标",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -502,6 +514,12 @@ export const zh = {
     pluginSecretClear: "清除已存值",
     /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
     pluginConfigMachine: "机器",
+    /** A plugin group's action: it runs once on the picked machine, and only the plugin knows what it does. */
+    pluginActionTitle: "执行插件操作",
+    pluginActionRun: "执行",
+    /** `machine` is the picked machine's name, null for this server. */
+    pluginActionConfirm: (action: string, machine: string | null): string =>
+      `在${machine === null ? "本机" : ` ${machine} `}上执行「${action}」？它会立即在那台机器上运行，具体做什么由插件决定。`,
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
@@ -567,6 +585,11 @@ export const zh = {
     companyModePersonalInfo:
       "关闭只隐藏本人的模式切换，组织照常运转；管理员的总开关在「服务器」分组。",
     companyModeServer: "启用公司模式",
+    /** Asked before the master switch goes off (turning it on does not ask). */
+    companyModeOffTitle: "关闭公司模式",
+    companyModeOff: "关闭",
+    companyModeOffBody:
+      "关闭公司模式？整个服务器的组织调度器会停止，所有人都打不开组织页面，期间错过的触发在重新打开后也不会补发。磁盘上的组织不受影响。",
     companyModeServerInfo:
       "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。内测功能：可能有不稳定的现象，遇到问题请反馈。",
     accentNames: {
@@ -625,6 +648,10 @@ export const zh = {
     noHistory: "还没有记录过版本。",
     current: "当前",
     restore: "恢复",
+    restoreTitle: "恢复版本",
+    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    restoreConfirm: (revision: string) =>
+      `恢复到版本 ${revision}？工作流的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
     fillApp: "占满应用",
     /** `palette` is the formatted palette.toggle chord, null while unbound. */
@@ -843,6 +870,10 @@ export const zh = {
     /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
     confirmSaveTitle: "保存修改",
     confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
+    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    discardTitle: "放弃未保存的修改",
+    discardBody: "放弃尚未保存的修改？放弃后无法找回。",
+    discard: "放弃",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
@@ -949,6 +980,8 @@ export const zh = {
     restoreDefault: "恢复默认",
     /** The same, named for what it restores: two of these sit on one page. */
     restoreDefaultOf: (subject: string) => `恢复默认：${subject}`,
+    /** Asked before the avatar's restore: the uploaded picture is deleted, unlike the nickname's. */
+    avatarResetConfirm: "恢复默认头像？已上传的图片会从服务器删除，想再用需要重新上传。",
     /** The picked image could not be brought under the size limit even as JPEG. */
     avatarTooLarge: "图片过大，请换一张尺寸更小的图片。",
     /** The picked file could not be decoded as an image at all. */
@@ -1001,6 +1034,9 @@ export const zh = {
     members: "成员",
     addMember: "添加成员",
     removeMember: "移除",
+    removeMemberTitle: "移除成员",
+    removeMemberConfirm: (user: string): string =>
+      `将 ${user} 移出该 Project？对方会立即失去访问权限，之后可以重新添加。`,
     /** New-conversation defaults section (Project settings): prefills each new conversation's agent / working directory / approval mode / thinking level / default model. */
     chatDefaultsTitle: "新对话默认值",
     chatDefaultsHint: "新建对话时预填的默认值：Agent、工作目录、审批模式、思考等级与默认模型。",
@@ -1024,6 +1060,9 @@ export const zh = {
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",
     commandPolicyRestore: "恢复默认",
+    /** Buffered like every edit (Save writes it), but it replaces the whole list in one click. */
+    commandPolicyRestoreConfirm:
+      "恢复为默认规则？列表中的所有规则（包括自定义规则）都会被替换，保存后生效。",
     commandPolicyAddRule: "添加规则",
     commandPolicyEditRule: "编辑",
     commandPolicyApplyRule: "确定",
@@ -1333,6 +1372,9 @@ export const zh = {
     importing: "导入中…",
     importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
     importConflictTitle: "版本冲突",
+    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
+    importConfirmBody: (file: string): string =>
+      `用「${file}」替换整个 Agent State？现有内容都会被快照包取代（Vault 保留），导入前会自动为当前版本存一份快照。`,
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
     resetConfigTitle: "还原为默认配置",
     resetConfigAction: "还原为默认配置",
@@ -2873,6 +2915,8 @@ Benchmark：
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "会话进程",
     processStop: "停止",
+    processStopTitle: "停止进程",
+    processStopConfirm: "停止这个后台进程？它会被立即结束，已捕获的输出也会一并丢弃。",
     processExited: "已退出",
     processRemove: "移除",
     /** Remove button tooltip: removal also drops the output captured from that process. */
@@ -2880,6 +2924,10 @@ Benchmark：
     /** The list heading's text action: removes every exited entry at once; its hint says the captured output goes too. */
     processClearExited: "清除已退出",
     processClearExitedHint: "清除所有已退出的进程——它们已捕获的输出也会一并丢弃",
+    /** An example task, a saved shortcut or a schedule's prompt about to replace text typed in the composer. */
+    replaceTypedTitle: "替换输入框内容",
+    replaceTyped: "替换",
+    replaceTypedBody: "用这条提示词替换输入框里已有的内容？你输入的文字会被清掉。",
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
@@ -4149,6 +4197,8 @@ Benchmark：
     /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
     draftRestored: "已恢复上次未提交的草稿",
     clearDraft: "清空草稿",
+    clearDraftConfirmLabel: "清空",
+    clearDraftConfirm: "清空草稿？表单里填写的内容与保存的草稿都会被清掉，无法恢复。",
     creating: "创建中…",
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "组织设置",

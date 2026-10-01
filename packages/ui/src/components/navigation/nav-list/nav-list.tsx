@@ -29,6 +29,7 @@ import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { iconTintOf } from "../../icons/sets";
 
 export type NavListOrientation = "vertical" | "responsive";
 
@@ -223,7 +224,12 @@ export function NavRow({
   const content = (
     <>
       {glyph !== undefined && (
-        <span aria-hidden className="ui-icon-decor shrink-0 text-fg-subtle" data-role="nav">
+        <span
+          aria-hidden
+          className="ui-icon-decor shrink-0 text-fg-subtle"
+          data-role="nav"
+          data-tint={typeof glyph === "string" ? iconTintOf(glyph) : undefined}
+        >
           {typeof glyph === "string" ? <GlyphIcon d={glyph} size={GLYPH_SIZE[density]} /> : glyph}
         </span>
       )}

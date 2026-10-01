@@ -15,6 +15,11 @@
  * The component stays mounted while closed, so it reopens where it was browsing when the host
  * has no Workspace set yet (the sidebar's new-workspace button picks one after another from the
  * same place); with one set, it reopens revealing that folder in its parent.
+ *
+ * Its look is the theme's: the places are navigation rows on the muted surface, the list's rows
+ * are bands inset from the pane's edges on the same row radius, the address bar and the filter
+ * wear the text-control look, and the toolbar is the dialog's head — laid straight into the
+ * dialog, as Modal's own footer is, so a theme's dialog recipe finds both.
  */
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -32,10 +37,14 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  IconButton,
   Menu,
   MenuItem,
   Modal,
+  NavRow,
   NoticeStrip,
+  Text,
+  controlBase,
   isContextMenuKey,
   isLongPressPointer,
   noAutofill,
@@ -93,32 +102,19 @@ import type {
   Place,
 } from "./workspace-finder-model";
 
-const UP_ICON = "M12 19V5m-6 6 6-6 6 6";
-const HOME_ICON = "M3 11l9-8 9 8M5 10v10h14V10";
-const DESKTOP_ICON = "M3 4h18v12H3zM8 20h8M12 16v4";
-const PICTURES_ICON = "M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.5h.01";
-const DRIVE_ICON = "M3 13h18v6H3zM5 13l2-8h10l2 8M17 16h.01";
-const MACHINE_ICON = "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01";
-const SIDEBAR_ICON = "M4 5h16v14H4zM10 5v14";
-const FILTER_ICON = "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z";
-const PLUS_ICON = "M12 5v14M5 12h14";
-const CHECK_ICON = "M5 12.5l4.5 4.5L19 7.5";
-/** A folder row's way in besides a double click: the drill-down chevron list rows use for "go into". */
-const ENTER_ICON = "M9 18l6-6-6-6";
-
 const PLACE_ICON: Record<Place["key"], string> = {
-  home: HOME_ICON,
-  desktop: DESKTOP_ICON,
+  home: ICONS.house,
+  desktop: ICONS.monitor,
   documents: ICONS.file,
   downloads: ICONS.download,
-  pictures: PICTURES_ICON,
-  drive: DRIVE_ICON,
+  pictures: ICONS.image,
+  drive: ICONS.hardDrive,
   folder: ICONS.folder,
 };
 
 const MENU_ICON: Record<FinderMenuItem, string> = {
   open: ICONS.folderOpen,
-  choose: CHECK_ICON,
+  choose: ICONS.check,
   addToQuickAccess: ICONS.pin,
   removeFromQuickAccess: ICONS.pin,
   copyPath: STAT_ICONS.copy,
@@ -143,12 +139,13 @@ interface View {
 }
 
 /**
- * The toolbar's navigation buttons: bare glyphs, no box and no hover fill. The address bar
- * beside them is the toolbar's one boxed control, so a button can never be read as a segment
- * of the path or the path as a row of buttons.
+ * The toolbar's navigation buttons: bare glyphs, no box and no hover fill — the ink alone
+ * answers the pointer, which is why they are not the package's ghost IconButton. The address bar
+ * beside them is the toolbar's one boxed control, so a button can never be read as a segment of
+ * the path or the path as a row of buttons.
  */
 const navButtonClass =
-  "shrink-0 rounded-md p-1.5 text-gray-500 transition-colors duration-150 hover:text-gray-900 disabled:cursor-default disabled:opacity-35 disabled:hover:text-gray-500 dark:text-gray-400 dark:hover:text-gray-100 dark:disabled:hover:text-gray-400";
+  "shrink-0 rounded-control p-1.5 text-fg-muted transition-colors duration-150 hover:text-fg disabled:cursor-default disabled:opacity-35 disabled:hover:text-fg-muted";
 
 export function WorkspaceFinder({
   open,
@@ -774,6 +771,13 @@ export function WorkspaceFinder({
     run(action);
   };
 
+  /**
+   * What the toolbar and the panes below it both carry: the key map and the context menu's
+   * gestures. They are two of the dialog's own children (its head, then its body) rather than
+   * one wrapper's, so each takes the handlers itself.
+   */
+  const band = { onKeyDown, ...menuProps };
+
   const permissionDenied =
     view.error instanceof ApiError && view.error.code === "dir_permission_denied";
   const hasRows = view.error === null && entries.length > 0;
@@ -806,6 +810,8 @@ export function WorkspaceFinder({
     <li
       key={key}
       className="group relative"
+      // The context menu hands Escape back to this row's own button (see the Dropdown below).
+      data-finder-place=""
       {...(folder !== undefined
         ? {
             "data-finder-path": folder.path,
@@ -814,28 +820,23 @@ export function WorkspaceFinder({
           }
         : {})}
     >
-      <button
-        type="button"
-        data-tooltip={fullTitle}
+      <NavRow
+        label={label}
+        glyph={icon}
+        badge={extra}
+        active={active}
         disabled={disabled}
-        aria-current={active ? "location" : undefined}
-        data-finder-focus
+        surface="muted"
+        // The remove button lies over the row's end: the row keeps its fill under it, and its
+        // label stops short of it.
+        groupHover={onRemove !== undefined}
+        className={onRemove !== undefined ? "pr-7" : ""}
+        tooltip={fullTitle}
         onClick={() => {
           setSidebarOpen(false);
           onClick();
         }}
-        className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2 py-1 text-left text-sm transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
-          onRemove !== undefined ? "pr-7" : ""
-        } ${
-          active
-            ? "bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-            : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/60"
-        }`}
-      >
-        <GlyphIcon d={icon} size={ICON_SIZE.rowLead} className="shrink-0 text-gray-400" />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {extra}
-      </button>
+      />
       {/* Revealed on hover and on keyboard focus; a touch screen removes through the row's
           press-and-hold menu instead, which offers the same action. */}
       {onRemove !== undefined && (
@@ -844,7 +845,7 @@ export function WorkspaceFinder({
           aria-label={f.removeNamed(label)}
           data-tooltip={f.removeFromQuickAccess}
           onClick={onRemove}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 opacity-0 transition-opacity duration-150 hover:text-gray-800 focus-visible:opacity-100 group-hover:opacity-100 dark:text-gray-500 dark:hover:text-gray-200"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-1 text-fg-subtle opacity-0 transition-opacity duration-150 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
         >
           <CloseIcon size={10} />
         </button>
@@ -853,8 +854,8 @@ export function WorkspaceFinder({
   );
 
   const sideHeading = (text: string, action?: ReactNode) => (
-    <div className="flex items-center justify-between px-2 pb-1 pt-3 first:pt-0">
-      <p className="text-xs font-medium text-gray-400 dark:text-gray-500">{text}</p>
+    <div className="flex items-center justify-between px-2.5 pb-1 pt-3 first:pt-0">
+      <Text variant="eyebrow">{text}</Text>
       {action}
     </div>
   );
@@ -869,11 +870,13 @@ export function WorkspaceFinder({
   const currentFolder = view.listing?.path ?? null;
   const canAddCurrent = currentFolder !== null && !inQuickAccess(currentFolder, machine);
 
+  // The places column sits on the muted surface, as the app's own navigation column does, and its
+  // rows take that surface's washes (NavRow's `muted`).
   const sidebar = (
     <aside
       className={`${
         sidebarOpen ? "absolute inset-y-0 left-0 z-10 flex w-64 shadow-xl" : "hidden"
-      } shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-gray-50 px-2 py-3 sm:static sm:flex sm:w-48 sm:shadow-none dark:border-gray-800 dark:bg-gray-950`}
+      } shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-muted px-2 py-3 sm:static sm:flex sm:w-48 sm:shadow-none`}
     >
       {/* Quick access stays up, even emptied, while there is a folder on screen to add back. */}
       {(quickAccess.length > 0 || currentFolder !== null) && (
@@ -881,18 +884,19 @@ export function WorkspaceFinder({
           {sideHeading(
             f.quickAccess,
             currentFolder !== null && canAddCurrent && (
-              <button
-                type="button"
-                aria-label={f.addCurrentToQuickAccess}
-                data-tooltip={f.addCurrentToQuickAccess}
+              // The negative margin keeps the heading on its own line height.
+              <IconButton
+                variant="ghost"
+                size="sm"
+                label={f.addCurrentToQuickAccess}
                 onClick={() => editQuickAccess(currentFolder, machine, true)}
-                className="rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-800 dark:text-gray-500 dark:hover:text-gray-200"
+                className="-my-1"
               >
-                <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.inlineGlyph} />
-              </button>
+                <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
+              </IconButton>
             ),
           )}
-          <ul className="space-y-0.5">
+          <ul className="flex flex-col gap-1">
             {quickAccess.map((place) =>
               sideRow({
                 key: `quick:${place.path}`,
@@ -912,7 +916,7 @@ export function WorkspaceFinder({
       {drives.length > 0 && (
         <>
           {sideHeading(f.thisPc)}
-          <ul className="space-y-0.5">
+          <ul className="flex flex-col gap-1">
             {drives.map((place) =>
               sideRow({
                 key: `drive:${place.path}`,
@@ -930,7 +934,7 @@ export function WorkspaceFinder({
       {recents.length > 0 && (
         <>
           {sideHeading(f.recent)}
-          <ul className="space-y-0.5">
+          <ul className="flex flex-col gap-1">
             {recents.map((r) =>
               sideRow({
                 key: `recent:${r.machineId ?? ""}:${r.path}`,
@@ -955,13 +959,13 @@ export function WorkspaceFinder({
       {machineSection && (
         <>
           {sideHeading(f.machines)}
-          <ul className="space-y-0.5">
+          <ul className="flex flex-col gap-1">
             {machines.map((entry, index) =>
               sideRow({
                 key: entry.selectable
                   ? `machine:${entry.id ?? "local"}`
                   : `machine-unusable:${index}`,
-                icon: MACHINE_ICON,
+                icon: ICONS.server,
                 label: entry.label,
                 title: entry.label,
                 active: entry.selectable && entry.id === machine,
@@ -969,11 +973,11 @@ export function WorkspaceFinder({
                   if (entry.id !== machine) switchMachine(entry.id);
                 },
                 extra: entry.local ? (
-                  <span className="shrink-0 text-xs text-gray-400">{S.chat.workspaceHere}</span>
+                  <span className="text-xs text-fg-subtle">{S.chat.workspaceHere}</span>
                 ) : entry.reason !== undefined ? (
                   // A machine that cannot be browsed says why on its own row, where the
                   // question is asked.
-                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-fg-subtle">
                     {S.chat.workspaceMachineWhy[entry.reason]}
                   </span>
                 ) : undefined,
@@ -995,14 +999,16 @@ export function WorkspaceFinder({
    * toolbar. At rest it holds the path as segments — a segment opens that folder — and a click
    * anywhere else in it (the folder mark, the current folder, the empty stretch after it) turns
    * it into a text field holding the whole path, as Explorer's does. Enter goes there, Escape or
-   * leaving the field puts the segments back.
+   * leaving the field puts the segments back. It wears the text-control look (controlBase's
+   * box, spelled out because the box is a div and its focus is the field's inside it): the
+   * focused look while it is a field, the resting one with its hover while it holds segments.
    */
   const addressBar = (
     <div
-      className={`flex h-8 min-w-0 flex-1 items-center rounded-md border bg-white transition-colors duration-150 dark:bg-gray-900 ${
+      className={`flex h-8 min-w-0 flex-1 items-center rounded-md border bg-surface text-fg transition-[border-color,box-shadow] duration-200 ${
         addressEditing
-          ? "border-gray-400 dark:border-gray-500"
-          : "border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600"
+          ? "border-fg-muted [box-shadow:var(--ui-focus-ring-input)]"
+          : "border-line-emphasis hover:border-fg-subtle"
       }`}
     >
       {addressEditing ? (
@@ -1028,7 +1034,7 @@ export function WorkspaceFinder({
               listRef.current?.focus();
             }
           }}
-          className="h-full min-w-0 flex-1 rounded-md bg-transparent px-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100"
+          className="h-full min-w-0 flex-1 rounded-md bg-transparent px-2.5 text-sm text-fg outline-none placeholder:text-fg-subtle"
         />
       ) : (
         <>
@@ -1037,7 +1043,7 @@ export function WorkspaceFinder({
             aria-label={f.editPath}
             data-tooltip={`${f.editPath} (${editChord})`}
             onClick={editAddress}
-            className="flex h-full shrink-0 items-center pl-2.5 pr-1 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+            className="flex h-full shrink-0 items-center pl-2.5 pr-1 text-fg-subtle transition-colors duration-150 hover:text-fg"
           >
             <GlyphIcon d={ICONS.folder} size={ICON_SIZE.inlineGlyph} />
           </button>
@@ -1052,7 +1058,7 @@ export function WorkspaceFinder({
                 return (
                   <li key={crumb.path} className="flex items-center">
                     {i > 0 && crumb.label !== "" && (
-                      <span className="px-0.5 text-gray-300 dark:text-gray-600" aria-hidden>
+                      <span className="px-0.5 text-line-emphasis" aria-hidden>
                         ›
                       </span>
                     )}
@@ -1067,10 +1073,8 @@ export function WorkspaceFinder({
                             "data-tooltip": `${f.editPath} (${editChord})`,
                           }
                         : {})}
-                      className={`rounded px-1 py-0.5 transition-colors duration-150 ${
-                        last
-                          ? "text-gray-900 dark:text-gray-100"
-                          : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+                      className={`rounded-sm px-1 py-0.5 transition-colors duration-150 ${
+                        last ? "text-fg" : "text-fg-muted hover:bg-surface-muted hover:text-fg"
                       }`}
                     >
                       {crumb.label}
@@ -1095,7 +1099,11 @@ export function WorkspaceFinder({
   );
 
   const toolbar = (
-    <div className="flex items-center gap-2 border-b border-gray-200 px-2 py-2 dark:border-gray-800">
+    <div
+      data-slot="head"
+      {...band}
+      className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-2"
+    >
       <div className="flex shrink-0 items-center">
         <button
           type="button"
@@ -1104,7 +1112,7 @@ export function WorkspaceFinder({
           aria-expanded={sidebarOpen}
           onClick={() => setSidebarOpen((v) => !v)}
         >
-          <GlyphIcon d={SIDEBAR_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.panelLeft} size={ICON_SIZE.iconButton} />
         </button>
         <button
           type="button"
@@ -1134,7 +1142,7 @@ export function WorkspaceFinder({
           aria-label={f.up}
           onClick={goParent}
         >
-          <GlyphIcon d={UP_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.arrowUp} size={ICON_SIZE.iconButton} />
         </button>
         {/* Refresh is also on the list's context menu, which is where a phone reaches it. */}
         <button
@@ -1151,9 +1159,9 @@ export function WorkspaceFinder({
       {addressBar}
       <label className="relative flex shrink-0 items-center">
         <GlyphIcon
-          d={FILTER_ICON}
+          d={ICONS.search}
           size={ICON_SIZE.inlineGlyph}
-          className="pointer-events-none absolute left-2 text-gray-400"
+          className="pointer-events-none absolute left-2 text-fg-subtle"
         />
         <input
           ref={filterRef}
@@ -1174,7 +1182,9 @@ export function WorkspaceFinder({
               setFilter("");
             }
           }}
-          className="h-8 w-20 rounded-md border border-gray-300 bg-white pl-7 pr-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none sm:w-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+          // The text-control look at the address bar's height and type, which no SearchInput
+          // rung has: the two boxes share the toolbar's one line.
+          className={`${controlBase} h-8 w-20 pl-7 pr-2 text-sm placeholder:text-fg-subtle sm:w-40`}
         />
       </label>
     </div>
@@ -1194,17 +1204,21 @@ export function WorkspaceFinder({
       : null;
     const settingsPane = denied?.settings ?? null;
     body = (
-      <div className="p-4">
+      <div className="px-2 py-3">
         <NoticeStrip
           tone={denied !== null ? "attention" : "danger"}
           className="rounded-md border px-3 py-2.5 text-sm"
         >
-          <p className="font-medium">{denied !== null ? f.deniedTitle : f.loadFailed}</p>
-          <p className="mt-1 text-xs leading-5">
-            {denied !== null ? f[denied.text] : apiErrorText(view.error)}
+          <p data-slot="title" className="font-medium">
+            {denied !== null ? f.deniedTitle : f.loadFailed}
           </p>
-          <p className="mt-1 break-all font-mono text-xs opacity-80">{view.path}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div data-slot="body">
+            <p className="mt-1 text-xs leading-5">
+              {denied !== null ? f[denied.text] : apiErrorText(view.error)}
+            </p>
+            <p className="mt-1 break-all font-mono text-xs opacity-80">{view.path}</p>
+          </div>
+          <div data-slot="actions" className="mt-2 flex flex-wrap items-center gap-2">
             {denied !== null && denied.allow !== "none" && (
               <Button
                 size="sm"
@@ -1234,10 +1248,10 @@ export function WorkspaceFinder({
       </div>
     );
   } else if (view.listing === null) {
-    body = <p className="px-4 py-3 text-xs text-gray-400">{S.common.loading}</p>;
+    body = <p className="px-2 py-3 text-xs text-fg-subtle">{S.common.loading}</p>;
   } else if (entries.length === 0) {
     body = (
-      <p className="px-4 py-3 text-xs text-gray-400">
+      <p className="px-2 py-3 text-xs text-fg-subtle">
         {filter.trim() !== "" ? f.noMatch(filter.trim()) : f.empty}
       </p>
     );
@@ -1264,24 +1278,27 @@ export function WorkspaceFinder({
             else setSelected(entry.path);
           }}
           onDoubleClick={() => folder && openEntry(entry.path)}
-          className={`flex select-none items-center ${ICON_GAP.menu} py-1 pl-3 pr-2 text-sm ${
+          // A band inset from the pane's edges on the row radius, as the places beside it are;
+          // the selection takes the accent while the list has focus and the rail's selected
+          // fill while it does not.
+          className={`flex select-none items-center ${ICON_GAP.menu} rounded-md px-2 py-1 text-sm ${
             !folder
-              ? "cursor-default text-gray-400 dark:text-gray-600"
+              ? "cursor-default text-fg-subtle"
               : isSel
                 ? listFocused
                   ? "bg-accent text-accent-fg"
-                  : "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100"
-                : "cursor-default text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800/60"
+                  : "bg-line-muted text-fg"
+                : "cursor-default text-fg hover:bg-surface-muted"
           }`}
         >
           <GlyphIcon
             d={folder ? ICONS.folder : ICONS.file}
             size={ICON_SIZE.rowLead}
-            className={`shrink-0 ${accent ? "" : "text-gray-400"}`}
+            className={`shrink-0 ${accent ? "" : "text-fg-subtle"}`}
           />
           <span className="min-w-0 flex-1 truncate">{entry.name}</span>
           <span
-            className={`hidden w-36 shrink-0 text-xs tabular-nums sm:block ${accent ? "" : "text-gray-400 dark:text-gray-500"}`}
+            className={`hidden w-36 shrink-0 text-xs tabular-nums sm:block ${accent ? "" : "text-fg-subtle"}`}
           >
             {entry.mtime !== undefined ? formatDateTime(new Date(entry.mtime).toISOString()) : "—"}
           </span>
@@ -1299,13 +1316,11 @@ export function WorkspaceFinder({
                 openEntry(entry.path);
               }}
               onDoubleClick={(e) => e.stopPropagation()}
-              className={`flex w-6 shrink-0 justify-center rounded py-0.5 transition-colors duration-150 ${
-                accent
-                  ? "text-current"
-                  : "text-gray-400 hover:text-gray-900 dark:text-gray-500 dark:hover:text-gray-100"
+              className={`flex w-6 shrink-0 justify-center rounded-sm py-0.5 transition-colors duration-150 ${
+                accent ? "text-current" : "text-fg-subtle hover:text-fg"
               }`}
             >
-              <GlyphIcon d={ENTER_ICON} size={ICON_SIZE.inlineGlyph} />
+              <GlyphIcon d={ICONS.chevronRight} size={ICON_SIZE.inlineGlyph} />
             </button>
           ) : (
             <span className="w-6 shrink-0" aria-hidden />
@@ -1365,37 +1380,36 @@ export function WorkspaceFinder({
       widthClass="sm:h-[min(36rem,85vh)] sm:max-w-3xl"
       footer={footer}
     >
-      <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown} {...menuProps}>
-        {toolbar}
-        <div className="relative flex min-h-0 flex-1">
-          {sidebar}
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-2 border-b border-gray-100 py-1 pl-3 pr-2 text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500">
-              <span className="min-w-0 flex-1 pl-6">{f.columnName}</span>
-              <span className="hidden w-36 shrink-0 sm:block">{f.columnModified}</span>
-              <span className="w-6 shrink-0" aria-hidden />
-            </div>
-            <div
-              ref={listRef}
-              id={listId}
-              // Its empty space is the folder on screen, for the context menu.
-              data-finder-here=""
-              // A listbox only while it holds rows: a message (empty, loading, an error with
-              // its Retry) is not an option, and the pane stays focusable either way so the
-              // keyboard chords keep working from it.
-              role={hasRows ? "listbox" : "region"}
-              tabIndex={0}
-              aria-label={crumbs[crumbs.length - 1]?.label ?? title}
-              aria-busy={loading}
-              {...(selIndex !== -1 ? { "aria-activedescendant": `${listId}-${selIndex}` } : {})}
-              onFocus={() => setListFocused(true)}
-              onBlur={() => setListFocused(false)}
-              className={`min-h-0 flex-1 overflow-y-auto py-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/40 ${
-                loading && view.listing !== null ? "opacity-60" : ""
-              }`}
-            >
-              {body}
-            </div>
+      {toolbar}
+      <div {...band} className="relative flex min-h-0 flex-1">
+        {sidebar}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Lined up with the rows below: the list's inset plus a row's own padding. */}
+          <div className="flex items-center gap-2 border-b border-line-muted px-4 py-1 text-xs text-fg-subtle">
+            <span className="min-w-0 flex-1 pl-6">{f.columnName}</span>
+            <span className="hidden w-36 shrink-0 sm:block">{f.columnModified}</span>
+            <span className="w-6 shrink-0" aria-hidden />
+          </div>
+          <div
+            ref={listRef}
+            id={listId}
+            // Its empty space is the folder on screen, for the context menu.
+            data-finder-here=""
+            // A listbox only while it holds rows: a message (empty, loading, an error with
+            // its Retry) is not an option, and the pane stays focusable either way so the
+            // keyboard chords keep working from it.
+            role={hasRows ? "listbox" : "region"}
+            tabIndex={0}
+            aria-label={crumbs[crumbs.length - 1]?.label ?? title}
+            aria-busy={loading}
+            {...(selIndex !== -1 ? { "aria-activedescendant": `${listId}-${selIndex}` } : {})}
+            onFocus={() => setListFocused(true)}
+            onBlur={() => setListFocused(false)}
+            className={`min-h-0 flex-1 overflow-y-auto px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/40 ${
+              loading && view.listing !== null ? "opacity-60" : ""
+            }`}
+          >
+            {body}
           </div>
         </div>
       </div>
@@ -1412,9 +1426,11 @@ export function WorkspaceFinder({
           anchorOwner={menu.anchorOwner}
           // A sidebar place hands Escape back to its own button; a list row, which is no
           // control of its own, to the list.
-          returnFocus={() =>
-            menu.anchorOwner()?.querySelector<HTMLElement>("[data-finder-focus]") ?? listRef.current
-          }
+          returnFocus={() => {
+            const owner = menu.anchorOwner();
+            const place = owner?.hasAttribute("data-finder-place") === true ? owner : null;
+            return place?.querySelector<HTMLElement>("button") ?? listRef.current;
+          }}
           className="contents"
           menuClass="w-max min-w-40 max-w-[calc(100vw-2rem)]"
           button={null}

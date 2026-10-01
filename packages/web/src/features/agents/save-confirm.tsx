@@ -4,7 +4,7 @@
  * whether there is anything to save (no changes → an info toast, not a dialog). Render `element`
  * once per surface.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { ConfirmModal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -31,4 +31,16 @@ export function useSaveConfirm(): {
     </ConfirmModal>
   );
   return { requestSave: (run: () => void) => setPending(() => run), element };
+}
+
+/**
+ * Mirrors a settings tab's unsaved-edits flag up to the page, and clears it when the tab
+ * unmounts. The page owns the tab strip and the Back link, and leaving a tab unmounts it with
+ * its form state, so the page is where a leave asks to discard first.
+ */
+export function useReportDirty(dirty: boolean, onDirtyChange?: (dirty: boolean) => void): void {
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 }

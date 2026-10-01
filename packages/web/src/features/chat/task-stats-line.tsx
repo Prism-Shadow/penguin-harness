@@ -28,7 +28,14 @@
  */
 import { useState } from "react";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, CopyButton, Spinner, StatChip } from "@prismshadow/penguin-ui";
+import {
+  ConfirmModal,
+  CopyButton,
+  GlyphIcon,
+  ICONS,
+  Spinner,
+  StatChip,
+} from "@prismshadow/penguin-ui";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -167,22 +174,7 @@ export function TaskStatsLine({
             {forking ? (
               <Spinner size="sm" label={S.common.loading} />
             ) : (
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <circle cx="6" cy="5" r="2" />
-                <circle cx="18" cy="7" r="2" />
-                <circle cx="6" cy="19" r="2" />
-                <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
-              </svg>
+              <GlyphIcon d={ICONS.gitBranch} size={13} />
             )}
           </button>
           <ConfirmModal

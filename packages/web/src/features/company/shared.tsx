@@ -21,6 +21,7 @@ import {
   FieldHint,
   FieldLabel,
   GlyphIcon,
+  ICONS,
   ICON_SIZE,
   Input,
   Notice,
@@ -39,11 +40,8 @@ import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
 
-/** Circled exclamation (lucide circle-alert): the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
-export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";
-
-/** Arrow leaving to the upper right (lucide arrow-up-right): the mark of a jump to another page. */
-const JUMP_ICON = "M7 7h10v10M7 17 17 7";
+/** Circled exclamation: the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
+export const INVALID_ICON = ICONS.alertCircle;
 
 /**
  * The way out of a card or a row that has no title to click: a flat glyph button that opens the
@@ -75,7 +73,7 @@ export function JumpButton({
       aria-label={label}
       className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${className}`}
     >
-      <GlyphIcon d={JUMP_ICON} size={ICON_SIZE.inlineGlyph} />
+      <GlyphIcon d={ICONS.arrowUpRight} size={ICON_SIZE.inlineGlyph} />
     </button>
   );
 }

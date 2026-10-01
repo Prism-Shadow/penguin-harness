@@ -338,8 +338,9 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     // the chart round's nine (two more series, the reference line, six geometry names), plus
     // the bar outline's three, plus the knob's hairline edge (2026-09-30), plus the update
     // mark's fill (W1, the same day), plus the streaming pair (the same day), plus the neutral
-    // fill of bubbles and chips (W6, the same day).
-    expect(TOKEN_NAMES.length).toBe(236);
+    // fill of bubbles and chips (W6, the same day), plus the icon sets' duotone opacity and
+    // nine glyph hues and Console's one-tag badge trio (ring, weight, md padding; 2026-10-01).
+    expect(TOKEN_NAMES.length).toBe(249);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {

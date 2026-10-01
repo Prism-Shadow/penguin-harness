@@ -103,6 +103,7 @@ import {
   Chip,
   ChipRow,
   ComposerCard,
+  ConfirmModal,
   Dropdown,
   GlyphIcon,
   ICONS,
@@ -565,7 +566,7 @@ export interface ComposerControl {
    * Put a composed prompt in the text body and preselect the skills it pins — without sending
    * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
    * installed are dropped here, where the installed list already lives. Pass an empty list to
-   * leave the composer's own Skill selection untouched.
+   * leave the composer's own Skill selection untouched. Replacing text the user typed asks first.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
   /**
@@ -1250,13 +1251,15 @@ export function ChatInput({
     [selectedSkills, onSkillsChange],
   );
 
+  /** The text the last fill put in the box, so a fill over it untouched does not ask (fillPrompt). */
+  const lastFillRef = useRef<string | null>(null);
   /**
    * Fill from a surface that composed a prompt, without sending (see ComposerControl): the
    * prompt REPLACES the text body — any draft is cleared first — and the pinned installed
    * skills join the selection, so pressing Send builds exactly the `[use_skills]` message the
    * caller used to submit on its own. Why text replaces while skills merge is buildExampleFill.
    */
-  const fillPrompt = useCallback(
+  const applyFill = useCallback(
     (prompt: string, pinnedSkills: readonly string[]) => {
       const fill = buildExampleFill({
         prompt,
@@ -1266,6 +1269,7 @@ export function ChatInput({
       });
       setText(fill.text);
       onTextChange?.(fill.text);
+      lastFillRef.current = fill.text;
       setCaret(0);
       // The merge only ever appends, so an unchanged length means an unchanged selection —
       // and calling back for nothing would rewrite the cached draft on every repeat click.
@@ -1286,6 +1290,25 @@ export function ChatInput({
       });
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
+  );
+  /**
+   * Every fill passes here, whichever surface sent it (an example task, a saved shortcut, a
+   * schedule's prompt): replacing text the user typed asks first. A fill over an empty box,
+   * over the same prompt, or over what an earlier fill put there untouched (browsing the
+   * examples) goes straight in.
+   */
+  const [pendingFill, setPendingFill] = useState<{
+    prompt: string;
+    pinnedSkills: readonly string[];
+  } | null>(null);
+  const fillPrompt = useCallback(
+    (prompt: string, pinnedSkills: readonly string[]) => {
+      const typed = textRef.current;
+      if (typed.trim() !== "" && typed !== prompt && typed !== lastFillRef.current) {
+        setPendingFill({ prompt, pinnedSkills });
+      } else applyFill(prompt, pinnedSkills);
+    },
+    [applyFill],
   );
   const addReference = useCallback((reference: ComposerReference) => {
     setReferences((prev) => [...prev, reference]);
@@ -2584,6 +2607,20 @@ export function ChatInput({
           </>
         }
       />
+      <ConfirmModal
+        open={pendingFill !== null}
+        title={S.chat.replaceTypedTitle}
+        tone="primary"
+        onClose={() => setPendingFill(null)}
+        onConfirm={() => {
+          if (pendingFill !== null) applyFill(pendingFill.prompt, pendingFill.pinnedSkills);
+          setPendingFill(null);
+        }}
+        confirmLabel={S.chat.replaceTyped}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.chat.replaceTypedBody}</p>
+      </ConfirmModal>
     </div>
   );
 }

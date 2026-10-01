@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
-import { Button, NoticeStrip } from "@prismshadow/penguin-ui";
+import { Button, ConfirmModal, NoticeStrip } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
@@ -193,6 +193,8 @@ export function WorkflowFrame({
   const [failure, setFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<WorkflowVersion[] | null>(null);
+  /** A revision whose restore awaits confirmation: it replaces the workflow's files. */
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -407,7 +409,7 @@ export function WorkflowFrame({
                       variant="secondary"
                       size="sm"
                       disabled={busy !== null}
-                      onClick={() => void rollback(v.revision)}
+                      onClick={() => setRestoring(v.revision)}
                     >
                       {S.workflows.restore}
                     </Button>
@@ -429,6 +431,21 @@ export function WorkflowFrame({
         }`}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
       />
+      <ConfirmModal
+        open={restoring !== null}
+        title={S.workflows.restoreTitle}
+        onClose={() => setRestoring(null)}
+        onConfirm={() => {
+          if (restoring !== null) void rollback(restoring);
+          setRestoring(null);
+        }}
+        confirmLabel={S.workflows.restore}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {restoring !== null ? S.workflows.restoreConfirm(restoring) : ""}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

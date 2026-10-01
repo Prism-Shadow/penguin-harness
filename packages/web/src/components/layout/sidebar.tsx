@@ -226,19 +226,8 @@ import {
 } from "../../features/company/company-nav";
 import type { WorkMode } from "../../features/company/company-nav";
 
-/** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
-export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
-
-/** The workspace group's overflow-menu trigger: three FILLED dots (the stroke version read too faint at this size). */
-function EllipsisGlyph({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <circle cx="5" cy="12" r="2" />
-      <circle cx="12" cy="12" r="2" />
-      <circle cx="19" cy="12" r="2" />
-    </svg>
-  );
-}
+/** New-chat pen over a baseline (the pinned "New chat" button and the collapsed rail share it). */
+export const NEW_CHAT_ICON = ICONS.penLine;
 
 /**
  * Private drag payload type of a manual session reorder. Deliberately NOT `text/plain`:
@@ -274,33 +263,6 @@ const isNavPage = (key: NavEntryKey): key is NavGroupKey => key !== "newChat";
 
 /** Manual drag-reordering needs a pointer that can drag (HTML5 DnD never fires from touch) — the outline rail's query. */
 const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
-
-/**
- * Mode-dependent create glyph: the entity's own icon (folder / robot) shrunk toward
- * the top-left, with a plus badge in the freed bottom-right corner — no knockout disc
- * needed (a background-colored punch would mismatch the hover pill), so it stays
- * legible at icon size in both themes. Stroke style matches the shared Icon set.
- */
-function AddBadgeIcon({ base, size = 15 }: { base: string; size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <g transform="translate(-1 -1) scale(0.82)">
-        <path d={base} />
-      </g>
-      <path d="M18.5 15.5v6M15.5 18.5h6" strokeWidth="2" />
-    </svg>
-  );
-}
 
 /**
  * A group header's trailing action (new chat, Agent settings): a square on the column's hover
@@ -2433,8 +2395,8 @@ export function Sidebar({
                 />
               </Menu>
             </Dropdown>
-            {/* Mode-dependent create — 具体新建的对象按分组方式决定, the icon following
-            suit (folder+ / robot+, a bottom-right plus badge on the entity's glyph):
+            {/* Mode-dependent create — what gets created follows the grouping mode, and the
+            icon follows suit (the folder with a plus, the robot with a plus badge):
             agent grouping opens the Agents page's existing create dialog (route
             state); workspace grouping opens the SAME directory-browse menu the
             draft's workspace picker uses — the picked directory registers as a
@@ -2444,7 +2406,7 @@ export function Sidebar({
             {newEntity === "agent" ? (
               <SidebarControl
                 label={newEntityLabel}
-                glyph={<AddBadgeIcon base={NAV_ICONS.agents} />}
+                glyph={<GlyphIcon d={ICONS.robotPlus} size={ICON_SIZE.iconButton} />}
                 onClick={() => {
                   navigate("/agents", { state: { create: true } });
                   onNavigate?.();
@@ -2474,7 +2436,7 @@ export function Sidebar({
                 trigger={(open, toggle) => (
                   <SidebarControl
                     label={newEntityLabel}
-                    glyph={<AddBadgeIcon base={ICONS.folder} />}
+                    glyph={<GlyphIcon d={ICONS.folderPlus} size={ICON_SIZE.iconButton} />}
                     active={open}
                     aria-expanded={open}
                     onClick={toggle}
@@ -3113,7 +3075,8 @@ function GroupOverflowMenu({
           onClick={() => setOpen(!open)}
           className="flex h-7 w-7 shrink-0 items-center justify-center text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
         >
-          <EllipsisGlyph size={16} />
+          {/* Filled: the stroked dots read too faint at this size. */}
+          <GlyphIcon d={ICONS.ellipsis} size={16} filled />
         </button>
       }
     >

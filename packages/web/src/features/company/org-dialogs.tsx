@@ -332,6 +332,8 @@ export function CreateOrganizationDialog({
   /** A stored draft was put back into the fields: the notice above them says so and offers to drop it. */
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** "Clear draft" awaiting confirmation: it empties every field and the stored draft. */
+  const [confirmClear, setConfirmClear] = useState(false);
   const { models, error: modelsError } = useProjectModels(projectId, open);
 
   // The Project the organization is being created in: the current one on open, changeable
@@ -465,7 +467,12 @@ export function CreateOrganizationDialog({
           {/* Dropping the draft is a form action, not a dialog verdict: it sits away from
               Cancel / Create so a click on it can never be mistaken for either. */}
           {draftContent && (
-            <Button size="sm" onClick={dropDraft} disabled={busy} className="mr-auto">
+            <Button
+              size="sm"
+              onClick={() => setConfirmClear(true)}
+              disabled={busy}
+              className="mr-auto"
+            >
               {S.company.clearDraft}
             </Button>
           )}
@@ -571,6 +578,19 @@ export function CreateOrganizationDialog({
         />
         {formError !== null && <ErrorLine message={formError} onRetry={() => void submit()} />}
       </div>
+      <ConfirmModal
+        open={confirmClear}
+        title={S.company.clearDraft}
+        confirmLabel={S.company.clearDraftConfirmLabel}
+        cancelLabel={S.common.cancel}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          dropDraft();
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.company.clearDraftConfirm}</p>
+      </ConfirmModal>
     </Modal>
   );
 }
@@ -840,7 +860,7 @@ export function OrganizationSettingsDialog({
         title={S.company.deleteOrg}
         busy={busy}
         confirmDisabled={typedId.trim() !== orgId}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}

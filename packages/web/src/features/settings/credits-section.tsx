@@ -1,8 +1,9 @@
 /**
- * Credits page: the fonts the app bundles, which themes set them, and the licence each ships
- * under, with the licence's full text one click away. The list comes from the UI package's font
- * metadata (the same record its licence files and build scripts are checked against), so a face
- * added or dropped there appears or disappears here without an edit.
+ * Credits page: the fonts the app bundles and the icon families its icons are drawn from, which
+ * themes use each, and the licence each ships under, with the licence's full text one click away.
+ * The lists come from the UI package's credits (the same records its licence files are checked
+ * against), so a face or an icon family added or dropped there appears or disappears here without
+ * an edit.
  *
  * MiSans's licence asks software that uses the face to credit it, and this page is where the
  * app does: the face is listed with its licence for every account and every backend, which is
@@ -15,10 +16,9 @@
  * screen away.
  */
 import { useId, useState } from "react";
-import { FONT_CREDITS } from "@prismshadow/penguin-ui/fonts-credits";
-import type { FontCredit } from "@prismshadow/penguin-ui/fonts-credits";
+import { FONT_CREDITS, ICON_CREDITS } from "@prismshadow/penguin-ui/fonts-credits";
 import type { ThemeId } from "@prismshadow/penguin-ui";
-import { Chevron, ICON_GAP } from "@prismshadow/penguin-ui";
+import { Chevron, ICON_GAP, Text } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
 /** A theme id in the reader's words. */
@@ -52,10 +52,19 @@ function LicenseText({ text }: { text: string }) {
   );
 }
 
-function CreditRow({ font }: { font: FontCredit }) {
+/** One credited font or icon family, in the shape both credit lists share. */
+interface Credit {
+  readonly name: string;
+  readonly themes: readonly ThemeId[];
+  readonly source: string;
+  readonly licenseTitle: string;
+  readonly licenseText: string;
+}
+
+function CreditRow({ font }: { font: Credit }) {
   return (
     <li className="py-3.5 first:pt-0 last:pb-0">
-      <p className="text-sm font-medium">{font.family}</p>
+      <p className="text-sm font-medium">{font.name}</p>
       <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
         <dt className="text-gray-500 dark:text-gray-400">{S.settings.creditsThemes}</dt>
         {/* A face no theme sets by default (IBM Plex Sans Condensed) still ships, so it is
@@ -84,12 +93,29 @@ function CreditRow({ font }: { font: FontCredit }) {
   );
 }
 
+function CreditList({ label, credits }: { label: string; credits: readonly Credit[] }) {
+  return (
+    <section>
+      <Text variant="eyebrow" className="mb-2">
+        {label}
+      </Text>
+      <ul className="divide-y divide-gray-100 dark:divide-gray-800/60">
+        {credits.map((credit) => (
+          <CreditRow key={credit.name} font={credit} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function CreditsSection() {
   return (
-    <ul className="divide-y divide-gray-100 dark:divide-gray-800/60">
-      {FONT_CREDITS.map((font) => (
-        <CreditRow key={font.id} font={font} />
-      ))}
-    </ul>
+    <div className="space-y-6">
+      <CreditList
+        label={S.settings.creditsFonts}
+        credits={FONT_CREDITS.map((font) => ({ ...font, name: font.family }))}
+      />
+      <CreditList label={S.settings.creditsIcons} credits={ICON_CREDITS} />
+    </div>
   );
 }

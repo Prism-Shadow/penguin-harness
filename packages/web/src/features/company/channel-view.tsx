@@ -43,6 +43,7 @@ import {
   ChannelRun,
   EmptyState,
   GlyphIcon,
+  ICONS,
   ICON_GAP,
   ICON_SIZE,
   NoticeStrip,
@@ -101,9 +102,6 @@ interface StreamMeta {
   days: string[];
   unreadAfterId: string | null;
 }
-
-/** Downward arrow on the return-to-latest pill (lucide arrow-down). */
-const ARROW_DOWN_ICON = "M12 5v14M6 13l6 6 6-6";
 
 export function ChannelView() {
   const { projectId, orgId, org } = useOrg();
@@ -659,10 +657,10 @@ export function ChannelView() {
                 aria-label={S.chat.jumpToLatest}
                 data-tooltip={S.chat.jumpToLatest}
                 onClick={jumpToLatest}
-                className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-full border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+                className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
               >
                 {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
-                <GlyphIcon d={ARROW_DOWN_ICON} size={ICON_SIZE.inlineGlyph} />
+                <GlyphIcon d={ICONS.arrowDown} size={ICON_SIZE.inlineGlyph} />
               </button>
             )}
           </div>
@@ -729,7 +727,7 @@ function RefChip({
       type="button"
       data-tooltip={title}
       onClick={onClick}
-      className={`inline-flex items-center ${ICON_GAP.tight} rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+      className={`inline-flex items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
     >
       {icon !== undefined && <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} />}
       {children}

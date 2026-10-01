@@ -86,8 +86,13 @@ export function Modal({
             : "rounded-t-lg"
         } border border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0`}
       >
+        {/* The head and the foot name themselves (the glass hook's dialog anatomy), so a theme
+            may draw or drop the rules that part them from the body. */}
         {!headerless && (
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <div
+            data-slot="head"
+            className="flex items-center justify-between border-b border-line px-4 py-3"
+          >
             <h2 id={titleId} className="text-base font-semibold">
               {title}
             </h2>
@@ -96,7 +101,9 @@ export function Modal({
         )}
         {bare ? children : <div className="max-h-[70vh] overflow-y-auto px-4 py-4">{children}</div>}
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-line px-4 py-3">{footer}</div>
+          <div data-slot="foot" className="flex justify-end gap-2 border-t border-line px-4 py-3">
+            {footer}
+          </div>
         )}
       </div>
     </div>,

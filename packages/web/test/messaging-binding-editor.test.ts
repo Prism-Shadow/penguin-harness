@@ -74,6 +74,7 @@ function stateOf(
     channels: { feishu: DARK, telegram: DARK, qq: DARK, wechat: DARK, ...facts },
     fieldErrors: {},
     dirty: false,
+    unsavedAny: false,
     busy: false,
     toggling: false,
     testing: false,

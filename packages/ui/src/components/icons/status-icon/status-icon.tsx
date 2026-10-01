@@ -12,6 +12,7 @@
  * tooltip); without one it is decoration beside words that already say the state, and hidden
  * from assistive technology — an unnamed image would be announced as an anonymous one.
  */
+import { GlyphIcon } from "../glyph-icon/glyph-icon";
 import { ICONS } from "../icons";
 import { Spinner } from "../spinner/spinner";
 
@@ -58,24 +59,16 @@ export function StatusIcon({
       </span>
     );
   }
-  const px = SIZES[size];
+  // The settled glyph is a registry glyph, drawn by the one renderer so every theme draws it in
+  // its own set; the name and the tooltip sit on a wrapper, the same box the spinner's takes.
   return (
-    <svg
-      width={px}
-      height={px}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      // A style, not the attribute: an SVG presentation attribute cannot read a custom property.
-      style={{ strokeWidth: "var(--ui-icon-stroke, 1.7)" }}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <span
       {...(label === undefined
         ? { "aria-hidden": true }
         : { role: "img" as const, "aria-label": label, "data-tooltip": label })}
-      className={`block shrink-0 ${INK[state]}`}
+      className={`flex shrink-0 ${INK[state]}`}
     >
-      <path d={GLYPH[state]} />
-    </svg>
+      <GlyphIcon d={GLYPH[state]} size={SIZES[size]} />
+    </span>
   );
 }

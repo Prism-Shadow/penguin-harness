@@ -20,8 +20,11 @@ import { Modal } from "../modal/modal";
 export interface PagedDialogItem<K extends string> {
   key: K;
   label: string;
-  /** Small leading glyph in the rail; sized by the caller (16px reads well). */
-  icon?: ReactNode;
+  /**
+   * The rail's leading glyph: a registry path, drawn at the nav row's size as a decorative icon
+   * (so a theme that tints decoration by glyph can), or a node the caller sized.
+   */
+  icon?: string | ReactNode;
   /**
    * The page's semantic explanation, disclosed by a "?" beside the pane heading. It belongs here
    * rather than at the top of the page body because the heading is the only title a page has — a

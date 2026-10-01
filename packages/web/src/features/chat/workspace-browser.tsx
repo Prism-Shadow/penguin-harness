@@ -168,8 +168,6 @@ const MD_RENDER_LIMIT = 64 * 1024;
 const SNIFF_BYTES = 8 * 1024;
 /** How long the search box settles before the query is sent. A Workspace walk is not free, and nobody reads results for a prefix they are still typing. */
 const SEARCH_DEBOUNCE_MS = 250;
-/** Window with a left pane: the tree toggle. */
-const PANEL_LEFT_ICON = "M4 5h16v14H4zM10 5v14";
 
 /** An external reference with a scheme (http(s)/mailto/data, etc.), passed through as-is in the md rendered view. */
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
@@ -2582,7 +2580,7 @@ export function WorkspaceBrowser({
                 : "text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             }`}
           >
-            <GlyphIcon d={PANEL_LEFT_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.panelLeft} size={ICON_SIZE.iconButton} />
           </button>
         )}
         {/* The path, read out and not navigable: the tree beside it is what navigates, and a

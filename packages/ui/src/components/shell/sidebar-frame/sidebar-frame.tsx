@@ -3,9 +3,9 @@
  * row (the fold button and the Project or organization switcher), one pinned entry, the scroll
  * area, and the account row at the foot. The pieces the scroll area is built from are here too:
  * the page nav — pinned entries that always show, then the ones that fold away under a slim
- * toggle — its entries with their pin toggles and the areas a dragged entry can land in, the
- * list's header with its label and its controls, the controls themselves, and the switcher's and
- * the account's buttons.
+ * toggle — its entries with their pin toggles (a lock) and the areas a dragged entry can land
+ * in, the list's header with its label and its controls, the controls themselves, and the
+ * switcher's and the account's buttons.
  *
  * The page nav and the list scroll together, so the nav rides up as the list is scrolled: the
  * scroll area is the column's only shrinkable block, and a column of fixed chrome taller than a
@@ -32,6 +32,7 @@ import { ChevronDown } from "../../icons/marks/marks";
 import { Text } from "../../content/typography/typography";
 import { NAV_FILL, NavRow } from "../../navigation/nav-list/nav-list";
 import type { NavRowProps } from "../../navigation/nav-list/nav-list";
+import { setDragPreview } from "../../overlays/drag-preview/drag-preview";
 import { ROW_ACTION_GLYPH, ROW_HOVER_BUTTON } from "../session-row/session-row";
 
 /**
@@ -250,7 +251,7 @@ export function SidebarNavArea({
 
 /** A nav entry's pin toggle, as its caller describes it. */
 export interface SidebarNavPin {
-  /** The entry is pinned: the tack is filled. */
+  /** The entry is pinned: the lock is closed (open while it is not). */
   pinned: boolean;
   /** The toggle's accessible name, the same either way: `aria-pressed` carries the state. */
   label: string;
@@ -266,9 +267,15 @@ export interface SidebarNavEntryProps extends Omit<
   "badge" | "surface" | "groupHover" | "draggable"
 > {
   pin: SidebarNavPin;
-  /** A mark at the row's end (an update dot) that gives way to the toggle wherever it shows. */
+  /**
+   * A mark at the row's end (an update dot), drawn by the caller to sit at the row's end; it
+   * steps just left of the toggle wherever the toggle shows.
+   */
   badge?: ReactNode;
-  /** The whole row is a drag handle; the caller wires the handlers below. */
+  /**
+   * The whole row is a drag handle, its drag image the row's chip; the caller wires the handlers
+   * below.
+   */
   draggable?: boolean;
   onDragStart?: (e: ReactDragEvent) => void;
   onDragEnd?: () => void;
@@ -280,12 +287,16 @@ export interface SidebarNavEntryProps extends Omit<
  * over the link's last pixels and the link keeps the whole row as its hit area). The toggle is the
  * conversation rows' hover button — flat, shown on the row's hover or its own focus, taking taps
  * only while shown — with one addition: where there is no hover at all it always shows, because
- * the toggle is then the only way to move an entry. The tack is filled while pinned.
+ * the toggle is then the only way to move an entry. The lock is closed while pinned and open
+ * while not, so the drawing itself carries the state.
  *
  * The row's hover answers to the entry as a whole, so its fill holds while the pointer is on the
- * toggle. A badge sits at the row's end, where the toggle appears, so it gives way to the toggle —
- * the conversation rows' time-and-actions handoff — and where the toggle always shows it moves
- * just left of it. Draggable, the whole entry is the handle and its link starts no drag of its own.
+ * toggle. A badge never hides and never shares the toggle's spot: at rest it sits at the row's
+ * end, and wherever the toggle shows (the entry hovered, the toggle focused, or always where
+ * nothing hovers) it stands just left of the toggle, whose own place does not move. The badge
+ * steps over at once rather than sliding — a transform under hover is a motion the house rules
+ * refuse — so reduced motion has nothing to undo. Draggable, the whole entry is the handle and
+ * its link starts no drag of its own; the drag image is the entry's chip (`setDragPreview`).
  */
 export function SidebarNavEntry({
   pin,
@@ -298,7 +309,16 @@ export function SidebarNavEntry({
   return (
     <div
       className="group relative flex items-center"
-      {...(draggable ? { draggable: true, onDragStart, onDragEnd } : {})}
+      {...(draggable
+        ? {
+            draggable: true,
+            onDragStart: (e: ReactDragEvent) => {
+              if (e.target === e.currentTarget) setDragPreview(e);
+              onDragStart?.(e);
+            },
+            onDragEnd,
+          }
+        : {})}
     >
       <NavRow
         {...row}
@@ -316,11 +336,14 @@ export function SidebarNavEntry({
           onClick={pin.onToggle}
           className={`${ROW_HOVER_BUTTON} hover:text-fg [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
         >
-          <GlyphIcon d={ICONS.pin} size={ROW_ACTION_GLYPH} filled={pin.pinned} />
+          <GlyphIcon d={pin.pinned ? ICONS.lock : ICONS.lockOpen} size={ROW_ACTION_GLYPH} />
         </button>
       </span>
+      {/* The badge's two places: the row's end, and — while the toggle shows — five and a half
+          units in, which puts a dot the caller hangs `right-2.5` one unit clear of the toggle's
+          box (`right-1`, `w-6`). */}
       {badge !== undefined && (
-        <span className="pointer-events-none absolute inset-y-0 right-0 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 [@media(hover:none)]:right-6.5">
+        <span className="pointer-events-none absolute inset-y-0 right-0 group-hover:right-5.5 peer-focus-within:right-5.5 [@media(hover:none)]:right-5.5">
           {badge}
         </span>
       )}

@@ -213,6 +213,8 @@ export interface MessagingBindingEditorState {
   fieldErrors: MessagingFormErrors;
   /** Unsaved edits on the SELECTED channel (a typed secret and a checked clear box count). */
   dirty: boolean;
+  /** Unsaved edits on ANY channel's form — every form stays editable across a switch, so this is what closing the editor throws away. */
+  unsavedAny: boolean;
   busy: boolean;
   toggling: boolean;
   testing: boolean;
@@ -371,6 +373,12 @@ export function useMessagingBinding(
           : null;
   const otherEnabled = enabledChannel !== null && enabledChannel !== selected;
   const dirty = form !== null && baseline !== null && formDirty(form, baseline);
+  const unsavedAny =
+    form !== null &&
+    baseline !== null &&
+    (["feishu", "telegram", "qq", "wechat"] as const).some((channel) =>
+      formDirty({ ...form, channel }, baseline),
+    );
 
   /** One channel's PUT/state response lands only in that channel's facts + form baseline. */
   const applyChannel = (
@@ -500,6 +508,7 @@ export function useMessagingBinding(
     channels,
     fieldErrors,
     dirty,
+    unsavedAny,
     busy,
     toggling,
     testing,

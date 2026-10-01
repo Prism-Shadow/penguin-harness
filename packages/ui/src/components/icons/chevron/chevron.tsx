@@ -5,8 +5,11 @@
  * wherever it is.
  *
  * It is a component rather than a registry entry because the rotation is part of the mark, and
- * this file is where the de-slop rules let a transform transition live.
+ * this file is where the de-slop rules let a transform transition live. Like the other marks it
+ * is drawn in every icon set (`GlyphMark`), each set's drawing pointing right, so the rotation
+ * turns whichever drawing the theme shows.
  */
+import { GlyphMark } from "../glyph-icon/glyph-sets";
 import { ChevronDown } from "../marks/marks";
 
 export function Chevron({
@@ -19,20 +22,14 @@ export function Chevron({
   className?: string;
 }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
+    <GlyphMark
+      mark="chevron"
+      grid={24}
+      size={size}
       className={`block shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""} ${className}`}
     >
-      <path d="M9 5l7 7-7 7" />
-    </svg>
+      <path d="M9 5l7 7-7 7" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </GlyphMark>
   );
 }
 

@@ -33,6 +33,7 @@ import { MachinePicker } from "../machines/machine-picker";
 import {
   Button,
   Checkbox,
+  ConfirmModal,
   Input,
   NoticeStrip,
   PasswordInput,
@@ -122,6 +123,15 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const [clearing, setClearing] = useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * A group action awaiting confirmation, with its own title. A plugin cannot mark an action
+   * as dangerous, so every one asks before it runs on the machine.
+   */
+  const [pendingAction, setPendingAction] = useState<{
+    entry: PluginConfigEntry;
+    id: string;
+    title: string;
+  } | null>(null);
   const { machineIds, machineLabels } = useSessions();
   /** The machine whose settings the page shows and saves: null for this server. */
   const [machine, setMachine] = useState<string | null>(null);
@@ -513,7 +523,13 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
                     size="sm"
                     variant="secondary"
                     disabled={busy !== null}
-                    onClick={() => void runAction(entry, action.id)}
+                    onClick={() =>
+                      setPendingAction({
+                        entry,
+                        id: action.id,
+                        title: localized(action.title, action.titleZh) ?? action.title,
+                      })
+                    }
                   >
                     {localized(action.title, action.titleZh) ?? action.title}
                   </Button>
@@ -594,6 +610,27 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
           </section>
         );
       })}
+      <ConfirmModal
+        open={pendingAction !== null}
+        title={S.settings.pluginActionTitle}
+        tone="primary"
+        onClose={() => setPendingAction(null)}
+        onConfirm={() => {
+          if (pendingAction !== null) void runAction(pendingAction.entry, pendingAction.id);
+          setPendingAction(null);
+        }}
+        confirmLabel={S.settings.pluginActionRun}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {pendingAction !== null
+            ? S.settings.pluginActionConfirm(
+                pendingAction.title,
+                machine === null ? null : nameOf(machine),
+              )
+            : ""}
+        </p>
+      </ConfirmModal>
     </SettingsSection>
   );
 }

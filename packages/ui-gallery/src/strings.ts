@@ -303,6 +303,7 @@ export const zh = {
     iconSizes: "图标尺寸",
     iconRegistry: (icons: number, files: number) => `${icons} 个图标，来自 ${files} 个文件`,
     duplicateNames: "同一路径的多个名字",
+    iconMarks: "组件标记",
     durations: "时长 × 缓动",
     reducedNote: "已减弱动效：每个变化直接呈现终态。",
     liveSignal: "实时信号",
@@ -331,7 +332,7 @@ export const zh = {
       sidebarRows: ["新对话", "智能体", "模型库"] as readonly string[],
     },
     hookJobs: {
-      "ui-glass": "盖在内容之上的临时层",
+      "ui-glass": "磨砂面：盖在内容之上的临时层，白领的插件与技能图块",
       "ui-eyebrow": "为下方一组条目命名的分组标签",
       "ui-display": "页面或主视觉唯一的展示标题",
       "ui-live": "正在进行之物的动效",
@@ -346,6 +347,7 @@ export const zh = {
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的回答：各主题决定新文字如何出现",
+      "ui-glyph": "按主题换画法的图标：通用为 Octicons，白领为双色调线性，极客为像素画",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],

@@ -56,12 +56,11 @@ import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
 export const SHORTCUTS_FOLDER_ID = "shortcuts";
 
 /**
- * Lightning bolt (lucide zap): the folder's mark. Not the bookmark it might suggest — the folders
+ * The lightning bolt: the folder's mark. Not the bookmark it might suggest — the folders
  * themselves already behave bookmark-style (exactly one open), so that glyph would name the
  * mechanism every folder shares instead of what this one holds.
  */
-const SHORTCUTS_GLYPH =
-  "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z";
+const SHORTCUTS_GLYPH = ICONS.zap;
 
 /** An always-visible row action (edit / delete), sized and coloured to recede until pointed at. */
 function RowAction({

@@ -14,6 +14,7 @@ import { Link, useParams } from "react-router";
 import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import ReactMarkdown from "react-markdown";
 import {
+  Badge,
   Button,
   CopiedStatus,
   CopyCheckGlyph,
@@ -148,12 +149,9 @@ export function PluginDetailPage() {
           {(entry.keywords ?? []).length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
               {(entry.keywords ?? []).map((keyword) => (
-                <span
-                  key={keyword}
-                  className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-                >
+                <Badge key={keyword} variant="outline">
                   {keyword}
-                </span>
+                </Badge>
               ))}
             </div>
           )}

@@ -43,6 +43,7 @@ import type {
   ModelVisionDetectRequest,
 } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   Button,
   Checkbox,
   Chevron,
@@ -68,6 +69,7 @@ import {
   Switch,
   TodoNotice,
   buttonClass,
+  setDragPreview,
   toastError,
   toastInfo,
   toastSuccess,
@@ -117,7 +119,7 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "./model-group-order";
-import { TAG_INK, TAG_SHAPE, modelTags } from "./model-tags";
+import { TAG_TONE, modelTags } from "./model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -232,18 +234,6 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   if (!Number.isFinite(n)) return t;
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
-
-/**
- * The one group-header action glyph this page draws itself (a 24x24 line path), an arrow entering
- * a door: authorize with the provider and come back with a key. Add, bulk key, the catalog sync
- * and delete read `ICONS.plus`, `ICONS.key`, `ICONS.rotateCw` and `ICONS.trash`.
- */
-const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
-
-/** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
-const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
-const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
-const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
 
 /** Metric tone -> text color classes for the card speed badges. */
 const TONE_CLASS: Record<SpeedTone, string> = {
@@ -758,7 +748,10 @@ export function ModelsPage() {
   const syncNote = todo ? S.todo.presetUpdates(todo.count) : "";
   /** The notice's two counts, both off the delta the sync action itself computes. */
   const syncCounts = todo ? noticeCounts(todo) : null;
-  /** The notice's sync confirmation is open (it lists the refs the delta named). */
+  /**
+   * The sync confirmation is open. Every entry asks it — the notice, the toolbar button, a row's
+   * fix and the config dialog's — and it lists the refs the delta named when the badge has one.
+   */
   const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const userId = useAuth().user?.userId ?? null;
@@ -1132,6 +1125,9 @@ export function ModelsPage() {
           if (e.target !== e.currentTarget) return;
           e.dataTransfer.setData(MODEL_GROUP_DRAG_MIME, key);
           e.dataTransfer.effectAllowed = "move" as const;
+          // The browser would lift the header's own paint alone — no section edge, its dark
+          // fill let through — so the image is the header's opaque chip instead.
+          setDragPreview(e);
           setDragGroup(key);
         },
         onDragEnd: () => {
@@ -1295,7 +1291,7 @@ export function ModelsPage() {
             onClick={() => (running ? stopSpeedTest() : setSpeedFor(group.provider.id))}
           >
             <GlyphIcon
-              d={running ? ICONS.stopCircle : GAUGE_ICON}
+              d={running ? ICONS.stopCircle : ICONS.gauge}
               size={ICON_SIZE.groupHeaderAction}
             />
           </Button>
@@ -1369,7 +1365,7 @@ export function ModelsPage() {
               <Button
                 size="sm"
                 variant="primary"
-                onClick={() => void syncPresets()}
+                onClick={() => setSyncConfirmOpen(true)}
                 disabled={busy || rows === null}
                 title={`${S.models.syncCatalogHint} · ${syncNote}`}
               >
@@ -1512,22 +1508,13 @@ export function ModelsPage() {
                           section. `shrink-0` keeps it whole: the vendor name beside it is
                           the element allowed to truncate on a narrow page. */}
                       {group.provider.recommended && (
-                        // Not a `Badge`: every Badge tone is a status or `neutral`, and an
-                        // endorsement is neither, which is the category tone.ts keeps out on
-                        // purpose. Unfilled, like the card marks below it: an outline
-                        // is enough to make it a pill, and a block of colour on the collapse
-                        // bar competes with the vendor name it is endorsing. It gives way on
-                        // a narrow row before the name does.
-                        //
-                        // Gold, and the darker end of it: `yellow-700` (#a16207) is the last
-                        // rung that still clears 4.5:1 against this bar's gray-50 — 12px bold
-                        // is not WCAG "large text", so the brighter golds above it are not
-                        // available in light mode. Dark mode takes yellow-400, the bright
-                        // gold, which clears it comfortably on this app's near-black. The
-                        // ring is the text's own hue at 40%, in both themes: a ring brighter
-                        // than the words it encloses reads as a highlighter, not as gold.
-                        <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-yellow-700/40 px-2 py-0.5 text-xs font-semibold text-yellow-700 @lg:inline dark:border-yellow-400/40 dark:text-yellow-400">
-                          {S.models.recommendedGroup}
+                        // The theme's tag, outlined like the card marks below it: an outline is
+                        // enough to make it a tag, and a block of colour on the collapse bar
+                        // competes with the vendor name it is endorsing. `attention` asks the
+                        // reader to look here, and is the tone nearest the gold this mark has
+                        // always worn. It gives way on a narrow row before the name does.
+                        <span className="hidden shrink-0 @lg:inline-flex">
+                          <Badge tone="attention">{S.models.recommendedGroup}</Badge>
                         </span>
                       )}
                     </button>
@@ -1594,7 +1581,7 @@ export function ModelsPage() {
                                     }
                                   : undefined
                               }
-                              onSyncPresets={isOwner ? () => void syncPresets() : undefined}
+                              onSyncPresets={isOwner ? () => setSyncConfirmOpen(true) : undefined}
                             />
                           ))
                         )}
@@ -1721,7 +1708,7 @@ export function ModelsPage() {
               S.models.groupDeleted(removed.length),
             );
           }}
-          confirmLabel={S.common.confirm}
+          confirmLabel={S.common.delete}
           cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
@@ -1734,21 +1721,26 @@ export function ModelsPage() {
         </ConfirmModal>
       )}
 
-      {/* The notice's bulk sync. Same union the toolbar button runs (syncPresets), but
-          confirm-first: the button on the notice is reached from a block announcing a batch, and
-          a sync rewrites the catalog-owned fields of every entry it names. The body is the
-          toolbar button's own description of those semantics, verbatim — the wording that has
-          always stated what a sync keeps and what it overwrites. */}
-      {todo && syncConfirmOpen && (
+      {/* The bulk sync, confirm-first from every entry (the notice, the toolbar, a row's fix,
+          the config dialog's): a sync rewrites the catalog-owned fields of every entry it names.
+          The body is the toolbar button's own description of those semantics, verbatim — the
+          wording that has always stated what a sync keeps and what it overwrites — plus the
+          refs the badge's delta named, when there is a badge. */}
+      {syncConfirmOpen && (
         <ConfirmModal
           open
-          title={S.todo.modelsConfirmTitle(todo.count)}
+          title={todo ? S.todo.modelsConfirmTitle(todo.count) : S.models.syncCatalog}
           tone="primary"
           confirmLabel={S.models.syncCatalog}
           cancelLabel={S.common.cancel}
           busy={syncing}
           onClose={() => setSyncConfirmOpen(false)}
           onConfirm={() => {
+            // Asked from the config dialog, the sync rewrites the row that dialog was seeded
+            // from, so the dialog goes first (a no-op from every other entry).
+            setEditing(null);
+            setEditingMovedToCustom(false);
+            setAddingTo(null);
             setSyncing(true);
             void syncPresets().finally(() => {
               setSyncing(false);
@@ -1758,14 +1750,18 @@ export function ModelsPage() {
         >
           <div className="space-y-3">
             <p className="text-sm text-gray-600 dark:text-gray-300">{S.models.syncCatalogHint}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
-            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-              {todo.items.map((ref) => (
-                <li key={ref} className="px-3 py-1.5 font-mono text-xs">
-                  {ref}
-                </li>
-              ))}
-            </ul>
+            {todo && (
+              <>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
+                <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                  {todo.items.map((ref) => (
+                    <li key={ref} className="px-3 py-1.5 font-mono text-xs">
+                      {ref}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
         </ConfirmModal>
       )}
@@ -1841,18 +1837,10 @@ export function ModelsPage() {
             setEditingMovedToCustom(false);
             setAddingTo(null);
           }}
-          // The sync rewrites the very row this dialog was seeded from, so the dialog goes
-          // first and the merge runs against the table, not around an open form.
-          onSyncPresets={
-            isOwner
-              ? () => {
-                  setEditing(null);
-                  setEditingMovedToCustom(false);
-                  setAddingTo(null);
-                  void syncPresets();
-                }
-              : undefined
-          }
+          // The sync rewrites the very row this dialog was seeded from, so the confirmation's
+          // yes closes the dialog first and the merge runs against the table, not around an
+          // open form; a no leaves the dialog as it was.
+          onSyncPresets={isOwner ? () => setSyncConfirmOpen(true) : undefined}
           onSubmit={(next, action) => {
             const isNew = addingTo !== null;
             setEditing(null);
@@ -2308,7 +2296,7 @@ export function ModelCard({
               className={`flex items-center gap-1 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
               data-tooltip={S.models.ttftTitle}
             >
-              <GlyphIcon d={CLOCK_ICON} size={11} />
+              <GlyphIcon d={ICONS.clock} size={11} />
               {Math.round(speed.ttftMs)}ms
             </span>
           )}
@@ -2317,7 +2305,7 @@ export function ModelCard({
               className={`flex items-center gap-1 ${TONE_CLASS[tpsTone(speed.tps)]}`}
               data-tooltip={S.models.tpsTitle}
             >
-              <GlyphIcon d={ZAP_ICON} size={11} />
+              <GlyphIcon d={ICONS.zap} size={11} />
               {speed.tps} tok/s
             </span>
           )}
@@ -2366,17 +2354,19 @@ export function ModelCard({
             when empty: most models carry no mark at all, and letting it collapse would leave the
             grid ragged — cards in the same row of a two-column grid stretch to the tallest, so an
             absent line shows up as uneven padding rather than as a shorter card. Its height is
-            the tags' own, so a card with marks and a card without are exactly as tall. */}
-        <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
+            the tags' own — an empty row holds one invisible tag, which is that height in every
+            theme — so a card with marks and a card without are exactly as tall. */}
+        <span className="flex w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
-            <span
-              key={tag.key}
-              data-tooltip={tag.title}
-              className={`${TAG_SHAPE} ${tag.className}`}
-            >
+            <Badge key={tag.key} tone={tag.tone} size="sm" tooltip={tag.title}>
               {tag.label}
-            </span>
+            </Badge>
           ))}
+          {tags.length === 0 && (
+            <span aria-hidden className="invisible flex">
+              <Badge size="sm">&nbsp;</Badge>
+            </span>
+          )}
         </span>
         {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
             non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
@@ -3223,17 +3213,19 @@ function ModelDialog({
               {(isDefault || form.vision || isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
                   {isDefault && (
-                    <span className={`${TAG_SHAPE} ${TAG_INK.status}`}>{S.models.default}</span>
+                    <Badge tone={TAG_TONE.status} size="sm">
+                      {S.models.default}
+                    </Badge>
                   )}
                   {form.vision && (
-                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
+                    <Badge tone={TAG_TONE.capability} size="sm">
                       {S.models.visionBadge}
-                    </span>
+                    </Badge>
                   )}
                   {isVisionModel && (
-                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
+                    <Badge tone={TAG_TONE.capability} size="sm">
                       {S.models.visionModelBadge}
-                    </span>
+                    </Badge>
                   )}
                 </span>
               )}
@@ -3737,7 +3729,7 @@ function ModelDialog({
             setConfirming(null);
             void submit(action);
           }}
-          confirmLabel={S.common.confirm}
+          confirmLabel={confirming === "remove" ? S.common.delete : S.common.confirm}
           cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
@@ -4033,7 +4025,7 @@ function ModelOAuthDialog({
             {/* In the dialog body, directly above the code Input: it takes the same rung the
                 field does, not the page-level md. */}
             <Button size="sm" variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
-              <GlyphIcon d={SIGN_IN_ICON} size={13} />
+              <GlyphIcon d={ICONS.signIn} size={13} />
               {S.models.oauthAuthorize}
             </Button>
             <Input

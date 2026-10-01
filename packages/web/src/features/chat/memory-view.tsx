@@ -31,16 +31,13 @@ import { useLocale } from "../../state/locale";
 import { buildMemoryList, memoryNavBack, memoryNavForRequest } from "./memory-nav";
 import type { MemoryNavMode, ScopeFiles } from "./memory-nav";
 
-/** Folder (Workspace scope; the User scope is ICONS.user), boxed arrow (open the settings tab), left arrow (back). */
-const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
-const OPEN_SETTINGS_ICON =
-  "M14 4h6v6M20 4 10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3";
-const BACK_ICON = "M19 12H5m6-6-6 6 6 6";
+/** The scope marks: the folder for the Workspace scope, the person for the User scope. */
+const SCOPE_ICON = { user: ICONS.user, workspace: ICONS.folder } as const;
 
 /** The scope glyph + tooltip pair, shared with the memory-changes card's rows. */
 export function scopeGlyph(scope: "user" | "workspace", scopeKey?: string) {
   return {
-    d: scope === "user" ? ICONS.user : FOLDER_ICON,
+    d: SCOPE_ICON[scope],
     title: scope === "user" ? S.memory.userScope : S.chat.memoryScopeWorkspace(scopeKey ?? ""),
   };
 }
@@ -142,7 +139,7 @@ export function ChatMemoryView({
             data-tooltip={S.chat.memoryBack}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
-            <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.arrowLeftCentered} size={ICON_SIZE.iconButton} />
             <span className="sr-only">{S.chat.memoryBack}</span>
           </button>
           <span data-tooltip={glyph.title} className="shrink-0 text-gray-400">
@@ -199,7 +196,7 @@ export function ChatMemoryView({
             data-tooltip={S.chat.openAgentMemory}
             className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
-            <GlyphIcon d={OPEN_SETTINGS_ICON} size={ICON_SIZE.inlineGlyph} />
+            <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.inlineGlyph} />
             <span className="truncate">{S.chat.openAgentMemory}</span>
           </button>
         )}
@@ -220,10 +217,7 @@ export function ChatMemoryView({
             <div key={`${group.scope} ${group.scopeKey}`} className="pb-2">
               <div className="flex items-center gap-2 px-3.5 py-1.5">
                 <span className="shrink-0 text-gray-400">
-                  <GlyphIcon
-                    d={group.scope === "user" ? ICONS.user : FOLDER_ICON}
-                    size={ICON_SIZE.inlineGlyph}
-                  />
+                  <GlyphIcon d={SCOPE_ICON[group.scope]} size={ICON_SIZE.inlineGlyph} />
                 </span>
                 <p
                   className="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-gray-400"

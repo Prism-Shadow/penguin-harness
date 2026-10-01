@@ -9,7 +9,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { EmptyState, Spinner } from "@prismshadow/penguin-ui";
+import { EmptyState, GlyphIcon, ICONS, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
@@ -500,21 +500,7 @@ export function MessageStream({
           onClick={jumpToLatest}
           className="anim-pop absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            aria-hidden
-          >
-            <path
-              d="M12 5v14M6 13l6 6 6-6"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <GlyphIcon d={ICONS.arrowDown} size={16} />
         </button>
       )}
     </div>

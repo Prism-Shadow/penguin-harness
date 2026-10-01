@@ -52,7 +52,7 @@ function ToolButton({
         disabled={disabled}
         onClick={onClick}
         {...aria}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-gray-500 transition-colors duration-150 hover:text-gray-900 disabled:text-gray-300 dark:text-gray-400 dark:hover:text-gray-100 dark:disabled:text-gray-700"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-fg-muted transition-colors duration-150 hover:text-fg disabled:text-fg-subtle disabled:opacity-60"
       >
         {children}
       </button>
@@ -103,7 +103,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
       : null;
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800 dark:bg-gray-950">
+    <div className="flex shrink-0 items-center gap-1 border-b border-line bg-canvas px-2 py-1">
       <ToolButton
         label={S.builtinBrowser.back}
         disabled={tab?.canGoBack !== true}

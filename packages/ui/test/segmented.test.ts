@@ -45,6 +45,15 @@ describe("Segmented", () => {
     );
   });
 
+  it("rounds its chips concentric with the well: the well's radius less its one-unit inset", () => {
+    const html = render();
+    const chip = "rounded-[max(0px,calc(var(--ui-radius-control)_-_var(--ui-space-unit)))]";
+    expect(html.match(/aria-pressed="(true|false)" class="[^"]*"/g)).toHaveLength(2);
+    for (const option of html.match(/aria-pressed="(?:true|false)" class="[^"]*"/g) ?? []) {
+      expect(option.split(/[" ]/)).toContain(chip);
+    }
+  });
+
   it("folds a badge into the option's name and keeps it out of flow", () => {
     const html = render(3, true);
     expect(html).toContain('aria-label="Dark · Beta"');
