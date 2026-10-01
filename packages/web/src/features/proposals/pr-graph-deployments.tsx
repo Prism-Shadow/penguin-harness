@@ -6,9 +6,8 @@
  */
 import type { ProposalGraphDeployment } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
+import { ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { toneSurface } from "../../lib/tone";
-import { OrgSection } from "../company/org-layout";
 
 /** The marks of the deployments on one layer (0 = the base branch); nothing when none sits there. */
 export function DeploymentMarks({
@@ -25,8 +24,8 @@ export function DeploymentMarks({
       {here.map((d) => (
         <span
           key={d.id}
-          title={t.deploymentTitle(d.id, d.commit ?? "", d.describe, d.ahead)}
-          className={`shrink-0 rounded px-1 font-mono text-[10px] font-medium ${toneSurface.link}`}
+          data-tooltip={t.deploymentTitle(d.id, d.commit ?? "", d.describe, d.ahead)}
+          className={`shrink-0 rounded px-1 font-mono text-xs font-medium ${toneSurface.link}`}
         >
           @{d.id}
           {d.relation === "ahead" && d.ahead !== null ? ` +${d.ahead}` : ""}
@@ -46,14 +45,14 @@ export function DeploymentsOff({
   const off = (deployments ?? []).filter((d) => d.at === null);
   if (off.length === 0) return null;
   return (
-    <OrgSection title={t.deploymentsOff} count={off.length} info={t.deploymentsOffHint}>
+    <RuledSection title={t.deploymentsOff} count={off.length} info={t.deploymentsOffHint}>
       <ul className="divide-y divide-gray-100 dark:divide-gray-800">
         {off.map((d) => (
           <li key={d.id} className={`flex items-center ${ICON_GAP.row} px-1 py-1.5 text-xs`}>
             <span className="shrink-0 font-mono font-medium">@{d.id}</span>
             <span
               className="shrink-0 font-mono text-gray-500 dark:text-gray-400"
-              title={d.commit ?? undefined}
+              data-tooltip={d.commit ?? undefined}
             >
               {d.commit === null ? t.deploymentUnread : d.commit.slice(0, 9)}
             </span>
@@ -64,13 +63,13 @@ export function DeploymentsOff({
             )}
             <span
               className="ml-auto min-w-0 truncate pl-3 text-gray-400 dark:text-gray-500"
-              title={d.error ?? d.url ?? undefined}
+              data-tooltip={d.error ?? d.url ?? undefined}
             >
               {d.error ?? d.url ?? ""}
             </span>
           </li>
         ))}
       </ul>
-    </OrgSection>
+    </RuledSection>
   );
 }
