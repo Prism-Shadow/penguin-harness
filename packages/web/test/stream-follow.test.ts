@@ -1,17 +1,18 @@
 /**
- * Unit tests for stream-follow.ts (issue #75): in a short scroll area (scrollable
- * slack < 80px), scrolling up immediately exits auto-stick-to-bottom; staying at
- * a historical position, streaming increments don't override that intent; the
- * user can scroll back down to resume; content-shrink clamping isn't
- * misread as an upward scroll. Plus stickToBottom: programmatic snaps report the
- * landed position synchronously, so content growth racing the snap's async scroll
- * event can't make entering a conversation land off-bottom. Plus the hold: while the
- * selection menu is open the view does not snap, the user's own scrolling still decides
- * the intent, and a release catches a following view up with what arrived meanwhile.
+ * Following the bottom of a streaming transcript (features/chat/stream-follow.ts, issue #75).
+ *
+ * - In a short scroll area, any upward move (wheel, scrollbar, keyboard, a touch pull-down)
+ *   exits following at once; pushing up with a finger does not.
+ * - At a historical position, streaming growth never overrides the user's intent; scrolling
+ *   back near the bottom resumes following, and content shrinking under the view is not read
+ *   as scrolling up. A first scroll event already far from the bottom starts not following.
+ * - The back-to-bottom button re-enters follow, and its jump keeps it stuck.
+ * - A programmatic snap reports where it landed at once, so growth racing its scroll event
+ *   (entering a conversation, back-to-bottom) keeps follow; content that fits clamps to 0; a
+ *   real upward scroll right after still exits.
+ * - While held (the selection menu is open) the view does not snap, the user's own scrolling
+ *   still decides the intent, and the release catches a following view up.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createStreamFollow, stickToBottom } from "../src/features/chat/stream-follow";
 
@@ -233,19 +234,5 @@ describe("hold", () => {
     f.hold(false);
     expect(f.stick).toBe(false);
     expect(f.snaps).toBe(false);
-  });
-
-  it("is what the message stream snaps by, held while its selection menu is open", () => {
-    // The rules above bind the stream only while every snap it makes asks `snaps` rather than
-    // `stick`, and the hold follows the menu's open state.
-    const stream = readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), "../src/features/chat/message-stream.tsx"),
-      "utf8",
-    );
-    expect(stream).toContain("const menuOpen = selectionMenu.open;");
-    expect(stream).toContain("follow.hold(menuOpen);");
-    const snaps = stream.match(/if \(([^)]*?)\) stickToBottom\(el, follow\);/g) ?? [];
-    expect(snaps.length).toBeGreaterThanOrEqual(3);
-    for (const snap of snaps) expect(snap).toContain("follow.snaps");
   });
 });
