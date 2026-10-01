@@ -1,21 +1,17 @@
 /**
- * agent-handoff.ts unit tests: the `/agent` picker's candidate filtering, the staged-switch
- * send decision (`/agent` and `/model` only act on Enter — this is where "act on what, and
- * when" is pinned down), and the re-export wiring for the origin marker blocks (their own
- * semantics — both forms, anchoring, legacy compat — are covered by
- * packages/core/test/markers.test.ts).
+ * The `/agent` and `/model` chips (features/chat/agent-handoff.ts). The origin marker blocks
+ * it re-exports are core's, tested in packages/core/test/markers.test.ts.
+ *
+ * - The `/agent` picker's search matches any part of an Agent's id or name, case-insensitively;
+ *   an empty query lists every candidate and a query matching nothing lists none.
+ * - A staged chip acts only on send: with nothing staged the message is an ordinary post; a
+ *   staged handoff opens the new chat whatever this session is doing; a staged model fork goes
+ *   out only while the session is idle and is blocked (never degraded into a post) otherwise;
+ *   where no fork is possible the chip cannot block a send; with both chips, the handoff wins.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import {
-  filterAgents,
-  handoffMessage,
-  modelSwitchMessage,
-  parseHandoffMessage,
-  parseModelSwitchMessage,
-  parseScheduledMessage,
-  stagedSendRoute,
-} from "../src/features/chat/agent-handoff";
+import { filterAgents, stagedSendRoute } from "../src/features/chat/agent-handoff";
 
 const agent = (agentId: string, name?: string): AgentSummary => ({
   agentId,
@@ -114,30 +110,5 @@ describe("stagedSendRoute (what a staged /agent or /model chip does on send)", (
   it("should both chips ever coexist, the handoff wins — it is the one that touches nothing here", () => {
     expect(route({ handoffTarget: true, pendingModel: true })).toBe("handoff");
     expect(route({ handoffTarget: true, pendingModel: true, sessionBusy: true })).toBe("handoff");
-  });
-});
-
-describe("origin marker blocks are re-exported from core", () => {
-  it("handoff / model-switch producers emit the square form and round-trip through the feature module", () => {
-    const handoff = handoffMessage({ agentId: "default_agent", workspace: "/data/ws" });
-    expect(handoff.startsWith("[handoff_from]\n")).toBe(true);
-    expect(parseHandoffMessage(handoff)).toEqual({
-      agentId: "default_agent",
-      workspace: "/data/ws",
-    });
-    const switched = modelSwitchMessage({ sessionId: "session-01", tracePath: "/t.jsonl" });
-    expect(switched.startsWith("[model_switch_from]\n")).toBe(true);
-    expect(parseModelSwitchMessage(switched)).toEqual({
-      sessionId: "session-01",
-      tracePath: "/t.jsonl",
-    });
-  });
-
-  it("the scheduled-task parser (server-produced block) is reachable here for the banner", () => {
-    expect(
-      parseScheduledMessage(
-        "[scheduled_task]\nschedule: daily\nfired_at: 2026-01-01T00:00:00Z\n[/scheduled_task]\n\nbody",
-      ),
-    ).toEqual({ origin: { name: "daily", firedAt: "2026-01-01T00:00:00Z" }, rest: "body" });
   });
 });

@@ -1,21 +1,99 @@
 /**
- * The plugin library page's install questions, pure and unit tested:
- * - `pluginInstalled` / `installedPluginVersion` — a plugin is installed on an Agent when any
- *   part of it is there (a skill, or the hook package when it ships one), read off the two
- *   installed lists the page fetches per Agent;
- * - `outdatedAgentIds`, the per-plugin reminder's data source — the Agents the SERVER lists as
- *   behind on it (`AgentSummary.pluginUpdates`), since versions are `YYYY.MM.DD.N` strings the
- *   web never compares itself;
- * - `pluginUpdatePlan`, the page notice's "update all of them" version of the same question.
+ * The Plugins page's pure decisions (features/plugins/plugins-page.tsx). One file, so the page
+ * module is imported once.
+ *
+ * - All machines: every plugin is listed, and a machine-only one says where it runs. This
+ *   server: what it is asked for, a shared plugin not removable from its table. Another
+ *   machine: the state that machine reports, and what it has not received yet.
+ * - A plugin is installed on an Agent once any part of it is there (a skill, or its hook
+ *   package), read off the two installed lists; nothing is installed for an Agent with no
+ *   snapshot or for a plugin that ships nothing.
+ * - The installed version is the hook package's where there is one, else the first installed
+ *   skill's, and undefined where the plugin is not installed.
+ * - The per-plugin reminder names the Agents the server lists as behind on it, in list order
+ *   (versions are never compared here).
+ * - The "update all" plan is empty when no Agent is behind, sends one request per Agent with
+ *   every plugin it is behind on, and counts distinct plugins as the notice does.
  */
 import { describe, expect, it } from "vitest";
+import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
 import {
+  availablePluginRows,
+  installedPluginRows,
   installedPluginVersion,
   outdatedAgentIds,
   pluginInstalled,
   pluginUpdatePlan,
+  type AgentInstalls,
+  type PluginParts,
+  type PluginView,
 } from "../src/features/plugins/plugins-page";
-import type { AgentInstalls, PluginParts } from "../src/features/plugins/plugins-page";
+
+const SELF = "Self000000000000";
+const GPU = "Gpu0000000000000";
+
+const row = (
+  specifier: string,
+  where: { everywhere: boolean; machines: string[]; here: boolean },
+  active = where.here,
+): InstalledPluginsResponse["plugins"][number] => ({
+  specifier,
+  active,
+  builtin: false,
+  modules: [],
+  replaces: [],
+  ...where,
+});
+
+const deployment: InstalledPluginsResponse = {
+  plugins: [
+    row("@acme/shared", { everywhere: true, machines: [], here: true }),
+    row("@acme/gpu-only", { everywhere: false, machines: [GPU], here: false }),
+  ],
+  shipped: [],
+  file: ".project_config.toml",
+  machineId: SELF,
+  restartPending: false,
+};
+
+const nameOf = (id: string) => (id === GPU ? "gpu-box" : "this server");
+const modules = (rows: ReturnType<typeof installedPluginRows>) =>
+  rows.flatMap((r) => (r.kind === "module" ? [r] : []));
+
+describe("plugin rows per machine", () => {
+  it("all machines: every plugin, and a machine-only one says where it runs", () => {
+    const view: PluginView = { machineId: null, remote: null, nameOf };
+    const rows = modules(installedPluginRows([], "en", deployment, [], view));
+    expect(rows.map((r) => [r.specifier, r.state, r.onlyOn])).toEqual([
+      ["@acme/shared", "active", undefined],
+      ["@acme/gpu-only", "elsewhere", ["gpu-box"]],
+    ]);
+    // Offered for all machines, since the shared table does not list it.
+    expect(availablePluginRows(deployment, [], view)).toEqual([]);
+  });
+
+  it("this server: what it is asked for, and a shared plugin cannot be removed from its table", () => {
+    const view: PluginView = { machineId: SELF, remote: null, nameOf };
+    const rows = modules(installedPluginRows([], "en", deployment, [], view));
+    expect(rows.map((r) => r.specifier)).toEqual(["@acme/shared"]);
+    expect(rows[0]!.removeBlocked).toBeDefined();
+  });
+
+  it("another machine: the state it reports, and what it has not received yet", () => {
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [row("@acme/gpu-only", { everywhere: true, machines: [], here: true }, false)],
+    };
+    remote.plugins[0]!.error = "npm: 404";
+    const view: PluginView = { machineId: GPU, remote, nameOf };
+    const rows = modules(installedPluginRows([], "en", deployment, [], view));
+    expect(rows.map((r) => [r.specifier, r.state, r.removeBlocked === undefined])).toEqual([
+      ["@acme/shared", "unsynced", false],
+      ["@acme/gpu-only", "failed", true],
+    ]);
+  });
+});
 
 const skill = (name: string) => ({ name, description: "", version: "2026.08.01.1" });
 

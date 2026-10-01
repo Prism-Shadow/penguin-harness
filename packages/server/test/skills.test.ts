@@ -1,19 +1,30 @@
 /**
- * Integration tests for the Skill routes: library catalog structure (any logged-in user), member
- * install/uninstall with 404 for outsiders, 404 for unknown skills, installed
- * files matching the library content, idempotent update on reinstall, the
- * directory disappearing after uninstall, default_agent starting with the
- * preinstalled library set (preinstall: false skills stay manual-install)
- * while a newly created plain Agent has none, Agent creation seeding the Skills picked in the
- * create dialog (unknown name = 404 with no Agent created), and the zip
- * archive install/export (layouts, zip-slip and limit rejections, 409
- * skill_exists + overwrite replace, byte-identical export round-trip), and the Agent list's
- * `pluginUpdates` — the Skill-library badge gate, which rides along on that list.
+ * The Skill routes: the library catalogue, installs into an Agent, zip archives and the Agent
+ * list's update badge.
+ *
+ * - Any signed-in user reads the catalogue (categories with plugin metadata, skills and hook
+ *   points, no bodies) and what a plugin ships, keyed by path.
+ * - Members install and uninstall; installs land verbatim, the directory goes on uninstall, and
+ *   a reinstall restores hand-edited content. An unknown skill is a 404 with nothing half
+ *   installed, a malformed body a 400; outsiders and a missing Agent get 404.
+ * - default_agent starts with the preinstalled library set (preinstall: false skills stay
+ *   manual); a new plain Agent has none; creating an Agent seeds the picked skills, refuses an
+ *   unknown one without creating the Agent, and refuses a non-array field.
+ * - An archive installs in the nested or the root layout (the directory name winning over the
+ *   frontmatter), refuses zip-slip, invalid names, malformed bodies and anything past the
+ *   uncompressed caps (read off the central directory), answers 409 skill_exists unless told
+ *   to overwrite, and exports byte-identically.
+ * - The Agent list's pluginUpdates names a Skill once the library moves past it (the legacy
+ *   version spelling reading as the same version), never one the library does not carry, and
+ *   never a directory with no readable SKILL.md.
+ *
+ * One app and one Project for the file; every case works in plain Agents of its own (removed
+ * after it), and the case about default_agent's own set in a Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir, librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
@@ -42,7 +53,7 @@ describe("skills api", () => {
       .flatMap((p) => p.skills.map((s) => s.name))
       .sort();
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_s");
     const b = await provisionUser(t.app, "member_s");
@@ -50,16 +61,50 @@ describe("skills api", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  let projects = 0;
+  /** A Project of the owner's with the member added. */
+  const newProject = async (): Promise<string> => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_s-skills", name: "skills project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_s-skills_${projects}`,
+        name: "skills project",
+      })
     ).json()) as ProjectCreateResponse;
-    projectId = created.project.projectId;
     expect(
-      (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_s" })).status,
+      (
+        await owner.post(`/api/projects/${created.project.projectId}/members`, {
+          userId: "member_s",
+        })
+      ).status,
     ).toBe(201);
+    return created.project.projectId;
+  };
+
+  // The cases share one Project and work in plain Agents of their own, which go with the case
+  // (a retry finds their names free). The one case about default_agent's own set takes a
+  // Project of its own.
+  let shared: string;
+  beforeAll(async () => {
+    shared = await newProject();
+  });
+  beforeEach(() => {
+    projectId = shared;
   });
   afterEach(async () => {
-    await t.cleanup();
+    const listed = (await (
+      await owner.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    for (const { agentId } of listed.agents) {
+      if (agentId !== "default_agent") {
+        await owner.delete(`/api/projects/${projectId}/agents/${agentId}`);
+      }
+    }
   });
 
   /** Creates a plain Agent with no Skills preinstalled. */
@@ -249,6 +294,7 @@ describe("skills api", () => {
   });
 
   it("default_agent starts with the preinstalled library set; preinstall:false skills stay manual-install", async () => {
+    projectId = await newProject();
     const res = await member.get(base("default_agent"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as AgentSkillsResponse;

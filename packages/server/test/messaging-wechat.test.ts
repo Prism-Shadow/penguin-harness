@@ -1,22 +1,34 @@
 /**
- * WeChat messaging tests — the fourth channel's mirror of messaging.test.ts, over a fake
- * transport (the wire itself is messaging-wechat-transport.test.ts's).
+ * WeChat messaging — the fourth channel's mirror of messaging.test.ts, over a fake transport
+ * (the wire itself is messaging-wechat-transport.test.ts's). No test opens a socket.
  *
- * Two halves. The ordinary one repeats what the other channels already pin, because the
- * route wiring is per-channel even where the behaviour is not: token masking, the bot id as
- * the account identity and the enable-time 409 it collides on, the save/enable split, the
- * channel-agnostic GET, the credential probe.
+ * This channel has NO typed credential (it is bound by a scan), so its PUT carries
+ * preferences alone, its test endpoint takes no body, and its inbound side is a long poll
+ * whose FIRST answer is a drain, so a binding switched on after a week dark does not replay
+ * that week as a task flood. Pictures and files travel both ways.
  *
- * The half that only exists here follows from this channel having NO typed credential. Its
- * PUT carries preferences alone and refuses to create a binding; its test endpoint takes no
- * body; and its inbound side is a long poll whose FIRST answer is a drain, so a binding
- * switched on after a week dark does not replay that week as a task flood. Media is the
- * other difference worth its own tests: pictures and files travel in both directions here,
- * which no other channel in this product manages.
- *
- * No test opens a socket.
+ * - A stored config is narrowed (one missing a credential refused; no host means the entry
+ *   host); a reply anchor reads back to its chat; the poll backs off further after each
+ *   failure, up to a ceiling.
+ * - The connector's seam carries text, images and files, downloading nothing until the bridge
+ *   asks.
+ * - The GET masks the token and names the bot id as the account; the PUT saves preferences
+ *   only and never creates a binding; the clear flag drops the token, refused while connected;
+ *   saving never collides, enabling does; the probe reads the stored binding; the channel
+ *   joins the channel-agnostic read.
+ * - The connection is ready before any poll answers; the drain runs until the platform
+ *   answers and never again on that connection, without spending itself on a silent window;
+ *   the first poll's backlog is dropped, keeping its cursor; a refused token stops the loop
+ *   with its own reason; a poll failure is one outage report, recovering on its own, and a
+ *   failure that recovers on its own does not silence the refusal behind it.
+ * - An inbound message reaches the Agent and the reply goes back with the conversation token
+ *   (forgotten when the connection closes); the test message goes to the remembered chat; an
+ *   empty message gets the not-supported notice; a picture reaches the model as an image typed
+ *   from its bytes, a file as a path under the sender's name, an oversize one as a size
+ *   refusal; outbound, a picture goes as a picture and any other file as an attachment, and
+ *   Markdown renders only when the binding asks.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
@@ -24,7 +36,6 @@ import type {
   WeChatBindingResponse,
   WeChatTestResponse,
 } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_TEST_MESSAGE,
@@ -49,11 +60,11 @@ import {
   wechatConfigOf,
   wechatRetryDelayMs,
 } from "../src/runtime/messaging/wechat-connector.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-28-11-00-00-w9100001";
-const SID2 = "session-2026-08-28-11-00-01-w9100002";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/wechat`;
 const PROJECT = "birder-default_project";
 
@@ -229,34 +240,12 @@ function echoFakeSession(
   runs: InputPayload[][],
   reply = "Reply text",
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(input: OmniMessage[]) {
       runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },
-    async *compact() {},
-  };
-}
-
-function sessionRowOf(sessionId: string, projectId: string): SessionRow {
-  return {
-    sessionId,
-    projectId,
-    agentId: "default_agent",
-    provider: "custom",
-    modelId: "m1",
-    workspace: "/tmp/w",
-    approvalMode: "allow-all",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -282,9 +271,10 @@ describe("wechat config and reply refs", () => {
   });
 
   it("backs off further after each failure, up to a ceiling", () => {
-    expect(wechatRetryDelayMs(1)).toBe(2_000);
-    expect(wechatRetryDelayMs(2)).toBe(4_000);
-    expect(wechatRetryDelayMs(20)).toBe(60_000);
+    expect(wechatRetryDelayMs(2)).toBeGreaterThan(wechatRetryDelayMs(1));
+    expect(wechatRetryDelayMs(3)).toBeGreaterThan(wechatRetryDelayMs(2));
+    // Past some number of failures the wait stops growing.
+    expect(wechatRetryDelayMs(30)).toBe(wechatRetryDelayMs(20));
   });
 });
 
@@ -331,6 +321,12 @@ describe("wechat binding routes and the long poll", () => {
   let api: ReturnType<typeof apiClient>;
   let fake: FakeWeChatTransport;
   let runs: InputPayload[][];
+  /**
+   * The case's two Sessions, fresh per case: the app is the describe's, and a binding, a poll
+   * and a status belong to their Session.
+   */
+  let SID: string;
+  let SID2: string;
 
   /** Store a scanned config as the scan route would, then flip the toggle on. */
   const bindEnabled = async (sid: string, config: Record<string, unknown> = SCANNED_CONFIG) => {
@@ -344,20 +340,31 @@ describe("wechat binding routes and the long poll", () => {
     await waitFor(() => t.deps.messaging.statusOf(sid, "wechat").state === "connected");
   };
 
-  beforeEach(async () => {
-    fake = new FakeWeChatTransport();
-    runs = [];
+  beforeAll(async () => {
     // A small non-zero backoff rather than zero: the loop retries in a tight cycle during
     // the outage test, and a zero delay would spin without yielding.
-    t = await createTestApp({ wechatTransport: fake, wechatRetryDelayMs: () => 5 });
+    t = await createTestApp({
+      wechatTransport: forwardingTo(() => fake),
+      wechatRetryDelayMs: () => 5,
+    });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    const row = sessionRowOf(SID, PROJECT);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    fake = new FakeWeChatTransport();
+    runs = [];
+    SID = uniqueSessionId();
+    SID2 = uniqueSessionId();
+    const row = sessionRow(SID, { projectId: PROJECT });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   });
-  afterEach(async () => {
-    await t.cleanup();
+  afterEach(() => {
+    // What the case bound goes with it, long poll and all.
+    for (const row of t.deps.messagingRepo.listAll()) t.deps.messaging.unbindSession(row.sessionId);
   });
 
   // —— Routes ——————————————————————————————————————————————————————————————
@@ -426,8 +433,8 @@ describe("wechat binding routes and the long poll", () => {
   });
 
   it("the bot id is the account: saving never collides, enabling does", async () => {
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, PROJECT));
-    t.deps.manager.adopt(sessionRowOf(SID2, PROJECT), echoFakeSession(SID2, []));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId: PROJECT }));
+    t.deps.manager.adopt(sessionRow(SID2, { projectId: PROJECT }), echoFakeSession(SID2, []));
     await bindEnabled(SID);
     // The same bot saved on a second Session is fine; only the connection is exclusive.
     t.deps.messagingRepo.upsert({

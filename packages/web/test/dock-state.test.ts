@@ -1,30 +1,45 @@
 /**
- * The dock store (features/dock/dock-state.ts): two docks (right/bottom) of uniform tabs
- * — singleton panels plus per-shell terminal tabs — SCOPED per conversation like browser
- * windows managing their own tabs: switching Sessions switches the whole arrangement, and
- * no conversation's tabs depend on another's. An open dock with no tabs is still visible
- * (it shows the picker); closing a tab removes it, and the last tab closing puts the dock
- * away; a dock's own toggle hides it keeping its tabs — and, through closedDockView, the
- * mounted bodies behind them.
+ * The dock store (features/dock/dock-state.ts): two docks (right and bottom) of uniform tabs —
+ * singleton panels and per-shell terminal tabs — scoped per conversation, the way browser
+ * windows manage their own tabs. The module reads localStorage at import time, so the storage
+ * is installed first (for the whole file: a reload reads it back) and the module imported after.
  *
- * The module reads localStorage at import time, so the stub is installed first and the
- * module imported dynamically.
+ * - A panel opens as a right-dock tab by default and stays a singleton: opening it in the other
+ *   dock moves the tab, and reopening shows it where it lives; the scheduled-tasks panel and the
+ *   built-in browser open like any other. Closing a tab removes it, and the last one puts the
+ *   dock away.
+ * - An open dock with no tabs is visible (the picker); toggling a dock closed keeps its tabs.
+ * - Terminal tabs are one per shell, bottom by default, shown where they live rather than
+ *   duplicated, and mix freely with panel tabs.
+ * - The whole arrangement switches with the Session and comes back on return; one Session's
+ *   terminals never appear in another's docks; a placeholder scope's arrangement passes to the
+ *   first Session chosen (a draft's to the Session it becomes, never clobbering); dead shells'
+ *   tabs are pruned in every scope.
+ * - A tab moves to the other dock and activates there (the only tab closes its source dock); a
+ *   whole dock moves, merging after the target's tabs; a strip reorders only with a complete,
+ *   matching key list.
+ * - The terminal toggle reports no tab so the caller adopts or creates one, hides and restores,
+ *   and brings the terminal to the front when a panel covers it.
+ * - Each scope's arrangement round-trips across a reload (sizes are one preference); a stored
+ *   tab this build does not know is dropped, not the dock, and a malformed entry reads as empty
+ *   docks.
+ * - Scope switches and moves are instant (no animation); toggles animate.
+ * - A detached terminal tab returns to the scope it left, unless a conversation already holds
+ *   the shell again.
+ * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
+ *   one has none.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { memoryStorage } from "./helpers/storage";
 
 let dock: typeof import("../src/features/dock/dock-state");
-/** The stub's backing map, so a test can assert what a RELOAD would read back. */
-let store: Map<string, string>;
 
 beforeAll(async () => {
-  store = new Map<string, string>();
+  // Not vi.stubGlobal: the package config unstubs globals before every test, and the module
+  // (and the reload below) must keep reading this one storage for the whole file.
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
-    value: {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => void store.set(key, value),
-      removeItem: (key: string) => void store.delete(key),
-    },
+    value: memoryStorage(),
   });
   dock = await import("../src/features/dock/dock-state");
 });
@@ -302,7 +317,7 @@ describe("persistence", () => {
   it("reads a stored schedules tab back and drops a tab key it does not know", async () => {
     // A layout written by a newer build may name a kind this build lacks; the known tab
     // survives and the stranger is dropped, never the whole dock.
-    store.set(
+    localStorage.setItem(
       "penguin.dock.layout",
       '{"scopes": {"s": {"right": {"tabs": ["schedules", "someday"], "active": "schedules", "open": true}}}}',
     );
@@ -326,7 +341,7 @@ describe("persistence", () => {
   });
 
   it("degrades a malformed stored entry to empty docks", async () => {
-    store.set(
+    localStorage.setItem(
       "penguin.dock.layout",
       '{"scopes": {"s": {"right": {"tabs": [42]}}}, "bottomRatio": "x"}',
     );

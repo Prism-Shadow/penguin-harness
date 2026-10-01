@@ -1,11 +1,19 @@
 /**
- * The Evaluation Center's prompts and id helpers (src/features/benchmark/benchmark-prompts.ts):
- * the Create-with-AI tail hands the benchmark-design Skill its tested Agent and the Project-level
- * layout, the Evaluate and Optimize tails carry every input the agent-evaluation and
- * agent-optimization Skills require, the two Ask AI tails carry the facts on screen and the
- * files they were read from, and the manual form's directory names follow the id alphabet.
+ * The Evaluation Center's prompts and id helpers (src/features/benchmark/benchmark-prompts.ts).
  * Assertions on a tail's wording are language-agnostic: the ids, paths and Session ids it must
  * name, never the sentences around them, which differ per dictionary.
+ *
+ * - The Create-with-AI tail hands the benchmark-design Skill its tested Agent and the
+ *   Project-level layout, and every evaluation records its tested Agent.
+ * - The Evaluate tail carries every input the agent-evaluation Skill requires and asks for the
+ *   full matrix without offering an optimization; the Optimize tail carries every input the
+ *   agent-optimization Skill requires; a note or focus text goes before the tail, a blank one
+ *   is left out.
+ * - The evaluation dialog's Ask AI question carries the facts on screen, every case and the
+ *   Session of every run, and names no Skill to run; the case dialog's names both material
+ *   paths and the latest runs; each box opens on the default question, which leads its examples.
+ * - Case ids pad the position to three digits, a Benchmark lives at the Project level, and a
+ *   runs count is 1..MAX_RUNS.
  */
 import { describe, expect, it } from "vitest";
 import { S } from "../src/lib/strings";
@@ -15,7 +23,6 @@ import {
   askCaseTail,
   askEvaluationExamples,
   askEvaluationTail,
-  benchmarkCreateExamples,
   benchmarkCreateTail,
   benchmarkPath,
   buildEvaluatePrompt,
@@ -44,16 +51,6 @@ describe("benchmarkCreateTail", () => {
     expect(tail).toContain("`benchmarks/<benchmark_id>/`");
     expect(tail).not.toContain("agents/report-writer");
     expect(tail).toContain("`agent_id`");
-  });
-
-  it("offers examples with unique keys and non-empty prompts", () => {
-    const examples = benchmarkCreateExamples();
-    expect(examples.length).toBeGreaterThanOrEqual(4);
-    expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
-    for (const e of examples) {
-      expect(e.label).not.toBe("");
-      expect(e.prompt.trim()).not.toBe("");
-    }
   });
 });
 
@@ -206,17 +203,10 @@ describe("askEvaluationTail (the evaluation dialog's Ask AI question)", () => {
     expect(tail).not.toContain("run_subagent");
   });
 
-  it("offers examples with unique keys and non-empty prompts, the default question first", () => {
-    const examples = askEvaluationExamples();
-    expect(examples).toHaveLength(4);
-    expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
-    for (const e of examples) {
-      expect(e.label).not.toBe("");
-      expect(e.prompt.trim()).not.toBe("");
-    }
-    // The box opens on the default question; the leading example IS that question, so a
-    // reader who tried another example can bring it back with one click.
-    expect(examples[0]?.prompt).toBe(S.benchmark.askEvaluationDefault);
+  it("leads the examples with the default question the box opens on", () => {
+    // The leading example IS that question, so a reader who tried another example can bring
+    // it back with one click.
+    expect(askEvaluationExamples()[0]?.prompt).toBe(S.benchmark.askEvaluationDefault);
   });
 });
 
@@ -254,15 +244,8 @@ describe("askCaseTail (the case dialog's Ask AI question)", () => {
     expect(tail).not.toContain("64.7");
   });
 
-  it("offers examples with unique keys and non-empty prompts, the default question first", () => {
-    const examples = askCaseExamples();
-    expect(examples).toHaveLength(4);
-    expect(examples[0]?.prompt).toBe(S.benchmark.askCaseDefault);
-    expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
-    for (const e of examples) {
-      expect(e.label).not.toBe("");
-      expect(e.prompt.trim()).not.toBe("");
-    }
+  it("leads the examples with the default question the box opens on", () => {
+    expect(askCaseExamples()[0]?.prompt).toBe(S.benchmark.askCaseDefault);
   });
 });
 

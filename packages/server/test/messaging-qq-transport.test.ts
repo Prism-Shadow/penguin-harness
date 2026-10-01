@@ -1,17 +1,30 @@
 /**
- * The QQ production adapter — the half of the channel that talks to Tencent.
+ * The QQ production adapter — the half of the channel that talks to Tencent, under the fake
+ * transport messaging-qq.test.ts drives the connector with: the access-token cache, the
+ * OpenAPI POST with its 401 replay and its two error families, and the gateway session's
+ * handshake, heartbeat and reconnect protocol.
  *
- * messaging-qq.test.ts drives the connector and its routes over a fake transport, which
- * leaves everything under that seam unexercised: the access-token cache, the OpenAPI POST
- * with its 401 replay and its two error families, and the gateway session's whole
- * handshake / heartbeat / reconnect protocol. Those are where a platform failure actually
- * reaches this product, so they get their own file.
+ * - One token is bought and shared by a burst of sends, re-bought inside its refresh margin,
+ *   never cached forever on a missing TTL; a refused exchange names the platform's reason and
+ *   never the secret.
+ * - A passive reply posts to its scene's endpoint as text, or as msg_type 2 with `content`
+ *   emptied; a refusal is a QQApiError (a 4xx one a defect, a 5xx one recovering) and a
+ *   transfer failure a recovering channel error; a 401 is replayed once on a fresh token; the
+ *   one failure this product can provoke leads with the rule.
+ * - The gateway identifies with the one subscribed intent; resumes after a drop that keeps
+ *   the session and re-identifies after one that does not; forgets the session on
+ *   INVALID_SESSION and reconnects on RECONNECT (the asked-for reconnect routine, the refused
+ *   resume not); stops for good on a delisted or banned bot; types every close it reports and
+ *   calls only the self-clearing ones recovering (a routine close does not silence the outage
+ *   after it); drops a socket that stops acknowledging heartbeats or never handshakes, both
+ *   routine; judges the token exchange and the gateway lookup the way it judges a send; opens
+ *   nothing once closed.
  *
- * Nothing here opens a socket or a connection. `globalThis.fetch` is stubbed the way
- * messaging-telegram.test.ts stubs it, and the gateway runs on a fake socket passed through
- * `QQTransportOpts.createSocket` — a test hook rather than a module mock, because this
- * suite shares one module registry across files and `vi.mock` would leak into every later
- * one (see vitest.config.ts).
+ * Nothing here opens a socket: the global fetch is the suite's fetch fake, restored after
+ * every case, and the gateway runs on a fake socket passed through
+ * `QQTransportOpts.createSocket` — hooks rather than module mocks, because this suite shares
+ * one module registry across files and `vi.mock` would leak into every later one (see
+ * vitest.config.ts).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -29,9 +42,15 @@ import {
 } from "../src/runtime/messaging/qq-api.js";
 import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
 import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
+import type { FetchCall } from "./fixtures/fetch.js";
 import { waitFor } from "./helpers.js";
 
 const CREDS: QQCredentials = { appId: "102000001", appSecret: "qq-app-secret-ABCD-1234" };
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 /** Gateway opcodes, spelled out here so a test asserts the wire number rather than a name. */
 const OP_DISPATCH = 0;
@@ -45,61 +64,23 @@ const OP_HEARTBEAT_ACK = 11;
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-/** One recorded request against the stubbed fetch. */
-interface Call {
-  url: string;
-  method: string;
-  body: string;
-  authorization: string;
-}
-
 /**
- * Installs a fetch stub for the run of `body`, and hands it the calls it recorded.
- *
- * `answer` returns the response for one call; returning null means "the default", which is
- * a valid token and a gateway URL — the two calls almost every test needs before it reaches
- * the thing it is actually about.
+ * Stands the suite's fetch fake in for the global fetch. `answer` decides a call's response;
+ * returning null gives the default — a valid token and a gateway URL, the two calls almost
+ * every test needs before it reaches the thing it is actually about.
  */
-async function withFetch<T>(
-  answer: (call: Call, index: number) => Response | null,
-  body: (calls: Call[]) => Promise<T>,
-): Promise<T> {
-  const calls: Call[] = [];
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-    const headers = new Headers(init?.headers);
-    const call: Call = {
-      url: String(input),
-      method: init?.method ?? "GET",
-      body: typeof init?.body === "string" ? init.body : "",
-      authorization: headers.get("authorization") ?? "",
-    };
-    calls.push(call);
-    const answered = answer(call, calls.length - 1);
+function stubQQ(answer: (call: FetchCall, index: number) => Response | null = () => null) {
+  return stubFetch((call, index) => {
+    const answered = answer(call, index);
     if (answered !== null) return answered;
     if (call.url.endsWith("/app/getAppAccessToken")) {
-      return jsonResponse({ access_token: `token-${calls.length}`, expires_in: 7200 });
+      return jsonResponse({ access_token: `token-${index + 1}`, expires_in: 7200 });
     }
     if (call.url.endsWith("/gateway")) return jsonResponse({ url: "wss://gateway.example/ws" });
     if (call.url.includes("/v2/")) return jsonResponse({}, 200);
     throw new Error(`unexpected fetch: ${call.url}`);
-  }) as typeof fetch;
-  try {
-    return await body(calls);
-  } finally {
-    globalThis.fetch = original;
-  }
+  }).calls;
 }
-
-/** The default answer: let withFetch's own token/gateway responses stand. */
-const defaults = (): null => null;
 
 // ---------------------------------------------------------------------------
 // A fake socket: every frame in and out is the test's, and no I/O happens.
@@ -220,87 +201,75 @@ describe("the QQ access-token cache", () => {
   afterEach(() => vi.useRealTimers());
 
   it("buys one token and reuses it, whatever a burst of sends asks for", async () => {
-    await withFetch(defaults, async (calls) => {
-      const bot = createQQTransport().createClient(CREDS);
-      // Concurrent, so the cache is asked before the first exchange has resolved: without
-      // the in-flight collapse each of these buys its own token, and the endpoint answers
-      // 100001 Too many requests.
-      await Promise.all([bot.checkCredentials(), bot.checkCredentials(), bot.checkCredentials()]);
-      await bot.checkCredentials();
-      const exchanges = calls.filter((c) => c.url.endsWith("/app/getAppAccessToken"));
-      expect(exchanges).toHaveLength(1);
-      expect(exchanges[0]!.method).toBe("POST");
-      // The exchange is the only call that carries the secret, and it carries it as the
-      // platform's own field names.
-      expect(JSON.parse(exchanges[0]!.body)).toEqual({
-        appId: CREDS.appId,
-        clientSecret: CREDS.appSecret,
-      });
+    const calls = stubQQ();
+    const bot = createQQTransport().createClient(CREDS);
+    // Concurrent, so the cache is asked before the first exchange has resolved: without
+    // the in-flight collapse each of these buys its own token, and the endpoint answers
+    // 100001 Too many requests.
+    await Promise.all([bot.checkCredentials(), bot.checkCredentials(), bot.checkCredentials()]);
+    await bot.checkCredentials();
+    const exchanges = calls.filter((c) => c.url.endsWith("/app/getAppAccessToken"));
+    expect(exchanges).toHaveLength(1);
+    expect(exchanges[0]!.method).toBe("POST");
+    // The exchange is the only call that carries the secret, and it carries it as the
+    // platform's own field names.
+    expect(JSON.parse(exchanges[0]!.body)).toEqual({
+      appId: CREDS.appId,
+      clientSecret: CREDS.appSecret,
     });
   });
 
   it("re-buys once the token is inside its refresh margin", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    await withFetch(
-      (call) =>
-        call.url.endsWith("/app/getAppAccessToken")
-          ? // Quoted, which is what the platform's own response example returns even though
-            // its field table calls the field a number.
-            jsonResponse({ access_token: `t${Date.now()}`, expires_in: "120" })
-          : null,
-      async (calls) => {
-        const bot = createQQTransport().createClient(CREDS);
-        await bot.checkCredentials();
-        // Inside the cached life (120s less the documented 60s overlap).
-        vi.setSystemTime(Date.now() + 30_000);
-        await bot.checkCredentials();
-        expect(calls).toHaveLength(1);
-        // Past it. The old token stays valid for the overlap, so refreshing here can never
-        // strand a request already in flight.
-        vi.setSystemTime(Date.now() + 40_000);
-        await bot.checkCredentials();
-        expect(calls).toHaveLength(2);
-      },
+    const calls = stubQQ((call) =>
+      call.url.endsWith("/app/getAppAccessToken")
+        ? // Quoted, which is what the platform's own response example returns even though
+          // its field table calls the field a number.
+          jsonResponse({ access_token: `t${Date.now()}`, expires_in: "120" })
+        : null,
     );
+    const bot = createQQTransport().createClient(CREDS);
+    await bot.checkCredentials();
+    // Inside the cached life (120s less the documented 60s overlap).
+    vi.setSystemTime(Date.now() + 30_000);
+    await bot.checkCredentials();
+    expect(calls).toHaveLength(1);
+    // Past it. The old token stays valid for the overlap, so refreshing here can never
+    // strand a request already in flight.
+    vi.setSystemTime(Date.now() + 40_000);
+    await bot.checkCredentials();
+    expect(calls).toHaveLength(2);
   });
 
   it("caps a missing or nonsensical TTL at the platform's own ceiling instead of caching forever", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    await withFetch(
-      (call) =>
-        call.url.endsWith("/app/getAppAccessToken")
-          ? jsonResponse({ access_token: "no-ttl" })
-          : null,
-      async (calls) => {
-        const bot = createQQTransport().createClient(CREDS);
-        await bot.checkCredentials();
-        vi.setSystemTime(Date.now() + 7100 * 1000);
-        await bot.checkCredentials();
-        expect(calls).toHaveLength(1);
-        vi.setSystemTime(Date.now() + 100 * 1000);
-        await bot.checkCredentials();
-        expect(calls).toHaveLength(2);
-      },
+    const calls = stubQQ((call) =>
+      call.url.endsWith("/app/getAppAccessToken") ? jsonResponse({ access_token: "no-ttl" }) : null,
     );
+    const bot = createQQTransport().createClient(CREDS);
+    await bot.checkCredentials();
+    vi.setSystemTime(Date.now() + 7100 * 1000);
+    await bot.checkCredentials();
+    expect(calls).toHaveLength(1);
+    vi.setSystemTime(Date.now() + 100 * 1000);
+    await bot.checkCredentials();
+    expect(calls).toHaveLength(2);
   });
 
   it("reports a refused exchange with the platform's reason and never with the secret", async () => {
-    await withFetch(
-      (call) =>
-        call.url.endsWith("/app/getAppAccessToken")
-          ? jsonResponse({ code: 100007, message: "appid invalid" }, 400)
-          : null,
-      async () => {
-        const bot = createQQTransport().createClient(CREDS);
-        const err = await bot.checkCredentials().then(
-          () => "",
-          (e: unknown) => (e instanceof Error ? e.message : String(e)),
-        );
-        expect(err).toContain("appid invalid");
-        expect(err).toContain("100007");
-        expect(err).not.toContain(CREDS.appSecret);
-      },
+    stubQQ((call) =>
+      call.url.endsWith("/app/getAppAccessToken")
+        ? jsonResponse({ code: 100007, message: "appid invalid" }, 400)
+        : null,
     );
+    const bot = createQQTransport().createClient(CREDS);
+    const err = await bot.checkCredentials().then(
+      () => "",
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    expect(err).toContain("appid invalid");
+    expect(err).toContain("100007");
+    expect(err).not.toContain(CREDS.appSecret);
   });
 });
 
@@ -314,39 +283,37 @@ describe("the QQ OpenAPI send", () => {
   };
 
   it("posts a passive reply to the scene's own endpoint, as plain text", async () => {
-    await withFetch(defaults, async (calls) => {
-      const bot = createQQTransport().createClient(CREDS);
-      await bot.sendMessage(args);
-      await bot.sendMessage({ ...args, kind: "group", openid: "group_openid_bbb" });
-      const sends = calls.filter((c) => c.url.includes("/v2/"));
-      expect(sends.map((c) => c.url)).toEqual([
-        `${QQ_API_BASE}/v2/users/user_openid_aaa/messages`,
-        `${QQ_API_BASE}/v2/groups/group_openid_bbb/messages`,
-      ]);
-      expect(sends[0]!.authorization).toBe("QQBot token-1");
-      expect(JSON.parse(sends[0]!.body)).toEqual({
-        content: "hello",
-        msg_type: 0,
-        msg_id: "msg_1",
-        msg_seq: 2,
-      });
+    const calls = stubQQ();
+    const bot = createQQTransport().createClient(CREDS);
+    await bot.sendMessage(args);
+    await bot.sendMessage({ ...args, kind: "group", openid: "group_openid_bbb" });
+    const sends = calls.filter((c) => c.url.includes("/v2/"));
+    expect(sends.map((c) => c.url)).toEqual([
+      `${QQ_API_BASE}/v2/users/user_openid_aaa/messages`,
+      `${QQ_API_BASE}/v2/groups/group_openid_bbb/messages`,
+    ]);
+    expect(sends[0]!.headers.get("authorization")).toBe("QQBot token-1");
+    expect(JSON.parse(sends[0]!.body)).toEqual({
+      content: "hello",
+      msg_type: 0,
+      msg_id: "msg_1",
+      msg_seq: 2,
     });
   });
 
   it("posts a markdown reply as msg_type 2, with `content` emptied as the platform requires", async () => {
-    await withFetch(defaults, async (calls) => {
-      const bot = createQQTransport().createClient(CREDS);
-      await bot.sendMessage({ ...args, markdown: "## Head\n\n**bold**" });
-      const sent = calls.filter((c) => c.url.includes("/v2/"))[0]!;
-      // "传了 markdown 后此字段必须为空" — a payload carrying both is rejected, so `content`
-      // goes out empty rather than merely ignored. The deprecated template fields are absent.
-      expect(JSON.parse(sent.body)).toEqual({
-        content: "",
-        msg_type: 2,
-        markdown: { content: "## Head\n\n**bold**" },
-        msg_id: "msg_1",
-        msg_seq: 2,
-      });
+    const calls = stubQQ();
+    const bot = createQQTransport().createClient(CREDS);
+    await bot.sendMessage({ ...args, markdown: "## Head\n\n**bold**" });
+    const sent = calls.filter((c) => c.url.includes("/v2/"))[0]!;
+    // "传了 markdown 后此字段必须为空" — a payload carrying both is rejected, so `content`
+    // goes out empty rather than merely ignored. The deprecated template fields are absent.
+    expect(JSON.parse(sent.body)).toEqual({
+      content: "",
+      msg_type: 2,
+      markdown: { content: "## Head\n\n**bold**" },
+      msg_id: "msg_1",
+      msg_seq: 2,
     });
   });
 
@@ -354,200 +321,186 @@ describe("the QQ OpenAPI send", () => {
     // The distinction the markdown-to-text fallback turns on: the platform answered and
     // delivered nothing, so another form of the same message is safe to send — where a
     // request that never completed may already have been delivered.
-    await withFetch(
-      (call) => (call.url.includes("/v2/") ? jsonResponse({ err_code: 40054001 }, 400) : null),
-      async () => {
-        const bot = createQQTransport().createClient(CREDS);
-        const err = await bot.sendMessage(args).catch((e: unknown) => e);
-        expect(err).toBeInstanceOf(QQApiError);
-        expect((err as QQApiError).code).toBe(40054001);
-        // A 4xx refusal meets the same no next time: the error table keeps it a defect.
-        expect((err as QQApiError).recovers).toBe(false);
-        expect(messagingErrorKind(err, "messaging_send_failed")).toBe("unexpected");
-      },
+    const sendError = () =>
+      createQQTransport()
+        .createClient(CREDS)
+        .sendMessage(args)
+        .catch((e: unknown) => e);
+
+    stubQQ((call) =>
+      call.url.includes("/v2/") ? jsonResponse({ err_code: 40054001 }, 400) : null,
     );
-    await withFetch(
-      (call) => (call.url.includes("/v2/") ? jsonResponse({ err_code: 22009 }, 503) : null),
-      async () => {
-        const bot = createQQTransport().createClient(CREDS);
-        const err = await bot.sendMessage(args).catch((e: unknown) => e);
-        // The platform's own fault, whatever its code says: the next send goes through.
-        expect(err).toBeInstanceOf(QQApiError);
-        expect(messagingErrorKind(err, "messaging_send_failed")).toBe("expected");
-      },
-    );
-    await withFetch(
-      (call) => {
-        if (!call.url.includes("/v2/")) return null;
-        throw new TypeError("fetch failed");
-      },
-      async () => {
-        const bot = createQQTransport().createClient(CREDS);
-        const err = await bot.sendMessage(args).catch((e: unknown) => e);
-        expect(err).toBeInstanceOf(MessagingChannelError);
-        expect(err).not.toBeInstanceOf(QQApiError);
-        expect((err as MessagingChannelError).recovers).toBe(true);
-        expect(messagingErrorKind(err, "messaging_send_failed")).toBe("expected");
-      },
-    );
+    const refused = await sendError();
+    expect(refused).toBeInstanceOf(QQApiError);
+    expect((refused as QQApiError).code).toBe(40054001);
+    // A 4xx refusal meets the same no next time: the error table keeps it a defect.
+    expect((refused as QQApiError).recovers).toBe(false);
+    expect(messagingErrorKind(refused, "messaging_send_failed")).toBe("unexpected");
+
+    stubQQ((call) => (call.url.includes("/v2/") ? jsonResponse({ err_code: 22009 }, 503) : null));
+    const faulted = await sendError();
+    // The platform's own fault, whatever its code says: the next send goes through.
+    expect(faulted).toBeInstanceOf(QQApiError);
+    expect(messagingErrorKind(faulted, "messaging_send_failed")).toBe("expected");
+
+    stubQQ((call) => {
+      if (!call.url.includes("/v2/")) return null;
+      throw new TypeError("fetch failed");
+    });
+    const lost = await sendError();
+    expect(lost).toBeInstanceOf(MessagingChannelError);
+    expect(lost).not.toBeInstanceOf(QQApiError);
+    expect((lost as MessagingChannelError).recovers).toBe(true);
+    expect(messagingErrorKind(lost, "messaging_send_failed")).toBe("expected");
   });
 
   it("replays a 401 once on a fresh token, and gives up rather than looping", async () => {
     // A secret rotated in the console, or a clock further off than the refresh margin
     // covers: the cached token died before its stated expiry.
-    await withFetch(
-      (call) => (call.url.includes("/v2/") ? jsonResponse({ code: 11244 }, 401) : null),
-      async (calls) => {
-        const bot = createQQTransport().createClient(CREDS);
-        await expect(bot.sendMessage(args)).rejects.toThrow(/Message send failed/);
-        expect(calls.map((c) => c.url.replace(QQ_API_BASE, ""))).toEqual([
-          "/app/getAppAccessToken",
-          "/v2/users/user_openid_aaa/messages",
-          // The invalidated cache buys a new token, and the send is tried once more...
-          "/app/getAppAccessToken",
-          "/v2/users/user_openid_aaa/messages",
-        ]);
-      },
+    const calls = stubQQ((call) =>
+      call.url.includes("/v2/") ? jsonResponse({ code: 11244 }, 401) : null,
     );
+    const bot = createQQTransport().createClient(CREDS);
+    await expect(bot.sendMessage(args)).rejects.toThrow(/Message send failed/);
+    expect(calls.map((c) => c.url.replace(QQ_API_BASE, ""))).toEqual([
+      "/app/getAppAccessToken",
+      "/v2/users/user_openid_aaa/messages",
+      // The invalidated cache buys a new token, and the send is tried once more...
+      "/app/getAppAccessToken",
+      "/v2/users/user_openid_aaa/messages",
+    ]);
   });
 
   it("leads the one failure this product can provoke with the rule behind it", async () => {
-    await withFetch(
-      (call) =>
-        call.url.includes("/v2/")
-          ? // Both families in one body, which is where the precedence matters: the OpenAPI
-            // answers `err_code` and the token endpoint answers `code`.
-            jsonResponse({ err_code: 40034128, code: 500, message: "msg over limit" }, 400)
-          : null,
-      async () => {
-        const bot = createQQTransport().createClient(CREDS);
-        const err = await bot.sendMessage(args).then(
-          () => "",
-          (e: unknown) => (e instanceof Error ? e.message : String(e)),
-        );
-        expect(err).toContain("only a few replies");
-        expect(err).toContain("40034128");
-        expect(err).not.toContain("500");
-      },
+    stubQQ((call) =>
+      call.url.includes("/v2/")
+        ? // Both families in one body, which is where the precedence matters: the OpenAPI
+          // answers `err_code` and the token endpoint answers `code`.
+          jsonResponse({ err_code: 40034128, code: 500, message: "msg over limit" }, 400)
+        : null,
     );
+    const bot = createQQTransport().createClient(CREDS);
+    const err = await bot.sendMessage(args).then(
+      () => "",
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    expect(err).toContain("only a few replies");
+    expect(err).toContain("40034128");
+    expect(err).not.toContain("500");
   });
 });
 
 describe("the QQ gateway session", () => {
   it("identifies with the one subscribed intent and reports the handshake", async () => {
-    await withFetch(defaults, async (calls) => {
-      const h = harnessOf();
-      const conn = await h.open();
-      try {
-        const socket = h.sockets[0]!;
-        expect(socket.url).toBe("wss://gateway.example/ws");
-        socket.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
-        expect(socket.frames(OP_IDENTIFY)[0]).toMatchObject({
-          op: OP_IDENTIFY,
-          d: { token: "QQBot token-1", intents: QQ_INTENT_GROUP_AND_C2C, shard: [0, 1] },
-        });
-        expect(h.readies).toBe(0); // HELLO is not a handshake; READY is
-        socket.deliver({ op: OP_DISPATCH, t: "READY", s: 1, d: { session_id: "gw-1" } });
-        expect(h.readies).toBe(1);
+    const calls = stubQQ();
+    const h = harnessOf();
+    const conn = await h.open();
+    try {
+      const socket = h.sockets[0]!;
+      expect(socket.url).toBe("wss://gateway.example/ws");
+      socket.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
+      expect(socket.frames(OP_IDENTIFY)[0]).toMatchObject({
+        op: OP_IDENTIFY,
+        d: { token: "QQBot token-1", intents: QQ_INTENT_GROUP_AND_C2C, shard: [0, 1] },
+      });
+      expect(h.readies).toBe(0); // HELLO is not a handshake; READY is
+      socket.deliver({ op: OP_DISPATCH, t: "READY", s: 1, d: { session_id: "gw-1" } });
+      expect(h.readies).toBe(1);
 
-        socket.deliver({
-          op: OP_DISPATCH,
-          t: "C2C_MESSAGE_CREATE",
-          s: 2,
-          d: { id: "m1", content: " status?", author: { user_openid: "u1" } },
-        });
-        expect(h.inbound).toEqual([
-          { kind: "c2c", openid: "u1", messageId: "m1", content: "status?", senderOpenid: "u1" },
-        ]);
-        // `GET /gateway` is rate limited to 2 requests a minute; one lookup per session.
-        expect(calls.filter((c) => c.url.endsWith("/gateway"))).toHaveLength(1);
-      } finally {
-        conn.close();
-      }
-    });
+      socket.deliver({
+        op: OP_DISPATCH,
+        t: "C2C_MESSAGE_CREATE",
+        s: 2,
+        d: { id: "m1", content: " status?", author: { user_openid: "u1" } },
+      });
+      expect(h.inbound).toEqual([
+        { kind: "c2c", openid: "u1", messageId: "m1", content: "status?", senderOpenid: "u1" },
+      ]);
+      // `GET /gateway` is rate limited to 2 requests a minute; one lookup per session.
+      expect(calls.filter((c) => c.url.endsWith("/gateway"))).toHaveLength(1);
+    } finally {
+      conn.close();
+    }
   });
 
   it("resumes after a drop that keeps the session, and re-identifies after one that does not", async () => {
-    await withFetch(defaults, async () => {
-      const h = harnessOf();
-      const conn = await h.open();
-      try {
-        handshake(h.sockets[0]!, "gw-1");
-        // 4009 is the one drop the platform keeps resumable.
-        h.sockets[0]!.drop(4009);
-        await waitFor(() => h.sockets.length === 2);
-        h.sockets[1]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
-        expect(h.sockets[1]!.frames(OP_RESUME)[0]).toMatchObject({
-          d: { session_id: "gw-1", seq: 1 },
-        });
-        h.sockets[1]!.deliver({ op: OP_DISPATCH, t: "RESUMED", s: 2 });
-        expect(h.readies).toBe(2);
+    stubQQ();
+    const h = harnessOf();
+    const conn = await h.open();
+    try {
+      handshake(h.sockets[0]!, "gw-1");
+      // 4009 is the one drop the platform keeps resumable.
+      h.sockets[0]!.drop(4009);
+      await waitFor(() => h.sockets.length === 2);
+      h.sockets[1]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
+      expect(h.sockets[1]!.frames(OP_RESUME)[0]).toMatchObject({
+        d: { session_id: "gw-1", seq: 1 },
+      });
+      h.sockets[1]!.deliver({ op: OP_DISPATCH, t: "RESUMED", s: 2 });
+      expect(h.readies).toBe(2);
 
-        // 4006 says the handle is dead: the next handshake must start over.
-        h.sockets[1]!.drop(4006);
-        await waitFor(() => h.sockets.length === 3);
-        h.sockets[2]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
-        expect(h.sockets[2]!.frames(OP_RESUME)).toHaveLength(0);
-        expect(h.sockets[2]!.frames(OP_IDENTIFY)).toHaveLength(1);
-        // One report per OUTAGE, and there were two: a completed handshake ends the first
-        // one, so the drop after it is news rather than a repeat.
-        expect(h.errors).toHaveLength(2);
-      } finally {
-        conn.close();
-      }
-    });
+      // 4006 says the handle is dead: the next handshake must start over.
+      h.sockets[1]!.drop(4006);
+      await waitFor(() => h.sockets.length === 3);
+      h.sockets[2]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
+      expect(h.sockets[2]!.frames(OP_RESUME)).toHaveLength(0);
+      expect(h.sockets[2]!.frames(OP_IDENTIFY)).toHaveLength(1);
+      // One report per OUTAGE, and there were two: a completed handshake ends the first
+      // one, so the drop after it is news rather than a repeat.
+      expect(h.errors).toHaveLength(2);
+    } finally {
+      conn.close();
+    }
   });
 
   it("forgets the session on INVALID_SESSION and reconnects on RECONNECT", async () => {
-    await withFetch(defaults, async () => {
-      const h = harnessOf();
-      const conn = await h.open();
-      try {
-        handshake(h.sockets[0]!, "gw-1");
-        // Politely asked to reconnect: the session stays resumable.
-        h.sockets[0]!.deliver({ op: OP_RECONNECT });
-        expect(h.sockets[0]!.closes).toBe(1);
-        h.sockets[0]!.drop(1000);
-        await waitFor(() => h.sockets.length === 2);
-        h.sockets[1]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
-        expect(h.sockets[1]!.frames(OP_RESUME)).toHaveLength(1);
+    stubQQ();
+    const h = harnessOf();
+    const conn = await h.open();
+    try {
+      handshake(h.sockets[0]!, "gw-1");
+      // Politely asked to reconnect: the session stays resumable.
+      h.sockets[0]!.deliver({ op: OP_RECONNECT });
+      expect(h.sockets[0]!.closes).toBe(1);
+      h.sockets[0]!.drop(1000);
+      await waitFor(() => h.sockets.length === 2);
+      h.sockets[1]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
+      expect(h.sockets[1]!.frames(OP_RESUME)).toHaveLength(1);
 
-        // The resume was refused: the handle goes.
-        h.sockets[1]!.deliver({ op: OP_INVALID_SESSION });
-        h.sockets[1]!.drop(1000);
-        await waitFor(() => h.sockets.length === 3);
-        h.sockets[2]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
-        expect(h.sockets[2]!.frames(OP_IDENTIFY)).toHaveLength(1);
+      // The resume was refused: the handle goes.
+      h.sockets[1]!.deliver({ op: OP_INVALID_SESSION });
+      h.sockets[1]!.drop(1000);
+      await waitFor(() => h.sockets.length === 3);
+      h.sockets[2]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
+      expect(h.sockets[2]!.frames(OP_IDENTIFY)).toHaveLength(1);
 
-        // The two closes look alike on the wire, so their verdicts come from the session: the
-        // reconnect the platform asked for is routine, and the refused resume — which loses
-        // whatever arrived in the gap — is not, and is reported although the same outage has
-        // already reported the routine one.
-        expect(h.errors.map((err) => messagingErrorKind(err, "messaging_connect_failed"))).toEqual([
-          "expected",
-          "unexpected",
-        ]);
-      } finally {
-        conn.close();
-      }
-    });
+      // The two closes look alike on the wire, so their verdicts come from the session: the
+      // reconnect the platform asked for is routine, and the refused resume — which loses
+      // whatever arrived in the gap — is not, and is reported although the same outage has
+      // already reported the routine one.
+      expect(h.errors.map((err) => messagingErrorKind(err, "messaging_connect_failed"))).toEqual([
+        "expected",
+        "unexpected",
+      ]);
+    } finally {
+      conn.close();
+    }
   });
 
   it("stops for good on a delisted or banned bot rather than retrying forever", async () => {
-    await withFetch(defaults, async () => {
-      const h = harnessOf();
-      const conn = await h.open();
-      try {
-        handshake(h.sockets[0]!, "gw-1");
-        h.sockets[0]!.drop(4914);
-        await settle(40); // several backoff rounds at 5ms, had it retried
-        expect(h.sockets).toHaveLength(1);
-        expect(h.errors).toHaveLength(1);
-        expect(String(h.errors[0])).toContain("4914");
-      } finally {
-        conn.close();
-      }
-    });
+    stubQQ();
+    const h = harnessOf();
+    const conn = await h.open();
+    try {
+      handshake(h.sockets[0]!, "gw-1");
+      h.sockets[0]!.drop(4914);
+      await settle(40); // several backoff rounds at 5ms, had it retried
+      expect(h.sockets).toHaveLength(1);
+      expect(h.errors).toHaveLength(1);
+      expect(String(h.errors[0])).toContain("4914");
+    } finally {
+      conn.close();
+    }
   });
 
   it("types every close it reports, and calls only the self-clearing ones recovering", async () => {
@@ -557,21 +510,20 @@ describe("the QQ gateway session", () => {
     // boolean somebody else typed in.
     const verdictOf = async (code: number): Promise<MessagingConnectionClosedError> => {
       let closed: MessagingConnectionClosedError | undefined;
-      await withFetch(defaults, async () => {
-        const h = harnessOf();
-        const conn = await h.open();
-        try {
-          handshake(h.sockets[0]!, "gw-1");
-          h.sockets[0]!.drop(code);
-          await waitFor(() => h.errors.length > 0);
-          const err = h.errors[0];
-          expect(err).toBeInstanceOf(MessagingConnectionClosedError);
-          closed = err as MessagingConnectionClosedError;
-          expect(closed.closeCode).toBe(code);
-        } finally {
-          conn.close();
-        }
-      });
+      stubQQ();
+      const h = harnessOf();
+      const conn = await h.open();
+      try {
+        handshake(h.sockets[0]!, "gw-1");
+        h.sockets[0]!.drop(code);
+        await waitFor(() => h.errors.length > 0);
+        const err = h.errors[0];
+        expect(err).toBeInstanceOf(MessagingConnectionClosedError);
+        closed = err as MessagingConnectionClosedError;
+        expect(closed.closeCode).toBe(code);
+      } finally {
+        conn.close();
+      }
       return closed!;
     };
 
@@ -605,116 +557,112 @@ describe("the QQ gateway session", () => {
     // filed `expected` — so if it kept the slot, a socket the platform expires at 4009 followed
     // by an auth refusal forever would leave the dashboard reading zero defects for a binding
     // that is down until someone changes a credential.
-    await withFetch(defaults, async () => {
-      const h = harnessOf();
-      const conn = await h.open();
-      try {
-        handshake(h.sockets[0]!, "gw-1");
-        h.sockets[0]!.drop(4009);
-        await waitFor(() => h.errors.length === 1);
-        expect((h.errors[0] as MessagingConnectionClosedError).recovers).toBe(true);
+    stubQQ();
+    const h = harnessOf();
+    const conn = await h.open();
+    try {
+      handshake(h.sockets[0]!, "gw-1");
+      h.sockets[0]!.drop(4009);
+      await waitFor(() => h.errors.length === 1);
+      expect((h.errors[0] as MessagingConnectionClosedError).recovers).toBe(true);
 
-        // The retry meets a refusal that no reconnect clears: it gets its own record.
-        await waitFor(() => h.sockets.length === 2);
-        h.sockets[1]!.drop(4004);
-        await waitFor(() => h.errors.length === 2);
-        expect((h.errors[1] as MessagingConnectionClosedError).recovers).toBe(false);
+      // The retry meets a refusal that no reconnect clears: it gets its own record.
+      await waitFor(() => h.sockets.length === 2);
+      h.sockets[1]!.drop(4004);
+      await waitFor(() => h.errors.length === 2);
+      expect((h.errors[1] as MessagingConnectionClosedError).recovers).toBe(false);
 
-        // And there it stops: the outage has said what it needed to say.
-        await waitFor(() => h.sockets.length === 3);
-        h.sockets[2]!.drop(4004);
-        await settle(40);
-        expect(h.errors).toHaveLength(2);
-      } finally {
-        conn.close();
-      }
-    });
+      // And there it stops: the outage has said what it needed to say.
+      await waitFor(() => h.sockets.length === 3);
+      h.sockets[2]!.drop(4004);
+      await settle(40);
+      expect(h.errors).toHaveLength(2);
+    } finally {
+      conn.close();
+    }
   });
 
   it("what the socket reports is what the recorder classifies, with no help in between", async () => {
     // The two halves are each tested against this class; this is the seam. `messagingErrorKind`
     // is handed the object the gateway raised, exactly as bridge.ts hands it over — so wrapping
     // or re-throwing the error anywhere on that path fails here.
-    await withFetch(defaults, async () => {
-      const h = harnessOf();
-      const conn = await h.open();
-      try {
-        handshake(h.sockets[0]!, "gw-1");
-        h.sockets[0]!.drop(4009);
-        await waitFor(() => h.errors.length === 1);
-        expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
-      } finally {
-        conn.close();
-      }
-    });
+    stubQQ();
+    const h = harnessOf();
+    const conn = await h.open();
+    try {
+      handshake(h.sockets[0]!, "gw-1");
+      h.sockets[0]!.drop(4009);
+      await waitFor(() => h.errors.length === 1);
+      expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
+    } finally {
+      conn.close();
+    }
   });
 
   it("drops a socket that stops acknowledging heartbeats", async () => {
-    await withFetch(defaults, async () => {
-      const h = harnessOf();
-      const conn = await h.open();
-      try {
-        const socket = h.sockets[0]!;
-        handshake(socket, "gw-1", 20);
-        // Healthy first: a socket that answers keeps its heartbeat going.
-        await settle(70);
-        expect(socket.frames(OP_HEARTBEAT).length).toBeGreaterThanOrEqual(2);
-        expect(socket.closes).toBe(0);
+    stubQQ();
+    const h = harnessOf();
+    const conn = await h.open();
+    try {
+      const socket = h.sockets[0]!;
+      handshake(socket, "gw-1", 20);
+      // Healthy first: a socket that answers keeps its heartbeat going.
+      await settle(70);
+      expect(socket.frames(OP_HEARTBEAT).length).toBeGreaterThanOrEqual(2);
+      expect(socket.closes).toBe(0);
 
-        // Now the far end goes away without a FIN — a NAT or proxy drop. `readyState`
-        // stays OPEN, so nothing but this watchdog can notice.
-        socket.autoAck = false;
-        await waitFor(() => h.sockets.length === 2);
-        expect(socket.closes).toBe(1);
-        expect(h.errors).toHaveLength(1);
-        expect(String(h.errors[0])).toContain("heartbeat");
-        // A dead pipe the next socket replaces: routine, whatever the retries meet next.
-        expect(h.errors[0]).toBeInstanceOf(MessagingChannelError);
-        expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
-      } finally {
-        conn.close();
-      }
-    });
+      // Now the far end goes away without a FIN — a NAT or proxy drop. `readyState`
+      // stays OPEN, so nothing but this watchdog can notice.
+      socket.autoAck = false;
+      await waitFor(() => h.sockets.length === 2);
+      expect(socket.closes).toBe(1);
+      expect(h.errors).toHaveLength(1);
+      expect(String(h.errors[0])).toContain("heartbeat");
+      // A dead pipe the next socket replaces: routine, whatever the retries meet next.
+      expect(h.errors[0]).toBeInstanceOf(MessagingChannelError);
+      expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
+    } finally {
+      conn.close();
+    }
   });
 
   it("drops a socket that opened and then never handshook", async () => {
-    await withFetch(defaults, async () => {
-      const h = harnessOf({ handshakeTimeoutMs: 30 });
-      const conn = await h.open();
-      try {
-        // Not one frame: the shape of a proxy that accepted the upgrade and blackholed
-        // everything after it. No HELLO means no heartbeat either, so the deadline on the
-        // handshake is the only thing covering this.
-        await waitFor(() => h.sockets.length === 2);
-        expect(h.sockets[0]!.closes).toBe(1);
-        expect(h.errors).toHaveLength(1);
-        expect(String(h.errors[0])).toContain("handshake");
-        expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
-      } finally {
-        conn.close();
-      }
-    });
+    stubQQ();
+    const h = harnessOf({ handshakeTimeoutMs: 30 });
+    const conn = await h.open();
+    try {
+      // Not one frame: the shape of a proxy that accepted the upgrade and blackholed
+      // everything after it. No HELLO means no heartbeat either, so the deadline on the
+      // handshake is the only thing covering this.
+      await waitFor(() => h.sockets.length === 2);
+      expect(h.sockets[0]!.closes).toBe(1);
+      expect(h.errors).toHaveLength(1);
+      expect(String(h.errors[0])).toContain("handshake");
+      expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
+    } finally {
+      conn.close();
+    }
   });
 
   it("judges the two calls in front of the socket the way it judges a send", async () => {
     // The token exchange and the gateway lookup are plain HTTPS: a request that never arrived
     // may go through next time, and a refusal is judged by its status.
-    const firstError = (answer: (call: Call) => Response | null): Promise<unknown> =>
-      withFetch(answer, async () => {
-        const errors: unknown[] = [];
-        const conn = await createQQTransport({ gatewayRetryMs: () => 5 }).openGateway(CREDS, {
-          onMessage: () => {},
-          onError: (err) => {
-            errors.push(err);
-          },
-        });
-        try {
-          await waitFor(() => errors.length > 0);
-          return errors[0];
-        } finally {
-          conn.close();
-        }
+    const firstError = async (answer: (call: FetchCall) => Response | null): Promise<unknown> => {
+      stubQQ(answer);
+      const errors: unknown[] = [];
+      const conn = await createQQTransport({ gatewayRetryMs: () => 5 }).openGateway(CREDS, {
+        onMessage: () => {},
+        onError: (err) => {
+          errors.push(err);
+        },
       });
+      try {
+        await waitFor(() => errors.length > 0);
+        return errors[0];
+      } finally {
+        conn.close();
+      }
+    };
     const kindOf = (err: unknown) => messagingErrorKind(err, "messaging_connect_failed");
 
     expect(
@@ -753,14 +701,13 @@ describe("the QQ gateway session", () => {
   });
 
   it("stops opening sockets once the connection is closed", async () => {
-    await withFetch(defaults, async () => {
-      const h = harnessOf({ handshakeTimeoutMs: 20 });
-      const conn = await h.open();
-      handshake(h.sockets[0]!, "gw-1");
-      conn.close();
-      expect(h.sockets[0]!.closes).toBe(1);
-      await settle(60);
-      expect(h.sockets).toHaveLength(1);
-    });
+    stubQQ();
+    const h = harnessOf({ handshakeTimeoutMs: 20 });
+    const conn = await h.open();
+    handshake(h.sockets[0]!, "gw-1");
+    conn.close();
+    expect(h.sockets[0]!.closes).toBe(1);
+    await settle(60);
+    expect(h.sockets).toHaveLength(1);
   });
 });

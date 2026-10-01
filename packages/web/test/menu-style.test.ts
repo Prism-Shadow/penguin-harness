@@ -1,16 +1,17 @@
 /**
- * One look for every picker and menu: Select's panel, row states and check mark, which the UI
- * package owns (`menuPanelClass`, `menuRowClass`, `menuRowTone`, `ChoiceCheck` in
- * components/overlays/menu-panel/menu-panel.tsx), shared by Select, OptionMenu, Dropdown and the
- * pickers built on Dropdown, and the Menu rows built on them. The pieces themselves are tested in
- * the package; this suite checks how the app uses them, as source, because the web suite renders
- * no DOM.
+ * Guard: one look for every picker and menu. Select's panel, row states and check mark are the
+ * UI package's (`menuPanelClass`, `menuRowClass`, `menuRowTone`, `ChoiceCheck` in
+ * components/overlays/menu-panel/menu-panel.tsx) and are tested there; this holds how the app
+ * uses them.
+ *
+ * - The panel, rows and check live in the UI package, and no other file declares a copy.
+ * - No web module hand-builds a menu row from the row classes (the Session row menu pending).
+ * - No web module marks the current choice with a typed ✓.
  */
 import { describe, expect, it } from "vitest";
-import { expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+import { expectSingleHome, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
-const text = (id: string) => sourceFile(SCAN, id).text;
 const MENU_PANEL = "packages/ui/src/components/overlays/menu-panel/menu-panel.tsx";
 
 describe("menus and pickers", () => {
@@ -25,16 +26,6 @@ describe("menus and pickers", () => {
       )
       .map((file) => file.id);
     expect(copies).toEqual([]);
-  });
-
-  it("open Select's panel", () => {
-    for (const id of [
-      "packages/ui/src/components/forms/select/select.tsx",
-      "packages/ui/src/components/forms/select/option-menu.tsx",
-      "packages/ui/src/components/overlays/dropdown/dropdown.tsx",
-    ]) {
-      expect(text(id), id).toContain("${menuPanelClass}");
-    }
   });
 
   it("draw their rows with the Menu family, never a hand-built menu row", () => {

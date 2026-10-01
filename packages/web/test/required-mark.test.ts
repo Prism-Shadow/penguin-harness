@@ -1,20 +1,20 @@
 /**
- * The field-marker contract (the UI package's forms/field/field.tsx): **a required field carries
- * the red "*", an optional field carries nothing at all, and no label or placeholder writes the
- * word "optional".**
+ * Guard: the field-marker contract (the UI package's forms/field/field.tsx) — **a required field
+ * carries the red "*", an optional field carries nothing at all, and no label or placeholder
+ * writes the word "optional".** How RequiredMark and a required Input render is the UI package's
+ * to test (packages/ui/test/field.test.ts, input.test.ts); this file holds the rule across the
+ * app.
  *
- * The absence of the mark is the whole signal, so it only reads if the mark is spelled one way
- * everywhere and never competes with a second, wordier convention — the same reason
- * test/icon-scale.test.ts fails on a second copy of the close cross.
+ * - The field module lives in one place, and no other file hand-rolls a red "*" (found however
+ *   its className is written).
+ * - Neither dictionary says "optional" in a label, and every prose exception still says it (so
+ *   the allow-list cannot rot).
  *
  * The source scan parses the real JSX with the TypeScript parser: whether a red span holds a lone
  * "*" is a question about an element's children, and a regex cannot see children.
  */
 import { describe, expect, it } from "vitest";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
-import { Input, RequiredMark } from "@prismshadow/penguin-ui";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
@@ -134,37 +134,6 @@ describe("required mark", () => {
   it("scans every source root, and finds the field module in one place", () => {
     expectEveryRootScanned(SCAN);
     expectSingleHome(SCAN, FIELD);
-  });
-
-  it("renders only when the field is required", () => {
-    const required = renderToStaticMarkup(
-      createElement(Input, { label: "Name", required: true, value: "", readOnly: true }),
-    );
-    expect(required).toContain("*");
-    expect(required).toContain("text-tone-danger-fg");
-    // Decorative to assistive tech — aria-required on the control is what gets announced.
-    expect(required).toMatch(/<span[^>]*aria-hidden[^>]*>\*<\/span>/);
-    expect(required).toContain('aria-required="true"');
-  });
-
-  it("states itself where no control carries aria-required", () => {
-    // The trace viewer's schema table is not a form: nothing else there says "required".
-    const spoken = renderToStaticMarkup(createElement(RequiredMark, { label: "required" }));
-    expect(spoken).toMatch(/<span[^>]*aria-hidden[^>]*>\*<\/span>/);
-    expect(spoken).toContain("required");
-    expect(spoken).not.toMatch(/^<span[^>]*aria-hidden/);
-  });
-
-  it("leaves an optional field completely unmarked", () => {
-    // No counterpart mark and no wording: absence is the signal, so anything here would blunt it.
-    const optional = renderToStaticMarkup(
-      createElement(Input, { label: "Name", value: "", readOnly: true }),
-    );
-    // Scoped to the mark's own shape: a bare `toContain("*")` over the markup would also trip
-    // on a Tailwind `*:` variant landing in any class the control renders.
-    expect(optional).not.toMatch(/<span[^>]*>\*<\/span>/);
-    expect(optional).not.toMatch(RED_INK);
-    expect(optional).not.toContain("aria-required");
   });
 
   it("is spelled in exactly one place", () => {

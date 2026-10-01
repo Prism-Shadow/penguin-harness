@@ -1,15 +1,22 @@
 /**
- * Goal-mode server tests.
+ * Goal mode on the server: SessionManager.startGoal and the goal events it derives.
  *
- * - SessionManager.startGoal running the goal plugin's user_prompt hook on a fake Session
- *   (no real LLM requests, no scripts) and driving one `session.run` — the round and
- *   terminal server events derived from the stream's harness-injected inputs and goal hook
- *   events.
- * - A real core Session that runs the installed scripts against a loopback model endpoint,
- *   with a hand-written every-prompt package beside the goal package: on a goal start that
- *   package's context rides round 1 without counting as a round, and an ordinary Task starts
- *   no goal — for the goal package the library ships and for one installed before
- *   user_prompt commands ran on every Prompt.
+ * On a fake Session (the goal plugin's start answered in its place, no scripts, no LLM):
+ * - A goal run maps its round inputs and the goal hook's answers to goal_round and
+ *   goal_finished events.
+ * - The recorded objective leaves the attached images out, so the display copy stays path-free.
+ * - A background completion notice inside a round is not a round boundary.
+ * - A second goal while one runs is a 409; a Session with no goal start hook is a 409
+ *   goal_plugin_not_installed.
+ * - A throw after the terminal event publishes no contradicting outcome; a stream that ends
+ *   without the terminal event closes the goal as aborted.
+ *
+ * On a real core Session running the installed scripts against a loopback model, with a
+ * hand-written every-prompt package beside the goal package (both for the package the library
+ * ships and for one installed before user_prompt ran on every Prompt):
+ * - A goal start runs the goal's start by name, and the other package's context rides round 1
+ *   without counting as a round.
+ * - An ordinary Task starts no goal; only the other package's hook runs for it.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -20,7 +27,6 @@ import {
   assistantText,
   buildSkillsMessage,
   createAgent,
-  emptyTokenCounts,
   hookEvent,
   hooksDir,
   imageUrlMessage,
@@ -40,6 +46,7 @@ import type { ChannelEvent } from "../src/runtime/channel.js";
 import { SessionManager, createCoreSessionLoader } from "../src/runtime/session-manager.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
+import { fakeSession } from "./fixtures/session.js";
 import { makeTempRoot, waitFor } from "./helpers.js";
 import {
   MOCK_MODEL_ID,
@@ -129,28 +136,18 @@ describe("SessionManager.startGoal", () => {
     const runOpts: RunOpts[] = [];
     const runs: OmniMessage[][] = [];
     const starts: Array<{ name: string; prompt: string; extras: unknown }> = [];
-    return {
-      sessionId: ROW.sessionId,
-      runOpts,
-      runs,
-      starts,
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const session = fakeSession(ROW.sessionId, {
       async runUserPromptHook(name, prompt, extras) {
         starts.push({ name, prompt, extras });
         return { context: "goal round 1 protocol lines" };
       },
-      async *run(input: OmniMessage[], opts) {
+      async *run(input: OmniMessage[]) {
         runs.push(input);
-        void opts;
         runOpts.push({});
         yield* stream(input);
       },
-      async *compact() {},
-    };
+    });
+    return Object.assign(session, { runOpts, runs, starts });
   }
 
   function makeManager(session: RuntimeSession): SessionManager {
@@ -369,10 +366,6 @@ describe("SessionManager.startGoal", () => {
       rounds: 1,
       used: 0,
     });
-  });
-
-  it("sanity: emptyTokenCounts helper stays exported for fakes", () => {
-    expect(emptyTokenCounts().total).toBe(0);
   });
 });
 

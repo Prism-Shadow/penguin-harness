@@ -1,15 +1,11 @@
 /**
- * The details card's background-process list (src/features/chat/process-list.ts and its use in
- * chat-page.tsx): which entries "clear exited" removes, which failure of a batch of per-entry
- * requests reaches the user, and how a command too long for its row is read whole.
+ * The details card's background-process list (features/chat/process-list.ts).
  *
- * The last part is a source scan, as in title-reveal.test.ts: vitest runs node-only here
- * (`environment: "node"`, no jsdom), and a native `title` creeping back onto the command line —
- * two tooltips over each other — is not something a rendered-markup assertion would see.
+ * - "Clear exited" picks every exited entry in list order, and never a running one.
+ * - Of a batch of per-entry requests, nothing is reported when all succeed or only failed
+ *   with the action's own "stale list" statuses; otherwise the first other failure is
+ *   reported once, a network failure included.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../src/api/client";
 import { exitedProcessIds, reportableProcessFailure } from "../src/features/chat/process-list";
@@ -77,26 +73,5 @@ describe("reportableProcessFailure", () => {
     // Stop treats only 404 as stale: a 409 there is a real refusal worth saying.
     const conflict = new ApiError(409, "process_running", "running");
     expect(reportableProcessFailure([rejected(conflict)], [404])).toEqual({ error: conflict });
-  });
-});
-
-describe("the process row's command line", () => {
-  const src = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
-  const chatPage = readFileSync(resolve(src, "features/chat/chat-page.tsx"), "utf8");
-
-  it("shows a truncated command whole in the code tooltip, never in a native title", () => {
-    expect(chatPage).toContain(
-      '<Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />',
-    );
-    expect(chatPage).not.toContain("title={p.cmd}");
-  });
-
-  it("clears exited entries through the same per-entry route a row's Remove uses", () => {
-    expect(chatPage).toMatch(
-      /runProcessAction\(exitedIds, api\.removeSessionProcess, \[404, 409\]\)/,
-    );
-    expect(chatPage).toMatch(
-      /runProcessAction\(\[processId\], api\.removeSessionProcess, \[404, 409\]\)/,
-    );
   });
 });

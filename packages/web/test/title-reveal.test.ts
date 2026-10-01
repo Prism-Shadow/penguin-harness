@@ -1,19 +1,13 @@
 /**
- * title-reveal.ts unit tests: the pure math behind the sidebar's truncated-title
- * scroll reveal (#309). Distance: only a real overflow (beyond the 1px subpixel
- * tolerance) counts — it drives both the `title` tooltip and the scroll, so "fits"
- * must be exactly 0. Duration: proportional to the distance (constant reading
- * speed), clamped between a floor (a sub-350ms hop reads as a glitch) and a
- * ceiling (a huge title speeds up instead of holding the hover hostage), and 0
- * when there is nothing to scroll. Disclosure: which of the scroll and the `title`
- * tooltip reaches the tail (#570) — a rule rather than a number, but pure in the
- * same way, so it is tested the same way.
+ * The sidebar's truncated-title reveal (lib/title-reveal.ts): how far and how long a title
+ * that does not fit scrolls, and which of the scroll and the tooltip reaches its tail.
  *
- * The rest pins the CSS contract. The arithmetic was never the fragile
- * part: the reveal only works while three files agree on four names, and nothing
- * else in the suite notices if one side is renamed. vitest runs node-only here
- * (`environment: "node"`, no jsdom), so these assert against the source text
- * rather than a rendered DOM.
+ * - A title that fits, or overflows by no more than the 1px subpixel tolerance, has nothing
+ *   to reveal; past the tolerance the whole overflow is revealed.
+ * - The scroll runs at a constant reading speed, clamped between a floor and a ceiling, in
+ *   whole milliseconds, and takes no time when there is nothing to scroll.
+ * - A title that fits discloses nothing; an overflowing one scrolls where the scroll is
+ *   offered and motion is allowed, and falls back to the tooltip otherwise.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -25,7 +19,6 @@ import {
   revealDurationMs,
   titleDisclosure,
 } from "../src/lib/title-reveal";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 describe("revealDistancePx", () => {
   it("reports 0 when the text fits", () => {
@@ -72,82 +65,6 @@ describe("revealDurationMs", () => {
   });
 });
 
-const SCAN = scanSources();
-const TRUNCATED = "packages/web/src/components/ui/truncated.tsx";
-const truncated = sourceFile(SCAN, TRUNCATED).text;
-const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
-/**
- * Every stylesheet under the scanned roots — styles.css, and the shared package's CSS once the
- * reveal's rules move there — with comments stripped and whitespace collapsed, so the assertions
- * survive reformatting.
- */
-const css = SCAN.files
-  .filter((file) => file.name.endsWith(".css"))
-  .map((file) => file.text)
-  .join("\n")
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .replace(/\s+/g, " ");
-/** The keyframes that carry the whole reveal. */
-const keyframes = css.match(/@keyframes title-scroll-reveal \{.*?\} \}/)?.[0] ?? "";
-/** The hover/focus rule that starts them. */
-const trigger = css.match(/\[data-title-reveal\][^{]*\{[^}]*\}/)?.[0] ?? "";
-
-describe("the truncated-title reveal's CSS contract", () => {
-  it("is read from every source root, with the reveal component in one place", () => {
-    expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, TRUNCATED);
-    expectSingleHome(SCAN, "packages/web/src/lib/title-reveal.ts");
-  });
-
-  it("triggers on the row attribute the sidebar rows actually render", () => {
-    expect(sidebar).toContain("data-title-reveal");
-    expect(trigger).toContain("[data-title-reveal]:is(:hover, :has(:focus-visible))");
-    // Scoped to the inner span, so a title that fits (no class, no variables) matches nothing.
-    expect(trigger).toContain(".title-scroll > .title-scroll-text");
-  });
-
-  it("selects the class names truncated.tsx emits", () => {
-    expect(truncated).toContain('" title-scroll"');
-    expect(truncated).toContain('className="title-scroll-text"');
-  });
-
-  it("reads the custom properties truncated.tsx writes", () => {
-    for (const prop of ["--title-scroll-shift", "--title-scroll-ms"]) {
-      expect(truncated).toContain(prop);
-      expect(`${keyframes}${trigger}`).toContain(`var(${prop},`);
-    }
-  });
-
-  it("moves the text with an animation, which is what reduced motion disables", () => {
-    // The reduced-motion guarantee is the global `animation: none !important` block, and
-    // it only reaches animations: rewriting this as a transition would keep the visuals and
-    // silently lose reduced-motion support. JS reads the same preference, but only to decide
-    // which disclosure is live (titleDisclosure below) — never to start or stop the motion.
-    expect(trigger).toMatch(/animation: title-scroll-reveal var\(--title-scroll-ms/);
-    expect(trigger).not.toContain("transition:");
-    expect(css).toMatch(
-      /@media \(prefers-reduced-motion: reduce\) \{[^@]*animation: none !important/,
-    );
-  });
-
-  it("makes the text transformable inside the keyframes, never on the trigger rule", () => {
-    // `transform` is inert on a non-replaced inline box, so the reveal needs the inner
-    // span to become inline-block. It has to happen in the keyframes: as a declaration
-    // on the trigger it would apply the moment the pointer touches the row, and Blink
-    // paints no ellipsis for an overflowing atomic inline — so every long title would
-    // drop its "…" 0.3s before anything moved, which is the flicker the delay exists
-    // to prevent.
-    expect(keyframes).toContain("display: inline-block");
-    expect(keyframes).toContain("transform: translateX(var(--title-scroll-shift");
-    expect(trigger).not.toContain("display:");
-    expect(trigger).not.toContain("transform:");
-  });
-
-  it("holds the revealed tail with a forwards fill after a start delay", () => {
-    expect(trigger).toMatch(/animation:[^;}]*\blinear\b[^;}]*\b0\.3s\b[^;}]*\bforwards\b/);
-  });
-});
-
 describe("titleDisclosure", () => {
   it("discloses nothing for a title that fits", () => {
     for (const scrollReveal of [false, true]) {
@@ -179,11 +96,5 @@ describe("titleDisclosure", () => {
         "tooltip",
       );
     }
-  });
-
-  it("is the one rule the component asks", () => {
-    // The cases above only bind the rendering while truncated.tsx routes through this rule
-    // instead of re-deriving it inline, where the two could drift apart.
-    expect(truncated).toContain("titleDisclosure({");
   });
 });

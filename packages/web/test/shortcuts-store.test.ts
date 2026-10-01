@@ -1,7 +1,21 @@
 /**
- * The keymap store (src/lib/shortcuts/store.ts) over an in-memory mirror: overrides resolve
- * over the defaults, an explicit null unbinds, unknown ids ride along, malformed input reads as
- * defaults, a row set back to its default disappears, and an external change re-reads.
+ * The keymap store (lib/shortcuts/store.ts) over an in-memory localStorage mirror.
+ *
+ * - The keymap starts from the platform's registry defaults; the platform's stored section
+ *   overlays them, an explicit null unbinds, and an unknown id or unparseable chord keeps the
+ *   default.
+ * - Malformed JSON, a foreign shape or a wrong version reads as no overrides; the document is
+ *   sanitized to the three platform sections of string-or-null values.
+ * - A write stores the override in the platform's section and notifies subscribers; an unbind
+ *   is stored as null; a row set back to its default is removed (an emptied section with it);
+ *   unknown ids and other platforms' sections survive; a literal Ctrl chord is Mod on Linux;
+ *   Reset all clears the current platform only.
+ * - Another tab's write to the mirror is re-read (only for its own key); defaults move to the
+ *   keys the keyboard layout types.
+ * - The account's copy: every edit goes to the persister as the compact document; the server's
+ *   document wins over the mirror; a mirror edited here is kept when the server has none;
+ *   one account's edit never reaches the next account on the tab; a mirror the server does not
+ *   know and this session did not write is cleared.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseChord } from "../src/lib/shortcuts/chord";
@@ -22,26 +36,14 @@ import {
   setBinding,
   setKeybindingsPersister,
   subscribeKeymap,
-  type KeybindingsStorage,
 } from "../src/lib/shortcuts/store";
 import type { StoredKeybindings } from "../src/lib/shortcuts/types";
+import { memoryStorage } from "./helpers/storage";
 
-function memStorage(
-  initial: Record<string, string> = {},
-): KeybindingsStorage & { map: Map<string, string> } {
-  const map = new Map(Object.entries(initial));
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
-
-let storage = memStorage();
+let storage = memoryStorage();
 
 beforeEach(() => {
-  storage = memStorage();
+  storage = memoryStorage();
   setPlatformForTests("linux");
   configureKeybindingsStoreForTests({ storage, layout: null });
 });

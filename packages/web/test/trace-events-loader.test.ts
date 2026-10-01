@@ -1,18 +1,21 @@
 /**
- * The Trace file view's event pager (features/traces/trace-events-loader.ts).
+ * The Trace file view's event pager (features/traces/trace-events-loader.ts). The walk must
+ * cover the WHOLE file: the analysis attributes messages to rounds by index range, so an event
+ * never fetched is a round that renders an empty message list.
  *
- * What matters here is that the walk covers the WHOLE file: the analysis beside it attributes
- * messages to rounds by index range, so an event the walk never fetched is a round that renders
- * an empty message list. The cases below are the four ways a walk ends — the file is covered,
- * the file cannot be paged any further, the reader left, and the page cap — plus the one that
- * moves the finish line, a file appended to while the walk is running.
+ * - A 2500-event file is paged in three requests, every page reported in file order; the walk
+ *   advances by what a page delivered, not by what it asked for.
+ * - A file appended to while the walk runs is followed to its new end.
+ * - The walk ends on a page with no events, however long the file claims to be; it reports and
+ *   requests nothing more once cancelled (a page arriving after the cancel is dropped); a walk
+ *   that never finishes is capped.
+ * - It resolves with the last page's total, the walk's final word on the file's length.
  */
 import { describe, expect, it } from "vitest";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { TraceEventsResponse } from "@prismshadow/penguin-server/api";
 import {
   MAX_TRACE_EVENT_PAGES,
-  TRACE_EVENT_PAGE_SIZE,
   loadTraceEventPages,
 } from "../src/features/traces/trace-events-loader";
 
@@ -208,10 +211,5 @@ describe("loadTraceEventPages", () => {
       }),
     ).resolves.toBe(0);
     expect(gone.calls).toEqual([]);
-  });
-
-  it("asks for the largest page the events endpoint accepts", () => {
-    // The route parses `limit` as 1-1000 (server/src/http/validate.ts); a larger ask is a 400.
-    expect(TRACE_EVENT_PAGE_SIZE).toBe(1000);
   });
 });

@@ -1,29 +1,26 @@
 /**
- * Global request body cap (`/api/*`).
+ * The global request-body cap on `/api/*`.
  *
- * The cap used to read `content-length` only, which a chunked request simply does not carry —
- * `Number(undefined ?? 0)` is 0, so a body of any size passed straight through to the sinks
- * behind it (task input images, file attachments, Trace import). These tests post a body with
- * **no declared length** and require the same 413 `payload_too_large` a declared one gets, plus
- * an under-cap streamed body still arriving intact (the cap has to re-feed what it counted).
+ * The cap used to read `content-length` only, which a chunked request does not carry, so a
+ * body of any size passed straight through to the sinks behind it (task input images, file
+ * attachments, Trace import). The cap is derived from the admin-set attachment budget
+ * (bodyLimitBytes), so these cases set that budget to its floor and compute the expected cap
+ * with the server's own helper — a hardcoded byte count would stop testing the cap the moment
+ * the defaults moved.
  *
- * The cap is no longer a constant: it is derived from the admin-settable attachment budget
- * (bodyLimitBytes). So these tests turn that budget down to its floor and compute the expected
- * cap with the same helper the server uses — which makes them a test of the derivation too, not
- * just of the middleware. A hardcoded byte count here would silently stop testing the cap the
- * moment the defaults moved.
+ * - A streamed body with no declared length over the cap is refused 413 `payload_too_large`,
+ *   and no Task starts.
+ * - A declared over-cap length is refused before the body is read.
+ * - An under-cap streamed body passes through intact (the cap re-feeds what it counted).
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import type { SessionRow } from "../src/db/repos/sessions.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { bodyLimitBytes, MIN_ATTACHMENT_MB } from "../src/services/attachment-limits.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
+import { createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-07-29-13-00-00-aabb0004";
-const PROJECT_ID = "streamer-default_project";
 const MB = 1024 * 1024;
 
 /**
@@ -61,10 +58,10 @@ function streamedTaskBody(fill: number): ReadableStream<Uint8Array> {
 
 describe("request body cap", () => {
   let t: TestApp;
-  let api: ReturnType<typeof apiClient>;
   let cookie: string;
+  let SID: string;
   let runs: OmniMessage[][];
-  /** The body cap implied by the budget set in beforeEach. */
+  /** The body cap implied by the smallest budget an admin can set. */
   let cap: number;
 
   const postStream = (fill: number) =>
@@ -77,38 +74,9 @@ describe("request body cap", () => {
       duplex: "half",
     } as RequestInit);
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     ({ cookie } = await provisionUser(t.app, "streamer"));
-    api = apiClient(t.app, cookie);
-    const row: SessionRow = {
-      sessionId: SID,
-      projectId: PROJECT_ID,
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m1",
-      workspace: "/tmp/w",
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
-    t.deps.sessionsRepo.insert(row);
-    runs = [];
-    const session: RuntimeSession = {
-      sessionId: SID,
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
-      async *run(input: OmniMessage[]) {
-        runs.push(input);
-        yield assistantText("done");
-      },
-      async *compact() {},
-    };
-    t.deps.manager.adopt(row, session);
     // Smallest budget an admin can set, so the derived cap is as low as it goes and the
     // over-cap body these tests have to stream stays cheap to produce.
     t.deps.serverSettingsRepo.setAttachmentMaxMb(MIN_ATTACHMENT_MB);
@@ -118,8 +86,19 @@ describe("request body cap", () => {
       attachmentTotalMb: MIN_ATTACHMENT_MB,
     });
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    runs = [];
+    const session = fakeSession(SID, {
+      async *run(input: OmniMessage[]) {
+        runs.push(input);
+        yield assistantText("done");
+      },
+    });
+    adoptSession(t.deps, session, { projectId: "streamer-default_project" });
   });
 
   it("a body with no declared length is still capped", async () => {

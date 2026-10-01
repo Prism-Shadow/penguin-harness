@@ -1,15 +1,16 @@
 /**
- * The notice and chart hooks on the real app: every notice renders through the package's
- * NoticeStrip (so it carries `ui-notice` and a `data-tone` in the hook's words), the toast
- * included, a mark a call site draws before a notice's text sits in its icon slot, and the charts'
- * roots carry `ui-chart` with their parts named by literal `data-part` values.
+ * Guard: the notice hook themes restyle (the `ui-notice` box and its icon slot) is written in one
+ * place. What NoticeStrip and the toast render is the UI package's to test
+ * (packages/ui/test/notice-strip.test.ts, toaster.test.ts).
+ *
+ * - NoticeStrip and the toaster live in the UI package, one copy each.
+ * - No file but NoticeStrip spells the `ui-notice` hook.
+ * - A mark a call site draws inside a NoticeStrip sits in its icon slot, so a theme that draws
+ *   its own tone mark can hide it (the check is exercised on known shapes too).
  */
 import ts from "typescript";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { NOTICE_TONE, NoticeStrip, ToastStack } from "@prismshadow/penguin-ui";
-import { expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+import { expectSingleHome, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
 
@@ -22,32 +23,12 @@ describe("notices", () => {
     expectSingleHome(SCAN, TOASTER);
   });
 
-  it("render the hook with the tone in the hook's words", () => {
-    const html = renderToStaticMarkup(
-      createElement(NoticeStrip, { tone: "attention", className: "px-3" }, "Heads up"),
-    );
-    expect(html).toContain("ui-notice");
-    expect(html).toContain('data-tone="warning"');
-    expect(new Set(Object.values(NOTICE_TONE))).toEqual(
-      new Set(["info", "success", "warning", "danger", "neutral"]),
-    );
-  });
-
-  it("go through NoticeStrip, the toast included", () => {
-    // The strip is the one place a notice's box is spelled: no other file writes the hook.
+  it("go through NoticeStrip: no other file spells the hook", () => {
     const own = SCAN.files
       .filter((file) => file.name.endsWith(".tsx") && file.id !== NOTICE_STRIP)
       .filter((file) => /\bui-notice\b/.test(file.text.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, "")))
       .map((file) => file.id);
     expect(own).toEqual([]);
-    const html = renderToStaticMarkup(
-      createElement(ToastStack, {
-        items: [{ id: 1, kind: "error", text: "Connection failed" }],
-        onDismiss: () => {},
-      }),
-    );
-    expect(html).toContain("ui-notice");
-    expect(html).toContain('data-tone="danger"');
   });
 });
 
@@ -134,44 +115,5 @@ describe("a notice's own mark", () => {
         'const A = () => <NoticeStrip tone="danger">x<Button><CloseIcon /></Button></NoticeStrip>;',
       ),
     ).toEqual([]);
-  });
-});
-
-const CHARTS = "packages/ui/src/components/charts";
-const CHART_MARKS = `${CHARTS}/marks/marks.tsx`;
-const TIMELINE_BAR = `${CHARTS}/marks/timeline-bar.tsx`;
-
-describe("charts", () => {
-  it("live in the shared UI package, one copy each", () => {
-    // The primitives' marks.tsx is left out: the icon marks share its file name.
-    for (const id of [
-      TIMELINE_BAR,
-      `${CHARTS}/chart-style.ts`,
-      `${CHARTS}/chart-frame/chart-frame.tsx`,
-      `${CHARTS}/chart-frame/chart-geom.ts`,
-      `${CHARTS}/token-donut/token-donut.tsx`,
-      `${CHARTS}/sparkline/sparkline.tsx`,
-      `${CHARTS}/ring/ring.tsx`,
-      `${CHARTS}/legend/legend.tsx`,
-    ]) {
-      expectSingleHome(SCAN, id);
-    }
-  });
-
-  it("carry ui-chart on their roots and name their parts", () => {
-    for (const id of [
-      `${CHARTS}/chart-frame/chart-frame.tsx`,
-      `${CHARTS}/token-donut/token-donut.tsx`,
-      `${CHARTS}/sparkline/sparkline.tsx`,
-      `${CHARTS}/ring/ring.tsx`,
-      "packages/web/src/features/traces/timeline-chart.tsx",
-    ]) {
-      expect(sourceFile(SCAN, id).text, id).toContain("ui-chart");
-    }
-    // The parts are written by the chart primitives, the one place marks are drawn.
-    const parts = [CHART_MARKS, TIMELINE_BAR].map((id) => sourceFile(SCAN, id).text).join("\n");
-    for (const part of ["series", "area", "bar", "point", "grid", "axis"]) {
-      expect(parts, part).toMatch(new RegExp(`data-part(?:=|": )"${part}"`));
-    }
   });
 });
