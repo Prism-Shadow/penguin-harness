@@ -291,37 +291,19 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
 
 /**
  * The client types AgentHub 0.4 named after model generations, matched the way its router
- * matched them (substrings of the lowercased value, in its branch order), and the MMSP 0.5.0
+ * matched them (anywhere in the lowercased value, in its branch order), and the MMSP 0.5.0
  * client that speaks the same wire protocol: the 0.4 Gemini client spoke generateContent,
- * which the compatible client still does (and what the Penguin Go relay serves), the rest
- * became their vendor's official client. The 0.5.0 names contain none of these substrings.
+ * which the compatible client still does (and what the Penguin Go relay serves); the rest
+ * became their vendor's official client. No 0.5.0 name matches any of these.
  */
-const LEGACY_CLIENT_TYPES: readonly (readonly [
-  matches: (t: string) => boolean,
-  clientType: string,
-])[] = [
-  [(t) => t.includes("gemini-3") || t.includes("gemini-embedding"), "gemini-generate-content"],
-  [
-    (t) =>
-      t.includes("claude") &&
-      (t.includes("4-6") || t.includes("4-7") || t.includes("4-8") || t.includes("-5")),
-    "anthropic-official",
-  ],
-  [
-    (t) =>
-      t.includes("gpt-5.4") ||
-      t.includes("gpt-5.5") ||
-      t.includes("gpt-5.6") ||
-      t.includes("gpt-6"),
-    "openai-official",
-  ],
-  [(t) => t.includes("glm-5"), "zai-official"],
-  [
-    (t) => t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6"),
-    "moonshot-official",
-  ],
-  [(t) => t === "minimax-m3", "minimax-official"],
-  [(t) => t.includes("deepseek-v4"), "deepseek-official"],
+const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
+  [/gemini-(3|embedding)/, "gemini-generate-content"],
+  [/^(?=.*claude).*(4-[678]|-5)/, "anthropic-official"],
+  [/gpt-(5\.[456]|6)/, "openai-official"],
+  [/glm-5/, "zai-official"],
+  [/kimi-k(3|2\.[56])/, "moonshot-official"],
+  [/^minimax-m3$/, "minimax-official"],
+  [/deepseek-v4/, "deepseek-official"],
 ];
 
 /**
@@ -349,7 +331,7 @@ export function migrateLegacyClientTypes(table: Record<string, unknown>): boolea
     const m = entry as { client_type?: unknown };
     if (typeof m.client_type !== "string") continue;
     const t = m.client_type.trim().toLowerCase();
-    const replacement = LEGACY_CLIENT_TYPES.find(([matches]) => matches(t))?.[1];
+    const replacement = LEGACY_CLIENT_TYPES.find(([legacy]) => legacy.test(t))?.[1];
     if (replacement !== undefined) {
       m.client_type = replacement;
       changed = true;

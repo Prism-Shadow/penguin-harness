@@ -31,24 +31,7 @@
  * The three generic protocol clients — `openai-responses`, `ant-messages`,
  * `openai-chat` — are also what the custom-model protocol detection stores.
  */
-import { routedClientType } from "@prismshadow/penguin-core/model-catalog";
-
-/** The path each MMSP client type appends to its base URL (see the module doc). */
-const CLIENT_TYPE_PATHS: Readonly<Record<string, string>> = {
-  "openai-official": "/responses",
-  "anthropic-official": "/v1/messages",
-  "gemini-official": "/v1beta/interactions",
-  "zai-official": "/chat/completions",
-  "moonshot-official": "/chat/completions",
-  "deepseek-official": "/responses",
-  "minimax-official": "/responses",
-  "openai-responses": "/responses",
-  "openai-chat": "/chat/completions",
-  "openai-chat-vllm-adapter": "/chat/completions",
-  "openai-embedding": "/embeddings",
-  "ant-messages": "/v1/messages",
-  "gemini-generate-content": "/v1beta/models",
-};
+import { MMSP_CLIENTS, routedClientType } from "@prismshadow/penguin-core/model-catalog";
 
 /** The official client of each first-party vendor group, which its unpinned ids route to. */
 const VENDOR_GROUP_CLIENT_TYPES: Readonly<Record<string, string>> = {
@@ -77,11 +60,7 @@ export function protocolPathForModel(provider: string, clientType: string, model
   if (routed === "openai-official" && id.toLowerCase().startsWith("text-embedding-")) {
     return "/embeddings";
   }
-  const path = routed === undefined ? undefined : CLIENT_TYPE_PATHS[routed];
-  if (path !== undefined) return path;
-  const vendorClient = VENDOR_GROUP_CLIENT_TYPES[provider];
-  return (
-    (vendorClient !== undefined ? CLIENT_TYPE_PATHS[vendorClient] : undefined) ??
-    "/chat/completions"
-  );
+  const client =
+    MMSP_CLIENTS[routed ?? ""] ?? MMSP_CLIENTS[VENDOR_GROUP_CLIENT_TYPES[provider] ?? ""];
+  return client?.path ?? "/chat/completions";
 }

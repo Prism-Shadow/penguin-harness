@@ -2932,26 +2932,37 @@ const MODEL_FAMILIES: readonly (readonly [prefix: string, clientType: string])[]
 ];
 
 /**
- * The environment variable pair each MMSP client reads when handed no key: an official
- * client its vendor's, a compatible client the pair of the vendor whose wire protocol it
- * speaks (`openai-chat-vllm-adapter` subclasses `openai-chat`, so it reads the same pair).
- * Keyed by client type, so a client type this table does not name is one MMSP does not
- * have either.
+ * The wire protocol that carries MMSP's `fast_mode` on a client: `"openai"` for the clients
+ * that send `service_tier: "priority"` (the OpenAI protocols, and Google's Interactions API
+ * and MiniMax alike), `"anthropic"` for those that send `speed: "fast"` plus the
+ * `fast-mode-2026-02-01` beta header. The two differ in what the user must be warned about,
+ * not just in wire shape (see fastModeProtocol).
  */
-const CLIENT_ENV_PREFIX: Readonly<Record<string, string>> = {
-  "openai-official": "OPENAI",
-  "anthropic-official": "ANTHROPIC",
-  "gemini-official": "GEMINI",
-  "zai-official": "ZAI",
-  "moonshot-official": "MOONSHOT",
-  "deepseek-official": "DEEPSEEK",
-  "minimax-official": "MINIMAX",
-  "openai-responses": "OPENAI",
-  "openai-chat": "OPENAI",
-  "openai-chat-vllm-adapter": "OPENAI",
-  "openai-embedding": "OPENAI",
-  "ant-messages": "ANTHROPIC",
-  "gemini-generate-content": "GEMINI",
+export type FastModeProtocol = "openai" | "anthropic";
+
+/**
+ * What the harness mirrors about each MMSP client, in one place: the environment variable
+ * prefix it reads its key and base URL from when handed none (an official client its vendor's,
+ * a compatible client the vendor's whose wire protocol it speaks), the path it appends to its
+ * base URL, and the protocol that carries `fast_mode` (absent = the client rejects it). A
+ * client type this table does not name is one MMSP does not have either.
+ */
+export const MMSP_CLIENTS: Readonly<
+  Record<string, { env: string; path: string; fastMode?: FastModeProtocol }>
+> = {
+  "openai-official": { env: "OPENAI", path: "/responses", fastMode: "openai" },
+  "anthropic-official": { env: "ANTHROPIC", path: "/v1/messages", fastMode: "anthropic" },
+  "gemini-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
+  "zai-official": { env: "ZAI", path: "/chat/completions" },
+  "moonshot-official": { env: "MOONSHOT", path: "/chat/completions" },
+  "deepseek-official": { env: "DEEPSEEK", path: "/responses" },
+  "minimax-official": { env: "MINIMAX", path: "/responses", fastMode: "openai" },
+  "openai-responses": { env: "OPENAI", path: "/responses", fastMode: "openai" },
+  "openai-chat": { env: "OPENAI", path: "/chat/completions", fastMode: "openai" },
+  "openai-chat-vllm-adapter": { env: "OPENAI", path: "/chat/completions", fastMode: "openai" },
+  "openai-embedding": { env: "OPENAI", path: "/embeddings" },
+  "ant-messages": { env: "ANTHROPIC", path: "/v1/messages", fastMode: "anthropic" },
+  "gemini-generate-content": { env: "GEMINI", path: "/v1beta/models" },
 };
 
 /**
@@ -2976,10 +2987,9 @@ export function routedClientType(modelId: string, clientType?: string): string |
  * self-built group via the OpenAI protocol.
  */
 export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvInfo | undefined {
-  const routed = routedClientType(modelId, clientType);
-  const prefix = routed === undefined ? undefined : CLIENT_ENV_PREFIX[routed];
-  if (prefix === undefined) return undefined;
-  return { envKey: `${prefix}_API_KEY`, envBaseUrlKey: `${prefix}_BASE_URL` };
+  const client = MMSP_CLIENTS[routedClientType(modelId, clientType) ?? ""];
+  if (client === undefined) return undefined;
+  return { envKey: `${client.env}_API_KEY`, envBaseUrlKey: `${client.env}_BASE_URL` };
 }
 
 /**
@@ -3246,16 +3256,6 @@ export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefi
 }
 
 /**
- * The wire protocol that would carry MMSP's `fast_mode` for a model: `"openai"` for the
- * clients that send `service_tier: "priority"` (the OpenAI-protocol clients, and Google's
- * Interactions API and MiniMax alike), and `"anthropic"` for the Anthropic-protocol ones
- * (ant-messages / anthropic-official), which send `speed: "fast"` plus the
- * `fast-mode-2026-02-01` beta header. The two differ in what the user must be warned about,
- * not just in wire shape (see fastModeProtocol).
- */
-export type FastModeProtocol = "openai" | "anthropic";
-
-/**
  * Whether a model can carry fast mode at all, and on which protocol - `undefined` means no.
  *
  * The fast tier is a property of the **client MMSP routes to** (routedClientType), never of
@@ -3290,29 +3290,21 @@ export function fastModeProtocol(
   clientType?: string,
   baseUrl?: string,
 ): FastModeProtocol | undefined {
-  switch (routedClientType(modelId, clientType)) {
-    case "openai-official":
-      // OpenAI serves its embedding models through the Embeddings API, which has no fast tier.
-      return modelId.toLowerCase().startsWith("text-embedding-") ? undefined : "openai";
-    case "anthropic-official":
-      // Bedrock has no fast tier, and these generations reject the `speed` parameter; both
-      // tests run against what the client was constructed with, as the client's own do.
-      if (baseUrl?.startsWith("bedrock://")) return undefined;
-      if (["4-6", "sonnet-5-5", "fable-5-1"].some((generation) => modelId.includes(generation))) {
-        return undefined;
-      }
-      return "anthropic";
-    case "ant-messages":
-      return "anthropic";
-    case "gemini-official":
-    case "minimax-official":
-    case "openai-responses":
-    case "openai-chat":
-    case "openai-chat-vllm-adapter":
-      return "openai";
-    default:
-      return undefined;
+  const routed = routedClientType(modelId, clientType);
+  // OpenAI serves its embedding models through the Embeddings API, which has no fast tier.
+  if (routed === "openai-official" && modelId.toLowerCase().startsWith("text-embedding-")) {
+    return undefined;
   }
+  // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter; both
+  // tests run against what the client was constructed with, as the client's own do.
+  if (
+    routed === "anthropic-official" &&
+    (baseUrl?.startsWith("bedrock://") ||
+      ["4-6", "sonnet-5-5", "fable-5-1"].some((generation) => modelId.includes(generation)))
+  ) {
+    return undefined;
+  }
+  return MMSP_CLIENTS[routed ?? ""]?.fastMode;
 }
 
 /**

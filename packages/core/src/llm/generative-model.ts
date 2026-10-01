@@ -31,6 +31,10 @@
 import { AutoLLMClient, ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
 import type {
   ContentItem,
+  TextDoneItem,
+  ThinkingDoneItem,
+  ToolCallDeltaItem,
+  ToolCallDoneItem,
   ToolSchema,
   UniConfig,
   UniEvent,
@@ -246,31 +250,47 @@ export function usageToTokenCounts(usage: UsageMetadata): TokenCounts {
 // Pure translator: UniEvent[] → OmniMessage[] (unit-testable, no network)
 // ---------------------------------------------------------------------------
 
-/** The item streaming now: MMSP streams one at a time, so every fragment belongs to it. */
+/** The item streaming now, from its first visible fragment: MMSP streams one item at a time. */
 interface OpenItem {
   kind: "text" | "thinking" | "tool_call";
-  /** What its fragments carried so far — the complete message's content if the stream breaks before the item's `.done`. */
+  /** What its fragments carried so far — all an interrupted stream leaves of it. */
   content: string;
-  /** Whether a partial `start` went out: a fragment carrying only fidelity (a signature, a phase marker) opens nothing on screen. */
-  started: boolean;
-  /** A tool call's name and its Session-unique id (with a `#n` suffix when the provider's id was already taken). */
+  /** A tool call's name and its Session-unique id (a `#n` suffix when the provider's id was already taken). */
   name: string;
   toolCallId: string;
+}
+
+/** A `partial_*` message of the open item (a tool call's name rides on its `start` alone). */
+function partial(
+  open: OpenItem,
+  eventType: "start" | "delta" | "stop",
+  content = "",
+  stopReason: StopReason = "completed",
+): OmniMessage {
+  if (open.kind === "tool_call") {
+    const name = eventType === "start" ? open.name : "";
+    return partialToolCall({
+      eventType,
+      name,
+      arguments: content,
+      toolCallId: open.toolCallId,
+      stopReason,
+    });
+  }
+  return (open.kind === "text" ? partialText : partialThinking)(eventType, content, stopReason);
 }
 
 /**
  * Streaming translator. Feed `UniEvent`s one at a time into `pushEvent`, which yields the
  * OmniMessages they stand for. MMSP's grammar does the aggregation — an item streams as
  * `.delta` fragments closed by its `.done` item, items never interleave, and one `stop` event
- * ends the stream — so nothing is reassembled here:
+ * ends the stream — so the mapping is one to one:
  *
  *   - a `.delta` becomes a `partial_*` delta, behind a `start` on the item's first fragment;
  *   - a `.done` becomes the partial `stop` and the complete `model_msg`, read off the done
  *     item alone (the streamed fragments are never reconciled against it);
  *   - the `stop` event carries the request's usage and finish reason.
  *
- * Split into its own class to make unit testing easier (feed a constructed array of UniEvents,
- * assert on emission order and token counts).
  * Docs: /docs/omni-message § "The streaming discipline".
  */
 export class EventTranslator {
@@ -283,15 +303,12 @@ export class EventTranslator {
 
   private open: OpenItem | null = null;
   /**
-   * A finished text or thinking item whose messages have not gone out yet. Its stop reason is
-   * `completed` unless the stream ends on it — then it is the request's own (a reply cut at the
-   * output cap ends `fatal`) — and only the next event says which. A tool call never waits:
-   * the engine starts on it as soon as it is complete.
+   * A finished text or thinking item whose messages have not gone out yet: its stop reason is
+   * `completed` unless it ends the stream — then it is the request's own — and only the next
+   * event says which. A tool call never waits: the engine starts on it the moment it is complete.
    */
-  private held: ((stopReason: StopReason) => OmniMessage[]) | null = null;
-  /** Whether the `stop` event arrived: the response is complete and MMSP has committed the turn. */
+  private held: TextDoneItem | ThinkingDoneItem | null = null;
   private stopSeen = false;
-  /** Token usage for this request (the `stop` event's). */
   private requestTokens: TokenCounts = emptyTokenCounts();
 
   /** Consumes one UniEvent, yielding 0..n OmniMessages. */
@@ -303,12 +320,12 @@ export class EventTranslator {
       // nothing retries, but it ended in a way only a human can fix (raise the output cap),
       // which is what the abnormal terminal label tells the render layers.
       const normal = event.finish_reason === "stop" || event.finish_reason === "tool_call";
-      yield* this.release(normal ? "completed" : "fatal");
+      yield* this.close(normal ? "completed" : "fatal");
       return;
     }
     for (const item of event.content_items) {
       // Another item arrived, so the one held back did not end the stream.
-      yield* this.release("completed");
+      if (this.held) yield* this.close("completed");
       switch (item.type) {
         case "text.delta":
           yield* this.fragment("text", item.text);
@@ -316,63 +333,16 @@ export class EventTranslator {
         case "thinking.delta":
           yield* this.fragment("thinking", item.thinking);
           break;
-        case "text.done": {
-          const stop = this.close("text");
-          this.held = (reason) => [
-            ...stop(reason),
-            assistantText(item.text, reason, item.fidelity),
-          ];
-          break;
-        }
-        case "thinking.done": {
-          const stop = this.close("thinking");
-          this.held = (reason) => [
-            ...stop(reason),
-            thinkingMessage(item.thinking, reason, item.fidelity),
-          ];
-          break;
-        }
         case "tool_call.delta":
-          // A call's first fragment carries its name and id; the rest only arguments.
-          if (item.name) {
-            this.open = {
-              kind: "tool_call",
-              content: "",
-              started: true,
-              name: item.name,
-              toolCallId: this.toolCallIds.allocate(item.tool_call_id),
-            };
-            yield partialToolCall({
-              eventType: "start",
-              name: item.name,
-              toolCallId: this.open.toolCallId,
-            });
-          }
-          if (item.arguments && this.open?.kind === "tool_call") {
-            this.open.content += item.arguments;
-            // The delta doesn't repeat the name: the start and tool_call_id establish identity.
-            yield partialToolCall({
-              eventType: "delta",
-              name: "",
-              arguments: item.arguments,
-              toolCallId: this.open.toolCallId,
-            });
-          }
+          yield* this.fragment("tool_call", item.arguments, item);
           break;
-        case "tool_call.done": {
-          const toolCallId =
-            this.open?.kind === "tool_call"
-              ? this.open.toolCallId
-              : this.toolCallIds.allocate(item.tool_call_id);
-          yield* this.close("tool_call", toolCallId)("completed");
-          yield toolCall({
-            name: item.name,
-            arguments: JSON.stringify(item.arguments),
-            toolCallId,
-            ...(item.fidelity !== undefined ? { fidelity: item.fidelity } : {}),
-          });
+        case "text.done":
+        case "thinking.done":
+          this.held = item;
           break;
-        }
+        case "tool_call.done":
+          yield* this.close("completed", item);
+          break;
         // Other items (inline data, inline thinking, embeddings) are not model streaming
         // output here.
         default:
@@ -382,7 +352,7 @@ export class EventTranslator {
   }
 
   /**
-   * Interruption finalization: even when interrupted or on error, close the structure as
+   * Interruption finalization: even when interrupted or on error, the structure closes as
    * `start → delta → stop → complete message`. The item still streaming gets its partial
    * `stop` and a complete message holding what had arrived, tagged with the interruption
    * `stopReason` (`aborted` / `retryable` / `fatal`) to tell it from a normal completion —
@@ -390,65 +360,67 @@ export class EventTranslator {
    * `token_usage`: an interrupted Request has no usage to report.
    */
   *finishInterrupted(stopReason: StopReason): Generator<OmniMessage> {
-    yield* this.release(stopReason);
-    const open = this.open;
-    if (!open?.started) return;
-    yield* this.close(open.kind, open.toolCallId)(stopReason);
-    if (open.kind === "tool_call") {
-      yield toolCall({
-        name: open.name,
-        arguments: open.content,
-        toolCallId: open.toolCallId,
-        stopReason,
-      });
-    } else {
-      yield (open.kind === "text" ? assistantText : thinkingMessage)(open.content, stopReason);
-    }
+    yield* this.close(stopReason);
   }
 
-  /** Whether the `stop` event arrived: a fully delivered, committed response (see the defensive branch in streamGenerate). */
+  /** Whether the `stop` event arrived: a fully delivered, committed response. */
   get stopped(): boolean {
     return this.stopSeen;
   }
 
-  /** Token usage for this request (read once the stream has stopped). */
+  /** Token usage for this request (the `stop` event's). */
   getRequestTokens(): TokenCounts {
     return this.requestTokens;
   }
 
-  /** One text or thinking fragment: opens the item on its first content, then streams it. */
-  private *fragment(kind: "text" | "thinking", content: string): Generator<OmniMessage> {
-    const open = (this.open ??= { kind, content: "", started: false, name: "", toolCallId: "" });
+  /**
+   * One fragment of the item streaming now. The item opens on its first visible fragment — a
+   * call's name (which only its first fragment carries), or any text — so one that carries
+   * only fidelity (a signature, encrypted reasoning) shows nothing on screen.
+   */
+  private *fragment(
+    kind: OpenItem["kind"],
+    content: string,
+    call?: ToolCallDeltaItem,
+  ): Generator<OmniMessage> {
+    if (!this.open) {
+      if (kind === "tool_call" ? !call?.name : !content) return;
+      const toolCallId = call ? this.toolCallIds.allocate(call.tool_call_id) : "";
+      this.open = { kind, content: "", name: call?.name ?? "", toolCallId };
+      yield partial(this.open, "start");
+    }
     if (!content) return;
-    const partial = kind === "text" ? partialText : partialThinking;
-    if (!open.started) {
-      open.started = true;
-      yield partial("start");
-    }
-    open.content += content;
-    yield partial("delta", content);
+    this.open.content += content;
+    yield partial(this.open, "delta", content);
   }
 
-  /** Closes the item streaming now; returns its partial `stop`, to be given the stop reason (nothing when no `start` went out). */
-  private close(kind: OpenItem["kind"], toolCallId = ""): (reason: StopReason) => OmniMessage[] {
-    const started = this.open?.kind === kind && this.open.started;
-    this.open = null;
-    if (!started) return () => [];
-    if (kind === "tool_call") {
-      // stop doesn't carry name (tool identity is established by start and tool_call_id).
-      return (stopReason) => [
-        partialToolCall({ eventType: "stop", name: "", toolCallId, stopReason }),
-      ];
+  /**
+   * Ends the item in hand: its partial `stop`, then its complete message — the done item's
+   * (`done`, else the one held back), or, when the stream broke before one arrived, whatever
+   * its fragments carried.
+   */
+  private *close(
+    stopReason: StopReason,
+    done: TextDoneItem | ThinkingDoneItem | ToolCallDoneItem | null = this.held,
+  ): Generator<OmniMessage> {
+    const open = this.open;
+    this.open = this.held = null;
+    if (open) yield partial(open, "stop", "", stopReason);
+    if (done?.type === "tool_call.done") {
+      const toolCallId = open?.toolCallId ?? this.toolCallIds.allocate(done.tool_call_id);
+      const args = JSON.stringify(done.arguments);
+      const { name, fidelity } = done;
+      yield toolCall({ name, arguments: args, toolCallId, stopReason, ...fidelityProp(fidelity) });
+    } else if (done) {
+      yield done.type === "text.done"
+        ? assistantText(done.text, stopReason, done.fidelity)
+        : thinkingMessage(done.thinking, stopReason, done.fidelity);
+    } else if (open?.kind === "tool_call") {
+      const { name, content, toolCallId } = open;
+      yield toolCall({ name, arguments: content, toolCallId, stopReason });
+    } else if (open) {
+      yield (open.kind === "text" ? assistantText : thinkingMessage)(open.content, stopReason);
     }
-    const partial = kind === "text" ? partialText : partialThinking;
-    return (stopReason) => [partial("stop", "", stopReason)];
-  }
-
-  /** Sends out the item held back, now that its stop reason is known. */
-  private *release(stopReason: StopReason): Generator<OmniMessage> {
-    const held = this.held;
-    this.held = null;
-    if (held) yield* held(stopReason);
   }
 }
 
@@ -515,7 +487,8 @@ export function describeError(error: unknown): string {
   return parts.join(": ") || error.message || String(error);
 }
 
-const MALFORMED_ERROR_NAMES: ReadonlySet<string> = new Set([
+/** The errors that mean "a response arrived and cannot be used": a JSON parse failure, and MMSP's own stream errors. */
+const UNUSABLE_RESPONSE_ERRORS: ReadonlySet<string> = new Set([
   "SyntaxError",
   "ToolCallArgumentParseError",
   "EmptyResponseError",
@@ -523,43 +496,30 @@ const MALFORMED_ERROR_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Determines whether an error is a "response delivered but unusable" error. Two shapes:
+ * Determines whether an error means the response was delivered but cannot be used:
  *
- * - A raw `SyntaxError` from `JSON.parse` on a response body;
- * - MMSP's own stream errors, thrown in place of the item or the `stop` event they spoil:
+ * - a raw `SyntaxError` from `JSON.parse` on a response body;
+ * - MMSP's stream errors, thrown in place of the item or the `stop` event they spoil:
  *   `ToolCallArgumentParseError` (streamed tool-call arguments are not a JSON object — e.g. a
  *   stream truncated mid-arguments), `EmptyResponseError` (a completed response carrying
  *   thinking only, which cannot be replayed) and `StreamProtocolError` (a client broke the
- *   stream grammar).
+ *   stream grammar);
+ * - a stream a server/proxy ended early but **cleanly**, leaving MMSP no usage or finish reason
+ *   to close it with: a plain `Error` MMSP gives no type, matched by its message
+ *   ("Streaming response ended without usage_metadata|finish_reason", @prismshadow/mmsp 0.5.0).
  *
- * In every case the turn was **not committed** to MMSP's history: this is not an
- * auth/parameter failure but an incomplete LLM Request, and should end `retryable` and
- * be handed to the engine to reconnect and retry. Judged by the error's `name`, which also
- * covers cross-realm or deserialization-reconstructed errors, probing down the `cause` chain
- * for wrapped errors.
+ * In every case the turn was **not committed** to MMSP's history: an incomplete LLM Request,
+ * which ends `retryable` and is handed to the engine to reconnect and retry. Judged by the
+ * error's `name` (so cross-realm or reconstructed errors match too), down the `cause` chain.
  */
-export function isMalformedJsonParseError(error: unknown): boolean {
-  return anyInCauseChain(error, (level) =>
-    MALFORMED_ERROR_NAMES.has(String((level as { name?: unknown }).name)),
-  );
-}
-
-/**
- * Determines whether an error is MMSP's "incomplete stream" error: when a server/proxy
- * terminates the stream early **cleanly** at an event boundary (no network error thrown),
- * the stream has no usage or no finish reason to close with, and MMSP reports that as a plain
- * `Error` ("Streaming response ended without usage_metadata|finish_reason") in place of the
- * `stop` event. This is not an auth/parameter failure but an incomplete LLM Request, and
- * should end `retryable` and be handed to the engine to reconnect and retry. MMSP gives it no
- * error type, so it is matched by message prefix (verified against @prismshadow/mmsp 0.5.0),
- * probing down the `cause` chain.
- */
-export function isIncompleteStreamError(error: unknown): boolean {
-  return anyInCauseChain(error, (level) =>
-    String((level as { message?: unknown }).message ?? "").startsWith(
-      "Streaming response ended without",
-    ),
-  );
+export function isUnusableResponseError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const { name, message } = level as { name?: unknown; message?: unknown };
+    return (
+      UNUSABLE_RESPONSE_ERRORS.has(String(name)) ||
+      String(message ?? "").startsWith("Streaming response ended without")
+    );
+  });
 }
 
 /** Credentials/authentication error codes and types (OpenAI-compatible bodies / SDK errors). */
@@ -634,7 +594,7 @@ export function isAuthenticationError(error: unknown): boolean {
  * scoped to `parameter === "fast_mode"`: other UnsupportedParameterError sources keep the
  * default `retryable` classification (and the engine's ladder) unchanged. Judged by exception
  * type with a `name` fallback (covers cross-realm or deserialization-reconstructed errors,
- * same approach as isMalformedJsonParseError), probing down the `cause` chain.
+ * same approach as isUnusableResponseError), probing down the `cause` chain.
  */
 export function isFastModeUnsupportedError(error: unknown): boolean {
   return anyInCauseChain(error, (level) => {
@@ -1002,7 +962,7 @@ export class GenerativeModel implements LLMInterface {
         outcome = { status: "aborted" };
       } else if (timedOut) {
         outcome = { status: "retryable", errorCode: "timeout" }; // Idle timeout -> needs reconnection
-      } else if (isMalformedJsonParseError(error) || isIncompleteStreamError(error)) {
+      } else if (isUnusableResponseError(error)) {
         // An unusable response, or a cleanly truncated stream (MMSP had no usage or finish
         // reason to close it with): both are an incomplete LLM Request — the turn was never
         // committed, so the engine reconnects and retries. Checked before the fatal

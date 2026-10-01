@@ -35,9 +35,8 @@ import {
   ToolCallIdAllocator,
   buildUniConfig,
   isAuthenticationError,
-  isIncompleteStreamError,
   isFastModeUnsupportedError,
-  isMalformedJsonParseError,
+  isUnusableResponseError,
   isFatalProviderRejection,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
@@ -1047,34 +1046,30 @@ describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fa
   });
 });
 
-describe("isMalformedJsonParseError", () => {
-  it("detects JSON.parse SyntaxError by exception type, including the cause chain", () => {
-    // MMSP uses JSON.parse internally; a parse failure throws a SyntaxError, so it can be
-    // determined directly by exception type.
+describe("isUnusableResponseError", () => {
+  it("a JSON.parse SyntaxError is one, by exception type, down the cause chain", () => {
     expect(
-      isMalformedJsonParseError(new SyntaxError("Unexpected token < in JSON at position 0")),
+      isUnusableResponseError(new SyntaxError("Unexpected token < in JSON at position 0")),
     ).toBe(true);
-    // An error wrapped by a higher layer can still be determined via the cause chain.
     expect(
-      isMalformedJsonParseError(
-        new Error("request failed", {
-          cause: new SyntaxError("Unexpected end of JSON input"),
-        }),
+      isUnusableResponseError(
+        new Error("request failed", { cause: new SyntaxError("Unexpected end of JSON input") }),
       ),
     ).toBe(true);
-    // A non-SyntaxError does not count as malformed (even if the message mentions JSON),
-    // leaving classification to the network/failure path.
-    expect(isMalformedJsonParseError(new Error("Unexpected token < in JSON at position 0"))).toBe(
+    // Message vocabulary alone is not a signal: a plain Error that mentions JSON is left to the
+    // network / rejection classification.
+    expect(isUnusableResponseError(new Error("Unexpected token < in JSON at position 0"))).toBe(
       false,
     );
-    expect(isMalformedJsonParseError(new Error("socket hang up"))).toBe(false);
+    expect(isUnusableResponseError(new Error("socket hang up"))).toBe(false);
+    expect(isUnusableResponseError(null)).toBe(false);
   });
 
-  it("detects MMSP's stream errors (truncated tool args, thinking-only, a broken grammar)", () => {
+  it("MMSP's stream errors are: truncated tool args, a thinking-only response, a broken grammar", () => {
     // A stream truncated mid-arguments surfaces as ToolCallArgumentParseError, thrown in place
-    // of the call's done item — must stay malformed so the engine reconnects.
+    // of the call's done item.
     expect(
-      isMalformedJsonParseError(
+      isUnusableResponseError(
         new ToolCallArgumentParseError({
           client: "AnthropicOfficialClient",
           toolName: "exec_command",
@@ -1085,53 +1080,34 @@ describe("isMalformedJsonParseError", () => {
       ),
     ).toBe(true);
     // A completed thinking-only response cannot be replayed (400 on the next turn): retrying
-    // via malformed gives the model another chance instead of failing the turn.
+    // gives the model another chance instead of failing the turn.
     expect(
-      isMalformedJsonParseError(
-        new EmptyResponseError({ client: "AnthropicOfficialClient", finishReason: "stop" }),
-      ),
-    ).toBe(true);
-    // A client that broke the stream grammar: the response is unusable, the turn uncommitted.
-    expect(
-      isMalformedJsonParseError(
-        new StreamProtocolError({
-          client: "OpenaiChatClient",
-          message: "a delta event carries usage_metadata",
-        }),
-      ),
-    ).toBe(true);
-    // Also detectable via the name fallback and the cause chain.
-    expect(
-      isMalformedJsonParseError(
+      isUnusableResponseError(
         new Error("request failed", {
           cause: new EmptyResponseError({ client: "OpenAIOfficialClient", finishReason: null }),
         }),
       ),
     ).toBe(true);
-    expect(isMalformedJsonParseError({ name: "StreamProtocolError" })).toBe(true);
+    expect(
+      isUnusableResponseError(
+        new StreamProtocolError({ client: "OpenaiChatClient", message: "a delta carries usage" }),
+      ),
+    ).toBe(true);
+    // A reconstructed error matches by name.
+    expect(isUnusableResponseError({ name: "StreamProtocolError" })).toBe(true);
   });
-});
 
-describe("isIncompleteStreamError", () => {
-  it("detects MMSP's incomplete-stream error by message prefix, incl. cause chain", () => {
-    // The server/proxy cleanly terminates the stream early at an event boundary: MMSP has no
-    // usage or finish reason to close the stream with and throws a plain Error in place of the
-    // stop event.
+  it("a cleanly truncated stream is: MMSP has no usage or finish reason to close it with", () => {
     expect(
-      isIncompleteStreamError(new Error("Streaming response ended without usage_metadata")),
+      isUnusableResponseError(new Error("Streaming response ended without usage_metadata")),
     ).toBe(true);
     expect(
-      isIncompleteStreamError(new Error("Streaming response ended without finish_reason")),
-    ).toBe(true);
-    expect(
-      isIncompleteStreamError(
+      isUnusableResponseError(
         new Error("request failed", {
-          cause: new Error("Streaming response ended without usage_metadata"),
+          cause: new Error("Streaming response ended without finish_reason"),
         }),
       ),
     ).toBe(true);
-    expect(isIncompleteStreamError(new Error("socket hang up"))).toBe(false);
-    expect(isIncompleteStreamError(null)).toBe(false);
   });
 });
 
