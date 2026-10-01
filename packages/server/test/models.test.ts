@@ -53,7 +53,7 @@ import type {
 } from "../src/api/types.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
-import { stubFetch } from "./fixtures/fetch.js";
+import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { fakeSession, sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -1167,28 +1167,44 @@ describe("model-reference rekeying and the connectivity test", () => {
   });
 
   it("connectivity test: both a saved model and a **not-yet-saved** custom model can be tested (the LLM layer throws nothing, every outcome converges)", async () => {
-    await api.put(url(), {
-      models: [{ provider: "openai", modelId: "gpt-5.5", apiKey: "sk-invalid-key-for-test" }],
-    });
-    const saved = await api.post(testUrl(), { provider: "openai", modelId: "gpt-5.5" });
-    expect(saved.status).toBe(200);
-    const savedBody = (await saved.json()) as ModelTestResponse;
-    expect(savedBody.ok).toBe(false);
-    expect(typeof savedBody.message).toBe("string");
+    // Both endpoints refuse the key they are handed.
+    const network = stubFetch(() =>
+      jsonResponse(
+        { error: { message: "Incorrect API key provided.", code: "invalid_api_key" } },
+        401,
+      ),
+    );
+    try {
+      await api.put(url(), {
+        models: [{ provider: "openai", modelId: "gpt-5.5", apiKey: "sk-invalid-key-for-test" }],
+      });
+      const saved = await api.post(testUrl(), { provider: "openai", modelId: "gpt-5.5" });
+      expect(saved.status).toBe(200);
+      const savedBody = (await saved.json()) as ModelTestResponse;
+      expect(savedBody.ok).toBe(false);
+      expect(typeof savedBody.message).toBe("string");
 
-    // "Test before save" for adding a custom model: the model isn't in the config, so all params come from the request body.
-    const unsaved = await api.post(testUrl(), {
-      provider: "custom",
-      modelId: "my-new-model",
-      apiKey: "sk-invalid",
-      baseUrl: "https://example.invalid/v1",
-      clientType: "openai",
-    });
-    expect(unsaved.status).toBe(200);
-    const unsavedBody = (await unsaved.json()) as ModelTestResponse;
-    expect(unsavedBody.ok).toBe(false);
-    expect(typeof unsavedBody.message).toBe("string");
-  }, 40_000);
+      // "Test before save" for adding a custom model: the model isn't in the config, so all params come from the request body.
+      const unsaved = await api.post(testUrl(), {
+        provider: "custom",
+        modelId: "my-new-model",
+        apiKey: "sk-invalid",
+        baseUrl: "https://example.invalid/v1",
+        clientType: "openai",
+      });
+      expect(unsaved.status).toBe(200);
+      const unsavedBody = (await unsaved.json()) as ModelTestResponse;
+      expect(unsavedBody.ok).toBe(false);
+      expect(typeof unsavedBody.message).toBe("string");
+      // Each probe went to its own model's endpoint, with its own key.
+      const keyAt = (host: string) =>
+        network.calls.find((c) => c.url.startsWith(host))?.headers.get("authorization");
+      expect(keyAt("https://api.openai.com/")).toBe("Bearer sk-invalid-key-for-test");
+      expect(keyAt("https://example.invalid/v1")).toBe("Bearer sk-invalid");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("connectivity test: a model with no credential at all converges to ok:false instead of 500", async () => {
     // A model using the OpenAI protocol: the provider SDK throws at **client construction** because

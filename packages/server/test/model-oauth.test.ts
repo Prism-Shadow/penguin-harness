@@ -20,7 +20,7 @@
  *
  * No test reaches the network: the exchange endpoint is the suite's fetch fake, handed to
  * `exchangeCode` and the service, and standing in for the global fetch in the route cases. The
- * route describes share one app each, every case in a Project of its own.
+ * route describes share one app, every case in a Project of its own.
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -376,9 +376,19 @@ describe("callback origin", () => {
   });
 });
 
+/** The route describes' app and the owner of every Project in it. */
+let t: TestApp;
+let owner: ReturnType<typeof apiClient>;
+
+beforeAll(async () => {
+  t = await createTestApp();
+  owner = apiClient(t.app, (await provisionUser(t.app, "owner_o")).cookie);
+});
+afterAll(async () => {
+  await t.cleanup();
+});
+
 describe("model-oauth routes", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
   let member: ReturnType<typeof apiClient>;
   let projectId: string;
   /** The provider's exchange endpoint, standing in for the global fetch. */
@@ -392,14 +402,7 @@ describe("model-oauth routes", () => {
   const base = () => `/api/projects/${projectId}/model-oauth`;
 
   beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_o");
-    const b = await provisionUser(t.app, "member_m");
-    owner = apiClient(t.app, a.cookie);
-    member = apiClient(t.app, b.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
+    member = apiClient(t.app, (await provisionUser(t.app, "member_m")).cookie);
   });
 
   // Every case runs its flows against a Project of its own.
@@ -598,8 +601,6 @@ describe("model-oauth routes", () => {
  * asserted with NO cookie unless the case is specifically about a signed-in browser.
  */
 describe("model-oauth callback without a session", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
   /** A signed-in member of the flow's Project who is not its owner — the closest anyone gets. */
   let stranger: ReturnType<typeof apiClient>;
   let projectId: string;
@@ -633,29 +634,25 @@ describe("model-oauth callback without a session", () => {
     );
   };
 
+  /** A Project of the owner's. */
+  const create = async (id: string): Promise<string> =>
+    (
+      (await (
+        await owner.post("/api/projects", { projectId: id, name: id })
+      ).json()) as ProjectCreateResponse
+    ).project.projectId;
+
+  // The stranger, and another Project the owner also holds (a flow presented under it stores
+  // nothing there, which no case changes), are the describe's; the flow's Project is per case.
   beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_o");
-    owner = apiClient(t.app, a.cookie);
-    const b = await provisionUser(t.app, "stranger_s");
-    stranger = apiClient(t.app, b.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
+    stranger = apiClient(t.app, (await provisionUser(t.app, "stranger_s")).cookie);
+    otherProjectId = await create("owner_o-other");
   });
 
-  // Every case gets two Projects of its own: the flow's, and another the owner also holds.
   let projects = 0;
   beforeEach(async () => {
     projects += 1;
-    const create = async (id: string): Promise<string> =>
-      (
-        (await (
-          await owner.post("/api/projects", { projectId: id, name: id })
-        ).json()) as ProjectCreateResponse
-      ).project.projectId;
-    projectId = await create(`owner_o-td_${projects}`);
-    otherProjectId = await create(`owner_o-other_${projects}`);
+    projectId = await create(`owner_o-cb_${projects}`);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "stranger_s" })).status,
     ).toBe(201);

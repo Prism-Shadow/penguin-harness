@@ -14,7 +14,7 @@
  *   the response mirrors GET models, credentials survive, a pair outside the models table is
  *   a 400, and it is owner-only.
  *
- * One app per describe; every case works in a Project of its own.
+ * One app for the file; every case works in a Project of its own.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -34,26 +34,28 @@ const SERVED = {
   sandbox: { mode: "danger-full-access", network: "open", localNetworkSupported: false },
 };
 
+/** The file's app and its three users; every case below works in a Project of its own. */
+let t: TestApp;
+let owner: ReturnType<typeof apiClient>;
+let member: ReturnType<typeof apiClient>;
+let outsider: ReturnType<typeof apiClient>;
+
+beforeAll(async () => {
+  t = await createTestApp();
+  const a = await provisionUser(t.app, "owner_a");
+  const b = await provisionUser(t.app, "member_b");
+  const c = await provisionUser(t.app, "outsider_c");
+  owner = apiClient(t.app, a.cookie);
+  member = apiClient(t.app, b.cookie);
+  outsider = apiClient(t.app, c.cookie);
+});
+afterAll(async () => {
+  await t.cleanup();
+});
+
 describe("project chat defaults", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let member: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   let url: string;
-
-  beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_a");
-    const b = await provisionUser(t.app, "member_b");
-    const c = await provisionUser(t.app, "outsider_c");
-    owner = apiClient(t.app, a.cookie);
-    member = apiClient(t.app, b.cookie);
-    outsider = apiClient(t.app, c.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
-  });
 
   // Every case works in a Project of its own.
   let projects = 0;
@@ -171,25 +173,8 @@ describe("project chat defaults", () => {
 });
 
 describe("models default (narrow default-model switch)", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let member: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   let url: string;
-
-  beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_a");
-    const b = await provisionUser(t.app, "member_b");
-    const c = await provisionUser(t.app, "outsider_c");
-    owner = apiClient(t.app, a.cookie);
-    member = apiClient(t.app, b.cookie);
-    outsider = apiClient(t.app, c.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
-  });
 
   // Every case works in a Project of its own.
   let projects = 0;
