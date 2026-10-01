@@ -25,7 +25,9 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { getGoal, getMessages } from "../../api/endpoints";
 import { probeSession } from "../../api/session-probe";
+import { apiSocket } from "../../api/socket";
 import { openSessionStream } from "../../api/sse";
+import { machineForSession } from "../../lib/session-machines";
 import { createStreamController } from "../../lib/omni/stream-controller";
 import type {
   OlderHistoryState,
@@ -119,6 +121,13 @@ export function useSessionStream(
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
 
+  /**
+   * A history still loading after this is said out loud, with where the call went and what the
+   * socket is doing: a conversation that never draws has otherwise nothing to show for itself —
+   * no error, no failed request, an open socket — and "black until F5" was the whole report.
+   */
+  const SLOW_HISTORY_MS = 15_000;
+
   /** Fold one goal_* event into the banner state (a mid-goal join without goal_started keeps prior fields where known). */
   const onGoalEvent = useCallback((ev: GoalServerEvent) => {
     setGoal((prev) => {
@@ -149,6 +158,8 @@ export function useSessionStream(
   onCreatedRef.current = onSessionCreated;
 
   const controllerRef = useRef<StreamController | null>(null);
+  /** `loading` as the controller last reported it, readable from a timer. */
+  const loadingRef = useRef(true);
   // Empty model placeholder before the controller is established (first frame).
   const placeholderRef = useRef<StreamModel | null>(null);
   if (placeholderRef.current === null) placeholderRef.current = createStreamModel();
@@ -246,7 +257,10 @@ export function useSessionStream(
       onReturnedSteering: setReturnedSteering,
       onPendingFollowUps: setPendingFollowUps,
       onSubagents: setSubagents,
-      onLoading: setLoading,
+      onLoading: (value) => {
+        loadingRef.current = value;
+        setLoading(value);
+      },
       onError: setError,
       onModelChange: bump,
       onPendingChange: () => setPendingTick((t) => t + 1),
@@ -255,6 +269,15 @@ export function useSessionStream(
       onGoalEvent,
     });
     controllerRef.current = controller;
+    loadingRef.current = true;
+    const slow = window.setTimeout(() => {
+      if (!loadingRef.current) return;
+      const target = machineForSession(sessionId);
+      console.warn(
+        `[chat] the history of ${sessionId} is still loading after ${SLOW_HISTORY_MS} ms ` +
+          `(asked of ${target === null ? "this server" : `machine ${target}`}); socket: ${JSON.stringify(apiSocket.report())}`,
+      );
+    }, SLOW_HISTORY_MS);
 
     // Connect-first: subscribe to the stream before fetching history.
     const conn = openSessionStream(sessionId, {
@@ -263,8 +286,9 @@ export function useSessionStream(
       // Hydrate the goal banner only once the subscription is live (fires on first connect and
       // every reconnect); the prev/active guards keep it from clobbering a live banner.
       onOpen: hydrateGoal,
-      // EventSource can't read the status code: when the connection is judged a fatal error
-      // and closes, ask whether this browser is still signed in (api/session-probe.ts).
+      // A stream refused for good (401/403/404 — or, on the EventSource fallback, a handshake
+      // the browser gave up on) is reported as closed: ask whether this browser is still signed
+      // in (api/session-probe.ts).
       onError: (closed) => {
         if (closed) void probeSession();
       },
@@ -273,6 +297,7 @@ export function useSessionStream(
 
     return () => {
       goalFetchStale = true;
+      window.clearTimeout(slow);
       controller.dispose();
       conn.close();
       if (rafRef.current !== null) {
