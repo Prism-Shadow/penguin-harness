@@ -88,7 +88,7 @@ penguin chat [options]
 | `--verbose` | 显示完整工具输出，而不是折叠长输出；见[工具输出折叠](#工具输出折叠)。 | 长输出折叠 |
 | `--server <url>` | 目标服务器；见[服务器连接](#服务器连接)。 | — |
 
-使用 `--resume` 时，原 Session 已固定 Workspace 和模型，`--workspace`、`--model-id` 和 `--provider` 无法覆盖它们。`--thinking` 仍然有效：它重新固定现有 Session，从下一次 LLM 请求起生效。在上下文中途更改等级会使供应商的上下文缓存失效，所以请先压缩。退出时，如果 Session 已有历史，REPL 会打印一条可直接复制运行的 `penguin chat --resume <sessionId>` 命令。
+使用 `--resume` 时，原 Session 已固定 Workspace 和模型，`--workspace`、`--model-id` 和 `--provider` 无法覆盖它们；要换模型，在恢复后的对话里使用 `/switch-model`。`--thinking` 仍然有效：它重新固定现有 Session，从下一次 LLM 请求起生效。在上下文中途更改等级会使供应商的上下文缓存失效，所以请先压缩。退出时，如果 Session 已有历史，REPL 会打印一条可直接复制运行的 `penguin chat --resume <sessionId>` 命令。
 
 ### REPL 内命令
 
@@ -100,6 +100,8 @@ penguin chat [options]
 | `/clear` | 原地开启一个全新的空白 Session，仍用同一个 Workspace 和模型。旧 Session 保留在服务器上，之后可用 `--resume` 恢复。 |
 | `/thinking` | 显示这个 Session 的思考等级：`--thinking` 或 `/thinking` 固定的等级，否则是 Agent 配置的等级。 |
 | `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。等级不会写回 Agent 配置。 |
+| `/switch-model` | 显示这个 Session 当前的模型。 |
+| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话；压缩失败或被中断则保持当前模型。还没运行过的 Session 不压缩，直接切换。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
 | `/verbose` | 在折叠和完整工具输出之间切换。 |
 | `/exit`、`/quit` | 退出。 |
 
@@ -566,7 +568,8 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--set-default` | 同时把这条条目设为 Project 的默认模型。 | — |
 
 - CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
-- 新建条目时，`--client-type` 和 `--base-url` 默认取内置模型目录为对应 `(provider, model_id)` 组合设置的值。模型目录里没有这一条时由分组决定：指定了协议的分组就用它指定的协议；`custom`、用户自定义和网关分组用 `openai-chat`，网关分组的端点会自动填成 base URL；第一方厂商分组则两项都不设置，由 MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。更新已有条目时，只有显式传入这两个选项才会改动。
+- 新建条目时，`--client-type` 和 `--base-url` 默认取内置模型目录为对应 `(provider, model_id)` 组合设置的值。模型目录里没有这一条时由分组决定：指定了协议的分组就用它指定的协议（`vllm`），`custom` 和用户自定义分组用 `openai-chat`。更新已有条目时，只有显式传入这两个选项才会改动。
+- 只有 `custom`、`vllm` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
 - 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
 
 ### model default / model vision / model list / model remove
@@ -644,7 +647,7 @@ penguin server status [--root <dir>]
 
 只有当记录的 pid 还活着、端口也能建立连接时，`running` 才是 true，所以复用的 pid 不会冒充存活的服务器。没有服务器在运行时，`port` 和 `pid` 为 `null`。`machineId` 在本机至少启动过一次服务器之前为 `null`：id 在首次启动时生成，此后永不改变。数据根目录照常取自 `--root` 或 `PENGUIN_HOME`。
 
-**机器**页面通过 ssh 运行这条命令，询问一台机器正在做什么，这也是输出采用 JSON 而不是文字说明的原因。
+**机器管理**页面通过 ssh 运行这条命令，询问一台机器正在做什么，这也是输出采用 JSON 而不是文字说明的原因。
 
 ### penguin server reset-admin-password
 
@@ -669,7 +672,7 @@ penguin server stop [--root <dir>]
 
 服务器停不下来时，命令打印 `{"ok":false,"pid":…,"detail":"…"}` 并以退出码 1 退出。出现这种情况的情形有：信号无法送达；`SIGTERM` 发出 15 秒后服务器仍占用着数据根目录；以及在 Windows 上——那里无法通过信号实现优雅停止，只能从服务器自己的控制台停止。
 
-**机器**页面重启一台机器时，会通过 ssh 运行这条命令。之所以用命令而不是直接向服务器发请求，是因为需要停止的机器通常正是平台版本过期的那台，而平台路由要等机器跑上带这条路由的构建版本才会存在。
+**机器管理**页面重启一台机器时，会通过 ssh 运行这条命令。之所以用命令而不是直接向服务器发请求，是因为需要停止的机器通常正是平台版本过期的那台，而平台路由要等机器跑上带这条路由的构建版本才会存在。
 
 ## penguin version
 

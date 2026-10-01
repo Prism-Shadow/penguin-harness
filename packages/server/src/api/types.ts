@@ -403,7 +403,15 @@ export interface UiPrefs {
   workMode?: "dev" | "company";
   /** The organization last opened in company mode, as `<projectId>/<orgId>`. */
   lastOrgKey?: string;
+  /** The one group balance shown beside the user name (pinned on the models page); null when unpinned. */
+  pinnedBalance?: PinnedBalance | null;
   [key: string]: unknown;
+}
+
+/** A group balance pinned beside the user name: which Project's key reads which group's balance. */
+export interface PinnedBalance {
+  projectId: string;
+  provider: string;
 }
 
 export interface PrefsResponse {
@@ -813,6 +821,59 @@ export interface DefaultModelUpdateRequest {
 /** Response mirrors what GET models reports as `defaultModel`. */
 export interface DefaultModelResponse {
   defaultModel: ModelRefDto;
+}
+
+/** One balance in one currency. */
+export interface ModelBalanceAmount {
+  /** Decimal string in `currency`'s major unit, as the vendor states it (TokenDance's micro-yuan are converted to yuan). */
+  amount: string;
+  /** ISO 4217 code: `CNY`, `USD`, … */
+  currency: string;
+}
+
+/**
+ * Why a group's balance could not be read:
+ * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
+ * - `no_key`: the group has no API key to ask with — none stored, and no environment variable
+ *   the credential rule lends its rows for the balance endpoint's host;
+ * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
+ *   without a readable balance.
+ */
+export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed";
+
+/**
+ * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
+ * balance behind the group's API key — the stored one, or else the environment key its rows
+ * fall back to under the credential rule (DeepSeek's DEEPSEEK_API_KEY) — read server-side from
+ * the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
+ * neither does the vendor's own text. Like the connectivity test, a balance that cannot be read is an answer
+ * (`ok: false` with a code), not a failed request. Readings and vendor failures are cached for
+ * 60 s per Project and group, for as long as the group's key is the same; `force=1` skips the
+ * cache and refreshes it.
+ */
+export type ModelBalanceResponse = ModelBalanceReading | ModelBalanceFailure;
+
+export interface ModelBalanceReading extends ModelBalanceAmount {
+  ok: true;
+  provider: string;
+  /** Whether the account can make requests right now (DeepSeek's `is_available`); absent when the vendor does not say. */
+  available?: boolean;
+  /** Further currencies the account holds, after the one in `amount` / `currency`; absent when there is only one. */
+  others?: ModelBalanceAmount[];
+  /** When the server read it from the vendor (ISO 8601); a cached answer keeps its original time. */
+  fetchedAt: string;
+}
+
+export interface ModelBalanceFailure {
+  ok: false;
+  provider: string;
+  error: ModelBalanceErrorCode;
+  /** The vendor's HTTP status, when it answered with an error. */
+  status?: number;
+  /** English detail for logs and bug reports; the Web App words each code itself. */
+  message: string;
+  /** When the answer was settled (ISO 8601). */
+  fetchedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1422,9 +1483,12 @@ export interface SessionInfo {
   sessionId: string;
   projectId: string;
   agentId: string;
-  /** Provider group of the session's model (paired with `modelId` to form a model reference). */
+  /**
+   * Provider group of the session's **current** model (paired with `modelId` to form a model
+   * reference). It moves with each in-session switch (`POST /api/sessions/:id/switch-model`).
+   */
   provider: string;
-  /** Upstream model_id of the session's model (the request id sent to MMSP). */
+  /** Upstream model_id of the session's current model (the request id sent to MMSP). */
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
@@ -1833,6 +1897,33 @@ export interface GoalStateView {
 export interface GoalResponse {
   /** The Session's most recent goal run; null if it never ran one. */
   goal: GoalStateView | null;
+}
+
+/**
+ * `POST /api/sessions/:sessionId/switch-model`: switch this Session to another model in place.
+ * The running context is closed on the model it ran on, then the next one opens on the target.
+ *
+ * - **202** {@link TaskCreateResponse} — the switch streams, the Session status `compacting`.
+ *   A context with a completed turn is closed by an ordinary `manual` compaction pair (always
+ *   summarize); one without — just compacted, or its first request never finished — has
+ *   nothing to summarize and streams no pair. Then come the new context's opener records
+ *   and, last, its `session_meta`: its `provider` / `model_id` name the model the Session now
+ *   runs on, the Session reads report that pair from this record on, and `task_state` turns
+ *   idle after it.
+ *   A compaction that ends other than `completed` means no switch — no `session_meta` follows
+ *   and the Session keeps its model.
+ * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
+ *   switched inside the request, and nothing is streamed.
+ * - **409**, one code per refusal, before any event: `task_in_progress` / `compacting` (busy),
+ *   `same_model`, `model_not_configured` (the target is not in the Project config),
+ *   `model_unavailable` (its client cannot be constructed, e.g. no credential), and
+ *   `compaction_not_configured`.
+ */
+export interface SessionSwitchModelRequest {
+  /** Provider group of the target model. */
+  provider: string;
+  /** Upstream model_id of the target model. */
+  modelId: string;
 }
 
 export interface TaskCreateResponse {
@@ -2893,7 +2984,11 @@ export interface WorkspaceFilesResponse {
   entries: WorkspaceFileEntry[];
 }
 
-/** Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). */
+/**
+ * Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). A
+ * write answers 204 with the written file's version in `ETag` — the marker the next conditional
+ * write of the same file carries, so an editor can keep editing after a save.
+ */
 export interface FilesWriteRequest {
   /** The entire file, base64-encoded (≤14MB decoded). */
   dataBase64: string;
@@ -2909,7 +3004,7 @@ export interface FilesWriteRequest {
   ifVersion?: string;
 }
 
-/** Move or rename one Workspace file (the Files panel's context menu). */
+/** Move or rename one Workspace file or folder (the Files panel's context menu). */
 export interface FilesMoveRequest {
   /** Source path, relative to the Workspace root. */
   from: string;
@@ -2922,11 +3017,23 @@ export interface FilesMoveRequest {
    * has none, because the caller never read it, which is why an occupied destination is
    * refused with 409 `target_exists` rather than overwritten.
    *
-   * A directory `from` is a 400 whatever this field says: a directory carries no single
-   * version marker, so the precondition that protects this operation cannot be expressed for
-   * one, and silently moving a tree without that protection is worse than refusing to move it.
+   * A directory `from` takes none, and one sent with it is a 400: a directory carries no
+   * single version marker, so no precondition can be stated for it. A folder moves whole and
+   * unconditionally — nothing is lost that way, since whatever the Agent wrote into it meanwhile
+   * moves with it — and is refused only when the destination is occupied or lies inside it.
    */
   ifVersion?: string;
+}
+
+/**
+ * Create one empty text file or one folder in a Workspace (the Files panel's New menu). Missing
+ * parent directories are created as a write creates them. Anything already at `path` — a file,
+ * a folder or a link — is refused with 409 `target_exists` and nothing is written.
+ */
+export interface FilesCreateRequest {
+  /** The new entry's path, relative to the Workspace root. */
+  path: string;
+  kind: "file" | "dir";
 }
 
 /**
@@ -3257,13 +3364,22 @@ export interface UsageErrorCount {
   count: number;
 }
 
-/** A single error summary (one row in the stats center's error panel table). */
+/**
+ * One row of the stats center's error panel table: the records of one calendar day that share
+ * a source, code, kind and message. The day is the viewer's when the request carried
+ * `utcOffsetMinutes`, and the server's own otherwise.
+ */
 export interface UsageErrorItem {
+  /** The latest of the records this row stands for. */
   ts: string;
   source: string;
   code: string;
   kind: string;
   message: string;
+  /** How many records this row stands for (the panel's "×N"). */
+  count: number;
+  /** The earliest of them; equal to `ts` for a single record. */
+  firstTs: string;
 }
 
 /**
@@ -3275,14 +3391,16 @@ export interface UsageErrorItem {
  * items.
  */
 export interface UsageErrors {
-  /** Filtered row count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
+  /** Filtered record count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
   total: number;
   /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */
   topCode: UsageErrorCount | null;
-  /** Most recent N items (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
+  /** Most recent N rows (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
   recent: UsageErrorItem[];
+  /** How many rows the table has for this filter (records folded per {@link UsageErrorItem}) — what the pager counts. */
+  rows: number;
 }
 
 /**
@@ -3293,12 +3411,15 @@ export interface UsageErrors {
  * or neither), so a page never widens what the summary counted, plus an optional `kind`
  * ({@link UsageErrorKind}) narrowing to one of the two categories — which
  * is how the cost-center badge asks "are there unexpected errors, and how new is the newest"
- * with `limit=1` instead of pulling the whole dashboard aggregate.
+ * with `limit=1` instead of pulling the whole dashboard aggregate. `utcOffsetMinutes` (minutes
+ * east of UTC, the dashboard takes it too) says whose calendar day a row's records share.
  */
 export interface UsageErrorsPage {
   items: UsageErrorItem[];
-  /** Filtered row count, so the caller knows when it has reached the end. */
+  /** Filtered record count — the occurrences, which is what the cost-center badge counts. */
   total: number;
+  /** Filtered row count (records folded per {@link UsageErrorItem}), so the caller knows when it has reached the end. */
+  rows: number;
 }
 
 /**

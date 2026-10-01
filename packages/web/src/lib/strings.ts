@@ -18,10 +18,10 @@ export const zh = {
 
   nav: {
     chat: "对话",
-    newChat: "新对话",
+    newChat: "新建对话",
     agents: "智能体",
     models: "模型库",
-    machines: "机器",
+    machines: "机器管理",
     plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
@@ -36,6 +36,9 @@ export const zh = {
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
+    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
+    pinEntry: "常驻",
+    unpinEntry: "取消常驻",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "概览",
@@ -49,7 +52,7 @@ export const zh = {
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
-    pageTitle: "机器",
+    pageTitle: "机器管理",
     /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
@@ -156,7 +159,7 @@ export const zh = {
     serverUpOn: (port: number) => `运行中，端口 ${port}`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
     output: "输出",
-    agentsUnreachable: "那台机器尚未连接——请在「机器」页面使用它",
+    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
   },
 
@@ -785,7 +788,7 @@ export const zh = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "标记为已读",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
@@ -851,6 +854,13 @@ export const zh = {
     moreInfo: "说明",
     /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
     moreInfoAbout: (subject: string) => `说明：${subject}`,
+    /** The toast stack's name as a live region (the shared UI package's `Toaster`). */
+    notifications: "通知",
+    /** Read after a toast's text: pressing the toast dismisses it. */
+    dismiss: "关闭",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "上一页",
+    nextPage: "下一页",
     name: "名称",
     username: "用户名",
     role: "角色",
@@ -1088,7 +1098,7 @@ export const zh = {
     createDirSkillsHint: "选择一个项目目录，读取其 .agents/skills 与 .claude/skills 下的技能",
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
-    createDirSkillsClear: "清除已选目录",
+    createDirSkillsClear: "不从目录导入",
     /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
     createSnapshot: "从快照初始化",
     createSnapshotPick: "选择快照包",
@@ -1437,9 +1447,9 @@ export const zh = {
       {
         key: "openrouter",
         label: "OpenRouter 热门模型",
-        description: "读取模型列表页，加为一个分组",
+        description: "读取模型列表页，加为一个自建分组",
         prompt:
-          "把 https://openrouter.ai/models 上的热门模型加为一个 OpenRouter 分组（先问我要 API key）。",
+          "把 https://openrouter.ai/models 上的热门模型加为一个自建分组（先问我要 API key）。",
       },
       {
         key: "vllm",
@@ -1474,6 +1484,8 @@ export const zh = {
     platformSync: "同步",
     homepage: "模型主页",
     speedTest: "测速",
+    /** The same icon button while its group's run is going: stops after the probe in flight. */
+    speedTestStop: "停止测速",
     speedTestTitle: "分组测速",
     speedTestConfirm: (n: number): string =>
       `将对该分组的 ${n} 个模型逐个发起一次真实请求,测量首 token 延迟(TTFT)与输出速率(TPS),会消耗少量 API 额度。是否继续?`,
@@ -1615,7 +1627,7 @@ export const zh = {
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "手动设置密钥",
+    groupApiKey: "填写密钥",
     groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
     groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
     getApiKey: "前往密钥管理",
@@ -1623,7 +1635,35 @@ export const zh = {
     groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
     // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
     // 不透明的 flow id 和状态。
-    oauthKey: "自动获取密钥",
+    oauthKey: "连接",
+    /** The same button once the group holds a key: the flow again, for a fresh key or another account. */
+    reconnect: "重新连接",
+    /** The small status beside it: whether the group holds a stored key, however that key got there. */
+    connectedStatus: "连接成功",
+    notConnectedStatus: "未连接",
+    /**
+     * A group's account balance in its header (and pinned beside the user name): the tooltip
+     * names the group, the vendor's own figures and the time of the reading. `amounts` and
+     * `time` are already formatted.
+     */
+    balanceTitle: (label: string, amounts: string, time: string): string =>
+      `${label} 余额 ${amounts}，查询于 ${time}`,
+    balanceRefreshHint: "点击同步",
+    /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
+    balanceUnavailable: "账户当前不可用，余额可能不足",
+    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    balanceErrors: {
+      no_key: "该分组没有可用的 API key，无法查询余额",
+      upstream_failed: "服务商没有返回余额，可点击重试",
+      unsupported: "该分组不支持查询余额",
+    } as Record<string, string | undefined>,
+    /** Appended when the vendor answered with an HTTP error. */
+    balanceStatus: (status: number): string => `（服务商返回 HTTP ${status}）`,
+    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
+    pinBalance: "常驻到用户名旁",
+    unpinBalance: "取消常驻",
+    /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
+    tokenDanceBanner: "连接 TokenDance 钱包，无需手动配置模型密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
     oauthIntro: (label: string, n: number): string =>
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
@@ -2317,13 +2357,35 @@ export const zh = {
     thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
     /** Compaction ended without completing — the switch still applies, so say both. */
     thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
+    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch always compacts on the current model first, and a failed compaction keeps it. */
+    modelSwitchInSessionTitle: "切换模型",
+    modelSwitchInSessionConfirm: "压缩并切换",
+    /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
+    modelSwitchInSessionDirectConfirm: "切换",
+    modelSwitchInSessionBody: (from: string, to: string): string =>
+      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则保持「${from}」。`,
+    /** Body when the transcript is empty: there is no context to compact, so the switch is immediate. */
+    modelSwitchInSessionDirectBody: (to: string): string =>
+      `当前上下文没有内容，将直接切换到「${to}」。`,
+    /** Body when the transcript ends in a completed compaction or a model switch with nothing since: the switch runs no compaction and continues from what that context opened with (a summary, or nothing). */
+    modelSwitchInSessionCompactedBody: (to: string): string =>
+      `上下文刚压缩或切换过、此后没有新的对话，不会再次压缩：本对话将直接以「${to}」继续。`,
+    /** Toast once the server accepted a compacting switch: the row in the conversation carries it from here. */
+    modelSwitchInSessionStarted: (from: string, to: string): string =>
+      `正在用「${from}」压缩上下文，完成后切换到「${to}」。`,
+    /** Toast once the server accepted a switch that compacts nothing (the context was just compacted or switched): the model-change marker in the conversation carries it from here. */
+    modelSwitchInSessionSwitching: (to: string): string => `正在切换到「${to}」。`,
+    /** Toast when the switch completed inside the request (the Session had never run). */
+    modelSwitchInSessionApplied: (to: string): string => `已切换到「${to}」。`,
     workspaceHere: "本机",
     /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
     workspaceMachineWhy: {
       "no-identity": "待识别",
     },
     workspaceAuto: "临时工作区",
-    workspaceClear: "改用临时工作区",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "从临时工作区开始",
+    workspaceTempRule: "在 Agent 目录的 workspaces/ 下新建一个空目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
     finder: {
@@ -2421,12 +2483,14 @@ export const zh = {
     sortManual: "手动排序",
     sortRecent: "最近更新",
     newWorkspaceEntity: "新建工作区",
-    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
     workspaceMenu: "工作区选项",
     renameWorkspace: "重命名工作区",
     renameWorkspaceLabel: "名称",
     renameWorkspaceHint: "留空则使用目录名",
     deleteWorkspace: "删除工作区",
+    /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
+    browseWorkspaceFiles: "打开文件浏览",
     deleteWorkspaceConfirm: (name: string) =>
       `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
@@ -2623,13 +2687,12 @@ Benchmark：
       },
     },
     sessionList: "Session",
+    /** The Session list's heading, named for how the list is grouped. */
+    sessionListByMode: { workspace: "工作区", agent: "智能体", time: "最近" },
     defaultSessionTitle: "新对话",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -2937,19 +3000,20 @@ Benchmark：
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
-    /** `/model` switch: command description, picker title, the staged target's description and remove button, the switch-origin banner, and the empty-body auto message. */
-    switchModel: "切换模型，发送时开启新会话延续本对话",
-    switchModelTitle: "切换模型",
-    modelSwitchTargetTitle: (model: string) => `发送后换用 ${model} 延续本对话`,
-    modelSwitchRemove: "移除切换模型",
+    /** `/model` handoff: command description, picker title, the staged target's description and remove button, the origin banner, and the empty-body auto message. Every surface says that it opens a NEW conversation and leaves this one as it is — switching inside this conversation is the toolbar's model picker (`modelSwitchInSession*`). */
+    switchModel: "换模型开新会话：发送时用所选模型新开一个会话延续本对话，本会话保持不变",
+    switchModelTitle: "换模型开新会话",
+    modelSwitchTargetTitle: (model: string) =>
+      `发送后用 ${model} 新开一个会话延续本对话，本会话保持不变`,
+    modelSwitchRemove: "移除换模型目标",
     /** Why Send is disabled with a model switch staged: the fork branches off a Trace this Session is still writing. */
-    modelSwitchBusyHint: "本轮结束后才能切换模型：新会话要从当前会话的记录接续",
+    modelSwitchBusyHint: "本轮结束后才能换模型开新会话：新会话要从当前会话的记录接续",
     modelSwitchFrom: (prevModel?: string) =>
-      prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
+      prevModel
+        ? `换模型新开的会话（原模型 ${prevModel}），延续原会话`
+        : "换模型新开的会话，延续原会话",
     /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
-    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
-    modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line. */
     orgTriggerFrom: (org: string): string => `由组织「${org}」触发`,
@@ -2992,6 +3056,8 @@ Benchmark：
     compactionDone: (mode: string): string => (mode === "discard" ? "清空完毕" : "压缩完毕"),
     /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
     compactionResult: "压缩结果",
+    /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
+    modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -3086,6 +3152,8 @@ Benchmark：
     dropFilesDesc: "图片与文件将添加到输入框",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "目标模式仅支持附加图片，文件未添加。",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string => `粘贴的文本较长，已作为附件 ${name} 添加。`,
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -3496,6 +3564,8 @@ Benchmark：
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
+    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
+    stopEditing: "退出编辑",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
@@ -3506,7 +3576,8 @@ Benchmark：
     renameLabel: "新的路径",
     renameHint: "相对 Workspace 根目录；路径中不存在的目录会自动创建",
     renameConfirm: "移动",
-    renameTargetExists: (path: string): string => `${path} 已存在，未做改动。`,
+    /** A move or a New landed on a name that is taken: nothing was written. */
+    targetExists: (path: string): string => `${path} 已存在，未做改动。`,
     renamed: (name: string): string => `已移动到 ${name}`,
     deleteTitle: "删除文件",
     deleteBody: (name: string): string => `删除 ${name}？该文件不会进入回收站。`,
@@ -3521,6 +3592,18 @@ Benchmark：
     conflictBody: (name: string): string =>
       `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
     overwriteAnyway: "仍然覆盖",
+    /** The tree header's New menu, a folder's menu and the blank space under the tree. */
+    newMenu: "新建",
+    newTextFile: "新建文本文件",
+    newFolder: "新建文件夹",
+    newFileName: "文件名",
+    newFolderName: "文件夹名",
+    /** Formatting, kept on screen while typing: where the entry goes, and what a `/` does. */
+    createHint: (dir: string): string => `建在 ${dir} 下；名称里的 / 会同时建出中间的文件夹`,
+    createConfirm: "创建",
+    created: (name: string): string => `已创建 ${name}`,
+    /** The new-chat draft's Files panel and its toggle, while the Workspace is a temporary one. */
+    draftTemporary: "临时工作区在发送第一条消息时才创建。选一个文件夹，即可浏览其中的文件。",
   },
 
   usage: {
@@ -3563,11 +3646,13 @@ Benchmark：
     errorsColKind: "类型",
     errorsColMessage: "消息",
     errorsEmpty: "暂无异常",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `首次出现于 ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "较新",
     errorsOlder: "更早",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `第 ${page} / ${pages} 页 · 共 ${total} 条`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `第 ${page} / ${pages} 页 · 共 ${rows} 行`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "清空",
     errorsClearTitle: "清空错误记录",
@@ -4060,10 +4145,8 @@ Benchmark：
     workspaceField: "公司工作区",
     workspaceInfo:
       "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。",
-    workspaceHint: "留空则使用组织自己的 workspace/ 目录；指定时必须是服务器上已存在的目录",
     workspaceEmpty: "组织自己的 workspace/ 目录",
-    workspaceMenuHint: "选一个已存在的目录作为公司工作区",
-    workspaceClear: "改回组织自己的目录",
+    workspaceClear: "使用组织自己的目录",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO 预算",
     ceoBudgetHint: "每月上限；CEO 的预算就是整家公司的预算",
@@ -4773,6 +4856,7 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       model_not_routable:
         "该模型 ID 无法路由：厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",
@@ -4811,6 +4895,9 @@ Benchmark：
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.
       compaction_not_configured: "该 Agent 没有配置上下文压缩。",
+      same_model: "本会话已在使用该模型。",
+      model_not_configured: "所选模型不在本 Project 的模型配置中。",
+      model_unavailable: "所选模型暂不可用（例如还没有 API key），请先在「模型」页配置。",
       nothing_to_compact: "当前上下文还没有可压缩的内容（尚未完成一轮对话）。",
       already_compacted: "刚刚压缩过，之后还没有新的对话，无需重复压缩。",
       version_conflict: "快照版本不高于当前版本。",

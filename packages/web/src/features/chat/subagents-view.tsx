@@ -33,10 +33,17 @@ import type {
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, EmptyState, GlyphIcon, ICON_SIZE, StatusIcon } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  EmptyState,
+  GlyphIcon,
+  ICON_SIZE,
+  StatusIcon,
+  Text,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
-import { toastError } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
@@ -204,9 +211,9 @@ export function SubagentsView({
     <div className="flex h-full min-h-0 flex-col">
       {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned (capped height; scrolls both ways for deep/wide trees). */}
       <div className="shrink-0 border-b border-gray-200 px-3 pb-2 pt-1.5 dark:border-gray-800">
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <Text variant="eyebrow" className="mb-1.5">
           {S.subagentPanel.topologyLabel}
-        </p>
+        </Text>
         {nodes.length > 1 ? (
           <div className="max-h-48 overflow-y-auto">
             <AgentTopologyView
@@ -252,7 +259,7 @@ export function SubagentsView({
             </span>
             <span
               data-tooltip={active.sessionId}
-              className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500"
+              className="shrink-0 font-mono text-xs text-fg-subtle"
             >
               {shortSessionId(active.sessionId)}
             </span>

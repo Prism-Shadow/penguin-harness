@@ -86,14 +86,15 @@ From top to bottom, the sidebar holds:
 
 - The **Development** / **Company** switch, only when company mode is available: an admin has enabled it for the server, and you have not turned it off for yourself. Company mode swaps the page entries below for an organization's pages, and the conversation list for its channels. See [Company mode](/company-mode).
 - The Project switcher, with the **Collapse sidebar** button beside it. See [Projects and members](#projects-and-members).
-- **New chat**, which opens a new conversation draft. See [Chat](/chat).
-- The page entries. The chevron under the last one folds them away:
+- The nav entries:
 
 | Entry | What it is for | Guide |
 | --- | --- | --- |
+| **New chat** | Open a new conversation draft | [Chat](/chat) |
 | **Agents** | Create agents and edit their prompt, memory, runtime, tools, Skills, hooks, Vault and scheduled tasks | [Agents](/agents) |
-| **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
 | **Models** | Configure the Project's models, providers and credentials | [Models](/models) |
+| **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
+| **Machines** | Install this PenguinHarness build on other hosts over ssh and manage the connections to them (admins only) | [Security Model](/security#manage-remote-machines-over-ssh) |
 | **Cost Center** | Token usage, cost and server errors by agent, model and time range | [Cost Center](/usage) |
 | **Evaluation Center** | Benchmarks: evaluate agents and optimize them against a Benchmark | [Evaluation Center](/evaluation-center) |
 
@@ -103,6 +104,17 @@ From top to bottom, the sidebar holds:
   - The update row, which names where an update stands and opens the update dialog. See [Updates](/updates).
   - **Sign out**.
 
+### Pinned and collapsible entries
+
+**New chat** is always pinned. **Agents**, **Models** and **Plugins** are pinned by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
+
+To change which entries are pinned:
+
+- Point at an entry and select the pin at the end of its row. A filled pin means the entry is pinned; selecting it moves the entry into the collapsible area, and selecting an empty pin pins the entry. On a touch screen the pin is always shown.
+- Or drag an entry into the collapsible area to make it collapsible, or out of it to pin it.
+
+Each area keeps the order of the table above, however its entries got there, and with nothing collapsible the chevron bar is gone. The choices are saved per browser. The collapsed rail shows every entry either way.
+
 ### Notification dots
 
 A dot on a page entry means something is waiting there:
@@ -110,8 +122,8 @@ A dot on a page entry means something is waiting there:
 | Entry | What the dot means |
 | --- | --- |
 | **Agents** | Agents on an outdated kernel |
-| **Plugins** | Plugin updates |
 | **Models** | Preset models to sync (shown to owners) |
+| **Plugins** | Plugin updates |
 | **Cost Center** | Unexpected errors |
 
 A dot on your avatar means a software update. Pointing at an entry names what is waiting.
@@ -122,13 +134,9 @@ A dot on your avatar means a software update. Pointing at an entry names what is
 
 On a narrow window, the sidebar hides behind a menu button in a top bar and opens as a drawer.
 
-### Trajectories and Machines
+### Trajectories
 
-Two parts of the app have no sidebar entry.
-
-**Trajectories** is a side panel of the chat page, not a page of its own. It shows the open conversation's Trace files, with a summary, per-turn statistics, an execution timeline, and the individual events. **Export** downloads a file. See [Chat](/chat).
-
-**Machines** installs this PenguinHarness build on other hosts over ssh, choosing from the server account's `~/.ssh/config`. It is not offered in the sidebar in this release. An admin can reach it at `/machines`.
+**Trajectories** has no sidebar entry: it is a side panel of the chat page, not a page of its own. It shows the open conversation's Trace files, with a summary, per-turn statistics, an execution timeline, and the individual events. **Export** downloads a file. See [Chat](/chat).
 
 ### Language and theme
 

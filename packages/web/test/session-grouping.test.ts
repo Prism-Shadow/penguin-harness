@@ -1,19 +1,34 @@
 /**
- * Workspace grouping and the time buckets for the chat sidebar (pure logic).
+ * How the chat sidebar groups Sessions (lib/session-grouping.ts): by Workspace, by time
+ * bucket, and into the folders under each group.
  *
- * Workspace grouping:
- * - named Workspaces group by exact path, labeled by basename (full path kept for
- *   tooltips), newest group first;
- * - temporary Workspaces (`<agentDir>/workspaces/tmp-<8hex>`, the shape produced by
- *   core's createTempWorkspace) are all merged into ONE trailing temp group — an
- *   empty path (defensive; the server always backfills the resolved dir) counts too;
- * - sessions inside every group are re-sorted newest first: the flat store list
- *   concatenates per-Agent server responses, so its order isn't globally chronological.
+ * - A temporary Workspace (`…/workspaces/<dir>` of an Agent, or an empty path) is recognized
+ *   on either path separator; near misses and nested directories are not.
+ * - A group key is the trimmed path, or one shared sentinel for every temporary Workspace; a
+ *   machine's directory keys under that machine and splits back into machine and path, while
+ *   the server query carries the path only. A label is the path's last segment.
+ * - Grouping by Workspace merges Agents on one path (newest Session first, newest group first),
+ *   folds every temporary Workspace into one trailing group per machine, keeps one path on two
+ *   machines apart, and keeps archived rows in their group.
+ * - A Session's folder is decided by archived first, then its source; partitioning keeps the
+ *   order inside each folder, and benchmark runs get a folder of their own.
+ * - The auto-opened "last conversation" is the most recently active user or scheduled row
+ *   (ties by id), never an archived, subagent or benchmark one.
+ * - A page fetched with one extra row reports whether the server has more, never showing it.
+ * - Server counts sum per Workspace across Agents (recording which Agents hold each folder) and
+ *   stay apart per machine; the newest stamp per group survives aggregation.
+ * - Pinned items come first, each partition keeping its order; unknown pins are ignored.
+ * - Title search is a case-insensitive substring match; a blank query matches everything and
+ *   an untitled Session matches no non-blank query.
+ * - Time buckets cut at 24 hours and 30 days on last activity, skewed stamps land newest and
+ *   unreadable ones oldest, empty buckets are dropped, and bucket keys never collide with a
+ *   path or an Agent id.
+ * - Every counted Workspace becomes a group (empty when none of its rows loaded), placed by
+ *   the newer of its stamp and its loaded rows, the temp group last; a count of zero forms none.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
-  FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
   TIME_BUCKETS,
@@ -330,8 +345,6 @@ describe("benchmark Sessions (the Evaluation Center's runs)", () => {
     const parts = partitionSessions([run, user]);
     expect(parts.benchmark.map((s) => s.sessionId)).toEqual([run.sessionId]);
     expect(parts.active.map((s) => s.sessionId)).toEqual([user.sessionId]);
-    // Its own collapsed folder, rendered between Scheduled and Archived.
-    expect(FOLDER_CATEGORIES).toEqual(["subagent", "schedule", "benchmark", "archived"]);
     // The evaluator's run is not the conversation the user was last in.
     expect(latestConversation([run, user])).toBe(user);
   });

@@ -297,6 +297,32 @@ describe("resumeTrace", () => {
     expect(result.pendingSummary).toBeUndefined();
   });
 
+  it("an open context names the summary it opened with until a turn completes on it", () => {
+    const summary = "[context_summary]\nthe gist\n[/context_summary]";
+    const unanswered = resumeTrace([
+      meta(),
+      userText(summary),
+      userText("and now?"),
+      requestBegin(),
+      requestEnd("aborted"),
+    ]);
+    expect(textsOf(unanswered.carryOver)).toEqual([summary, "and now?"]);
+    expect(unanswered.openingSummary).toBe(unanswered.carryOver[0]);
+
+    const answered = resumeTrace([
+      meta(),
+      userText(summary),
+      userText("and now?"),
+      requestBegin(),
+      assistantText("this"),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+    ]);
+    expect(answered.openingSummary).toBeUndefined();
+    // A first input that is no summary is not one the context opened with.
+    expect(resumeTrace([meta(), userText("hello")]).openingSummary).toBeUndefined();
+  });
+
   it("drops failed compaction rounds via the generic rule (prompt not in history)", () => {
     const result = resumeTrace([
       meta(),

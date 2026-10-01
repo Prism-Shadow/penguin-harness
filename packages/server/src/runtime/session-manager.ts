@@ -14,12 +14,15 @@
  *     new api_key / base_url. Agent State changes (vault, AGENTS.md, tools, …) take no
  *     such shortcut: core assembles them into the next model context — at the Session's
  *     next compaction — exactly as the CLI does, so a running context never changes;
- *   - Per-Session mutual exclusion: only one Task/compaction may be in progress at a
- *     time;
- *   - run/compact drive: consumes the output stream in the background, publishing each
- *     message to the SSE channel and handing it to usage-recorder for persistence;
+ *   - Per-Session mutual exclusion: only one Task/compaction/model switch may be in
+ *     progress at a time;
+ *   - run/compact/switch drive: consumes the output stream in the background, publishing
+ *     each message to the SSE channel and handing it to usage-recorder for persistence;
  *     on completion (including errors) resets to idle and pushes a `task_state` server
- *     event;
+ *     event. A model switch (startSwitch) is a compaction whose next context opens on
+ *     another model: the entry's (provider, modelId) — the pair usage is attributed to —
+ *     and the index row follow the runtime, moving as the new context's session_meta passes
+ *     through the drive;
  *   - Approval registration and interrupt convergence: each approval decision re-reads
  *     approval_mode from the DB (takes effect immediately); an interrupt first
  *     converges pending approvals to deny, then aborts. An organization's sessions have
@@ -39,6 +42,7 @@ import {
   isHookContinue,
   isHookInput,
   isSessionMeta,
+  ModelSwitchRefusedError,
   parseUserSteeringText,
   tracesDir,
   userText,
@@ -55,6 +59,7 @@ import type {
   SpawnConfiner,
   SessionMetaPayload,
   SessionTitleResult,
+  StopReason,
   SubagentMessageOptions,
   SubagentMessageOutcome,
   TextPayload,
@@ -62,6 +67,7 @@ import type {
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
 import type {
+  ModelRefDto,
   PendingFollowUpInfo,
   PendingSteeringInfo,
   ServerEvent,
@@ -134,6 +140,37 @@ function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError 
   return new HttpError(409, code, message);
 }
 
+/**
+ * Core's refusal of a model switch — a typed `ModelSwitchRefusedError`, thrown before its
+ * first event (see `Session.switchModel`) — as the 409 the HTTP contract names for it: each
+ * reason is its own code (see `SessionSwitchModelRequest`). A missing credential reads as the
+ * remedy the Web App can act on rather than the loader's own wording. Anything else core
+ * throws is not a refusal but a failure — an Agent State that no longer parses, a bootstrap
+ * that broke — and is rethrown, so it reaches the 500 path and its logging instead of being
+ * dressed up as a target problem.
+ */
+function switchRefusal(err: unknown, ref: ModelRefDto): HttpError {
+  if (!(err instanceof ModelSwitchRefusedError)) throw err;
+  const message =
+    err.reason === "model_unavailable" && isMissingCredential(err)
+      ? `Model ${ref.modelId} has no API key yet. Configure it on the Models page first.`
+      : err.message;
+  return new HttpError(409, err.reason, message);
+}
+
+/** A stream whose head was already pulled, whole again: `head`, then the rest of `rest`. */
+async function* resumeFrom<T>(head: T, rest: AsyncGenerator<T, unknown>): AsyncGenerator<T> {
+  yield head;
+  yield* rest;
+}
+
+/** The model a runtime Session reports itself on, or null for one that reports none (test fakes). */
+function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
+  const { provider, modelId } = session;
+  if (provider === undefined || modelId === undefined) return null;
+  return { provider, modelId };
+}
+
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
 export interface RuntimeSession {
   readonly sessionId: string;
@@ -145,6 +182,27 @@ export interface RuntimeSession {
     },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
+  /**
+   * The running context's model (core `Session.provider` / `Session.modelId`, getters over
+   * the context's session_meta): the row's pair at creation, moved by each in-session switch
+   * — and, after a restart, whatever the Trace resumed on. Optional: test fakes may omit them,
+   * in which case the entry keeps the row's pair.
+   */
+  readonly provider?: string;
+  readonly modelId?: string;
+  /**
+   * Switches the Session's model in place (core `Session.switchModel`): closes the running
+   * context on the model it ran on, then opens the next one on the target. A completed switch
+   * streams the new context's main-session `session_meta` last, and the getters above answer
+   * the target by then; a refusal is thrown before the first event; a Session that never ran
+   * switches without streaming anything. Optional: test fakes may omit it, reading as
+   * "switching is not available".
+   */
+  switchModel?(opts: {
+    provider: string;
+    modelId: string;
+    signal: AbortSignal;
+  }): AsyncGenerator<OmniMessage, StopReason>;
   /**
    * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
    * an assignment applies from the Session's very next LLM request. Optional: test fakes may
@@ -436,7 +494,11 @@ interface RuntimeEntry {
   sessionId: string;
   projectId: string;
   agentId: string;
-  /** Vendor grouping for the Session's model (paired with modelId to form a model reference). */
+  /**
+   * The Session's current model (provider group paired with modelId): what the next drive
+   * attributes usage to. The row's pair, kept in step with the runtime's own answer (see
+   * `syncEntryModel`) — at load, and whenever a model switch moves it.
+   */
   provider: string;
   modelId: string;
   session: RuntimeSession;
@@ -1308,6 +1370,113 @@ export class SessionManager {
     });
   }
 
+  /**
+   * Switches the Session's model in place (`POST /switch-model`) — core `Session.switchModel`,
+   * gated like a compaction (open, not deleting, idle). Core decides everything before its
+   * first event, so the head of its stream is pulled here, under the lock, and tells the three
+   * outcomes apart:
+   *
+   * - it throws — a refusal, answered 409 with the code of its reason (see `switchRefusal`);
+   * - it is already done — a Session that never ran has no context to close: core re-assembled
+   *   its first context on the target, nothing streams, and the row carries the new pair by
+   *   the time this returns (`switched: true`; the route answers with the fresh DTO);
+   * - it yields — a driven run like a compaction (`switched: false`): status `compacting`,
+   *   idle when it ends. The head is a compaction's begin, the first record of a bootstrap (a
+   *   Session loaded from its Trace opens its context first), or — for a context with no
+   *   completed turn, which streams no pair — the opener's first record.
+   *
+   * The switch is the entry's run from that pull on — it can be stopped, and a deletion or a
+   * shutdown waits for it — while the entry only reads `compacting` once there is something
+   * to stream, so a refusal never flickers a state.
+   *
+   * The entry and the row follow the runtime as the new context's `session_meta` passes
+   * through the drive (see `drive`); a switch that does not complete streams no meta and
+   * leaves them where they were. Usage: a drive bills to the model it started on, so the
+   * switch's compaction request goes to the model that served it and the next run to the new
+   * one.
+   */
+  async startSwitch(
+    sessionId: string,
+    ref: ModelRefDto,
+  ): Promise<{ sessionId: string; switched: boolean }> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const entry = await this.ensureEntry(sessionId);
+      this.assertIdle(entry);
+      if (entry.provider === ref.provider && entry.modelId === ref.modelId) {
+        throw new HttpError(
+          409,
+          "same_model",
+          `This Session already runs on ${ref.provider} / ${ref.modelId}.`,
+        );
+      }
+      if (!entry.session.switchModel) {
+        throw new HttpError(
+          409,
+          "model_unavailable",
+          "Switching the model is not available for this Session.",
+        );
+      }
+      const ac = new AbortController();
+      const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
+      const head = gen.next();
+      const settled = (): void => {
+        entry.abort = null;
+        entry.running = null;
+      };
+      // One promise for the whole switch — the pull, then the drive behind it — so whoever
+      // waits for this entry's run to end waits for both.
+      entry.abort = ac;
+      entry.running = head.then((first) => {
+        if (first.done) return settled();
+        entry.status = "compacting";
+        this.publishState(entry, "compacting");
+        return this.drive(entry, resumeFrom(first.value, gen));
+      }, settled);
+      let first: IteratorResult<OmniMessage, StopReason>;
+      try {
+        first = await head;
+      } catch (err) {
+        throw switchRefusal(err, ref);
+      }
+      entry.lastActivityMs = Date.now();
+      if (!first.done) return { sessionId: entry.sessionId, switched: false };
+      this.syncEntryModel(entry);
+      return { sessionId: entry.sessionId, switched: true };
+    });
+  }
+
+  /**
+   * Moves the entry — and the row it caches into — to the model the runtime reports itself on,
+   * when that differs: the pair the next drive attributes usage to, and the one
+   * `GET /sessions/:id` describes. A runtime that reports none (test fakes) leaves the entry
+   * alone. The row write is guarded like the other bookkeeping writes (see `touchRow`): a
+   * switch must not be stranded mid-drive by a closed DB handle, and the entry is right either
+   * way.
+   */
+  private syncEntryModel(entry: RuntimeEntry): void {
+    const model = runtimeModelOf(entry.session);
+    if (!model) return;
+    if (entry.provider === model.provider && entry.modelId === model.modelId) return;
+    entry.provider = model.provider;
+    entry.modelId = model.modelId;
+    try {
+      this.deps.sessions.updateModel(entry.sessionId, model.provider, model.modelId);
+    } catch (err) {
+      this.log(
+        `[session] model bookkeeping failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.deps.errors?.record({
+        source: "session",
+        err,
+        ctx: { projectId: entry.projectId, agentId: entry.agentId, sessionId: entry.sessionId },
+        code: "session_model_update_failed",
+      });
+    }
+  }
+
   /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
   decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean {
     const entry = this.entries.get(sessionId);
@@ -1804,6 +1973,10 @@ export class SessionManager {
       // discard path produces today.
       backgroundTasks: discardedBackgroundTasks ?? backgroundTaskCounts(session),
     };
+    // The runtime's model is the truth the row caches: a Session that switched models and
+    // crashed between the Trace write and the row update resumes (from the Trace) on the new
+    // model, and the row is brought back in step here.
+    this.syncEntryModel(entry);
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
     if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);
@@ -1934,6 +2107,15 @@ export class SessionManager {
           if (entry.pendingSteering.length > 0 && isDeliveredSteering(msg)) {
             entry.pendingSteering.shift();
             this.publishState(entry, entry.status);
+          }
+          // The main session's own session_meta is streamed when a model switch opens its new
+          // context, and the runtime is on that context's model by then: the entry and the row
+          // follow it here, ahead of the publish below, so a client that re-reads the Session
+          // on this record already finds the new model. The new context's file is open too, its
+          // records on it, and what the context it replaced still held pending went with it.
+          if (isSessionMeta(msg)) {
+            this.syncEntryModel(entry);
+            entry.pendingBootstrap = [];
           }
         } else if (isSessionMeta(msg)) {
           // Subagent registration is only a "side effect" — it must never interrupt the
@@ -2291,6 +2473,7 @@ export abstract class Sessions extends Interface<
     | "startTask"
     | "startGoal"
     | "startCompact"
+    | "startSwitch"
     | "decideApproval"
     | "steer"
     | "recallSteering"
@@ -2328,13 +2511,14 @@ export abstract class SessionServiceIface extends Interface<
 >() {}
 
 /** The per-spawn policies every Session's command environment is built with. */
-export abstract class SessionEnv extends Interface<{
-  proxyEnv(): ProxyEnvPolicy | null;
-  controlEnv(ctx: ControlEnvContext): Record<string, string>;
+@Interface()
+export abstract class SessionEnv {
+  abstract proxyEnv(): ProxyEnvPolicy | null;
+  abstract controlEnv(ctx: ControlEnvContext): Record<string, string>;
   /** The directories at the FRONT of every command's PATH: the harness's own CLI shim (see CreateAgentOptions.pathPrepend). */
-  pathPrepend(): string[];
-  confineSpawn(ctx: ControlEnvContext): SpawnConfiner | null;
-}>() {}
+  abstract pathPrepend(): string[];
+  abstract confineSpawn(ctx: ControlEnvContext): SpawnConfiner | null;
+}
 
 @Module()
 export class SessionsModule {
@@ -2501,13 +2685,14 @@ export class SessionsModule {
 }
 
 /** Builds the loader a manager runs sessions through; a test stands in a fake session. */
-export abstract class SessionLoaders extends Interface<{
-  create(
+@Interface()
+export abstract class SessionLoaders {
+  abstract create(
     root: string,
     sources: Opaque<"SessionOrigins", SessionOrigins>,
     env: Opaque<"SessionLoaderEnv", Parameters<typeof createCoreSessionLoader>[2]>,
   ): Opaque<"SessionLoader", SessionLoader>;
-}>() {}
+}
 @Component()
 export class CoreSessionLoaders implements SessionLoaders {
   create(
@@ -2520,11 +2705,12 @@ export class CoreSessionLoaders implements SessionLoaders {
 }
 
 /** Builds the title generator; a test stands in a notifier that never calls a model. */
-export abstract class TitleGenerators extends Interface<{
-  create(
+@Interface()
+export abstract class TitleGenerators {
+  abstract create(
     deps: Opaque<"TitleGeneratorDeps", ConstructorParameters<typeof TitleGenerator>[0]>,
   ): Opaque<"TitleNotifier", TitleNotifier>;
-}>() {}
+}
 @Component()
 export class DefaultTitleGenerators implements TitleGenerators {
   create(deps: ConstructorParameters<typeof TitleGenerator>[0]): TitleNotifier {

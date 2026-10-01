@@ -31,6 +31,9 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
+    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
+    pinEntry: "Pin",
+    unpinEntry: "Unpin",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
@@ -731,7 +734,7 @@ export const en: Strings = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
@@ -798,6 +801,13 @@ export const en: Strings = {
     moreInfo: "More info",
     /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
     moreInfoAbout: (subject: string) => `More info: ${subject}`,
+    /** The toast stack's name as a live region (the shared UI package's `Toaster`). */
+    notifications: "Notifications",
+    /** Read after a toast's text: pressing the toast dismisses it. */
+    dismiss: "Dismiss",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "Previous page",
+    nextPage: "Next page",
     name: "Name",
     username: "Username",
     role: "Role",
@@ -1043,7 +1053,7 @@ export const en: Strings = {
     createDirSkillsEmpty: "This directory carries no installable Skills",
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
-    createDirSkillsClear: "Clear the selected directory",
+    createDirSkillsClear: "Don't import from a directory",
     createSnapshot: "Initialize from a snapshot",
     createSnapshotPick: "Choose a snapshot package",
     createSnapshotHint:
@@ -1400,9 +1410,9 @@ export const en: Strings = {
       {
         key: "openrouter",
         label: "OpenRouter's popular models",
-        description: "Reads the listing page, adds one group",
+        description: "Reads the listing page, adds a group of your own",
         prompt:
-          "Add the popular models on https://openrouter.ai/models as an OpenRouter group (ask me for the API key first).",
+          "Add the popular models on https://openrouter.ai/models as a group of my own (ask me for the API key first).",
       },
       {
         key: "vllm",
@@ -1439,6 +1449,8 @@ export const en: Strings = {
     platformSync: "Sync",
     homepage: "Model page",
     speedTest: "Speed test",
+    /** The same icon button while its group's run is going: stops after the probe in flight. */
+    speedTestStop: "Stop speed test",
     speedTestTitle: "Speed test",
     speedTestConfirm: (n: number): string =>
       `This sends one real request to each of the ${n} models in this group, one at a time, to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
@@ -1562,14 +1574,42 @@ export const en: Strings = {
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
-    groupApiKey: "Set key",
+    groupApiKey: "Enter key",
     groupApiKeyTitle: (label: string): string => `Set the API key for ${label}`,
     groupApiKeyHint: (n: number): string =>
       `Applies to all ${n} models in this group; leave empty to keep them unchanged.`,
     getApiKey: "Manage keys",
     getModelIds: "Get model IDs",
     groupKeyApplied: (n: number): string => `API key set for ${n} models`,
-    oauthKey: "Authorize key",
+    oauthKey: "Connect",
+    /** The same button once the group holds a key: the flow again, for a fresh key or another account. */
+    reconnect: "Reconnect",
+    /** The small status beside it: whether the group holds a stored key, however that key got there. */
+    connectedStatus: "Connected",
+    notConnectedStatus: "Not connected",
+    /**
+     * A group's account balance in its header (and pinned beside the user name): the tooltip
+     * names the group, the vendor's own figures and the time of the reading. `amounts` and
+     * `time` are already formatted.
+     */
+    balanceTitle: (label: string, amounts: string, time: string): string =>
+      `${label} balance ${amounts}, read at ${time}`,
+    balanceRefreshHint: "Click to refresh",
+    /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
+    balanceUnavailable: "The account cannot make requests right now; its balance may be too low",
+    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    balanceErrors: {
+      no_key: "This group has no API key to read its balance with",
+      upstream_failed: "The provider returned no balance; click to try again",
+      unsupported: "This group has no balance to read",
+    } as Record<string, string | undefined>,
+    /** Appended when the vendor answered with an HTTP error. */
+    balanceStatus: (status: number): string => ` (the provider answered HTTP ${status})`,
+    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
+    pinBalance: "Pin beside your name",
+    unpinBalance: "Unpin",
+    /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
+    tokenDanceBanner: "Connect your TokenDance wallet — no model keys to set by hand",
     oauthTitle: (label: string): string => `Authorize a new ${label} API key`,
     oauthIntro: (label: string, n: number): string =>
       `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,
@@ -2279,13 +2319,29 @@ export const en: Strings = {
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
       "The compaction did not finish; the thinking level was switched anyway.",
+    modelSwitchInSessionTitle: "Switch model",
+    modelSwitchInSessionConfirm: "Compact and switch",
+    /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
+    modelSwitchInSessionDirectConfirm: "Switch",
+    modelSwitchInSessionBody: (from: string, to: string): string =>
+      `The context is compacted on the current model "${from}" first, and this conversation then continues on "${to}". If the compaction fails, it stays on "${from}".`,
+    modelSwitchInSessionDirectBody: (to: string): string =>
+      `This conversation has no context yet, so it switches to "${to}" right away.`,
+    modelSwitchInSessionCompactedBody: (to: string): string =>
+      `The context was compacted or switched a moment ago and nothing has been said since, so nothing is compacted again: this conversation continues on "${to}" from there.`,
+    modelSwitchInSessionStarted: (from: string, to: string): string =>
+      `Compacting the context on "${from}" — the conversation moves to "${to}" when it finishes.`,
+    modelSwitchInSessionSwitching: (to: string): string => `Switching to "${to}".`,
+    modelSwitchInSessionApplied: (to: string): string => `Switched to "${to}".`,
     workspaceHere: "here",
     /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
     workspaceMachineWhy: {
       "no-identity": "not identified",
     },
     workspaceAuto: "Temporary workspace",
-    workspaceClear: "Use a temporary workspace instead",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "Start in a temporary workspace",
+    workspaceTempRule: "A new empty folder inside the agent's workspaces/ folder",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
     finder: {
@@ -2375,12 +2431,14 @@ export const en: Strings = {
     sortManual: "Manual order",
     sortRecent: "Most recent",
     newWorkspaceEntity: "New workspace",
-    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
     workspaceMenu: "Workspace options",
     renameWorkspace: "Rename workspace",
     renameWorkspaceLabel: "Name",
     renameWorkspaceHint: "Leave empty to use the folder name",
     deleteWorkspace: "Remove workspace",
+    /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
+    browseWorkspaceFiles: "Browse files",
     deleteWorkspaceConfirm: (name: string) =>
       `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
@@ -2574,14 +2632,11 @@ Scenarios:
       },
     },
     sessionList: "Sessions",
+    sessionListByMode: { workspace: "Workspaces", agent: "Agents", time: "Recent" },
     defaultSessionTitle: "New chat",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint:
-      "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -2888,19 +2943,19 @@ Scenarios:
     handoffFrom: (agent: string) => `Handed off from ${agent}'s conversation`,
     handoffBack: (title?: string) =>
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
-    switchModel: "Switch model — on send, continues this conversation in a new session",
-    switchModelTitle: "Switch model",
-    modelSwitchTargetTitle: (model: string) => `Sending continues this conversation on ${model}`,
-    modelSwitchRemove: "Remove model switch",
+    switchModel:
+      "New conversation on another model — sending opens a new session that continues this one; this conversation stays as it is",
+    switchModelTitle: "New conversation on another model",
+    modelSwitchTargetTitle: (model: string) =>
+      `Sending opens a new conversation on ${model} that continues this one; this conversation stays as it is`,
+    modelSwitchRemove: "Remove the model for the new conversation",
     modelSwitchBusyHint:
-      "The model switch waits for this turn to finish: the new session continues from this session's record",
+      "The new conversation waits for this turn to finish: it continues from this session's record",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel
-        ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
-        : "Switched model — continued from the earlier conversation",
+        ? `New conversation on another model (was ${prevModel}) — continues the original`
+        : "New conversation on another model — continues the original",
     modelSwitchAutoMessage: "Continue this conversation on the new model",
-    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
-    modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line. */
     orgTriggerFrom: (org: string): string => `Triggered by organization "${org}"`,
@@ -2939,6 +2994,7 @@ Scenarios:
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
     compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
     compactionResult: "Result",
+    modelChanged: (from: string, to: string): string => `Model switched · ${from} → ${to}`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -3032,6 +3088,9 @@ Scenarios:
     dropFilesDesc: "Images and files are added to the message draft",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string =>
+      `The pasted text was long, so it was attached as ${name}.`,
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -3457,6 +3516,8 @@ Scenarios:
     discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
     discard: "Discard",
     unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
+    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
+    stopEditing: "Stop editing",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "Changed on disk",
     changedOnDiskHint:
@@ -3469,7 +3530,8 @@ Scenarios:
     renameHint:
       "Relative to the Workspace root; a directory in the path that does not exist is created",
     renameConfirm: "Move",
-    renameTargetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
+    /** A move or a New landed on a name that is taken: nothing was written. */
+    targetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
     renamed: (name: string): string => `Moved to ${name}`,
     deleteTitle: "Delete file",
     deleteBody: (name: string): string => `Delete ${name}? It does not go to a trash folder.`,
@@ -3485,6 +3547,20 @@ Scenarios:
     conflictBody: (name: string): string =>
       `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
     overwriteAnyway: "Overwrite",
+    /** The tree header's New menu, a folder's menu and the blank space under the tree. */
+    newMenu: "New",
+    newTextFile: "New text file",
+    newFolder: "New folder",
+    newFileName: "File name",
+    newFolderName: "Folder name",
+    /** Formatting, kept on screen while typing: where the entry goes, and what a `/` does. */
+    createHint: (dir: string): string =>
+      `Created in ${dir}. A / in the name also creates the folders in between.`,
+    createConfirm: "Create",
+    created: (name: string): string => `Created ${name}`,
+    /** The new-chat draft's Files panel and its toggle, while the Workspace is a temporary one. */
+    draftTemporary:
+      "A temporary workspace is created with the first message. Choose a folder to browse its files.",
   },
 
   usage: {
@@ -3527,11 +3603,13 @@ Scenarios:
     errorsColKind: "Type",
     errorsColMessage: "Message",
     errorsEmpty: "No errors",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `First at ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "Newer",
     errorsOlder: "Older",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `Page ${page} / ${pages} · ${total} total`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `Page ${page} / ${pages} · ${rows} row${rows === 1 ? "" : "s"}`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
@@ -4032,11 +4110,8 @@ Scenarios:
     workspaceField: "Company workspace",
     workspaceInfo:
       "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",
-    workspaceHint:
-      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory on the server",
     workspaceEmpty: "The organization's own workspace/ directory",
-    workspaceMenuHint: "Pick an existing directory as the company workspace",
-    workspaceClear: "Back to the organization's own directory",
+    workspaceClear: "Use the organization's own directory",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO budget",
     ceoBudgetHint: "A monthly cap; the CEO's budget is the whole company's",
@@ -4756,6 +4831,8 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      model_not_addable:
+        "This group carries its built-in models only; add the model under a custom group.",
       model_not_routable:
         "This model ID cannot be routed: a vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
@@ -4795,6 +4872,10 @@ Scenarios:
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.
       compaction_not_configured: "This agent does not have context compaction configured.",
+      same_model: "This conversation is already on that model.",
+      model_not_configured: "That model is not in this Project's model configuration.",
+      model_unavailable:
+        "That model cannot be used yet (it may have no API key) — configure it on the Models page first.",
       nothing_to_compact:
         "There is nothing to compact in the current context yet (no completed conversation turn).",
       already_compacted:

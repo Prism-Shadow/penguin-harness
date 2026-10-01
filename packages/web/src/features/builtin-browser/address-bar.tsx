@@ -13,9 +13,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, Ref } from "react";
 import { createPortal } from "react-dom";
 import type { BuiltinBrowserHistoryEntry } from "@prismshadow/penguin-server/api";
+import { noAutofill, sizeTextClass } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { noAutofill, panelSearchClass } from "../../components/ui/input";
 import { displayAddress, normalizeAddress } from "./address";
 import { NO_HIGHLIGHT, moveHighlight } from "./suggestion-nav";
 
@@ -25,6 +25,16 @@ const SUGGESTION_LIMIT = 8;
 const SUGGEST_DELAY_MS = 120;
 /** Gap between the field and the list (px). */
 const LIST_GAP = 4;
+
+/**
+ * The field's look: a box standing inside the toolbar with its own quiet line, on the control
+ * size scale's sm rung. Not a SearchInput: it holds an address, Escape reverts its text rather
+ * than clearing it, and it has no clear button.
+ */
+const fieldClass =
+  `w-full rounded-md border border-gray-200 bg-transparent ${sizeTextClass.sm} text-gray-700 ` +
+  "transition-colors placeholder:text-gray-400 focus:border-gray-400 focus:outline-none " +
+  "dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-gray-500";
 
 export function AddressBar({
   url,
@@ -167,7 +177,7 @@ export function AddressBar({
         onFocus={(event) => event.target.select()}
         onBlur={stopEditing}
         onKeyDown={onKeyDown}
-        className={`${panelSearchClass} h-7 min-w-0 flex-1 px-2`}
+        className={`${fieldClass} h-7 min-w-0 flex-1 px-2`}
       />
       {listOpen &&
         createPortal(

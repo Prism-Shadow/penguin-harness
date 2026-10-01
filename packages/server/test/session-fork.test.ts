@@ -1,3 +1,19 @@
+/**
+ * Forking a Session at one of its replies (POST /api/sessions/:id/fork).
+ *
+ * - A fork copies the history through the selected reply, snapshots the scratchpad, rewrites
+ *   the local attachment markers to its own copy, and outlives the source's deletion.
+ * - Forks of one source share a persistent number sequence, whatever reply they start from; a
+ *   source with no title forks under a readable numbered fallback.
+ * - A fork that fails after its row was committed removes the row and the cloned files.
+ * - A user message, an intermediate assistant segment and a hidden compaction summary are not
+ *   fork points; a running source is a 409 task_in_progress.
+ * - A missing scratchpad forks as empty, and deleting the fork leaves the source intact.
+ * - Completed earlier shards are cloned and the selected one cut, with stable positions on a
+ *   tail page.
+ * - Concurrent forks get unique Sessions and never overwrite the source.
+ * - A user without Project access is not told the endpoint exists.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +41,7 @@ import { apiClient, createTestApp, provisionUser, writeTraceFile, waitFor } from
 import type { TestApp } from "./helpers.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { fakeSession } from "./fixtures/session.js";
 
 const SID = "session-2026-08-14-10-00-00-aabbcc01";
 
@@ -37,19 +54,12 @@ function at(timestamp: string, message: OmniMessage): OmniMessage {
 }
 
 function parkingFakeSession(sessionId: string, until: Promise<void>): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run() {
       await until;
       yield assistantText("done");
     },
-    async *compact() {},
-  };
+  });
 }
 
 describe("session fork", () => {
@@ -499,6 +509,65 @@ describe("session fork", () => {
           (message.payload as { type?: string }).type === "compaction_begin",
       ),
     ).toBe(false);
+  });
+
+  it("a fork's model is the one of the shard it is cut in, not the model the source runs on now", async () => {
+    const { scratch } = await seedSource();
+    // The source switched models: shard 1 closes with the switch's plain manual pair, shard 2
+    // opens headed by the new model's session_meta, and the source's row already carries it.
+    const nextModel = { provider: "custom", model_id: "fork-model-b" };
+    const closing = [
+      at(
+        "2026-08-14T10:01:05.000Z",
+        compactionBegin({ reason: "manual", mode: "summarize", context: 500, turns: 2 }),
+      ),
+      at("2026-08-14T10:01:05.100Z", requestBegin()),
+      at("2026-08-14T10:01:05.200Z", assistantText("[summary]summary[/summary]")),
+      at("2026-08-14T10:01:05.300Z", requestEnd("completed")),
+      at(
+        "2026-08-14T10:01:05.400Z",
+        compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      ),
+    ];
+    await fs.appendFile(
+      path.join(tracesDir(t.root, projectId, "default_agent"), "2026-08-14", `${SID}_001.jsonl`),
+      closing.map((message) => JSON.stringify(message)).join("\n") + "\n",
+      "utf8",
+    );
+    const metaB: SessionMetaPayload = {
+      session_id: SID,
+      provider: nextModel.provider,
+      model_id: nextModel.model_id,
+      model_context_window: 20_000,
+      system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
+      agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+      workspace,
+    };
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-08-14", SID, 2, [
+      at("2026-08-14T10:01:05.000Z", sessionMeta(metaB)),
+      at("2026-08-14T10:01:06.000Z", userText("[context_summary]\nsummary\n[/context_summary]")),
+      at("2026-08-14T10:01:07.000Z", userText("on the new model")),
+      at("2026-08-14T10:01:08.000Z", requestBegin()),
+      at("2026-08-14T10:01:09.000Z", assistantText("answered on b")),
+      at("2026-08-14T10:01:10.000Z", requestEnd("completed")),
+      at("2026-08-14T10:01:10.100Z", tokenUsage(counts(300), counts(100))),
+    ]);
+    t.deps.sessionsRepo.updateModel(SID, nextModel.provider, nextModel.model_id);
+
+    // Cut in shard 2: the fork resumes on the model that answered there.
+    const onB = (await (
+      await api.post(`/api/sessions/${SID}/fork`, { position: { fileIndex: 2, ordinal: 4 } })
+    ).json()) as SessionForkResponse;
+    expect(onB.session).toMatchObject({ provider: "custom", modelId: "fork-model-b" });
+    // Cut in shard 1: the fork resumes on shard 1's model, although the source has moved on.
+    const onA = (await (
+      await api.post(`/api/sessions/${SID}/fork`, { position: { fileIndex: 1, ordinal: 4 } })
+    ).json()) as SessionForkResponse;
+    expect(onA.session).toMatchObject({ provider: "custom", modelId: "fork-model" });
+    expect(t.deps.sessionsRepo.findById(onA.session.sessionId)).toMatchObject({
+      provider: "custom",
+      modelId: "fork-model",
+    });
   });
 
   it("gives concurrent forks unique Sessions without overwriting the source", async () => {

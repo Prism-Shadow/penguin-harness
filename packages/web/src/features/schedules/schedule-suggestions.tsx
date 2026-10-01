@@ -84,7 +84,7 @@ export function ScheduleSuggestions({
       <div className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
         {S.schedule.suggestionsTitle}
       </div>
-      <ul className="space-y-0.5">
+      <ul className="space-y-1">
         {scheduleSuggestions(mode).map((s) => (
           <li key={s.key}>
             <button
@@ -100,7 +100,7 @@ export function ScheduleSuggestions({
                   <span className="truncate text-sm text-gray-800 dark:text-gray-100">
                     {s.name}
                   </span>
-                  <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                     {s.hint}
                   </span>
                 </span>

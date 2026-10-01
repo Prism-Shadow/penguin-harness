@@ -195,6 +195,13 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+
+  /** The server's own message, unwrapped (empty when the body carried none) — for a caller that localizes the code and still needs the specifics. */
+  get detail(): string {
+    const message = (this.body as { error?: { message?: unknown } } | null | undefined)?.error
+      ?.message;
+    return typeof message === "string" ? message : "";
+  }
 }
 
 export class ServerClient {

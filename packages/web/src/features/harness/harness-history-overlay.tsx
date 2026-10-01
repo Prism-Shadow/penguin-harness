@@ -12,8 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Badge, CloseIcon, Skeleton } from "@prismshadow/penguin-ui";
-import { useDialogLayer } from "../../components/ui/modal";
+import { Badge, CloseIcon, NoticeStrip, Skeleton, useDialogLayer } from "@prismshadow/penguin-ui";
 import type {
   HarnessHistoryEntry,
   IfaceChange,
@@ -26,7 +25,6 @@ import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { ModuleTreeView } from "./module-tree-view";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The last path segment without its extension: `store/platform/1a2b….mjs` → `1a2b…`. */
 function shortSha(pointer: string | null): string {
@@ -160,8 +158,8 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
   }, [open]);
 
   // Escape closes it only while it is the topmost esc-consuming layer (shared with Modal /
-  // Dropdown / the palette, see modal.tsx); Tab stays inside the panel, and closing hands
-  // focus back to where it was.
+  // Dropdown / the palette, see the UI package's esc-layers); Tab stays inside the panel, and
+  // closing hands focus back to where it was.
   const panelRef = useRef<HTMLElement>(null);
   const { onKeyDown: onPanelKeyDown } = useDialogLayer(open, panelRef, onClose);
 

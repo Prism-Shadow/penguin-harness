@@ -12,9 +12,26 @@
  * reinstalls the previous release). Nothing records a schema version, so both properties rest
  * on every schema change staying additive — and the downgrade one on more than that, which the
  * last suite pins next to the tolerance rather than leaving it implied.
+ *
+ * Scenarios:
+ * - Given a web.db formed before a column existed, when it is opened, the column is added, the
+ *   old rows read back with the grandfathered value, and the column takes writes at once
+ *   (sessions' client / has_trace; each messaging_bindings column added since 0.2.5, with
+ *   render_markdown the one that starts ON).
+ * - Given a database this build already formed, a reopen changes nothing.
+ * - Given sessions formed before last_active_at, the open backfills it once from the last
+ *   request (else created_at); a later open neither re-runs the backfill nor rewrites a row.
+ * - Given a stamp, a write never moves it backwards, and a write for one Session touches no
+ *   other row; both insert paths store a cell even when the caller leaves it out.
+ * - Given a database formed before messaging_bindings existed, the open creates it and its
+ *   index and keeps the rows already there.
+ * - Given the retired unique account index, the open drops it, so one bot account can be saved
+ *   on two Sessions, and an enabled binding still holds its account afterwards.
+ * - Given a database from a newer build, unknown tables, columns and indexes survive the open;
+ *   a defaultless NOT NULL column or a new unique index still breaks this build's writes.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -28,7 +45,18 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 const sqlite = process.getBuiltinModule("node:sqlite");
 
 let dir: string;
+/** A database this build formed with a fresh open — once per file, since forming one commits every DDL statement of SCHEMA_SQL on its own. */
+let formedDir: string;
+let formed: string;
 
+beforeAll(async () => {
+  formedDir = await mkdtemp(path.join(tmpdir(), "penguin-db-formed-"));
+  formed = path.join(formedDir, "web.db");
+  openDatabase(formed).close();
+});
+afterAll(async () => {
+  await rm(formedDir, { recursive: true, force: true, maxRetries: 10 });
+});
 beforeEach(async () => {
   dir = await mkdtemp(path.join(tmpdir(), "penguin-db-upgrade-"));
 });
@@ -38,6 +66,30 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true, maxRetries: 10 });
 });
 
+/** The case's own copy of the database this build formed. */
+async function copyOfFormed(name: string): Promise<string> {
+  const dbPath = path.join(dir, name);
+  await copyFile(formed, dbPath);
+  return dbPath;
+}
+
+/**
+ * Writes the file another build left behind, in ONE transaction. The shape is what an open
+ * reads; how durably the fixture was written is not. Outside a transaction every statement
+ * of SCHEMA_SQL commits on its own — a journal file created, synced and deleted forty-odd
+ * times per seed — which on a Windows runner costs seconds per case.
+ */
+function seedDatabase(dbPath: string, build: (db: DatabaseSync) => void): void {
+  const db = new sqlite.DatabaseSync(dbPath);
+  try {
+    db.exec("BEGIN");
+    build(db);
+    db.exec("COMMIT");
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * Seeds a database in the shape it had **before** last_active_at existed, derived from the
  * real SCHEMA_SQL rather than a hand-copied DDL replica (a copy silently forks from the
@@ -45,16 +97,13 @@ afterEach(async () => {
  * things this change introduced — the column, and the reshaped usage index.
  */
 function seedPreLastActiveDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
-  const db = new sqlite.DatabaseSync(dbPath);
-  try {
+  seedDatabase(dbPath, (db) => {
     db.exec(SCHEMA_SQL);
     db.exec("ALTER TABLE sessions DROP COLUMN last_active_at");
     db.exec("DROP INDEX IF EXISTS idx_usage_session_ts");
     db.exec("CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_records(session_id)");
     seed(db);
-  } finally {
-    db.close();
-  }
+  });
 }
 
 /** Reads the stored cell directly, bypassing mapRow's coalesce (which would mask a NULL). */
@@ -69,26 +118,26 @@ describe("openDatabase column upgrade", () => {
   it("adds client/has_trace to a sessions table formed before the columns existed", () => {
     const dbPath = path.join(dir, "web.db");
     // A database formed by the pre-#139 schema: sessions without client / has_trace.
-    const old = new sqlite.DatabaseSync(dbPath);
-    old.exec(`CREATE TABLE sessions (
-      session_id    TEXT PRIMARY KEY,
-      project_id    TEXT NOT NULL,
-      agent_id      TEXT NOT NULL,
-      provider      TEXT NOT NULL,
-      model_id      TEXT NOT NULL,
-      workspace     TEXT NOT NULL,
-      approval_mode TEXT NOT NULL DEFAULT 'allow-all',
-      title         TEXT,
-      archived_at   TEXT,
-      created_at    TEXT NOT NULL
-    );`);
-    old
-      .prepare(
-        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)
-       VALUES ('session-legacy', 'p1', 'a1', 'custom', 'm1', '/w', '2026-01-01T00:00:00.000Z')`,
-      )
-      .run();
-    old.close();
+    seedDatabase(dbPath, (old) => {
+      old.exec(`CREATE TABLE sessions (
+        session_id    TEXT PRIMARY KEY,
+        project_id    TEXT NOT NULL,
+        agent_id      TEXT NOT NULL,
+        provider      TEXT NOT NULL,
+        model_id      TEXT NOT NULL,
+        workspace     TEXT NOT NULL,
+        approval_mode TEXT NOT NULL DEFAULT 'allow-all',
+        title         TEXT,
+        archived_at   TEXT,
+        created_at    TEXT NOT NULL
+      );`);
+      old
+        .prepare(
+          `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)
+         VALUES ('session-legacy', 'p1', 'a1', 'custom', 'm1', '/w', '2026-01-01T00:00:00.000Z')`,
+        )
+        .run();
+    });
 
     const db = openDatabase(dbPath);
     try {
@@ -139,8 +188,7 @@ describe("openDatabase column upgrade", () => {
     // A database formed by 0.2.7 or earlier: messaging_bindings exists (it shipped in 0.2.5)
     // but has no redelivery watermark. Derived from the real SCHEMA_SQL, then the one column
     // this change adds is dropped back off, so the fixture cannot fork from the schema.
-    const old = new sqlite.DatabaseSync(dbPath);
-    try {
+    seedDatabase(dbPath, (old) => {
       old.exec(SCHEMA_SQL);
       old.exec("ALTER TABLE messaging_bindings DROP COLUMN last_inbound_message_id");
       old
@@ -151,9 +199,7 @@ describe("openDatabase column upgrade", () => {
            VALUES ('session-legacy-binding', 'feishu', 'cli_app', '{}', 1, 'oc_old', 1, ?, ?)`,
         )
         .run("2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
-    } finally {
-      old.close();
-    }
+    });
 
     const db = openDatabase(dbPath);
     try {
@@ -177,10 +223,8 @@ describe("openDatabase column upgrade", () => {
     }
   });
 
-  it("is idempotent: reopening an already-upgraded database changes nothing", () => {
-    const dbPath = path.join(dir, "web.db");
-    openDatabase(dbPath).close();
-    const db = openDatabase(dbPath);
+  it("is idempotent: reopening an already-upgraded database changes nothing", async () => {
+    const db = openDatabase(await copyOfFormed("web.db"));
     try {
       const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
       expect(cols.filter((c) => c.name === "client")).toHaveLength(1);
@@ -350,14 +394,11 @@ describe("openDatabase table and index upgrades", () => {
    * drop exactly what that change introduced (dropping the table takes its index with it).
    */
   function seedPreMessagingDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
-    const db = new sqlite.DatabaseSync(dbPath);
-    try {
+    seedDatabase(dbPath, (db) => {
       db.exec(SCHEMA_SQL);
       db.exec("DROP TABLE messaging_bindings");
       seed(db);
-    } finally {
-      db.close();
-    }
+    });
   }
 
   it("creates messaging_bindings on a database formed before it existed, keeping existing rows", () => {
@@ -424,35 +465,17 @@ describe("openDatabase table and index upgrades", () => {
     column: string,
     seed: (db: DatabaseSync) => void,
   ): void {
-    const db = new sqlite.DatabaseSync(dbPath);
-    try {
+    seedDatabase(dbPath, (db) => {
       db.exec(SCHEMA_SQL);
       db.exec(`ALTER TABLE messaging_bindings DROP COLUMN ${column}`);
       seed(db);
-    } finally {
-      db.close();
-    }
-  }
-
-  /**
-   * Seeds a database in the shape it had before messaging_bindings.render_markdown existed:
-   * today's schema with that column dropped. Same derivation rule as the helpers around it.
-   */
-  function seedPreRenderMarkdownDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
-    const db = new sqlite.DatabaseSync(dbPath);
-    try {
-      db.exec(SCHEMA_SQL);
-      db.exec("ALTER TABLE messaging_bindings DROP COLUMN render_markdown");
-      seed(db);
-    } finally {
-      db.close();
-    }
+    });
   }
 
   it("adds render_markdown to a messaging_bindings formed before it, existing rows ON", () => {
     const dbPath = path.join(dir, "web-md.db");
     const ts = "2026-01-01T00:00:00.000Z";
-    seedPreRenderMarkdownDb(dbPath, (old) => {
+    seedPreDeliveryColumnDb(dbPath, "render_markdown", (old) => {
       old
         .prepare(
           `INSERT INTO messaging_bindings
@@ -595,17 +618,14 @@ describe("openDatabase table and index upgrades", () => {
    * the schema it is imitating.
    */
   function seedUniqueAccountIndexDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
-    const db = new sqlite.DatabaseSync(dbPath);
-    try {
+    seedDatabase(dbPath, (db) => {
       db.exec(SCHEMA_SQL);
       db.exec("DROP INDEX idx_messaging_by_account");
       db.exec(
         "CREATE UNIQUE INDEX idx_messaging_account ON messaging_bindings(channel, account_id)",
       );
       seed(db);
-    } finally {
-      db.close();
-    }
+    });
   }
 
   it("drops the retired unique account index, so one bot account fits on two Sessions", () => {
@@ -744,8 +764,8 @@ describe("openDatabase tolerates a database from a newer build", () => {
     return SCHEMA_SQL.replace(anchor, `${anchor}\n  ${ddl},`);
   }
 
-  it("leaves unknown tables, columns and indexes intact across an open", () => {
-    const dbPath = path.join(dir, "web.db");
+  it("leaves unknown tables, columns and indexes intact across an open", async () => {
+    const dbPath = await copyOfFormed("web.db");
     const current = openDatabase(dbPath);
     wire(SessionsRepo, { db: current }).insert({
       sessionId: "s1",
@@ -811,7 +831,7 @@ describe("openDatabase tolerates a database from a newer build", () => {
     }
   });
 
-  it("a defaultless NOT NULL column or a new unique index still breaks this build's writes", () => {
+  it("a defaultless NOT NULL column or a new unique index still breaks this build's writes", async () => {
     // Neither change removes anything, so both pass an "is it additive?" reading — and both
     // leave this build opening the database happily and then failing on its first write. The
     // open is where a version stamp would be checked, so the failure surfaces at an arbitrary
@@ -821,12 +841,9 @@ describe("openDatabase tolerates a database from a newer build", () => {
     //    COLUMN, which is what makes every ensureColumn entry safe — but a newer build that
     //    forms the database writes CREATE TABLE, where the shape is perfectly legal.
     const formedByNewer = path.join(dir, "formed-by-newer.db");
-    const newer = new sqlite.DatabaseSync(formedByNewer);
-    try {
-      newer.exec(schemaWithExtraSessionsColumn("future_required TEXT NOT NULL"));
-    } finally {
-      newer.close();
-    }
+    seedDatabase(formedByNewer, (newer) =>
+      newer.exec(schemaWithExtraSessionsColumn("future_required TEXT NOT NULL")),
+    );
     const opened = openDatabase(formedByNewer);
     try {
       expect(() =>
@@ -849,7 +866,7 @@ describe("openDatabase tolerates a database from a newer build", () => {
 
     // 2. A unique index over columns this build already writes. Nothing is added to any row,
     //    yet rows this build creates today stop being insertable.
-    const withUniqueIndex = path.join(dir, "unique-index.db");
+    const withUniqueIndex = await copyOfFormed("unique-index.db");
     const newerIndexed = openDatabase(withUniqueIndex);
     try {
       newerIndexed.exec(

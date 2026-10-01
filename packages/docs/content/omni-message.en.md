@@ -47,7 +47,7 @@ interface SessionMetaPayload {
 }
 ```
 
-The model and the Workspace are fixed for the Session's lifetime. The system prompt is fixed per context.
+The Workspace is fixed for the Session's lifetime. The model and the system prompt are fixed per context: an in-session model switch opens its new context on another model, and this record is the only place that says so.
 
 Every Trace file opens with a `session_meta`. When a compaction opens a new context, the new file's `session_meta` carries the system prompt assembled for that context from the Agent State as it stands at that moment (see [Compaction](/agent-loop#compaction)). On resume, the engine takes the latest file's `session_meta` as the runtime configuration. See [Sessions & Traces](/sessions-and-traces).
 

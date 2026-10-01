@@ -14,7 +14,7 @@
  * The flow and the actions live in `use-update-flow.ts`; this file only renders.
  */
 import type { ReactNode } from "react";
-import { Button, Link } from "@prismshadow/penguin-ui";
+import { Button, Link, Modal, ProgressBar, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { toneInk } from "../../lib/tone";
@@ -27,7 +27,6 @@ import {
   useUpdateFlow,
   useUpdateFlowOwner,
 } from "../../lib/use-update-flow";
-import { Modal } from "../ui/modal";
 
 const RELEASES_URL = "https://github.com/Prism-Shadow/penguin-harness/releases";
 
@@ -88,7 +87,11 @@ function Body({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNode
       return (
         <>
           <p className="text-sm font-medium">{S.update.downloading(flow.version)}</p>
-          <ProgressBar percent={flow.percent} />
+          <ProgressBar
+            size="md"
+            label={S.update.downloadProgress}
+            {...(flow.percent !== null ? { value: flow.percent } : { indeterminate: true })}
+          />
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {flow.percent !== null
               ? `${flow.percent}%`
@@ -235,12 +238,7 @@ function Footer({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNo
 function Line({ spinner, children }: { spinner?: boolean; children: ReactNode }) {
   return (
     <p className="flex items-center gap-2 text-sm">
-      {spinner && (
-        <span
-          aria-hidden
-          className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-        />
-      )}
+      {spinner && <Spinner size="md" label={S.common.loading} />}
       <span>{children}</span>
     </p>
   );
@@ -253,32 +251,6 @@ function ReleasesLink({ href, children }: { href: string; children: ReactNode })
         {children}
       </Link>
     </p>
-  );
-}
-
-/**
- * The download bar: determinate with a percentage (the shell's updater, the installer's
- * curl bar), indeterminate — a pulsing segment — while the backend reports a phase without
- * one (resolving the release, verifying and installing). Width transitions only, so the
- * global reduced-motion rule leaves a correct resting state.
- */
-function ProgressBar({ percent }: { percent: number | null }) {
-  return (
-    <div
-      role="progressbar"
-      aria-label={S.update.downloadProgress}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      {...(percent !== null ? { "aria-valuenow": percent } : {})}
-      className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"
-    >
-      <div
-        className={`h-full rounded-full bg-accent ${
-          percent === null ? "w-1/3 animate-pulse" : "transition-[width] duration-300"
-        }`}
-        style={percent === null ? undefined : { width: `${percent}%` }}
-      />
-    </div>
   );
 }
 

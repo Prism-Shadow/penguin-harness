@@ -469,9 +469,10 @@ export class WeChatScanService {
 }
 
 /** The scan-to-connect transport as a node, so a test stands in a fake for the network. */
-export abstract class WeChatScanTransportHandle extends Interface<{
-  transport: Opaque<"WeChatScanTransport", WeChatScanTransport>;
-}>() {}
+@Interface()
+export abstract class WeChatScanTransportHandle {
+  abstract transport: Opaque<"WeChatScanTransport", WeChatScanTransport>;
+}
 @Module()
 export class WeChatScanTransportProvider {
   @Provide() wechatScanTransport!: WeChatScanTransportHandle;

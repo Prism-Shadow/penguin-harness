@@ -29,6 +29,9 @@ cache/
 .agents/settings.local.json
 .agents/**/*.local.*
 
+# vitest --coverage reports
+coverage/
+
 # playwright e2e artifacts
 packages/web/test-results/
 # component gallery screenshots (scripts/shots.mjs); never committed

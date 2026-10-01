@@ -183,6 +183,13 @@ export interface MessagesPageResult {
 export interface ForkTraceResult {
   sessionId: string;
   createdAt: string;
+  /**
+   * The model the fork resumes on: the `session_meta` of the shard the cut falls in. Each shard
+   * records its own context's model, so a source that switched models mid-way forks onto the
+   * model that was serving the selected reply, not the one the source runs on today.
+   */
+  provider: string;
+  modelId: string;
 }
 
 /**
@@ -701,6 +708,10 @@ export class TraceService implements Traces {
 
     const firstMeta = shards.flat().find(isSessionMeta);
     if (!firstMeta) throw invalid("The source Trace has no session metadata.");
+    // The fork's model is the target shard's: one shard is one model context, and a model
+    // switch opens the next context in a new shard headed by its own session_meta.
+    const targetMeta = targetShard.find(isSessionMeta) ?? firstMeta;
+    const model = { provider: targetMeta.payload.provider, modelId: targetMeta.payload.model_id };
 
     const created = new Date();
     const createdAt = created.toISOString();
@@ -789,7 +800,7 @@ export class TraceService implements Traces {
           records,
         });
       }
-      return { sessionId: newSessionId, createdAt };
+      return { sessionId: newSessionId, createdAt, ...model };
     } catch (err) {
       await Promise.all(written.map((file) => fs.rm(file, { force: true }).catch(() => undefined)));
       await fs.rm(forkScratchpad, { recursive: true, force: true }).catch(() => undefined);

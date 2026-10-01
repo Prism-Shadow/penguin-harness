@@ -1,6 +1,6 @@
 /**
- * The rule that decides which disclosure a site gets (src/components/ui/info-popover.tsx and
- * help-fold.tsx): **the circled "?" may only appear beside a title.**
+ * The rule that decides which disclosure a site gets (the UI package's InfoPopover and
+ * HelpFold): **the circled "?" may only appear beside a title.**
  *
  * A "?" is an anchored mark — it reads as help because it modifies the title next to it. Standing
  * alone at the top of a panel it modifies nothing, and a reader has to click it to find out what
@@ -89,15 +89,15 @@ function findOrphans(): string[] {
 describe("disclosure anchoring", () => {
   it("scans every source root, and finds the two disclosures in one place each", () => {
     expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, "packages/web/src/components/ui/info-popover.tsx");
-    expectSingleHome(SCAN, "packages/web/src/components/ui/help-fold.tsx");
+    expectSingleHome(SCAN, "packages/ui/src/components/overlays/info-popover/info-popover.tsx");
+    expectSingleHome(SCAN, "packages/ui/src/components/overlays/info-popover/help-fold.tsx");
   });
 
   it("never leaves an InfoPopover standing without a title beside it", () => {
     expect(
       findOrphans(),
       'A circled "?" must sit after a title. Where the surface has no title — an Agent settings ' +
-        "tab, whose name lives in the tab bar — use HelpFold (components/ui/help-fold.tsx) instead.",
+        "tab, whose name lives in the tab bar — use HelpFold instead.",
     ).toEqual([]);
   });
 

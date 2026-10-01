@@ -2,10 +2,32 @@
  * Integration tests for the Session index: creation (default model / workspace
  * guard), listing (DB union Trace directory discovery), PATCH approval mode and
  * thinking level, and createdAt parsing.
+ *
+ * One app and one Project serve the file; each case works in an Agent of its own, which it
+ * deletes on the way out.
+ *
+ * Scenarios:
+ * - Given no default model, or a model with no usable credential, creating a Session is a 400
+ *   with its own code; half a model reference is a 400, never completed for the caller.
+ * - Given a configured model, a created Session gets a temporary Workspace inside its Agent,
+ *   allow-all, a lastActiveAt equal to its creation stored on the row, and shows in the list;
+ *   an explicit Workspace only has to exist.
+ * - Given a Session's origin, it is read from session_meta, never the row: a schedule's
+ *   Session, one only a Trace head knows after a restart, and adopted ones (junk narrowed).
+ * - Given many rows, the list pages newest first, filters by sidebar category, by Workspace
+ *   group and by organization, and its counts stay whole-Agent; junk parameters are 400s.
+ * - Given an unmanaged Trace, the startup sweep adopts it once as a client:'cli' row.
+ * - Given a client hint, 'cli' or 'web' is stored and listed; 'org' cannot be claimed.
+ * - Given a PATCH, the answer is the row after the write; approval mode and thinking level
+ *   persist; bad values are 400s.
+ * - Given a DELETE, the row and every Trace shard go and the list does not resurrect it; the
+ *   Workspace directory stays.
+ * - Given a Trace, the single GET names its latest shard; list rows do not.
+ * - Given a goal, a malformed budget, an image-only objective or a file attachment is a 400.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
@@ -22,9 +44,12 @@ describe("session-index", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let projectId: string;
-  const base = () => `/api/projects/${projectId}/agents/default_agent/sessions`;
+  /** The case's own Agent: every list here is one Agent's, so no case sees another's rows. */
+  let agentId: string;
+  let cases = 0;
+  const base = () => `/api/projects/${projectId}/agents/${agentId}/sessions`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "alice");
     api = apiClient(t.app, cookie);
@@ -33,8 +58,17 @@ describe("session-index", () => {
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(async () => {
+    agentId = `case_${++cases}`;
+    expect((await api.post(`/api/projects/${projectId}/agents`, { agentId })).status).toBe(201);
+  });
+  afterEach(async () => {
+    // Deleting the Agent takes its index rows and Traces with it, so a retried case starts
+    // from nothing, the fixed session ids below included.
+    await api.delete(`/api/projects/${projectId}/agents/${agentId}`);
   });
 
   async function configureModels(): Promise<void> {
@@ -95,9 +129,7 @@ describe("session-index", () => {
     expect(session.status).toBe("idle");
     expect(session.hasTrace).toBe(false);
     // The temporary Workspace lives inside this Agent's workspaces directory.
-    expect(session.workspace).toContain(
-      path.join(projectId, "agents", "default_agent", "workspaces"),
-    );
+    expect(session.workspace).toContain(path.join(projectId, "agents", agentId, "workspaces"));
 
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
@@ -149,7 +181,7 @@ describe("session-index", () => {
     // The scheduler goes through SessionService.createSession directly (no HTTP route exposes source).
     const info = await t.deps.sessionService.createSession({
       projectId,
-      agentId: "default_agent",
+      agentId,
       source: "schedule",
     });
     expect(info.source).toBe("schedule");
@@ -175,7 +207,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: sid,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-x",
       workspace: "/tmp/w-restart",
@@ -194,7 +226,7 @@ describe("session-index", () => {
       workspace: "/tmp/w-restart",
       source: "subagent",
     };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", sid, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-02", sid, 1, [
       sessionMeta(meta),
       userText("child work"),
     ]);
@@ -219,7 +251,7 @@ describe("session-index", () => {
       workspace: "/tmp/w-cli",
       source: "schedule",
     };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", adopted, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-03", adopted, 1, [
       sessionMeta(sourced),
       userText("adopted"),
     ]);
@@ -230,7 +262,7 @@ describe("session-index", () => {
       session_id: junk,
       source: "weird-origin",
     } as unknown as SessionMetaPayload;
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", junk, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-03", junk, 1, [
       sessionMeta(junkMeta),
       userText("junk"),
     ]);
@@ -246,7 +278,7 @@ describe("session-index", () => {
     const mk = (n: number) => ({
       sessionId: `session-2026-07-0${n}-08-00-00-aaaa000${n}`,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-page",
       workspace: `/tmp/w-${n}`,
@@ -292,7 +324,7 @@ describe("session-index", () => {
       (
         await t.deps.sessionService.createSession({
           projectId,
-          agentId: "default_agent",
+          agentId,
           source: "schedule",
         })
       ).sessionId;
@@ -305,7 +337,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: subagentE,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-x",
       workspace: "/tmp/w-sub",
@@ -314,7 +346,7 @@ describe("session-index", () => {
       createdAt: "2026-07-02T09:30:00.000Z",
       lastActiveAt: "2026-07-02T09:30:00.000Z",
     });
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", subagentE, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-02", subagentE, 1, [
       sessionMeta({
         session_id: subagentE,
         model_id: "m-x",
@@ -420,12 +452,12 @@ describe("session-index", () => {
   it("workspaceGroup pages one Workspace group's own stream, temporary workspaces as one group", async () => {
     // Rows are inserted straight into the index: the group filter reads the stored path, and
     // going through create() would only add realpath validation this has nothing to say about.
-    const agentDir = `${t.root}/${projectId}/agents/default_agent`;
+    const agentDir = `${t.root}/${projectId}/agents/${agentId}`;
     const seed = async (sessionId: string, workspace: string, createdAt: string) =>
       t.deps.sessionsRepo.insert({
         sessionId,
         projectId,
-        agentId: "default_agent",
+        agentId,
         provider: "custom",
         modelId: "m-x",
         workspace,
@@ -572,7 +604,7 @@ describe("session-index", () => {
       agent_state: "/tmp/a",
       workspace: "/tmp/cli-workspace",
     };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-01", discovered, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-01", discovered, 1, [
       sessionMeta(meta),
       userText("cli session"),
     ]);
@@ -631,7 +663,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: deskSession,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-desk",
       workspace: "/tmp/w-desk",
@@ -650,7 +682,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: legacyId,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-legacy",
       workspace: "/tmp/w-legacy",
@@ -668,7 +700,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: legacy,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-legacy",
       workspace: "/tmp/w-legacy",
@@ -696,24 +728,14 @@ describe("session-index", () => {
       agent_state: "/tmp/a",
       workspace: session.workspace,
     };
-    const f1 = await writeTraceFile(
-      t.root,
-      projectId,
-      "default_agent",
-      "2026-07-01",
-      sessionId,
-      1,
-      [sessionMeta(meta), userText("round one")],
-    );
-    const f2 = await writeTraceFile(
-      t.root,
-      projectId,
-      "default_agent",
-      "2026-07-02",
-      sessionId,
-      2,
-      [sessionMeta(meta), userText("round two")],
-    );
+    const f1 = await writeTraceFile(t.root, projectId, agentId, "2026-07-01", sessionId, 1, [
+      sessionMeta(meta),
+      userText("round one"),
+    ]);
+    const f2 = await writeTraceFile(t.root, projectId, agentId, "2026-07-02", sessionId, 2, [
+      sessionMeta(meta),
+      userText("round two"),
+    ]);
 
     const del = await api.delete(`/api/sessions/${sessionId}`);
     expect(del.status).toBe(204);
@@ -742,7 +764,7 @@ describe("session-index", () => {
   it("the list is sorted by createdAt descending", async () => {
     await configureModels();
     const older = "session-2020-01-01-00-00-00-00000001";
-    await writeTraceFile(t.root, projectId, "default_agent", "2020-01-01", older, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2020-01-01", older, 1, [
       sessionMeta({
         session_id: older,
         model_id: "m",
@@ -813,7 +835,7 @@ describe("session-index", () => {
       t.deps.sessionsRepo.insert({
         sessionId,
         projectId,
-        agentId: "default_agent",
+        agentId,
         provider: "custom",
         modelId: "m-org",
         workspace: "/tmp/w-org",
@@ -824,13 +846,7 @@ describe("session-index", () => {
         lastActiveAt: createdAt,
       });
     }
-    t.deps.orgCacheRepo.addTicketSession(
-      projectId,
-      "acme",
-      "2026-09-02-site",
-      ticket,
-      "default_agent",
-    );
+    t.deps.orgCacheRepo.addTicketSession(projectId, "acme", "2026-09-02-site", ticket, agentId);
     const list = async (qs: string) => {
       const res = await api.get(`${base()}${qs}`);
       expect(res.status, qs).toBe(200);
@@ -906,7 +922,7 @@ describe("session-index", () => {
     const row = {
       sessionId: "session-2026-07-02-00-00-00-11223344",
       projectId,
-      agentId: "default_agent",
+      agentId,
       modelId: "cli-model",
       provider: "custom",
       workspace: "/tmp/w",
@@ -949,11 +965,11 @@ describe("session-index", () => {
       agent_state: "/tmp/a",
       workspace: session.workspace,
     };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", session.sessionId, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-02", session.sessionId, 1, [
       sessionMeta(meta),
       userText("a"),
     ]);
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", session.sessionId, 2, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-03", session.sessionId, 2, [
       sessionMeta(meta),
       userText("b"),
     ]);
@@ -989,10 +1005,10 @@ describe("session-index", () => {
     // the assertion is about validation alone — a real goal loop would still be settling
     // after the test closed its database.
     const started: OmniMessage[][] = [];
-    t.deps.manager.startGoal = async (sessionId, args) => {
+    vi.spyOn(t.deps.manager, "startGoal").mockImplementation(async (sessionId, args) => {
       started.push(args.messages);
       return { sessionId };
-    };
+    });
     const withText = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
       input: [
         { type: "text", text: "objective" },

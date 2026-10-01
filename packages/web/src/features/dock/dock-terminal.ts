@@ -3,9 +3,9 @@
  * global `terminal.toggle` command. Split from dock-state.ts so the store stays pure (unit-testable
  * without fetch); this module owns every server round-trip a terminal tab needs.
  */
+import { toastError } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
-import { toastError } from "../../components/ui/toast";
 import {
   HttpStatusError,
   fetchJson,
@@ -54,6 +54,15 @@ let workspaceMachine: string | null = null;
 export function setDockCwd(path: string | null, machineId: string | null = null): void {
   workspaceCwd = path !== null && path.trim() !== "" ? path : null;
   workspaceMachine = workspaceCwd === null ? null : machineId;
+}
+
+/**
+ * The Workspace the page's docks belong to — the conversation's, or the one the draft picked —
+ * with its machine; null when none is known. Only meaningful while a page with docks is on
+ * screen (`docksOnScreen`): elsewhere it still names the last conversation's, for the hotkey.
+ */
+export function dockWorkspace(): { path: string; machineId: string | null } | null {
+  return workspaceCwd === null ? null : { path: workspaceCwd, machineId: workspaceMachine };
 }
 
 /** A rejected working directory (gone, replaced by a file, relative) — see resolveCwd server-side. */

@@ -27,10 +27,11 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Plugins / Models / Cost Center / Evaluation Center, each labeled by a
- *   localized (en + zh) styled tooltip on hover and by no native `title` (two tooltips would
- *   stack); "last conversation" targets the most recently active non-archived session and is
- *   disabled while none exists; expanding from the rail restores the pinned sidebar;
+ *   Agents / Models / Plugins / Cost Center / Evaluation Center (the user is a member, so no
+ *   Machines), each labeled by a localized (en + zh) styled tooltip on hover and by no native
+ *   `title` (two tooltips would stack); "last conversation" targets the most recently active
+ *   non-archived session and is disabled while none exists; expanding from the rail restores
+ *   the pinned sidebar;
  * - login page: a single brand penguin logo above the form (part of the form area; the
  *   background still only has the trace animation), the trace animation grows in after a
  *   delayed blank first paint, no two trace segments cross or touch (except where a fork shares
@@ -102,7 +103,7 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
           pricing: { cacheRead: 1, cacheWrite: 5, output: 10 },
         },
         { provider: "openai", modelId: "gpt-5.5", apiKey: "sk-mock2" },
-        { provider: "google", modelId: "gemini-3-pro" },
+        { provider: "google", modelId: "gemini-3.1-pro-preview" },
       ],
     },
   });
@@ -273,25 +274,24 @@ test("models: group header actions collapse to icons instead of disappearing", a
 
   // The 900px viewport still renders the desktop sidebar, leaving only ~560px for a group
   // header. That is the issue #294 case: viewport breakpoints alone report plenty of room.
-  const openRouter = page.getByRole("button", { name: /OpenRouter \d+ 个模型/ });
+  const openRouter = page.getByRole("button", { name: /OpenRouter\s*\d+ 个模型/ });
   await openRouter.waitFor();
 
   // Every group-level action, addressed by its accessible name (aria-label = "action vendor",
   // stable across widths). Narrow rows must never hide an action: it keeps its icon (with a
-  // title tooltip) and sheds only the visible text label.
+  // tooltip) and sheds only the visible text label. OpenRouter carries its presets only, so its
+  // header offers the group key and the speed test — the latter an icon at every width.
   const actions = [
-    { role: "button", name: "新增模型 OpenRouter", label: "新增模型" },
-    { role: "button", name: "统一配置 API key OpenRouter", label: "统一配置 API key" },
-    { role: "button", name: "测速 OpenRouter", label: "测速" },
-    { role: "link", name: "获取 API key OpenRouter", label: "获取 API key" },
+    { name: "填写密钥 OpenRouter", label: "填写密钥" },
+    { name: "测速 OpenRouter", label: null },
   ];
 
-  // The expected label regime is derived from the row's measured width against the
-  // container thresholds — @3xl (48rem) admits the button labels, @4xl (56rem) the link
-  // label — because how wide the row is at a given viewport depends on the environment's
-  // root font size (the sidebar, page padding, viewport breakpoints and the thresholds are
-  // all rem-based). A row hugging a threshold (±16px) skips the label assertions; the
-  // coverage checks after the sweep guarantee both extreme regimes were exercised anyway.
+  // The expected label regime is derived from the row's measured width against the @3xl
+  // container threshold (48rem) that admits the labels, because how wide the row is at a
+  // given viewport depends on the environment's root font size (the sidebar, page padding,
+  // viewport breakpoints and the thresholds are all rem-based). A row hugging the threshold
+  // (±16px) skips the label assertions; the coverage checks after the sweep guarantee both
+  // regimes were exercised anyway.
   const seen = { iconOnly: false, fullyLabeled: false };
   for (const width of [390, 900, 1180, 1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
@@ -305,31 +305,27 @@ test("models: group header actions collapse to icons instead of disappearing", a
     });
     const regime = (remThreshold) =>
       Math.abs(rowWidth - remThreshold * rem) <= 16 ? null : rowWidth >= remThreshold * rem;
-    const buttonLabels = regime(48);
-    const linkLabel = regime(56);
-    if (buttonLabels === false && linkLabel === false) seen.iconOnly = true;
-    if (buttonLabels === true && linkLabel === true) seen.fullyLabeled = true;
+    const labels = regime(48);
+    if (labels === false) seen.iconOnly = true;
+    if (labels === true) seen.fullyLabeled = true;
 
-    for (const { role, name, label } of actions) {
-      const action = page.getByRole(role, { name });
-      await expect(action, `${label} action reachable @${width}`).toBeVisible();
-      await expect(action, `${label} action has a tooltip @${width}`).toHaveAttribute(
-        "title",
-        /.+/,
-      );
-      const expectLabel = role === "link" ? linkLabel : buttonLabels;
-      if (expectLabel === null) continue;
-      const text = action.locator("span", { hasText: label });
+    for (const { name, label } of actions) {
+      const action = page.getByRole("button", { name });
+      await expect(action, `${name} reachable @${width}`).toBeVisible();
+      await expect(action, `${name} has a tooltip @${width}`).toHaveAttribute("data-tooltip", /.+/);
       const icon = action.locator("svg");
-      if (expectLabel) {
+      if (label === null) {
+        await expect(icon, `${name} icon shown @${width}`).toBeVisible();
+        continue;
+      }
+      if (labels === null) continue;
+      // A labelled action keeps its glyph and adds its words where the row has room.
+      const text = action.locator("span", { hasText: label });
+      await expect(icon, `${label} icon shown @${width}`).toBeVisible();
+      if (labels) {
         await expect(text, `${label} label shown @${width}`).toBeVisible();
-        // The link swaps between glyph and text; the buttons keep their glyph alongside.
-        if (role === "link") {
-          await expect(icon, `${label} icon swapped out @${width}`).toBeHidden();
-        }
       } else {
         await expect(text, `${label} label hidden @${width}`).toBeHidden();
-        await expect(icon, `${label} icon shown @${width}`).toBeVisible();
       }
     }
     const metrics = await openRouter.locator("xpath=..").evaluate((header) => {
@@ -419,20 +415,24 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Last conversation",
     "New chat",
     "Agents",
-    "Plugins",
     "Models",
+    "Plugins",
     "Cost Center",
     "Evaluation Center",
   ];
   const attrs = (name) =>
     entries.evaluateAll((els, n) => els.map((el) => el.getAttribute(n)), name);
-  expect(await attrs("aria-label"), "rail order (en)").toEqual(EN);
+  // An entry on a badge trail appends what is waiting (" · …") to its name, and Models does
+  // here: replacing the Project's model table above leaves presets to sync. The order is
+  // about the names.
+  const names = async () => (await attrs("aria-label")).map((label) => label.split(" · ")[0]);
+  expect(await names(), "rail order (en)").toEqual(EN);
   // No native title anywhere on the rail: it would open a second, slower tooltip under the
   // styled one, which is the whole reason the styled one exists.
   expect(await attrs("title"), "rail carries no native tooltips (en)").toEqual(EN.map(() => null));
   const tooltip = page.getByTestId("tooltip");
   await rail.getByRole("link", { name: "Models" }).hover();
-  await expect(tooltip, "rail tooltip (en)").toHaveText("Models");
+  await expect(tooltip, "rail tooltip (en)").toHaveText(/^Models/);
   await rail.getByRole("button", { name: "Last conversation" }).hover();
   await expect(tooltip, "rail tooltip follows the pointer (en)").toHaveText("Last conversation");
 
@@ -467,8 +467,9 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
       { timeout: 1000 },
     );
   }).toPass({ timeout: 15_000 });
-  // Active fill = the *unprefixed* bg-gray-200/70 token (the resting state carries hover:bg-gray-200/70, which a bare substring match would also hit).
-  const ACTIVE_FILL = /(^|\s)bg-gray-200\/70(\s|$)/;
+  // Active fill = the *unprefixed* bg-fg/7 token, the navigation column's selected wash (the
+  // resting state carries hover:bg-fg/7, which a bare substring match would also hit).
+  const ACTIVE_FILL = /(^|\s)bg-fg\/7(\s|$)/;
   // On a conversation, the entry lights as "you are here" (any non-draft /chat/:id).
   await expect(rail.getByRole("button", { name: "Last conversation" })).toHaveClass(ACTIVE_FILL);
 
@@ -490,15 +491,16 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await page.reload();
   await expect(entries).toHaveCount(7);
-  const ZH = ["最近一次对话", "新建对话", "智能体", "插件市场", "模型库", "成本中心", "评估中心"];
-  expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
+  const ZH = ["最近一次对话", "新建对话", "智能体", "模型库", "插件市场", "成本中心", "评估中心"];
+  expect(await names(), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail carries no native tooltips (zh)").toEqual(ZH.map(() => null));
   await rail.getByRole("link", { name: "模型库" }).hover();
-  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText("模型库");
+  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText(/^模型库/);
 
   // --- Expand: the rail's top button (localized) restores the pinned sidebar ---
   await page.getByRole("button", { name: "展开侧栏" }).click();
-  await expect(page.locator("aside")).toHaveClass(/w-64/);
+  // The app's sidebar is the first <aside>; the Plugins page open here has one of its own.
+  await expect(page.locator("aside").first()).toHaveClass(/w-64/);
   await expect(page.getByRole("button", { name: "收起侧栏" })).toBeVisible();
 });
 
@@ -526,7 +528,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
           modelId: "anthropic/claude-sonnet-4-5-thinking-preview",
           apiKey: "sk-mock3",
         },
-        { provider: "google", modelId: "gemini-3-pro" },
+        { provider: "google", modelId: "gemini-3.1-pro-preview" },
       ],
     },
   });

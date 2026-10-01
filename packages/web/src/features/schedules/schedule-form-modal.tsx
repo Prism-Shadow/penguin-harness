@@ -20,18 +20,25 @@ import type {
   ScheduleUpsertRequest,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
-import { Button } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Checkbox,
+  FieldError,
+  FieldLabel,
+  FormPicker,
+  Input,
+  Modal,
+  PickerList,
+  Select,
+  Textarea,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { Modal } from "../../components/ui/modal";
-import { FormPicker } from "../../components/ui/form-picker";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { toastInfo, toastSuccess } from "../../components/ui/toast";
-import { ModelSelect, PickerList } from "../chat/model-select";
+import { ModelCatalogSelect } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { itemModelRef } from "./schedule-upsert";
@@ -87,7 +94,7 @@ function filterSessions(sessions: SessionInfo[], query: string): SessionInfo[] {
 
 /**
  * Searchable Session picker for the bind-to-Session mode: the shared FormPicker (same
- * trigger look as ModelSelect/WorkspaceSelect) whose panel is the shared PickerList (search
+ * trigger look as ModelCatalogSelect/WorkspaceSelect) whose panel is the shared PickerList (search
  * box + keyboard nav). The Agent's full Session list is fetched once when the picker first
  * opens — un-paged, mirroring how the form one-shots getModels — so search covers every
  * Session rather than only the sidebar's loaded active page. The stored value is still the
@@ -165,7 +172,7 @@ function SessionSelect({
               <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">
                 {s.title ?? S.chat.defaultSessionTitle}
               </span>
-              <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+              <span className="shrink-0 font-mono text-xs text-gray-400 dark:text-gray-500">
                 {s.sessionId.slice(-6)}
               </span>
             </>
@@ -210,7 +217,7 @@ function initialForm(editing: ScheduleItem | null, lockedSessionId: string | und
     sessionId: editing.sessionId ?? "",
     workspace: editing.workspace ?? "",
     // A schedule that follows the Project default stores no model; the default takes its
-    // place in the picker once the model list arrives (ModelSelect has no null state).
+    // place in the picker once the model list arrives (ModelCatalogSelect has no null state).
     model: itemModelRef(editing),
     ...pinned,
   };
@@ -240,7 +247,7 @@ function ScheduleFormDialog({
   const [busy, setBusy] = useState(false);
   // Model dropdown data; a load failure doesn't block the form — falling back to "Project default" is fine.
   const [models, setModels] = useState<ModelInfo[]>([]);
-  // The Project default model reference, kept so ModelSelect can mark it and so the form can
+  // The Project default model reference, kept so ModelCatalogSelect can mark it and so the form can
   // treat "the default is selected" as "follow the default" (omit the model from the body).
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | null>(null);
 
@@ -405,7 +412,7 @@ function ScheduleFormDialog({
               <FieldLabel>{S.schedule.target}</FieldLabel>
               <p className="text-xs text-gray-600 dark:text-gray-300">
                 {S.schedule.targetThisSession}
-                <span className="ml-1.5 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                <span className="ml-1.5 font-mono text-xs text-gray-400 dark:text-gray-500">
                   {lockedSessionId.slice(-6)}
                 </span>
               </p>
@@ -436,13 +443,13 @@ function ScheduleFormDialog({
                 </div>
               ) : (
                 // New-Session mode: Model and Workspace use the same form-variant pickers as
-                // the Project default-settings dialog (ModelSelect / WorkspaceSelect), so the
+                // the Project default-settings dialog (ModelCatalogSelect / WorkspaceSelect), so the
                 // two surfaces read identically.
                 <>
                   <div>
                     <FieldLabel>{S.schedule.model}</FieldLabel>
                     {models.length > 0 ? (
-                      <ModelSelect
+                      <ModelCatalogSelect
                         models={models}
                         value={form.model}
                         {...(defaultModel ? { defaultModel } : {})}
@@ -460,9 +467,9 @@ function ScheduleFormDialog({
                       projectId={projectId}
                       workspace={form.workspace}
                       onChange={(workspace) => set({ workspace })}
+                      agentId={agentId}
                       variant="form"
                     />
-                    <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
                   </div>
                 </>
               )}
@@ -478,14 +485,12 @@ function ScheduleFormDialog({
           value={form.prompt}
           onChange={(e) => set({ prompt: e.target.value })}
         />
-        <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-          <input
-            type="checkbox"
-            checked={form.enabled}
-            onChange={(e) => set({ enabled: e.target.checked })}
-          />
-          {S.schedule.enabled}
-        </label>
+        <Checkbox
+          checked={form.enabled}
+          onChange={(on) => set({ enabled: on })}
+          label={S.schedule.enabled}
+          className="text-gray-600 dark:text-gray-300"
+        />
         {formError && <p className="text-xs text-red-600 dark:text-red-400">{formError}</p>}
       </div>
     </Modal>

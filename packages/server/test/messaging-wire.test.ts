@@ -1,39 +1,49 @@
 /**
- * Protocol tests for the two messaging adapters, at the boundary each one actually calls:
- * the Lark SDK's HTTP instance, and `fetch`.
+ * Protocol tests for the two messaging adapters, at the boundary each one actually calls: the
+ * Lark SDK's HTTP instance, and `fetch`. The suites next door substitute our own seams
+ * (FeishuSdk, TelegramTransport), which proves the bridge drives the seam and nothing about
+ * whether the adapter behind it speaks the real protocol; both shipped messaging bugs lived in
+ * that gap. So the fake here is pushed one layer down, to the transport itself.
  *
- * These exist because the suites next door could not have caught the two bugs that reached
- * a user. Those suites substitute a hand-written implementation of *our own* seam
- * (FeishuSdk, TelegramTransport), which proves the bridge drives the seam correctly and
- * proves nothing whatever about whether the adapter behind it speaks the real protocol —
- * every wire detail is stubbed out along with the wire. Both shipped bugs lived in that
- * gap: an image download whose refusal reason was silently discarded, and an upload path no
- * test had ever run against a real response shape.
+ * Feishu, against the SDK's HTTP boundary (`createLarkSdk({ httpInstance })`, a stand-in for
+ * axios that reproduces the SDK's response interceptor, so URL building, params, payloads and
+ * unwrapping all run for real):
+ * - A message image or file downloads from the resource endpoint, typed off its bytes (by the
+ *   header when they are not an image, PNG only as a last resort); past the cap it is a size
+ *   error.
+ * - A refusal reports the API's own reason even when the error body is a stream, reads the
+ *   stream's own code and msg, and carries the scopes and the grant link out of it; a body
+ *   that is not a Feishu envelope falls back to the generic text.
+ * - Every call has a deadline; a refused call is a FeishuApiError, a stalled one a plain Error.
+ * - A card goes out as msg_type interactive (schema 2.0), through the send and the reply
+ *   endpoints alike.
+ * - A picture is uploaded and its key sent as an image message; other files upload under the
+ *   category the client previews them by; an upload without a key names the file.
  *
- * So the fake here is pushed down one layer, to the transport itself:
- *
- * - **Feishu**: `createLarkSdk({ httpInstance })` hands the real SDK a stand-in for axios,
- *   so the SDK's own URL building, `:path` filling, param serialization, payload formatting
- *   and response unwrapping all run for real. The stub must reproduce what the SDK's own
- *   response interceptor does to an axios response — return `resp.data` (the parsed body),
- *   or `{data, headers}` when the call asked for `$return_headers` — because that is the
- *   contract the SDK's generated methods are written against. Errors are thrown in axios's
- *   shape, `{response: {status, data}}`, and for a `responseType: "stream"` request the
- *   error body is a stream too, which is the whole of bug 1.
- * - **Telegram**: the Bot API is plain HTTPS, so the stub is `globalThis.fetch`, and the
- *   assertions are on the URLs, the multipart field names and the error text.
- *
- * No test opens a socket.
+ * Telegram, against `fetch` (the suite's fetch fake, handed to the transport's own seam):
+ * - A photo downloads in two hops, getFile then the file endpoint, and no error ever carries
+ *   the bot token the download URL embeds; a file the API already reports over the cap is a
+ *   size error.
+ * - parse_mode is on the wire only when the send asked for it.
+ * - A failure carries the verdict the error table files it by: a poll or a send that never
+ *   completed, a flood wait, Telegram's own outage and a proxy's error page recover; a revoked
+ *   token, a chat that blocked the bot and a chat that is gone do not.
+ * - A picture posts as multipart sendPhoto and other files as sendDocument, for real against a
+ *   loopback socket too; a refused upload surfaces the API's description.
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import type { Dispatcher } from "undici";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { FeishuApiError, createLarkSdk } from "../src/runtime/messaging/feishu-sdk.js";
 import { feishuCardOf } from "../src/runtime/messaging/feishu-card.js";
-import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+import {
+  TelegramApiError,
+  createTelegramTransport,
+} from "../src/runtime/messaging/telegram-api.js";
 import type {
   TelegramTransport,
   TelegramTransportOpts,
@@ -42,6 +52,7 @@ import {
   MessagingMediaTooLargeError,
   MessagingPermissionError,
 } from "../src/runtime/messaging/media.js";
+import { fakeFetch } from "./fixtures/fetch.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
 const CREDS = { appId: "cli_wire", appSecret: "secret", baseDomain: "https://open.feishu.cn" };
@@ -459,23 +470,15 @@ describe("telegram adapter against the fetch boundary", () => {
   const PHOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x11, 0x22]);
   const DOC = Buffer.from("hello from the workspace");
 
-  /** A recorded stub, handed to the transport through its own seam rather than to the global. */
-  interface FetchStub {
-    urls: string[];
-    bodies: unknown[];
-    transport: TelegramTransport;
-  }
-
-  /** Records every request and answers by URL. */
-  function stubFetch(answer: (url: string) => Response | Promise<Response>): FetchStub {
-    const urls: string[] = [];
-    const bodies: unknown[] = [];
-    const fetchImpl = ((url: string | URL, init?: RequestInit) => {
-      urls.push(String(url));
-      bodies.push(init?.body);
-      return Promise.resolve(answer(String(url)));
-    }) as unknown as TelegramTransportOpts["fetch"];
-    return { urls, bodies, transport: createTelegramTransport({ fetch: fetchImpl }) };
+  /** A transport over the suite's fetch fake, handed in through its own seam rather than the global. */
+  function telegramOver(answer: (url: string) => Response | Promise<Response>) {
+    const fake = fakeFetch((call) => answer(call.url));
+    return {
+      calls: fake.calls,
+      transport: createTelegramTransport({
+        fetch: fake.fetch as unknown as TelegramTransportOpts["fetch"],
+      }),
+    };
   }
 
   const okJson = (result: unknown): Response =>
@@ -484,7 +487,7 @@ describe("telegram adapter against the fetch boundary", () => {
     });
 
   it("downloads a photo in two hops: getFile, then the FILE endpoint", async () => {
-    const stub = stubFetch((url) =>
+    const stub = telegramOver((url) =>
       url.includes("/getFile")
         ? okJson({ file_path: "photos/file_7.jpg", file_size: PHOTO.length })
         : new Response(PHOTO, { headers: { "content-type": "image/jpeg" } }),
@@ -495,13 +498,13 @@ describe("telegram adapter against the fetch boundary", () => {
     expect(got.filePath).toBe("photos/file_7.jpg");
     // The second hop is /file/bot<token>/<path> — a different endpoint from the methods,
     // and the detail most easily got wrong.
-    expect(stub.urls[0]).toBe(`https://api.telegram.org/bot${TOKEN}/getFile`);
-    expect(stub.urls[1]).toBe(`https://api.telegram.org/file/bot${TOKEN}/photos/file_7.jpg`);
+    expect(stub.calls[0]!.url).toBe(`https://api.telegram.org/bot${TOKEN}/getFile`);
+    expect(stub.calls[1]!.url).toBe(`https://api.telegram.org/file/bot${TOKEN}/photos/file_7.jpg`);
   });
 
   it("never puts the bot token in an error, though the download URL embeds it", async () => {
     // Transport failure first.
-    const stub = stubFetch(() => {
+    const stub = telegramOver(() => {
       throw Object.assign(new Error("fetch failed"), { cause: new Error("ECONNREFUSED") });
     });
     const bot = stub.transport.createClient({ botToken: TOKEN });
@@ -512,7 +515,7 @@ describe("telegram adapter against the fetch boundary", () => {
       /SECRET-TOKEN-VALUE/,
     );
     // Then an HTTP failure on the file endpoint itself, whose URL carries the token.
-    const stub2 = stubFetch((url) =>
+    const stub2 = telegramOver((url) =>
       url.includes("/getFile")
         ? okJson({ file_path: "photos/f.jpg" })
         : new Response("nope", { status: 404 }),
@@ -527,19 +530,19 @@ describe("telegram adapter against the fetch boundary", () => {
   });
 
   it("puts parse_mode on the wire only when the send asked for it", async () => {
-    const stub = stubFetch(() => okJson({ message_id: 1 }));
+    const stub = telegramOver(() => okJson({ message_id: 1 }));
     const bot = stub.transport.createClient({ botToken: TOKEN });
     await bot.sendMessage({ chatId: "42", text: "<b>hi</b>", parseMode: "HTML" });
     // A fixed notice carries no markup and must go out verbatim, which means no field at all
     // rather than a field naming plain text.
     await bot.sendMessage({ chatId: "42", text: "plain notice" });
-    const bodies = stub.bodies.map((b) => JSON.parse(String(b)) as Record<string, unknown>);
+    const bodies = stub.calls.map((c) => JSON.parse(c.body) as Record<string, unknown>);
     expect(bodies[0]).toEqual({ chat_id: 42, text: "<b>hi</b>", parse_mode: "HTML" });
     expect(bodies[1]).toEqual({ chat_id: 42, text: "plain notice" });
   });
 
   it("refuses a file the API already says is over the cap, as a size error", async () => {
-    const stub = stubFetch(() =>
+    const stub = telegramOver(() =>
       okJson({ file_path: "photos/f.jpg", file_size: 30 * 1024 * 1024 }),
     );
     const bot = stub.transport.createClient({ botToken: TOKEN });
@@ -549,8 +552,7 @@ describe("telegram adapter against the fetch boundary", () => {
   });
 
   it("posts a picture as multipart sendPhoto, and other files as sendDocument", async () => {
-    const stub = stubFetch(() => okJson({}));
-    const { urls, bodies } = stub;
+    const stub = telegramOver(() => okJson({}));
     const bot = stub.transport.createClient({ botToken: TOKEN });
     await bot.sendPhoto({ chatId: "42424242", fileName: "chart.png", data: PHOTO });
     await bot.sendDocument({
@@ -559,15 +561,16 @@ describe("telegram adapter against the fetch boundary", () => {
       data: Buffer.from("hi"),
     });
 
-    expect(urls[0]!.endsWith("/sendPhoto")).toBe(true);
-    expect(urls[1]!.endsWith("/sendDocument")).toBe(true);
-    const photo = bodies[0] as FormData;
+    const [photoCall, docCall] = stub.calls;
+    expect(photoCall!.url.endsWith("/sendPhoto")).toBe(true);
+    expect(docCall!.url.endsWith("/sendDocument")).toBe(true);
+    const photo = photoCall!.init?.body as FormData;
     // The field name is the API's, not ours, and the file must arrive with its name on it.
     expect(photo.get("chat_id")).toBe("42424242");
     const file = photo.get("photo") as File;
     expect(file.name).toBe("chart.png");
     expect(file.size).toBe(PHOTO.length);
-    const doc = bodies[1] as FormData;
+    const doc = docCall!.init?.body as FormData;
     expect(doc.get("chat_id")).toBe("-1002233445566");
     expect((doc.get("document") as File).name).toBe("notes.md");
   });
@@ -641,8 +644,66 @@ describe("telegram adapter against the fetch boundary", () => {
     expect(photoBody).toContain(PHOTO.toString("latin1"));
   });
 
+  it("gives a failure the verdict the error table files it by", async () => {
+    // error-kind.ts reads `recovers` at the connection and at a text send, and this adapter is
+    // where it is decided: off Telegram's own code, its copy of the HTTP status, or off the
+    // status itself when a proxy answered instead of Telegram.
+    const refusal = (code: number, description: string): Response =>
+      new Response(JSON.stringify({ ok: false, error_code: code, description }), {
+        status: code,
+        headers: { "content-type": "application/json" },
+      });
+    const sendFailure = (answer: (url: string) => Response): Promise<unknown> =>
+      telegramOver(answer)
+        .transport.createClient({ botToken: TOKEN })
+        .sendMessage({ chatId: "1", text: "hi" })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+    const sendKind = async (answer: (url: string) => Response) =>
+      messagingErrorKind(await sendFailure(answer), "messaging_send_failed");
+    const tlsReset = (): Response => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: new Error(
+          "Client network socket disconnected before secure TLS connection was established",
+        ),
+      });
+    };
+
+    // The reported row: a poll that never completed is no refusal of Telegram's, and the
+    // loop's next poll is the whole of the fix.
+    const poll = await telegramOver(tlsReset)
+      .transport.createClient({ botToken: TOKEN })
+      .getUpdates({ timeoutSec: 0, signal: new AbortController().signal })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(poll).not.toBeInstanceOf(TelegramApiError);
+    expect(String((poll as Error).message)).toBe(
+      "getUpdates failed: Client network socket disconnected before secure TLS connection was established",
+    );
+    expect(messagingErrorKind(poll, "messaging_connect_failed")).toBe("expected");
+    // A send that never completed, a flood wait and Telegram's own outage clear by themselves,
+    // and so does a proxy's error page, which carries no code but a status.
+    expect(await sendKind(tlsReset)).toBe("expected");
+    expect(await sendKind(() => refusal(429, "Too Many Requests: retry after 5"))).toBe("expected");
+    expect(await sendKind(() => refusal(502, "Bad Gateway"))).toBe("expected");
+    expect(
+      await sendKind(() => new Response("<html>gateway timeout</html>", { status: 504 })),
+    ).toBe("expected");
+    // A revoked token, a chat that blocked the bot and a chat that is gone meet the same no on
+    // every later send.
+    expect(await sendKind(() => refusal(401, "Unauthorized"))).toBe("unexpected");
+    expect(await sendKind(() => refusal(403, "Forbidden: bot was blocked by the user"))).toBe(
+      "unexpected",
+    );
+    expect(await sendKind(() => refusal(400, "Bad Request: chat not found"))).toBe("unexpected");
+  });
+
   it("surfaces a Bot API refusal of an upload with its description", async () => {
-    const stub = stubFetch(
+    const stub = telegramOver(
       () =>
         new Response(
           JSON.stringify({ ok: false, description: "PHOTO_INVALID_DIMENSIONS", error_code: 400 }),

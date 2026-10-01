@@ -1,9 +1,9 @@
 /**
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
- * user, session create/get/patch, tasks/steer/compact/abort, SSE stream, messages, agents,
- * projects, usage, schedules, organizations and their channels, and — through the
- * `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
+ * user, session create/get/patch, tasks/steer/compact/switch-model/abort, SSE stream,
+ * messages, agents, projects, usage, schedules, organizations and their channels, and — through
+ * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
  * nothing of the developer's real data root is read.
  *
@@ -194,6 +194,22 @@ export class FakeServer {
   history: unknown[] = [];
   /** POST /compact behavior: "reject" -> 409 nothing_to_compact; a function emits its messages like a task. */
   compact: "reject" | ((session: FakeSessionState) => unknown[]) = "reject";
+  /**
+   * POST /switch-model behavior. "inline" (default): the Session never ran, so it switches
+   * inside the request and answers 200 with the updated SessionResponse; "inline-rebuilt" does
+   * the same for a Session the server had to rebuild first, which comes back under a new id.
+   * `{ refuse }`: 409 with that code. A function streams like /compact (202): its `messages`
+   * are emitted between running and idle, and the Session's model changes only when
+   * `completed`.
+   */
+  switchModel:
+    | "inline"
+    | "inline-rebuilt"
+    | { refuse: string }
+    | ((
+        session: FakeSessionState,
+        target: { provider: string; modelId: string },
+      ) => { messages: unknown[]; completed: boolean }) = "inline";
   /** POST /steer behavior: accept (202) or reject (409 not_running). */
   steerMode: "accept" | "reject" = "accept";
   /** When true, a task POST emits `running` + the script's messages but never `idle` — the turn hangs (soft-yield timeout tests). */
@@ -210,7 +226,7 @@ export class FakeServer {
     series: [],
     byAgentSeries: [],
     byModelSeries: [],
-    errors: { total: 0, unexpected: 0, topCode: null, recent: [] },
+    errors: { total: 0, unexpected: 0, topCode: null, recent: [], rows: 0 },
     agentIds: [],
     models: [],
   };
@@ -1804,6 +1820,29 @@ export class FakeServer {
           return this.error(409, "nothing_to_compact", "Nothing to compact.");
         }
         this.runTurn(session, this.compact(session));
+        return this.json({ sessionId: session.sessionId }, 202);
+      }
+      if (rest === "/switch-model" && method === "POST") {
+        const target = { provider: String(body?.provider), modelId: String(body?.modelId) };
+        if (typeof this.switchModel === "object") {
+          return this.error(409, this.switchModel.refuse, `Refused: ${this.switchModel.refuse}.`);
+        }
+        if (this.switchModel === "inline" || this.switchModel === "inline-rebuilt") {
+          if (this.switchModel === "inline-rebuilt") {
+            this.sessions.delete(session.sessionId);
+            session.sessionId = this.mintSessionId();
+            this.sessions.set(session.sessionId, session);
+          }
+          session.provider = target.provider;
+          session.modelId = target.modelId;
+          return this.json({ session: this.sessionInfo(session) });
+        }
+        const { messages, completed } = this.switchModel(session, target);
+        if (completed) {
+          session.provider = target.provider;
+          session.modelId = target.modelId;
+        }
+        this.runTurn(session, messages);
         return this.json({ sessionId: session.sessionId }, 202);
       }
       if (rest === "/abort" && method === "POST") {

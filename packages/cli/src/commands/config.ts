@@ -22,9 +22,9 @@
  * group's semantics (not set for first-party vendors; the protocol a group pins where it
  * pins one, and otherwise openai-chat for custom / self-hosted groups / gateways, with the
  * gateway's endpoint base URL pre-filled); adding a NEW entry to a first-party vendor group
- * under a model id MMSP cannot route — one that begins with no known vendor prefix (`gpt-`,
- * `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`) — is refused, since nothing
- * there would carry a protocol for it. For `model default` / `model vision`, core
+ * under a model id MMSP cannot route is refused, since nothing there would carry a
+ * protocol for it, and so is adding one that is not a preset to any built-in group but custom
+ * and vLLM. For `model default` / `model vision`, core
  * validation raises an error when the reference is not
  * found in models; `model remove` reports the same condition itself, since removal is
  * idempotent in core, and clears the default / vision pointers that named the removed entry.
@@ -60,6 +60,7 @@ import {
   setDefaultModel,
   setVaultEntry,
   setVisionModel,
+  unaddableModel,
   unroutableVendorModel,
 } from "@prismshadow/penguin-core";
 import { parseApprovalAnswer } from "../approval.js";
@@ -200,6 +201,16 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       // already stored is left alone: updating it is not the act that put it there.
       if (!existed && unroutableVendorModel(provider, modelId, clientType)) {
         process.stderr.write(`${t.error(t.modelNotRoutable(formatModelRef(ref)))}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      // The route's second rule, enforced here for the same reason: only custom, vLLM and
+      // user-defined groups take models added by hand, and every other built-in group carries
+      // its catalog presets. A preset may be added back; an entry already stored is left alone.
+      if (!existed && unaddableModel(provider, modelId)) {
+        process.stderr.write(
+          `${t.error(t.modelNotAddable(formatModelRef(ref), pInfo?.label ?? provider))}\n`,
+        );
         process.exitCode = 1;
         return;
       }

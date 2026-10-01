@@ -1,0 +1,238 @@
+/**
+ * The Plugins page's pure decisions (features/plugins/plugins-page.tsx). One file, so the page
+ * module is imported once.
+ *
+ * - All machines: every plugin is listed, and a machine-only one says where it runs. This
+ *   server: what it is asked for, a shared plugin not removable from its table. Another
+ *   machine: the state that machine reports, and what it has not received yet.
+ * - A plugin is installed on an Agent once any part of it is there (a skill, or its hook
+ *   package), read off the two installed lists; nothing is installed for an Agent with no
+ *   snapshot or for a plugin that ships nothing.
+ * - The installed version is the hook package's where there is one, else the first installed
+ *   skill's, and undefined where the plugin is not installed.
+ * - The per-plugin reminder names the Agents the server lists as behind on it, in list order
+ *   (versions are never compared here).
+ * - The "update all" plan is empty when no Agent is behind, sends one request per Agent with
+ *   every plugin it is behind on, and counts distinct plugins as the notice does.
+ */
+import { describe, expect, it } from "vitest";
+import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
+import {
+  availablePluginRows,
+  installedPluginRows,
+  installedPluginVersion,
+  outdatedAgentIds,
+  pluginInstalled,
+  pluginUpdatePlan,
+  type AgentInstalls,
+  type PluginParts,
+  type PluginView,
+} from "../src/features/plugins/plugins-page";
+
+const SELF = "Self000000000000";
+const GPU = "Gpu0000000000000";
+
+const row = (
+  specifier: string,
+  where: { everywhere: boolean; machines: string[]; here: boolean },
+  active = where.here,
+): InstalledPluginsResponse["plugins"][number] => ({
+  specifier,
+  active,
+  builtin: false,
+  modules: [],
+  replaces: [],
+  ...where,
+});
+
+const deployment: InstalledPluginsResponse = {
+  plugins: [
+    row("@acme/shared", { everywhere: true, machines: [], here: true }),
+    row("@acme/gpu-only", { everywhere: false, machines: [GPU], here: false }),
+  ],
+  shipped: [],
+  file: ".project_config.toml",
+  machineId: SELF,
+  restartPending: false,
+};
+
+const nameOf = (id: string) => (id === GPU ? "gpu-box" : "this server");
+const modules = (rows: ReturnType<typeof installedPluginRows>) =>
+  rows.flatMap((r) => (r.kind === "module" ? [r] : []));
+
+describe("plugin rows per machine", () => {
+  it("all machines: every plugin, and a machine-only one says where it runs", () => {
+    const view: PluginView = { machineId: null, remote: null, nameOf };
+    const rows = modules(installedPluginRows([], "en", deployment, [], view));
+    expect(rows.map((r) => [r.specifier, r.state, r.onlyOn])).toEqual([
+      ["@acme/shared", "active", undefined],
+      ["@acme/gpu-only", "elsewhere", ["gpu-box"]],
+    ]);
+    // Offered for all machines, since the shared table does not list it.
+    expect(availablePluginRows(deployment, [], view)).toEqual([]);
+  });
+
+  it("this server: what it is asked for, and a shared plugin cannot be removed from its table", () => {
+    const view: PluginView = { machineId: SELF, remote: null, nameOf };
+    const rows = modules(installedPluginRows([], "en", deployment, [], view));
+    expect(rows.map((r) => r.specifier)).toEqual(["@acme/shared"]);
+    expect(rows[0]!.removeBlocked).toBeDefined();
+  });
+
+  it("another machine: the state it reports, and what it has not received yet", () => {
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [row("@acme/gpu-only", { everywhere: true, machines: [], here: true }, false)],
+    };
+    remote.plugins[0]!.error = "npm: 404";
+    const view: PluginView = { machineId: GPU, remote, nameOf };
+    const rows = modules(installedPluginRows([], "en", deployment, [], view));
+    expect(rows.map((r) => [r.specifier, r.state, r.removeBlocked === undefined])).toEqual([
+      ["@acme/shared", "unsynced", false],
+      ["@acme/gpu-only", "failed", true],
+    ]);
+  });
+});
+
+const skill = (name: string) => ({ name, description: "", version: "2026.08.01.1" });
+
+/** A plugin shipping two skills and a stop hook, one with a skill only, and one with a hook only. */
+const FULL: PluginParts = {
+  name: "orchestration",
+  skills: [skill("plan"), skill("run")],
+  hooks: ["stop"],
+};
+const SKILL_ONLY: PluginParts = { name: "web-design", skills: [skill("web-design")], hooks: [] };
+const HOOK_ONLY: PluginParts = { name: "goal", skills: [], hooks: ["stop"] };
+
+const installs = (
+  skills: Record<string, string>,
+  hooks: Record<string, string>,
+): AgentInstalls => ({
+  skills: new Map(Object.entries(skills)),
+  hooks: new Map(Object.entries(hooks)),
+});
+
+describe("pluginInstalled", () => {
+  it("counts a plugin as installed once any part of it is there, so a partial copy can be updated", () => {
+    const whole = installs(
+      { plan: "2026.08.01.1", run: "2026.08.01.1" },
+      { orchestration: "2026.08.01.1" },
+    );
+    expect(pluginInstalled(FULL, whole)).toBe(true);
+    // An older version that shipped one skill fewer, or a copy missing its hook package, is
+    // what the server lists as behind: an installed plugin an update completes.
+    expect(
+      pluginInstalled(FULL, installs({ plan: "2026.08.01.1" }, { orchestration: "2026.08.01.1" })),
+    ).toBe(true);
+    expect(pluginInstalled(FULL, installs({ plan: "2026.08.01.1", run: "2026.08.01.1" }, {}))).toBe(
+      true,
+    );
+    expect(pluginInstalled(FULL, installs({ other: "2026.08.01.1" }, {}))).toBe(false);
+  });
+
+  it("reads a skill-only plugin off the skills list and a hook-only one off the hooks list", () => {
+    expect(pluginInstalled(SKILL_ONLY, installs({ "web-design": "2026.07.30.1" }, {}))).toBe(true);
+    expect(pluginInstalled(SKILL_ONLY, installs({}, { "web-design": "2026.07.30.1" }))).toBe(false);
+    expect(pluginInstalled(HOOK_ONLY, installs({}, { goal: "2026.08.29.1" }))).toBe(true);
+    expect(pluginInstalled(HOOK_ONLY, installs({ goal: "2026.08.29.1" }, {}))).toBe(false);
+  });
+
+  it("is false for an Agent with no snapshot yet, and for a plugin that ships nothing", () => {
+    expect(pluginInstalled(SKILL_ONLY, undefined)).toBe(false);
+    expect(pluginInstalled({ name: "empty", skills: [], hooks: [] }, installs({}, {}))).toBe(false);
+  });
+});
+
+describe("installedPluginVersion", () => {
+  it("reads the hook package's version where there is one, else the first skill's", () => {
+    expect(
+      installedPluginVersion(
+        FULL,
+        installs({ plan: "2026.07.01.1", run: "2026.07.01.1" }, { orchestration: "2026.07.02.1" }),
+      ),
+    ).toBe("2026.07.02.1");
+    expect(installedPluginVersion(SKILL_ONLY, installs({ "web-design": "2026.07.30.1" }, {}))).toBe(
+      "2026.07.30.1",
+    );
+  });
+
+  it("is undefined where the plugin is not installed, and reads a partial copy's first installed skill", () => {
+    expect(installedPluginVersion(SKILL_ONLY, undefined)).toBeUndefined();
+    expect(
+      installedPluginVersion(SKILL_ONLY, installs({ other: "2026.07.01.1" }, {})),
+    ).toBeUndefined();
+    expect(
+      installedPluginVersion(
+        { name: "pair", skills: [skill("plan"), skill("run")], hooks: [] },
+        installs({ run: "2026.07.01.1" }, {}),
+      ),
+    ).toBe("2026.07.01.1");
+  });
+});
+
+/** Just the two fields the update questions read (they take a Pick, so the fixture can be one too). */
+const agent = (agentId: string, ...updates: Array<{ name: string; version: string }>) => ({
+  agentId,
+  pluginUpdates: updates,
+});
+
+describe("outdatedAgentIds", () => {
+  it("names the Agents the server lists as behind on that plugin, in list order", () => {
+    const agents = [
+      agent("stale", { name: "web-design", version: "2026.08.01.1" }),
+      agent("current"),
+      agent("other", { name: "vllm", version: "2026.08.01.1" }),
+      agent(
+        "also_stale",
+        { name: "web-design", version: "2026.08.01.1" },
+        { name: "vllm", version: "2026.08.01.1" },
+      ),
+    ];
+    expect(outdatedAgentIds(agents, "web-design")).toEqual(["stale", "also_stale"]);
+    expect(outdatedAgentIds(agents, "vllm")).toEqual(["other", "also_stale"]);
+    expect(outdatedAgentIds(agents, "goal")).toEqual([]);
+  });
+});
+
+describe("pluginUpdatePlan", () => {
+  it("is empty when no Agent is behind, so the notice has nothing to offer", () => {
+    expect(pluginUpdatePlan([agent("a"), agent("b")])).toEqual({ perAgent: [], plugins: [] });
+  });
+
+  it("sends one request per Agent, carrying every plugin that Agent is behind on", () => {
+    // The install endpoint takes a list, and an Agent behind on two plugins is one overwrite
+    // either way.
+    expect(
+      pluginUpdatePlan([
+        agent(
+          "alpha",
+          { name: "web-design", version: "2026.08.01.3" },
+          { name: "vllm", version: "2026.08.01.2" },
+        ),
+        agent("beta"),
+        agent("gamma", { name: "web-design", version: "2026.08.01.3" }),
+      ]),
+    ).toEqual({
+      perAgent: [
+        { agentId: "alpha", names: ["vllm", "web-design"] },
+        { agentId: "gamma", names: ["web-design"] },
+      ],
+      plugins: ["vllm", "web-design"],
+    });
+  });
+
+  it("counts distinct plugins, matching what the notice above the button says", () => {
+    // The gate counts by plugin because the page lists the library once. The plan's `plugins`
+    // is what the confirmation lists, so the two must be the same number or the dialog would
+    // contradict the block that opened it.
+    const plan = pluginUpdatePlan([
+      agent("alpha", { name: "shared", version: "2026.08.01.2" }),
+      agent("beta", { name: "shared", version: "2026.08.01.2" }),
+      agent("gamma", { name: "shared", version: "2026.08.01.2" }),
+    ]);
+    expect(plan.plugins).toEqual(["shared"]);
+    expect(plan.perAgent).toHaveLength(3);
+  });
+});

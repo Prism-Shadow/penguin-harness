@@ -1,7 +1,40 @@
 /**
- * stream-model.ts unit tests: partial aggregation, full-message
- * convergence/replacement, orphan delta handling, overlap dedup, origin nested routing,
- * approval/abort/compaction events, Task segmentation and stats triggering.
+ * The chat stream's model (lib/omni/stream-model.ts): OmniMessages in, the items the chat
+ * renders out, and the same items whether a conversation arrives live or is rebuilt from
+ * history.
+ *
+ * - Streaming fragments accumulate into one item that the complete message then replaces;
+ *   an orphan fragment (joined mid-stream) is ignored; a late streaming copy never duplicates
+ *   a card history already built; tool-output images show as soon as a delta carries them.
+ * - A live-tail start carrying an accumulated prefix seeds its item on top of history, and a
+ *   start for an already complete call or output changes nothing.
+ * - Approval decisions annotate their card (manual when registered here, even across a resync
+ *   rebuild; remote otherwise), including decisions that arrive before the card; fatal errors
+ *   and aborts render their own items.
+ * - A compaction renders one banner: its summary and thinking stream onto it, each body
+ *   section is timed over the window it shows itself running (retries included), history
+ *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
+ * - The MCP connect row sums tools, keeps per-server outcomes and its wall time.
+ * - Retries render one ladder line per streak, with their countdown inputs, settling as
+ *   gave-up on abort, exhaustion or a new Task; request events inside a compaction do not.
+ * - Subagent output routes into the nearest approved, unfinished run_subagent card, one hop
+ *   per level, else a standalone card; a child's tokens count toward the parent's stats.
+ * - Messages carry their time; a Task starts at a user message or image and closes with a
+ *   stats row (tokens, output speed, elapsed from Trace timestamps, the copy target, the
+ *   fork position), compaction and approval waits attributed by position.
+ * - Compaction-internal messages and steering never start a Task; background notices ride
+ *   inside the running Task unless they arrived idle.
+ * - Elapsed time survives a reload mid-run and never leaks the local clock.
+ * - Tool cards are found at any depth by origin chain, and an approval key tells apart the
+ *   same call id under different origins.
+ * - Overlap dedup matches identical envelopes in its window (Trace positions ignored) and
+ *   discards the matching in-flight fragment, nested ones included.
+ * - Thinking and tool durations cover generation and execution, minus approval waits; aborts
+ *   and idle close running cards.
+ * - A repeated tool_call_id opens a new card and closes the superseded one.
+ * - Empty or blank fidelity-only messages render nothing, live or rebuilt.
+ * - A Task's stats row lists the memory files it changed (completed writes and edits under
+ *   the memory root only).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -441,6 +474,104 @@ describe("approvals and events", () => {
     expect(banner.running).toBe(false);
     expect(banner.status).toBe("retryable");
     expect(banner.errorMessage).toBe("the response contained no usable summary");
+  });
+
+  it("a main-session session_meta on another model pushes a model_change item after the compaction row; the window's first meta, a same-pair rewrite and a nested child's meta push none", () => {
+    const onModel = (provider: string, modelId: string, sessionId = "s1") =>
+      sessionMeta({ ...meta(sessionId).payload, provider, model_id: modelId });
+    const markers = (model: StreamModel) => model.items.filter((i) => i.kind === "model_change");
+    const m = createStreamModel();
+    // The window's first meta only sets the context model.
+    pushMessage(m, onModel("anthropic", "a-1"));
+    expect(items(m)).toEqual([]);
+    expect(m.contextModel).toEqual({ sessionId: "s1", provider: "anthropic", modelId: "a-1" });
+
+    // A switch streams an ordinary manual pair, then the new context's meta on another model.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    pushMessage(m, at(onModel("openai", "b-2"), "2026-09-17T08:00:00.000Z"));
+    expect(items(m).map((i) => i.kind)).toEqual(["compaction", "model_change"]);
+    expect(items(m)[1]).toEqual({
+      kind: "model_change",
+      id: expect.any(Number),
+      from: { provider: "anthropic", modelId: "a-1" },
+      to: { provider: "openai", modelId: "b-2" },
+      tsMs: Date.parse("2026-09-17T08:00:00.000Z"),
+    });
+    expect(m.contextModel).toEqual({ sessionId: "s1", provider: "openai", modelId: "b-2" });
+
+    // A same-pair rewrite — an ordinary rotation's meta, or the same record served twice by
+    // history and the live tail — pushes nothing.
+    pushMessage(m, onModel("openai", "b-2"));
+    expect(markers(m)).toHaveLength(1);
+
+    // A nested child's metas are that child's identity, never a switch of this Session, even
+    // when two of them name different models.
+    pushMessage(m, withOrigin(onModel("zhipu", "glm-5", "child1"), "child1"));
+    pushMessage(m, withOrigin(onModel("deepseek", "ds-1", "child1"), "child1"));
+    const child = items(m).find((i) => i.kind === "subagent") as SubagentItem;
+    expect(child.model.meta).toMatchObject({ provider: "deepseek", modelId: "ds-1" });
+    expect(markers(child.model)).toEqual([]);
+    expect(markers(m)).toHaveLength(1);
+    expect(m.contextModel).toEqual({ sessionId: "s1", provider: "openai", modelId: "b-2" });
+  });
+
+  it("a round settled behind a switch's compaction row and marker places its stats row above both", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      at(sessionMeta({ ...meta("s1").payload, model_id: "a-1" }), "2026-09-17T08:00:00.000Z"),
+    );
+    pushMessage(m, at(userText("task"), "2026-09-17T08:00:01.000Z"));
+    pushMessage(m, at(requestBegin(), "2026-09-17T08:00:02.000Z"));
+    pushMessage(m, at(assistantText("half a reply"), "2026-09-17T08:00:03.000Z"));
+    pushMessage(m, at(tokenUsage(counts(100), counts(100)), "2026-09-17T08:00:04.000Z"));
+    // Interrupted: the round's last item is the abort, so the compaction below does not settle
+    // it on arrival — the history rebuild settles it at its end.
+    pushMessage(m, at(abortEvent(), "2026-09-17T08:00:05.000Z"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 100, turns: 1 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    pushMessage(m, sessionMeta({ ...meta("s1").payload, model_id: "b-2" }));
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "abort",
+      "task_stats",
+      "compaction",
+      "model_change",
+    ]);
+    // The round is priced on the model it ran on, though it was settled after the new context's
+    // meta had arrived.
+    const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+    expect(stats.model).toEqual({ provider: meta("s1").payload.provider, modelId: "a-1" });
+  });
+
+  it("a Task's stats row names the model its context ran on; one that began before any meta names none", () => {
+    const round = (m: StreamModel, n: number): void => {
+      const t = (s: number) => `2026-09-17T08:0${n}:0${s}.000Z`;
+      pushMessage(m, at(userText(`task ${n}`), t(1)));
+      pushMessage(m, at(requestBegin(), t(2)));
+      pushMessage(m, at(assistantText(`reply ${n}`), t(3)));
+      pushMessage(m, at(tokenUsage(counts(100 * n), counts(100)), t(4)));
+    };
+    const models = (m: StreamModel) =>
+      items(m).flatMap((i) => (i.kind === "task_stats" ? [i.model?.modelId] : []));
+    const m = createStreamModel();
+    // A window that starts partway into a context: no meta ahead of its first Task.
+    round(m, 1);
+    pushMessage(m, sessionMeta({ ...meta("s1").payload, model_id: "a-1" }));
+    round(m, 2);
+    pushMessage(m, sessionMeta({ ...meta("s1").payload, model_id: "b-2" }));
+    round(m, 3);
+    finalizeHistory(m);
+    expect(models(m)).toEqual([undefined, "a-1", "b-2"]);
   });
 
   it("compaction wall time is derived from the begin/end message timestamps", () => {
@@ -2179,11 +2310,14 @@ describe("elapsed comes from Trace timestamps (#5/#20: settled spans, reload-sta
 
 describe("approval keys and tool-card lookup (#7/#19)", () => {
   it("approvalKey distinguishes identical toolCallIds by origin chain", () => {
-    expect(approvalKey(undefined, "t1")).toBe(" t1");
-    expect(approvalKey([], "t1")).toBe(" t1");
-    expect(approvalKey(["c1"], "t1")).toBe("c1 t1");
-    expect(approvalKey(["c1", "c2"], "t1")).toBe("c1/c2 t1");
-    expect(approvalKey(["c1"], "t1")).not.toBe(approvalKey(undefined, "t1"));
+    expect(approvalKey([], "t1")).toBe(approvalKey(undefined, "t1"));
+    const keys = [
+      approvalKey(undefined, "t1"),
+      approvalKey(["c1"], "t1"),
+      approvalKey(["c1", "c2"], "t1"),
+      approvalKey(["c1"], "t2"),
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("findToolCard locates tool cards at any depth by origin chain", () => {

@@ -175,7 +175,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(list.out.split("\n").some((l) => /anthropic\s+claude-sonnet-4-6/.test(l))).toBe(true);
   });
 
-  it("client_type defaults by grouping semantics (PRN-021): custom / self-hosted / gateway get openai-chat unless the group pins another protocol, first-party providers get none", async () => {
+  it("client_type defaults by grouping semantics (PRN-021): custom and self-built groups get openai-chat, a group that pins a protocol hands it over", async () => {
     // The custom group and self-hosted groups (--provider not a catalog value): default to client_type=openai.
     await runModel([
       "add",
@@ -187,28 +187,14 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       tmpRoot,
     ]);
     await runModel(["add", "--model-id", "in-house-1", "--provider", "mylab", "--root", tmpRoot]);
-    // A non-catalog id under a first-party vendor group: client_type is not set (MMSP routes
-    // by the vendor family the upstream id begins with). The id has to be one that routing
-    // places — the group carries nothing else that could name a protocol for it (see the
-    // refusal test below).
+    // vLLM pins its adapter on every entry, the models a user serves included, and has no
+    // endpoint to preset: the entry carries none until the user names their own server.
     await runModel([
       "add",
       "--model-id",
-      "deepseek-v4-my-tune",
+      "my-served-model",
       "--provider",
-      "deepseek",
-      "--root",
-      tmpRoot,
-    ]);
-    // Gateway group: the gateway's endpoint base URL pre-filled, and the protocol the group
-    // pins — OpenRouter speaks the Responses API for every model it serves, so an id added by
-    // hand gets openai-responses rather than the openai-chat the other gateways default to.
-    await runModel([
-      "add",
-      "--model-id",
-      "acme/some-model",
-      "--provider",
-      "openrouter",
+      "vllm",
       "--root",
       tmpRoot,
     ]);
@@ -232,9 +218,8 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       parsed.models.find((m) => m.provider === p && m.model_id === id)!;
     expect(by("custom", "my-openai-proxy").client_type).toBe("openai-chat");
     expect(by("mylab", "in-house-1").client_type).toBe("openai-chat");
-    expect(by("deepseek", "deepseek-v4-my-tune").client_type).toBeUndefined();
-    expect(by("openrouter", "acme/some-model").client_type).toBe("openai-responses");
-    expect(by("openrouter", "acme/some-model").base_url).toBe("https://openrouter.ai/api/v1");
+    expect(by("vllm", "my-served-model").client_type).toBe("openai-chat-vllm-adapter");
+    expect(by("vllm", "my-served-model").base_url).toBeUndefined();
     expect(by("mylab", "special-1").client_type).toBe("verbatim-type");
   });
 
@@ -278,8 +263,8 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     ]);
     expect(custom.code).toBe(0);
 
-    // And inside a vendor group once the entry names a protocol MMSP has — the shape the
-    // Penguin Go presets are written in.
+    // Naming its own protocol makes the id routable inside a vendor group; but a model that is
+    // no preset is not added there by hand at all.
     const pinned = await runModel([
       "add",
       "--model-id",
@@ -291,9 +276,63 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       "--root",
       tmpRoot,
     ]);
-    expect(pinned.code).toBe(0);
-    const entry = await stored("deepseek", "qwen/qwen3.8-flash-next");
-    expect(entry?.client_type).toBe("openai-chat");
+    expect(pinned.code).toBe(1);
+    expect(pinned.err).toContain("cannot be added");
+    expect(await stored("deepseek", "qwen/qwen3.8-flash-next")).toBeUndefined();
+  });
+
+  it("refuses a NEW entry that is no preset in any built-in group but custom and vLLM, and takes a preset back", async () => {
+    // The models PUT refuses the same rows; this command writes the file without the server,
+    // so it enforces the rule again rather than leave a second door open.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    const stored = async (p: string, id: string) => {
+      const parsed = parseToml(await fs.readFile(file, "utf8")) as {
+        models: Array<Record<string, unknown>>;
+      };
+      return parsed.models.find((m) => m.provider === p && m.model_id === id);
+    };
+    await runModel(["add", "--model-id", "seed", "--provider", "custom", "--root", tmpRoot]);
+    // Two gateways and a vendor group, with ids each one's client would happily serve.
+    for (const [provider, id] of [
+      ["openrouter", "acme/some-model"],
+      ["tokendance", "acme/some-model"],
+      ["deepseek", "deepseek-v4-my-tune"],
+    ] as const) {
+      const refused = await runModel([
+        "add",
+        "--model-id",
+        id,
+        "--provider",
+        provider,
+        "--root",
+        tmpRoot,
+      ]);
+      expect(refused.code, provider).toBe(1);
+      expect(refused.err, provider).toContain("cannot be added");
+      expect(refused.err, provider).toContain("custom group");
+      expect(await stored(provider, id), provider).toBeUndefined();
+    }
+    // A preset the Project removed is the group's own model, and may come back.
+    await runModel([
+      "remove",
+      "--model-id",
+      "deepseek-v4-pro",
+      "--provider",
+      "deepseek",
+      "--root",
+      tmpRoot,
+    ]);
+    const back = await runModel([
+      "add",
+      "--model-id",
+      "deepseek-v4-pro",
+      "--provider",
+      "deepseek",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(back.code).toBe(0);
+    expect(await stored("deepseek", "deepseek-v4-pro")).toBeDefined();
   });
 
   it("an entry already stored in a vendor group still updates, however its id routes", async () => {
@@ -303,7 +342,8 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     await runModel(["add", "--model-id", "seed", "--provider", "custom", "--root", tmpRoot]);
     await fs.appendFile(
       file,
-      '\n[[models]]\nprovider = "deepseek"\nmodel_id = "legacy-fine-tune"\n',
+      '\n[[models]]\nprovider = "deepseek"\nmodel_id = "legacy-fine-tune"\n' +
+        '\n[[models]]\nprovider = "openrouter"\nmodel_id = "acme/legacy-pick"\n',
       "utf8",
     );
 
@@ -324,6 +364,19 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     };
     const entry = parsed.models.find((m) => m.model_id === "legacy-fine-tune");
     expect(entry?.context_window).toBe(65536);
+    // A row added to a gateway before gateways stopped taking them updates the same way.
+    const gateway = await runModel([
+      "add",
+      "--model-id",
+      "acme/legacy-pick",
+      "--provider",
+      "openrouter",
+      "--api-key",
+      "sk-or-legacy",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(gateway.code).toBe(0);
   });
 
   it("a new entry naming a catalog row inherits that row's pinned client_type and base_url; --client-type still wins", async () => {
@@ -369,10 +422,9 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       "--root",
       tmpRoot,
     ]);
-    // The same id under a group that does not sell it has no catalog row, so the group rule
-    // still decides: OpenRouter gives it the openai-responses its group pins and its own
-    // endpoint, not DeepSeek's client and vendor endpoint.
-    await runModel([
+    // The same id under a group that does not sell it is no preset there, and a gateway takes
+    // no hand-added models: refused, and nothing is written.
+    const elsewhere = await runModel([
       "add",
       "--model-id",
       "deepseek-flash",
@@ -381,6 +433,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       "--root",
       tmpRoot,
     ]);
+    expect(elsewhere.code).toBe(1);
     // An explicit --client-type outranks the inherited pin, and so does --base-url.
     await runModel([
       "remove",
@@ -414,8 +467,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(by("penguin-go", "gemini-3.8-flash").base_url).toBe("https://token.penguin.ooo/api");
     expect(by("deepseek", "deepseek-flash").client_type).toBeUndefined();
     expect(by("deepseek", "deepseek-flash").base_url).toBeUndefined();
-    expect(by("openrouter", "deepseek-flash").client_type).toBe("openai-responses");
-    expect(by("openrouter", "deepseek-flash").base_url).toBe("https://openrouter.ai/api/v1");
+    expect(by("openrouter", "deepseek-flash")).toBeUndefined();
     expect(by("penguin-go", "deepseek-v4-pro").client_type).toBe("openai-chat");
     expect(by("penguin-go", "deepseek-v4-pro").base_url).toBe("https://proxy.example/v1");
   });

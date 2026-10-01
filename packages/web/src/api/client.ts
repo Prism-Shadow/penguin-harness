@@ -67,6 +67,11 @@ export interface ApiFetchMeta {
    * is readable cross-origin too.
    */
   serverNowMs: number | null;
+  /**
+   * The response's `ETag`, or null when it carries none. A Workspace file write answers with the
+   * version it wrote there — the precondition the editor's next save of that file carries.
+   */
+  etag: string | null;
 }
 
 /** Makes an API request; non-2xx responses uniformly throw ApiError; 204/empty body returns undefined. */
@@ -132,9 +137,10 @@ export async function apiFetchWithMeta<T>(
 
   const headerDate = Date.parse(response.headers.get("date") ?? "");
   const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+  const etag = response.headers.get("etag");
 
-  if (response.status === 204) return { data: undefined as T, serverNowMs };
+  if (response.status === 204) return { data: undefined as T, serverNowMs, etag };
   const text = await response.text();
-  if (!text) return { data: undefined as T, serverNowMs };
-  return { data: JSON.parse(text) as T, serverNowMs };
+  if (!text) return { data: undefined as T, serverNowMs, etag };
+  return { data: JSON.parse(text) as T, serverNowMs, etag };
 }

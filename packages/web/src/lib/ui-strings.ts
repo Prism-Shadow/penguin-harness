@@ -17,6 +17,21 @@ export function uiStringsOf(dict: Strings): UiStrings {
     close: dict.common.close,
     copied: dict.common.copied,
     loading: dict.common.loading,
+    showPassword: dict.auth.showPassword,
+    hidePassword: dict.auth.hidePassword,
+    clearSearch: dict.chat.searchClear,
+    moreInfo: dict.common.moreInfo,
+    moreInfoAbout: dict.common.moreInfoAbout,
+    notifications: dict.common.notifications,
+    dismiss: dict.common.dismiss,
+    copyCode: dict.chat.copyCode,
+    expand: dict.nav.expandGroup,
+    collapse: dict.nav.collapseGroup,
+    more: dict.chat.loadMore,
+    fewer: dict.chat.showLess,
+    previous: dict.common.previousPage,
+    next: dict.common.nextPage,
+    pagePosition: dict.chat.groupPagePosition,
   };
 }
 

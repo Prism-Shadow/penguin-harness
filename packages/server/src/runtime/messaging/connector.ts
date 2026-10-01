@@ -133,13 +133,51 @@ export interface MessagingConnectorHandlers {
   onMessage(msg: MessagingInboundMessage): void | Promise<void>;
   /** The connection completed a handshake (may fire again after an automatic reconnect). */
   onReady?(): void;
-  /** The connection failed and the channel gave up (or the initial connect failed). */
+  /**
+   * The connection failed and the channel gave up (or the initial connect failed). A
+   * {@link MessagingChannelError} says whether the outage clears without anyone acting.
+   */
   onError?(err: unknown): void;
 }
 
 /** A live inbound event stream; `close` ends it (idempotent). */
 export interface MessagingConnection {
   close(): void;
+}
+
+/**
+ * A channel failure that carries its connector's verdict on whether anybody has to act.
+ *
+ * `recovers` answers one question: made again with nothing changed, does the same attempt go
+ * through? A connection the connector's own retry brings back — a network drop, a reset TLS
+ * handshake, a deadline, a platform restarting — does, and so does a send the next message
+ * gets past (a 5xx, a rate limit). A credential the platform refused, a permission never
+ * granted or a console setting in the way does not, however eagerly the connector retries.
+ *
+ * The verdict is decided where the failure is understood — the transport that read the
+ * platform's status and its own code, or the connection loop that knows why it gave up on a
+ * socket — and error-kind.ts reads the boolean and nothing else: a wording match would tie
+ * the dashboard's "needs a human" count to how a platform phrases itself.
+ */
+export class MessagingChannelError extends Error {
+  constructor(
+    message: string,
+    /** Whether the same attempt, made again with nothing changed, goes through. */
+    readonly recovers: boolean,
+  ) {
+    super(message);
+    this.name = "MessagingChannelError";
+  }
+}
+
+/**
+ * Whether a request the platform answered with this HTTP status may go through unchanged next
+ * time: 408 and 429 say "not now" and a 5xx is the platform's own fault, while any other 4xx is
+ * a refusal that repeats until someone changes something — the line core draws for an LLM
+ * provider's status.
+ */
+export function httpStatusRecovers(status: number | undefined): boolean {
+  return status === 408 || status === 429 || (status !== undefined && status >= 500);
 }
 
 /**

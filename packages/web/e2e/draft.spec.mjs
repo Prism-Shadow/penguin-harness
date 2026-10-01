@@ -293,7 +293,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // —— Switch the sidebar to agent mode via the header's list-settings menu (persists in
   // localStorage; the grouping radios moved from the inline toggle into this menu) ——
   await page.getByRole("button", { name: "列表选项" }).click();
-  await page.getByRole("button", { name: "按 Agent 分组" }).click();
+  await page.getByRole("menuitemradio", { name: "按 Agent 分组" }).click();
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("penguin.sidebarGroupMode")))
     .toBe("agent");
@@ -344,7 +344,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
 
   await ta.fill("/model");
   await ta.press("Enter");
-  await expect(page.getByText("切换模型", { exact: true })).toBeVisible(); // picker title bar
+  // The model-picker dialog, named for what /model does (it has no visible title bar).
+  await expect(page.getByRole("dialog", { name: "换模型开新会话" })).toBeVisible();
   await expect(ta).toHaveValue(""); // the command consumed its own token
   await page.getByPlaceholder(/搜索模型/).fill("claude-4-8");
   // Both models match the query (one id is the other's prefix); pick the non-mini one, i.e. not
@@ -357,7 +358,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // Nothing was sent: we are still in the same Session, with the pick pinned as a chip — which
   // is why the body can be typed AFTER the pick and still ride along.
   await expect(page).toHaveURL(new RegExp(`/chat/${secondSessionId}$`));
-  await expect(page.getByLabel("移除切换模型")).toBeVisible();
+  await expect(page.getByLabel("移除换模型目标")).toBeVisible();
   await ta.fill("Fork body typed after the pick");
 
   // The chip is draft content, cached in the SAME entry as the text (poll on the text: it is
@@ -370,7 +371,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(await page.evaluate((k) => localStorage.getItem(k), sessionKey)).toContain("claude-4-8");
   await page.reload();
   await expect(ta).toHaveValue("Fork body typed after the pick");
-  await expect(page.getByLabel("移除切换模型")).toBeVisible();
+  await expect(page.getByLabel("移除换模型目标")).toBeVisible();
 
   // Enter performs the fork: a NEW Session on the picked model, same Agent, carrying the body.
   await ta.press("Enter");
@@ -381,8 +382,9 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   const third = await (await page.request.get(`${BASE}/api/sessions/${thirdSessionId}`)).json();
   expect(third.session.modelId).toBe("claude-4-8");
   expect(third.session.agentId).toBe("agent_helper");
-  // The source block collapses into the "switched model" banner, and the typed body follows it.
-  await expect(page.getByText(/已切换模型（原为 claude-4-8-mini）/)).toBeVisible();
+  // The source block collapses into the "new conversation on another model" banner, and the
+  // typed body follows it.
+  await expect(page.getByText(/换模型新开的会话（原模型 claude-4-8-mini）/)).toBeVisible();
   await expect(page.getByText("Fork body typed after the pick")).toBeVisible();
 
   // —— /agent stages the handoff; Enter is what performs it ——

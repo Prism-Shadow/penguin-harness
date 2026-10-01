@@ -322,7 +322,7 @@ const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
  * say a Project last opened before the release that shipped this migration must be opened once
  * on a 0.2.x release first. Takes out LEGACY_CLIENT_TYPES, this function, the write-back in the
  * two loaders, and their tests (core `state.test.ts`, server `models.test.ts`); see
- * changelog/unreleased/2026-09-30-backward-compatibility.md.
+ * changelog/unreleased/2026-10-01-backward-compatibility.md.
  */
 export function migrateLegacyClientTypes(table: Record<string, unknown>): boolean {
   let changed = false;
@@ -837,13 +837,13 @@ export async function removeModel(
   ref: ModelRef,
 ): Promise<ProjectConfig> {
   const cfg = await loadProjectConfig(root, projectId);
-  const idx = cfg.models.findIndex((m) => sameRef(m, ref));
+  const idx = cfg.models.findIndex((m) => sameModelRef(m, ref));
   if (idx < 0) return cfg;
   cfg.models.splice(idx, 1);
-  if (cfg.default_model && sameRef(cfg.default_model, ref)) {
+  if (cfg.default_model && sameModelRef(cfg.default_model, ref)) {
     delete cfg.default_model;
   }
-  if (cfg.vision_model && sameRef(cfg.vision_model, ref)) {
+  if (cfg.vision_model && sameModelRef(cfg.vision_model, ref)) {
     delete cfg.vision_model;
   }
   await saveProjectConfig(root, projectId, cfg);
@@ -851,7 +851,7 @@ export async function removeModel(
 }
 
 /** Whether two paired references name the same entry. Both halves must match — the pair is the config's unique key. */
-function sameRef(a: ModelRef, b: ModelRef): boolean {
+export function sameModelRef(a: ModelRef, b: ModelRef): boolean {
   return a.provider === b.provider && a.model_id === b.model_id;
 }
 

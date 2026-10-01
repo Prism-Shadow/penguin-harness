@@ -9,37 +9,29 @@
  * to migrate the credential and pointers).
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
- * name + count, collapsible), with one card per model within a group — the card shows only
- * the display name + status badges (default / vision / proxy-read), while
- * context, pricing, and key status are folded into a single line of small text. Clicking a
- * card opens the config dialog (credentials, context, pricing, vision toggle, plus set as
- * default / set as vision model / delete); the "add model" entry point lives in each group
- * header (owner only) and reuses the same dialog — provider is pre-filled with that group;
- * the protocol follows group semantics: a first-party vendor group doesn't persist
- * client_type (MMSP routes by the vendor family the upstream id begins with, with env
- * fallback resolved live from the id), while custom / user-defined groups / gateways use a
- * fixed OpenAI protocol, and gateways (OpenRouter / SiliconFlow / Qwen Token Plan)
- * additionally pre-fill their endpoint base URL; the "get model id / API key" external links
- * sit next to the corresponding input's label (shown in both add and edit dialogs). The group
- * list ends with an "add group" action (user-defined groups share custom's semantics; the
- * group appears once the first model saves successfully — groups are carried by the model
- * entry's provider field, not persisted separately). The header also holds an owner-only
- * "sync presets" action next to the search box (union-merge with the built-in catalog, see
- * catalog-sync.ts).
+ * name + count + the collapse chevron), with one card per model within a group — the card
+ * shows only the display name + status badges (default / vision / fast / free / discount), while
+ * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
+ * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
+ * delete). The group header's right side holds the group's actions in a fixed order
+ * (group-header.ts): its balance (pin and refresh before the amount, a divider after it),
+ * Connect with its status, Enter key, the speed test, and — on the groups that take
+ * hand-added models (custom, vLLM, user-defined) — Add model, which reuses the same dialog
+ * with that group pre-filled. The protocol follows group semantics: custom / user-defined
+ * groups pick or detect it, a group that pins one (vLLM) hands it to every entry. The "get
+ * model id / API key" external links sit next to the corresponding input's label in the
+ * dialogs, never in the header. A TokenDance banner above the groups offers its connect flow
+ * until the group holds a key. The group list ends with an "add group" action (user-defined
+ * groups share custom's semantics; the group appears once the first model saves successfully —
+ * groups are carried by the model entry's provider field, not persisted separately). The
+ * header also holds an owner-only "sync presets" action next to the search box (union-merge
+ * with the built-in catalog, see catalog-sync.ts).
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
  */
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -52,15 +44,33 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  Checkbox,
   Chevron,
+  ConfirmModal,
   EmptyState,
+  FieldError,
+  FieldLabel,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Input,
   Link,
+  Modal,
+  NoticeStrip,
+  PageFrame,
+  PageHeader,
+  PasswordInput,
   ProviderLogo,
+  Segmented,
+  Select,
   SkeletonList,
+  Spinner,
+  Switch,
+  TodoNotice,
   buttonClass,
+  toastError,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -71,16 +81,8 @@ import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Input } from "../../components/ui/input";
-import { FieldError, FieldLabel } from "../../components/ui/field";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { AiCreateModal, CreateButtons } from "../ai-create";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
@@ -88,7 +90,7 @@ import {
   canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
-  isVendorGroup,
+  isAddableGroup,
   modelHomepageUrl,
   providerClientType,
   providerEnvFallbackKey,
@@ -142,19 +144,30 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { noticeCounts } from "../../lib/bulk-update";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneInk } from "../../lib/tone";
-import { InfoPopover } from "../../components/ui/info-popover";
+import { toneDot, toneInk } from "../../lib/tone";
 import { KeyAuthDialog } from "./key-auth-dialog";
 import type { KeyAuthTexts } from "./key-auth-dialog";
-import { NoticeStrip } from "../../components/ui/notice-strip";
+import {
+  HEADER_BUTTON,
+  HEADER_LABEL,
+  HEADER_SQUARE,
+  HEADER_TEXT,
+  dividerAfterBalance,
+  groupHeaderActions,
+  groupKeyFromEnv,
+  groupKeyStored,
+} from "./group-header";
+import type { GroupHeaderAction } from "./group-header";
+import { GroupBalance } from "./group-balance";
+import { isPinned, usePinnedBalance } from "./balance";
+import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 
 /**
- * The authorization flows a group's "authorize a key" dialog can run, keyed by the flow named
- * in that group's catalog descriptor. Everything the two differ in lives here — the four
+ * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
+ * group's catalog descriptor. Everything the two differ in lives here — the four
  * endpoint calls and the copy — because everything else about the dialog is shared, and a
  * group picks its entry by carrying `bridgeAuth` rather than by being named in this file.
  */
@@ -221,13 +234,10 @@ function inputToUsd(inputStr: string, currency: Currency): string {
 }
 
 /**
- * Group-header action glyphs this page draws itself (24x24 line paths); add, bulk key and the
- * catalog sync read `ICONS.plus`, `ICONS.key` and `ICONS.rotateCw`. The trash can is the tapered
- * bin the agent cards' delete action wears, not the registry's straight-sided `ICONS.trash`.
+ * The one group-header action glyph this page draws itself (a 24x24 line path), an arrow entering
+ * a door: authorize with the provider and come back with a key. Add, bulk key, the catalog sync
+ * and delete read `ICONS.plus`, `ICONS.key`, `ICONS.rotateCw` and `ICONS.trash`.
  */
-const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-/** Arrow entering a door: authorize with the provider and come back with a key. */
 const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
@@ -774,6 +784,15 @@ export function ModelsPage() {
   const [speedFor, setSpeedFor] = useState<string | null>(null);
   /** Group currently being speed-tested (provider id); tests run strictly one model at a time. */
   const [speedRunning, setSpeedRunning] = useState<string | null>(null);
+  /**
+   * The running test was asked to stop. A ref for the loop, which reads it between probes; the
+   * state mirror disables the stop button meanwhile, since the probe in flight still has to
+   * come back before the loop can see it.
+   */
+  const speedStopRef = useRef(false);
+  const [speedStopping, setSpeedStopping] = useState(false);
+  /** The balance pinned beside the user name, so its group's header keeps the pin to undo it. */
+  const pinnedBalance = usePinnedBalance();
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
@@ -1003,13 +1022,17 @@ export function ModelsPage() {
    * Group speed test: one real request per model, strictly sequential (concurrent probes
    * trip provider rate limits), each result written to the card as it lands. The
    * confirmation dialog (speedFor) has already warned about quota by the time this runs.
+   * A stop takes effect between probes: the one in flight is not abandoned (its request is
+   * already billed), its result lands like the others, and no further probe starts.
    */
   const runSpeedTest = async (providerId: string) => {
     if (!projectId || !rows) return;
     const targets = rows.filter((r) => r.provider === providerId);
+    speedStopRef.current = false;
     setSpeedRunning(providerId);
     try {
       for (const row of targets) {
+        if (speedStopRef.current) break;
         const key = refMapKey(row.provider, row.modelId);
         setSpeedResults((prev) => new Map(prev).set(key, "pending"));
         try {
@@ -1030,7 +1053,13 @@ export function ModelsPage() {
       }
     } finally {
       setSpeedRunning(null);
+      setSpeedStopping(false);
     }
+  };
+
+  const stopSpeedTest = () => {
+    speedStopRef.current = true;
+    setSpeedStopping(true);
   };
 
   /**
@@ -1112,10 +1141,10 @@ export function ModelsPage() {
         draggable: true,
         onDragStart: (e: ReactDragEvent) => {
           // dragstart fires AT the source node, so target === currentTarget exactly when
-          // the header row itself is what the browser picked up. The row also carries the
-          // provider's external key link, which is natively draggable: a drag begun there
-          // is a link drag, and claiming it would overwrite the link's payload and effect
-          // and turn a release over any other header into a silent reorder.
+          // the header row itself is what the browser picked up. A drag begun on anything
+          // inside it that is natively draggable (selected text, a link) belongs to that
+          // element, and claiming it would overwrite its payload and effect and turn a
+          // release over any other header into a silent reorder.
           if (e.target !== e.currentTarget) return;
           e.dataTransfer.setData(MODEL_GROUP_DRAG_MIME, key);
           e.dataTransfer.effectAllowed = "move" as const;
@@ -1175,395 +1204,437 @@ export function ModelsPage() {
   const oauthFlow = oauthFor === null ? undefined : providerInfo(oauthFor)?.bridgeAuth?.flow;
   const oauthKeyAuth = oauthFlow === undefined ? null : KEY_AUTH[oauthFlow];
 
-  return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
-              {S.models.title}
-              {!isOwner && (
-                <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
-              )}
-            </h1>
-            {/* The header holds search, the owner-only "sync presets" action and the pair of
-                create buttons — the AI path and the group form, offered side by side (per-model
-                entry points still live in each group header); on narrow screens (flex-wrap wraps
-                it to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
-            <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
-              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-                <Input
-                  size="sm"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={S.models.searchPlaceholder}
-                />
-              </div>
-              {/* The action appears only while a sync is actually waiting, and the accent says so
-                  — a preset sync with nothing to sync is a no-op, and a permanent button spent the
-                  header's width on one. That is also why the dot is gone: it marked this button as
-                  the end of the models trail, and on a button that exists only when the trail does,
-                  it would be lit every time it was seen. The sr-only sentence stays, folding what is
-                  waiting into the accessible name in the wording the trail carried down.
-                  Owner-only — the gate never raises this for a member. */}
-              {isOwner && todo && (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => void syncPresets()}
-                  disabled={busy || rows === null}
-                  title={`${S.models.syncCatalogHint} · ${syncNote}`}
-                >
-                  {S.models.syncCatalog}
-                  <span className="sr-only"> · {syncNote}</span>
-                </Button>
-              )}
-              {isOwner && (
-                <CreateButtons
-                  size="sm"
-                  // Only the form needs the table: AddGroupDialog is mounted behind `rows`, so
-                  // without it the manual button would be a dead click. The AI path is left live
-                  // precisely because a failed load is one of the things it can repair.
-                  manualDisabled={rows === null}
-                  onAi={() => setAiAddOpen(true)}
-                  onManual={() => setAddGroupOpen(true)}
-                />
-              )}
-            </div>
-          </div>
-          {/* Last stop on the Models trail, in the one shape all four dismissible trails use:
-              directly under the title, naming what is waiting, carrying the sync itself, and
-              carrying the way down for someone who has looked and decided to stay off the
-              catalog. This is the one page whose two counts are both real — the catalog is a
-              list of entries, so an entry the table lacks is genuinely new — and both come off
-              the delta the sync action itself computes (catalog-sync.ts), never a second count.
-              The toolbar's "sync presets" button is unchanged and still runs it directly. */}
-          {isOwner && todo && syncCounts && (
-            <TodoNotice
-              text={
-                syncCounts.added === null
-                  ? S.todo.changesUpgradable(syncCounts.updated)
-                  : S.todo.changesWithAdded(syncCounts.added, syncCounts.updated)
-              }
-              actionLabel={S.todo.updateNow}
-              busy={syncing}
-              onAction={() => setSyncConfirmOpen(true)}
-              dismissLabel={S.todo.dismiss}
-              onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
+  /** TokenDance's rows, for the banner: shown while the group has models and none of them a key. */
+  const tokenDanceRows = rows?.filter((row) => row.provider === TOKENDANCE_PROVIDER_ID) ?? [];
+  const showTokenDanceBanner = tokenDanceRows.length > 0 && !groupKeyStored(tokenDanceRows);
+
+  /**
+   * One of a group header's actions (group-header.ts decides which, and in what order). Every
+   * button keeps an accessible name of "action group" and a title; on a narrow header the ones
+   * that carry words drop them and keep their icon.
+   */
+  const renderGroupAction = (
+    group: (typeof groups)[number],
+    action: GroupHeaderAction,
+    keyStored: boolean,
+  ): ReactNode => {
+    const { provider } = group;
+    switch (action) {
+      case "balance":
+        return <GroupBalance projectId={projectId} provider={provider} />;
+      case "connect": {
+        // The status is the group holding a stored key, however it got there; the button
+        // runs the group's flow again once it does, for a fresh key or another account.
+        const status = keyStored ? S.models.connectedStatus : S.models.notConnectedStatus;
+        const verb = keyStored ? S.models.reconnect : S.models.oauthKey;
+        return (
+          <span className="flex shrink-0 items-center gap-2">
+            <span
+              data-tooltip={status}
+              className={`${HEADER_TEXT} gap-1 whitespace-nowrap text-gray-500 dark:text-gray-400`}
+            >
+              <span
+                aria-hidden
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${keyStored ? toneDot.success : toneDot.muted}`}
+              />
+              {/* The words give way on a narrow header; the dot and its tooltip stay. */}
+              <span className="sr-only @2xl:not-sr-only">{status}</span>
+            </span>
+            {isOwner && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className={HEADER_BUTTON}
+                disabled={busy}
+                aria-label={`${verb} ${provider.label}`}
+                title={verb}
+                onClick={() => {
+                  keyLanded.current = false;
+                  setOauthFor(group.provider.id);
+                }}
+              >
+                <GlyphIcon d={ICONS.chainLink} size={ICON_SIZE.groupHeaderAction} />
+                <span className={HEADER_LABEL}>{verb}</span>
+              </Button>
+            )}
+          </span>
+        );
+      }
+      case "platformSync":
+        // A stored Penguin Go key enables catalog refresh, but connecting stays a separate
+        // action so the owner can replace the key with another account's.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.platformSync} ${provider.label}`}
+            title={S.models.platformSync}
+            onClick={() => void syncPlatformModels()}
+          >
+            <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.platformSync}</span>
+          </Button>
+        );
+      case "groupKey":
+        // One key written across the whole group, overwriting what each row holds; a single
+        // model still takes its own in the model dialog.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.groupApiKey} ${provider.label}`}
+            title={S.models.groupApiKey}
+            onClick={() => setGroupKeyFor(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.key} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.groupApiKey}</span>
+          </Button>
+        );
+      case "speedTest": {
+        // One icon for both directions: it starts a run (after the confirmation) and, while
+        // its own group's run is going, stops it — the gauge turns into the registry's square in
+        // a circle. Every other group's waits its turn.
+        const running = speedRunning === group.provider.id;
+        const verb = running ? S.models.speedTestStop : S.models.speedTest;
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_SQUARE}
+            disabled={busy || (running ? speedStopping : speedRunning !== null)}
+            aria-label={`${verb} ${provider.label}`}
+            title={verb}
+            onClick={() => (running ? stopSpeedTest() : setSpeedFor(group.provider.id))}
+          >
+            <GlyphIcon
+              d={running ? ICONS.stopCircle : GAUGE_ICON}
+              size={ICON_SIZE.groupHeaderAction}
             />
-          )}
-        </div>
+          </Button>
+        );
+      }
+      case "addModel":
+        // Only the groups that take hand-added models: custom, vLLM and user-defined ones. The
+        // rest carry the catalog's presets, which the server enforces too (model_not_addable).
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.addToGroup} ${provider.label}`}
+            title={S.models.addToGroup}
+            onClick={() => setAddingTo(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.addToGroup}</span>
+          </Button>
+        );
+      case "deleteGroup":
+        // Whole-group delete, user-defined groups only: a built-in group is catalog identity
+        // (its rows delete one by one), a user-defined group exists solely through its rows.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.deleteGroup} ${provider.label}`}
+            title={S.models.deleteGroup}
+            onClick={() => setDeleteGroupFor(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.deleteGroup}</span>
+          </Button>
+        );
+    }
+  };
 
-        {rows === null ? (
-          <SkeletonList rows={4} />
-        ) : rows.length === 0 ? (
-          <EmptyState
-            title={S.models.empty}
-            action={
-              isOwner && <Button onClick={() => setAddingTo("custom")}>{S.models.addCustom}</Button>
+  return (
+    <PageFrame>
+      {/* The header holds search, the owner-only "sync presets" action and the pair of create
+          buttons — the AI path and the group form, offered side by side (per-model entry points
+          still live in each group header); on narrow screens the actions wrap to their own line
+          and the search box shrinks flexibly, fixed width at >=sm. A member reads why nothing
+          here is editable behind the title's "?". */}
+      <PageHeader
+        title={S.models.title}
+        info={isOwner ? undefined : S.models.readOnlyHint}
+        actions={
+          <>
+            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+              <Input
+                size="sm"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={S.models.searchPlaceholder}
+              />
+            </div>
+            {/* The action appears only while a sync is actually waiting, and the accent says so
+                — a preset sync with nothing to sync is a no-op, and a permanent button spent the
+                header's width on one. That is also why the dot is gone: it marked this button as
+                the end of the models trail, and on a button that exists only when the trail does,
+                it would be lit every time it was seen. The sr-only sentence stays, folding what is
+                waiting into the accessible name in the wording the trail carried down.
+                Owner-only — the gate never raises this for a member. */}
+            {isOwner && todo && (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => void syncPresets()}
+                disabled={busy || rows === null}
+                title={`${S.models.syncCatalogHint} · ${syncNote}`}
+              >
+                {S.models.syncCatalog}
+                <span className="sr-only"> · {syncNote}</span>
+              </Button>
+            )}
+            {isOwner && (
+              <AiCreateButtons
+                size="sm"
+                // Only the form needs the table: AddGroupDialog is mounted behind `rows`, so
+                // without it the manual button would be a dead click. The AI path is left live
+                // precisely because a failed load is one of the things it can repair.
+                manualDisabled={rows === null}
+                onAi={() => setAiAddOpen(true)}
+                onManual={() => setAddGroupOpen(true)}
+              />
+            )}
+          </>
+        }
+      >
+        {/* Last stop on the Models trail, in the one shape all four dismissible trails use:
+            directly under the title, naming what is waiting, carrying the sync itself, and
+            carrying the way down for someone who has looked and decided to stay off the
+            catalog. This is the one page whose two counts are both real — the catalog is a
+            list of entries, so an entry the table lacks is genuinely new — and both come off
+            the delta the sync action itself computes (catalog-sync.ts), never a second count.
+            The toolbar's "sync presets" button is unchanged and still runs it directly. */}
+        {isOwner && todo && syncCounts && (
+          <TodoNotice
+            text={
+              syncCounts.added === null
+                ? S.todo.changesUpgradable(syncCounts.updated)
+                : S.todo.changesWithAdded(syncCounts.added, syncCounts.updated)
             }
+            actionLabel={S.todo.updateNow}
+            busy={syncing}
+            onAction={() => setSyncConfirmOpen(true)}
+            dismissLabel={S.todo.dismiss}
+            onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
           />
-        ) : groups.length === 0 ? (
-          <EmptyState title={S.models.noSearchResults} />
-        ) : (
-          <div className="space-y-3">
-            {groups.map((group) => {
-              const open = isGroupExpanded(expanded, group.provider.id, searching);
-              const drag = groupDragProps(group.provider.id);
-              const platformAuthorized =
-                group.provider.id === PENGUIN_GO_PROVIDER_ID &&
-                group.rows.some((row) => Boolean(row.credential?.apiKeyMasked));
-              return (
-                // The drop indicator is drawn against the WHOLE group, so "below" reads as
-                // after this group and its model cards rather than between the header and
-                // its own first card. It needs this wrapper to live in: the section clips
-                // its children (overflow-hidden carries the expand/collapse transition).
-                // Absolutely positioned, so it costs no layout width and cannot push the
-                // header's up-to-six actions out of a narrow page.
-                <div key={group.provider.id} className="relative">
-                  {drag.dropEdge !== null && (
-                    <div
-                      aria-hidden
-                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
-                        drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
-                      }`}
-                    />
-                  )}
-                  <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    {/* Group header: collapse button (logo + vendor name + count) + group-level
-                      actions on the right. Actions are separate elements because buttons can't
-                      nest. The row is a size container: the sidebar can narrow it while the
-                      viewport remains desktop-sized, so action labels must respond to this
-                      row's actual width rather than viewport breakpoints. Narrow rows never
-                      hide an action — each one keeps its icon (with aria-label + title) and
-                      only sheds its text label. The row is also the drag handle for
-                      reordering the group (groupDragProps). */}
-                    <div
-                      {...drag.header}
-                      className={`@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
-                    >
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        onClick={() => toggleGroup(group.provider.id)}
-                        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left"
-                      >
-                        <ProviderLogo
-                          provider={group.provider.id}
-                          className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
-                        />
-                        {/* The vendor name is the only thing in this row allowed to take the
-                            remaining space, and the only one that truncates. Giving it a
-                            minimum width is what made a narrow row overlap: the items beside
-                            it never shrink, so once their widths plus that floor exceeded the
-                            button, the whole group overflowed the box and ran under the
-                            actions. The floor is gone; what gives way instead is the two marks
-                            after it, which drop out on a narrow row (below, and the actions'
-                            labels do the same at @3xl). The name then always has the leftovers
-                            to itself and truncates inside them, so nothing can overlap. */}
-                        <span className="min-w-0 truncate text-sm font-semibold">
-                          {group.provider.label}
-                        </span>
-                        <span className="hidden shrink-0 whitespace-nowrap font-mono text-xs text-gray-400 @xl:inline">
-                          {S.models.modelCount(group.rows.length)}
-                        </span>
-                        {/* The recommendation rides the collapse bar itself, so it is read with
-                            the group's name rather than as a caption floating above the
-                            section. `shrink-0` keeps it whole: the vendor name beside it is
-                            the element allowed to truncate on a narrow page. */}
-                        {group.provider.recommended && (
-                          // Not a `Badge`: every Badge tone is a status or `neutral`, and an
-                          // endorsement is neither, which is the category tone.ts keeps out on
-                          // purpose. Unfilled, like the card marks below it: an outline
-                          // is enough to make it a pill, and a block of colour on the collapse
-                          // bar competes with the vendor name it is endorsing. It holds on
-                          // longer than the model count beside it and gives way before the
-                          // name does.
-                          //
-                          // Gold, and the darker end of it: `yellow-700` (#a16207) is the last
-                          // rung that still clears 4.5:1 against this bar's gray-50 — 11px bold
-                          // is not WCAG "large text", so the brighter golds above it are not
-                          // available in light mode. Dark mode takes yellow-400, the bright
-                          // gold, which clears it comfortably on this app's near-black. The
-                          // ring is the text's own hue at 40%, in both themes: a ring brighter
-                          // than the words it encloses reads as a highlighter, not as gold.
-                          <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-yellow-700/40 px-2 py-0.5 text-[11px] font-semibold text-yellow-700 @lg:inline dark:border-yellow-400/40 dark:text-yellow-400">
-                            {S.models.recommendedGroup}
-                          </span>
-                        )}
-                      </button>
-                      {isOwner && platformAuthorized && (
-                        // A stored Penguin Go key enables catalog refresh, but authorization remains
-                        // a separate action so the owner can replace it with another account.
-                        // Sync leads the group actions and sits immediately before Add model.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.platformSync} ${group.provider.label}`}
-                          title={S.models.platformSync}
-                          onClick={() => void syncPlatformModels()}
-                        >
-                          <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.groupHeaderAction} />
-                          <span className="hidden @3xl:inline">{S.models.platformSync}</span>
-                        </Button>
-                      )}
-                      {isOwner && !isVendorGroup(group.provider.id) && (
-                        // Add-model entry point: on every group header whose group decides a
-                        // protocol — custom, user-defined, and the gateways. A vendor group
-                        // carries the built-in catalog and nothing else: it persists no
-                        // client_type, so MMSP places its entries by the vendor family their
-                        // id begins with, and an id of no known family cannot start. The way
-                        // to add a model of one's own is a custom group, which has a protocol
-                        // to pick. Narrow rows never hide a group action — they drop its label
-                        // and keep the icon (same pattern for every action in this row), so
-                        // the button stays reachable.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.addToGroup} ${group.provider.label}`}
-                          title={S.models.addToGroup}
-                          onClick={() => setAddingTo(group.provider.id)}
-                        >
-                          <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
-                          <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
-                        </Button>
-                      )}
-                      {isOwner &&
-                        (group.provider.oauth || group.provider.bridgeAuth !== undefined) && (
-                          // Authorize-a-key action: rendered off the group's own catalog
-                          // descriptor, so a provider gains this button by publishing a flow
-                          // rather than by being named here — `oauth` for the ones whose PKCE
-                          // round-trip the App runs itself, `bridgeAuth` for the ones an
-                          // authorization bridge runs for it. Same narrow-row rule as its
-                          // neighbours — the label goes, the icon and its names stay. It leads the
-                          // manual key action: where a group can mint a key, that is the shorter path.
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="shrink-0"
-                            disabled={busy}
-                            aria-label={`${S.models.oauthKey} ${group.provider.label}`}
-                            title={S.models.oauthKey}
-                            onClick={() => setOauthFor(group.provider.id)}
-                          >
-                            <GlyphIcon d={SIGN_IN_ICON} size={ICON_SIZE.groupHeaderAction} />
-                            <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
-                          </Button>
-                        )}
-                      {isOwner && group.provider.id !== "custom" && (
-                        // Bulk key action: icon-only while this row is narrow, labeled from
-                        // @3xl up. The button itself never disappears — aria-label + title
-                        // carry the name while the visible label is dropped.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.groupApiKey} ${group.provider.label}`}
-                          title={S.models.groupApiKey}
-                          onClick={() => setGroupKeyFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={ICONS.key} size={ICON_SIZE.groupHeaderAction} />
-                          <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
-                        </Button>
-                      )}
-                      {isOwner && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy || speedRunning !== null}
-                          aria-label={`${S.models.speedTest} ${group.provider.label}`}
-                          title={
-                            speedRunning === group.provider.id
-                              ? S.models.speedPending
-                              : S.models.speedTest
-                          }
-                          onClick={() => setSpeedFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={GAUGE_ICON} size={ICON_SIZE.groupHeaderAction} />
-                          {/* Compact rows keep this accessible action icon-only. */}
-                          <span className="hidden @3xl:inline">
-                            {speedRunning === group.provider.id
-                              ? S.models.speedPending
-                              : S.models.speedTest}
-                          </span>
-                        </Button>
-                      )}
-                      {isOwner && !MODEL_PROVIDERS.some((p) => p.id === group.provider.id) && (
-                        // Whole-group delete, user-defined groups only: a built-in group is
-                        // catalog identity (its rows delete one by one), a user-defined group
-                        // exists solely through its rows and can go as a unit.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.deleteGroup} ${group.provider.label}`}
-                          title={S.models.deleteGroup}
-                          onClick={() => setDeleteGroupFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.groupHeaderAction} />
-                          <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
-                        </Button>
-                      )}
-                      {group.provider.apiKeyUrl && (
-                        // External link: its label is the last one admitted as space grows
-                        // (@4xl); below that only the link's external glyph is left, with a
-                        // small padding bump for a usable touch target.
-                        <Link
-                          href={group.provider.apiKeyUrl}
-                          external
-                          variant="standalone"
-                          aria-label={`${S.models.getApiKey} ${group.provider.label}`}
-                          data-tooltip={S.models.getApiKey}
-                          className="shrink-0 whitespace-nowrap p-1 text-xs @4xl:p-0"
-                        >
-                          <span className="hidden @4xl:inline">{S.models.getApiKey}</span>
-                        </Link>
-                      )}
-                      {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        aria-label={group.provider.label}
-                        onClick={() => toggleGroup(group.provider.id)}
-                        className="shrink-0 p-1.5"
-                      >
-                        <Chevron open={open} className="text-gray-400" />
-                      </button>
-                    </div>
+        )}
+      </PageHeader>
 
-                    {/* Expand/collapse height transition: grid-template-rows tweens between
-                      0fr and 1fr, with the inner overflow-hidden handling clipping — pure
-                      CSS, no need to measure content height. Content stays in the DOM while
-                      collapsed (height is 0), so both directions animate. */}
-                    <div
-                      className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+      {/* Above every group, while the TokenDance group has models but no key: its own connect
+          flow, pitched as the way to skip setting keys by hand. */}
+      {isOwner && showTokenDanceBanner && (
+        <TokenDanceBanner
+          onConnect={() => {
+            keyLanded.current = false;
+            setOauthFor(TOKENDANCE_PROVIDER_ID);
+          }}
+        />
+      )}
+
+      {rows === null ? (
+        <SkeletonList rows={4} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title={S.models.empty}
+          action={
+            isOwner && <Button onClick={() => setAddingTo("custom")}>{S.models.addCustom}</Button>
+          }
+        />
+      ) : groups.length === 0 ? (
+        <EmptyState title={S.models.noSearchResults} />
+      ) : (
+        <div className="space-y-3">
+          {groups.map((group) => {
+            const open = isGroupExpanded(expanded, group.provider.id, searching);
+            const drag = groupDragProps(group.provider.id);
+            const keyStored = groupKeyStored(group.rows);
+            const actions = groupHeaderActions(group.provider, {
+              isOwner,
+              keyStored,
+              keyFromEnv: groupKeyFromEnv(group.rows),
+              balancePinned: isPinned(pinnedBalance, projectId, group.provider.id),
+            });
+            return (
+              // The drop indicator is drawn against the WHOLE group, so "below" reads as
+              // after this group and its model cards rather than between the header and
+              // its own first card. It needs this wrapper to live in: the section clips
+              // its children (overflow-hidden carries the expand/collapse transition).
+              // Absolutely positioned, so it costs no layout width and cannot push the
+              // header's actions out of a narrow page.
+              <div key={group.provider.id} className="relative">
+                {drag.dropEdge !== null && (
+                  <div
+                    aria-hidden
+                    className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
+                      drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
+                    }`}
+                  />
+                )}
+                <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                  {/* Group header: collapse button (logo + vendor name + count + chevron) +
+                    the group's actions on the right, in group-header.ts's order. Actions are
+                    separate elements because buttons can't nest. The row is a size
+                    container: the sidebar can narrow it while the viewport remains
+                    desktop-sized, so labels respond to this row's actual width rather than
+                    viewport breakpoints. Narrow rows never hide an action — each one keeps
+                    its icon (with aria-label + title) and only sheds its text. When even the
+                    icons leave the name too little room, the actions move to a line of their
+                    own below it, as one block (the name keeps a floor, so it is never
+                    squeezed to nothing). The row is also the drag handle for reordering the
+                    group (groupDragProps). */}
+                  <div
+                    {...drag.header}
+                    className={`@container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-1.5 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => toggleGroup(group.provider.id)}
+                      className="flex min-w-[10rem] flex-1 items-center gap-2 px-3 py-2 text-left"
                     >
-                      {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
-                      <div className="overflow-hidden" inert={!open}>
-                        <div
-                          className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-2.5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
-                        >
-                          {group.rows.length === 0 ? (
-                            // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
-                            <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
-                              {S.models.groupEmptyHint}
-                            </p>
-                          ) : (
-                            group.rows.map((row) => (
-                              <ModelCard
-                                key={`${row.provider}:${row.modelId}`}
-                                row={row}
-                                currency={currency}
-                                isDefault={sameModelRef(rowRef(row), defaultModel)}
-                                isVisionModel={sameModelRef(rowRef(row), visionModel)}
-                                speed={speedResults.get(refMapKey(row.provider, row.modelId))}
-                                usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
-                                hourTick={hourTick}
-                                onOpen={() => {
-                                  setEditingMovedToCustom(false);
-                                  setEditing(rowRef(row));
-                                }}
-                                onMoveToCustom={
-                                  isOwner
-                                    ? () => {
-                                        setEditingMovedToCustom(true);
-                                        setEditing(rowRef(row));
-                                      }
-                                    : undefined
-                                }
-                                onSyncPresets={isOwner ? () => void syncPresets() : undefined}
+                      <ProviderLogo
+                        provider={group.provider.id}
+                        className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
+                      />
+                      {/* The vendor name is the only thing in this button allowed to take
+                          the remaining space, and the only one that truncates. */}
+                      <span className="min-w-0 truncate text-sm font-semibold">
+                        {group.provider.label}
+                      </span>
+                      {/* The count as the model picker's rail writes it: a bare number, with
+                          the words kept for assistive tech. */}
+                      <span
+                        aria-hidden
+                        className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                      >
+                        {group.rows.length}
+                      </span>
+                      <span className="sr-only">{S.models.modelCount(group.rows.length)}</span>
+                      {/* The chevron follows the name and its count rather than the row's far
+                          edge, so it reads as part of the group it folds. */}
+                      <Chevron open={open} className="text-gray-400" />
+                      {/* The recommendation rides the collapse bar itself, so it is read with
+                          the group's name rather than as a caption floating above the
+                          section. `shrink-0` keeps it whole: the vendor name beside it is
+                          the element allowed to truncate on a narrow page. */}
+                      {group.provider.recommended && (
+                        // Not a `Badge`: every Badge tone is a status or `neutral`, and an
+                        // endorsement is neither, which is the category tone.ts keeps out on
+                        // purpose. Unfilled, like the card marks below it: an outline
+                        // is enough to make it a pill, and a block of colour on the collapse
+                        // bar competes with the vendor name it is endorsing. It gives way on
+                        // a narrow row before the name does.
+                        //
+                        // Gold, and the darker end of it: `yellow-700` (#a16207) is the last
+                        // rung that still clears 4.5:1 against this bar's gray-50 — 12px bold
+                        // is not WCAG "large text", so the brighter golds above it are not
+                        // available in light mode. Dark mode takes yellow-400, the bright
+                        // gold, which clears it comfortably on this app's near-black. The
+                        // ring is the text's own hue at 40%, in both themes: a ring brighter
+                        // than the words it encloses reads as a highlighter, not as gold.
+                        <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-yellow-700/40 px-2 py-0.5 text-xs font-semibold text-yellow-700 @lg:inline dark:border-yellow-400/40 dark:text-yellow-400">
+                          {S.models.recommendedGroup}
+                        </span>
+                      )}
+                    </button>
+                    {actions.length > 0 && (
+                      <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
+                        {actions.map((action) => (
+                          <Fragment key={action}>
+                            {renderGroupAction(group, action, keyStored)}
+                            {/* A rule between the account's figure and the group's status and
+                                actions, drawn only when something follows the balance. */}
+                            {action === "balance" && dividerAfterBalance(actions) && (
+                              <span
+                                aria-hidden
+                                className="h-7 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
                               />
-                            ))
-                          )}
-                        </div>
+                            )}
+                          </Fragment>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expand/collapse: grid-template-rows goes between 0fr and 1fr, with the
+                    inner overflow-hidden handling clipping — no need to measure content height.
+                    The grid carries the theme's layout motion, which decides how the fold moves
+                    (and stills it under reduced motion). Content stays in the DOM while
+                    collapsed (height is 0), so both directions animate. The section keeps its
+                    own head rather than being a CollapsibleSection: the head is the group's
+                    drag handle and a size container, and its chevron follows the group's name. */}
+                  <div
+                    data-layout-motion
+                    className={`grid ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                  >
+                    {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
+                    <div className="overflow-hidden" inert={!open}>
+                      <div
+                        className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-3 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+                      >
+                        {group.rows.length === 0 ? (
+                          // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
+                          <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
+                            {S.models.groupEmptyHint}
+                          </p>
+                        ) : (
+                          group.rows.map((row) => (
+                            <ModelCard
+                              key={`${row.provider}:${row.modelId}`}
+                              row={row}
+                              currency={currency}
+                              isDefault={sameModelRef(rowRef(row), defaultModel)}
+                              isVisionModel={sameModelRef(rowRef(row), visionModel)}
+                              speed={speedResults.get(refMapKey(row.provider, row.modelId))}
+                              usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
+                              hourTick={hourTick}
+                              onOpen={() => {
+                                setEditingMovedToCustom(false);
+                                setEditing(rowRef(row));
+                              }}
+                              onMoveToCustom={
+                                isOwner
+                                  ? () => {
+                                      setEditingMovedToCustom(true);
+                                      setEditing(rowRef(row));
+                                    }
+                                  : undefined
+                              }
+                              onSyncPresets={isOwner ? () => void syncPresets() : undefined}
+                            />
+                          ))
+                        )}
                       </div>
                     </div>
-                  </section>
-                </div>
-              );
-            })}
-            {isOwner && query.trim() === "" && (
-              // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
-              <button
-                type="button"
-                onClick={() => setAddGroupOpen(true)}
-                className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
-              >
-                ＋ {S.models.addGroup}
-              </button>
-            )}
-          </div>
-        )}
+                  </div>
+                </section>
+              </div>
+            );
+          })}
+          {isOwner && query.trim() === "" && (
+            // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
+            <button
+              type="button"
+              onClick={() => setAddGroupOpen(true)}
+              className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
+            >
+              ＋ {S.models.addGroup}
+            </button>
+          )}
+        </div>
+      )}
 
-        {loadError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{loadError}</p>}
-      </div>
+      {loadError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{loadError}</p>}
 
       {rows && groupKeyFor && (
         <GroupKeyDialog
@@ -1666,6 +1737,8 @@ export function ModelsPage() {
               S.models.groupDeleted(removed.length),
             );
           }}
+          confirmLabel={S.common.confirm}
+          cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {/* Offered on user-defined groups only, whose display info is always synthesized. */}
@@ -1688,6 +1761,7 @@ export function ModelsPage() {
           title={S.todo.modelsConfirmTitle(todo.count)}
           tone="primary"
           confirmLabel={S.models.syncCatalog}
+          cancelLabel={S.common.cancel}
           busy={syncing}
           onClose={() => setSyncConfirmOpen(false)}
           onConfirm={() => {
@@ -1827,7 +1901,7 @@ export function ModelsPage() {
           }}
         />
       )}
-    </div>
+    </PageFrame>
   );
 }
 
@@ -2087,18 +2161,11 @@ function AddGroupDialog({
                 <Button
                   variant="link"
                   size="sm"
-                  disabled={detecting || busy}
+                  loading={detecting}
+                  disabled={busy}
                   onClick={() => void detect()}
                   title={S.models.detectProtocolHint}
                   className="shrink-0"
-                  leading={
-                    detecting && (
-                      <span
-                        aria-hidden
-                        className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                      />
-                    )
-                  }
                 >
                   {detecting ? S.models.detecting : S.models.detectProtocol}
                 </Button>
@@ -2248,13 +2315,13 @@ export function ModelCard({
 
   const speedBadges =
     speed === "pending" ? (
-      <span className="shrink-0 text-[11px] text-gray-400">{S.models.speedPending}</span>
+      <span className="shrink-0 text-xs text-gray-400">{S.models.speedPending}</span>
     ) : speed ? (
       speed.ok ? (
-        <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium">
+        <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
           {speed.ttftMs !== undefined && (
             <span
-              className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
+              className={`flex items-center gap-1 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
               data-tooltip={S.models.ttftTitle}
             >
               <GlyphIcon d={CLOCK_ICON} size={11} />
@@ -2263,7 +2330,7 @@ export function ModelCard({
           )}
           {speed.tps !== undefined && (
             <span
-              className={`flex items-center gap-0.5 ${TONE_CLASS[tpsTone(speed.tps)]}`}
+              className={`flex items-center gap-1 ${TONE_CLASS[tpsTone(speed.tps)]}`}
               data-tooltip={S.models.tpsTitle}
             >
               <GlyphIcon d={ZAP_ICON} size={11} />
@@ -2273,7 +2340,7 @@ export function ModelCard({
         </span>
       ) : (
         <span
-          className="shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
+          className="shrink-0 text-xs font-medium text-red-600 dark:text-red-400"
           data-tooltip={speed.message}
         >
           {S.models.speedFailed}
@@ -2294,17 +2361,17 @@ export function ModelCard({
             but it is a detail you go looking for rather than one you scan by, and it is a click
             away in the config dialog; the width it was taking now belongs to the name. */}
         <span className="flex w-full min-w-0 items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>
           {/* What this model has spent over its whole life, on the row's right edge. Recessive by
-              design — grey and a size below the meta line: it is context for a name you are
+              design — grey, on the small rung below the name: it is context for a name you are
               scanning past, not a figure the page is about. A model that has never run shows
               nothing rather than a zero, which would read as a measurement instead of an
               absence. */}
           {usedTokens !== undefined && usedTokens > 0 && (
             <span
-              className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
+              className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
               data-tooltip={S.models.usedTokensTitle}
             >
               {S.models.usedTokens(humanizeTokens(usedTokens))}
@@ -2330,7 +2397,7 @@ export function ModelCard({
         {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
             non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
         <span className="flex w-full items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
+          <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
             {meta.map((part, i) => (
               <Fragment key={i}>
                 {i > 0 && " · "}
@@ -2348,7 +2415,7 @@ export function ModelCard({
       {fix !== null && (
         <NoticeStrip
           tone="attention"
-          className="flex items-center justify-between gap-2 border-t px-3 py-2 text-[11px]"
+          className="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs"
         >
           <span className="min-w-0">
             {fix === "sync" ? S.models.vendorRowStalePin : S.models.vendorRowUnroutable}
@@ -2388,46 +2455,6 @@ const CONFIRM_BODY: Record<DialogAction, (name: string) => string> = {
   setVisionModel: (n) => S.models.confirmVisionModel(n),
   remove: (n) => S.models.confirmDelete(n),
 };
-
-/**
- * Live width of one affix drawn inside an input — the currency symbol, the "/M tok" price unit,
- * the "Token" unit — so the input can reserve exactly the room it actually occupies. An affix is
- * rendered text: its width follows the resolved font, the root font size (the appearance setting
- * scales it) and, for the currency symbol, the selected currency, none of which is known where
- * the padding is written, which is why it is measured rather than typed. The affix is absolutely
- * positioned, so its size does not depend on the padding derived from it. One call covers every
- * field drawing the same string at the same size; fields whose affixes differ take one each.
- */
-function useAffixWidth(): [RefObject<HTMLSpanElement | null>, number] {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    // The observer reports the box LAYOUT size, which is what has to be reserved. A rect read
-    // off the element would be wrong here: the dialog pops in under `scale(0.96)`, so a
-    // measurement taken while that animation runs comes back 4% short, and a transform never
-    // notifies an observer that would correct it. Delivery is after layout and before paint,
-    // so the unmeasured state is not painted; a currency switch, a language switch and a
-    // font-size change all resize the affix and re-run this.
-    const ro = new ResizeObserver(([entry]) => {
-      if (entry) setWidth(entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, width];
-}
-
-/**
- * Padding that clears an affix of the given rendered width: the 0.5rem the affix is inset
- * from the input edge (`left-2` / `right-2`), the affix itself, and 0.25rem of separation so
- * the value does not read as one run of text with it. An unmeasured width (0) still yields a
- * padding no smaller than the control's own, so nothing lands outside the box.
- */
-function affixPadding(width: number): string {
-  return `calc(${width}px + 0.75rem)`;
-}
 
 function ModelDialog({
   projectId,
@@ -2555,12 +2582,6 @@ function ModelDialog({
   const [visionDetecting, setVisionDetecting] = useState(false);
   /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
   const visionInFlight = useRef<Promise<void> | null>(null);
-  // Room each in-field affix needs (see useAffixWidth). The three price inputs share one
-  // currency symbol and one "/M tok" unit; the context-window and max-tokens inputs share the
-  // "Token" unit with each other, so each distinct string is measured once.
-  const [currencyRef, currencyWidth] = useAffixWidth();
-  const [priceUnitRef, priceUnitWidth] = useAffixWidth();
-  const [tokenUnitRef, tokenUnitWidth] = useAffixWidth();
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
   /** The loaded row's running promotion, explained under the price fields. */
@@ -3002,7 +3023,7 @@ function ModelDialog({
           <FieldLabel required block={false}>
             {S.models.modelId}
           </FieldLabel>
-          <span className="flex shrink-0 items-baseline gap-2.5">
+          <span className="flex shrink-0 items-baseline gap-2">
             {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
             {dialogProvider?.modelsUrl && (
               <Link
@@ -3082,7 +3103,14 @@ function ModelDialog({
             set({ provider, clientType: clientTypeAfterProviderChange(provider, form.clientType) });
           }}
         >
-          {MODEL_PROVIDERS.map((p) => (
+          {/* Built-in groups: the ones that take hand-added models (custom, vLLM), and the
+              group the row was loaded in — a row already in a gateway or vendor group may stay
+              there, but no other row may be moved into one (the server refuses that as an
+              addition, model_not_addable). The current value stays listed so it is valid. */}
+          {MODEL_PROVIDERS.filter(
+            (p) =>
+              isAddableGroup(p.id) || p.id === row?.original?.provider || p.id === form.provider,
+          ).map((p) => (
             <option key={p.id} value={p.id}>
               {p.label}
             </option>
@@ -3195,12 +3223,12 @@ function ModelDialog({
             the dialog agree about what a mark looks like. The model homepage entry stays a
             small secondary button on the right — a property of the model, not an input. */}
         {!isNew && (
-          <div className="flex items-center gap-2.5 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
+          <div className="flex items-center gap-3 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
             <ProviderLogo
               provider={form.provider}
               className="h-6 w-6 shrink-0 text-gray-700 dark:text-gray-300"
             />
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="truncate text-sm font-medium">{modelLabel}</span>
               {/* Upstream id in small text: when there's no display name the line above is
                   already showing it, so don't repeat. Tested on the trimmed value, not on
@@ -3345,14 +3373,11 @@ function ModelDialog({
               </span>
             )}
             {canEdit && (
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={form.clearApiKey}
-                  onChange={(e) => set({ clearApiKey: e.target.checked })}
-                />
-                {S.models.clearApiKey}
-              </label>
+              <Checkbox
+                checked={form.clearApiKey}
+                onChange={(on) => set({ clearApiKey: on })}
+                label={S.models.clearApiKey}
+              />
             )}
           </div>
         )}
@@ -3377,8 +3402,10 @@ function ModelDialog({
             baseUrlRequired). The in-field suffix at the right edge shows the protocol path the
             client appends to the base URL — the endpoint shape a custom URL must serve; it
             renders for every model and stays while the field is empty (hints the shape before
-            typing). Reuses the unit-adornment idiom of the context window / max tokens fields
-            below; the error text sits outside the relative wrapper (see Input.invalid).
+            typing). It looks like the unit affix of the context window / max tokens fields
+            below, but it can be a menu button, which Input's `affix` does not take, so it is
+            positioned by hand and the error text sits outside the relative wrapper (see
+            Input.invalid).
 
             For custom / user-defined groups that suffix IS the protocol SELECTOR (see
             protocol-suffix.tsx): the path is one-to-one with the three generic protocol
@@ -3407,18 +3434,10 @@ function ModelDialog({
               <Button
                 variant="link"
                 size="sm"
-                disabled={detecting}
+                loading={detecting}
                 onClick={() => void detectFromButton()}
                 title={S.models.detectProtocolHint}
                 className="shrink-0"
-                leading={
-                  detecting && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                    />
-                  )
-                }
               >
                 {detecting ? S.models.detecting : S.models.detectProtocol}
               </Button>
@@ -3491,68 +3510,47 @@ function ModelDialog({
             Agent's system_config value; empty inherits it (lets a small-context local
             model stay under its window). */}
         <div className="grid grid-cols-2 items-start gap-2">
-          <label className="block">
-            <FieldLabel>{S.models.contextWindow}</FieldLabel>
-            <span className="relative block">
-              <Input
-                size="sm"
-                value={form.contextWindow}
-                inputMode="numeric"
-                disabled={!canEdit}
-                invalid={Boolean(fieldErrors.contextWindow)}
-                onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
-                // Half-width cell: the placeholder is wider than the box in English, and an
-                // input clips at its padding box, so an unclipped one runs past the value area
-                // and collides with the unit. `truncate` ends it in an ellipsis instead, which
-                // reads as "there is more" rather than as text colliding; the title has it in full.
-                className="truncate font-mono"
-                style={{ paddingRight: affixPadding(tokenUnitWidth) }}
-                // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
-                title={
-                  preset
-                    ? S.models.contextWindowHint
-                    : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
-                }
-                placeholder={
-                  preset
-                    ? S.models.contextWindowHint
-                    : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
-                }
-              />
-              <span
-                // Both fields in this row draw the same unit at the same size, so one
-                // measurement sizes the reserve for the pair.
-                ref={tokenUnitRef}
-                className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400"
-              >
-                {S.models.tokenUnit}
-              </span>
-            </span>
-            {fieldErrors.contextWindow && <FieldError>{fieldErrors.contextWindow}</FieldError>}
-          </label>
-          <label className="block">
-            <FieldLabel>{S.models.maxTokens}</FieldLabel>
-            <span className="relative block">
-              <Input
-                size="sm"
-                value={form.maxTokens}
-                inputMode="numeric"
-                disabled={!canEdit}
-                invalid={Boolean(fieldErrors.maxTokens)}
-                onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
-                // Truncated for the same reason as the context window beside it.
-                className="truncate font-mono"
-                style={{ paddingRight: affixPadding(tokenUnitWidth) }}
-                // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
-                title={S.models.maxTokensTitle}
-                placeholder={S.models.maxTokensHint}
-              />
-              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-                {S.models.tokenUnit}
-              </span>
-            </span>
-            {fieldErrors.maxTokens && <FieldError>{fieldErrors.maxTokens}</FieldError>}
-          </label>
+          <Input
+            label={S.models.contextWindow}
+            size="sm"
+            value={form.contextWindow}
+            inputMode="numeric"
+            disabled={!canEdit}
+            error={fieldErrors.contextWindow}
+            onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
+            // Half-width cell: the placeholder is wider than the box in English, and an input
+            // clips at its padding box, so an unclipped one runs past the value area and collides
+            // with the unit. `truncate` ends it in an ellipsis instead, which reads as "there is
+            // more" rather than as text colliding; the title has it in full.
+            className="truncate font-mono"
+            affix={{ trailing: S.models.tokenUnit }}
+            // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
+            title={
+              preset
+                ? S.models.contextWindowHint
+                : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
+            }
+            placeholder={
+              preset
+                ? S.models.contextWindowHint
+                : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
+            }
+          />
+          <Input
+            label={S.models.maxTokens}
+            size="sm"
+            value={form.maxTokens}
+            inputMode="numeric"
+            disabled={!canEdit}
+            error={fieldErrors.maxTokens}
+            onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
+            // Truncated for the same reason as the context window beside it.
+            className="truncate font-mono"
+            affix={{ trailing: S.models.tokenUnit }}
+            // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
+            title={S.models.maxTokensTitle}
+            placeholder={S.models.maxTokensHint}
+          />
         </div>
 
         {/* 4) Pricing: three fields side by side with self-contained labels (… price) — no
@@ -3566,40 +3564,19 @@ function ModelDialog({
               ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
               ["output", S.models.priceOutput, form.output],
             ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
-          ).map(([key, label, value], i) => (
-            <label key={key} className="block">
-              <FieldLabel>{label}</FieldLabel>
-              <span className="relative block">
-                <span
-                  // The three fields draw the same symbol and the same unit at the same size,
-                  // so only the first pair is measured and every field reserves from it.
-                  ref={i === 0 ? currencyRef : undefined}
-                  className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400"
-                >
-                  {CURRENCY_SYMBOL[currency]}
-                </span>
-                <Input
-                  size="sm"
-                  value={value}
-                  inputMode="decimal"
-                  disabled={!canEdit}
-                  invalid={Boolean(fieldErrors[key])}
-                  onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
-                  className="text-right font-mono"
-                  style={{
-                    paddingLeft: affixPadding(currencyWidth),
-                    paddingRight: affixPadding(priceUnitWidth),
-                  }}
-                />
-                <span
-                  ref={i === 0 ? priceUnitRef : undefined}
-                  className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400"
-                >
-                  {S.models.priceUnitShort}
-                </span>
-              </span>
-              {fieldErrors[key] && <FieldError>{fieldErrors[key]}</FieldError>}
-            </label>
+          ).map(([key, label, value]) => (
+            <Input
+              key={key}
+              label={label}
+              size="sm"
+              value={value}
+              inputMode="decimal"
+              disabled={!canEdit}
+              error={fieldErrors[key]}
+              onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
+              className="text-right font-mono"
+              affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
+            />
           ))}
         </div>
         {/* The fields hold the list price, not the promotional price the card prints: the
@@ -3674,18 +3651,10 @@ function ModelDialog({
                     <Button
                       variant="link"
                       size="sm"
-                      disabled={visionDetecting}
+                      loading={visionDetecting}
                       onClick={() => void detectVisionFromButton()}
                       title={S.models.detectVisionHint}
                       className="shrink-0"
-                      leading={
-                        visionDetecting && (
-                          <span
-                            aria-hidden
-                            className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                          />
-                        )
-                      }
                     >
                       {visionDetecting ? S.models.detectingVision : S.models.detectVision}
                     </Button>
@@ -3764,6 +3733,8 @@ function ModelDialog({
             setConfirmingFastMode(false);
             set({ fastMode: true });
           }}
+          confirmLabel={S.common.confirm}
+          cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">{S.models.fastModeConfirmBody}</p>
           {fastProtocol === "anthropic" && (
@@ -3786,6 +3757,8 @@ function ModelDialog({
             setConfirming(null);
             void submit(action);
           }}
+          confirmLabel={S.common.confirm}
+          cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {CONFIRM_BODY[confirming](modelLabel)}
@@ -4096,7 +4069,7 @@ function ModelOAuthDialog({
         )}
         {phase === "waiting" && !manual && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+            <Spinner size="xs" label={S.common.loading} />
             {S.models.oauthWaiting}
           </p>
         )}

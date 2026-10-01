@@ -35,13 +35,22 @@ import type {
 import {
   ActivityIcon,
   Button,
+  ConfirmModal,
   CopyButton,
+  Dot,
+  Dropdown,
   EmptyState,
   GlyphIcon,
+  Heading,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  Modal,
   Skeleton,
+  StatChip,
+  toastError,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { switchDeskModel } from "../company/desk-model";
@@ -84,11 +93,7 @@ import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Truncated } from "../../components/ui/truncated";
-import { Dropdown } from "../../components/ui/dropdown";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
@@ -124,6 +129,9 @@ import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
+import { modelLabel } from "./model-select";
+import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
+import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, promotedPricing, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { WorkspaceBrowser } from "./workspace-browser";
@@ -157,26 +165,13 @@ import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-l
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
-import { PanelsToolbar } from "./panels-toolbar";
-import { toneDot, toneInk } from "../../lib/tone";
+import { DockToggles } from "./dock-toggles";
+import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
-
-/** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
-function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
-  return (
-    <span
-      data-tooltip={label}
-      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
-    >
-      <GlyphIcon d={icon} />
-      {value}
-    </span>
-  );
-}
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
@@ -365,6 +360,17 @@ export function ChatPage() {
   // the pick is held until the compaction completes. Logic in thinking-level.ts
   // (needsThinkingSwitchConfirm / thinkingSwitchAfterCompaction).
   const [thinkingSwitch, setThinkingSwitch] = useState<StagedThinkingSwitch | null>(null);
+  // A pick in the session toolbar's model picker, waiting on its confirm dialog (null = no
+  // dialog). `shape` is what the switch will do to the context — compact it first, switch an
+  // empty conversation at once, or continue from a summary already held — so the dialog and
+  // the toast promise only that. See onPickSessionModel / confirmModelSwitch.
+  const [modelSwitchAsk, setModelSwitchAsk] = useState<{
+    to: ModelRefDto;
+    shape: SwitchContextShape;
+  } | null>(null);
+  // The dialog stays open (its buttons busy) until the switch request answers, so a double
+  // click cannot post the switch twice.
+  const [modelSwitchPosting, setModelSwitchPosting] = useState(false);
 
   const routeSessionId = params.sessionId ?? null;
   // The docks' arrangement lives in the dock store (features/dock) — tabs, active tab,
@@ -435,6 +441,38 @@ export function ChatPage() {
   // below treats the two alike.
   const parkedDraftId = parkedDraftIdOf(routeSessionId);
   const draft = routeSessionId === DRAFT_SESSION_ID || parkedDraftId !== null;
+  /**
+   * The folder the draft has picked, and its machine — what the dock's Files panel browses
+   * while there is no Session to address it by. Null for a temporary Workspace, which has no
+   * directory until the first message makes one.
+   */
+  const [draftWorkspace, setDraftWorkspace] = useState<{
+    path: string;
+    machineId: string | null;
+  } | null>(null);
+  const onDraftWorkspace = useCallback((path: string, machineId: string | null) => {
+    const trimmed = path.trim();
+    setDraftWorkspace((prev) =>
+      trimmed === ""
+        ? null
+        : prev !== null && prev.path === trimmed && prev.machineId === machineId
+          ? prev
+          : { path: trimmed, machineId },
+    );
+  }, []);
+  // A Workspace group's "Browse files" in the sidebar lands on a draft for that folder and asks
+  // for the Files panel: opened once per navigation, in the draft's own dock scope (AppLayout
+  // points the dock at the route in a layout effect, which runs before this one).
+  const browseFilesKey =
+    draft && (location.state as { browseFiles?: boolean } | null)?.browseFiles === true
+      ? location.key
+      : null;
+  const openedForBrowse = useRef<string | null>(null);
+  useEffect(() => {
+    if (browseFilesKey === null || openedForBrowse.current === browseFilesKey) return;
+    openedForBrowse.current = browseFilesKey;
+    openPanel("workspace");
+  }, [browseFilesKey]);
   /**
    * The row the direct lookup below produced, kept beside the list: the list is replaced by
    * every reload, and a row that only a lookup knows about (an organization's desk, a
@@ -949,6 +987,7 @@ export function ChatPage() {
   // Session switch: resets the usage-fetch marker, the file-card existence cache, any
   // thinking-level switch staged behind its dialog (per-session UI state — a compaction
   // that self-heals to a new session id routes through here too and drops the held pick),
+  // a model switch waiting behind its own dialog (it was asked of the conversation left),
   // and the popover's per-session data (process list / token buckets),
   // avoiding stale data from the previous Session (the panel jump commands reset in their
   // own effect above, and the cost hold re-keys itself inside advanceCostStat). The thinking level itself needs no reset — it is read off the
@@ -956,6 +995,7 @@ export function ChatPage() {
   useEffect(() => {
     usageAppliedRef.current = null;
     setThinkingSwitch(null);
+    setModelSwitchAsk(null);
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
@@ -1462,6 +1502,19 @@ export function ChatPage() {
     composerRef.current?.addReference(reference);
   }, []);
 
+  // A fresh Session row from the server, applied wherever the page reads the row from: the
+  // paged list, and the direct lookup's copy for a row the list does not hold (see
+  // resolveRoutedSession).
+  const applySessionRow = useCallback(
+    (session: SessionInfo) => {
+      replace(session);
+      setFetchedSession((cur) =>
+        cur !== null && cur.sessionId === session.sessionId ? session : cur,
+      );
+    },
+    [replace],
+  );
+
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
   // from the next LLM request (the picker's menu advises compacting first). Modeled on
@@ -1685,6 +1738,96 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.version, stream.model, thinkingSwitch, applyTurnThinkingLevel]);
 
+  /** A model's display label for the switch dialog and its toasts: the configured name, else the id. */
+  const modelDisplay = useCallback(
+    (ref: ModelRefDto): string => {
+      const m = models?.models.find((x) => sameModelRef(x, ref));
+      return m ? modelLabel(m) : ref.modelId;
+    },
+    [models],
+  );
+
+  // Session toolbar model picker: switches THIS conversation's model (the `/model` handoff opens
+  // a new conversation instead). Re-picking the current model does nothing, and neither does a
+  // pick that raced a Task starting (the picker is disabled then, and the server would refuse
+  // it anyway); any other pick asks first, worded for what the switch will do: compact the
+  // context on the current model before moving on, or — right after a compaction or a switch,
+  // when there is nothing to compact — continue on the picked model from what is already held.
+  const onPickSessionModel = useCallback(
+    (ref: ModelRefDto) => {
+      if (!selected || sameModelRef(ref, selected)) return;
+      if (sessionModelPickerDisabled(stream.taskState)) return;
+      // Read at pick time: the model's items mutate in place. The live tail decides, behind
+      // whatever window was backfilled above it.
+      const shape = switchContextShape([...stream.prefixItems, ...stream.model.items]);
+      setModelSwitchAsk({ to: ref, shape });
+    },
+    [selected, stream.taskState, stream.prefixItems, stream.model],
+  );
+
+  // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
+  // compaction, the model-change marker alone) carries it from here, and the effect below moves
+  // the Session row once the new context's session_meta names the new model. 200 = the Session
+  // never ran and switched inside the request: the row comes back with the response — under a
+  // new id when the server had to rebuild a Session that left no Trace, which the page follows.
+  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured)
+  // is a toast.
+  const confirmModelSwitch = useCallback(async () => {
+    const ask = modelSwitchAsk;
+    if (!selected || ask === null || modelSwitchPosting) return;
+    setModelSwitchPosting(true);
+    const from = modelDisplay({ provider: selected.provider, modelId: selected.modelId });
+    const to = modelDisplay(ask.to);
+    try {
+      const res = await api.switchSessionModel(selected.sessionId, {
+        provider: ask.to.provider,
+        modelId: ask.to.modelId,
+      });
+      if ("session" in res) {
+        applySessionRow(res.session);
+        toastSuccess(S.chat.modelSwitchInSessionApplied(to));
+        await syncHealedSessionId(selected.sessionId, res.session.sessionId);
+        return;
+      }
+      // Only a switch that compacts may say so; one that continues from a held summary runs
+      // no compaction and must not promise one.
+      toastInfo(
+        ask.shape === "compact"
+          ? S.chat.modelSwitchInSessionStarted(from, to)
+          : S.chat.modelSwitchInSessionSwitching(to),
+      );
+    } catch (e) {
+      // The codes that take a model name are about the model the Session is on (its loader's
+      // missing credential); a refusal of the target names it in its own message.
+      toastError(apiErrorText(e, { modelId: selected.modelId }));
+    } finally {
+      setModelSwitchPosting(false);
+      setModelSwitchAsk(null);
+    }
+  }, [
+    modelSwitchAsk,
+    modelSwitchPosting,
+    selected,
+    modelDisplay,
+    applySessionRow,
+    syncHealedSessionId,
+  ]);
+
+  // The Session row (model badge, context window, window notice, header price) follows the
+  // model the conversation is on: when the running context's session_meta names another model
+  // than the row on hand — a switch completed, on this tab or another one watching the
+  // Session, or the row was held from before a switch — the row moves to it in place, the way
+  // a title does. The server moved its own row before it published that record. Runs per
+  // stream version because the model mutates in place.
+  useEffect(() => {
+    const running = stream.model.contextModel;
+    if (!selected || running === null || stream.loading) return;
+    if (!sessionRowStale(running, selected)) return;
+    applySessionRow({ ...selected, provider: running.provider, modelId: running.modelId });
+    // `version` is the model's change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.version, stream.model, stream.loading, selected, applySessionRow]);
+
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
   // conversation (a sidebar row, sendable anytime) instead of lingering invisibly in the
@@ -1735,12 +1878,16 @@ export function ChatPage() {
     [selected, addSession, navigate],
   );
 
-  // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
-  // (paired reference) current pricing; null if no pricing is configured. That pricing is the
-  // list price, so a promotion the models response reports for the Model comes off it here, as
-  // it does on the recorded cost.
-  const activeModel = models?.models.find((m) => sameModelRef(m, activeModelRef));
-  const modelPricing = promotedPricing(activeModel?.pricing, activeModel?.discount);
+  // Real-time cost for a turn: converts the Task's bucketed usage using a Model's (paired
+  // reference) current pricing; null if no pricing is configured. That pricing is the list
+  // price, so a promotion the models response reports for the Model comes off it here, as it
+  // does on the recorded cost. A Task is priced on the model it ran on when its row names one
+  // (a Session can switch models between Tasks), else on the Session's own.
+  const pricingOf = (ref: ModelRefDto | null) => {
+    const m = models?.models.find((x) => sameModelRef(x, ref));
+    return promotedPricing(m?.pricing, m?.discount);
+  };
+  const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
     onApprove,
@@ -1750,7 +1897,8 @@ export function ChatPage() {
     // happen mid-turn, and if only running were checked, the trailing group would flash
     // "finished running" during compaction before flipping back to "running".
     taskRunning: stream.taskState !== "idle",
-    taskCost: (stats) => bucketCostUsd(stats.tokensByBucket, modelPricing),
+    taskCost: (stats, model) =>
+      bucketCostUsd(stats.tokensByBucket, model ? pricingOf(model) : modelPricing),
     // Reconnect countdown controls (live waiting state only): retry-now skips the
     // remaining backoff server-side (benign no-op on timing races), give-up is the
     // ordinary session abort — the engine's abort-during-backoff path ends the turn.
@@ -1822,6 +1970,24 @@ export function ChatPage() {
     // The browser is one set of pages shared by every conversation, not a Session's view,
     // so it needs no Session and works on the draft page too.
     if (kind === "builtin-browser") return <BuiltinBrowserPanel active={active} />;
+    // The draft's Files panel browses the folder picked in the composer, addressed by the
+    // directory itself; a temporary Workspace has none yet.
+    if (!selected && draft && kind === "workspace" && projectId) {
+      return draftWorkspace !== null ? (
+        <WorkspaceBrowser
+          scope={{
+            kind: "workspace",
+            projectId,
+            workspace: draftWorkspace.path,
+            machineId: draftWorkspace.machineId,
+          }}
+          active={active}
+          onAddReference={addComposerReference}
+        />
+      ) : (
+        <EmptyState title={panelLabel(kind)} description={S.files.draftTemporary} />
+      );
+    }
     if (!selected)
       return (
         <EmptyState
@@ -1857,7 +2023,7 @@ export function ChatPage() {
       case "workspace":
         return (
           <WorkspaceBrowser
-            session={selected}
+            scope={{ kind: "session", sessionId: selected.sessionId }}
             openRequest={fileOpenRequest}
             active={active}
             reloadSignal={settledTurnSignal}
@@ -1961,10 +2127,10 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
-  // Input area in session state: Agent / Workspace / Model are already locked by the Session
-  // (the model selector isn't rendered; models feeds the locked model's read-only display and
-  // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
-  // /model forks the conversation onto another model.
+  // Input area in session state: Agent and Workspace are fixed by the Session. The toolbar's
+  // model picker switches this conversation's model in place (confirmed, compacting first);
+  // approval mode and the thinking level stay editable; /model opens a NEW conversation on
+  // another model and leaves this one as it is.
   const input = selected && (
     <ChatInput
       controlRef={composerRef}
@@ -1987,6 +2153,7 @@ export function ChatPage() {
       {...(models !== null ? { models: models.models } : {})}
       {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
       onSwitchModel={onSwitchModel}
+      onPickSessionModel={onPickSessionModel}
       // Display value: the level pinned on this Session, else the Agent config's level
       // (auto-follow while unpinned; the send path uses the raw pin — see onSend).
       turnThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
@@ -2075,11 +2242,12 @@ export function ChatPage() {
       )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <h1 className="flex min-w-0 font-sans text-[15px] font-semibold">
+            {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
+            <Heading level={5} as="h1" className="flex min-w-0">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
-            </h1>
+            </Heading>
             {/* Session-level state: a turning hourglass while the run is active, and nothing at
                 all once it settles — the conversation on screen is by definition read, and the
                 unread dot is a sidebar affordance for the rows you are NOT looking at. The
@@ -2103,7 +2271,7 @@ export function ChatPage() {
               placement actions and pin toggles. Every entry is a dock tab (features/dock)
               — the toolbar reads and drives the dock store directly; this page only feeds
               the pending-approval dot. */}
-          <PanelsToolbar agentsPending={anySubagentPending} />
+          <DockToggles agentsPending={anySubagentPending} />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
               (phones without a hover pointer; a desktop window whose gutter a docked panel
@@ -2137,10 +2305,11 @@ export function ChatPage() {
                   infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
                 }`}
               >
-                {/* Wide: the chip row (icon + title per chip carries the full meaning). */}
-                <span className="hidden items-center gap-3 px-2 sm:flex">
+                {/* Wide: the chip row (icon + tooltip per chip carries the full meaning). The
+                    row sets the chips' face and ink, and keeps each on one line. */}
+                <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
                   <StatChip
-                    icon={STAT_ICONS.tokens}
+                    glyph={STAT_ICONS.tokens}
                     value={hs.tokensText}
                     label={`${S.chat.statTokens}（Token）`}
                   />
@@ -2150,13 +2319,13 @@ export function ChatPage() {
                       something's broken. */}
                   {hs.costText != null && (
                     <StatChip
-                      icon={STAT_ICONS.cost}
+                      glyph={STAT_ICONS.cost}
                       value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
                       label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
                     />
                   )}
                   <StatChip
-                    icon={STAT_ICONS.elapsed}
+                    glyph={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
                     label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
                   />
@@ -2244,7 +2413,7 @@ export function ChatPage() {
                     from the usage fetch, so it can trail the live total mid-run and
                     reconciles on idle. No-cost sessions omit the cost bullet entirely, as
                     the chip does. */}
-                <ul className="list-inside list-disc space-y-0.5 font-mono text-xs">
+                <ul className="list-inside list-disc space-y-1 font-mono text-xs">
                   <li>
                     {S.chat.statTotalTokens} {hs.tokensText}
                     {cacheHitRate !== null &&
@@ -2296,17 +2465,17 @@ export function ChatPage() {
                   <ul className="mt-1 space-y-1.5">
                     {processes.map((p) => (
                       <li key={p.processId} className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            p.running
-                              ? `animate-pulse ${toneDot.busy}`
-                              : "bg-gray-300 dark:bg-gray-600"
-                          }`}
-                        />
+                        {p.running ? (
+                          <Dot tone="success" pulse />
+                        ) : (
+                          <span
+                            aria-hidden
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+                          />
+                        )}
                         <span className="min-w-0 flex-1">
                           <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
-                          <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                          <span className="block truncate text-xs text-gray-400 dark:text-gray-500">
                             {formatDateTime(p.startedAt)}
                             {p.pid !== null && ` · pid ${p.pid}`}
                             {/* Detected service URL (output scan or port probe), running rows
@@ -2341,7 +2510,7 @@ export function ChatPage() {
                           </button>
                         ) : (
                           <>
-                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                               {S.chat.processExited}
                             </span>
                             {/* The row is the only handle on that process's captured
@@ -2397,6 +2566,8 @@ export function ChatPage() {
               projectId={projectId}
               models={models}
               {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
+              composerRef={composerRef}
+              onWorkspaceChange={onDraftWorkspace}
             />
           ) : (
             // Keyed by Session: the whole block does a light fade-in when switching sessions.
@@ -2570,6 +2741,7 @@ export function ChatPage() {
         title={S.chat.thinkingSwitchTitle}
         tone="primary"
         confirmLabel={S.chat.thinkingSwitchCompactFirst}
+        cancelLabel={S.common.cancel}
         confirmDisabled={stream.taskState !== "idle"}
         onConfirm={compactThenThinkingSwitch}
         secondaryLabel={S.chat.thinkingSwitchConfirm}
@@ -2585,6 +2757,50 @@ export function ChatPage() {
               thinkingSwitch?.level ??
               "",
           )}
+        </p>
+        {stream.taskState !== "idle" && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {S.chat.thinkingSwitchBusyHint}
+          </p>
+        )}
+      </ConfirmModal>
+
+      {/* In-conversation model switch confirmation (the session toolbar's model picker), two
+          choices only: compact and switch, or cancel. There is no "switch anyway" — a switch
+          always compacts on the current model first, and a failed compaction keeps it. The two
+          shapes with nothing to compact read "switch" instead: an empty transcript (the switch
+          is immediate) and a transcript ending in a completed compaction or a model switch (no
+          compaction runs; the conversation continues from what is already held). The session
+          can start running while the dialog is up (a queued follow-up, a schedule): the confirm
+          is then disabled and the body says why, exactly like the thinking dialog. */}
+      <ConfirmModal
+        open={modelSwitchAsk !== null}
+        title={S.chat.modelSwitchInSessionTitle}
+        tone="primary"
+        confirmLabel={
+          modelSwitchAsk?.shape === "compact"
+            ? S.chat.modelSwitchInSessionConfirm
+            : S.chat.modelSwitchInSessionDirectConfirm
+        }
+        cancelLabel={S.common.cancel}
+        confirmDisabled={stream.taskState !== "idle"}
+        busy={modelSwitchPosting}
+        onConfirm={() => void confirmModelSwitch()}
+        onClose={() => {
+          if (!modelSwitchPosting) setModelSwitchAsk(null);
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {modelSwitchAsk === null || selected === null
+            ? null
+            : modelSwitchAsk.shape === "empty"
+              ? S.chat.modelSwitchInSessionDirectBody(modelDisplay(modelSwitchAsk.to))
+              : modelSwitchAsk.shape === "compacted"
+                ? S.chat.modelSwitchInSessionCompactedBody(modelDisplay(modelSwitchAsk.to))
+                : S.chat.modelSwitchInSessionBody(
+                    modelDisplay({ provider: selected.provider, modelId: selected.modelId }),
+                    modelDisplay(modelSwitchAsk.to),
+                  )}
         </p>
         {stream.taskState !== "idle" && (
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">

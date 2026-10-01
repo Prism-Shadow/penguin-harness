@@ -1,9 +1,18 @@
 /**
- * The web app's page manifest (src/module.json) and how server contributions fold in.
+ * The web app's page manifest (src/module.json) and how server contributions fold in
+ * (lib/pages.ts).
+ *
+ * - Every nav key the JSON manifest names has a nav label and an icon (the JSON is not
+ *   type-checked against them).
+ * - Every page has a unique id, key and path, and a renderer.
+ * - A member's nav drops admin-only and unreleased pages and adds nothing the admin lacks.
+ * - A server page whose renderer this build carries is appended after the local ones.
+ * - A server page with an unknown builtin renderer is skipped, and a local page wins over a
+ *   same-key server one.
+ * - An iframe renderer needs no registry entry.
  */
 import { describe, expect, it } from "vitest";
 import { NAV_PAGE_KEYS, PAGES, mergePages, navPagesFor } from "../src/lib/pages";
-import { NAV_GROUP_KEYS } from "../src/lib/nav-group-collapse";
 import { zh } from "../src/lib/strings";
 import { NAV_ICONS } from "../src/lib/nav-icons";
 
@@ -13,7 +22,6 @@ describe("the page manifest", () => {
       expect(zh.nav).toHaveProperty(key);
       expect(NAV_ICONS).toHaveProperty(key);
     }
-    expect(NAV_GROUP_KEYS).toEqual(NAV_PAGE_KEYS);
   });
 
   it("every page has a unique id, key and path, and a renderer", () => {

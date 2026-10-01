@@ -618,6 +618,11 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/dirs?path=` | Server-side directory browser behind the Workspace picker |
 | POST | `/dirs/access` | Desktop app: has the shell read a folder macOS refused, in the app's own name, so that macOS asks the user: `{path}` → `{granted, packaged}` |
 | GET | `/dir-skills?path=` | The Skills a directory carries, for importing them into a new agent |
+| GET | `/workspace-files?workspace=&path=` | The **Files** panel on a directory no Session addresses yet (see below) |
+| GET / PUT / DELETE | `/workspace-files/content?workspace=&path=` | Reads, writes or deletes a file of that directory |
+| POST | `/workspace-files/create?workspace=` / `/workspace-files/move?workspace=` | Creates a file or folder / moves one |
+| GET | `/workspace-files/search?workspace=&q=` | Searches that directory by entry name |
+| POST | `/workspace-files/reveal?workspace=&path=` | Shows the file in the machine's own file manager |
 
 - The Session list accepts optional query parameters. `limit` and `offset` page the list (`offset` requires `limit`). `category` (`active`, `subagent`, `schedule`, `benchmark` or `archived`) filters it before paging, and `workspaceGroup` filters it to one Workspace. `counts=1` adds `counts` (totals per category over the whole list), `workspaceCounts` (the same totals per Workspace path) and `workspaceLatest` (each Workspace's newest Session). Without paging parameters, the full list is returned.
 - `excludeOrg=1` leaves an organization's desk, ticket and subagent Sessions out of the page and out of the `counts=1` totals together, which is what development mode's list asks for. Any other value is a 400.
@@ -628,6 +633,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 - `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries, platform}`: every entry carries its `kind` (`dir` or `file`) and `mtime`, and on Windows the home request adds `roots`, the drive roots that exist. A directory the server may not read answers `403 dir_permission_denied` rather than an empty list — on macOS that is usually a Files and Folders permission the user has not granted.
 - `POST /dirs/access` is the Workspace picker's **Allow access** in the desktop app. macOS asks about Desktop, Documents and Downloads only on behalf of the app it holds responsible for the read, so the desktop shell's main process reads the absolute `path` once, and the answer waits for the user. `granted` says whether the read succeeded (always `true` off macOS, where nothing is read). `packaged` is `false` for a development instance started from a terminal, whose reads macOS charges to that terminal. The route returns `400` `dir_not_absolute` for a path that is not absolute, `503` `shell_unreachable` when the server has no desktop shell to ask, and `504` `timeout` when the shell has not answered within 120 seconds. Only the desktop app's own window may call it; any other session gets `403` `desktop_shell_only`.
 - `GET /dir-skills` reads only `<path>/.agents/skills` and `<path>/.claude/skills` of an absolute `path`, and answers `{path, skills}`. A directory without Skills answers with an empty list. See `POST /agents` under [Agents](#agents).
+- `/workspace-files` runs the operations of [Workspace files](#workspace-files) on a directory named by its absolute path in `workspace`, for the pages that have no Session yet: the new-chat page's chosen folder, and a sidebar Workspace group's **Browse files**. The answers are the Session routes' own. The caller needs access to the Project, the same access that lets it create a Session in that directory, and `workspace` must be an existing directory, as when a Session is created there (400 `workspace_not_found` otherwise). Every `path` is confined to it as for a Session. There is no preview redirect, because preview tokens name a Session: HTML from a directory previews with `preview=1` in the same-origin sandbox. A directory on another machine is reached through that machine's `/server/<machineId>` proxy.
 
 ## Usage and Traces (Agent Level)
 
@@ -637,7 +643,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | --- | --- | --- |
 | GET | `/usage` | Usage statistics |
 | GET | `/usage/model-totals` | Lifetime Token total per model; takes no filters |
-| GET | `/usage/errors` | One page of the error detail table, newest first: → `{items, total}` |
+| GET | `/usage/errors` | One page of the error detail table, newest first: → `{items, total, rows}` |
 | DELETE | `/usage/errors` | Empties the error table for the current filter: → `{deleted}` (Project owner only) |
 | GET | `/agents/:agentId/traces` | Trace files as a date → Session drill-down |
 | GET | `/agents/:agentId/traces/:sessionId/:index` | Reads Trace events (`offset` / `limit` pagination) |
@@ -656,6 +662,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | `agentId`, `provider`, `modelId` | Filters |
 
 - `GET /usage/errors` takes `offset`, `limit`, the same `from` / `to` / `fromTs` / `toTs` / `agentId` filter, and an optional `kind` (`unexpected` or `expected`).
+- The error table folds the records of one day that share a source, code, kind and message into one row, with its `count`, its latest time `ts` and its first time `firstTs`. `offset`, `limit` and `rows` count those rows; `total` and the dashboard's summary figures count records. `GET /usage` and `GET /usage/errors` take an optional `utcOffsetMinutes`, the reader's offset east of UTC (−840 to 840), which decides the day; without it the day is the server's own.
 - `DELETE /usage/errors` takes the same filter as the reads, `from` / `to` / `fromTs` / `toTs` / `agentId`, but no `kind`, because the panel offers no such control. `from` and `to` are both required here (400 otherwise), because an open bound would clear the whole history rather than a filtered part. The clear reaches exactly what the caller's reads reach: an admin's clear also removes the unattributed rows that only an admin's read shows, and a member's clear never does.
 - `GET /agents/:agentId/traces` also accepts `limit` and `offset` for paging, and `category` (which requires `limit`) to list one category of Sessions.
 - Any member can download a Trace. Import is owner only, like the Agent State snapshot import, and capped at 14MB. The imported file must be valid Trace JSONL whose first record is a `session_meta` with a filename-safe `session_id`. A session id the agent already has is rejected (409 `trace_session_exists`), so an imported file always becomes index 001 of a new Session, stored in the local date directory of its first record's timestamp.
@@ -728,6 +735,7 @@ A fork clones the retained Trace files and snapshots the source scratchpad under
 | POST | `/abort` | Interrupts the current Task: 202 when triggered, 204 when idle |
 | POST | `/retry-now` | Skips the reconnect countdown: → 200 `{skipped}` |
 | POST | `/compact` | Starts context compaction: 202 |
+| POST | `/switch-model` | Switches this Session's model in place: 202, or 200 with the updated Session when the Session never ran |
 
 - `POST /tasks` answers `{sessionId, queued?}`. With `queueIfBusy`, a busy Session holds the input as a follow-up (`queued: true`) and starts it as an ordinary next Task once the Session is idle; `task_state` events report the number queued. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see [Request bodies](#request-bodies)).
 - `POST /tasks` with `goal: {budget?}` starts a goal loop instead. It returns 409 `goal_plugin_not_installed` unless the `goal` plugin is installed on the agent. The objective is the input's text, with any leading marker blocks removed, so the input must carry non-empty text (400 otherwise): an image alone states no objective. Images are sent in round 1 as ordinary input, and later rounds re-inject only the objective text. `file` parts are refused with 400, because nothing carries them into the objective that every round re-injects. See [Goal mode](/goal-mode).
@@ -739,6 +747,7 @@ A fork clones the retained Trace files and snapshots the source scratchpad under
 - `POST /subagents/:childSessionId/abort` stops only the child's current run; the child Session stays available for steering and follow-ups. It returns 202 when a run was stopped, and 204 when the child is already idle or unknown.
 - `POST /retry-now` backs the **Retry now** button on the reconnect countdown. It skips the backoff wait in progress and fires the next retry immediately, without changing the attempt counter. `skipped: false` means no wait was in progress; it is not an error.
 - `POST /compact` returns 409 when there is nothing to compact, with the reason in the code: `compaction_not_configured` (the agent has no compaction configured), `nothing_to_compact` (the context has no completed conversation turn yet) or `already_compacted` (nothing new was said since the last compaction). A Session resumed after a server restart works this out from its Trace, so an existing conversation can be compacted without running a Task first.
+- `POST /switch-model` takes `{provider, modelId}`, the complete pair (one half alone is 400). It compacts the context on the current model, always in summarize mode, then opens the next context on the target. It answers 202 and streams like `/compact`, with the Session status `compacting`: an ordinary manual `compaction_begin` / `compaction_end` pair when the context had completed turns to summarize (none otherwise: just compacted, or its first request never finished), then the new context's opener records and its `session_meta`, whose `provider` / `model_id` name the model the Session now runs on; `GET /` returns the new pair from that record on. A compaction that ends other than `completed` means no switch: no `session_meta` follows and the Session keeps its model. A Session that never ran has nothing to compact, so the switch completes inside the request, which answers 200 with the updated `{session}` and streams nothing. Refusals are 409 with a code per reason: `task_in_progress` / `compacting` (busy), `same_model`, `model_not_configured` (the target is not in the Project's model table), `model_unavailable` (the target cannot be constructed, e.g. no credential) and `compaction_not_configured`. The switch's compaction request is metered against the previous model, the Tasks after it against the new one.
 
 ### Request bodies
 
@@ -768,11 +777,11 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-The Web App's `/model` switch has no dedicated endpoint. Like the `/agent` handoff, it combines ordinary routes:
+There are two ways to change model. The in-session switch is `POST /switch-model` above: the same Session compacts and continues on another model, keeping its id and its history. The Web App's `/model` handoff instead opens a new conversation on another model and has no dedicated endpoint. Like the `/agent` handoff, it combines ordinary routes:
 
 1. Session creation opens a new Session for the same agent, with the chosen model and the source Workspace carried over.
 2. `POST /tasks` sends a first message that opens with a `[model_switch_from]` source block, naming the source session id, its `tracePath`, the Workspace and the previous model pair.
-3. The model reads that Trace file itself when it needs the earlier history.
+3. The model reads that Trace file itself when it needs the earlier history. The source Session is left as it was.
 
 ### Background processes
 
@@ -794,15 +803,18 @@ The Web App's `/model` switch has no dedicated endpoint. Like the `/agent` hando
 | GET | `/files/content?path=&download=&preview=` | Reads a Workspace file (see [Workspace file responses](#workspace-file-responses)) |
 | GET | `/files/preview-redirect?path=` | Opens an HTML file on the separate preview origin: mints a signed token and redirects with 302 |
 | POST | `/files/stat` | Checks whether files exist: `{paths}` |
-| PUT | `/files/content?path=` | Uploads a file: `{dataBase64}`, up to 14MB |
-| POST | `/files/move` | Moves or renames one file: `{from, to, ifVersion?}` → 204 |
+| PUT | `/files/content?path=` | Writes a file whole: `{dataBase64, ifVersion?}`, up to 14MB → 204, with the version written in `ETag` |
+| POST | `/files/create` | Creates an empty text file or a folder: `{path, kind}` (`file` or `dir`) → 204 |
+| POST | `/files/move` | Moves or renames one file or folder: `{from, to, ifVersion?}` → 204 |
 | DELETE | `/files/content?path=&ifVersion=` | Deletes one file → 204 |
 | POST | `/files/reveal?path=` | Shows the file in the machine's own file manager → 204 |
 | GET | `/files/search?q=` | Searches the whole Workspace by entry name |
 | GET | `/scratchpad/:fileName` | Reads a scratch file of the Session, such as an input image or file attachment |
 
 - `GET /files/preview-redirect` backs **Open in new tab** and the rendered HTML view of the **Files** panel; see [Preview on a separate origin](#preview-on-a-separate-origin).
-- `POST /files/move` works on files only: a directory has no single version marker, so the precondition that protects the move cannot be expressed for one, and the route returns 400. Missing parent directories of `to` are created. It returns 404 `path_not_found` when `from` is gone, and 409 `file_changed` when `ifVersion` no longer matches (a source that disappeared while a marker was given counts as changed). It returns 409 `target_exists` when something is already at `to`, because the destination was never read and so is refused rather than overwritten, and 400 for a move onto the file's own path.
+- `PUT /files/content` answers with the version it wrote in `ETag`: the marker the next conditional write of the same file carries, so the **Files** panel's editor keeps editing after a save.
+- `POST /files/create` creates one empty text file or one folder, making missing parent directories as a write does. Anything already at `path`, a link included (it is not followed), returns 409 `target_exists` with nothing written.
+- `POST /files/move` moves a file or a folder. Missing parent directories of `to` are created. It returns 404 `path_not_found` when `from` is gone, and for a file, 409 `file_changed` when `ifVersion` no longer matches (a source that disappeared while a marker was given counts as changed). A folder has no single version marker, so it moves whole without one: a folder sent with `ifVersion` returns 400, and so does a folder moved into itself. It returns 409 `target_exists` when something is already at `to`, because the destination was never read and so is refused rather than overwritten, and 400 for a move onto the entry's own path.
 - `DELETE /files/content` also works on files only (400 for a directory). It returns 404 `path_not_found` when the file is gone, and 409 `file_changed` when `ifVersion` no longer matches. The marker is optional, and without it the delete is unconditional, but the **Files** panel always sends the marker its read returned.
 - `POST /files/reveal` selects the file on macOS and Windows, and opens its directory on a Linux desktop. Only the desktop shell's own window may call it. It returns 404 `not_found` when the server was not started by a desktop shell, and 403 `desktop_shell_only` for a browser session against a desktop-mode server: such a session cannot be told apart from a remote one, and a folder opening on the server's machine helps nobody there. The path is confined the same way as for a read (400 out of bounds, 404 `path_not_found`), and 502 `reveal_failed` means the file manager would not start.
 - `GET /files/search` matches entry names only (a case-insensitive substring; the path is not matched) and answers `{hits: [{path, kind, sizeBytes, mtime}], truncated}`, each hit carrying what a directory listing entry carries. The search walks breadth-first from the root, so hits come shallowest first, and a capped result keeps the most relevant hits rather than whatever the first directory held. `truncated` means a cap stopped the walk: 200 hits, or 20000 directory entries visited. An empty `q`, or one longer than 100 characters, returns 400.
@@ -1002,6 +1014,8 @@ Besides its state, a binding's runtime status reports what the live connection h
 - `lastConnectionError`: `{at, detail}` for the last connection failure, kept after the connection recovers. By contrast, `lastError` belongs to the `error` state and disappears as soon as the state leaves it.
 
 All three live in the server process and reset on every connect or reconnect, and re-enabling the channel or saving credentials opens a new connection. An absent `lastInboundAt` therefore means "nothing since this connection opened", never "nothing ever". These fields exist because a channel that withholds messages still shows `connected` with no error.
+
+A connection failure is also filed as an error record, `messaging_connect_failed`, once per outage, and a reply that never reached the chat as `messaging_send_failed`. On Telegram, QQ and WeChat both are `expected` when the next attempt clears them by itself: a request that never completed, a timeout, HTTP 408, 429 or 5xx, a QQ gateway that stopped answering heartbeats or asked to reconnect, or WeChat's session timeout. They are `unexpected` when they repeat until someone acts, such as a rejected credential, a missing permission, or a webhook or a second poller on a Telegram bot. When an outage starts with an `expected` failure, the first `unexpected` one after it is filed too.
 
 ## Terminals
 

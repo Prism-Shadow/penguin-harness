@@ -25,11 +25,10 @@ import type {
   QQBindingInfo,
   QQScanPollResponse,
 } from "@prismshadow/penguin-server/api";
-import { Button } from "@prismshadow/penguin-ui";
+import { Button, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 
 /** Modules of quiet zone around the code — four is what the QR spec asks for. */
 const QUIET_ZONE = 4;

@@ -3,6 +3,8 @@
  * Branches on request body:
  *  - title request (prompt contains "concise title") -> short text
  *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
+ *  - "files rewrite test <cmd>" -> tool_use(exec_command) running <cmd>, then a short final text
+ *    (files-folders.spec: the Agent rewrites a file the Files panel has open)
  *  - subagent's own turns (its prompt is the only user text) -> tool_use(exec_command) first,
  *    then the report text once the tool_result is back — the tool call gives the child a real
  *    approval point (under always-ask it parks on a NESTED approval, which the subagents-panel
@@ -249,6 +251,29 @@ const server = http.createServer((req, res) => {
         },
       ]);
       messageStop(res, "end_turn", 18);
+      return;
+    }
+
+    // Files-panel rewrite test: the Agent rewrites a Workspace file while the panel has it open.
+    // Keyed on the LAST message, since the history keeps every earlier request of the
+    // conversation: the user's own text names the command, and its tool_result ends the turn.
+    const lastMessage = JSON.stringify(messages[messages.length - 1] ?? {});
+    const rewrite = /files rewrite test ([^"\\]+)/.exec(lastMessage);
+    if (rewrite) {
+      block(
+        res,
+        0,
+        { type: "tool_use", id: "toolu_files_rewrite", name: "exec_command", input: {} },
+        [{ type: "input_json_delta", partial_json: JSON.stringify({ cmd: rewrite[1].trim() }) }],
+      );
+      messageStop(res, "tool_use", 12);
+      return;
+    }
+    if (flat.includes("files rewrite test") && lastMessage.includes("tool_result")) {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "The file was rewritten." },
+      ]);
+      messageStop(res, "end_turn", 8);
       return;
     }
 

@@ -8,9 +8,9 @@
  * own shape calls for, since a built-in model whose stored entry carries a stale protocol pin
  * must not be told to move into a custom group.
  *
- * vitest runs node-only here, so the card is rendered to static markup and the group header —
- * which lives inside the page component and needs a fetch, a Project and localStorage — is
- * checked against the source of its own render condition.
+ * vitest runs node-only here, so the card is rendered to static markup and the group header's
+ * add entry point is checked through the action set group-header.ts decides (the header lives
+ * inside the page component and needs a fetch, a Project and localStorage).
  */
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -18,7 +18,13 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { isVendorGroup, unroutableVendorModel } from "@prismshadow/penguin-core/model-catalog";
+import {
+  MODEL_PROVIDERS,
+  isAddableGroup,
+  isVendorGroup,
+  unroutableVendorModel,
+} from "@prismshadow/penguin-core/model-catalog";
+import { groupHeaderActions } from "../src/features/models/group-header";
 import { ModelCard, unroutableFix } from "../src/features/models/models-page";
 import type { RowState } from "../src/features/models/models-page";
 import { S, zh } from "../src/lib/strings";
@@ -153,18 +159,36 @@ describe("the ways the page can open the add-model dialog", () => {
   it("are exactly three, none of which can name a vendor group", () => {
     // A fourth would be a new way into the state this change closed, so it has to be read
     // here rather than discovered as a bug report. The three: the "no models at all" empty
-    // state, which opens custom; the group header, guarded by the predicate; and a
-    // brand-new group, whose name is rejected when it collides with a built-in id.
-    expect(openers).toEqual(['"custom"', "group.provider.id", "name"]);
-    expect(source).toContain("{isOwner && !isVendorGroup(group.provider.id) && (");
+    // state, which opens custom; the group header's Add model action, which the header only
+    // carries where group-header.ts puts it; and a brand-new group, whose name is rejected
+    // when it collides with a built-in id.
+    expect([...openers].sort()).toEqual(['"custom"', "group.provider.id", "name"].sort());
+    expect(source).toContain('case "addModel":');
     expect(source).toContain("MODEL_PROVIDERS.some((p) => p.id === trimmed)");
+    for (const p of MODEL_PROVIDERS.filter((provider) => isVendorGroup(provider.id))) {
+      const actions = groupHeaderActions(p, {
+        isOwner: true,
+        keyStored: true,
+        balancePinned: false,
+      });
+      expect(actions, p.id).not.toContain("addModel");
+    }
   });
 
-  it("leave the page's other group actions unguarded (only adding a model is closed off)", () => {
-    // A vendor group still takes a bulk API key, a speed test and its console link — the rule
-    // is about what may be written into the group, not about reaching it.
+  it("leave the page's other group actions in place (only adding a model is closed off)", () => {
+    // A vendor group still takes a group API key and a speed test — the rule is about what
+    // may be written into the group, not about reaching it.
     expect(source).toContain("onClick={() => setGroupKeyFor(group.provider.id)}");
-    expect(source).toContain("onClick={() => setSpeedFor(group.provider.id)}");
+    expect(source).toContain("setSpeedFor(group.provider.id)");
+    for (const p of MODEL_PROVIDERS.filter((provider) => isVendorGroup(provider.id))) {
+      const actions = groupHeaderActions(p, {
+        isOwner: true,
+        keyStored: true,
+        balancePinned: false,
+      });
+      expect(actions, p.id).toContain("groupKey");
+      expect(actions, p.id).toContain("speedTest");
+    }
   });
 });
 
@@ -175,6 +199,10 @@ describe("the predicate the page reads", () => {
     expect(isVendorGroup("openrouter")).toBe(false);
     expect(unroutableVendorModel("deepseek", "qwen/qwen3.8-flash-next")).toBe(true);
     expect(unroutableVendorModel("custom", "qwen/qwen3.8-flash-next")).toBe(false);
+    // Whether a model may be added at all is the wider rule: gateways take none either.
+    expect(isAddableGroup("deepseek")).toBe(false);
+    expect(isAddableGroup("openrouter")).toBe(false);
+    expect(isAddableGroup("custom")).toBe(true);
   });
 });
 

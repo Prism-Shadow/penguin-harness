@@ -4,13 +4,14 @@
  * POST /api/projects/:p/models/test, POST /api/projects/:p/models/detect,
  * POST /api/projects/:p/models/list, POST /api/projects/:p/models/detect-vision (the model
  * reference `(provider, modelId)` is sent as a pair in the request body, avoiding
- * URL-encoding issues). Any member can read (api_key is masked); only the owner can
- * modify, test, or detect.
+ * URL-encoding issues), GET /api/projects/:p/models/balance. Any member can read (api_key is
+ * masked) and read a group's balance; only the owner can modify, test, or detect.
  */
 import { Hono } from "hono";
 import type {
   DefaultModelResponse,
   EndpointModelListRequest,
+  ModelBalanceResponse,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsUpdateRequest,
@@ -27,6 +28,7 @@ import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
+import { ModelBalances } from "../../services/model-balance.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
@@ -206,6 +208,11 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
 
 export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  /** The balance reader and its 60 s cache, one per route group. */
+  const balances = new ModelBalances({
+    groupKey: (projectId, provider) =>
+      deps.projectConfigService.getGroupBalanceKey(projectId, provider),
+  });
 
   app.get("/", async (c) => {
     // Defensive id validation.
@@ -221,6 +228,25 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
     const res = await deps.projectConfigService.updateModels(projectId, req);
     modelConfigChanged(deps, projectId);
     return c.json(res);
+  });
+
+  // A group's account balance (any member, like the table itself): the server asks the
+  // vendor with the group's stored key, so the key never reaches the browser. A balance that
+  // cannot be read is an answer (`ok: false` with a code), as a failed connectivity test is.
+  // `force=1` is the page's refresh click and skips the 60 s cache.
+  app.get("/balance", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const provider = c.req.query("provider") ?? "";
+    if (provider === "" || provider.length > 64) {
+      throw badRequest("provider must name a model group.");
+    }
+    const answer: ModelBalanceResponse = await balances.read(
+      projectId,
+      provider,
+      c.req.query("force") === "1",
+    );
+    return c.json(answer);
   });
 
   // Narrow default-model switch (owner): flips the same top-level `default_model` the

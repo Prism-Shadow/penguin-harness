@@ -14,15 +14,19 @@
  */
 import { useEffect, useState } from "react";
 import type { ServerSettings } from "@prismshadow/penguin-server/api";
-import { Button } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Input,
+  SettingsSection,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
-import { Input } from "../../components/ui/input";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { SectionShell } from "./section-shell";
 
 export function UploadsSection() {
   const { uploadLimits, refresh } = useAuth();
@@ -111,7 +115,7 @@ export function UploadsSection() {
 
   const hydrated = settings !== null;
   return (
-    <SectionShell
+    <SettingsSection
       actions={
         <Button
           size="sm"
@@ -169,6 +173,6 @@ export function UploadsSection() {
           if (limitError !== null) setLimitError(null);
         }}
       />
-    </SectionShell>
+    </SettingsSection>
   );
 }

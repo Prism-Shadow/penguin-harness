@@ -23,6 +23,7 @@ import {
   providerClientType,
   providerInfo,
   fastModeProtocol,
+  isAddableGroup,
   isVendorGroup,
   resolveModelEnv,
   routedClientType,
@@ -35,6 +36,7 @@ import {
   providerEnvFallbackKey,
   resolveModelCredential,
   sameEndpoint,
+  unaddableModel,
   unroutableVendorModel,
 } from "../src/state/index.js";
 
@@ -153,6 +155,25 @@ describe("model-catalog", () => {
     for (const p of MODEL_PROVIDERS) {
       expect(p.oauth === undefined || p.bridgeAuth === undefined).toBe(true);
     }
+  });
+
+  it("exactly TokenDance and DeepSeek publish a balance endpoint, on the host their keys already go to", () => {
+    // The descriptor is what puts a balance in a group's header, so the Web App never names a
+    // group; each one names the reader for its vendor's response shape.
+    const withBalance = MODEL_PROVIDERS.filter((p) => p.balance !== undefined).map((p) => [
+      p.id,
+      p.balance!.format,
+    ]);
+    expect(withBalance).toEqual([
+      ["tokendance", "tokendance"],
+      ["deepseek", "deepseek"],
+    ]);
+    // The server sends the group's stored key to this URL, so it is the vendor's own https
+    // endpoint and nothing else.
+    expect(providerInfo("tokendance")!.balance!.url).toBe(
+      "https://tokendance.space/portal/api/v1/user/balance",
+    );
+    expect(providerInfo("deepseek")!.balance!.url).toBe("https://api.deepseek.com/user/balance");
   });
 
   it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {
@@ -1601,6 +1622,38 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
       expect(isVendorGroup(id), id).toBe(false);
     }
     expect(isVendorGroup("my-own-group")).toBe(false);
+  });
+
+  it("isAddableGroup: custom, vLLM and user-defined groups take hand-added models, no other built-in group does", () => {
+    for (const id of ["custom", "vllm", "my-own-group"]) {
+      expect(isAddableGroup(id), id).toBe(true);
+    }
+    // Every first-party vendor and every gateway, the relays included.
+    const closed = MODEL_PROVIDERS.map((p) => p.id).filter(
+      (id) => id !== "custom" && id !== "vllm",
+    );
+    expect(closed).toContain("openrouter");
+    expect(closed).toContain("penguin-go");
+    expect(closed).toContain("deepseek");
+    for (const id of closed) {
+      expect(isAddableGroup(id), id).toBe(false);
+    }
+  });
+
+  it("unaddableModel: a closed group still takes its own presets, an addable group takes anything", () => {
+    expect(unaddableModel("openrouter", "someone/new-model")).toBe(true);
+    // Routable is not enough: the DeepSeek client would place this id, but it is no preset.
+    expect(unaddableModel("deepseek", "deepseek-v4-pro-next")).toBe(true);
+    // The pair is the key: DeepSeek's own id is not one of OpenRouter's presets.
+    expect(unaddableModel("openrouter", "deepseek-flash")).toBe(true);
+    // Every catalog row may be written back into its own group — that is what "Sync presets"
+    // does for a row the Project deleted.
+    for (const m of MODEL_CATALOG) {
+      expect(unaddableModel(m.provider, m.modelId), `${m.provider}/${m.modelId}`).toBe(false);
+    }
+    for (const id of ["custom", "vllm", "my-own-group"]) {
+      expect(unaddableModel(id, "someone/new-model"), id).toBe(false);
+    }
   });
 
   it("modelHomepageUrl: gateway per-model pages, vendor docs fallback, none for custom groups", () => {

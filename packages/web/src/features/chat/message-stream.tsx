@@ -9,15 +9,15 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { EmptyState } from "@prismshadow/penguin-ui";
+import { EmptyState, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
-import { WorkspaceLinksProvider } from "./md";
-import { WorkGroup, isWorkItem } from "./work-group";
+import { WorkspaceLinksProvider } from "./workspace-links";
+import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
@@ -44,8 +44,8 @@ export interface StreamRenderContext {
    * long as the model might still call another tool, the trailing group always shows "Running".
    */
   taskRunning: boolean;
-  /** Converts this turn's stats into cost (USD) using the current Model pricing; returns null when no price is configured (cost is hidden). */
-  taskCost?: (stats: TaskStats) => number | null;
+  /** Converts this turn's stats into cost (USD) at the current pricing of `model`, the model the turn ran on (the Session's own when the turn names none); returns null when no price is configured (cost is hidden). */
+  taskCost?: (stats: TaskStats, model?: { provider: string; modelId: string }) => number | null;
   /**
    * "Retry now" on the live reconnect countdown: skips the remaining backoff wait
    * server-side (POST /retry-now); the line flips to "retrying" when the request_begin
@@ -103,7 +103,7 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
-      <WorkGroup
+      <SessionWorkGroup
         key={`wg-${seg.items[0]!.id}`}
         items={seg.items}
         ctx={ctx}
@@ -458,7 +458,7 @@ export function MessageStream({
             <div className="flex justify-center pb-2">
               {older.loading ? (
                 <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  <Spinner size="sm" label={S.common.loading} />
                   {S.chat.loadingEarlier}
                 </span>
               ) : older.error !== null ? (
@@ -480,7 +480,7 @@ export function MessageStream({
             <EmptyState title={S.chat.emptyStream} />
           ) : (
             // Links in replies, reasoning and compaction summaries name files of this Session's
-            // Workspace: they open in its Files panel rather than a new tab (see md.tsx).
+            // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
               <MessageItems items={items} ctx={ctx} />
             </WorkspaceLinksProvider>

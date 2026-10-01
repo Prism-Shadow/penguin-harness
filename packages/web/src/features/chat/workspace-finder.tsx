@@ -24,26 +24,36 @@ import type {
   ReactNode,
 } from "react";
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
-import { Button, CloseIcon, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CloseIcon,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  Modal,
+  NoticeStrip,
+  isContextMenuKey,
+  isLongPressPointer,
+  noAutofill,
+  toastError,
+  toastSuccess,
+  useRowContextMenu,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { writeClipboard } from "../../lib/clipboard";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { formatDateTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
-import { Modal } from "../../components/ui/modal";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { Dropdown } from "../../components/ui/dropdown";
-import { noAutofill } from "../../components/ui/input";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   EMPTY_HISTORY,
   TYPE_SELECT_RESET_MS,
@@ -51,6 +61,7 @@ import {
   baseName,
   canGoBack,
   canGoForward,
+  clearButton,
   defaultPlaces,
   deniedBox,
   drivePlaces,
@@ -148,9 +159,10 @@ export function WorkspaceFinder({
   workspace,
   machineId,
   chooseMachine,
+  agentId,
   title,
-  hint,
   clearLabel,
+  clearTitle,
 }: {
   open: boolean;
   onClose: () => void;
@@ -165,9 +177,13 @@ export function WorkspaceFinder({
   machineId?: string | null;
   /** Offer the Machines section. */
   chooseMachine?: boolean;
+  /** The Agent a temporary Workspace would belong to: the footer button then shows the folder it would get. */
+  agentId?: string;
   title: string;
-  hint: string;
+  /** The footer button that takes `onClear`. */
   clearLabel: string;
+  /** That button's tooltip while the folder it stands for is not known here. */
+  clearTitle?: string;
 }) {
   const f = S.chat.finder;
   const isMac = useMemo(isMacPlatform, []);
@@ -339,6 +355,27 @@ export function WorkspaceFinder({
       cancelled = true;
     };
   }, [open, chooseMachine, projectId]);
+
+  /**
+   * The `agent_state` directory of the Agent a temporary Workspace would belong to, from that
+   * Agent's config on this server: the footer button's path is built from it. Kept per Agent,
+   * the way the home listing is kept per machine.
+   */
+  const [agentState, setAgentState] = useState<{ agentId: string; dir: string } | null>(null);
+  useEffect(() => {
+    if (!open || agentId === undefined || agentState?.agentId === agentId) return;
+    let cancelled = false;
+    void api
+      .getAgentConfig(projectId, agentId)
+      .then((res) => {
+        if (!cancelled) setAgentState({ agentId, dir: res.stateDir });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // Not keyed on `agentState`, which is what this fills in.
+  }, [open, agentId, projectId]);
 
   const { workspaceLatestByAgent } = useSessions();
   const recents = useMemo(
@@ -1278,21 +1315,27 @@ export function WorkspaceFinder({
     });
   }
 
+  const clear = clearButton({
+    offered: onClear !== undefined,
+    stateDir: agentState !== null && agentState.agentId === agentId ? agentState.dir : null,
+    machine,
+  });
+
   const footer = (
     <>
-      <div className="mr-auto flex min-w-0 flex-col justify-center gap-0.5 self-center">
-        {onClear !== undefined && workspace.trim() !== "" && (
-          <button
-            type="button"
-            onClick={() => onClear(machine)}
-            className="self-start text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            {clearLabel}
-          </button>
-        )}
-        <p className="line-clamp-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{hint}</p>
-      </div>
-      {/* The buttons keep their width; on a phone the hint beside them wraps instead. */}
+      {/* The host's "no folder" choice: a plain text button whatever is chosen now; the folder a
+          temporary Workspace would get is its tooltip. */}
+      {clear !== null && (
+        <Button
+          size="sm"
+          title={clear.fullPath ?? clearTitle}
+          className="mr-auto min-w-0 self-center"
+          onClick={() => onClear?.(machine)}
+        >
+          <span className="min-w-0 truncate">{clearLabel}</span>
+        </Button>
+      )}
+      {/* The buttons keep their width; on a phone the button beside them truncates instead. */}
       <Button size="sm" className="shrink-0 self-center whitespace-nowrap" onClick={onClose}>
         {S.common.cancel}
       </Button>
@@ -1314,6 +1357,9 @@ export function WorkspaceFinder({
       open={open}
       title={title}
       onClose={onClose}
+      // No title bar: Cancel in the footer (and Escape, and the backdrop) is the way out, and
+      // the title still names the dialog for assistive tech.
+      headerless
       bare
       fullScreenOnPhone
       widthClass="sm:h-[min(36rem,85vh)] sm:max-w-3xl"
@@ -1373,19 +1419,18 @@ export function WorkspaceFinder({
           menuClass="w-max min-w-40 max-w-[calc(100vw-2rem)]"
           button={null}
         >
-          {finderMenuItems(menuTarget, inQuickAccess(menuTarget.path, menuTarget.machine)).map(
-            (item) => (
-              <button
-                key={item}
-                type="button"
-                className={overflowMenuRowClass}
-                onClick={() => runMenuItem(item, menuTarget)}
-              >
-                {overflowMenuGlyph(MENU_ICON[item])}
-                {menuLabel(item, menuTarget)}
-              </button>
-            ),
-          )}
+          <Menu density="sm">
+            {finderMenuItems(menuTarget, inQuickAccess(menuTarget.path, menuTarget.machine)).map(
+              (item) => (
+                <MenuItem
+                  key={item}
+                  glyph={MENU_ICON[item]}
+                  label={menuLabel(item, menuTarget)}
+                  onSelect={() => runMenuItem(item, menuTarget)}
+                />
+              ),
+            )}
+          </Menu>
         </Dropdown>
       )}
     </Modal>

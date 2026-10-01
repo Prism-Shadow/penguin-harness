@@ -27,17 +27,24 @@ import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "../chat/skill-use";
 import { apiErrorText } from "../../lib/api-error";
-import { Input, Textarea } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Select } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { toneInk } from "../../lib/tone";
-import { SectionShell } from "./section-shell";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker } from "../machines/machine-picker";
-import { NoticeStrip } from "../../components/ui/notice-strip";
-import { Button, Spinner } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Checkbox,
+  Input,
+  NoticeStrip,
+  PasswordInput,
+  Select,
+  SettingsSection,
+  Spinner,
+  Textarea,
+  ToggleRow,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 
 /** The picker's value for this server; a machine id is never this short. */
 const THIS_SERVER = "*";
@@ -324,7 +331,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       </div>
     ) : null;
 
-  if (entries === null) return <SectionShell>{picker}</SectionShell>;
+  if (entries === null) return <SettingsSection>{picker}</SettingsSection>;
 
   const patch = (plugin: string, name: string, value: unknown) => {
     setDrafts((prev) => ({ ...prev, [plugin]: { ...(prev[plugin] ?? {}), [name]: value } }));
@@ -390,19 +397,15 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         );
       case "boolean":
         return (
-          <div key={name} className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{label}</p>
-              {hint !== undefined && (
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
-              )}
-            </div>
-            <Switch
-              checked={draft[name] === true}
-              onChange={(v) => patch(entry.name, name, v)}
-              disabled={disabled}
-            />
-          </div>
+          <ToggleRow
+            key={name}
+            variant="plain"
+            label={label}
+            hint={hint}
+            checked={draft[name] === true}
+            onChange={(v) => patch(entry.name, name, v)}
+            disabled={disabled}
+          />
         );
       case "secret": {
         const masked = typeof entry.values[name] === "string" ? (entry.values[name] as string) : "";
@@ -430,25 +433,22 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
               }}
             />
             {masked !== "" && typed === "" && (
-              <label className="flex items-center gap-x-3 text-xs text-gray-500 dark:text-gray-400">
+              <div className="flex items-center gap-x-3 text-xs text-gray-500 dark:text-gray-400">
                 <span className="font-mono">{masked}</span>
-                <span className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={clearing.has(key)}
-                    disabled={disabled}
-                    onChange={(e) =>
-                      setClearing((prev) => {
-                        const next = new Set(prev);
-                        if (e.target.checked) next.add(key);
-                        else next.delete(key);
-                        return next;
-                      })
-                    }
-                  />
-                  {S.settings.pluginSecretClear}
-                </span>
-              </label>
+                <Checkbox
+                  checked={clearing.has(key)}
+                  disabled={disabled}
+                  label={S.settings.pluginSecretClear}
+                  onChange={(on) =>
+                    setClearing((prev) => {
+                      const next = new Set(prev);
+                      if (on) next.add(key);
+                      else next.delete(key);
+                      return next;
+                    })
+                  }
+                />
+              </div>
             )}
           </div>
         );
@@ -550,7 +550,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const names = new Set(entries.map((e) => e.name));
   const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
   return (
-    <SectionShell>
+    <SettingsSection>
       {picker}
       {machine !== null && loadError !== null && (
         <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
@@ -594,6 +594,6 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
           </section>
         );
       })}
-    </SectionShell>
+    </SettingsSection>
   );
 }

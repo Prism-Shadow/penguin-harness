@@ -47,7 +47,7 @@ interface SessionMetaPayload {
 }
 ```
 
-模型与 Workspace 在整个 Session 生命周期内不变，系统提示词则按上下文固定。
+Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
 
 每个 Trace 文件都以一条 `session_meta` 开头。压缩开启新上下文时，新文件的 `session_meta` 记录的系统提示词，按当时的 Agent State 为这个上下文重新装配（见[上下文压缩](/agent-loop#上下文压缩)）。恢复 Session 时，引擎以最新文件里的 `session_meta` 作为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。
 

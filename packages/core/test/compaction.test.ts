@@ -1990,11 +1990,15 @@ describe("context compaction", () => {
     // must build it and fold the conversation: the caller has already been told compaction is
     // available, so a silent no-op leaves it waiting for a banner that never arrives.
     const resumedLLM = new ScriptedLLM([{ messages: [assistantText("[summary]s[/summary]")] }]);
-    const newContextLLM = new ScriptedLLM([]);
+    const newContextLLM = new ScriptedLLM([{ messages: [assistantText("on it")] }]);
     const written: OmniMessage[] = [];
     const session = new Session({
       meta: metaMessage.payload,
-      bootstrap: async () => ({ llm: resumedLLM }),
+      // Like the real opener, the bootstrap publishes the context's toolset record.
+      bootstrap: async ({ emit }) => {
+        emit(toolListReady([]));
+        return { llm: resumedLLM };
+      },
       environment: fakeEnvironment,
       trace: {
         write: async (msg) => {
@@ -2020,6 +2024,15 @@ describe("context compaction", () => {
     // Compaction reset the context, and the reason stays specific rather than falling back to
     // "nothing said yet".
     expect(session.compactability()).toBe("just_compacted");
+    // The engine was built for this call rather than by a run, so the context's first-run
+    // records were still owed to the Trace. They describe the context the compaction closed,
+    // and are dropped with it: the one toolset record is the one the rotation writes at the
+    // head of the next context's file, and the next run writes no second one behind its input.
+    await collect(session.run([userText("next")], { approve: allowAll }));
+    const types = payloadTypes(written);
+    const input = written.findIndex((m) => (m.payload as { text?: string }).text === "next");
+    expect(types.filter((t) => t === "tool_list_ready")).toHaveLength(1);
+    expect(types.indexOf("tool_list_ready")).toBeLessThan(input);
     session.dispose();
   });
 

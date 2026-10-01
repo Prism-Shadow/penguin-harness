@@ -38,6 +38,7 @@
  * always survive.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
@@ -51,7 +52,15 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, Chevron, ICONS, ICON_GAP, PenguinLogo } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  Chevron,
+  Dropdown,
+  ICONS,
+  MenuItem,
+  PenguinLogo,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { UNCONFINED } from "../../lib/permission-level";
@@ -63,8 +72,6 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { Dropdown } from "../../components/ui/dropdown";
-import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { versionBadgeFor } from "../../lib/update-flow";
 import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
@@ -93,8 +100,8 @@ import {
 import { newChatAgentId } from "./new-chat";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
+import { FilesPanelToggle } from "./dock-toggles";
 import { sameModelRef } from "../models/model-grouping";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -148,12 +155,21 @@ export function DraftView({
   projectId,
   models,
   draftId,
+  composerRef: pageComposerRef,
+  onWorkspaceChange,
 }: {
   projectId: string;
   /** Project model config (already fetched by ChatPage): candidate list and default model. */
   models: ModelsResponse | null;
   /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
   draftId?: string;
+  /**
+   * The page's handle on the composer, so what the dock's panels hand the conversation (the
+   * Files panel's references) reaches this draft's composer as it reaches a live Session's.
+   */
+  composerRef?: RefObject<ComposerControl | null>;
+  /** The Workspace picked here ("" = a temporary one) and its machine, for the Files panel. */
+  onWorkspaceChange?: (path: string, machineId: string | null) => void;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -212,7 +228,8 @@ export function DraftView({
   // that case falls back to home (setDockCwd's null).
   useEffect(() => {
     setDockCwd(workspace || null, workspaceMachine);
-  }, [workspace, workspaceMachine]);
+    onWorkspaceChange?.(workspace, workspaceMachine);
+  }, [workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -816,7 +833,8 @@ export function DraftView({
    * in-flight guard to keep here, and everything else — where the prompt goes when text is
    * already typed, focus, the caret — is the composer's, reached through this handle.
    */
-  const composerRef = useRef<ComposerControl | null>(null);
+  const ownComposerRef = useRef<ComposerControl | null>(null);
+  const composerRef = pageComposerRef ?? ownComposerRef;
   const fillExample = useCallback((task: ExampleTask) => {
     // S is a live binding swapped on locale change: read the prompt at click time, not at render.
     composerRef.current?.fillPrompt(S.chat.exampleTasks[task.id].prompt, task.skills);
@@ -926,7 +944,11 @@ export function DraftView({
             machineId={workspaceMachine}
             onChange={changeWorkspace}
             chooseMachine
+            {...(agentId ? { agentId } : {})}
           />
+          {/* The dock's Files panel on the folder picked beside it; a temporary Workspace has
+              none yet (see FilesPanelToggle). */}
+          <FilesPanelToggle available={workspace.trim() !== ""} />
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
@@ -957,7 +979,7 @@ export function DraftView({
                 />
 
                 {open && (
-                  <ul className="mt-0.5 space-y-0.5 pl-4">
+                  <ul className="mt-0.5 space-y-1 pl-4">
                     {folder.tasks.map((task) => {
                       const copy = S.chat.exampleTasks[task.id];
                       return (
@@ -1003,7 +1025,7 @@ export function DraftView({
  * new version.
  */
 const versionBadgeClass =
-  "ml-1.5 inline-block align-super text-[10px] leading-4 text-gray-400 dark:text-gray-500";
+  "ml-1.5 inline-block align-super text-xs leading-4 text-gray-400 dark:text-gray-500";
 
 /**
  * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
@@ -1117,32 +1139,28 @@ function AgentSelect({
         {agents.map((a) => {
           const active = a.agentId === selected?.agentId;
           return (
-            <button
+            <MenuItem
               key={a.agentId}
-              type="button"
+              density="sm"
               aria-pressed={active}
-              onClick={() => {
+              checked={active}
+              onSelect={() => {
                 onSelect(a);
                 setOpen(false);
               }}
-              className={`flex items-center ${ICON_GAP.menu} ${menuRowClass} ${menuRowTone(active)}`}
-            >
-              <AgentAvatar
-                id={a.agentId}
-                name={agentDisplayName(a)}
-                size={20}
-                className="shrink-0 rounded"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs">{agentDisplayName(a)}</span>
-                {a.description && (
-                  <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
-                    {a.description}
-                  </span>
-                )}
-              </span>
-              <ChoiceCheck on={active} />
-            </button>
+              glyph={
+                <AgentAvatar
+                  id={a.agentId}
+                  name={agentDisplayName(a)}
+                  size={20}
+                  className="shrink-0 rounded"
+                />
+              }
+              label={agentDisplayName(a)}
+              description={
+                a.description ? <span className="block truncate">{a.description}</span> : undefined
+              }
+            />
           );
         })}
       </div>

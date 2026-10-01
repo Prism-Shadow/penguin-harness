@@ -19,11 +19,18 @@
  */
 import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
+import {
+  ChartArea,
+  ChartFrame,
+  ChartLine,
+  ChartPoint,
+  makeGeom,
+  seriesPoints,
+  useChartWidth,
+} from "@prismshadow/penguin-ui";
+import type { ChartPaint } from "@prismshadow/penguin-ui";
 import { formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
-import { makeGeom, seriesPoints } from "./chart-geom";
-import { ChartFrame, useChartWidth } from "./chart-svg";
-import { ChartArea, ChartLine, ChartPoint, type ChartPaint } from "../../components/ui/chart";
 import { bucketAxisLabel, bucketFullLabel } from "./usage-controls";
 import { Empty } from "./usage-charts";
 

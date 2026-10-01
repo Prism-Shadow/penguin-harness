@@ -84,8 +84,8 @@ export interface KeyRule {
  *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (lib/remark-autolink-boundary.ts) is the product's domain inside an
- *     example URL in a doc comment. It is not a storage key.
+ *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
   // ---------------------------------------------------------------- browser preferences
@@ -217,6 +217,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.sidebarNavPinned",
+    scope: "browser",
+    why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
@@ -330,6 +336,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.companyBetaNoticeShown",
     scope: "browser",
     why: "That company mode's beta notice has been shown in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.tokenDanceBannerDismissed",
+    scope: "browser",
+    why: "That the models page's TokenDance banner was dismissed in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
   },
   {
     kind: "exact",

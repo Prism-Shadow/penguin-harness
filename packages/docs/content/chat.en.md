@@ -17,10 +17,10 @@ The chat page is where you work with an agent. You start a conversation, follow 
 A new conversation starts as a draft. The Session is created when you send the first message.
 
 1. In the sidebar, select **New chat**. The draft opens on the agent in the Project's **New chat defaults**, as long as that agent still exists in the Project; otherwise on `default_agent`, and otherwise on the first agent.
-2. Above the composer, pick the **Agent**, the **Workspace** (a directory on the server, chosen in a directory browser), the **Approval mode**, the **Model** and the **Thinking level**.
+2. Above the composer, pick the **Agent**, the **Workspace** (a directory on the server, chosen in a directory browser; to use none, select **Start in a temporary workspace** at its bottom left), the **Approval mode**, the **Model** and the **Thinking level**.
 3. Type your message and press Enter.
 
-Once the Session exists, its model and Workspace are locked. To move to another model later, see [Switch the model](#switch-the-model).
+Once the Session exists, its Workspace is locked; its model can still change, see [Switch the model](#switch-the-model).
 
 Good to know:
 
@@ -58,6 +58,7 @@ Press Enter to send, and Shift+Enter for a new line. In an empty composer, the u
 ### Attach images and files
 
 - Paste an image into the composer. Pasting accepts images only.
+- Paste a very long text (more than 20,000 characters or 400 lines, such as a whole log) and it is attached as a text file named `pasted-<date>-<time>.txt` instead of filling the text box, so typing stays responsive; the model still reads all of it. In goal mode, which takes no file attachments, it is pasted as text.
 - In the + menu (**More input options**), select **Upload image** or **Upload file**.
 
 An attachment can be any type. Selected files show as removable chips above the text, in the order you picked them, and a message with attachments and no text can be sent.
@@ -90,7 +91,7 @@ Type `/` to open the slash menu. Press Enter or Tab to run the highlighted entry
 | --- | --- |
 | `/compact` | Compacts the context |
 | `/agent` | Hands the conversation to another agent; see [Hand off to another agent](#hand-off-to-another-agent) |
-| `/model` | Continues the conversation on another model; see [Switch the model](#switch-the-model) |
+| `/model` | Opens a new conversation on another model; see [Switch the model](#switch-the-model) |
 | `/goal` | Turns on goal mode; see [Set a goal](#set-a-goal) |
 | A Skill's name | Selects or clears an installed Skill; selected Skills are sent with the message |
 
@@ -164,15 +165,30 @@ A compaction can only start on an idle conversation, so while a Task runs the fi
 
 ## Switch the model
 
-A Session's model is locked; selecting the model name says "Type /model to switch models". Switching continues the conversation in a new Session.
+There are two ways to change the model, and they do different things.
+
+### In this conversation
+
+Select the model name in the composer's toolbar and pick another model. The picker is disabled while a Task runs or a compaction is under way, and picking the current model does nothing. A dialog asks first, because the switch compacts the context on the current model before moving on:
+
+- **Compact and switch**: the context is compacted on the current model (always a summary, even when the agent is configured to discard), and the conversation then continues on the new model. If the compaction fails or is aborted, the conversation stays on the current model.
+- **Cancel**: keeps the current model.
+
+Right after a compaction or another switch there is nothing to compact, so the dialog says nothing is compacted again and the button reads **Switch**; a conversation with no messages yet switches at once.
+
+The switch shows in the conversation as a compaction row followed by a "Model switched · A → B" marker (the marker alone when there was nothing to compact: right after a compaction or another switch, or when the last request never completed). A failed compaction shows as a failed compaction row with no marker. Once switched, the model badge, the context window and the cost estimate follow the new model.
+
+### In a new conversation
+
+`/model` opens a new Session that continues the conversation on another model and leaves this one as it is.
 
 1. In the composer, type `/model` and pick a model. It appears as a chip above the text, and nothing is sent yet.
 2. Type a message if you want. With an empty composer, "Continue this conversation on the new model" is sent.
 3. Press Enter.
 
-The new Session keeps the agent, the Workspace and the approval mode. It opens with a "Switched model (was …) — continued from the earlier conversation" banner that links back, and the model reads the earlier conversation's Trace file when it needs the history.
+The new Session keeps the agent, the Workspace and the approval mode. It opens with a "New conversation on another model (was …) — continues the original" banner that links back, and the model reads the earlier conversation's Trace file when it needs the history.
 
-- The switch waits until the Session is idle, because it continues from the Session's Trace, which a running turn or a compaction is still writing. A line above the composer says so while it waits.
+- The handoff waits until the Session is idle, because it continues from the Session's Trace, which a running turn or a compaction is still writing. A line above the composer says so while it waits.
 - To cancel, select × on the chip, or press Backspace at the start of the text.
 - The chip is saved with the draft, so it survives a reload or a visit to another conversation.
 
@@ -210,7 +226,7 @@ To return to the newest message, select **Jump to latest**. In a longer conversa
 
 ## Use side panels
 
-The chat page has two docks for panels: the right sidebar and the bottom panel. The **Right sidebar** and **Bottom panel** buttons at the top right of the chat toolbar show and hide them. An empty dock offers a list of panels to open; **Add panel** adds another, and a panel can move to the other dock. Panels become available once the conversation has started.
+The chat page has two docks for panels: the right sidebar and the bottom panel. The **Right sidebar** and **Bottom panel** buttons at the top right of the chat toolbar show and hide them. An empty dock offers a list of panels to open; **Add panel** adds another, and a panel can move to the other dock. Panels become available once the conversation has started, except **Files**: on the new-chat page it browses the folder picked for the new conversation, from the **Files** button right of the Workspace pill (see [Files panel](/files#open-the-files-panel)).
 
 | Panel | What it shows |
 | --- | --- |
@@ -382,7 +398,7 @@ On a Mac, ⌘ takes the place of Ctrl in Ctrl+S and in the Ctrl+Alt rows other t
 
 Some of what you do in the chat travels as structured text in the conversation, which you may notice in the Trace:
 
-- A model switch starts the new Session with a `[model_switch_from]` block naming the source Session, its title, its Trace file, its Workspace and the previous provider and model, followed by your message. The new conversation shows the block as the "Switched model" banner.
+- `/model` starts the new Session with a `[model_switch_from]` block naming the source Session, its title, its Trace file, its Workspace and the previous provider and model, followed by your message. The new conversation shows the block as the "New conversation on another model" banner. A switch inside a conversation writes no block: it is recorded as an ordinary compaction, and the new context's `session_meta` names the new model.
 - A steering message is sent as a `[user_steering]` user message with the agent's next turn.
 - Selected Skills travel with the message in a `[use_skills]` block.
 - Each attached file adds an `[attached file: <path>]` line to the message.

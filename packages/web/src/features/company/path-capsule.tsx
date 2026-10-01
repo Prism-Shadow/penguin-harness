@@ -20,10 +20,9 @@
 import { useMemo } from "react";
 import type { ReactNode } from "react";
 import type { Components, Options } from "react-markdown";
-import { CopiedStatus, GlyphIcon, ICONS, ICON_SIZE, useCopied } from "@prismshadow/penguin-ui";
+import { CopiedStatus, GlyphIcon, ICONS, ICON_SIZE, Md, useCopied } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { Md } from "../chat/md";
 import { codePath, pathKind, pathLabel, spellAsWritten, splitPaths } from "./path-capsules";
 import type { PathScope } from "./path-capsules";
 
