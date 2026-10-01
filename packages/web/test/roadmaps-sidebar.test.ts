@@ -19,7 +19,7 @@ import {
   roadmapIdText,
 } from "../src/features/company/roadmaps-sidebar";
 import { orgChannelPath } from "../src/features/company/company-nav";
-import { FolderSection } from "../src/components/ui/group-list";
+import { FolderSection } from "@prismshadow/penguin-ui";
 import { badgeNote, RowBadges } from "../src/features/company/channel-sidebar";
 import { STAT_ICONS } from "../src/lib/stat-icons";
 import { S, zh } from "../src/lib/strings";
@@ -136,7 +136,7 @@ describe("a roadmap's row menu", () => {
     const copied: string[] = [];
     const item = RoadmapRowMenuRows({ roadmap: suffixed, onCopy: (t) => copied.push(t) });
     if (!isValidElement(item)) throw new Error("the menu renders no element");
-    (item as ReactElement<{ onClick: () => void }>).props.onClick();
+    (item as ReactElement<{ onSelect: () => void }>).props.onSelect();
     expect(copied).toEqual(["#3"]);
   });
 
