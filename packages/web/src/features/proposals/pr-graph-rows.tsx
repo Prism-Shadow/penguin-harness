@@ -21,6 +21,7 @@ import { Badge, ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../company/shared";
 import { PROPOSAL_STATUS_TONE } from "./proposals-model";
 import { DeploymentMarks } from "./pr-graph-deployments";
+import { graphTops } from "./pr-graph-model";
 
 /** The focused proposal's row: a background wash only, so the marks on it keep their own ink. */
 export const FOCUS_WASH = "bg-blue-50 dark:bg-blue-950/40";
@@ -121,7 +122,7 @@ export function NodeRow({
         <span className="min-w-0 truncate" data-tooltip={node.title}>
           {node.title}
         </span>
-        {graph.top === node.number && <Mark tone="success">{t.top}</Mark>}
+        {graphTops(graph).includes(node.number) && <Mark tone="success">{t.top}</Mark>}
         {node.fork && <Mark tone="attention">{t.fork}</Mark>}
         {node.via.map((v) => (
           <Mark

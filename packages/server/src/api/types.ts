@@ -6995,6 +6995,12 @@ export interface ProposalGraphResponse {
    * keeps going — choosing there takes the record (the roadmap's order), which the graph does not read.
    */
   top: number | null;
+  /**
+   * The last layer of every branch the chain walk took, in PR order. Several stacks that each
+   * start on the base branch and keep going are all on the chain; each one's last layer is here,
+   * so each is marked as its stack's top. Absent from a server older than the field.
+   */
+  tops?: number[];
   /** Proposals with an impl PR that is not an open PR on the delivery repository. */
   unplaced: ProposalGraphUnplaced[];
   /** What could not be read from GitHub; the graph is partial when present. */

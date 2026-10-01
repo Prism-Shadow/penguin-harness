@@ -15,7 +15,8 @@
  * 3. At a fork the chain takes the one branch that keeps going (a child with stacked children of
  *    its own); the others are off the chain. When none or several keep going, choosing takes the
  *    record — the roadmap's order — which this plugin does not read: the graph walks every branch,
- *    marks the fork and names no top.
+ *    marks the fork and names no single top. The base branch can carry several stacks this way,
+ *    each starting on it and keeping going; every branch walked has its own last layer (`tops`).
  *
  * Everything here is pure: the reader (pr-graph.ts) fetches, buildGraph lays out what it read —
  * each node with its parent, edge and chain verdict, the proposal whose impl PR it is and the PR
@@ -143,6 +144,8 @@ export interface Chain {
   order: number[];
   /** The chain's last layer, or null when it is empty or a fork could not be decided. */
   top: number | null;
+  /** The last layer of every branch the walk took, in PR order: one per stack. */
+  tops: number[];
   /** Nodes with more than one stacked child; 0 = the base branch. */
   forks: Set<number>;
   /** Why each node off the chain is off, and the node the reason names. */
@@ -192,7 +195,8 @@ export function walkChain(nodes: readonly ChainNode[]): Chain {
     else if (inCycle(n.number, byNumber)) off.set(n.number, { reason: "cycle", at: null });
     else off.set(n.number, { reason: "above", at: n.parent });
   }
-  return { order, top: leaves.length === 1 ? leaves[0]! : null, forks, off };
+  const tops = [...leaves].sort((a, b) => a - b);
+  return { order, top: tops.length === 1 ? tops[0]! : null, tops, forks, off };
 }
 
 /** Whether walking up the parents from a node comes back to it. */
@@ -394,6 +398,7 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     origins: input.origins.map((o) => ({ name: o.name, repo: o.repo })),
     nodes: [...chain.order, ...offChain].map((n) => nodes.get(n)!),
     top: chain.top,
+    tops: chain.tops,
     unplaced,
     errors: input.errors,
     checkedAt: input.checkedAt,

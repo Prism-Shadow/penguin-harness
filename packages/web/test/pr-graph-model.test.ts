@@ -10,7 +10,9 @@
 import { describe, expect, it } from "vitest";
 import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
 import {
+  baseStacks,
   focusedProposal,
+  graphTops,
   layoutGraph,
   rowOfProposal,
   splitArgs,
@@ -140,6 +142,30 @@ describe("layoutGraph", () => {
     const layout = layoutGraph([], null);
     expect(shape(layout.rows)).toEqual([[0, 0, null]]);
     expect(layout.lanes).toBe(1);
+  });
+});
+
+describe("several stacks on the base", () => {
+  it("draws each stack as its own line and counts the stacks on the base", () => {
+    // Three stacks on dev: 1→2, 3→4, 5→6.
+    const nodes = [node(1, 0), node(2, 1), node(3, 0), node(4, 3), node(5, 0), node(6, 5)];
+    const { rows, lanes } = layoutGraph(nodes, null);
+    expect(lanes).toBe(3);
+    // Every stack keeps one lane from its bottom to its top.
+    const laneOf = new Map(rows.filter((r) => r.node).map((r) => [r.node!.number, r.lane]));
+    expect(laneOf.get(1)).toBe(laneOf.get(2));
+    expect(laneOf.get(3)).toBe(laneOf.get(4));
+    expect(laneOf.get(5)).toBe(laneOf.get(6));
+    expect(new Set([laneOf.get(1), laneOf.get(3), laneOf.get(5)]).size).toBe(3);
+    expect(baseStacks(nodes)).toBe(3);
+    // A branch on the base that is off the chain does not count as a stack.
+    expect(baseStacks([...nodes, node(7, 0, { onChain: false })])).toBe(3);
+  });
+
+  it("marks every stack's top, and reads a single top from a server older than the field", () => {
+    expect(graphTops({ top: null, tops: [2, 4, 6] })).toEqual([2, 4, 6]);
+    expect(graphTops({ top: 6 })).toEqual([6]);
+    expect(graphTops({ top: null })).toEqual([]);
   });
 });
 

@@ -38,7 +38,7 @@ import { useLocale } from "../../state/locale";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
 import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, TitleButton } from "../company/shared";
-import { focusedProposal, layoutGraph, rowOfProposal } from "./pr-graph-model";
+import { baseStacks, focusedProposal, layoutGraph, rowOfProposal } from "./pr-graph-model";
 import type { GraphRow } from "./pr-graph-model";
 import {
   FOCUS_WASH,
@@ -341,7 +341,12 @@ function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
           {graph.base.head.slice(0, 9)}
         </span>
       )}
-      {graph.base.fork && <Mark tone="attention">{t.baseForked}</Mark>}
+      {graph.base.fork &&
+        (baseStacks(graph.nodes) > 1 ? (
+          <Mark tone="muted">{t.baseStacks(baseStacks(graph.nodes))}</Mark>
+        ) : (
+          <Mark tone="attention">{t.baseForked}</Mark>
+        ))}
       <DeploymentMarks deployments={graph.deployments} at={0} />
     </div>
   );

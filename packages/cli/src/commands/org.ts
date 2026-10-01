@@ -607,11 +607,15 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
   const short = (sha: string | null): string => (sha === null ? "?" : sha.slice(0, 9));
   const label = (n: number | null): string =>
     n === null ? "?" : n === 0 ? g.base.branch : `#${n}`;
+  // Every stack's top; a server older than `tops` names at most one.
+  const tops = g.tops ?? (g.top === null ? [] : [g.top]);
+  // Stacks side by side on the base branch: its children on the chain.
+  const stacks = g.nodes.filter((n) => n.parent === 0 && n.onChain).length;
   const line = (n: ProposalGraphNode): string => {
     const marks = [
       ...(n.draft ? ["draft"] : []),
       ...(n.fork ? ["fork"] : []),
-      ...(g.top === n.number ? ["top"] : []),
+      ...(tops.includes(n.number) ? ["top"] : []),
       ...n.via.map((v) => `via ${v.state} #${v.number}`),
       ...(n.stale ? ["stale, restack pending"] : []),
       ...(n.off === null
@@ -662,7 +666,7 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
   const off = g.nodes.filter((n) => !n.onChain);
   const blocks = [
     [
-      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? "  [fork]" : ""}${on(0)}`,
+      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? (stacks > 1 ? `  [${stacks} stacks]` : "  [fork]") : ""}${on(0)}`,
       ...chain.map((n) => indent(depth(n), line(n) + on(n.number))),
     ].join("\n"),
     ...(off.length > 0

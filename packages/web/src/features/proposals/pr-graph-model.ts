@@ -18,7 +18,7 @@
  * that is not reached from the base at all (a cycle of declarations), cannot be drawn; the page
  * lists it apart — which is not the same as off the chain.
  */
-import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
+import type { ProposalGraphNode, ProposalGraphResponse } from "@prismshadow/penguin-server/api";
 
 /** One row of the drawn graph, top to bottom. `node` is null for the base branch (the last row). */
 export interface GraphRow {
@@ -126,6 +126,24 @@ export function layoutGraph(nodes: readonly ProposalGraphNode[], top: number | n
     .reverse();
   const detached = nodes.filter((n) => !placed.has(n.number)).sort((a, b) => a.number - b.number);
   return { rows, lanes: widest + 1, detached };
+}
+
+/**
+ * Every stack's top: the server's `tops`, or its single `top` from a server older than that field.
+ * Several stacks on the base branch each have one, so each is marked.
+ */
+export function graphTops(graph: Pick<ProposalGraphResponse, "top" | "tops">): number[] {
+  if (graph.tops !== undefined) return graph.tops;
+  return graph.top === null ? [] : [graph.top];
+}
+
+/**
+ * How many stacks start on the base branch: its children that are on the chain. More than one is a
+ * fork the graph keeps (several stacks side by side); one, with the base still forked, means a
+ * branch at the base was not taken.
+ */
+export function baseStacks(nodes: readonly ProposalGraphNode[]): number {
+  return nodes.filter((n) => n.parent === 0 && n.onChain).length;
 }
 
 /** The row showing a proposal's impl PR, or -1 when that proposal has no node on the graph. */
