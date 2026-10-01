@@ -1999,6 +1999,19 @@ router
   .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
 
 // ---------------------------------------------------------------------------------------------
+// Agent packages: publishing to a gist and installing from a source both reach GitHub or a
+// registry, which the demo has no server for.
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/projects/:projectId/agents/:agentId/package", () => readOnly("pack an Agent"))
+  .post("/api/projects/:projectId/agents/:agentId/package/publish", () =>
+    readOnly("publish an Agent package"),
+  )
+  .post("/api/agent-packages/preview", () => readOnly("read an Agent package source"))
+  .post("/api/agent-packages/install", () => readOnly("install an Agent package"));
+
+// ---------------------------------------------------------------------------------------------
 // Machines (admin)
 // ---------------------------------------------------------------------------------------------
 

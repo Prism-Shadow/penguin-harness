@@ -1474,6 +1474,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       proxyForApp: true,
       proxyForAgent: true,
       proxyUrl: null,
+      githubTokenSet: false,
       attachmentMaxMb: 100,
       attachmentTotalMb: 120,
       companyMode: false,
