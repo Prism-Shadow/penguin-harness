@@ -14,7 +14,7 @@
 于是重挂后第一次推送把两个模型迁移都当成已执行，一路到 18 却没有 `model_promotions` 与 `model_provider_auth_tokens`，
 凡成本或供应商鉴权读它们的地方都答 500：Models 页、组织总览。正式实例在那次推送上就是这样。
 
-迁移 19 `model-tables-adoption` 重跑 9、10 各自的 DDL——冻结副本，都是 `IF NOT EXISTS`——按正常次序跑过它们的根什么
+迁移 17 `model-tables-adoption` 重跑 9、10 各自的 DDL——冻结副本，都是 `IF NOT EXISTS`——按正常次序跑过它们的根什么
 也不会发生。无需手动处理：下一次推送在 swap 路径上运行它。
 
 ## 兼容性

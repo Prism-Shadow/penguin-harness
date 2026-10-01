@@ -17,7 +17,7 @@ applied, reaches 18 without `model_promotions` or `model_provider_auth_tokens`, 
 wherever cost or provider auth reads them: the models page, an organization's overview. Seen on
 the release instance at that first push.
 
-Migration 19, `model-tables-adoption`, re-runs 9's and 10's own DDL — frozen copies, both
+Migration 17, `model-tables-adoption`, re-runs 9's and 10's own DDL — frozen copies, both
 `IF NOT EXISTS` — so a root that took them in their proper place finds its work done. Nothing to do
 by hand: the next push runs it on the swap path.
 
