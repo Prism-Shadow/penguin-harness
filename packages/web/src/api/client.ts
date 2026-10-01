@@ -124,8 +124,9 @@ export async function apiFetchWithMeta<T>(
   // where the cookie's own session facts come from — the socket knows only the user.
   const wantsSocket = target !== null || !httpOnly(path);
   // ready() waits for a handshake in progress, so the page's first calls ride the socket
-  // instead of racing it; false means HTTP for this call.
-  const overSocket = wantsSocket && (await apiSocket.ready());
+  // instead of racing it; false means HTTP for this call. A socket that is not coming at all
+  // is not waited on: the call goes out over HTTP at once, as it did before the socket.
+  const overSocket = wantsSocket && !apiSocket.isUnavailable() && (await apiSocket.ready());
   let answer = overSocket ? await callOverSocket(method, url, options.body) : null;
   if (answer === null || answer.status === 415 || answer.status === 421)
     answer = await callOverHttp(method, url, options.body);
@@ -252,7 +253,8 @@ async function callOverHttp(method: string, url: string, body: unknown): Promise
 export async function apiRequest(url: string, init: { method?: string } = {}): Promise<Response> {
   const path = url.split("?")[0] ?? url;
   const local = !url.startsWith("/server/");
-  const overSocket = !(local && httpOnly(path)) && (await apiSocket.ready());
+  const overSocket =
+    !(local && httpOnly(path)) && !apiSocket.isUnavailable() && (await apiSocket.ready());
   if (overSocket) {
     try {
       const res = await apiSocket.call(init.method ?? "GET", url);

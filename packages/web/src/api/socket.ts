@@ -147,10 +147,17 @@ export class ApiSocket {
    * (null when nobody is), and may reject when it cannot tell — the question is then asked
    * again on the next call.
    */
+  /**
+   * `available` false starts the socket as unavailable: there is nothing it could connect to,
+   * so callers go straight to HTTP and EventSource without settling an identity first.
+   */
   constructor(
     private readonly urlFor: (userId: string) => string,
     private readonly whoAmI: () => Promise<string | null>,
-  ) {}
+    available = true,
+  ) {
+    if (!available) this.#state = "unavailable";
+  }
 
   isOpen(): boolean {
     return this.#state === "open";
@@ -619,7 +626,13 @@ async function whoAmI(): Promise<string | null> {
 }
 
 /** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */
-export const apiSocket = new ApiSocket((userId) => {
-  const scheme = location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${location.host}${apiSocketPath(userId)}`;
-}, whoAmI);
+// Off a page (no `location` — the Web App's logic under test in Node) there is no origin to
+// open the socket on, so it is unavailable from the start.
+export const apiSocket = new ApiSocket(
+  (userId) => {
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    return `${scheme}://${location.host}${apiSocketPath(userId)}`;
+  },
+  whoAmI,
+  typeof location !== "undefined" && typeof WebSocket !== "undefined",
+);
