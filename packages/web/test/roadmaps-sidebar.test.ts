@@ -5,16 +5,23 @@
  * name is already the row's text, and `Truncated` adds one only when the name is cut (a static
  * render measures no overflow, so none appears here). A room with unread messages gives its row
  * the channel row's own badges (count, "@me") and a bold name. Past the first five, the rows fold under
- * "> More (n)", the channel list's "> Archived (n)" fold with another word.
+ * "> More (n)", the channel list's "> Archived (n)" fold with another word. A row's context menu
+ * has one item, which copies the roadmap's number as `#n`.
  */
 import { describe, expect, it } from "vitest";
-import { createElement } from "react";
+import { createElement, isValidElement } from "react";
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import { RoadmapRow } from "../src/features/company/roadmaps-sidebar";
+import {
+  RoadmapRow,
+  RoadmapRowMenuRows,
+  roadmapIdText,
+} from "../src/features/company/roadmaps-sidebar";
 import { orgChannelPath } from "../src/features/company/company-nav";
 import { FolderSection } from "../src/components/ui/group-list";
 import { badgeNote, RowBadges } from "../src/features/company/channel-sidebar";
+import { STAT_ICONS } from "../src/lib/stat-icons";
 import { S, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -115,5 +122,38 @@ describe("the section's fold", () => {
         archived.replace(S.company.channels.archivedGroup, "·"),
       );
     }
+  });
+});
+
+describe("a roadmap's row menu", () => {
+  // A roadmap whose room took a suffixed channel id because the plain one was in use.
+  const suffixed = { ...roadmap, channelId: "roadmap_3_2" };
+
+  it("copies the roadmap's number as #n, never the room's channel id", () => {
+    expect(roadmapIdText(roadmap)).toBe("#3");
+    expect(roadmapIdText(suffixed)).toBe("#3");
+    // The item hands exactly that text to the copy: run its click without a DOM.
+    const copied: string[] = [];
+    const item = RoadmapRowMenuRows({ roadmap: suffixed, onCopy: (t) => copied.push(t) });
+    if (!isValidElement(item)) throw new Error("the menu renders no element");
+    (item as ReactElement<{ onClick: () => void }>).props.onClick();
+    expect(copied).toEqual(["#3"]);
+  });
+
+  it("has one item, read Copy roadmap ID in both languages, with the copy glyph", () => {
+    const html = renderToStaticMarkup(
+      createElement(RoadmapRowMenuRows, { roadmap, onCopy: () => {} }),
+    );
+    expect(html.match(/<button\b/g)).toHaveLength(1);
+    expect(html).toContain(S.company.roadmaps.copyId);
+    expect(html).toContain(`d="${STAT_ICONS.copy}"`);
+    expect(zh.company.roadmaps.copyId).toBe("复制路线图 ID");
+    expect(en.company.roadmaps.copyId).toBe("Copy roadmap ID");
+  });
+
+  it("leaves the row at rest as it was: no number, no title, the menu closed", () => {
+    expect(html).not.toContain("#3");
+    expect(html).not.toMatch(/\stitle="/);
+    expect(html).not.toContain(S.company.roadmaps.copyId);
   });
 });

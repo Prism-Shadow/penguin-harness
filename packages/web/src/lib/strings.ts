@@ -6077,6 +6077,8 @@ Benchmark：
       open: "开一份路线图",
       none: "还没有路线图。",
       loadFailed: "路线图加载失败",
+      /** A row's context menu (right-click, press-and-hold, Shift+F10): copies the roadmap's number as `#n`. */
+      copyId: "复制路线图 ID",
       panelTitle: (n: number) => `路线图 #${n}`,
       hidePanel: "回到讨论",
     },

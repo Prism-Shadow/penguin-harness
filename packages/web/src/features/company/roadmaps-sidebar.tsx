@@ -15,15 +15,23 @@
  * else lights its badge. Reading the room (the channel page's `markChannelRead`) clears the
  * badge by the store's own rule. A failed read says so in one line rather than hiding the
  * section.
+ *
+ * A row's context menu (right-click, press-and-hold, Shift+F10) copies the roadmap's ID — its
+ * number, as `#n` — so the number stays off the row and is still at hand when it is wanted.
  */
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import {
+  Dropdown,
   FOLDER_ROW_CLASS,
   FolderSection,
+  ICONS,
   ICON_GAP,
   ICON_SIZE,
+  MenuItem,
   PlusIcon,
+  toastSuccess,
+  useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { OrgRoadmapItem } from "../../api/endpoints";
@@ -31,6 +39,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { Icon } from "../../components/ui/group-list";
 import { NAV_ICONS } from "../../lib/nav-icons";
+import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../../components/ui/truncated";
 import { useOrgPages } from "./use-org-pages";
 import { useAuth } from "../../state/auth";
@@ -46,6 +55,37 @@ import {
   sidebarRoadmaps,
   type RoomState,
 } from "./roadmaps";
+
+/**
+ * The text "Copy roadmap ID" puts on the clipboard: the roadmap's number written `#n`, as the
+ * room's column heads it ("Roadmap #3") and the plugin's page addresses it. Taken from the
+ * number, never from the room's channel id: that is the channel's id, and it carries a suffix
+ * (`roadmap_3_2`) when the plain one was taken.
+ */
+export function roadmapIdText(roadmap: { number: number }): string {
+  return `#${roadmap.number}`;
+}
+
+/**
+ * The row menu's one item. The panel closes under the click, so the copy is confirmed by a
+ * toast rather than on the row — the session row menu's rule for "Copy Session ID".
+ */
+export function RoadmapRowMenuRows({
+  roadmap,
+  onCopy,
+}: {
+  roadmap: { number: number };
+  onCopy: (text: string) => void;
+}) {
+  return (
+    <MenuItem
+      density="sm"
+      glyph={ICONS.copy}
+      label={S.company.roadmaps.copyId}
+      onSelect={() => onCopy(roadmapIdText(roadmap))}
+    />
+  );
+}
 
 /**
  * One roadmap's row: its room read the way the channel list above reads a channel — the glyph,
@@ -69,11 +109,33 @@ export function RoadmapRow({
 }) {
   const note = badgeNote(counts);
   const unread = counts.unread > 0;
+  const ctx = useRowContextMenu();
+  /** The row's link: where focus goes back when the menu closes (the hook's default looks for a button). */
+  const link = () => ctx.anchorOwner()?.querySelector<HTMLElement>("a") ?? null;
+  const copy = (text: string) => {
+    link()?.focus();
+    ctx.close();
+    void writeClipboard(text).then((ok) => ok && toastSuccess(S.common.copied));
+  };
   return (
-    <li className="rounded-md transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/70">
+    <li
+      ref={ctx.rowRef}
+      // Right-click / Shift+F10 / press-and-hold open the row's menu; the native menu is
+      // suppressed inside that handler only, so the rest of the app keeps the browser's own.
+      {...ctx.rowProps}
+      className="rounded-md transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
+    >
       <NavLink
         to={orgChannelPath(projectId, orgId, roadmap.channelId)}
-        onClick={() => onNavigate?.()}
+        onClick={(e) => {
+          // A press-and-hold that opened the menu must not also open the room: touch screens
+          // replay the held press as a click once the finger lifts.
+          if (ctx.consumeLongPressClick()) {
+            e.preventDefault();
+            return;
+          }
+          onNavigate?.();
+        }}
         {...(note !== null ? { "aria-label": `${roadmap.name} · ${note}` } : {})}
         className={({ isActive }) =>
           `flex min-w-0 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
@@ -91,6 +153,21 @@ export function RoadmapRow({
         <Truncated text={roadmap.name} className="min-w-0 flex-1" />
         <RowBadges unread={counts.unread} mentionsMe={counts.mentionsMe} />
       </NavLink>
+      {/* `contents` keeps this wrapper out of the row's layout; the panel is portaled against
+          the point the gesture landed on. */}
+      <Dropdown
+        open={ctx.open}
+        setOpen={ctx.setOpen}
+        portal={{ direction: "down", align: "left" }}
+        anchorRect={ctx.anchor}
+        anchorOwner={ctx.anchorOwner}
+        returnFocus={link}
+        className="contents"
+        menuClass="w-40"
+        button={null}
+      >
+        <RoadmapRowMenuRows roadmap={roadmap} onCopy={copy} />
+      </Dropdown>
     </li>
   );
 }

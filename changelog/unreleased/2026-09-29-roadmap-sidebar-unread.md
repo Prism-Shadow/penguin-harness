@@ -17,4 +17,6 @@ The badge follows the room as it happens. A message from someone else in a room 
 
 The badge markup is shared with the channel rows, so the two cannot drift apart.
 
+Right-click a roadmap row (press and hold on a touch screen, or Shift+F10) for **Copy roadmap ID**: it copies the roadmap's number as `#3`. The row itself still shows no number.
+
 Not included: roadmap rooms don't count toward the organization's unread totals, and the collapsed rail has no roadmap rows.

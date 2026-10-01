@@ -5904,6 +5904,8 @@ Scenarios:
       open: "Open a roadmap",
       none: "No roadmap yet.",
       loadFailed: "Could not load the roadmaps",
+      /** A row's context menu (right-click, press-and-hold, Shift+F10): copies the roadmap's number as `#n`. */
+      copyId: "Copy roadmap ID",
       panelTitle: (n: number) => `Roadmap #${n}`,
       hidePanel: "Back to the room",
     },
