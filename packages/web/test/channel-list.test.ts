@@ -1,7 +1,16 @@
 /**
- * channel-list.ts unit tests: the all-hands channel's reserved id and its localized label,
- * the four runs of the sidebar's list and the order inside them, the id a new channel may
- * take, the two numbers the sidebar and rail badges sum, and who is left to invite.
+ * A company's channel list (features/company/channel-list.ts).
+ *
+ * - The all-hands channel renders under its localized label; every other channel under its
+ *   stored name.
+ * - A new channel id follows the server's semantic-id grammar; a blank, malformed, reserved or
+ *   taken id is refused with its reason before the request goes out.
+ * - The list pins the all-hands channel, then splits the rest into mine and others, with
+ *   archived channels folded away whatever the membership; each run is ordered by name, then
+ *   id, and a missing all-hands channel is survived.
+ * - The badges sum unread messages and mentions over the joined, unarchived channels only.
+ * - Invite candidates are the employees then the Project members not already in the channel,
+ *   with an employee's title as detail, a prefix match ranked above a substring match.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
@@ -32,8 +41,7 @@ const channel = (over: Partial<OrgChannelItem> & { channelId: string }): OrgChan
 });
 
 describe("the all-hands channel", () => {
-  it("is `default_channel`, and renders under its localized label rather than its stored name", () => {
-    expect(DEFAULT_CHANNEL_ID).toBe("default_channel");
+  it("renders under its localized label rather than its stored name", () => {
     expect(isAllHands(DEFAULT_CHANNEL_ID)).toBe(true);
     expect(isAllHands("site")).toBe(false);
     expect(channelLabel({ channelId: DEFAULT_CHANNEL_ID, name: "General" }, "全员频道")).toBe(

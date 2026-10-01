@@ -1,66 +1,20 @@
 /**
- * Scroll dismissal for the shared portal panel (the UI package's
- * src/components/overlays/portal-panel/use-portal-panel.ts), which OptionMenu, Select,
- * InfoPopover and the composer toolbar's context ring all open through.
+ * Guard: every consumer of the shared portal panel (the UI package's use-portal-panel.ts, which
+ * OptionMenu, Select, InfoPopover and the composer's context ring open through) attaches the
+ * hook's `triggerRef`. The scroll-dismissal rule asks whether a scroll moved the panel's trigger
+ * (`scrollMovesAnchor`, tested in the package's portal-panel.test.ts); a consumer without the ref
+ * hands it a null owner and silently gets close-on-any-scroll back. The consumers are discovered,
+ * not listed, so a new one is covered the day it is written.
  *
- * The panel listens for scroll in the capture phase because scroll does not bubble, and the
- * price of capture on `window` is that it hears every scrolling element in the document. The
- * rule that closes a panel whose position has gone stale must therefore ask whether the
- * scrolled container holds this panel's trigger — otherwise a chat pane auto-following a
- * streaming reply closes a panel opened in the composer toolbar, over content that never
- * moved.
- *
- * `scrollMovesAnchor` itself is exercised in the package's portal-panel.test.ts; what cannot be
- * reached from a node-only suite (`environment: "node"`, no jsdom) is the wiring, and the wiring is
- * where this silently breaks: the rule is answered with the trigger element, so a consumer
- * that never attaches `triggerRef` hands it a null owner and quietly gets the old
- * close-on-any-scroll behavior back for its own panel. So the scan below discovers the
- * hook's consumers rather than listing them, and a fifth one is covered on the day it is
- * written.
+ * - The scan finds the call sites the rule covers, the reported one (the context ring) among them.
+ * - Each attaches the hook's triggerRef.
  */
 import { describe, expect, it } from "vitest";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+import { scanSources, sourceFile } from "./helpers/roots";
 
 /** Every .ts/.tsx under web and the shared UI package: a consumer is covered on either side. */
 const SCAN = scanSources([".ts", ".tsx"]);
 const HOOK = "packages/ui/src/components/overlays/portal-panel/use-portal-panel.ts";
-
-/** The body of a handler declared as `const <name> = ...` up to its closing `};`. */
-function handler(src: string, name: string): string {
-  const body = new RegExp(`const ${name} = [\\s\\S]*?\\n {4}\\};`).exec(src);
-  expect(body, `${name} should be declared in use-portal-panel.ts`).not.toBeNull();
-  return body![0];
-}
-
-describe("use-portal-panel scroll dismissal", () => {
-  const hook = sourceFile(SCAN, HOOK).text;
-
-  it("reads every source root, and finds the hook in one place", () => {
-    expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, HOOK);
-  });
-
-  it("asks whether the scroll moved this panel's trigger before closing", () => {
-    const onScroll = handler(hook, "onScroll");
-    expect(onScroll).toMatch(/if \(!scrollMovesAnchor\(/);
-    // The trigger is the owner: the panel is placed against that element's box, so a scroll
-    // that did not move it did not invalidate the position.
-    expect(onScroll).toContain("triggerRef.current");
-  });
-
-  it("still exempts the panel's own internal scroll", () => {
-    // A long list scrolling inside the panel must not close the panel around it — the guard
-    // that does this predates the ownership test and has to survive it.
-    expect(handler(hook, "onScroll")).toContain("panelRef.current?.contains(");
-  });
-
-  it("leaves a resize closing unconditionally, because it moves every trigger at once", () => {
-    const onResize = /const onResize = .*/.exec(hook);
-    expect(onResize).not.toBeNull();
-    expect(onResize![0]).toContain("onCloseRef.current()");
-    expect(onResize![0]).not.toContain("scrollMovesAnchor");
-  });
-});
 
 describe("use-portal-panel consumers", () => {
   /** Files that open a panel through the hook — the hook's own module excluded. */

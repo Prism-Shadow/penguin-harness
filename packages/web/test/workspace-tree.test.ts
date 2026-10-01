@@ -1,13 +1,30 @@
 /**
- * Files panel logic (lib/workspace-tree.ts): the tree's rows from lazily loaded listings,
- * the rows a whole-Workspace search draws, where a drop lands, the narrow-layout decision and
- * the tree pane's width bounds, which files count as text (by name, or by their bytes when the
- * name says nothing) and how the read-only file browser previews one, the preferences' tolerant
- * parses, when leaving the editor has to ask, and what the panel's "add to conversation" puts in
- * the composer.
+ * The Files panel's logic (lib/workspace-tree.ts).
+ *
+ * - A path names its parent and the directories above it; expanding to a file opens the way
+ *   down without treating the file as a directory, and collapsing closes only that directory.
+ * - Listings sort directories before files by name; an entry upserts into sorted position,
+ *   replacing a same-named one, starting a listing where there was none, never mutating.
+ * - The tree's rows walk open directories depth first, number each row within its directory,
+ *   and mark an open directory still loading or empty; a whole-Workspace search draws a flat
+ *   list of hits named by their whole path, carrying size and time.
+ * - A drop lands on a folder row, in a file row's directory, or in the current directory.
+ * - Below the width threshold the panel is one column (two panes while unmeasured); an
+ *   undragged tree takes about a third within readable bounds, and a dragged width is clamped.
+ * - A file's kind comes from its name, or from its bytes when the name says nothing (UTF-8 text
+ *   cut mid-character is still text; NUL, control-heavy or non-UTF-8 bytes are not); the
+ *   read-only browser reads HTML as source and an unknown name as unsupported; only whole
+ *   text-like previews offer the editor, and leaving typed changes asks first.
+ * - The tree width, soft wrap and tree visibility preferences parse tolerantly, keep a stored
+ *   explicit answer over a new default, round-trip, and fall back when storage throws.
+ * - A line range is written as an editor writes it; a directory reference carries a trailing
+ *   slash.
+ * - "Add to conversation" hands the composer a reference (the text it will send and its file),
+ *   still fenced as a quotation, never text for the draft.
  */
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 import {
   type ComposerReference,
   type Listings,
@@ -275,27 +292,6 @@ describe("editing", () => {
   });
 });
 
-/** In-memory stand-in for localStorage, and one that throws the way blocked site data does. */
-function memPreferences(): {
-  getItem: (k: string) => string | null;
-  setItem: (k: string, v: string) => void;
-} {
-  const store = new Map<string, string>();
-  return {
-    getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => void store.set(key, value),
-  };
-}
-
-const brokenPreferences = {
-  getItem: (): string | null => {
-    throw new Error("blocked");
-  },
-  setItem: (): void => {
-    throw new Error("blocked");
-  },
-};
-
 describe("tree width preference", () => {
   it("takes a positive integer and treats everything else as unset", () => {
     expect(parseTreeWidth(null)).toBeNull();
@@ -307,12 +303,12 @@ describe("tree width preference", () => {
   });
 
   it("round-trips through storage and reads as unset when storage throws", () => {
-    const storage = memPreferences();
+    const storage = memoryStorage();
     expect(readTreeWidth(storage)).toBeNull();
     writeTreeWidth(233.4, storage);
     expect(readTreeWidth(storage)).toBe(233);
-    expect(readTreeWidth(brokenPreferences)).toBeNull();
-    expect(() => writeTreeWidth(200, brokenPreferences)).not.toThrow();
+    expect(readTreeWidth(blockedStorage())).toBeNull();
+    expect(() => writeTreeWidth(200, blockedStorage())).not.toThrow();
   });
 });
 
@@ -326,14 +322,14 @@ describe("soft wrap preference", () => {
   });
 
   it("round-trips through storage and reads as on when storage throws", () => {
-    const storage = memPreferences();
+    const storage = memoryStorage();
     expect(readWrapLines(storage)).toBe(true);
     writeWrapLines(false, storage);
     expect(readWrapLines(storage)).toBe(false);
     writeWrapLines(true, storage);
     expect(readWrapLines(storage)).toBe(true);
-    expect(readWrapLines(brokenPreferences)).toBe(true);
-    expect(() => writeWrapLines(false, brokenPreferences)).not.toThrow();
+    expect(readWrapLines(blockedStorage())).toBe(true);
+    expect(() => writeWrapLines(false, blockedStorage())).not.toThrow();
   });
 });
 
@@ -347,14 +343,14 @@ describe("tree visibility preference", () => {
   });
 
   it("round-trips through storage and defaults to shown when storage throws", () => {
-    const storage = memPreferences();
+    const storage = memoryStorage();
     expect(readTreeVisible(storage)).toBe(true);
     writeTreeVisible(false, storage);
     expect(readTreeVisible(storage)).toBe(false);
     writeTreeVisible(true, storage);
     expect(readTreeVisible(storage)).toBe(true);
-    expect(readTreeVisible(brokenPreferences)).toBe(true);
-    expect(() => writeTreeVisible(false, brokenPreferences)).not.toThrow();
+    expect(readTreeVisible(blockedStorage())).toBe(true);
+    expect(() => writeTreeVisible(false, blockedStorage())).not.toThrow();
   });
 });
 

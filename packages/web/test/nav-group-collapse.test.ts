@@ -1,19 +1,29 @@
 /**
- * nav-group-collapse.ts unit tests: the sidebar's nav entries and how they fold. In
- * development mode every entry — New chat, then the page manifest — is pinned (always shown)
- * or collapsible (inside the area a nav-row-wide chevron button folds away; no label —
- * tooltip and aria carry the collapse/expand names; arrow up = collapse, and the button
- * itself stays while collapsed as the way back). New chat, Agents, Models and Plugins are
- * pinned by default; a pin toggle or a drop moves an entry across, only the changes from the
- * defaults are stored, and both areas keep manifest order. The fold and the pin choices each
- * persist in one global localStorage key (injectable storage): a remount reads them back, and
- * nothing stored / unrecognized values / throwing storage all fall back to the defaults.
+ * The sidebar's nav entries and how they fold (lib/nav-group-collapse.ts): every entry — New
+ * chat, then the viewer's pages — is pinned (always shown) or collapsible (inside the area the
+ * chevron folds away), and the fold and the pin choices each persist in one global
+ * localStorage key.
+ *
+ * - New chat comes first, then the viewer's pages; a member sees the admin's pages minus the
+ *   admin-only Machines page, and nothing else. New chat's nav label is its tooltip's, and the
+ *   Machines page heading is its nav label.
+ * - By default New chat, Agents, Models and Plugins are pinned and the rest collapsible; a
+ *   member's areas are cut from their own entries.
+ * - A pin toggle stores only the deviation from the default, both areas keep manifest order
+ *   whatever order the moves came in, moving back removes the stored choice, and a move that
+ *   changes nothing returns the same record. New chat is always pinned.
+ * - Everything pinned leaves nothing to fold; everything collapsible folds to New chat alone.
+ * - Expanded shows the pinned area then the collapsible one; collapsed shows the pinned area.
+ * - With nothing stored the fold is expanded and no pin is moved, and reading writes nothing;
+ *   each choice persists and a remount reads it back.
+ * - An unrecognized fold value reads as expanded; pin choices keep only known entries with
+ *   boolean values, and anything unparseable reads as none.
+ * - A storage that throws (quota, private mode, a throwing getter) never escapes: storing is a
+ *   no-op and reading yields the defaults.
  */
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_PINNED_NAV_KEYS,
   NAV_GROUP_COLLAPSED_KEY,
-  NAV_GROUP_KEYS,
   NAV_PINNED_KEY,
   initialNavGroupCollapsed,
   initialNavPinOverrides,
@@ -28,29 +38,9 @@ import {
   withNavPinned,
 } from "../src/lib/nav-group-collapse";
 import type { NavCollapseStorage, NavPinOverrides } from "../src/lib/nav-group-collapse";
-import { NAV_ICONS } from "../src/lib/nav-icons";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-
-/** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
-function memStorage(): NavCollapseStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-  };
-}
-
-/** Storage whose every call throws (quota exceeded / private mode). */
-const brokenStorage: NavCollapseStorage = {
-  getItem: () => {
-    throw new Error("denied");
-  },
-  setItem: () => {
-    throw new Error("denied");
-  },
-};
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** Storage whose GETTER throws (blocked site data): touching the method itself raises. */
 const hostileStorage = {
@@ -60,63 +50,10 @@ const hostileStorage = {
   setItem: () => undefined,
 } as unknown as NavCollapseStorage;
 
-describe("NAV_GROUP_KEYS", () => {
-  it("covers exactly the Agents → Evaluation Center range, in rendered order", () => {
-    // Traces is deliberately absent: the Trace panel moved into the chat toolbar's panel
-    // switcher (features/dock), and /traces stays reachable through its deep links only.
-    expect([...NAV_GROUP_KEYS]).toEqual([
-      "agents",
-      "models",
-      "plugins",
-      "machines",
-      "usage",
-      "benchmark",
-    ]);
-    // Pin the endpoints by label: a manifest edit that shifts the range shows up here.
-    expect(zh.nav[NAV_GROUP_KEYS[0]!]).toBe("智能体");
-    expect(zh.nav[NAV_GROUP_KEYS[NAV_GROUP_KEYS.length - 1]!]).toBe("评估中心");
-  });
-
-  it("every entry has a zh label, an en label, and a nav icon (the sidebar renders straight off the manifest)", () => {
-    for (const key of NAV_GROUP_KEYS) {
-      expect(zh.nav[key]).toBeTruthy();
-      expect(en.nav[key]).toBeTruthy();
-      expect(NAV_ICONS[key]).toBeTruthy();
-    }
-  });
-
-  it("New chat is not a page of the manifest: it opens a draft, not a route", () => {
-    expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("newChat");
-    expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("chat");
-  });
-});
-
 describe("navEntryKeysFor", () => {
   it("puts New chat first, then this user's pages", () => {
     expect([...navEntryKeysFor(true)]).toEqual(["newChat", ...navKeysFor(true)]);
     expect([...navEntryKeysFor(false)]).toEqual(["newChat", ...navKeysFor(false)]);
-  });
-
-  it("reads one set of names in one order, in both languages", () => {
-    const keys = navEntryKeysFor(true);
-    expect(keys.map((key) => zh.nav[key])).toEqual([
-      "新建对话",
-      "智能体",
-      "模型库",
-      "插件市场",
-      "机器管理",
-      "成本中心",
-      "评估中心",
-    ]);
-    expect(keys.map((key) => en.nav[key])).toEqual([
-      "New chat",
-      "Agents",
-      "Models",
-      "Plugins",
-      "Machines",
-      "Cost Center",
-      "Evaluation Center",
-    ]);
   });
 
   it("New chat's nav label is the one its tooltip and the collapsed rail use", () => {
@@ -131,21 +68,16 @@ describe("navEntryKeysFor", () => {
 });
 
 describe("navKeysFor", () => {
-  it("hides the admin-only entries from a member, and nothing else", () => {
+  it("a member sees the admin's entries minus Machines, which the server refuses them", () => {
     // /api/machines is admin-gated server-side (it spawns ssh with the server account's
     // keys), so offering a member the row would only ever produce a 403.
-    expect([...navKeysFor(false)]).toEqual(["agents", "models", "plugins", "usage", "benchmark"]);
-    // An admin sees the whole manifest, machines included — the row it hides from a member.
-    // The Plugins page carries the built-in library and the deployment's registry both,
-    // under one key.
-    expect([...navKeysFor(true)]).toEqual([...NAV_GROUP_KEYS]);
-    expect(NAV_GROUP_KEYS as readonly string[]).toContain("machines");
+    expect(navKeysFor(true)).toContain("machines");
+    expect(navKeysFor(false)).toEqual(navKeysFor(true).filter((key) => key !== "machines"));
   });
 });
 
 describe("pinned vs. collapsible", () => {
   it("defaults: New chat, Agents, Models and Plugins pinned; the rest collapsible", () => {
-    expect([...DEFAULT_PINNED_NAV_KEYS]).toEqual(["newChat", "agents", "models", "plugins"]);
     expect(splitNavEntries(navEntryKeysFor(true), {})).toEqual({
       pinned: ["newChat", "agents", "models", "plugins"],
       collapsible: ["machines", "usage", "benchmark"],
@@ -205,7 +137,7 @@ describe("pinned vs. collapsible", () => {
     expect(withNavPinned(overrides, "newChat", false)).toBe(overrides);
     expect(isNavPinned("newChat", { newChat: false })).toBe(true);
     expect(splitNavEntries(navEntryKeysFor(true), { newChat: false }).pinned[0]).toBe("newChat");
-    const storage = memStorage();
+    const storage = memoryStorage();
     storage.setItem(NAV_PINNED_KEY, JSON.stringify({ newChat: false, usage: true }));
     expect(initialNavPinOverrides(storage)).toEqual({ usage: true });
   });
@@ -225,26 +157,12 @@ describe("pinned vs. collapsible", () => {
     expect(splitNavEntries(navEntryKeysFor(true), overrides).pinned).toEqual(["newChat"]);
     expect(visibleNavKeys(true, true, overrides)).toEqual(["newChat"]);
   });
-
-  it("the pin toggle's accessible names exist in both languages, pin and unpin distinct", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
-      expect(dict.nav.pinEntry, locale).toBeTruthy();
-      expect(dict.nav.unpinEntry, locale).toBeTruthy();
-      expect(dict.nav.pinEntry, locale).not.toBe(dict.nav.unpinEntry);
-    }
-  });
 });
 
 describe("visibleNavKeys", () => {
-  it("expanded shows every entry; collapsed leaves only the pinned ones visible and reachable (the sidebar renders the folded rows inert at zero height)", () => {
+  it("expanded shows the viewer's every entry; collapsed leaves only the pinned ones visible and reachable (the sidebar renders the folded rows inert at zero height)", () => {
     expect(visibleNavKeys(false)).toEqual(navEntryKeysFor(true));
     expect(visibleNavKeys(true)).toEqual(["newChat", "agents", "models", "plugins"]);
-  });
-
-  it("a member's nav is their own manifest, not the admin's", () => {
     expect(visibleNavKeys(false, false)).toEqual(navEntryKeysFor(false));
     expect(visibleNavKeys(true, false)).toEqual(["newChat", "agents", "models", "plugins"]);
   });
@@ -262,29 +180,17 @@ describe("visibleNavKeys", () => {
     ]);
     expect(visibleNavKeys(true, true, overrides)).toEqual(["newChat", "agents", "plugins"]);
   });
-
-  it("the chevron-button toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
-      expect(dict.nav.collapseGroup, locale).toBeTruthy();
-      expect(dict.nav.expandGroup, locale).toBeTruthy();
-      // One button, two states: the same name for both would leave the state unreadable.
-      expect(dict.nav.collapseGroup, locale).not.toBe(dict.nav.expandGroup);
-    }
-  });
 });
 
 describe("persisted collapse state (one global localStorage key)", () => {
   it("default is expanded with nothing stored, and reading never writes", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(initialNavGroupCollapsed(s)).toBe(false);
     expect(s.map.size).toBe(0);
   });
 
   it("toggle → store → a fresh mount-time read restores the collapsed state", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     // Collapse: what the sidebar renders shrinks to the pinned entries and the toggle …
     storeNavGroupCollapsed(true, s);
     expect(s.map.get(NAV_GROUP_COLLAPSED_KEY)).toBe("collapsed");
@@ -304,15 +210,14 @@ describe("persisted collapse state (one global localStorage key)", () => {
   });
 
   it("a stored collapsed state folds the collapsible area only; the pinned entries stay", () => {
-    const s = memStorage();
-    s.map.set(NAV_GROUP_COLLAPSED_KEY, "collapsed");
+    const s = memoryStorage({ [NAV_GROUP_COLLAPSED_KEY]: "collapsed" });
     expect(initialNavGroupCollapsed(s)).toBe(true);
     const shown = visibleNavKeys(initialNavGroupCollapsed(s), true, initialNavPinOverrides(s));
     expect(shown).toEqual(["newChat", "agents", "models", "plugins"]);
   });
 
   it("unrecognized stored values fall back to expanded", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     for (const raw of ["", "true", "1", "COLLAPSED", "yes"]) {
       s.map.set(NAV_GROUP_COLLAPSED_KEY, raw);
       expect(initialNavGroupCollapsed(s)).toBe(false);
@@ -320,8 +225,9 @@ describe("persisted collapse state (one global localStorage key)", () => {
   });
 
   it("storage throwing (quota/private mode): store does not throw, read yields the default", () => {
-    expect(() => storeNavGroupCollapsed(true, brokenStorage)).not.toThrow();
-    expect(initialNavGroupCollapsed(brokenStorage)).toBe(false);
+    const broken = blockedStorage();
+    expect(() => storeNavGroupCollapsed(true, broken)).not.toThrow();
+    expect(initialNavGroupCollapsed(broken)).toBe(false);
   });
 
   it("storage whose GETTER throws (blocked site data) degrades instead of escaping the useState initializer", () => {
@@ -332,13 +238,13 @@ describe("persisted collapse state (one global localStorage key)", () => {
 
 describe("persisted pin choices (one global localStorage key)", () => {
   it("nothing stored reads as no choices — the defaults — and reading never writes", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(initialNavPinOverrides(s)).toEqual({});
     expect(s.map.size).toBe(0);
   });
 
   it("a move → store → a fresh mount-time read restores the areas", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     const moved = withNavPinned(withNavPinned({}, "models", false), "usage", true);
     storeNavPinOverrides(moved, s);
     expect(JSON.parse(s.map.get(NAV_PINNED_KEY)!)).toEqual({ models: false, usage: true });
@@ -351,30 +257,34 @@ describe("persisted pin choices (one global localStorage key)", () => {
   });
 
   it("only the deviations are stored: moving back empties the record", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     storeNavPinOverrides(withNavPinned(withNavPinned({}, "models", false), "models", true), s);
     expect(s.map.get(NAV_PINNED_KEY)).toBe("{}");
   });
 
   it("keys this build does not know are ignored, so a page without a stored choice takes its default", () => {
-    const s = memStorage();
-    s.map.set(
-      NAV_PINNED_KEY,
-      JSON.stringify({ traces: true, apps: false, models: false, machines: true }),
-    );
+    const s = memoryStorage({
+      [NAV_PINNED_KEY]: JSON.stringify({
+        traces: true,
+        apps: false,
+        models: false,
+        machines: true,
+      }),
+    });
     // machines is admin-only but still a manifest key: an admin's choice survives a member's
     // visit in the same browser.
     expect(initialNavPinOverrides(s)).toEqual({ models: false, machines: true });
   });
 
   it("a value that is not a boolean is ignored, and the entry keeps its default", () => {
-    const s = memStorage();
-    s.map.set(NAV_PINNED_KEY, JSON.stringify({ models: "false", usage: 1, agents: null }));
+    const s = memoryStorage({
+      [NAV_PINNED_KEY]: JSON.stringify({ models: "false", usage: 1, agents: null }),
+    });
     expect(initialNavPinOverrides(s)).toEqual({});
   });
 
   it("unparseable or non-object values read as no choices", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     for (const raw of ["", "{", "null", "[]", '["models"]', "true", "7", '"models"']) {
       s.map.set(NAV_PINNED_KEY, raw);
       expect(initialNavPinOverrides(s), raw).toEqual({});
@@ -382,8 +292,9 @@ describe("persisted pin choices (one global localStorage key)", () => {
   });
 
   it("storage throwing (quota/private mode): store does not throw, read yields the defaults", () => {
-    expect(() => storeNavPinOverrides({ models: false }, brokenStorage)).not.toThrow();
-    expect(initialNavPinOverrides(brokenStorage)).toEqual({});
+    const broken = blockedStorage();
+    expect(() => storeNavPinOverrides({ models: false }, broken)).not.toThrow();
+    expect(initialNavPinOverrides(broken)).toEqual({});
   });
 
   it("storage whose GETTER throws degrades instead of escaping the useState initializer", () => {

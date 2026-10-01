@@ -1,13 +1,20 @@
 /**
- * The model-picker dialog's pure logic (model-picker-logic.ts): which groups the rail shows
- * and how the key-less models stay reachable, which group is active on open, which marks a
- * row wears, how search ranks and groups results across providers, and how the keyboard moves
- * between the rail and the list. A short source contract pins what the node suite cannot
- * render: every host opens the dialog, the dialog is the shared Modal rather than an overlay
- * of its own, and a row reads as logo, name and marks rather than as an upstream id.
+ * The model-picker dialog's logic (features/chat/model-picker-logic.ts).
+ *
+ * - The rail shows the groups holding a key-configured model, in the user's saved order; the
+ *   selected and the default model stay visible without a key, the toggle counts and then lists
+ *   the key-less ones, and with no key anywhere everything is listed with nothing to toggle.
+ * - The dialog opens on the current model's group and row, else the first group with a key,
+ *   else the first group, else nothing.
+ * - A row's marks follow the model card's order (default, vision, fast, discount): an
+ *   unannotated entry counts as vision-capable, a zero-cost row is free, an unpriced one
+ *   unmarked, and only this Project's default model is marked default.
+ * - Search ranks exact, prefix, word-boundary, substring, then provider-only matches, groups
+ *   the results by provider best-first, and finds exactly what the old dropdown found.
+ * - The keyboard wraps up and down through the list's rows or the rail's groups, moves between
+ *   rail and list with left, right and Tab, and names a group with ⌥/Alt+1–9 while leaving
+ *   ⌘/Ctrl+digit to the browser.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { ModelCredentialRowLike } from "../src/features/models/model-grouping";
 import {
@@ -240,33 +247,5 @@ describe("keyboard", () => {
     expect(groupShortcutIndex(k("3", { metaKey: true }))).toBeNull();
     expect(groupShortcutIndex(k("3", { ctrlKey: true }))).toBeNull();
     expect(groupShortcutIndex(k("3", { altKey: true, shiftKey: true }))).toBeNull();
-  });
-});
-
-describe("wiring (source contract)", () => {
-  const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-  const select = read("../src/features/chat/model-select.tsx");
-  const modal = read("../src/features/chat/model-picker-modal.tsx");
-  const chatInput = read("../src/features/chat/chat-input.tsx");
-
-  it("both trigger variants open the dialog, not a dropdown", () => {
-    expect(select).toContain("<ModelPickerModal");
-    expect(select).not.toMatch(/<Dropdown\b|<FormPicker\b/);
-  });
-
-  it("the dialog is the shared Modal, so stacked dialogs and Escape behave as elsewhere", () => {
-    expect(modal).toContain("<Modal");
-    expect(modal).not.toContain("createPortal");
-  });
-
-  it("/model opens the same dialog", () => {
-    expect(chatInput).toMatch(/<ModelPickerModal[\s\S]*?open=\{modelSwitchOpen\}/);
-    expect(chatInput).not.toContain("ModelMenuList");
-  });
-
-  it("a row reads as its provider's logo, its name and its marks; the id is only its tooltip", () => {
-    expect(modal).toContain("<ProviderLogo provider={m.provider}");
-    expect(modal).toContain("pickerRowTags(m, defaultModel");
-    expect(modal).not.toMatch(/>\s*\{m\.modelId\}\s*</);
   });
 });

@@ -1,10 +1,13 @@
 /**
- * POST /api/projects/:projectId/agents/:agentId/config/reset — overwrites
- * system_config.yaml with the current code defaults, keeping only the identity fields
- * (name / description / version); the config-side analogue of a skill update. Same
- * member-level authorization as PUT config; a non-member gets 404 without a write.
+ * POST /api/projects/:projectId/agents/:agentId/config/reset — the config-side analogue of a
+ * skill update.
+ *
+ * - It rewrites system_config.yaml with the current defaults, keeping only name, description
+ *   and version.
+ * - A nonexistent Agent is a 404 with no initialization side effect; a non-member gets 404 and
+ *   the config is not touched.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { defaultSystemConfig } from "@prismshadow/penguin-core";
 import type { AgentConfigResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
@@ -16,18 +19,27 @@ describe("POST agent config reset", () => {
   let projectId: string;
   const configUrl = () => `/api/projects/${projectId}/agents/default_agent/config`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "alice");
     alice = apiClient(t.app, a.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     // Project ids are username-prefixed (`alice-…`), same as the other route tests.
     const created = (await (
-      await alice.post("/api/projects", { projectId: "alice-reset", name: "Reset project" })
+      await alice.post("/api/projects", {
+        projectId: `alice-reset_${projects}`,
+        name: "Reset project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("restores the defaults while preserving name / description / version", async () => {

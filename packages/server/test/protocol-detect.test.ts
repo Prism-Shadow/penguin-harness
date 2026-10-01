@@ -1,20 +1,33 @@
 /**
- * Protocol auto-detection tests: classification of probe answers (route-exists vs
- * route-missing 404/405 vs HTML/gateway junk vs 5xx), the candidate base URLs a typed URL
- * expands to (an extra `/v1`, a missing `/v1`, a whole endpoint URL pasted in), the
- * required probe order (openai-responses → ant-messages → openai-chat, candidate by
- * candidate, stop at the first served protocol) and the base URL reported back,
- * auth header shapes per protocol (Bearer for the OpenAI protocols; x-api-key +
- * Bearer + anthropic-version for ant-messages, mirroring AgentHub's clients), the
- * per-protocol environment-variable fallback used when no key was typed or stored
- * (ANTHROPIC_* for ant-messages, OPENAI_* for the other two), and the
- * POST /api/projects/:p/models/detect route (validation, stored-key fallback via the
- * paired reference, and that the key never appears in the response).
+ * Protocol auto-detection: which wire protocol a typed base URL speaks.
+ *
+ * - A probe's answer is classified by what it proves: 404/405 is a missing route by status
+ *   alone; a 4xx in an API-error shape (auth failures included, a FastAPI `detail` only when it
+ *   carries a message) is a served route; HTML, non-JSON, a 2xx without protocol markers and
+ *   shapeless 4xx JSON are junk; a 5xx proves nothing.
+ * - A typed URL expands to candidates covering one `/v1` too many, one too few and a whole
+ *   endpoint URL pasted in (the longest endpoint path stripped, repeats collapsed, the rest kept
+ *   exactly as typed), joined to protocol paths the way the wrapped SDKs do.
+ * - Probes run openai-responses → ant-messages → openai-chat, candidate by candidate, stop at the
+ *   first served protocol and report the base URL it was served on; a probe that fails or
+ *   floods (abandoned at the body cap) does not stop the sequence.
+ * - Auth headers mirror AgentHub's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
+ *   and anthropic-version for ant-messages); a keyless probe sends no credential; the key never
+ *   reaches a URL or the reported probes.
+ * - With no key typed or stored, each probe of a vendor's own URL borrows that protocol's
+ *   environment variable (ANTHROPIC_* for ant-messages, OPENAI_* for the others), never for any
+ *   other URL; unset and blank are absent, and a typed key wins.
+ * - POST /api/projects/:p/models/detect validates the URL, falls back to the stored key of the
+ *   paired reference unless clearApiKey says not to, never echoes the key, and never sends
+ *   vendor environment keys to the Penguin Go relay.
+ *
+ * No test reaches the network except against a loopback server of its own: the probed endpoint
+ * is the suite's fetch fake.
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProtocolDetectResponse, ModelsResponse } from "../src/api/types.js";
 import {
   MAX_PROBE_BODY_BYTES,
@@ -25,6 +38,7 @@ import {
   isHttpUrl,
   probeUrl,
 } from "../src/services/protocol-detect.js";
+import { fakeFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -225,30 +239,23 @@ interface SeenCall {
   body: string;
 }
 
-/** Fake fetch serving fixed answers by pathname; unknown paths get an OpenAI-style JSON 404 (like real OpenAI-compatible servers). */
-function fakeFetch(
+/**
+ * The endpoint under probe, over the suite's fetch fake: fixed answers by pathname, and an
+ * OpenAI-style JSON 404 for any other path (like real OpenAI-compatible servers). Each request
+ * lands in `seen` with its headers as a lower-cased record, so an absent one reads undefined.
+ */
+function gateway(
   routes: Record<string, { status: number; body: string }>,
   seen?: SeenCall[],
 ): typeof fetch {
-  return (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    const url = String(input);
-    const headers: Record<string, string> = {};
-    for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) {
-      headers[k.toLowerCase()] = v;
-    }
-    seen?.push({ url, headers, body: String(init?.body ?? "") });
-    const route = routes[new URL(url).pathname];
-    if (!route) {
-      return new Response(OPENAI_ERROR, {
-        status: 404,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    return new Response(route.body, {
-      status: route.status,
+  return fakeFetch((call) => {
+    seen?.push({ url: call.url, headers: Object.fromEntries(call.headers), body: call.body });
+    const route = routes[new URL(call.url).pathname];
+    return new Response(route?.body ?? OPENAI_ERROR, {
+      status: route?.status ?? 404,
       headers: { "content-type": "application/json" },
     });
-  }) as typeof fetch;
+  }).fetch;
 }
 
 describe("detectModelProtocol (order and stop-at-first)", () => {
@@ -259,7 +266,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     const res = await detectModelProtocol({
       baseUrl: BASE,
       apiKey: "sk-unit",
-      fetchImpl: fakeFetch(
+      fetchImpl: gateway(
         {
           "/v1/responses": { status: 401, body: OPENAI_ERROR },
           "/v1/v1/messages": { status: 401, body: ANTHROPIC_ERROR },
@@ -278,7 +285,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   it("falls through to ant-messages when /responses is missing", async () => {
     const res = await detectModelProtocol({
       baseUrl: BASE,
-      fetchImpl: fakeFetch({
+      fetchImpl: gateway({
         "/v1/v1/messages": { status: 401, body: ANTHROPIC_ERROR },
         "/v1/chat/completions": { status: 401, body: OPENAI_ERROR },
       }),
@@ -294,7 +301,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   it("openai-chat is the last resort", async () => {
     const res = await detectModelProtocol({
       baseUrl: BASE,
-      fetchImpl: fakeFetch({
+      fetchImpl: gateway({
         "/v1/chat/completions": { status: 400, body: OPENAI_ERROR },
       }),
     });
@@ -303,7 +310,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   });
 
   it("nothing matches: no detected protocol, no base URL, and every candidate's probes reported", async () => {
-    const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: fakeFetch({}) });
+    const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: gateway({}) });
     expect(res.detected).toBeUndefined();
     expect(res.baseUrl).toBeUndefined();
     expect(res.probes).toHaveLength(candidateBaseUrls(BASE).length * 3);
@@ -322,7 +329,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   it("a pasted endpoint URL detects on the base it strips down to, and reports that base back", async () => {
     const res = await detectModelProtocol({
       baseUrl: "https://gw.example.com/v1/chat/completions",
-      fetchImpl: fakeFetch({ "/v1/chat/completions": { status: 401, body: OPENAI_ERROR } }),
+      fetchImpl: gateway({ "/v1/chat/completions": { status: 401, body: OPENAI_ERROR } }),
     });
     expect(res.detected).toBe("openai-chat");
     expect(res.baseUrl).toBe("https://gw.example.com/v1");
@@ -337,7 +344,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   it("a base URL typed without /v1 falls through to the /v1 candidate and reports it", async () => {
     const res = await detectModelProtocol({
       baseUrl: "https://gw.example.com",
-      fetchImpl: fakeFetch({ "/v1/responses": { status: 400, body: OPENAI_ERROR } }),
+      fetchImpl: gateway({ "/v1/responses": { status: 400, body: OPENAI_ERROR } }),
     });
     expect(res.detected).toBe("openai-responses");
     expect(res.baseUrl).toBe("https://gw.example.com/v1");
@@ -351,8 +358,8 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   });
 
   it("probe failures do not stop the sequence: a timeout on /responses still finds chat completions", async () => {
-    const timeoutOnResponses: typeof fetch = (async (input: Parameters<typeof fetch>[0]) => {
-      const path = new URL(String(input)).pathname;
+    const timeoutOnResponses = fakeFetch((call) => {
+      const path = new URL(call.url).pathname;
       if (path === "/v1/responses") {
         throw new DOMException("The operation timed out", "TimeoutError");
       }
@@ -363,7 +370,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
         status: 401,
         headers: { "content-type": "application/json" },
       });
-    }) as typeof fetch;
+    }).fetch;
     const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: timeoutOnResponses });
     expect(res.detected).toBe("openai-chat");
     expect(res.probes.map((p) => p.outcome)).toEqual(["timeout", "network_error", "served"]);
@@ -373,8 +380,8 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     // Streams well past MAX_PROBE_BODY_BYTES; the reader must stop at the cap rather than
     // materialize the whole thing, and the probe must not be credited as served.
     let pushed = 0;
-    const flooder: typeof fetch = (async (input: Parameters<typeof fetch>[0]) => {
-      const path = new URL(String(input)).pathname;
+    const flooder = fakeFetch((call) => {
+      const path = new URL(call.url).pathname;
       if (path === "/v1/v1/messages") {
         return new Response(OPENAI_ERROR, {
           status: 404,
@@ -402,7 +409,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       );
-    }) as typeof fetch;
+    }).fetch;
     const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: flooder });
     expect(res.probes[0]?.outcome).toBe("junk");
     expect(res.detected).toBe("openai-chat");
@@ -417,7 +424,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     await detectModelProtocol({
       baseUrl: `${BASE}/`, // trailing slash must not double up
       apiKey: "sk-secret-key",
-      fetchImpl: fakeFetch({}, seen),
+      fetchImpl: gateway({}, seen),
     });
     // Nothing serves, so both candidates are probed; the header shapes are asserted on the
     // first candidate's three calls.
@@ -444,7 +451,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       // Empty env: no key from anywhere, so this stays the genuinely keyless case
       // regardless of what the machine running the suite happens to export.
       env: {},
-      fetchImpl: fakeFetch({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }, seen),
+      fetchImpl: gateway({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }, seen),
     });
     expect(res.detected).toBe("openai-responses");
     expect(seen[0]!.headers.authorization).toBeUndefined();
@@ -506,7 +513,7 @@ describe("detectModelProtocol env fallback", () => {
         OPENAI_BASE_URL: BASE,
         ANTHROPIC_API_KEY: "sk-anthropic",
       },
-      fetchImpl: fakeFetch({}, seen), // every path 404s, so both candidates run all three probes
+      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
     });
     expect(seen).toHaveLength(6);
     for (const call of seen) {
@@ -520,7 +527,7 @@ describe("detectModelProtocol env fallback", () => {
     await detectModelProtocol({
       baseUrl: "https://api.openai.com/v1",
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({}, seen), // every path 404s, so both candidates run all three probes
+      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
     });
     expect(seen).toHaveLength(6);
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
@@ -547,7 +554,7 @@ describe("detectModelProtocol env fallback", () => {
       baseUrl: BASE,
       apiKey: "sk-typed",
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({}, seen),
+      fetchImpl: gateway({}, seen),
     });
     for (const call of seen) expect(call.headers.authorization).toBe("Bearer sk-typed");
     expect((seen[1] as SeenCall).headers["x-api-key"]).toBe("sk-typed");
@@ -558,7 +565,7 @@ describe("detectModelProtocol env fallback", () => {
     await detectModelProtocol({
       baseUrl: "https://api.anthropic.com",
       env: { ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({}, seen),
+      fetchImpl: gateway({}, seen),
     });
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
     expect(responses.headers.authorization).toBeUndefined();
@@ -570,7 +577,7 @@ describe("detectModelProtocol env fallback", () => {
     const res = await detectModelProtocol({
       baseUrl: "https://api.openai.com/v1",
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }),
+      fetchImpl: gateway({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }),
     });
     expect(res.detected).toBe("openai-responses");
     expect(JSON.stringify(res)).not.toContain("sk-openai");
@@ -612,17 +619,26 @@ describe("POST /api/projects/:p/models/detect", () => {
   let projectId: string;
   const detectUrl = () => `/api/projects/${projectId}/models/detect`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "diana");
     api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await api.post("/api/projects", { projectId: "diana-detect", name: "Detect project" })
+      await api.post("/api/projects", {
+        projectId: `diana-detect_${projects}`,
+        name: "Detect project",
+      })
     ).json()) as { project: { projectId: string } };
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("validates baseUrl: required and absolute http(s)", async () => {

@@ -3123,6 +3123,8 @@ Benchmark：
     dropFilesDesc: "图片与文件将添加到输入框",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "目标模式仅支持附加图片，文件未添加。",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string => `粘贴的文本较长，已作为附件 ${name} 添加。`,
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",

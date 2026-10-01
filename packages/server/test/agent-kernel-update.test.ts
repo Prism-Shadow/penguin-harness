@@ -1,12 +1,15 @@
 /**
- * POST /api/projects/:projectId/agents/:agentId/config/kernel-update — smart-merges
- * system_config.yaml up to the current defaults generation: untouched old defaults advance,
- * customizations are kept and reported, the config is stamped. Also covers the kernel fields
- * of the config DTO and the agents-list kernelOutdated flag. Same member-level authorization
- * as /reset; a non-member gets 404 without a write.
+ * POST /api/projects/:projectId/agents/:agentId/config/kernel-update — the smart merge of
+ * system_config.yaml up to the current defaults generation.
+ *
+ * - A fresh Agent reports stamped and current, in the config DTO and on the Agent list.
+ * - A pre-stamp config is flagged outdated; the update advances untouched old defaults, keeps
+ *   and reports the customizations, and stamps the config.
+ * - A nonexistent Agent is a 404 with no initialization side effect; a non-member gets 404 and
+ *   the config is not touched.
  */
 import fs from "node:fs/promises";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   KERNEL_VERSION,
@@ -33,17 +36,26 @@ describe("POST agent config kernel-update", () => {
   let projectId: string;
   const configUrl = () => `/api/projects/${projectId}/agents/default_agent/config`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "alice");
     alice = apiClient(t.app, a.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await alice.post("/api/projects", { projectId: "alice-kernel", name: "Kernel project" })
+      await alice.post("/api/projects", {
+        projectId: `alice-kernel_${projects}`,
+        name: "Kernel project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   /**

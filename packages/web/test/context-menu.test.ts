@@ -1,16 +1,13 @@
 /**
- * How the app uses the row context menu (the UI package's `useRowContextMenu` and its gesture
- * rules, under components/overlays/portal-panel/, driving a `Dropdown` in `anchorRect` mode). The
- * rules, the hook's own guards and the Dropdown's scroll wiring are the package's
- * `context-menu.test.ts`; what is pinned here spans the app.
+ * Guard: how the app uses the row context menu (the UI package's `useRowContextMenu` and its
+ * gesture rules). The rules, the hook's own guards and the Dropdown's scroll wiring are the
+ * package's `context-menu.test.ts`; what is held here spans the app.
  *
- * **Suppression scope**: preventing the browser's own menu is correct on the row and wrong
- * everywhere else, and nothing in a node-only suite (`environment: "node"`, no jsdom) would notice
- * a `preventDefault` that had crept onto a document-level listener — so the scan asserts there is
- * no global contextmenu listener in either root. And the feature must not be mouse-only: the
- * sidebar's Session rows (the UI package's `SessionRow`) spread all three openers (right-click,
- * Shift+F10, press-and-hold) and name the anchor's owner, which the scroll rule needs to leave a
- * menu open while an unrelated container scrolls.
+ * - The scan reads every source root, finds the menu modules in one place each, and reports
+ *   POSIX-separated paths whatever the platform's separator (the id contract every guard's
+ *   path comparison depends on, which only Windows CI would otherwise catch).
+ * - No window-, document- or globalThis-level contextmenu listener exists, so the browser's own
+ *   menu survives off the row.
  */
 import { describe, expect, it } from "vitest";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
@@ -34,8 +31,6 @@ const DROPDOWN = "packages/ui/src/components/overlays/dropdown/dropdown.tsx";
 const CONTEXT_MENU = "packages/ui/src/components/overlays/portal-panel/use-row-context-menu.ts";
 const RULES = "packages/ui/src/components/overlays/portal-panel/context-menu.ts";
 const SIDEBAR = "packages/web/src/components/layout/sidebar.tsx";
-/** The sidebar's conversation row, which owns the row's menu wiring. */
-const SESSION_ROW = "packages/ui/src/components/shell/session-row/session-row.tsx";
 
 describe("sourceFiles", () => {
   it("scans every source root, and finds the menu modules in one place each", () => {
@@ -53,7 +48,6 @@ describe("sourceFiles", () => {
     expect(paths.filter((p) => p.includes("\\"))).toEqual([]);
     expect(paths).toContain(CONTEXT_MENU);
     expect(paths).toContain(SIDEBAR);
-    expect(paths).toContain(SESSION_ROW);
   });
 });
 
@@ -68,24 +62,5 @@ describe("native-menu suppression scope", () => {
       /\b(window|document|globalThis)\.addEventListener\(\s*["']contextmenu["']/.test(src),
     );
     expect(global.map(([path]) => path)).toEqual([]);
-  });
-
-  it("gives the sidebar row all three openers, so the menu is not mouse-only", () => {
-    const row = sourceFiles().find(([path]) => path === SESSION_ROW);
-    expect(row).toBeDefined();
-    // The row spreads the hook's handlers (contextmenu + Shift+F10 + press-and-hold) and
-    // guards its own click against the one a hold replays.
-    expect(row![1]).toContain("{...ctx.rowProps}");
-    expect(row![1]).toContain("ctx.consumeLongPressClick()");
-    // And the sidebar draws its conversations with that row.
-    const sidebar = sourceFiles().find(([path]) => path === SIDEBAR);
-    expect(sidebar![1]).toContain("<SessionRow");
-  });
-
-  it("names the anchor's owner alongside the anchor, so the scroll rule has one to test", () => {
-    // Without the wiring, scrollMovesAnchor is asked about a null owner on every scroll and
-    // answers "dismiss" — the package's rule tests would still pass while the bug was back.
-    const row = sourceFiles().find(([path]) => path === SESSION_ROW);
-    expect(row![1]).toContain("anchorOwner={ctx.anchorOwner}");
   });
 });

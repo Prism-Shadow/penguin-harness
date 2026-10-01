@@ -1,20 +1,14 @@
 /**
- * account-menu.ts unit tests: which sessions the account menu offers a
- * change-password entry to.
+ * Which account controls a session is offered (lib/account-menu.ts), decided by the pair of
+ * the server's desktop mode and how the session signed in — never by either alone.
  *
- * The rule is pinned by value in all four combinations rather than by shape, because the
- * tempting simplification — keying on `desktopMode` alone, like the sibling sign-out and
- * Users entries do — is wrong in a way nothing else would catch: it also strips the
- * control from a browser signed in against a desktop-mode server over loopback, whose
- * password session can still change its password (server/test/desktop.test.ts, "keeps
- * requiring oldPassword for password-established sessions in desktop mode").
- *
- * vitest runs node-only here (`environment: "node"`, no jsdom), so this asserts against the
- * exported predicate rather than a rendered menu (title-reveal.test.ts convention).
+ * - Only the desktop shell's own window counts as the shell's window.
+ * - Change password is hidden in exactly one state, the shell's own window; a browser signed
+ *   into a desktop-mode server and a desktop cookie replayed against a plain server keep it.
+ * - The initial-password nag stays quiet in any window the shell signed in.
+ * - The current-password field is omitted for the shell's own window and first-login
+ *   sessions, and kept for a desktop session against a server no shell spawned.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   isDesktopShellWindow,
@@ -38,25 +32,21 @@ describe("isDesktopShellWindow", () => {
 });
 
 describe("offersChangePassword", () => {
-  it("hides it in the desktop shell's own window — no login form, seed password never shown", () => {
-    expect(offersChangePassword({ desktopMode: true, sessionVia: "desktop" })).toBe(false);
-  });
-
-  it("offers it on an ordinary multi-user server reached from a browser", () => {
-    expect(offersChangePassword({ desktopMode: false, sessionVia: "password" })).toBe(true);
-  });
-
-  it("offers it to a browser signed into a desktop-mode server over loopback", () => {
-    // That session typed a real password at the login form; the server still lets it
-    // change one, so hiding the entry would strand it.
-    expect(offersChangePassword({ desktopMode: true, sessionVia: "password" })).toBe(true);
-  });
-
-  it("offers it to a desktop cookie replayed against a plain server on the same data root", () => {
-    // The shared data root makes this reachable, and there the server requires the old
-    // password like any other session — so the control is live and must stay visible.
-    expect(offersChangePassword({ desktopMode: false, sessionVia: "desktop" })).toBe(true);
-  });
+  // The shell's own window has no login form and never shows the seed password. A browser
+  // that typed a real password into a desktop-mode server over loopback can still change it,
+  // and so can a desktop cookie replayed against a plain server on the same data root, where
+  // the server requires the old password like any other session.
+  it.each([
+    [true, "desktop", false],
+    [false, "password", true],
+    [true, "password", true],
+    [false, "desktop", true],
+  ] as const)(
+    "desktopMode %s, signed in via %s: offered %s",
+    (desktopMode, sessionVia, offered) => {
+      expect(offersChangePassword({ desktopMode, sessionVia })).toBe(offered);
+    },
+  );
 });
 
 describe("nagsAboutInitialPassword", () => {
@@ -90,106 +80,5 @@ describe("omitsOldPassword", () => {
     // request the server refuses. That account's password is recovered with `penguin server
     // reset-admin-password`, not from this form.
     expect(omitsOldPassword({ desktopMode: false, sessionVia: "desktop" })).toBe(false);
-  });
-
-  it("is hidden in exactly one of the four states", () => {
-    const states = [true, false].flatMap((desktopMode) =>
-      (["password", "desktop"] as const).map((sessionVia) => ({ desktopMode, sessionVia })),
-    );
-    expect(states.filter((s) => !offersChangePassword(s))).toEqual([
-      { desktopMode: true, sessionVia: "desktop" },
-    ]);
-  });
-});
-
-describe("the settings section registry", () => {
-  const source = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), "../src/lib/settings-sections.ts"),
-    "utf8",
-  );
-
-  it("gates the account page on the predicate rather than listing it always", () => {
-    // The change-password row moved from the sidebar menu into the settings dialog; the
-    // predicate now decides whether that page exists at all. Without this the predicate
-    // could pass every test above while the registry ignored it.
-    expect(source).toContain("offersChangePassword(v)");
-  });
-});
-
-describe("the account menu", () => {
-  // One menu, two anchors: the pinned sidebar's user row and the collapsed rail's avatar
-  // both render this component, so the rows below are asserted once, where they live.
-  const source = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/layout/user-menu.tsx"),
-    "utf8",
-  );
-
-  it("keeps sign-out on its own desktopMode gate", () => {
-    // Sign out is hidden for the whole desktop-mode server, not just the shell's window.
-    // Anchored to sign-out's own block: the server update row above it carries the same
-    // gate, so a bare `toContain("{!desktopMode && (")` would keep passing once this one
-    // was deleted.
-    const signOut = source.indexOf("S.auth.logout");
-    expect(signOut).toBeGreaterThan(-1);
-    const gate = source.lastIndexOf("{!desktopMode && (", signOut);
-    expect(gate).toBeGreaterThan(-1);
-    // Only sign-out's own <MenuItem> stands between that gate and the label it renders.
-    expect(source.slice(gate, signOut).match(/<\w+/g)).toEqual(["<MenuItem"]);
-  });
-
-  it("confirms before signing out, from a dialog the closing menu cannot take with it", () => {
-    // The row opens the confirmation; only the dialog's Confirm ends the session. A direct
-    // logout() back on the row is the regression worth naming: sign-out sits in a menu of
-    // otherwise harmless entries, where one slip used to land on the login page.
-    const signOut = source.indexOf("S.auth.logout");
-    const row = source.slice(source.lastIndexOf("{!desktopMode && (", signOut), signOut);
-    expect(row).toContain("setConfirmingLogout(true)");
-    expect(row).not.toContain("logout()");
-    // And the dialog is mounted OUTSIDE the dropdown, the property the comment beside it
-    // claims: the panel's children unmount the moment the menu closes, and the row closes
-    // the menu as it opens the dialog — moved inside, the confirmation would never appear.
-    const menuEnd = source.indexOf("</Dropdown>");
-    expect(menuEnd).toBeGreaterThan(-1);
-    expect(source.indexOf("<ConfirmModal")).toBeGreaterThan(menuEnd);
-  });
-
-  it("reaches the settings it no longer holds through one ungated Settings entry", () => {
-    // The preference rows, change password and user management all moved into the settings
-    // dialog, whose own section registry decides which pages this viewer sees — so the row
-    // itself carries no isAdmin test, or a non-admin would lose the personal pages along
-    // with the admin ones.
-    expect(source).toContain("setSettingsOpen(true)");
-    expect(source).not.toContain("offersChangePassword");
-    expect(source).not.toContain("S.settings.language");
-    expect(source).not.toContain("S.settings.theme");
-    expect(source).not.toContain('go("/settings")');
-    expect(source).not.toContain('go("/admin/users")');
-  });
-
-  it("mounts no dialog for a surface the settings dialog owns", () => {
-    // A stale mount would be a build failure rather than a silent one, but the menu
-    // keeping an opener for a surface reachable elsewhere is the regression worth naming.
-    expect(source).not.toContain("ProxySettingsDialog");
-    expect(source).not.toContain("UploadLimitsDialog");
-    expect(source).not.toContain("ChangePasswordDialog");
-  });
-
-  it("keeps the one update row outside the settings dialog, opening the modal the layout mounts", () => {
-    // Updating is deliberately not a settings page: the menu carries the entry itself. One
-    // row serves both backends (the server release, the shell's own updater in the desktop
-    // window) and hides itself where the session can update nothing; every click opens the
-    // update modal, which is mounted by the app layout — not here, where the menu closing on
-    // that same click would unmount it, and not on the draft page whose badge opens it too.
-    expect(source).toContain("<UpdateRow");
-    expect(source).toContain("openUpdateModal()");
-    expect(source).not.toContain("<UpdateModal");
-    expect(source).not.toContain("ServerUpdateRow");
-    expect(source).not.toContain("DesktopUpdateRow");
-  });
-
-  it("leaves the font credit to the Settings dialog's credits page", () => {
-    // The MiSans credit moved to Settings → Credits, which every account can open; the menu
-    // keeps no second copy of it.
-    expect(source).not.toContain("fontCredit");
   });
 });

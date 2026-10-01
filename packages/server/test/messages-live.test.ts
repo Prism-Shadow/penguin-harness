@@ -1,10 +1,16 @@
 /**
- * GET /api/sessions/:id/messages live-tail integration: while a Task runs, the response
- * carries `live` — a channel cursor plus one synthetic `partial_* start` per open
- * streaming fragment (origin preserved for subagent fragments); once the run ends the
- * field disappears and the tail is cleared.
+ * GET /api/sessions/:id/messages while a Task runs: the live tail a reloading page resumes
+ * the stream from.
+ *
+ * - Given an idle Session, the response carries no `live` field.
+ * - Given a running one, `live` carries a channel cursor and one synthetic `partial_* start`
+ *   per streaming fragment still open (a subagent fragment keeps its origin); once the run
+ *   ends the tail is cleared and the field disappears.
+ * - Windowed reads carry `live` on tail pages with the same content, never on `before` pages.
+ * - A read without paging parameters is byte-identical to the transcript alone, and malformed
+ *   paging parameters are refused.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   approvalDecision,
   assistantText,
@@ -21,10 +27,9 @@ import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagesResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
-const SID = "session-2026-07-25-10-00-00-cafe0001";
 
 /**
  * Fake session frozen mid-stream: it streams a thinking fragment, a closed text segment,
@@ -32,13 +37,7 @@ const SID = "session-2026-07-25-10-00-00-cafe0001";
  * on approval (always-ask) so the Task stays running while the test inspects /messages.
  */
 function midStreamFakeSession(sessionId: string): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       // A real run opens its first LLM request before any model output — and the
       // manager's pending-input holds end exactly there.
@@ -60,34 +59,26 @@ function midStreamFakeSession(sessionId: string): RuntimeSession {
       yield toolCallOutput({ output: "line 1\nline 2\n", toolCallId: "tc-lv" });
       yield assistantText("done");
     },
-    async *compact() {},
-  };
+  });
 }
 
 describe("messages live tail", () => {
   let t: TestApp;
   let cookie: string;
+  let SID: string;
   let row: SessionRow;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     ({ cookie } = await provisionUser(t.app, "livetailer"));
-    row = {
-      sessionId: SID,
-      projectId: "livetailer-default_project",
-      agentId: "default_agent",
-      modelId: "m1",
-      provider: "custom",
-      workspace: "/tmp/w",
-      approvalMode: "always-ask",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
-    t.deps.sessionsRepo.insert(row);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    row = sessionRow(SID, { projectId: "livetailer-default_project", approvalMode: "always-ask" });
+    t.deps.sessionsRepo.insert(row);
   });
 
   const getMessages = async (query = ""): Promise<MessagesResponse> => {
