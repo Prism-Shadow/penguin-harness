@@ -29,6 +29,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { Button, ICON_GAP, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
@@ -56,6 +57,10 @@ import {
 } from "./pr-graph-rows";
 import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy";
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
+
+/** Reads of a graph the organization's machine is still building, and the pause between them. */
+const GRAPH_READ_TRIES = 4;
+const GRAPH_RETRY_MS = 2_000;
 
 /** Row height and lane pitch of the drawn graph, in px. */
 const ROW = 52;
@@ -95,7 +100,19 @@ export function GraphPage() {
     setLoading(true);
     setError(null);
     try {
-      setGraph(await api.getOrgProposalGraph(projectId, orgId));
+      // The first read after the organization's server restarts asks GitHub for everything and
+      // can outlast the hub's wait (504 machine_not_answering); that read goes on and fills the
+      // server's cache, so asking again soon gets the graph. A few tries, then the error shows.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          setGraph(await api.getOrgProposalGraph(projectId, orgId));
+          return;
+        } catch (e) {
+          const slow = e instanceof ApiError && e.code === "machine_not_answering";
+          if (!slow || attempt >= GRAPH_READ_TRIES) throw e;
+          await new Promise((r) => setTimeout(r, GRAPH_RETRY_MS));
+        }
+      }
     } catch (e) {
       setError(apiErrorText(e));
     } finally {
