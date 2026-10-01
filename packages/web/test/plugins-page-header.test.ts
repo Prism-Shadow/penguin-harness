@@ -11,7 +11,7 @@
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. How the header row wraps on a narrow screen is PageHeader's, not this page's.
  */
-import { createElement } from "react";
+import { createElement, type FunctionComponent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ModuleRow, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
@@ -23,7 +23,7 @@ beforeEach(() => {
   stubLocalStorage().setItem("penguin.lang", "en");
 });
 
-const inLocale = (child: Parameters<typeof createElement>[0], props: object) =>
+const inLocale = <P extends object>(child: FunctionComponent<P>, props: P) =>
   renderToStaticMarkup(createElement(LocaleProvider, null, createElement(child, props)));
 
 /** The text a reader sees inside the button with this accessible name; undefined when absent. */
