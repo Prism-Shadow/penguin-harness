@@ -34,6 +34,8 @@
  *                    | conclude <n> -m <text> [--discussion <session_id>]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
  *                    | approve <n> | reject <n> --reason <s> | groups
+ *                    | deploy <n> --to <id> [--dry-run] [-- <args...>]
+ *                    | deploy-script add <id> [--description <s>] -- <command...> | ls | rm <id>
  *                    (the company-proposals plugin's routes: without the plugin, every one is a 404)
  *
  * Every subcommand takes `--org-id` (default: PENGUIN_ORG_ID, the variable company mode
@@ -101,7 +103,7 @@ import {
   ServerClient,
 } from "../client.js";
 import { getSessionInfo } from "../server-session.js";
-import { deployProposal, httpReadRevision, spawnRun } from "./proposal-deploy.js";
+import { registerProposalDeploy } from "./proposal-deploy.js";
 import { dim } from "../render.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -154,6 +156,8 @@ const ORG_404_CODES: ReadonlySet<string> = new Set([
   "proposal_not_found",
   "comment_not_found",
   "discussion_not_found",
+  "deploy_script_not_found",
+  "deploy_not_found",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -2281,38 +2285,21 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     else process.stdout.write(renderGraph(graph, t));
   });
 
-  scoped(
-    proposal
-      .command("deploy <number>")
-      .description(t.org.proposalDeployDesc)
-      .requiredOption("--to <port|url>", t.org.proposalDeployTo)
-      .option("--dry-run", t.org.proposalDeployDryRun),
-    t,
-  ).action(async (raw: string, opts) => {
-    const number = parseProposalNumber(raw, t);
-    if (number === null) return;
-    const scope = await orgScope(opts, t);
-    if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "GET", `/${number}`);
-    if (detail === null) return;
-    const outcome = await deployProposal({
-      proposal: { number, implPrUrl: detail.implPr?.url ?? null },
-      to: String(opts.to),
-      cwd: process.cwd(),
-      dryRun: opts.dryRun === true,
-      env: process.env,
-      run: spawnRun,
-      readRevision: httpReadRevision,
-      node: process.execPath,
-      log: (line) => process.stderr.write(`${line}\n`),
-    });
-    if (!outcome.ok) {
-      fail(t, outcome.reason);
-      return;
-    }
-    if (opts.json === true) printJson(outcome);
-    else if (outcome.dryRun) printLine(t.org.proposalDeployPlanned(number, outcome.head));
-    else printLine(t.org.proposalDeployDone(number, outcome.head, outcome.revision ?? ""));
+  registerProposalDeploy(proposal, t, {
+    scoped: (cmd) => scoped(cmd, t),
+    open: async (opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return null;
+      return <T>(method: string, suffix: string, body?: unknown) =>
+        proposalRequest<T>(scope, t, method, suffix, body);
+    },
+    actorFields,
+    actorQuery: () => query(actorQuery()),
+    fail: (message) => fail(t, message),
+    print: printLine,
+    printJson,
+    write: (text) => process.stdout.write(text),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   });
 
   const material = proposal.command("material").description(t.org.proposalMaterialDesc);

@@ -57,6 +57,7 @@ import { pullKey } from "./pr-chain.js";
 import { PrGraphReader } from "./pr-graph.js";
 import { gitRunner, type RunGit } from "./workspace-remotes.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
+import type { DeployScope } from "./deploy.js";
 import {
   checkScope,
   checkTests,
@@ -1473,6 +1474,21 @@ export class ProposalService {
         implPr: p.implPr?.url ?? null,
       })),
     });
+  }
+
+  /**
+   * What a deploy (deploy.ts) needs of an organization, behind the same access check as every
+   * other route: the organization, the caller, a proposal's impl PR and the delivery repository.
+   */
+  async deployScope(projectId: string, orgId: string, actor: OrgActor): Promise<DeployScope> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    return {
+      org,
+      principal: caller.principal,
+      person: this.isPerson(caller),
+      implPr: (number) => this.requireProposal(ledger, number).implPr?.url ?? null,
+      deliveryRepo: async () => (await this.deliveryRepo(org, ledger, [])).repo,
+    };
   }
 
   async feedback(

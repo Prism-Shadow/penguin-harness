@@ -8,6 +8,11 @@
  *                                   its new proposals come from approved roadmap items)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
  *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts)
+ *   GET    /deploy-scripts           the organization's deploy scripts (deploy-routes.ts)
+ *   POST   /deploy-scripts           { id, command[], description? } register one (a person who is a server admin)
+ *   DELETE /deploy-scripts/:id       remove one (a person who is a server admin)
+ *   POST   /deploys                  { script, proposal | pr, head?, args?, dryRun? } run a script on a PR head (anybody in the organization)
+ *   GET    /deploys/:id?from=        a run and its output from an offset
  *   POST   /adopt-impl               anybody in the organization: proposals without an impl PR take their latest delivery-repo `pr` material
  *   GET    /:number                  the proposal
  *   PUT    /:number/impl             { url } the impl PR (anybody in the organization; one per proposal)
@@ -37,118 +42,24 @@
  * is honoured only behind the local API token (see callerSessionId).
  */
 import { Hono } from "hono";
-import type { Context } from "hono";
-import type { OrgActor } from "@prismshadow/penguin-server/plugin";
 import type { ProposalMaterialKind } from "@prismshadow/penguin-server/api";
 import { MATERIAL_KINDS, ProposalError, type ProposalService } from "./service.js";
+import type { DeployService } from "./deploy.js";
+import { deployRoutes } from "./deploy-routes.js";
+import {
+  actorOf,
+  actorOfQuery,
+  jsonBody,
+  numberParam,
+  optionalString,
+  param,
+  requireString,
+} from "./route-input.js";
 
 /** The slot's contribution id, as the manifest names it. */
 export const ROUTES_ID = "company-proposals.routes";
 
-type SessionVia = "password" | "desktop" | "setup" | "token" | string;
-
-/**
- * The body's `sessionId` is an identity claim — "this write comes from inside that Session"
- * — and the only credential that backs it is the boot's local API token, which the control
- * environment hands a Session's subprocesses. A cookie proves a person, not a session, so a
- * cookie-authenticated claim is dropped and the write is attributed to that person.
- */
-function callerSessionId(via: SessionVia, body: Record<string, unknown>): string | undefined {
-  const sessionId = body.sessionId;
-  return via === "token" && typeof sessionId === "string" && sessionId !== ""
-    ? sessionId
-    : undefined;
-}
-
-/** Who performs this write; `agentId` is the same kind of claim as `sessionId`, backed by the same credential. */
-function actorOf(
-  c: Context,
-  body: Record<string, unknown>,
-  opts: { agentIdField?: string } = {},
-): OrgActor {
-  const user = c.get("user" as never) as { userId: string };
-  const via = c.get("sessionVia" as never) as SessionVia;
-  const sessionId = callerSessionId(via, body);
-  const field = opts.agentIdField ?? "agentId";
-  const raw = body[field];
-  const agentId = via === "token" && typeof raw === "string" && raw !== "" ? raw : undefined;
-  return {
-    userId: user.userId,
-    ...(sessionId !== undefined ? { sessionId } : {}),
-    ...(agentId !== undefined ? { agentId } : {}),
-  };
-}
-
-/** The same claim on a read, where `?sessionId=` / `?agentId=` carry it. */
-function actorOfQuery(c: Context): OrgActor {
-  const user = c.get("user" as never) as { userId: string };
-  const via = c.get("sessionVia" as never) as SessionVia;
-  const sessionId = c.req.query("sessionId");
-  const agentId = c.req.query("agentId");
-  return {
-    userId: user.userId,
-    ...(via === "token" && sessionId ? { sessionId } : {}),
-    ...(via === "token" && agentId ? { agentId } : {}),
-  };
-}
-
-async function jsonBody(c: Context): Promise<Record<string, unknown>> {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    throw new ProposalError(400, "bad_request", "Body must be a JSON object.");
-  }
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new ProposalError(400, "bad_request", "Body must be a JSON object.");
-  }
-  return body as Record<string, unknown>;
-}
-
-function requireString(body: Record<string, unknown>, key: string, maxLen = 20_000): string {
-  const value = body[key];
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new ProposalError(400, "bad_request", `${key} must be a non-empty string.`);
-  }
-  if (value.length > maxLen) {
-    throw new ProposalError(400, "bad_request", `${key} is too long (max ${maxLen} characters).`);
-  }
-  return value;
-}
-
-function optionalString(
-  body: Record<string, unknown>,
-  key: string,
-  maxLen = 4000,
-): string | undefined {
-  const value = body[key];
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "string")
-    throw new ProposalError(400, "bad_request", `${key} must be a string.`);
-  if (value.length > maxLen) {
-    throw new ProposalError(400, "bad_request", `${key} is too long (max ${maxLen} characters).`);
-  }
-  return value;
-}
-
-function numberParam(c: Context): number {
-  const raw = c.req.param("number");
-  const n = Number(raw);
-  if (!/^\d+$/.test(raw ?? "") || !Number.isInteger(n) || n < 1) {
-    throw new ProposalError(404, "proposal_not_found", `Proposal does not exist: ${raw}`);
-  }
-  return n;
-}
-
-function param(c: Context, name: "projectId" | "orgId"): string {
-  const value = c.req.param(name);
-  if (value === undefined || value === "") {
-    throw new ProposalError(404, "org_not_found", `Missing ${name}.`);
-  }
-  return value;
-}
-
-export function proposalRoutes(service: ProposalService): Hono {
+export function proposalRoutes(service: ProposalService, deploys: DeployService): Hono {
   const app = new Hono();
   app.onError((err, c) => {
     if (err instanceof ProposalError) {
@@ -195,6 +106,9 @@ export function proposalRoutes(service: ProposalService): Hono {
       await service.adoptImpl(param(c, "projectId"), param(c, "orgId"), actorOf(c, body)),
     );
   });
+
+  // Before `/:number`, which would otherwise take `deploy-scripts` and `deploys` for a number.
+  app.route("/", deployRoutes(deploys));
 
   app.get("/:number", async (c) =>
     c.json(

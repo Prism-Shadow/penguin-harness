@@ -1,11 +1,15 @@
-# `penguin org proposal deploy` puts a server on a proposal's generation
+# Proposals deploy with the organization's own deploy scripts
 
 - **Date:** 2026-09-30
 - **Type:** feature
-- **Scope:** `cli`, `plugins`
+- **Scope:** `plugins`, `cli`, `web`
 
 [中文版](2026-09-30-proposal-deploy.zh.md)
 
-`penguin org proposal deploy <n> --to <port|url>` hot-updates one penguin server to the head of proposal `n`'s impl PR. Run from inside a checkout of this repository, it fetches `refs/pull/<PR>/head` from the PR's repository (into `FETCH_HEAD`, no ref left behind), runs `pnpm install --frozen-lockfile` and `pnpm -r build` in a throwaway worktree under `.worktrees/`, runs that generation's own `scripts/deploy.mjs <target>`, and removes the worktree. It then reads the target's `GET /api/version` and succeeds only when `harness.source.revision` names the head; a refused or rolled-back push fails with both revisions printed. `--dry-run` resolves and fetches the head and pushes nothing.
+An organization registers its deploy scripts with `penguin org proposal deploy-script add <id> [--description <text>] -- <command> [args...]` (a server admin only; `deploy-script ls` and `deploy-script rm <id>` list and remove them). The registry is `deploy-scripts.json` in the organization's directory.
 
-The target's credential comes from the environment, `PENGUIN_ADMIN_PASSWORD` or `PENGUIN_API_TOKEN` as `deploy.mjs` takes them; the command stores none and prints none. A proposal without an impl PR, an impl PR that is not a GitHub pull request, and a plaintext `http://` target off this machine are refused before anything runs.
+`penguin org proposal deploy <n> --to <id> [--dry-run] [-- <extra args...>]` runs script `<id>` on the head of proposal `n`'s impl PR. The script runs on the server that holds the organization, in its shared workspace, with the extra arguments appended to the registered command and the PR in its environment: `PENGUIN_DEPLOY_HEAD`, `PENGUIN_DEPLOY_REPO`, `PENGUIN_DEPLOY_PR`, `PENGUIN_DEPLOY_PR_URL`, `PENGUIN_DEPLOY_BRANCH`, `PENGUIN_DEPLOY_PROPOSAL`, `PENGUIN_DEPLOY_ID`, `PENGUIN_DEPLOY_RUN` and `PENGUIN_DEPLOY_BY`. The command follows the run's output and exits 0 only when the script did; `--dry-run` prints the command and the head without running anything.
+
+On the PR graph page, right-clicking a node (or its ellipsis) lists the deploy scripts; picking one asks for extra arguments, runs the script on that PR's head and shows its output. A head that moved since the graph was read is refused.
+
+One run per script at a time, stopped after an hour. Runs and the last MiB of their output are kept in memory and are gone after a restart.

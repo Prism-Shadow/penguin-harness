@@ -652,11 +652,29 @@ export interface Messages {
     proposalImplAdopt: string;
     /** `proposal graph`: the delivery repository's PR graph. */
     proposalGraphDesc: string;
+    /** `proposal deploy <n> --to <id>`: run a registered deploy script on the impl PR head. */
     proposalDeployDesc: string;
     proposalDeployTo: string;
     proposalDeployDryRun: string;
-    proposalDeployPlanned: (n: number, head: string) => string;
-    proposalDeployDone: (n: number, head: string, revision: string) => string;
+    proposalDeployPlanned: (script: string, pr: string, head: string, argv: string) => string;
+    proposalDeployStarted: (run: string, script: string, pr: string, head: string) => string;
+    proposalDeploySucceeded: (run: string, head: string) => string;
+    proposalDeployFailed: (
+      run: string,
+      status: string,
+      exitCode: number | null,
+      error: string | null,
+    ) => string;
+    /** `proposal deploy-script …`: the organization's deploy scripts. */
+    deployScriptDesc: string;
+    deployScriptAddDesc: string;
+    deployScriptDescription: string;
+    deployScriptLsDesc: string;
+    deployScriptRmDesc: string;
+    deployScriptAdded: (id: string, command: string) => string;
+    deployScriptRemoved: (id: string) => string;
+    deployScriptNone: string;
+    deployScriptHeader: string[];
     proposalFeedbackDesc: string;
     /** `proposal conclude <n>`: a discussion's conclusion, to the owner's desk. */
     proposalConcludeDesc: string;
@@ -1909,14 +1927,28 @@ const en: Messages = {
     proposalGraphDesc:
       "Show the delivery repository's open PRs as a commit graph, with each PR's proposal and the origins' PRs on the same branch",
     proposalDeployDesc:
-      "Hot-update a penguin server to the proposal's impl PR head: fetch it, build it in a throwaway worktree, run that generation's scripts/deploy.mjs, then confirm the target runs it (credential: PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN in the environment — unset a session's own PENGUIN_API_TOKEN first, it belongs to this machine's data root)",
-    proposalDeployTo:
-      "The target server: a port on this machine (an ssh -L tunnel or a local server) or a full origin",
-    proposalDeployDryRun: "Resolve and fetch the head, print the plan, and push nothing",
-    proposalDeployPlanned: (n, head) =>
-      `Proposal #${n} would deploy ${head} (dry run, nothing pushed).`,
-    proposalDeployDone: (n, head, revision) =>
-      `Proposal #${n} deployed: the target now runs ${revision} (${head}).`,
+      "Run one of the organization's deploy scripts on the proposal's impl PR head, on the server that holds the organization; arguments after -- go to the script",
+    proposalDeployTo: "The deploy script's id (deploy-script ls lists them)",
+    proposalDeployDryRun: "Resolve the head and print what would run, without running it",
+    proposalDeployPlanned: (script, pr, head, argv) =>
+      `${script} would run on ${pr} at ${head} (dry run): ${argv}`,
+    proposalDeployStarted: (run, script, pr, head) =>
+      `Deploy ${run}: ${script} on ${pr} at ${head}. Ctrl-C stops following; the run goes on.`,
+    proposalDeploySucceeded: (run, head) => `Deploy ${run} succeeded (${head}).`,
+    proposalDeployFailed: (run, status, exitCode, error) =>
+      `Deploy ${run} ${status.replace("_", " ")}${exitCode === null ? "" : ` (exit ${exitCode})`}${error === null ? "" : `: ${error}`}.`,
+    deployScriptDesc:
+      "The organization's deploy scripts: what a deploy runs, on the server that holds the organization",
+    deployScriptAddDesc:
+      "Register a deploy script: an id and the command after -- (run in the shared workspace, no shell; a server admin only)",
+    deployScriptDescription: "One line on where it deploys",
+    deployScriptLsDesc: "List the registered deploy scripts",
+    deployScriptRmDesc: "Remove a deploy script (a server admin only)",
+    deployScriptAdded: (id, command) => `Deploy script ${id} registered: ${command}`,
+    deployScriptRemoved: (id) => `Deploy script ${id} removed.`,
+    deployScriptNone:
+      "No deploy scripts. A server admin registers one with: penguin org proposal deploy-script add <id> -- <command>",
+    deployScriptHeader: ["ID", "COMMAND", "DESCRIPTION", "BY"],
     proposalFeedbackDesc:
       "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
     proposalConcludeDesc:
@@ -3150,12 +3182,27 @@ const zh: Messages = {
     proposalGraphDesc:
       "把交付仓库的 open PR 排成提交关系图，标出每张 PR 的提案和各 origin 在同名分支上的 PR",
     proposalDeployDesc:
-      "把一台 penguin server 热更新到提案的 impl PR head：取回它、在临时 worktree 里构建、跑那一代自己的 scripts/deploy.mjs，再确认目标确实在跑它（凭据：环境里的 PENGUIN_ADMIN_PASSWORD 或 PENGUIN_API_TOKEN——会话自带的 PENGUIN_API_TOKEN 属于本机数据根，推别的 server 前先 unset）",
-    proposalDeployTo: "目标 server：本机端口（ssh -L 隧道或本机服务）或完整 origin",
-    proposalDeployDryRun: "只解析并取回 head、打印计划，不推送",
-    proposalDeployPlanned: (n, head) => `提案 #${n} 将部署 ${head}（演练，未推送）。`,
-    proposalDeployDone: (n, head, revision) =>
-      `提案 #${n} 已部署：目标现在跑的是 ${revision}（${head}）。`,
+      "在持有本组织的服务器上，对提案的 impl PR head 运行组织登记的某个部署脚本；-- 之后的参数原样传给脚本",
+    proposalDeployTo: "部署脚本的 id（deploy-script ls 可列出）",
+    proposalDeployDryRun: "只解析 head 并打印将要运行的命令，不运行",
+    proposalDeployPlanned: (script, pr, head, argv) =>
+      `${script} 将在 ${pr} 的 ${head} 上运行（演练）：${argv}`,
+    proposalDeployStarted: (run, script, pr, head) =>
+      `部署 ${run}：${script}，${pr} 的 ${head}。Ctrl-C 只停止跟随，部署照常进行。`,
+    proposalDeploySucceeded: (run, head) => `部署 ${run} 成功（${head}）。`,
+    proposalDeployFailed: (run, status, exitCode, error) =>
+      `部署 ${run} ${status === "timed_out" ? "超时" : "失败"}${exitCode === null ? "" : `（退出码 ${exitCode}）`}${error === null ? "" : `：${error}`}。`,
+    deployScriptDesc: "组织的部署脚本：部署时在持有本组织的服务器上运行什么",
+    deployScriptAddDesc:
+      "登记一个部署脚本：一个 id 加上 -- 之后的命令（在共享工作区里运行，不经 shell；仅服务器管理员）",
+    deployScriptDescription: "一句话说明它部署到哪里",
+    deployScriptLsDesc: "列出已登记的部署脚本",
+    deployScriptRmDesc: "移除一个部署脚本（仅服务器管理员）",
+    deployScriptAdded: (id, command) => `部署脚本 ${id} 已登记：${command}`,
+    deployScriptRemoved: (id) => `部署脚本 ${id} 已移除。`,
+    deployScriptNone:
+      "还没有部署脚本。服务器管理员可以这样登记：penguin org proposal deploy-script add <id> -- <command>",
+    deployScriptHeader: ["ID", "命令", "说明", "登记人"],
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
     proposalConcludeDesc:
       "把一次讨论的结论送到负责人的工位，只送一次（在讨论会话里执行，或由人加 --discussion 指定）",

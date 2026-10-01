@@ -6992,6 +6992,66 @@ export interface ProposalGraphResponse {
   checkedAt: string;
 }
 
+/**
+ * A deploy script an organization registered (company-proposals): the command a deploy to
+ * `id` runs on the server that holds the organization, in its shared workspace. How it builds
+ * and where it ships is the script's business; the deploy hands it the PR head.
+ */
+export interface ProposalDeployScript {
+  id: string;
+  /** The argument vector (no shell); a deploy appends its extra arguments. */
+  command: string[];
+  description: string;
+  /** `user:<id>`: who registered it. */
+  by: string;
+  at: string;
+}
+
+/** `GET …/proposals/deploy-scripts`. */
+export interface ProposalDeployScriptsResponse {
+  scripts: ProposalDeployScript[];
+}
+
+/** What a deploy runs: the script, the PR head it is given, and the full argument vector. */
+export interface ProposalDeployPlan {
+  script: string;
+  repo: string;
+  pr: number;
+  prUrl: string;
+  branch: string;
+  head: string;
+  /** The proposal whose impl PR this is; null for a PR no proposal registered. */
+  proposal: number | null;
+  argv: string[];
+}
+
+export type ProposalDeployStatus = "running" | "succeeded" | "failed" | "timed_out";
+
+export interface ProposalDeployRun extends ProposalDeployPlan {
+  id: string;
+  status: ProposalDeployStatus;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  startedAt: string;
+  finishedAt: string | null;
+  exitCode: number | null;
+  /** Why the script could not start or was stopped, when it did not simply exit. */
+  error: string | null;
+}
+
+/** `POST …/proposals/deploys`: the run started, or (with `dryRun`) only its plan. */
+export type ProposalDeployStartResponse = { run: ProposalDeployRun } | { plan: ProposalDeployPlan };
+
+/** `GET …/proposals/deploys/:id?from=`: the run and its output from `from` (output kept is a bounded tail). */
+export interface ProposalDeployRunResponse {
+  run: ProposalDeployRun;
+  output: string;
+  /** Where `output` starts: `from`, or later when the earlier output was dropped. */
+  from: number;
+  /** The offset to ask from next. */
+  next: number;
+}
+
 export interface ProposalDetail extends ProposalItem {
   /** The delegation, as the person wrote it — or as the author or a person last rewrote it (`penguin org proposal brief`). */
   brief: string;

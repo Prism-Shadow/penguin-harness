@@ -140,3 +140,8 @@ export function focusedProposal(params: URLSearchParams): number | null {
   const n = Number(raw);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
+
+/** A deploy's extra arguments as typed in the graph's deploy dialog: split at whitespace, nothing empty. */
+export function splitArgs(text: string): string[] {
+  return text.split(/\s+/).filter((a) => a !== "");
+}
