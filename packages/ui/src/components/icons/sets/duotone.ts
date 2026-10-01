@@ -305,6 +305,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   userCircle: "teal",
   userPlus: "teal",
   users: "teal",
+  messageSquare: "teal",
   globe: "teal",
   house: "teal",
   penLine: "teal",

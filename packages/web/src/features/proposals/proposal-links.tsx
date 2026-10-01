@@ -160,7 +160,7 @@ function LinkedCapsule({ value, ref_ }: { value: string; ref_: ProposalRef }) {
   return (
     <button
       type="button"
-      title={`${S.company.proposals.openProposal} · ${value}`}
+      data-tooltip={`${S.company.proposals.openProposal} · ${value}`}
       disabled={open === null}
       onClick={() => {
         if (open === null) return;

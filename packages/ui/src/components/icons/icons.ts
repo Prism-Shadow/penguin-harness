@@ -310,6 +310,8 @@ export const ICONS = {
 
   // --- Messages and actions -----------------------------------------------------------------
 
+  /** A speech bubble (lucide message-square): a comment. */
+  messageSquare: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   /** A speech bubble with a plus: putting something into a conversation rather than sending it. */
   messagePlus: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v6M9 10h6",
   /** A round speech bubble, open at its upper right, with two lines of text inside. */

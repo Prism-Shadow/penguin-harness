@@ -58,6 +58,7 @@ import {
   CloseIcon,
   ConfirmModal,
   GlyphIcon,
+  ICONS,
   ICON_GAP,
   ICON_SIZE,
   Input,
@@ -73,6 +74,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { isSubmitChord } from "../../lib/shortcuts/submit-chord";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
@@ -136,9 +138,6 @@ const SCOPE_KIND_TONE: Record<ProposalScopeKind, "muted" | "success" | "danger" 
   delete: "danger",
   rename: "link",
 };
-
-/** Speech bubble (lucide message-square): the comment chip's mark. */
-const COMMENT_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 
 /**
  * A material's glyph by kind: a pull request (two branches joined), an issue (a ringed dot),
@@ -360,7 +359,7 @@ function QueuePage() {
         <div
           role="group"
           aria-label={t.chip.group}
-          className="inline-flex flex-wrap gap-0.5 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800"
+          className="inline-flex flex-wrap gap-1 rounded-md bg-gray-100 p-1 dark:bg-gray-800"
         >
           {chips.states.map((chip) => (
             <QueueChip key={chip.key} on={chip.on} count={chip.count} onClick={chip.apply}>
@@ -454,7 +453,7 @@ function QueueChip({
       className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none ${shape} ${ink}`}
     >
       <span>{children}</span>
-      <span className="tabular-nums text-[10px] text-gray-400 dark:text-gray-500">{count}</span>
+      <span className="tabular-nums text-xs text-gray-400 dark:text-gray-500">{count}</span>
     </button>
   );
 }
@@ -495,7 +494,7 @@ function QueueRow({
           className={`absolute top-2 bottom-2 left-0 w-0.5 rounded-r ${toneDot.attention}`}
         />
       )}
-      <span className="mt-0.5 w-10 shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+      <span className="mt-0.5 w-10 shrink-0 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
         #{item.number}
       </span>
       <div className="min-w-0 flex-1">
@@ -510,7 +509,7 @@ function QueueRow({
           <ProposalStatusPill status={item.status} />
         </div>
         <div
-          className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row} text-[11px] text-gray-500 dark:text-gray-400`}
+          className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row} text-xs text-gray-500 dark:text-gray-400`}
         >
           <EmployeeAvatar
             id={item.author}
@@ -522,22 +521,22 @@ function QueueRow({
           {implementer !== null && (
             <>
               <span aria-hidden="true">·</span>
-              <span className="truncate" title={t.implementer}>
+              <span className="truncate" data-tooltip={t.implementer}>
                 {t.implementer} {implementer}
               </span>
             </>
           )}
           <span aria-hidden="true">·</span>
-          <span title={formatDateTime(item.updatedAt)}>
+          <span data-tooltip={formatDateTime(item.updatedAt)}>
             {t.updated} {formatRelativeShort(item.updatedAt, locale)}
           </span>
         </div>
       </div>
       {item.unread > 0 && (
         <span
-          title={t.unreadBadge(item.unread)}
+          data-tooltip={t.unreadBadge(item.unread)}
           aria-label={t.unreadBadge(item.unread)}
-          className={`mt-0.5 shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${toneSurface.attention}`}
+          className={`mt-0.5 shrink-0 rounded-full px-1.5 text-xs font-semibold tabular-nums ${toneSurface.attention}`}
         >
           {item.unread}
         </span>
@@ -939,7 +938,7 @@ function DetailPage({ number }: { number: number }) {
             role="separator"
             aria-orientation="vertical"
             aria-label={t.filePanel.resize}
-            title={t.filePanel.resize}
+            data-tooltip={t.filePanel.resize}
             {...panelWidth.dividerProps}
             className={`hidden w-1.5 shrink-0 cursor-col-resize transition-colors duration-150 lg:block ${
               panelWidth.resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
@@ -1037,7 +1036,7 @@ function ProposalView({
             {detail.revision === 0 ? t.noRevision : t.revision(detail.revision)}
           </span>
         </div>
-        <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+        <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
           <Meta label={t.author}>
             <PrincipalChip principal={`agent:${detail.author}`} names={names} />
           </Meta>
@@ -1052,7 +1051,7 @@ function ProposalView({
             <PrincipalChip principal={detail.delegatedBy} names={names} />
           </Meta>
           <Meta label={S.common.created}>
-            <span title={formatDateTime(detail.createdAt)}>
+            <span data-tooltip={formatDateTime(detail.createdAt)}>
               {formatRelativeShort(detail.createdAt, locale)}
             </span>
           </Meta>
@@ -1095,7 +1094,7 @@ function ProposalView({
       <RuledSection title={t.scope} count={detail.scope.length}>
         {detail.root !== "" && (
           <p className="mb-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-            <span className="mr-1 text-[11px] uppercase tracking-wide">{t.scopeRoot}</span>
+            <span className="mr-1 text-xs">{t.scopeRoot}</span>
             {detail.root}
           </p>
         )}
@@ -1121,7 +1120,7 @@ function ProposalView({
         ) : (
           <>
             {!closed && (
-              <p className="mb-3 text-[11px] text-gray-400 dark:text-gray-500">{t.selectionHint}</p>
+              <p className="mb-3 text-xs text-gray-400 dark:text-gray-500">{t.selectionHint}</p>
             )}
             <ProposalBody
               detail={detail}
@@ -1140,7 +1139,7 @@ function ProposalView({
         )}
         {stale.length > 0 && (
           <div className="mt-5">
-            <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <h4 className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
               {t.staleComments}
             </h4>
             <div className="space-y-2">
@@ -1224,7 +1223,7 @@ function ProposalView({
               <li key={ev.seq} className="flex items-start gap-2 text-xs">
                 <span
                   className="w-14 shrink-0 tabular-nums text-gray-400 dark:text-gray-500"
-                  title={formatDateTime(ev.at)}
+                  data-tooltip={formatDateTime(ev.at)}
                 >
                   {formatRelativeShort(ev.at, locale)}
                 </span>
@@ -1252,7 +1251,7 @@ function ProposalView({
       {/* The action bar sits at the foot of the page and stays in view while the body
           scrolls under it: the decision is taken after reading, so it waits at the end. */}
       {actions !== null && (
-        <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 bg-white/95 px-1 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
+        <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 bg-white/95 px-1 py-3 dark:border-gray-800 dark:bg-gray-950/95">
           {actions}
         </div>
       )}
@@ -1324,7 +1323,7 @@ function ChangesBar({
   return (
     <div className={`rounded-md border px-3 py-1.5 text-xs ${toneSurface.attention}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-medium" title={t.hint}>
+        <span className="font-medium" data-tooltip={t.hint}>
           {t.title(approvedRevision, detail.revision)}
         </span>
         {approval !== null && (
@@ -1434,7 +1433,7 @@ function ScopeRow({
   const edge = CHANGE_EDGE[row.change];
   const kindTag = (kind: ProposalScopeKind) => (
     <span
-      className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[SCOPE_KIND_TONE[kind]]}`}
+      className={`shrink-0 rounded-sm px-1 font-sans text-xs ${toneSurface[SCOPE_KIND_TONE[kind]]}`}
     >
       {t.scopeKind[kind]}
     </span>
@@ -1473,8 +1472,8 @@ function ScopeRow({
         )}
         {!removed && entry.state !== undefined && entry.state !== "exists" && (
           <span
-            className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[entry.state === "missing" ? "danger" : "muted"]}`}
-            title={
+            className={`shrink-0 rounded-sm px-1 font-sans text-xs ${toneSurface[entry.state === "missing" ? "danger" : "muted"]}`}
+            data-tooltip={
               entry.state === "missing"
                 ? t.scopeMissingHint(root === "" ? t.scopeWorkspace : root)
                 : undefined
@@ -1486,7 +1485,7 @@ function ScopeRow({
       </div>
       {(entry.name !== undefined || before?.name !== undefined) && (
         <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">
-          <span className="mr-1 text-[11px] uppercase tracking-wide">{t.scopePattern}</span>
+          <span className="mr-1 text-xs">{t.scopePattern}</span>
           {before !== null && before.name !== entry.name ? (
             <InlineWords words={diffWords(before.name ?? "", entry.name ?? "")} />
           ) : (
@@ -1536,7 +1535,7 @@ function TestGroups({
       {undeclared.length > 0 && (
         <div className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800">
           <div>
-            <h4 className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">
               {t.testGroupsUndeclared}
             </h4>
             <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
@@ -1581,8 +1580,8 @@ function TestGroup({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls={listId}
-          title={t.testGroupToggle(group)}
-          className={`flex items-center ${ICON_GAP.row} text-[11px] font-medium uppercase tracking-wide text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
+          data-tooltip={t.testGroupToggle(group)}
+          className={`flex items-center ${ICON_GAP.row} text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
         >
           <Chevron open={open} size={ICON_SIZE.chevronDense} />
           <span>{group}</span>
@@ -1639,7 +1638,7 @@ function TestRow({
   const edge = CHANGE_EDGE[row.change];
   const kindTag = (kind: ProposalTestEntry["kind"]) => (
     <span
-      className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[TEST_KIND_TONE[kind]]}`}
+      className={`shrink-0 rounded-sm px-1 font-sans text-xs ${toneSurface[TEST_KIND_TONE[kind]]}`}
     >
       {t.testKind[kind]}
     </span>
@@ -1655,7 +1654,7 @@ function TestRow({
           kindTag(entry.kind)
         )}
         {before !== null && before.group !== entry.group && (
-          <span className="font-sans text-[11px] text-gray-500 dark:text-gray-400">
+          <span className="font-sans text-xs text-gray-500 dark:text-gray-400">
             <Replaced before={before.group} after={entry.group} />
           </span>
         )}
@@ -1672,8 +1671,8 @@ function TestRow({
         )}
         {!removed && entry.state === "missing" && (
           <span
-            className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface.danger}`}
-            title={t.testMissingHint(root === "" ? t.scopeWorkspace : root)}
+            className={`shrink-0 rounded-sm px-1 font-sans text-xs ${toneSurface.danger}`}
+            data-tooltip={t.testMissingHint(root === "" ? t.scopeWorkspace : root)}
           >
             {t.testMissing}
           </span>
@@ -1698,9 +1697,7 @@ function TestRow({
 /** A small word after a section heading: the section is new, or gone, since the approved revision. */
 function DiffTag({ tone, label }: { tone: "success" | "danger"; label: string }) {
   return (
-    <span
-      className={`ml-2 rounded-sm px-1 align-middle text-[11px] font-normal ${toneSurface[tone]}`}
-    >
+    <span className={`ml-2 rounded-sm px-1 align-middle text-xs font-normal ${toneSurface[tone]}`}>
       {label}
     </span>
   );
@@ -1785,7 +1782,7 @@ function MaterialRow({
         <button
           type="button"
           className={link}
-          title={material.url}
+          data-tooltip={material.url}
           onClick={() => onOpenTicket(material.url)}
         >
           {material.label}
@@ -1795,7 +1792,7 @@ function MaterialRow({
           href={material.url}
           target="_blank"
           rel="noreferrer"
-          title={material.url}
+          data-tooltip={material.url}
           className={link}
         >
           {material.label}
@@ -2005,7 +2002,7 @@ function ProposalBody({
         <button
           type="button"
           aria-label={t.commentParagraph}
-          title={t.commentParagraph}
+          data-tooltip={t.commentParagraph}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             setSelection(null);
@@ -2021,7 +2018,7 @@ function ProposalBody({
           }}
           className="absolute top-0.5 right-1 flex h-6 w-6 items-center justify-center rounded text-gray-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700 focus-visible:opacity-100 dark:hover:bg-gray-700 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+          <GlyphIcon d={ICONS.messageSquare} size={ICON_SIZE.inlineGlyph} />
         </button>
       )}
     </div>
@@ -2082,13 +2079,13 @@ function ProposalBody({
               type="button"
               aria-expanded={isOpen}
               onClick={() => toggleSection(section.id)}
-              className={`inline-flex items-center gap-1 text-[11px] ${
+              className={`inline-flex items-center gap-1 text-xs ${
                 comments.some((c) => c.batchId === null)
                   ? toneInk.attention
                   : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
-              <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+              <GlyphIcon d={ICONS.messageSquare} size={ICON_SIZE.inlineGlyph} />
               {t.sectionComments(comments.length)}
             </button>
             {isOpen && (
@@ -2116,7 +2113,7 @@ function ProposalBody({
 
   return (
     <div ref={rootRef} className="relative" onMouseUp={onMouseUp}>
-      <div className="space-y-5">
+      <div className="space-y-4">
         {changes === null
           ? detail.sections.map((section) =>
               renderSection(
@@ -2176,7 +2173,7 @@ function ProposalBody({
               window.getSelection()?.removeAllRanges();
             }}
           >
-            <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+            <GlyphIcon d={ICONS.messageSquare} size={ICON_SIZE.inlineGlyph} />
             <span className="ml-1">{t.commentSelection}</span>
           </Button>
         </div>
@@ -2206,7 +2203,7 @@ function CommentComposer({
   };
   return (
     <div className="mt-2 space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
-      <div className="text-[11px] text-gray-500 dark:text-gray-400">{t.selectedText}</div>
+      <div className="text-xs text-gray-500 dark:text-gray-400">{t.selectedText}</div>
       <blockquote className="border-l-2 border-gray-300 pl-2 text-xs text-gray-700 whitespace-pre-wrap dark:border-gray-600 dark:text-gray-200">
         {quote}
       </blockquote>
@@ -2219,7 +2216,7 @@ function CommentComposer({
         autoFocus
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
+          if (isSubmitChord(e)) void submit();
           if (e.key === "Escape") onCancel();
         }}
       />
@@ -2287,11 +2284,13 @@ function CommentLine({
         focused ? toneSurface.attention : ""
       }`}
     >
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-gray-500 dark:text-gray-400">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-gray-500 dark:text-gray-400">
         <span className="font-medium text-gray-700 dark:text-gray-200">
           {principalLabel(comment.by, names)}
         </span>
-        <span title={formatDateTime(comment.at)}>{formatRelativeShort(comment.at, locale)}</span>
+        <span data-tooltip={formatDateTime(comment.at)}>
+          {formatRelativeShort(comment.at, locale)}
+        </span>
         {comment.batchId === null && <Badge tone="attention">{t.pending}</Badge>}
         {editable && editing === null && (
           <>
@@ -2341,7 +2340,7 @@ function CommentLine({
               autoFocus
               onChange={(e) => setEditing(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void saveEdit();
+                if (isSubmitChord(e)) void saveEdit();
                 if (e.key === "Escape") setEditing(null);
               }}
             />

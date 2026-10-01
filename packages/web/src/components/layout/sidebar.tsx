@@ -2148,7 +2148,7 @@ export function Sidebar({
                       /* A count rather than a dot: the number is the information, as on a
                          channel row, and the tooltip says what it counts. */
                       badge: (
-                        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                        <span className="ml-auto shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
                           {item.count}
                         </span>
                       ),
