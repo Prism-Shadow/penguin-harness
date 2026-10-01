@@ -18,12 +18,13 @@
  *   version spelling reading as the same version), never one the library does not carry, and
  *   never a directory with no readable SKILL.md.
  *
- * One app for the file; every case works in a Project of its own.
+ * One app and one Project for the file; every case works in plain Agents of its own (removed
+ * after it), and the case about default_agent's own set in a Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir, librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
@@ -65,9 +66,9 @@ describe("skills api", () => {
     await t.cleanup();
   });
 
-  // Every case gets a Project of its own (its own default_agent included) in the one app.
   let projects = 0;
-  beforeEach(async () => {
+  /** A Project of the owner's with the member added. */
+  const newProject = async (): Promise<string> => {
     projects += 1;
     const created = (await (
       await owner.post("/api/projects", {
@@ -75,10 +76,35 @@ describe("skills api", () => {
         name: "skills project",
       })
     ).json()) as ProjectCreateResponse;
-    projectId = created.project.projectId;
     expect(
-      (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_s" })).status,
+      (
+        await owner.post(`/api/projects/${created.project.projectId}/members`, {
+          userId: "member_s",
+        })
+      ).status,
     ).toBe(201);
+    return created.project.projectId;
+  };
+
+  // The cases share one Project and work in plain Agents of their own, which go with the case
+  // (a retry finds their names free). The one case about default_agent's own set takes a
+  // Project of its own.
+  let shared: string;
+  beforeAll(async () => {
+    shared = await newProject();
+  });
+  beforeEach(() => {
+    projectId = shared;
+  });
+  afterEach(async () => {
+    const listed = (await (
+      await owner.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    for (const { agentId } of listed.agents) {
+      if (agentId !== "default_agent") {
+        await owner.delete(`/api/projects/${projectId}/agents/${agentId}`);
+      }
+    }
   });
 
   /** Creates a plain Agent with no Skills preinstalled. */
@@ -268,6 +294,7 @@ describe("skills api", () => {
   });
 
   it("default_agent starts with the preinstalled library set; preinstall:false skills stay manual-install", async () => {
+    projectId = await newProject();
     const res = await member.get(base("default_agent"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as AgentSkillsResponse;

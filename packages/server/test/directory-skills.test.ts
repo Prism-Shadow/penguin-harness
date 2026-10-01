@@ -14,7 +14,8 @@
  *   shadowing a library Skill of the same name; a picked Skill that is gone is a 404 with no
  *   Agent created; a relative skillsDirectory and half of the directory pair are refused.
  *
- * One app for the file; every case works in a Project and a scratch directory of its own.
+ * One app and one Project for the file; every case works in a scratch directory and Agents of
+ * its own.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -23,6 +24,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { skillsDir, librarySkill } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
+  AgentsResponse,
   AgentSkillsResponse,
   DirectorySkillsResponse,
   ProjectCreateResponse,
@@ -74,20 +76,29 @@ describe("directory skills api", () => {
     await t.cleanup();
   });
 
-  // Every case picks a directory of its own and installs into a Project of its own.
-  let projects = 0;
-  beforeEach(async () => {
-    projects += 1;
+  // Every case picks a directory of its own and installs into the one Project, in Agents that
+  // go with the case (a retry finds their names free).
+  beforeAll(async () => {
     const created = (await (
       await owner.post("/api/projects", {
-        projectId: `owner_d-dirskills_${projects}`,
+        projectId: "owner_d-dirskills",
         name: "directory skills project",
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+  });
+  beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-dirskills-"));
   });
   afterEach(async () => {
+    const listed = (await (
+      await owner.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    for (const { agentId } of listed.agents) {
+      if (agentId !== "default_agent") {
+        await owner.delete(`/api/projects/${projectId}/agents/${agentId}`);
+      }
+    }
     // A scratch checkout can resist removal on Windows for a moment; same retry discipline as
     // helpers.ts.
     await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
