@@ -55,6 +55,7 @@ import type {
   MeResponse,
   MessagesResponse,
   MessagingBindingsResponse,
+  ModelBalanceResponse,
   ModelProtocolDetectResponse,
   ModelsResponse,
   ModelTestResponse,
@@ -110,6 +111,8 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
+// The catalog decides which groups publish a balance, as it does on the server.
+import { providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { dayKey } from "./fixtures";
 import type { UsageDay } from "./fixtures";
@@ -354,6 +357,23 @@ router
       m.isDefault = m.provider === ref.provider && m.modelId === ref.modelId;
     }
     return { defaultModel: ref };
+  })
+  .get("/api/projects/:projectId/models/balance", ({ store, query }): ModelBalanceResponse => {
+    const provider = query.get("provider") ?? "";
+    const fetchedAt = new Date().toISOString();
+    const info = providerInfo(provider);
+    if (info?.balance === undefined) {
+      const message = `The ${provider} group publishes no balance.`;
+      return { ok: false, provider, error: "unsupported", message, fetchedAt };
+    }
+    const keyed = store.f.models.models.some(
+      (m) => m.provider === provider && m.credential?.apiKeyMasked,
+    );
+    if (!keyed) {
+      const message = `The ${info.label} group stores no API key.`;
+      return { ok: false, provider, error: "no_key", message, fetchedAt };
+    }
+    return { ok: true, provider, amount: "110.00", currency: "CNY", fetchedAt };
   })
   .post("/api/projects/:projectId/models/test", (): ModelTestResponse => ({
     ok: true,
@@ -1373,14 +1393,19 @@ router
 
 const normalizePath = (path: string) => path.replace(/^\.?\/+/, "").replace(/\/+$/, "");
 
-router
-  .get("/api/sessions/:sessionId/files", ({ store, query }): WorkspaceFilesResponse => {
+/**
+ * The Files panel's operations over the one demo Workspace, for both ways the panel names it: a
+ * Session (`/api/sessions/:sessionId/files…`) and a directory (`/api/projects/:projectId/
+ * workspace-files…?workspace=`, the new-chat draft's folder). Every scope sees the same files.
+ */
+const workspaceFiles = {
+  list: ({ store, query }: Ctx): WorkspaceFilesResponse => {
     const path = normalizePath(query.get("path") ?? "");
     const entries = store.f.workspace.entries[path];
     if (!entries) notFound("Directory");
     return { path, entries };
-  })
-  .get("/api/sessions/:sessionId/files/content", ({ store, query }) => {
+  },
+  read: ({ store, query }: Ctx) => {
     const path = normalizePath(query.get("path") ?? "");
     const content = store.f.workspace.content[path];
     if (content === undefined) notFound("File");
@@ -1392,8 +1417,8 @@ router
         ? { "content-disposition": `attachment; filename="${name}"` }
         : {}),
     });
-  })
-  .put("/api/sessions/:sessionId/files/content", ({ store, query, body }) => {
+  },
+  write: ({ store, query, body }: Ctx) => {
     const path = normalizePath(query.get("path") ?? "");
     const data = str(record(body).dataBase64);
     try {
@@ -1411,8 +1436,8 @@ router
       existing.mtime = new Date().toISOString();
     } else entries.push({ name, kind: "file", sizeBytes: size, mtime: new Date().toISOString() });
     return empty();
-  })
-  .delete("/api/sessions/:sessionId/files/content", ({ store, query }) => {
+  },
+  remove: ({ store, query }: Ctx) => {
     const path = normalizePath(query.get("path") ?? "");
     delete store.f.workspace.content[path];
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -1421,49 +1446,71 @@ router
       (e) => e.name !== name,
     );
     return empty();
-  })
-  .post("/api/sessions/:sessionId/files/reveal", () =>
-    fail(404, "not_desktop", "Only the desktop shell can reveal a file."),
-  )
-  // The separate preview origin has no counterpart here: the file is served as the page itself.
-  .get("/api/sessions/:sessionId/files/preview-redirect", ({ store, query }) => {
-    const path = normalizePath(query.get("path") ?? "");
-    const content = store.f.workspace.content[path];
-    if (content === undefined) notFound("File");
-    return raw(content, {
-      "content-type": path.endsWith(".html")
-        ? "text/html; charset=utf-8"
-        : "text/plain; charset=utf-8",
-    });
-  })
-  .post("/api/sessions/:sessionId/files/move", ({ store, body }) => {
+  },
+  reveal: () => fail(404, "not_desktop", "Only the desktop shell can reveal a file."),
+  create: ({ store, body }: Ctx) => {
+    const { path: named, kind } = record(body);
+    const path = normalizePath(str(named));
+    if (path === "") fail(400, "bad_request", "path must name the new entry.");
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const entries = (store.f.workspace.entries[dir] ??= []);
+    if (entries.some((e) => e.name === name))
+      fail(409, "target_exists", "Something already exists at this path.");
+    const mtime = new Date().toISOString();
+    if (kind === "dir") {
+      entries.push({ name, kind: "dir", sizeBytes: 0, mtime });
+      store.f.workspace.entries[path] ??= [];
+    } else {
+      entries.push({ name, kind: "file", sizeBytes: 0, mtime });
+      store.f.workspace.content[path] = "";
+    }
+    return empty();
+  },
+  /** A file moves alone; a folder takes every listing and file under it along. */
+  move: ({ store, body }: Ctx) => {
     const { from, to } = record(body);
     const source = normalizePath(str(from));
     const target = normalizePath(str(to));
-    const content = store.f.workspace.content[source];
-    if (content === undefined) notFound("File");
-    if (store.f.workspace.content[target] !== undefined)
+    const ws = store.f.workspace;
+    const folder = ws.entries[source] !== undefined;
+    if (!folder && ws.content[source] === undefined) notFound("File");
+    if (ws.content[target] !== undefined || ws.entries[target] !== undefined)
       fail(409, "target_exists", "The destination exists.");
-    delete store.f.workspace.content[source];
-    store.f.workspace.content[target] = content;
-    const move = (path: string, remove: boolean) => {
-      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-      const name = path.slice(path.lastIndexOf("/") + 1);
-      const entries = (store.f.workspace.entries[dir] ??= []);
-      if (remove) store.f.workspace.entries[dir] = entries.filter((e) => e.name !== name);
-      else
-        entries.push({
-          name,
-          kind: "file",
-          sizeBytes: content.length,
-          mtime: new Date().toISOString(),
-        });
-    };
-    move(source, true);
-    move(target, false);
+    if (folder && target.startsWith(`${source}/`))
+      fail(400, "bad_request", "A folder cannot move into itself.");
+    const moved = (path: string) =>
+      path === source || path.startsWith(`${source}/`)
+        ? `${target}${path.slice(source.length)}`
+        : path;
+    for (const key of Object.keys(ws.content)) {
+      const next = moved(key);
+      if (next === key) continue;
+      ws.content[next] = ws.content[key]!;
+      delete ws.content[key];
+    }
+    for (const key of Object.keys(ws.entries)) {
+      const next = moved(key);
+      if (next === key) continue;
+      ws.entries[next] = ws.entries[key]!;
+      delete ws.entries[key];
+    }
+    const parentOf = (path: string) =>
+      path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+    const was = (ws.entries[parentOf(source)] ?? []).find((e) => e.name === nameOf(source));
+    ws.entries[parentOf(source)] = (ws.entries[parentOf(source)] ?? []).filter(
+      (e) => e.name !== nameOf(source),
+    );
+    (ws.entries[parentOf(target)] ??= []).push({
+      name: nameOf(target),
+      kind: folder ? "dir" : "file",
+      sizeBytes: was?.sizeBytes ?? 0,
+      mtime: new Date().toISOString(),
+    });
     return empty();
-  })
-  .get("/api/sessions/:sessionId/files/search", ({ store, query }): WorkspaceSearchResponse => {
+  },
+  search: ({ store, query }: Ctx): WorkspaceSearchResponse => {
     const q = (query.get("q") ?? "").toLowerCase();
     if (q === "") fail(400, "empty_query", "Nothing to search for.");
     const hits: WorkspaceSearchResponse["hits"] = [];
@@ -1480,6 +1527,32 @@ router
       }
     }
     return { hits, truncated: false };
+  },
+};
+
+for (const base of ["/api/sessions/:sessionId/files", "/api/projects/:projectId/workspace-files"]) {
+  router
+    .get(base, workspaceFiles.list)
+    .get(`${base}/content`, workspaceFiles.read)
+    .put(`${base}/content`, workspaceFiles.write)
+    .delete(`${base}/content`, workspaceFiles.remove)
+    .post(`${base}/reveal`, workspaceFiles.reveal)
+    .post(`${base}/create`, workspaceFiles.create)
+    .post(`${base}/move`, workspaceFiles.move)
+    .get(`${base}/search`, workspaceFiles.search);
+}
+
+router
+  // The separate preview origin has no counterpart here: the file is served as the page itself.
+  .get("/api/sessions/:sessionId/files/preview-redirect", ({ store, query }) => {
+    const path = normalizePath(query.get("path") ?? "");
+    const content = store.f.workspace.content[path];
+    if (content === undefined) notFound("File");
+    return raw(content, {
+      "content-type": path.endsWith(".html")
+        ? "text/html; charset=utf-8"
+        : "text/plain; charset=utf-8",
+    });
   })
   .post("/api/sessions/:sessionId/files/stat", ({ store, body }): FilesStatResponse => {
     const paths = record(body).paths;

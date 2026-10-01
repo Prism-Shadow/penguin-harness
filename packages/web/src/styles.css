@@ -348,6 +348,42 @@
   animation: browser-agent-ring 1.6s ease-in-out infinite;
 }
 
+/* The models page's TokenDance banner (features/models/tokendance-banner.tsx): a slow highlight
+   sweeps across the brand name alone every 6 s — the page's single decoration, asked for by
+   name; the rest of the banner stands still. The word is painted by a gradient clipped to its
+   glyphs: its own ink on both sides of a narrow bright band, three times the word's width. The
+   band sweeps from before the word to past its end, and the word's own resting position shows
+   ink only, so under the global `animation: none` below it is plain text. */
+@keyframes banner-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  30%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+.banner-shimmer {
+  --banner-ink: var(--color-gray-700);
+  --banner-glow: var(--color-gray-300);
+  background-image: linear-gradient(
+    100deg,
+    var(--banner-ink) 42%,
+    var(--banner-glow) 50%,
+    var(--banner-ink) 58%
+  );
+  background-size: 300% 100%;
+  background-position: 0% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: banner-shimmer 6s ease-in-out infinite;
+}
+.dark .banner-shimmer {
+  --banner-ink: var(--color-gray-300);
+  --banner-glow: var(--color-white);
+}
+
 /* Login page circuit traces (login-circuit.tsx): pathLength=1 normalization, draw-in -> hold -> fade-out
    loop. Base state is fully hidden: the positive animation-delay wait keeps the first paint blank, and
    lines only start growing after load; once reduced-motion globally disables animation, the override below

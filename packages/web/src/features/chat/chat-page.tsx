@@ -442,6 +442,38 @@ export function ChatPage() {
   const parkedDraftId = parkedDraftIdOf(routeSessionId);
   const draft = routeSessionId === DRAFT_SESSION_ID || parkedDraftId !== null;
   /**
+   * The folder the draft has picked, and its machine — what the dock's Files panel browses
+   * while there is no Session to address it by. Null for a temporary Workspace, which has no
+   * directory until the first message makes one.
+   */
+  const [draftWorkspace, setDraftWorkspace] = useState<{
+    path: string;
+    machineId: string | null;
+  } | null>(null);
+  const onDraftWorkspace = useCallback((path: string, machineId: string | null) => {
+    const trimmed = path.trim();
+    setDraftWorkspace((prev) =>
+      trimmed === ""
+        ? null
+        : prev !== null && prev.path === trimmed && prev.machineId === machineId
+          ? prev
+          : { path: trimmed, machineId },
+    );
+  }, []);
+  // A Workspace group's "Browse files" in the sidebar lands on a draft for that folder and asks
+  // for the Files panel: opened once per navigation, in the draft's own dock scope (AppLayout
+  // points the dock at the route in a layout effect, which runs before this one).
+  const browseFilesKey =
+    draft && (location.state as { browseFiles?: boolean } | null)?.browseFiles === true
+      ? location.key
+      : null;
+  const openedForBrowse = useRef<string | null>(null);
+  useEffect(() => {
+    if (browseFilesKey === null || openedForBrowse.current === browseFilesKey) return;
+    openedForBrowse.current = browseFilesKey;
+    openPanel("workspace");
+  }, [browseFilesKey]);
+  /**
    * The row the direct lookup below produced, kept beside the list: the list is replaced by
    * every reload, and a row that only a lookup knows about (an organization's desk, a
    * deep-linked conversation past the fetched pages) would otherwise disappear from under
@@ -1938,6 +1970,24 @@ export function ChatPage() {
     // The browser is one set of pages shared by every conversation, not a Session's view,
     // so it needs no Session and works on the draft page too.
     if (kind === "builtin-browser") return <BuiltinBrowserPanel active={active} />;
+    // The draft's Files panel browses the folder picked in the composer, addressed by the
+    // directory itself; a temporary Workspace has none yet.
+    if (!selected && draft && kind === "workspace" && projectId) {
+      return draftWorkspace !== null ? (
+        <WorkspaceBrowser
+          scope={{
+            kind: "workspace",
+            projectId,
+            workspace: draftWorkspace.path,
+            machineId: draftWorkspace.machineId,
+          }}
+          active={active}
+          onAddReference={addComposerReference}
+        />
+      ) : (
+        <EmptyState title={panelLabel(kind)} description={S.files.draftTemporary} />
+      );
+    }
     if (!selected)
       return (
         <EmptyState
@@ -1973,7 +2023,7 @@ export function ChatPage() {
       case "workspace":
         return (
           <WorkspaceBrowser
-            session={selected}
+            scope={{ kind: "session", sessionId: selected.sessionId }}
             openRequest={fileOpenRequest}
             active={active}
             reloadSignal={settledTurnSignal}
@@ -2516,6 +2566,8 @@ export function ChatPage() {
               projectId={projectId}
               models={models}
               {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
+              composerRef={composerRef}
+              onWorkspaceChange={onDraftWorkspace}
             />
           ) : (
             // Keyed by Session: the whole block does a light fade-in when switching sessions.

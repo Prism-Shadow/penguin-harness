@@ -1409,9 +1409,9 @@ export const en: Strings = {
       {
         key: "openrouter",
         label: "OpenRouter's popular models",
-        description: "Reads the listing page, adds one group",
+        description: "Reads the listing page, adds a group of your own",
         prompt:
-          "Add the popular models on https://openrouter.ai/models as an OpenRouter group (ask me for the API key first).",
+          "Add the popular models on https://openrouter.ai/models as a group of my own (ask me for the API key first).",
       },
       {
         key: "vllm",
@@ -1448,6 +1448,8 @@ export const en: Strings = {
     platformSync: "Sync",
     homepage: "Model page",
     speedTest: "Speed test",
+    /** The same icon button while its group's run is going: stops after the probe in flight. */
+    speedTestStop: "Stop speed test",
     speedTestTitle: "Speed test",
     speedTestConfirm: (n: number): string =>
       `This sends one real request to each of the ${n} models in this group, one at a time, to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
@@ -1571,14 +1573,42 @@ export const en: Strings = {
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
-    groupApiKey: "Set key",
+    groupApiKey: "Enter key",
     groupApiKeyTitle: (label: string): string => `Set the API key for ${label}`,
     groupApiKeyHint: (n: number): string =>
       `Applies to all ${n} models in this group; leave empty to keep them unchanged.`,
     getApiKey: "Manage keys",
     getModelIds: "Get model IDs",
     groupKeyApplied: (n: number): string => `API key set for ${n} models`,
-    oauthKey: "Authorize key",
+    oauthKey: "Connect",
+    /** The same button once the group holds a key: the flow again, for a fresh key or another account. */
+    reconnect: "Reconnect",
+    /** The small status beside it: whether the group holds a stored key, however that key got there. */
+    connectedStatus: "Connected",
+    notConnectedStatus: "Not connected",
+    /**
+     * A group's account balance in its header (and pinned beside the user name): the tooltip
+     * names the group, the vendor's own figures and the time of the reading. `amounts` and
+     * `time` are already formatted.
+     */
+    balanceTitle: (label: string, amounts: string, time: string): string =>
+      `${label} balance ${amounts}, read at ${time}`,
+    balanceRefreshHint: "Click to refresh",
+    /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
+    balanceUnavailable: "The account cannot make requests right now; its balance may be too low",
+    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    balanceErrors: {
+      no_key: "This group has no API key to read its balance with",
+      upstream_failed: "The provider returned no balance; click to try again",
+      unsupported: "This group has no balance to read",
+    } as Record<string, string | undefined>,
+    /** Appended when the vendor answered with an HTTP error. */
+    balanceStatus: (status: number): string => ` (the provider answered HTTP ${status})`,
+    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
+    pinBalance: "Pin beside your name",
+    unpinBalance: "Unpin",
+    /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
+    tokenDanceBanner: "Connect your TokenDance wallet — no model keys to set by hand",
     oauthTitle: (label: string): string => `Authorize a new ${label} API key`,
     oauthIntro: (label: string, n: number): string =>
       `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,
@@ -2400,12 +2430,14 @@ export const en: Strings = {
     sortManual: "Manual order",
     sortRecent: "Most recent",
     newWorkspaceEntity: "New workspace",
-    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
     workspaceMenu: "Workspace options",
     renameWorkspace: "Rename workspace",
     renameWorkspaceLabel: "Name",
     renameWorkspaceHint: "Leave empty to use the folder name",
     deleteWorkspace: "Remove workspace",
+    /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
+    browseWorkspaceFiles: "Browse files",
     deleteWorkspaceConfirm: (name: string) =>
       `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
@@ -3483,6 +3515,8 @@ Scenarios:
     discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
     discard: "Discard",
     unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
+    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
+    stopEditing: "Stop editing",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "Changed on disk",
     changedOnDiskHint:
@@ -3495,7 +3529,8 @@ Scenarios:
     renameHint:
       "Relative to the Workspace root; a directory in the path that does not exist is created",
     renameConfirm: "Move",
-    renameTargetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
+    /** A move or a New landed on a name that is taken: nothing was written. */
+    targetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
     renamed: (name: string): string => `Moved to ${name}`,
     deleteTitle: "Delete file",
     deleteBody: (name: string): string => `Delete ${name}? It does not go to a trash folder.`,
@@ -3511,6 +3546,20 @@ Scenarios:
     conflictBody: (name: string): string =>
       `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
     overwriteAnyway: "Overwrite",
+    /** The tree header's New menu, a folder's menu and the blank space under the tree. */
+    newMenu: "New",
+    newTextFile: "New text file",
+    newFolder: "New folder",
+    newFileName: "File name",
+    newFolderName: "Folder name",
+    /** Formatting, kept on screen while typing: where the entry goes, and what a `/` does. */
+    createHint: (dir: string): string =>
+      `Created in ${dir}. A / in the name also creates the folders in between.`,
+    createConfirm: "Create",
+    created: (name: string): string => `Created ${name}`,
+    /** The new-chat draft's Files panel and its toggle, while the Workspace is a temporary one. */
+    draftTemporary:
+      "A temporary workspace is created with the first message. Choose a folder to browse its files.",
   },
 
   usage: {
@@ -4781,6 +4830,8 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      model_not_addable:
+        "This group carries its built-in models only; add the model under a custom group.",
       model_not_routable:
         "This model ID cannot be routed by a vendor group's protocol. Vendor groups carry built-in models only — add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",

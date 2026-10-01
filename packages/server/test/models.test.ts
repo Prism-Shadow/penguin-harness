@@ -69,6 +69,26 @@ const pairKey = (m: { provider: string; modelId: string }): string => `${m.provi
 const pick = (body: ModelsResponse, provider: string, modelId: string) =>
   body.models.find((m) => m.provider === provider && m.modelId === modelId)!;
 
+/**
+ * Writes rows straight into a Project's config file, as a table saved before a rule existed
+ * would hold them: rows a built-in group no longer takes from a PUT (see "model_not_addable")
+ * are only ever reached this way.
+ */
+async function storeRows(
+  root: string,
+  projectId: string,
+  rows: Array<{ provider: string; modelId: string; clientType?: string }>,
+): Promise<void> {
+  const toml = rows.flatMap((r) => [
+    "[[models]]",
+    `provider = "${r.provider}"`,
+    `model_id = "${r.modelId}"`,
+    ...(r.clientType !== undefined ? [`client_type = "${r.clientType}"`] : []),
+    "",
+  ]);
+  await writeFile(path.join(root, projectId, ".project_config.toml"), toml.join("\n"), "utf8");
+}
+
 describe("models preset & catalog enrichment", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
@@ -228,6 +248,11 @@ describe("models preset & catalog enrichment", () => {
     process.env.PENGUIN_GO_API_KEY = "sk-penguin-test-secret-value-456";
     // Empty counts as absent — it would not authenticate either.
     process.env.DEEPSEEK_API_KEY = "";
+    // Two vendor-group rows no PUT may add any more, stored as a table from before would hold them.
+    await storeRows(t.root, projectId, [
+      { provider: "anthropic", modelId: "claude-sonnet-4-6-preview" },
+      { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
+    ]);
     try {
       const put = await api.put(url(), {
         defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
@@ -320,6 +345,10 @@ describe("models preset & catalog enrichment", () => {
   });
 
   it("PUT a custom model: the vision flag persists; the openai protocol falls back to OPENAI_API_KEY; provider is required", async () => {
+    // A vendor-group row on the openai protocol, as a group header's add once wrote it.
+    await storeRows(t.root, projectId, [
+      { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
+    ]);
     const put = await api.put(url(), {
       defaultModel: { provider: "custom", modelId: "my-model" },
       models: [
@@ -450,6 +479,94 @@ describe("models preset & catalog enrichment", () => {
       ],
     });
     expect(custom.status).toBe(200);
+  });
+
+  it("PUT refuses a new row that is no preset in a built-in group but custom and vLLM, and keeps every stored one", async () => {
+    // A row a user added to a gateway group while gateways still took them.
+    await storeRows(t.root, projectId, [
+      { provider: "openrouter", modelId: "acme/legacy-pick", clientType: "openai-responses" },
+      { provider: "custom", modelId: "mine", clientType: "openai-chat" },
+    ]);
+    const legacy = {
+      provider: "openrouter",
+      modelId: "acme/legacy-pick",
+      clientType: "openai-responses",
+    };
+    const mine = { provider: "custom", modelId: "mine", clientType: "openai-chat" };
+
+    // New in this request, in two gateways and in a vendor group — the last one an id the
+    // vendor's client would route, so it is this rule and not routing that answers.
+    for (const entry of [
+      { provider: "openrouter", modelId: "acme/new-pick", clientType: "openai-responses" },
+      { provider: "tokendance", modelId: "acme/new-pick", clientType: "openai-chat" },
+      { provider: "deepseek", modelId: "deepseek-v4-my-tune" },
+    ]) {
+      const res = await api.put(url(), { models: [legacy, mine, entry] });
+      expect(res.status, entry.provider).toBe(400);
+      const error = ((await res.json()) as ErrorBody).error;
+      expect(error.code, entry.provider).toBe("model_not_addable");
+      expect(error.message).toContain(entry.modelId);
+      expect(error.message).toContain("custom group");
+    }
+
+    // Moving a row in from another group is adding it to this one.
+    const moved = await api.put(url(), {
+      models: [
+        legacy,
+        {
+          provider: "openrouter",
+          modelId: "mine",
+          clientType: "openai-responses",
+          renamedFrom: { provider: "custom", modelId: "mine" },
+        },
+      ],
+    });
+    expect(moved.status).toBe(400);
+    expect(((await moved.json()) as ErrorBody).error.code).toBe("model_not_addable");
+
+    // Nothing above was written.
+    const before = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(before.models.map(pairKey).sort()).toEqual(
+      ["custom\0mine", "openrouter\0acme/legacy-pick"].sort(),
+    );
+
+    // The stored row keeps working: edited in place, then renamed inside its own group.
+    const edited = await api.put(url(), { models: [{ ...legacy, contextWindow: 65536 }, mine] });
+    expect(edited.status).toBe(200);
+    const renamed = await api.put(url(), {
+      models: [
+        {
+          provider: "openrouter",
+          modelId: "acme/renamed-pick",
+          clientType: "openai-responses",
+          renamedFrom: { provider: "openrouter", modelId: "acme/legacy-pick" },
+        },
+        mine,
+      ],
+    });
+    expect(renamed.status).toBe(200);
+    const after = (await renamed.json()) as ModelsResponse;
+    expect(after.models.map(pairKey).sort()).toEqual(
+      ["custom\0mine", "openrouter\0acme/renamed-pick"].sort(),
+    );
+
+    // A group's own preset is welcome back, and custom, vLLM and user-defined groups take
+    // anything.
+    const open = await api.put(url(), {
+      models: [
+        { provider: "openrouter", modelId: "acme/renamed-pick", clientType: "openai-responses" },
+        mine,
+        { provider: "deepseek", modelId: "deepseek-v4-pro" },
+        {
+          provider: "vllm",
+          modelId: "my-served-model",
+          clientType: "openai-chat-vllm-adapter",
+          baseUrl: "http://127.0.0.1:8000/v1",
+        },
+        { provider: "my-own-group", modelId: "anything", clientType: "openai-chat" },
+      ],
+    });
+    expect(open.status).toBe(200);
   });
 
   it('a config stored before the AgentHub 0.4.2 rename (client_type = "openai") keeps working: GET reports the canonical openai-chat', async () => {
@@ -583,6 +700,10 @@ describe("models preset & catalog enrichment", () => {
   });
 
   it("the same model_id can coexist under different providers (paired keys, neither overwrites the other)", async () => {
+    // The gateway's copy was added by hand, before gateways stopped taking such rows.
+    await storeRows(t.root, projectId, [
+      { provider: "siliconflow", modelId: "kimi-k2.6", clientType: "openai" },
+    ]);
     const put = await api.put(url(), {
       models: [
         { provider: "moonshot", modelId: "kimi-k2.6", apiKey: "sk-official-aaaa1111" },

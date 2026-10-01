@@ -5,10 +5,14 @@
  * drift into naming the same action two ways.
  *
  * The two entries that hold for either kind come first — copy the relative path, add a
- * reference to the conversation — and the kind-specific one comes last: a folder takes an
- * upload, a file gives a download. Download is an `<a download>` rather than a button, the
- * same shape the preview header already uses: it is the browser's own save, not a fetch the
- * app has to run.
+ * reference to the conversation — and the kind-specific ones follow: a folder takes a new text
+ * file, a new folder and an upload, a file gives a download. Download is an `<a download>` rather
+ * than a button, the same shape the preview header already uses: it is the browser's own save,
+ * not a fetch the app has to run. Rename comes last for either kind, and delete, for a file,
+ * after it.
+ *
+ * `WorkspaceNewMenuRows` is the New menu on its own — the tree pane's New button and the blank
+ * space under the tree, where there is no entry to copy or add, only somewhere to create.
  *
  * The rows are the Menu rows at the small density, the one every overflow and context menu in
  * the app uses, so they read the same as the Session row's menu.
@@ -22,8 +26,14 @@ export interface FileMenuTarget {
   kind: "dir" | "file";
 }
 
+/** The New menu's words, from the caller's dictionary. */
+export interface WorkspaceNewMenuLabels {
+  newTextFile: string;
+  newFolder: string;
+}
+
 /** The rows' words, from the caller's dictionary. */
-export interface WorkspaceFileMenuLabels {
+export interface WorkspaceFileMenuLabels extends WorkspaceNewMenuLabels {
   copyPath: string;
   addToChat: string;
   addSelectionToChat: string;
@@ -31,6 +41,41 @@ export interface WorkspaceFileMenuLabels {
   download: string;
   rename: string;
   delete: string;
+}
+
+/** The two New rows: a text file and a folder, both created in the directory the caller names. */
+function NewRows({
+  labels,
+  onNewFile,
+  onNewFolder,
+}: {
+  labels: WorkspaceNewMenuLabels;
+  onNewFile: () => void;
+  onNewFolder: () => void;
+}) {
+  return (
+    <>
+      <MenuItem glyph={ICONS.filePlus} label={labels.newTextFile} onSelect={onNewFile} />
+      <MenuItem glyph={ICONS.folderPlus} label={labels.newFolder} onSelect={onNewFolder} />
+    </>
+  );
+}
+
+/** The New menu on its own: the tree pane's New button, and the blank space under the tree. */
+export function WorkspaceNewMenuRows({
+  labels,
+  onNewFile,
+  onNewFolder,
+}: {
+  labels: WorkspaceNewMenuLabels;
+  onNewFile: () => void;
+  onNewFolder: () => void;
+}) {
+  return (
+    <Menu density="sm">
+      <NewRows labels={labels} onNewFile={onNewFile} onNewFolder={onNewFolder} />
+    </Menu>
+  );
 }
 
 export function WorkspaceFileMenuRows({
@@ -41,6 +86,8 @@ export function WorkspaceFileMenuRows({
   onCopyPath,
   onAddToChat,
   onUploadInto,
+  onNewFile,
+  onNewFolder,
   onAddSelection,
   onRename,
   onDelete,
@@ -54,6 +101,10 @@ export function WorkspaceFileMenuRows({
   onCopyPath: (target: FileMenuTarget) => void;
   onAddToChat: (target: FileMenuTarget) => void;
   onUploadInto: (dir: string) => void;
+  /** Creates an empty text file inside a folder; offered on folders when given. */
+  onNewFile?: (dir: string) => void;
+  /** Creates a folder inside a folder; offered on folders when given. */
+  onNewFolder?: (dir: string) => void;
   /**
    * Adds the text selected in the preview rather than the whole file. Offered only by the
    * preview, and only while a selection actually sits inside it — a tree row has nothing
@@ -61,10 +112,8 @@ export function WorkspaceFileMenuRows({
    */
   onAddSelection?: () => void;
   /**
-   * Renames or moves the file — one action, because both are the same write of a new path, and
-   * offering them separately would mean asking which one the user meant. Files only: a
-   * directory has no version marker, so the precondition that keeps this from overwriting the
-   * agent's work cannot be stated for one.
+   * Renames or moves the entry — one action, because both are the same write of a new path, and
+   * offering them separately would mean asking which one the user meant. A folder moves whole.
    */
   onRename?: (target: FileMenuTarget) => void;
   /** Deletes the file, behind a confirmation and the same precondition. */
@@ -88,11 +137,27 @@ export function WorkspaceFileMenuRows({
         />
       )}
       {target.kind === "dir" ? (
-        <MenuItem
-          glyph={ICONS.upload}
-          label={labels.uploadHere}
-          onSelect={() => onUploadInto(target.path)}
-        />
+        <>
+          {onNewFile !== undefined && onNewFolder !== undefined && (
+            <NewRows
+              labels={labels}
+              onNewFile={() => onNewFile(target.path)}
+              onNewFolder={() => onNewFolder(target.path)}
+            />
+          )}
+          <MenuItem
+            glyph={ICONS.upload}
+            label={labels.uploadHere}
+            onSelect={() => onUploadInto(target.path)}
+          />
+          {onRename !== undefined && (
+            <MenuItem
+              glyph={ICONS.penLine}
+              label={labels.rename}
+              onSelect={() => onRename(target)}
+            />
+          )}
+        </>
       ) : (
         <>
           <MenuItem

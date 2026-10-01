@@ -25,3 +25,7 @@ coverage/
 # Playwright e2e artifacts
 test-results/
 playwright-report/
+
+# vendored verbatim from upstream (see the dev skill's reference/ai-slop.md); kept byte-identical
+# so a refresh is a plain copy
+.agents/skills/penguin-harness-dev/reference/ai-slop/

@@ -906,6 +906,8 @@ export const zh = {
       uploadHere: "上传到此文件夹",
       rename: "重命名 / 移动",
       delete: "删除",
+      newTextFile: "新建文本文件",
+      newFolder: "新建文件夹",
       editor: "编辑器",
       editorLabel: (name: string) => `编辑 ${name}`,
       drop: "拖放反馈",

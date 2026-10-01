@@ -47,6 +47,7 @@ import type {
   FeishuBindingResponse,
   FeishuTestRequest,
   FeishuTestResponse,
+  FilesCreateRequest,
   FilesMoveRequest,
   FilesStatRequest,
   FilesStatResponse,
@@ -69,6 +70,7 @@ import type {
   MessagingBindingsResponse,
   MessagingChannel,
   MessagingTestMessageResponse,
+  ModelBalanceResponse,
   ModelOAuthCodeResponse,
   ModelOAuthStartRequest,
   ModelOAuthStartResponse,
@@ -402,6 +404,15 @@ export const putDefaultModel = (projectId: string, body: DefaultModelUpdateReque
     method: "PUT",
     body,
   });
+
+/**
+ * A group's account balance, read by the server with the group's stored key (the key never
+ * comes back). `force` skips the server's 60 s cache — the page's refresh click.
+ */
+export const getModelBalance = (projectId: string, provider: string, force = false) =>
+  apiFetch<ModelBalanceResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/balance?provider=${encodeURIComponent(provider)}${force ? "&force=1" : ""}`,
+  );
 
 /** Connectivity test: model reference (provider, modelId) is passed in the request body (may include an unsaved apiKey / baseUrl). */
 export const testModel = (projectId: string, body: ModelTestRequest) =>
@@ -1317,26 +1328,36 @@ export const revealWorkspaceFile = (sessionId: string, path: string) =>
  * `ETag`: pass it and the write is refused with 409 `file_changed` unless the file is still
  * the one that was read (the editor's save); leave it out and the write creates or replaces
  * unconditionally (uploads, which read no version).
+ *
+ * Resolves to the version the write produced — the marker the next save of the same file
+ * carries — or null from a server that does not say.
  */
 export const uploadWorkspaceFile = (
   sessionId: string,
   path: string,
   dataBase64: string,
   ifVersion?: string,
-) =>
-  apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
+): Promise<string | null> =>
+  apiFetchWithMeta<void>(`/api/sessions/${sessionId}/files/content`, {
     method: "PUT",
     body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
     query: { path },
-  });
+  }).then((res) => res.etag);
 
 /**
- * Moves or renames a Workspace file. `ifVersion` (see {@link uploadWorkspaceFile}) guards the
- * SOURCE: pass it and the move is refused with 409 `file_changed` unless the file is still the
- * one that was read. The destination has no such marker — nothing read it — so an occupied
- * destination is 409 `target_exists` rather than an overwrite. Files only: a directory is a
- * 400, since nothing could express a precondition over a whole tree. `to`'s parent directory
- * is created when it is missing.
+ * Creates one empty text file or one folder. Missing parent directories are made; anything
+ * already at the path is refused with 409 `target_exists` and nothing is written.
+ */
+export const createWorkspaceEntry = (sessionId: string, body: FilesCreateRequest) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/create`, { method: "POST", body });
+
+/**
+ * Moves or renames a Workspace file or folder. `ifVersion` (see {@link uploadWorkspaceFile})
+ * guards a file SOURCE: pass it and the move is refused with 409 `file_changed` unless the file
+ * is still the one that was read. A folder moves whole and takes none. The destination has no
+ * such marker — nothing read it — so an occupied destination is 409 `target_exists` rather than
+ * an overwrite, and a folder cannot move into itself. `to`'s parent directory is created when it
+ * is missing.
  */
 export const moveWorkspaceFile = (sessionId: string, body: FilesMoveRequest) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/move`, { method: "POST", body });
@@ -1360,6 +1381,96 @@ export const deleteWorkspaceFile = (sessionId: string, path: string, ifVersion?:
  */
 export const searchWorkspaceFiles = (sessionId: string, q: string) =>
   apiFetch<WorkspaceSearchResponse>(`/api/sessions/${sessionId}/files/search`, { query: { q } });
+
+// Workspace files by directory ----------------------------------------------------------------
+
+/**
+ * A directory the Files panel addresses by its absolute path rather than through a Session: the
+ * new-chat draft's chosen folder and a sidebar Workspace group, where no Session exists yet.
+ * Access is the Project's; the directory must exist. `machineId` is the machine it is on (null:
+ * this server) — a path names a directory only together with it.
+ */
+export interface WorkspaceDir {
+  projectId: string;
+  workspace: string;
+  machineId: string | null;
+}
+
+const workspaceDirBase = (dir: WorkspaceDir): string =>
+  `/api/projects/${encodeURIComponent(dir.projectId)}/workspace-files`;
+
+export const listWorkspaceDirFiles = (dir: WorkspaceDir, path: string) =>
+  apiFetch<WorkspaceFilesResponse>(workspaceDirBase(dir), {
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  });
+
+/** File content URL, as {@link workspaceFileUrl}; the machine's proxy prefix rides in the URL itself. */
+export const workspaceDirFileUrl = (dir: WorkspaceDir, path: string, download = false): string =>
+  apiUrl(
+    `${workspaceDirBase(dir)}/content?workspace=${encodeURIComponent(dir.workspace)}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`,
+    dir.machineId,
+  );
+
+/**
+ * "Open in a new tab" for an HTML file of a directory: the same-origin sandboxed preview, since
+ * the separate preview origin's tokens name a Session.
+ */
+export const workspaceDirPreviewUrl = (dir: WorkspaceDir, path: string): string =>
+  apiUrl(
+    `${workspaceDirBase(dir)}/content?workspace=${encodeURIComponent(dir.workspace)}&path=${encodeURIComponent(path)}&preview=1`,
+    dir.machineId,
+  );
+
+/** As {@link uploadWorkspaceFile}: resolves to the version written, or null when the server does not say. */
+export const writeWorkspaceDirFile = (
+  dir: WorkspaceDir,
+  path: string,
+  dataBase64: string,
+  ifVersion?: string,
+): Promise<string | null> =>
+  apiFetchWithMeta<void>(`${workspaceDirBase(dir)}/content`, {
+    method: "PUT",
+    body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  }).then((res) => res.etag);
+
+export const createWorkspaceDirEntry = (dir: WorkspaceDir, body: FilesCreateRequest) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/create`, {
+    method: "POST",
+    body,
+    query: { workspace: dir.workspace },
+    server: dir.machineId,
+  });
+
+export const moveWorkspaceDirFile = (dir: WorkspaceDir, body: FilesMoveRequest) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/move`, {
+    method: "POST",
+    body,
+    query: { workspace: dir.workspace },
+    server: dir.machineId,
+  });
+
+export const deleteWorkspaceDirFile = (dir: WorkspaceDir, path: string, ifVersion?: string) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/content`, {
+    method: "DELETE",
+    query: { workspace: dir.workspace, path, ifVersion },
+    server: dir.machineId,
+  });
+
+export const searchWorkspaceDirFiles = (dir: WorkspaceDir, q: string) =>
+  apiFetch<WorkspaceSearchResponse>(`${workspaceDirBase(dir)}/search`, {
+    query: { workspace: dir.workspace, q },
+    server: dir.machineId,
+  });
+
+export const revealWorkspaceDirFile = (dir: WorkspaceDir, path: string) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/reveal`, {
+    method: "POST",
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  });
 
 /** Batch file-existence check (message file cards): both out-of-bounds and missing paths simply don't appear in `existing`; always returns 200. */
 export const statSessionFiles = (sessionId: string, paths: string[]) =>

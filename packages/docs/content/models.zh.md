@@ -34,9 +34,19 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 价格按每百万 Token 显示，顺序为缓存命中 / 缓存未命中 / 输出。币种在设置里**币种**下选择：**美元 $** 或 **人民币 ¥**，按固定汇率 7 换算。
 
-点击卡片即可打开**模型配置**。分组旁边的链接会打开供应商的密钥控制台（**前往密钥管理**）。模型弹窗里还有两个链接，分别打开供应商的模型列表（**获取模型 id**）和模型的主页（**模型主页**）。
+点击卡片即可打开**模型配置**。其中的链接分别打开供应商的模型列表（**获取模型 id**）、模型的主页（**模型主页**），以及和**填写密钥**弹窗一样，打开供应商的密钥控制台（**前往密钥管理**）。
 
-只有 Project owner 能修改模型和凭证。成员可以搜索、展开和收起分组，在自己浏览器里调整顺序，也能以只读方式打开**模型配置**。
+分组标题栏左侧是供应商 logo、分组名、模型数，以及随分组展开而转向的箭头。右侧从左到右依次是：
+
+- 分组的余额：TokenDance 和 DeepSeek 分组有 key 之后显示，前面是图钉和刷新图标，后面有一条分隔线，见[账户余额](#账户余额)；
+- 连接状态和**连接**：TokenDance、Penguin Go 和 ModelScope，见[连接账户](#连接账户)；
+- **填写密钥**：除 **Custom** 以外的每个分组，见[设置 API key](#设置-api-key)；
+- 测速，见[测速](#测速)；
+- **添加模型**：只在 **Custom**、**vLLM** 和你创建的分组，见[添加模型](#添加模型)。
+
+TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推荐连接 TokenDance 钱包，这样分组里的模型不用手动配置密钥。横幅上的**连接**与分组标题栏上的是同一个流程。点击 × 可以在当前浏览器里隐藏横幅。
+
+只有 Project owner 能修改模型和凭证。成员可以搜索、展开和收起分组，在自己浏览器里调整顺序，查看余额和连接状态，也能以只读方式打开**模型配置**。
 
 ## 新增模型分组
 
@@ -84,26 +94,36 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 ## 添加模型
 
+**添加模型**只在 **Custom**、**vLLM** 和你创建的分组的标题栏上。其余内置分组（厂商分组与网关分组）只承载内置模型，见[只承载内置模型](#只承载内置模型)。
+
 1. 在分组标题上，点击**添加模型**。
-2. 在**模型 ID** 里输入模型 id，必须与供应商 API 要求的完全一致，例如 `gpt-5.5`。**获取模型 id** 会打开供应商的模型列表。
+2. 在**模型 ID** 里输入模型 id，必须与供应商 API 要求的完全一致，例如 `qwen3-32b`。**获取模型 id** 会打开供应商的模型列表。
 3. 可选：在**模型名称**里输入显示名。显示名为空时直接显示模型 id。
 4. 填写凭证和端点：
-   - **API key**：在厂商分组里留空则使用供应商的环境变量，服务端设置了这个变量时输入框会显示变量名。在网关分组、**Custom** 分组和你创建的分组里 key 必填——端点不是厂商自己的地址时，不会使用任何环境变量。
-   - **自定义 base URL**：在 **Custom** 分组和你创建的分组里必填。网关分组会自动填好。
+   - **API key**：必填——这些分组指向的都不是厂商自己的端点，这样的端点不会使用任何环境变量。
+   - **自定义 base URL**：必填，填你自己的服务或网关的端点。
 5. 可选：填写限制和价格：
    - **上下文窗口**：模型的上下文窗口大小，单位是 Token。模型不在内置模型目录里时，留空会保存为 1000000。
    - **最大输出长度**：每次请求最多输出的 Token 数。留空则使用 Agent 的设置；上下文较小的模型建议调低这个值。
    - **缓存命中价格**、**缓存未命中价格**和**输出价格**：按每百万 Token 填写，用页面上显示的币种；存储时统一换算成美元。三项要么全填，要么全不填。
-6. 可选：如果模型能接收图片，打开**支持视觉**，或者点击**检测**；见[检测视觉支持](#检测视觉支持)。在 **Custom** 分组和你创建的分组里，新添加的模型默认关闭视觉；加到其他分组的模型默认开启视觉。
+6. 可选：如果模型能接收图片，打开**支持视觉**，或者点击**检测**；见[检测视觉支持](#检测视觉支持)。在 **Custom** 分组和你创建的分组里，新添加的模型默认关闭视觉；加到 **vLLM** 分组的模型默认开启视觉。
 7. 可选：打开**快速模式**；见[快速模式](#快速模式)。
 8. 点击**确认**。
 
 新模型使用哪种协议，取决于所在的分组：
 
-- **厂商分组**（DeepSeek、Google Gemini、OpenAI、Anthropic、Z.AI、Moonshot、MiniMax）只支持厂商自己的 API。如果模型 id 无法按这种方式路由，弹窗会警告你，并提供**转为自定义模型**。OpenAI 兼容的端点请放进 **Custom** 分组。
-- **OpenRouter** 总是使用 `openai-responses`，**vLLM** 总是使用 `openai-chat-vllm-adapter`。
-- **OpenAI 兼容网关分组**使用 OpenAI Chat Completions，但聚合分组的预置条目可以逐条固定模型专属协议。
+- **vLLM** 总是使用 `openai-chat-vllm-adapter`。
 - **Custom** 和你创建的分组：在 base URL 字段里选择协议，或者检测协议。见[检测自定义模型的协议](#检测自定义模型的协议)。
+
+### 只承载内置模型
+
+除 **Custom** 和 **vLLM** 以外，每个内置分组只承载 PenguinHarness 内置模型目录里的模型。这些分组的 key 按分组统一管理，组里有哪些模型由目录决定。
+
+- 这些分组没有**添加模型**，**模型配置**的分组下拉里也不提供把模型移进这些分组。
+- 服务端会拒绝往这些分组新增不属于该分组内置模型的条目：保存时提示「该分组只承载内置模型」。`penguin config model add` 同样拒绝。删掉的内置模型可以重新加回来，**同步预置**做的就是这件事。
+- 这些分组里已有的模型原样保留，包括此前你在网关分组里自行添加的。它们照常可用，可以编辑、在本组内改名或删除。
+- 厂商分组（DeepSeek、Google Gemini、OpenAI、Anthropic、Z.AI、Moonshot、MiniMax）只支持厂商自己的 API。如果其中某个模型的 id 无法按这种方式路由，它会带上警示，并提供**移到自定义分组**。OpenAI 兼容的端点请放进 **Custom** 分组。
+- 网关分组沿用内置模型固定的协议：OpenRouter 使用 `openai-responses`，其余 OpenAI 兼容网关使用 OpenAI Chat Completions，但聚合分组的预置条目可以逐条固定模型专属协议。
 
 ### 编辑或删除模型
 
@@ -113,7 +133,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 ## 用 AI 创建模型分组
 
-**用 AI 创建**用来处理导入读不了的情况：模型列表页面不是 OpenAI 兼容的 `/models` 端点、只有文字描述的服务，或者要把厂商模型加进已有分组。
+**用 AI 创建**用来处理导入读不了的情况：模型列表页面不是 OpenAI 兼容的 `/models` 端点、只有文字描述的服务，或者要把内置模型加回它所在的分组。
 
 > [!TIP]
 > 如果 OpenAI 兼容端点能自己列出模型，**新增分组**弹窗里的**导入模型**更快。
@@ -187,16 +207,16 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 每个模型都可以配自己的 API key，也可以不配。
 
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它。
-- **整个分组。** 在分组标题栏上点击**手动设置密钥**并输入 key，组内所有模型都会使用它。
+- **整个分组。** 在分组标题栏上点击**填写密钥**并输入 key，它会写入组内每个模型，覆盖各自原有的 key。**Custom** 分组没有**填写密钥**：其中的模型各自连接自己的端点。
 - **不配 key。** 没配 key 的模型**只在请求确实发往该供应商的官方端点时**使用服务端上供应商的环境变量：条目没有 base URL（此时按 AgentHub 自己的 `*_API_KEY` / `*_BASE_URL` 配对），或 base URL 是厂商自己的端点。自带 base URL 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、两个 Qwen 网关、ModelScope）、**Custom**、**vLLM** 和你创建的分组指向别的端点，其中的模型必须配自己的 key：在这些分组里对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。Penguin Go 分组是唯一的例外，它回退到自己的 `PENGUIN_GO_API_KEY`，从不使用厂商变量。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
-### 授权获取新 API key
+### 连接账户
 
-支持自动授权取 key 的供应商，会在分组标题栏上加上**自动获取密钥**。内置分组里有三个提供了这个流程：TokenDance、Penguin Go 和 ModelScope。取得的 key 会写入分组里的每个模型，替换它们现在使用的 key。
+内置分组里有三个可以替你取得 key：TokenDance、Penguin Go 和 ModelScope。它们的标题栏上有**连接**按钮，旁边显示状态：**未连接**，或者分组里已存有 key 时显示**连接成功**，不论这把 key 是怎么写进来的。连接成功后按钮变为**重新连接**，用来换一把新 key 或换一个账户。取得的 key 会写入分组里的每个模型，替换它们现在使用的 key。
 
-1. 在分组的标题栏上，点击**自动获取密钥**。
+1. 在分组的标题栏上，点击**连接**。
 2. 点击**打开授权页**。供应商的授权页会在新标签页中打开。
 3. 在授权页完成授权。弹窗显示「等待在新标签页中完成授权…」，并自动报告结果。
 
@@ -208,7 +228,7 @@ TokenDance 会为你的账号创建一把**新** key，不会读取你已有的 
 Penguin Go 有四处不同：
 
 - 结果由服务端向 Penguin Go 轮询获取，因此这个分组没有手动填写授权码的方式。
-- 分组有 key 之后，标题栏上**添加模型**之前会出现**同步**，用它再次读取平台的模型目录，见 [Penguin Go 分组](#penguin-go-分组)。**自动获取密钥**依然保留，可以换成另一个平台账号的 key。
+- 连接成功后，标题栏上**重新连接**之后会出现**同步**，用它再次读取平台的模型目录，见 [Penguin Go 分组](#penguin-go-分组)。**重新连接**依然保留，可以换成另一个平台账号的 key。
 - 平台报告 key 失效或被吊销时，**模型库**页面会重新打开授权。
 - 取到的 key 写入本地失败时，服务端会把这一次交付短暂保留，可以直接重试写入，不必再次授权。
 
@@ -216,15 +236,25 @@ ModelScope 有三处不同：
 
 - 授权不经过魔搭自己的页面，而是经过一台**授权中转层**。中转层持有魔搭的 client secret，代 PenguinHarness 走完 OAuth，再把一把可直接调用 api-inference 的 access token 交回来。中转层的地址来自服务端环境变量 `MODELSCOPE_BRIDGE_URL`，见[环境变量](/configuration#环境变量)。
 - 授权页的地址由中转层给出，PenguinHarness 原样打开，不像 Penguin Go 那样自己拼。同样没有手动填写授权码的方式。
-- 拿到的 access token 是**会过期**的；PenguinHarness 会在服务端保存刷新凭据，并在模型请求前静默续期。刷新凭据失效或缺失时，才需要重新点一次**自动获取密钥**。
+- 拿到的 access token 是**会过期**的；PenguinHarness 会在服务端保存刷新凭据，并在模型请求前静默续期。刷新凭据失效或缺失时，才需要点一次**重新连接**。
 
 注意事项：
 
-- 只有 Project owner 能发起授权。TokenDance 还要求由他本人已登录的会话完成授权，实际上就是打开着弹窗的那个标签页。重定向本身不要求会话就能接收，因为供应商带回的浏览器未必是你发起授权时用的那个；但它只交回授权码：在弹窗来取结果之前，不会发生任何换取，也不会保存任何 key。
+- 只有 Project owner 能发起连接。TokenDance 还要求由他本人已登录的会话完成授权，实际上就是打开着弹窗的那个标签页。重定向本身不要求会话就能接收，因为供应商带回的浏览器未必是你发起授权时用的那个；但它只交回授权码：在弹窗来取结果之前，不会发生任何换取，也不会保存任何 key。
 - 整个换取过程都在服务端完成。TokenDance 的 PKCE verifier、Penguin Go 的设备密钥、以及 ModelScope 的授权码和设备密钥都不会进入浏览器；新 key 直接写入模型表，同样不经过浏览器。ModelScope 的 client secret 从头到尾都不在 PenguinHarness 里，只有中转层持有。
 - 一次授权流程最多等待十分钟。ModelScope 交付的是一组 access token / refresh token：access token 写入模型表，refresh token 只保存在服务端 DB，不返回给前端，也不写入 Project 配置。
 - 交付回来的 key 只交一次。Penguin Go 和 ModelScope 都会在本地保存失败时短暂保留这一次交付，因此可以直接重试写入，不必再次授权。ModelScope 下无需去魔搭控制台清理——它交回的是你自己账号的 token，不是新造的 key。
 - TokenDance 的 key 携带[应用归因](#应用归因)表中 PenguinHarness 的应用 URL，所以即使用其他工具发起调用，用量也仍会归到 PenguinHarness 名下。
+
+### 账户余额
+
+TokenDance 和 DeepSeek 可以查询 key 所属账户的余额。这两个分组有 key 之后，标题栏上会显示余额，币种跟随设置里的**币种**，与价格一样按固定汇率 7 换算。DeepSeek 的 key 也可以是服务端的 `DEEPSEEK_API_KEY`，即它的模型本来就会使用的环境变量（见[设置 API key](#设置-api-key)）；TokenDance 是网关，key 必须存到分组上。账户持有多种货币时显示合计：¥110 加 $5 显示为 `¥145`，或 `$20.71`。查询由服务端用已存的 key 发起，key 不会到达浏览器。
+
+- 余额前面有两个图标。刷新图标（同步）用来重新查询；鼠标指向它可以看到服务商给出的原始金额和查询时间。服务端会把查询结果保留一分钟；点击刷新图标时跳过这一分钟的缓存。
+- 查询不到余额时显示「—」；鼠标指向刷新图标可以看到原因。
+- 图钉（常驻）把余额常驻到侧边栏底部你的名字旁边，币种相同。同一时间只能常驻一个余额，常驻另一个即替换。常驻记在你的账户上，而不是浏览器里。常驻的余额在应用加载时查询一次，此后每五分钟刷新一次。
+
+余额通过 `GET /api/projects/:id/models/balance?provider=<分组>` 查询，Project 的所有成员都可以调用。
 
 ## 设置默认模型
 
@@ -252,7 +282,7 @@ ModelScope 有三处不同：
 
 要比较一个分组里的模型：
 
-1. 在分组标题栏上点击**测速**。
+1. 在分组标题栏上点击测速图标（**测速**）。
 2. 点击**开始测速**。
 
 PenguinHarness 依次向每个模型发送一个真实请求，这会消耗少量 API 配额，然后在每张卡片上显示：
@@ -260,7 +290,7 @@ PenguinHarness 依次向每个模型发送一个真实请求，这会消耗少�
 - 首个 Token 的延迟，单位毫秒：低于 1000 显示绿色，1000 到 3000 显示黄色，3000 以上显示红色；
 - 输出速率，单位 Token/秒：40 及以上显示绿色，15 及以上显示黄色，15 以下显示红色。
 
-结果只留在当前页面，刷新后就消失。
+测速进行中，同一个图标用来停止（**停止测速**）：正在测的那个模型测完后停止，不再发起后续请求，已有的结果保留。结果只留在当前页面，刷新后就消失。
 
 ## 同步预置模型
 
@@ -403,7 +433,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
-| penguin-go | `PENGUIN_GO_API_KEY` | 预置的中转分组，固定 base URL `https://token.penguin.ooo/api`；分组标题栏可以为你自动授权一把 key，也可以手动设置。见 [Penguin Go 分组](#penguin-go-分组) |
+| penguin-go | `PENGUIN_GO_API_KEY` | 预置的中转分组，固定 base URL `https://token.penguin.ooo/api`；分组标题栏可以为你连接取得 key，也可以手动填写。见 [Penguin Go 分组](#penguin-go-分组) |
 | opencode-go | `OPENAI_API_KEY` | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`（该客户端的变量是 `ANTHROPIC_API_KEY`）。见 [OpenCode Go 分组](#opencode-go-分组) |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
@@ -435,7 +465,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 `penguin-go` 和 TokenDance 一样是内置分组：一个中转服务，base URL 固定为 `https://token.penguin.ooo/api`。新建的 Project 立即带上这个分组的目录模型；在该分组之前创建的 Project，用**同步预置**把它们补上。
 
-分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权以及随后的**同步**还会读取平台自己的模型目录：
+分组的 key 从标题栏取得，见[连接账户](#连接账户)。连接以及随后的**同步**还会读取平台自己的模型目录：
 
 - 平台提供而 Project 没有的模型会被添加进来，连同协议、端点、显示名、上下文窗口、视觉能力和牌价。纯向量（embedding）模型不收录。
 - Project 已有的模型保留自己的端点和你配置过的其他内容。只刷新三项价格和客户端协议，`max_tokens` 保持未设置，沿用 Agent 的设定；任何模型都不会被删除。
@@ -445,7 +475,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 ### OpenCode Go 分组
 
-`opencode-go` 收录 OpenCode 为 Go 订阅列出的 27 个模型。它们共用一把 key：在分组标题栏用**手动设置密钥**设置一次即可。
+`opencode-go` 收录 OpenCode 为 Go 订阅列出的 27 个模型。它们共用一把 key：在分组标题栏用**填写密钥**设置一次即可。
 
 - **协议。** OpenCode 把每个模型放在三个端点之一上，因此每个条目各自固定 `client_type` 与 base URL。Chat Completions（`openai-chat`）和 Responses（`openai-responses`）模型使用 `https://opencode.ai/zen/go/v1`；Anthropic Messages（`ant-messages`）模型使用 `https://opencode.ai/zen/go`，因为客户端会自行加上 `/v1/messages`。与所有网关的条目一样，它们都不会回退到 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`：key 要设在分组上。你自己添加到该分组的模型使用 `openai-chat` 和带 `/v1` 的 base URL。
 - **价格。** Go 按月订阅，用量上限是按模型计的美元额度：每月一份额度，每 5 小时最多用掉其中 20%，每周最多 50%。条目记录的是每次请求从额度中扣除的每 Token 价格，因此对这个分组而言，成本中心显示的是你用掉了多少额度，而不是一张账单。`gpt-5.6-luna`、`grok-4.6`、`qwen3.7-plus` 和 `qwen3.6-plus` 记录基础档，分别覆盖 272K、200K、256K 和 256K 输入 Token 以内。四个 DeepSeek 模型遵循 DeepSeek 的空闲时段，见[价格与促销](#价格与促销)。
@@ -456,7 +486,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 `modelscope` 是聚合网关分组：三条预置共用魔搭 api-inference 端点，预置 base URL 为 `https://api-inference.modelscope.cn/v1`。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。三条预置都固定使用 AgentHub 通用 Responses 客户端（`client_type = "openai-responses"`），推理请求发往 `{base_url}/responses`。新建的 Project 立即带上这些预置；既有 Project 可通过**同步预置**或下一次 ModelScope 授权更新已存的协议。
 
-分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权走一台授权中转层，由中转层持有魔搭的 client secret 并交回一组 api-inference access token / refresh token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；access token 和其他分组的 key 一样写进 `.project_config.toml`，refresh token 只保存在服务端 DB。access token 会过期，PenguinHarness 会在模型请求前静默续期；refresh token 缺失或失效时，才需要从标题栏重新授权一次。
+分组的 key 从标题栏取得，见[连接账户](#连接账户)。连接走一台授权中转层，由中转层持有魔搭的 client secret 并交回一组 api-inference access token / refresh token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；access token 和其他分组的 key 一样写进 `.project_config.toml`，refresh token 只保存在服务端 DB。access token 会过期，PenguinHarness 会在模型请求前静默续期；refresh token 缺失或失效时，才需要从标题栏重新连接一次。
 
 预置条目不带价格。魔搭的 api-inference 是计费的，但它的模型页面读不到费率，所以这些条目按未定价处理：模型页在它们上面不显示价格徽标，成本中心把它们的用量报为未计价。这是目录记录「没人查过这个价格」的方式，见[价格与促销](#价格与促销)。
 

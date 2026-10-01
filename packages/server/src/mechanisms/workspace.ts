@@ -25,7 +25,8 @@ export abstract class WorkspaceFiles {
     rel: string,
     data: Buffer<ArrayBufferLike>,
     ifVersion?: string,
-  ): Promise<void>;
+  ): Promise<string>;
+  abstract create(workspace: string, rel: string, kind: "file" | "dir"): Promise<void>;
   abstract move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void>;
   abstract remove(workspace: string, rel: string, ifVersion?: string): Promise<void>;
   abstract search(workspace: string, q: string): Promise<WorkspaceSearchResponse>;

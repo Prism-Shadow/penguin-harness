@@ -34,9 +34,19 @@ Each model card shows the model's display name, tags, context window, prices, ke
 
 Prices are shown per million Tokens, in the order cache read / cache write / output. The currency is the one chosen under **Currency** in the settings: **USD $** or **CNY ¥**, converted at a fixed rate of 7.
 
-Select a card to open **Model settings**. Links next to a group open the provider's key console (**Manage keys**). The model dialog links to the provider's model list (**Get model IDs**) and to the model's own page (**Model page**).
+Select a card to open **Model settings**. It links to the provider's model list (**Get model IDs**), to the model's own page (**Model page**) and, like the **Enter key** dialog, to the provider's key console (**Manage keys**).
 
-Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them in their own browser, and open **Model settings** read-only.
+A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens. On the right it holds, from left to right:
+
+- the group's balance, for TokenDance and DeepSeek once the group has a key, with a pin and a refresh icon before it and a divider after it; see [Account balances](#account-balances);
+- whether the group is connected, and **Connect**, for TokenDance, Penguin Go and ModelScope; see [Connect an account](#connect-an-account);
+- **Enter key**, on every group but **Custom**; see [Set API keys](#set-api-keys);
+- the speed test; see [Measure speed](#measure-speed);
+- **Add model**, on **Custom**, **vLLM** and groups you created; see [Add a model](#add-a-model).
+
+While the TokenDance group has no key, a banner above the groups offers to connect your TokenDance wallet, so the models there need no key set by hand. Its **Connect** runs the same flow as the group's. Select × to hide the banner in this browser.
+
+Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them in their own browser, see balances and connection status, and open **Model settings** read-only.
 
 ## Add a model group
 
@@ -84,26 +94,36 @@ All of the group's models and their API keys are removed. Built-in groups cannot
 
 ## Add a model
 
+**Add model** is on the headers of **Custom**, **vLLM** and the groups you created. The other built-in groups — the vendors and the gateways — carry their built-in models only; see [Built-in models only](#built-in-models-only).
+
 1. On the group's header, select **Add model**.
-2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `gpt-5.5`. **Get model IDs** opens the provider's model list.
+2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `qwen3-32b`. **Get model IDs** opens the provider's model list.
 3. Optional: in **Display name**, enter a display name. An empty display name shows the model id.
 4. Fill in the credentials and endpoint:
-   - **API key**: in a vendor group, leave it empty to use the provider's environment variable; the field names the variable when it is set on the server. In a gateway group, in **Custom** and in groups you created, the key is required — no environment variable is used for an endpoint that is not the vendor's own.
-   - **Custom base URL**: required in **Custom** and in groups you created. In gateway groups it is filled in for you.
+   - **API key**: required — these groups point at endpoints that are not a vendor's own, and no environment variable is used for such an endpoint.
+   - **Custom base URL**: required. Enter your server's or gateway's endpoint.
 5. Optional: fill in the limits and prices:
    - **Context window**: the model's context window in Tokens. For a model that is not in the built-in catalog, an empty field saves as 1000000.
    - **Max output tokens**: the most output Tokens per request. Leave it empty to use the agent's setting; lower it for models with a small context.
    - **Cache read price**, **Cache write price**, and **Output price**: per million Tokens, in the display currency; they are stored in USD. Fill in all three or none.
-6. Optional: turn on **Vision support** if the model accepts images, or select **Detect**; see [Detect vision support](#detect-vision-support). New models in **Custom** and in groups you created start with vision off; models you add to other groups start with it on.
+6. Optional: turn on **Vision support** if the model accepts images, or select **Detect**; see [Detect vision support](#detect-vision-support). New models in **Custom** and in groups you created start with vision off; models you add to **vLLM** start with it on.
 7. Optional: turn on **Fast mode**; see [Fast mode](#fast-mode).
 8. Select **Confirm**.
 
 Which protocol a new model uses depends on its group:
 
-- **Vendor groups** (DeepSeek, Google Gemini, OpenAI, Anthropic, Z.AI, Moonshot, MiniMax) support only the vendor's own API. If a model id cannot be routed that way, the dialog warns you and offers **Move to Custom**. Use Custom for OpenAI-compatible endpoints.
-- **OpenRouter** always uses `openai-responses`, and **vLLM** always uses `openai-chat-vllm-adapter`.
-- **OpenAI-compatible gateway groups** use OpenAI Chat Completions, except for aggregate presets that pin a model-specific protocol.
+- **vLLM** always uses `openai-chat-vllm-adapter`.
 - **Custom** and groups you created: pick the protocol from the base URL field, or detect it. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
+
+### Built-in models only
+
+Every built-in group except **Custom** and **vLLM** carries the models in PenguinHarness's built-in catalog and nothing else. Their keys are managed per group, and which models they hold is the catalog's to decide.
+
+- These groups have no **Add model**, and **Model settings** does not offer them as a group to move a model into.
+- The server refuses a new model in one of these groups unless it is one of the group's built-in models: saving it fails with "This group carries its built-in models only". `penguin config model add` refuses it the same way. A built-in model you deleted can be added back, which is what **Sync presets** does.
+- Models already in these groups stay where they are, including ones you added to a gateway group before this rule. They keep working, and you can edit them, rename them within the group, or delete them.
+- A vendor group (DeepSeek, Google Gemini, OpenAI, Anthropic, Z.AI, Moonshot, MiniMax) supports only the vendor's own API. If one of its models has an id that cannot be routed that way, the model is marked and offers **Move to Custom**. Use **Custom** for OpenAI-compatible endpoints.
+- The gateway groups keep the protocol their built-in models pin: OpenRouter uses `openai-responses`, and the other OpenAI-compatible gateways use OpenAI Chat Completions, except for aggregate presets that pin a model-specific protocol.
 
 ### Edit or delete a model
 
@@ -113,7 +133,7 @@ Changing **Model ID** or **Group** renames the entry; its credential and its def
 
 ## Create a model group with AI
 
-**Create with AI** covers what an import cannot read: a model listing page that is not an OpenAI-compatible `/models` endpoint, a service described in words, or vendor models to add to an existing group.
+**Create with AI** covers what an import cannot read: a model listing page that is not an OpenAI-compatible `/models` endpoint, a service described in words, or a built-in model to put back into its group.
 
 > [!TIP]
 > For an OpenAI-compatible endpoint that lists its own models, **Import models** in the **Add group** dialog is faster.
@@ -187,16 +207,16 @@ The credential comes from the same chain as the connection test: the key typed i
 Each model carries its own API key, or none.
 
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it.
-- **A whole group.** On a group's header, select **Set key** and enter the key. It applies to every model in the group.
+- **A whole group.** On a group's header, select **Enter key** and enter the key. It is written to every model in the group, replacing the key each one had. **Custom** has no **Enter key**: its models each reach their own endpoint.
 - **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (AgentHub's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
-### Authorize a new API key
+### Connect an account
 
-A provider that supports automatic key authorization adds **Authorize key** to its group header. Three built-in groups do: TokenDance, Penguin Go and ModelScope. The key is written to every model in the group, replacing the key those models use now.
+Three built-in groups can get their key for you: TokenDance, Penguin Go and ModelScope. Their header shows **Connect** with a status beside it: **Not connected**, or **Connected** once the group holds a key, however the key got there. Once connected, the button reads **Reconnect**, which gets a fresh key or switches to another account. The key is written to every model in the group, replacing the key those models use now.
 
-1. On the group's header, select **Authorize key**.
+1. On the group's header, select **Connect**.
 2. Select **Open authorization page**. The provider's authorization page opens in a new tab.
 3. Authorize there. The dialog, which shows "Waiting for the authorization to finish in the other tab…", reports the result on its own.
 
@@ -208,7 +228,7 @@ TokenDance creates a **new** key on your account; it does not read a key you alr
 Penguin Go differs in four ways:
 
 - The server polls Penguin Go for the result, so this group has no manual-code mode.
-- Once the group has a key, a **Sync** action sits on the header just before **Add model** and reads the platform's catalog again; see [The Penguin Go group](#the-penguin-go-group). **Authorize key** stays available, so you can switch to another platform account.
+- Once the group is connected, a **Sync** action sits on the header right after **Reconnect** and reads the platform's catalog again; see [The Penguin Go group](#the-penguin-go-group). **Reconnect** stays available, so you can switch to another platform account.
 - A key the platform reports as invalid or revoked reopens authorization on the **Models** page.
 - If writing the delivered key locally fails, the server keeps that one delivery for a short while, so the write can be retried without authorizing again.
 
@@ -216,16 +236,26 @@ ModelScope differs in three ways:
 
 - Authorization does not go through ModelScope's own pages but through an **authorization bridge**. The bridge holds ModelScope's client secret, runs the OAuth exchange on PenguinHarness's behalf, and hands back an access token that calls api-inference directly. The bridge's address comes from the server-side `MODELSCOPE_BRIDGE_URL` environment variable; see [Environment variables](/configuration#environment-variables).
 - The authorization page's address is the bridge's, opened as given, rather than assembled here the way Penguin Go's is. This group likewise has no manual-code mode.
-- The access token **expires**; PenguinHarness stores the refresh credential on the server and silently renews before model requests. Re-authorize with **Authorize key** only when the refresh credential is missing or no longer valid.
+- The access token **expires**; PenguinHarness stores the refresh credential on the server and silently renews before model requests. Select **Reconnect** only when the refresh credential is missing or no longer valid.
 
 Keep in mind:
 
-- Only the Project owner can start an authorization. With TokenDance, only their own signed-in session can finish it, which in practice is the tab the dialog is open in. The redirect itself is received without a session, because the browser the provider sends back is not always the one you started in, but it only hands the code over: nothing is exchanged and no key is saved until the dialog asks for the result.
+- Only the Project owner can connect. With TokenDance, only their own signed-in session can finish it, which in practice is the tab the dialog is open in. The redirect itself is received without a session, because the browser the provider sends back is not always the one you started in, but it only hands the code over: nothing is exchanged and no key is saved until the dialog asks for the result.
 - The whole exchange runs on the server. Neither TokenDance's PKCE verifier, Penguin Go's device secret, nor ModelScope's code and device secret ever reaches the browser, and the new key goes straight into the model table without passing through it. ModelScope's client secret is never in PenguinHarness at all; only the bridge holds it.
 - An authorization flow waits for at most ten minutes. ModelScope delivers an access token / refresh token pair: the access token is written to the model table, while the refresh token stays only in the server DB and is never returned to the frontend or written to the Project config.
 - A delivered key is handed over only once. Penguin Go and ModelScope both keep that one delivery briefly if saving it locally fails, so the write can be retried without authorizing again. ModelScope leaves nothing to clean up in ModelScope's console — what it returns is a token for your own account, not a newly minted key.
 - TokenDance hands over the new key only once. If saving it fails, authorize again and delete the unused key in the provider's console.
 - A TokenDance key carries PenguinHarness's app URL from the [App attribution](#app-attribution) table, so calls made with it stay attributed even from another tool.
+
+### Account balances
+
+TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance in the currency chosen under **Currency** in the settings, converted at the same fixed rate of 7 as prices. For DeepSeek the key may also be the server's `DEEPSEEK_API_KEY`, which its models already fall back to (see [Set API keys](#set-api-keys)); TokenDance is a gateway, so its key must be stored on the group. An account holding several currencies shows their sum: ¥110 and $5 read `¥145`, or `$20.71`. The server asks the provider with the stored key, so the key never reaches the browser.
+
+- Two icons stand before the balance. The refresh icon reads it again; point at it to see the provider's own figures and when they were read. Answers are kept on the server for a minute; the refresh icon skips that.
+- A balance that cannot be read shows "—"; point at the refresh icon for the reason.
+- The pin keeps the balance next to your name at the bottom of the sidebar, in the same currency. One balance can be pinned at a time: pinning another replaces it. The pin is saved with your account, not in the browser. The pinned balance is read when the app loads and every five minutes after that.
+
+The balance is read with `GET /api/projects/:id/models/balance?provider=<group>`, which every member of the Project may call.
 
 ## Set the default model
 
@@ -253,7 +283,7 @@ In **Model settings**, select **Test connection** (owner only). The test uses wh
 
 To compare the models in a group:
 
-1. On the group's header, select **Speed test**.
+1. On the group's header, select the speed test icon (**Speed test**).
 2. Select **Start**.
 
 PenguinHarness sends one real request to each model in turn, which uses a small amount of your API quota, and shows on each card:
@@ -261,7 +291,7 @@ PenguinHarness sends one real request to each model in turn, which uses a small 
 - the time to first token, in milliseconds: green under 1000, yellow up to 3000, red above;
 - the output rate, in Tokens per second: green at 40 or more, yellow at 15 or more, red below.
 
-Results stay only on the page and are gone after a reload.
+While the test runs, the same icon stops it (**Stop speed test**): the model being measured finishes, no further request is sent, and the results so far stay. Results stay only on the page and are gone after a reload.
 
 ## Sync preset models
 
@@ -404,7 +434,7 @@ The table below lists the built-in groups and the environment variables their mo
 | Provider | API key env var | Notes |
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | The recommended group. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
-| penguin-go | `PENGUIN_GO_API_KEY` | Preset relay group, fixed base URL `https://token.penguin.ooo/api`; its header authorizes a key for you or takes one you set by hand. See [The Penguin Go group](#the-penguin-go-group) |
+| penguin-go | `PENGUIN_GO_API_KEY` | Preset relay group, fixed base URL `https://token.penguin.ooo/api`; its header connects for you or takes a key you enter by hand. See [The Penguin Go group](#the-penguin-go-group) |
 | opencode-go | `OPENAI_API_KEY` | OpenCode Go subscription gateway. Each model pins its own protocol: Chat Completions or Responses at `https://opencode.ai/zen/go/v1`, Anthropic Messages at `https://opencode.ai/zen/go` (that client's variable is `ANTHROPIC_API_KEY`). See [The OpenCode Go group](#the-opencode-go-group) |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
@@ -436,7 +466,7 @@ The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax prese
 
 `penguin-go` is a built-in group like TokenDance: a relay behind the fixed base URL `https://token.penguin.ooo/api`. A new Project gets the group's catalog models right away; a Project created before the group adds them with **Sync presets**.
 
-The group's key comes from its header; see [Authorize a new API key](#authorize-a-new-api-key). Authorization, and the **Sync** action that follows it, also read the platform's own model catalog:
+The group's key comes from its header; see [Connect an account](#connect-an-account). Connecting, and the **Sync** action that follows it, also read the platform's own model catalog:
 
 - Models the platform offers and the Project does not have are added, with their protocol, endpoint, display name, context window, vision flag and list price. Pure embedding models are left out.
 - Models the Project already has keep their endpoint and everything else you configured. Only their three prices and their client protocol are refreshed, `max_tokens` stays unset so the agent's setting applies, and nothing is ever deleted.
@@ -446,7 +476,7 @@ The platform quotes peak rates in USD per million Tokens. The group's DeepSeek r
 
 ### The OpenCode Go group
 
-`opencode-go` holds the 27 models OpenCode lists for its Go subscription. One key serves all of them: set it once with **Set key** on the group header.
+`opencode-go` holds the 27 models OpenCode lists for its Go subscription. One key serves all of them: set it once with **Enter key** on the group header.
 
 - **Protocols.** OpenCode serves each model on one of three endpoints, so each row pins its own `client_type` and base URL. Chat Completions (`openai-chat`) and Responses (`openai-responses`) models use `https://opencode.ai/zen/go/v1`. Anthropic Messages (`ant-messages`) models use `https://opencode.ai/zen/go`, because the client adds `/v1/messages` itself. Like every gateway's rows, none of them falls back to `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`: the key goes on the group. A model you add to the group yourself gets `openai-chat` and the `/v1` base URL.
 - **Prices.** Go is a monthly subscription whose usage limits are dollar amounts per model: a monthly allowance, of which at most 20% can be used in five hours and 50% in a week. The rows record the per-token rates a request draws from that allowance, so for this group the cost center shows how much of it you used, not a bill. `gpt-5.6-luna`, `grok-4.6`, `qwen3.7-plus` and `qwen3.6-plus` record their base tier, which covers up to 272K, 200K, 256K and 256K input tokens respectively. The four DeepSeek models follow DeepSeek's off-peak schedule; see [Prices and promotions](#prices-and-promotions).
@@ -457,7 +487,7 @@ The platform quotes peak rates in USD per million Tokens. The group's DeepSeek r
 
 `modelscope` is an aggregate gateway group: one ModelScope api-inference endpoint behind the preset base URL `https://api-inference.modelscope.cn/v1`. Model ids are upstream repo names, so they keep their vendor prefix (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`). All three preset rows pin AgentHub's generic Responses client (`client_type = "openai-responses"`) and send inference requests to `{base_url}/responses`. A new Project gets these presets right away; an existing Project updates its stored protocol with **Sync presets** or the next ModelScope authorization.
 
-The group's key comes from its header; see [Authorize a new API key](#authorize-a-new-api-key). Authorization goes through an authorization bridge, which holds the ModelScope client secret and returns an api-inference access token / refresh token pair, rather than through ModelScope's own pages. Nothing else about the group is special: inference requests go straight to `https://api-inference.modelscope.cn/v1` and never through the bridge. The access token is written into `.project_config.toml` like any other group key, while the refresh token stays only in the server DB. The access token expires, and PenguinHarness silently renews it before model requests; re-authorize from the header only when the refresh token is missing or no longer valid.
+The group's key comes from its header; see [Connect an account](#connect-an-account). Connecting goes through an authorization bridge, which holds the ModelScope client secret and returns an api-inference access token / refresh token pair, rather than through ModelScope's own pages. Nothing else about the group is special: inference requests go straight to `https://api-inference.modelscope.cn/v1` and never through the bridge. The access token is written into `.project_config.toml` like any other group key, while the refresh token stays only in the server DB. The access token expires, and PenguinHarness silently renews it before model requests; reconnect from the header only when the refresh token is missing or no longer valid.
 
 The preset rows carry no price. ModelScope bills for api-inference and its model pages publish no read-able rate, so the rows are left unpriced: the models page shows no price badge on them and the cost center reports their usage as uncosted. That is the catalog's way of recording "nobody has looked this up" — see [Prices and promotions](#prices-and-promotions).
 
