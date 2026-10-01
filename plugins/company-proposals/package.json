@@ -1,6 +1,7 @@
 {
   "name": "@prismshadow/penguin-plugin-company-proposals",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "description": "Proposals for PenguinHarness company mode: an employee writes a short, paragraph-commentable proposal while another builds it, the person reads, comments in batches and approves, and a proposals page with unread counts keeps the queue in view.",
   "license": "Apache-2.0",
