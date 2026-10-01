@@ -1262,7 +1262,21 @@ function ProposalView({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-1.5">
                     <PrincipalChip principal={ev.by} names={names} />
-                    <span className="text-gray-600 dark:text-gray-300">{eventLine(ev, names)}</span>
+                    {ev.url !== undefined ? (
+                      <a
+                        href={ev.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-tooltip={ev.url}
+                        className="text-gray-600 hover:underline dark:text-gray-300"
+                      >
+                        {eventLine(ev, names)}
+                      </a>
+                    ) : (
+                      <span className="text-gray-600 dark:text-gray-300">
+                        {eventLine(ev, names)}
+                      </span>
+                    )}
                   </div>
                   {more !== null && (
                     <div className="md-body md-compact mt-0.5 text-gray-700 dark:text-gray-200">

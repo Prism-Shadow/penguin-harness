@@ -407,7 +407,7 @@ export class ProposalService {
       unread: this.unreadOf(p, caller, reads),
       pendingComments: p.comments.filter((c) => c.batchId === null && c.by === caller.principal)
         .length,
-      materials: p.materials,
+      materials: withImplPr(p.materials, p.implPr),
       implPr: p.implPr,
     };
   }
@@ -1690,4 +1690,26 @@ export function compareDatedVersions(a: string, b: string): number {
   if (va === null || vb === null) return Number(va !== null) - Number(vb !== null);
   if (va[0] !== vb[0]) return va[0] < vb[0] ? -1 : 1;
   return va[1] - vb[1];
+}
+
+/**
+ * A proposal's materials with its impl PR among them. An impl PR set directly (`setImpl`, the
+ * admin's override, or a restack re-pointing one) is a ledger line of its own and not a
+ * material, so the Materials list read "no materials yet" beside a proposal that has its PR.
+ * When no `pr` material is that pull request, it is listed first, as the PR it is.
+ */
+export function withImplPr(
+  materials: readonly ProposalMaterial[],
+  implPr: { url: string; label: string; by: string; at: string } | null,
+): ProposalMaterial[] {
+  if (implPr === null) return [...materials];
+  const key = pullKey(implPr.url);
+  const held = materials.some(
+    (m) => m.kind === "pr" && (key === null ? m.url === implPr.url : pullKey(m.url) === key),
+  );
+  if (held) return [...materials];
+  return [
+    { kind: "pr", label: implPr.label, url: implPr.url, by: implPr.by, at: implPr.at },
+    ...materials,
+  ];
 }

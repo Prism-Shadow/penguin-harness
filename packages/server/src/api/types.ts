@@ -6813,6 +6813,8 @@ export interface ProposalEvent {
   text?: string;
   /** The revision a `revised` event produced. */
   revision?: number;
+  /** What a `material_added` event added (a material, or the impl PR): its link. */
+  url?: string;
 }
 
 /** A proposal as the queue lists it. */

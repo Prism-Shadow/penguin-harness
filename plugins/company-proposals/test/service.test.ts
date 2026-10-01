@@ -32,6 +32,7 @@ import plugin, {
   testGroupsOf,
 } from "../src/index.js";
 import type { RunGh } from "../src/pr-status.js";
+import { withImplPr } from "../src/service.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = "proj";
@@ -2018,5 +2019,40 @@ describe("the manifest", () => {
       pattern: TEST_GROUP_LINE,
       default: [...DEFAULT_TEST_GROUPS],
     });
+  });
+});
+
+describe("withImplPr", () => {
+  const impl = {
+    url: "https://github.com/acme/site/pull/7",
+    label: "acme/site#7",
+    by: "user:admin",
+    at: "2026-10-01T00:00:00.000Z",
+  };
+
+  it("lists an impl PR no material holds first, as a pr material", () => {
+    const other = {
+      kind: "doc" as const,
+      label: "spec",
+      url: "https://example.com/spec",
+      by: "user:a",
+      at: "t",
+    };
+    expect(withImplPr([other], impl)).toEqual([
+      { kind: "pr", label: "acme/site#7", url: impl.url, by: "user:admin", at: impl.at },
+      other,
+    ]);
+  });
+
+  it("adds nothing when a pr material is already that pull request, or there is no impl PR", () => {
+    const held = {
+      kind: "pr" as const,
+      label: "PR #7",
+      url: "https://github.com/acme/site/pull/7/files",
+      by: "user:a",
+      at: "t",
+    };
+    expect(withImplPr([held], impl)).toEqual([held]);
+    expect(withImplPr([], null)).toEqual([]);
   });
 });

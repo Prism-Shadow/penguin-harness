@@ -230,7 +230,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
   const event = (
     kind: ProposalEvent["kind"],
     by: string,
-    extra: { text?: string; revision?: number } = {},
+    extra: { text?: string; revision?: number; url?: string } = {},
   ): void => {
     p.events.push({ seq: line.seq, at: line.at, kind, by, ...extra });
   };
@@ -280,12 +280,12 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       return;
     case "material":
       p.materials.push({ ...line.material, by: line.by, at: line.at });
-      event("material_added", line.by, { text: line.material.label });
+      event("material_added", line.by, { text: line.material.label, url: line.material.url });
       return;
     case "impl":
       p.implPr = { url: line.url, label: line.label, by: line.by, at: line.at };
       // The timeline names it the way a material is named, marked as the impl PR.
-      event("material_added", line.by, { text: `impl ${line.label}` });
+      event("material_added", line.by, { text: `impl ${line.label}`, url: line.url });
       return;
     case "feedback":
       event(line.runtime ? "runtime_feedback" : "feedback", line.by, { text: line.text });
