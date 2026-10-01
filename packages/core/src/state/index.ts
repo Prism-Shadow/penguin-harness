@@ -14,6 +14,7 @@ export * from "./model-catalog.js";
 export * from "./command-policy-defaults.js";
 export * from "./project-config.js";
 export * from "./agent-state.js";
+export * from "./plugin-store.js";
 export * from "./agent-vault.js";
 export * from "./memory.js";
 export * from "./example-benchmark.js";

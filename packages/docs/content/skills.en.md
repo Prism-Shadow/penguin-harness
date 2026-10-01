@@ -7,6 +7,7 @@ A **Skill** is a set of reusable instructions that an agent reads when a task ca
 
 - **Looking for new abilities?** See [Browse plugins](#browse-plugins) and [Install a plugin on an agent](#install-a-plugin-on-an-agent).
 - **An update is waiting?** See [Update installed plugins](#update-installed-plugins).
+- **Adding a plugin of your own to the library?** See [Import, export and delete library plugins](#import-export-and-delete-library-plugins).
 - **Want the agent to use a specific Skill?** See [Use a Skill in a chat](#use-a-skill-in-a-chat).
 - **Managing one agent's Skills and hooks?** See [Manage an agent's Skills](#manage-an-agents-skills) and [Hook packages](#hook-packages).
 - **Adding a sandbox backend or another server plugin?** See [Server plugins](#server-plugins).
@@ -69,6 +70,25 @@ To update:
 > Updating reinstalls the library copy over each agent's installed Skill and hook files. Any local edits are lost, so export a backup first if you need them. See [Manage an agent's Skills](#manage-an-agents-skills).
 
 **Dismiss** hides the notice and the sidebar dot until the library version changes again. The update buttons on the cards stay.
+
+## Import, export and delete library plugins
+
+Beside the plugins PenguinHarness ships, the library lists the plugins in the **user plugin directory**, `<data root>/plugins`. An admin fills it by importing — from a zip file on this machine, or from a URL the server downloads — and an agent can then install those plugins exactly like a built-in one. A plugin from there carries a **User** badge.
+
+To import a plugin, select **Upload plugin** or **Download from URL** in the page header and fill in the dialog:
+
+- **Upload plugin** takes a zip file of at most 14 MB. **Download from URL** takes a direct zip link, a GitHub repository URL (its default branch), or a directory inside one (`…/tree/<ref>/<subdir>`), of at most 32 MB.
+- **Plugin name** is optional. Leave it empty and the plugin is named after the directory inside the archive that holds `plugin.json`; the server refuses the request rather than inventing a name when `plugin.json` sits at the very root of the zip, where there is no directory to take one from.
+- The archive has to be a zip carrying a `plugin.json`. The plugin root is the shallowest directory holding one and everything outside it is ignored, so a whole repository can be handed over and only the plugin inside it is installed. Under the plugin root the caps are 200 files, 5 MB each and 20 MB in total.
+- Both dialogs end with **Plugin import rules**, which state the accepted sources, the order the name is decided in, the size caps and what happens when the name is taken.
+
+Importing a name a built-in plugin already holds is refused — pick another. Importing a name a user plugin already holds asks you to confirm first, and overwriting replaces every one of its files, local edits included.
+
+The directory belongs to the installation rather than to a Project, and an installed plugin's hook scripts run with the server's own rights, so importing and deleting are an admin's. Exporting is not: **Export plugin** on a user plugin's card downloads the plugin as a zip, which is also how you take a backup of one.
+
+**Delete plugin** on the card removes the plugin's directory from disk after a confirmation, and it cannot be recovered. The Skills and hook packages an agent already installed from it are that agent's own copies and stay where they are; uninstall those from **Manage installs** if you want them gone too.
+
+Writing a plugin of your own? Both dialogs also carry **Plugin authoring rules**: one directory per plugin named after it, `plugin.json` and `skills/<skill>/SKILL.md` inside it, no account details in the plugin, and no credentials in the directory. See [Write a Skill](#write-a-skill) and [Plugin file format](#plugin-file-format).
 
 ## Use a Skill in a chat
 
@@ -307,4 +327,5 @@ Installed Skills live under `agent_state/skills/<name>/`, and hook packages unde
 - Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships. Reinstalling is how an installed copy is updated.
 - Uninstalling deletes the whole `skills/<name>/` or `hooks/<name>/` directory.
 - A running Session keeps the hook packages its current model context opened with; the next context, after a compaction or on resume, reads them again. After a hook package is installed, imported or removed through the Web App or the API, or the **Enable hooks** switch changes, the server rebuilds the agent's cached runtimes the next time they are idle, so open conversations pick up the change from their next turn.
+- A user plugin is stored at `<data root>/plugins/<name>/`, laid out like a library plugin package and read on the same terms as one; the library caches nothing, so an imported plugin is in the listing and installable as soon as the import returns. Importing replaces the whole directory in one rename, and deleting removes it, leaving the copies agents already installed untouched.
 - Besides the Web App, plugins can be installed through the SDK.

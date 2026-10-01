@@ -63,6 +63,7 @@ import type {
   OrganizationsResponse,
   PluginConfigActionResponse,
   PluginConfigResponse,
+  PluginDirectoryResponse,
   PluginFilesResponse,
   PluginIndexResponse,
   PluginLibraryResponse,
@@ -1654,6 +1655,13 @@ const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) 
 
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
+  .get("/api/plugins/directory", ({ store }): PluginDirectoryResponse => ({
+    path: "/home/demo/.penguin/data/plugins",
+    plugins: libraryPlugins(store)
+      .filter((plugin) => plugin.source === "user")
+      .map((plugin) => plugin.name)
+      .sort(),
+  }))
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
     const name = query.get("name") ?? "";
@@ -1666,6 +1674,26 @@ router
       return { files: {} };
     }
     return { files };
+  })
+  // An import needs a server: the upload's zip would have to be unpacked and validated, and the
+  // download fetched — the demo has neither, the same as the two archive installs (see
+  // skills/hooks above). The directory line and the delete below are the demo's own state, so
+  // they answer for real.
+  .post("/api/plugins/upload", () => readOnly("import a plugin archive"))
+  .post("/api/plugins/download", () => readOnly("download a plugin from a URL"))
+  .get("/api/plugins/:plugin/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.plugin}.zip"`,
+    }),
+  )
+  .delete("/api/plugins/:plugin", ({ store, params }) => {
+    const group = store.f.library.groups.find((g) =>
+      g.plugins.some((p) => p.name === params.plugin && p.source === "user"),
+    );
+    if (!group) notFound("Plugin");
+    group.plugins = group.plugins.filter((p) => !(p.name === params.plugin && p.source === "user"));
+    return empty();
   })
   .post("/api/projects/:projectId/agents/:agentId/plugins", (ctx): unknown => {
     const installed = installedOf(ctx);

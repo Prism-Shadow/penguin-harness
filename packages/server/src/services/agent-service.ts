@@ -132,7 +132,7 @@ export class AgentService implements AgentLifecycle {
     // The plugin library is read once for the whole list (every Agent is checked against the
     // same files). Meta reads and mtime stats for each Agent run in parallel (Promise.all
     // preserves the sorted order).
-    const library = loadLibraryPlugins();
+    const library = loadLibraryPlugins(this.root);
     const sorted = [...known.values()].sort((a, b) =>
       a.createdAt === b.createdAt
         ? a.agentId.localeCompare(b.agentId)
@@ -291,7 +291,7 @@ export class AgentService implements AgentLifecycle {
     agentId: string,
     pluginName: string,
   ): Promise<{ installed: string | null; library: string | null }> {
-    const plugin = libraryPlugin(pluginName);
+    const plugin = libraryPlugin(pluginName, this.root);
     if (!plugin) return { installed: null, library: null };
     const base = skillsDir(this.root, projectId, agentId);
     const versions: string[] = [];
@@ -324,7 +324,7 @@ export class AgentService implements AgentLifecycle {
    * Session is built, unlike skills, which are read from disk on demand.
    */
   async updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void> {
-    for (const plugin of resolveLibraryPlugins([pluginName])) {
+    for (const plugin of resolveLibraryPlugins([pluginName], this.root)) {
       await installPlugin(this.root, projectId, agentId, plugin);
     }
   }
@@ -447,7 +447,7 @@ export class AgentService implements AgentLifecycle {
     // installed after the library plugins and so win a name collision: the user picked that
     // directory for this Agent specifically, which is a narrower intent than "install the
     // built-in one".
-    const librarySeed = resolveLibraryPlugins(pluginNames ?? []);
+    const librarySeed = resolveLibraryPlugins(pluginNames ?? [], this.root);
     const directorySeed = directory
       ? await resolveDirectorySkills(directory.path, directory.names)
       : [];
@@ -498,7 +498,11 @@ export class AgentService implements AgentLifecycle {
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
-    const installed = await this.installedPlugins(projectId, agentId, loadLibraryPlugins());
+    const installed = await this.installedPlugins(
+      projectId,
+      agentId,
+      loadLibraryPlugins(this.root),
+    );
     return {
       agentId,
       name: cardName,

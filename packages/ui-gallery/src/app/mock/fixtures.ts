@@ -610,6 +610,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         titleZh: "开发",
         plugins: [
           {
+            source: "builtin",
             name: IDS.plugins.registry,
             description:
               "Answer questions about Claude Code from its documentation, with citations.",
@@ -629,6 +630,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             hooks: [],
           },
           {
+            source: "builtin",
             name: "penguin-sdk",
             description:
               "Build with the PenguinHarness SDK: the Session, Agent State and OmniMessage APIs.",
@@ -641,6 +643,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             hooks: [],
           },
           {
+            source: "builtin",
             name: "web-design",
             description: "Design and build web pages that do not read as templated defaults.",
             descriptionZh: "设计并实现不像模板默认值的网页。",
@@ -656,6 +659,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         titleZh: "办公效率",
         plugins: [
           {
+            source: "builtin",
             name: "goal",
             description:
               "Run a Session round after round until an objective is met, within a token budget.",
@@ -665,6 +669,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             hooks: ["stop"],
           },
           {
+            source: "builtin",
             name: "continual-learning",
             description: "Write what a Session learned into the Agent's memory when it ends.",
             descriptionZh: "会话结束时把学到的东西写进智能体记忆。",
@@ -679,12 +684,34 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             hooks: ["stop"],
           },
           {
+            source: "builtin",
             name: "report-writer",
             description:
               "Turn findings into a structured report with a summary, sections and an appendix.",
             descriptionZh: "把调查结果整理成带摘要、分节和附录的报告。",
             version: "2026.09.02.1",
             skills: [skill("report-writer", "撰写结构化报告", "Write structured reports")],
+            hooks: [],
+          },
+        ],
+      },
+      // The plugin directory's own plugin: from the operator's import rather than from the
+      // build, so its card carries the User badge, its export is offered and it is the one
+      // delete can remove (see routes.ts). A plugin without a category lands in "Other".
+      {
+        id: "other",
+        title: "Other",
+        titleZh: "其他",
+        plugins: [
+          {
+            source: "user",
+            name: "release-notes",
+            description: "Draft the release notes for one version from its merged changes.",
+            descriptionZh: "根据一个版本已合并的改动起草发布说明。",
+            shortDescription: "Release notes from merged changes",
+            shortDescriptionZh: "由已合并的改动生成发布说明",
+            version: "2026.09.28.1",
+            skills: [skill("release-notes", "起草发布说明", "Draft release notes")],
             hooks: [],
           },
         ],

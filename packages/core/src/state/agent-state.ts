@@ -238,7 +238,7 @@ export async function loadAgentState(opts?: {
   // reads SKILL.md with shell and follows it. Hook packages run at the loop's hook points.
   const plugins =
     preset === undefined && agentId === DEFAULT_AGENT_ID
-      ? loadPreinstalledPlugins()
+      ? loadPreinstalledPlugins(root)
       : (preset?.plugins ?? []);
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
@@ -271,7 +271,7 @@ export async function provisionProjectAgents(opts?: {
   projectId?: string;
 }): Promise<string[]> {
   const agentIds: string[] = [];
-  for (const { agentId, preset } of builtinProjectAgentPresets()) {
+  for (const { agentId, preset } of builtinProjectAgentPresets(opts?.root)) {
     await loadAgentState({
       ...(opts?.root !== undefined ? { root: opts.root } : {}),
       ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),
