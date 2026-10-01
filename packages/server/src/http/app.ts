@@ -85,7 +85,8 @@ export class HttpModule {
           if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
           c.set("user", user);
           // The handshake does not say how the cookie behind it was minted, so the most
-          // demanding kind is assumed: what needs the old password keeps needing it.
+          // demanding kind is assumed; the routes whose answer turns on the kind never reach
+          // here, the socket declines them for HTTP (api/types.ts sessionKindPath).
           c.set("sessionVia", "password");
           await next();
         });

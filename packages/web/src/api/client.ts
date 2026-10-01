@@ -13,6 +13,7 @@
  * notifies AuthProvider to clear the current user, letting the route guard redirect to the
  * login page — instead of each page popping its own "unauthorized" error.
  */
+import { sessionKindPath } from "@prismshadow/penguin-server/api";
 import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
 import { machineForPath } from "../lib/session-machines";
@@ -47,15 +48,17 @@ function isAuthEndpoint(path: string): boolean {
 
 /**
  * Paths of this server that never ride the socket (see apiFetchWithMeta): the runtime's own
- * routes — auth, the install-id probe, the hot channel — which the socket would only answer
- * 421 for, and `/api/me`, which is where the cookie's own session facts come from.
+ * routes — auth, the install-id probe, the hot channel — and those whose answer depends on the
+ * kind of session (sessionKindPath), which the socket would only answer 421 for; and
+ * `/api/me`, which is where the cookie's own session facts come from.
  */
 function httpOnly(path: string): boolean {
   return (
     path === "/api/me" ||
     path === "/api/install" ||
     path.startsWith("/api/hmr/") ||
-    isAuthEndpoint(path)
+    isAuthEndpoint(path) ||
+    sessionKindPath(path)
   );
 }
 

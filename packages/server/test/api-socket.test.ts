@@ -171,6 +171,24 @@ describe("calls", () => {
     s.ws.close();
   });
 
+  it("answers 421 for paths whose answer turns on the kind of session, which the handshake does not carry", async () => {
+    const s = await open({ cookie });
+    if (!("ws" in s)) throw new Error("handshake refused");
+    const paths: [string, string][] = [
+      ["PUT", "/api/me/password"],
+      ["GET", "/api/desktop/update/status"],
+      ["POST", "/api/projects/default_project/dirs/access"],
+      ["POST", "/api/sessions/s1/files/reveal?path=a.txt"],
+    ];
+    for (const [i, [method, path]] of paths.entries()) {
+      send(s.ws, { id: i + 1, call: { method, path, body: {} } });
+      const frame = await s.next();
+      expect(frame.status, path).toBe(421);
+      expect((frame.body as { error: { code: string } }).error.code).toBe("not_on_socket");
+    }
+    s.ws.close();
+  });
+
   it("closes on a malformed frame rather than guessing", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");

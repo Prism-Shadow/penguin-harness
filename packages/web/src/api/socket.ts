@@ -347,6 +347,8 @@ export class ApiSocket {
       console.warn(
         "[api-socket] this browser has no WebSocket: streams run as EventSources, calls as fetches",
       );
+      this.#fallBackWaiting();
+      this.#settleReady(false);
       return;
     }
     this.#state = "connecting";
@@ -432,9 +434,23 @@ export class ApiSocket {
     };
   }
 
+  /** The socket is not coming: every stream still waiting on it runs as its EventSource. */
+  #fallBackWaiting(): void {
+    for (const entry of this.#waiting) {
+      if (entry.closed) continue;
+      if (entry.retry !== null) clearTimeout(entry.retry);
+      entry.retry = null;
+      entry.fallen = entry.fallback();
+    }
+    this.#waiting.clear();
+  }
+
   #issue(entry: StreamEntry): void {
-    if (entry.closed || entry.fallen !== null || this.#ws === null || this.#state !== "open")
-      return;
+    // Whatever issues it — a reconnect or its own retry — the other must not issue it again.
+    if (entry.retry !== null) clearTimeout(entry.retry);
+    entry.retry = null;
+    if (entry.closed || entry.fallen !== null || entry.id !== null) return;
+    if (this.#ws === null || this.#state !== "open") return;
     this.#waiting.delete(entry);
     const id = this.#next++;
     entry.id = id;
@@ -573,11 +589,7 @@ export class ApiSocket {
           `Every stream now runs as its own EventSource and every call as a fetch until this page reloads — ` +
           `a browser holds about six such connections per origin, so requests may queue behind the streams.`,
       );
-      for (const entry of this.#waiting) {
-        if (entry.closed) continue;
-        entry.fallen = entry.fallback();
-      }
-      this.#waiting.clear();
+      this.#fallBackWaiting();
       return;
     }
     if (this.#waiting.size === 0) return; // nothing to carry: reopen lazily on the next ask

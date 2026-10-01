@@ -294,6 +294,34 @@ describe("ready", () => {
     await expect(noWs.ready()).resolves.toBe(false);
     expect(noWs.isUnavailable()).toBe(true);
   });
+
+  it("hands a stream already waiting to its EventSource when the browser has no WebSocket", async () => {
+    vi.stubGlobal("WebSocket", undefined);
+    const noWs = new ApiSocket(
+      () => "ws://test/socket",
+      async () => "admin",
+    );
+    let built = 0;
+    noWs.stream("/api/events", handlers(), () => {
+      built += 1;
+      return { close: () => undefined };
+    });
+    expect(built).toBe(0); // waiting on the identity, as with a socket
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(noWs.isUnavailable()).toBe(true);
+    expect(built).toBe(1);
+  });
+
+  it("starts unavailable when told there is nothing to connect to", async () => {
+    const offPage = new ApiSocket(
+      () => "ws://test/socket",
+      async () => "admin",
+      false,
+    );
+    expect(offPage.isUnavailable()).toBe(true);
+    await expect(offPage.ready()).resolves.toBe(false);
+  });
 });
 
 describe("robustness", () => {
@@ -455,6 +483,36 @@ describe("deadlines", () => {
     refuse(4);
     vi.advanceTimersByTime(1_000);
     expect(last().frames()).toHaveLength(5); // back to 1 s after the open
+    warn.mockRestore();
+  });
+
+  it("issues a stream once when a reconnect comes before its own retry", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    socket.stream("/server/m1/api/events", handlers(), () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    const refuse = (id: number) =>
+      last().receive({
+        id,
+        status: 502,
+        headers: {},
+        body: { error: { code: "machine_socket_unavailable", message: "No API socket to m1" } },
+      });
+    refuse(1);
+    vi.advanceTimersByTime(1_000);
+    refuse(2); // its own retry is now 2 s away
+    last().drop(); // the reconnect is 1 s away, and issues every waiting stream
+    vi.advanceTimersByTime(1_000);
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    expect(last().frames()).toHaveLength(1);
+    vi.advanceTimersByTime(5_000); // past the stream's own retry
+    const calls = last()
+      .frames()
+      .filter((f) => "call" in f);
+    expect(calls).toHaveLength(1);
     warn.mockRestore();
   });
 });

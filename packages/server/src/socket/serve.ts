@@ -22,6 +22,7 @@
  * makes those calls over HTTP instead.
  */
 import type { WebSocket } from "ws";
+import { sessionKindPath } from "../api/types.js";
 import { declined } from "../hmr/hono-seam.js";
 import { CALL_HEADERS, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
@@ -34,6 +35,15 @@ export const HIGH_WATER_BYTES = 4 * 1024 * 1024;
 
 /** Made over HTTP, never on the socket: sign-in (it sets the cookie) and the upgrade channel. */
 const HTTP_ONLY_PREFIXES = ["/api/auth", "/api/hmr"];
+
+/** Whether a call must be made over HTTP instead (see HTTP_ONLY_PREFIXES and sessionKindPath). */
+function httpOnly(path: string): boolean {
+  const pathname = path.split("?")[0] ?? path;
+  return (
+    HTTP_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
+    sessionKindPath(pathname)
+  );
+}
 
 /** The decline marker the platform app answers a path it does not own with, read off one such answer. */
 const DECLINE: [string, string] = (() => {
@@ -139,7 +149,7 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       });
       return;
     }
-    if (HTTP_ONLY_PREFIXES.some((p) => call.path === p || call.path.startsWith(`${p}/`))) {
+    if (httpOnly(call.path)) {
       send({
         id,
         status: 421,
