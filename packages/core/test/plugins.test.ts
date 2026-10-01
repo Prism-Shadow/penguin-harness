@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   PLUGIN_CATEGORIES,
   PLUGIN_VERSION_PATTERN,
@@ -27,9 +27,33 @@ import {
 
 const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 
+/**
+ * The library also reads the user plugin directory at `resolveRoot()/plugins`, so every test
+ * here points the data root at an empty temp directory: what loads is the repo's own library,
+ * never whatever this machine has imported (see test/plugin-store.test.ts for those).
+ */
+let tmpRoot: string;
+let prevHome: string | undefined;
+
+beforeEach(async () => {
+  prevHome = process.env.PENGUIN_HOME;
+  tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugins-"));
+  process.env.PENGUIN_HOME = tmpRoot;
+});
+
+afterEach(async () => {
+  if (prevHome === undefined) {
+    delete process.env.PENGUIN_HOME;
+  } else {
+    process.env.PENGUIN_HOME = prevHome;
+  }
+  await fs.rm(tmpRoot, { recursive: true, force: true });
+});
+
 /** Minimal LibraryPlugin for groupPlugins unit tests. */
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   name,
+  source: "builtin",
   description: `Do ${name}.`,
   version: "2026.08.29.1",
   preinstall: true,

@@ -18,9 +18,9 @@ import { HttpError } from "../http/errors.js";
  * `unknown_plugin` on the first name the library does not carry — the caller is expected to
  * run this before it creates or writes anything.
  */
-export function resolveLibraryPlugins(names: readonly string[]): LibraryPlugin[] {
+export function resolveLibraryPlugins(names: readonly string[], root: string): LibraryPlugin[] {
   return names.map((name) => {
-    const plugin = libraryPlugin(name);
+    const plugin = libraryPlugin(name, root);
     if (!plugin) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${name}`);
     }
@@ -83,10 +83,52 @@ export function pluginFiles(plugin: LibraryPlugin): Record<string, string> {
   return files;
 }
 
+/**
+ * Everything a plugin ships as the files of an installable archive, keyed by path relative to
+ * the plugin directory — the export side of the import routes, and the inverse of
+ * readPluginDir: `plugin.json` regenerated from the loaded manifest (the library is what knows
+ * the plugin's identity — description, version, category, preinstall, and the hook command
+ * lists that plugin.json declares), the icon, then the same skill and hook files the file
+ * browser shows. So an export round-trips through an import, whichever source the plugin came
+ * from, and a file the library does not read (a README beside the manifest, the npm
+ * `package.json` a built-in carries) is not part of the archive: it is not part of the plugin
+ * as this installation holds it.
+ */
+export function pluginArchiveFiles(plugin: LibraryPlugin): Record<string, string> {
+  const manifest: Record<string, unknown> = {
+    description: plugin.description,
+    ...(plugin.descriptionZh !== undefined ? { description_zh: plugin.descriptionZh } : {}),
+    ...(plugin.shortDescription !== undefined
+      ? { short_description: plugin.shortDescription }
+      : {}),
+    ...(plugin.shortDescriptionZh !== undefined
+      ? { short_description_zh: plugin.shortDescriptionZh }
+      : {}),
+    version: plugin.version,
+    ...(plugin.category !== undefined ? { category: plugin.category } : {}),
+    preinstall: plugin.preinstall,
+    ...(plugin.hooks !== undefined
+      ? {
+          hooks: {
+            stop: plugin.hooks.manifest.stop,
+            pre_tool_use: plugin.hooks.manifest.pre_tool_use,
+            user_prompt: plugin.hooks.manifest.user_prompt,
+          },
+        }
+      : {}),
+  };
+  return {
+    "plugin.json": `${JSON.stringify(manifest, null, 2)}\n`,
+    ...(plugin.icon !== undefined ? { "icon.svg": plugin.icon } : {}),
+    ...pluginFiles(plugin),
+  };
+}
+
 /** A library plugin as the listing describes it. Its skills go without their icon: it is the plugin's, sent once on the plugin itself. */
 export function toPluginItem(plugin: LibraryPlugin): PluginItem {
   return {
     name: plugin.name,
+    source: plugin.source,
     description: plugin.description,
     ...(plugin.descriptionZh !== undefined ? { descriptionZh: plugin.descriptionZh } : {}),
     ...(plugin.shortDescription !== undefined ? { shortDescription: plugin.shortDescription } : {}),

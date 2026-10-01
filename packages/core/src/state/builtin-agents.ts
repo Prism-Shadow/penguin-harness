@@ -35,14 +35,16 @@ export interface AgentPreset {
  * created; an existing Agent is never overwritten). The only builtin Agent is default_agent:
  * installs the library's preinstalled plugins, with no preset AGENTS.md.
  */
-export function builtinProjectAgentPresets(): Array<{ agentId: string; preset: AgentPreset }> {
+export function builtinProjectAgentPresets(
+  root?: string,
+): Array<{ agentId: string; preset: AgentPreset }> {
   return [
     {
       agentId: DEFAULT_AGENT_ID,
       preset: {
         name: "General Agent",
         description: "General-purpose agent that completes the user's requests with its tools.",
-        plugins: loadPreinstalledPlugins(),
+        plugins: loadPreinstalledPlugins(root),
       },
     },
   ];

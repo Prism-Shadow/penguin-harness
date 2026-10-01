@@ -2166,6 +2166,112 @@ export const zh = {
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (plugin: string, agent: string): string =>
       `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）将被删除。`,
+    /** Import actions in the page header (admin only — the plugin directory belongs to the server, not to a Project). */
+    importUpload: "上传插件",
+    importDownload: "远程下载",
+    /** Busy states: the upload one replaces the file-picker label, the download one its dialog's confirm button. */
+    importUploading: "上传中…",
+    importDownloading: "下载中…",
+    /** Client-side refusal of a picked zip over the decoded-archive cap; the file is dropped unread, so the server's own 413 never has to be earned. */
+    importTooLarge: (mb: number): string => `插件包不能超过 ${mb} MB，请压缩后重试`,
+    /**
+     * The import rules, shown as one numbered block at the foot of BOTH dialogs: they are the
+     * shape a plugin has to arrive in, not the property of one source, and a reader who opened
+     * the wrong dialog should still learn them. Ordered, because the name is decided by a
+     * precedence the reader has to walk (typed → URL → the archive's own layout), and that order
+     * is the trap a repository URL sets: it carries the repository's name.
+     */
+    importRulesTitle: "插件导入规则",
+    importRules: [
+      "来源是本地 zip，或一个地址——zip 直链、GitHub 仓库地址（取默认分支）、仓库内目录地址（…/tree/<分支>/<子目录>）。",
+      "压缩包必须是含 plugin.json 的 zip；插件根取归档里最浅一层含 plugin.json 的目录，同一层出现多个则拒绝。",
+      "插件名依次取：你填的名字 → 地址自带的名字（目录地址取末段目录名、仓库地址取仓库名、zip 链接取文件名）→ 插件根的目录名；只能用字母、数字、下划线和中划线。所以从仓库地址导入会装成仓库名。",
+      "上传的 zip 不超过 14 MB，远程归档不超过 32 MB；解包后只统计插件根之下：200 个文件、单文件 5 MB、合计 20 MB。",
+      "内置插件占用的名字不能导入（换个名字）；同名用户插件会先问一次是否覆盖，覆盖即替换其全部文件。",
+    ],
+    /**
+     * The other half, under it: what a plugin has to BE, rather than what the import does with
+     * it. Written here rather than in any one plugin repository for the reason the rules exist
+     * at all — a plugin outlives the repository it was published in, and the two rules that keep
+     * being broken (account details and credentials inside the plugin) are broken by whoever is
+     * writing one, who is looking at this surface and not at that repository's README.
+     */
+    authoringRulesTitle: "插件编写规则",
+    authoringRules: [
+      "一个插件一个目录，目录名即插件名；插件之间不共享文件，要复用就复制一份。",
+      "目录里要有 plugin.json（描述、版本）和 skills/<技能名>/SKILL.md；给别人时打成 zip，顶层目录名就是插件名。",
+      "不要把账号信息写进插件——AppID、密钥、邮箱、手机号都属于使用者：从记忆或环境变量里读，脚本一律做成参数，不要写死默认值。",
+      "不提交密钥：私钥、token、cookie 都不进插件目录。",
+    ],
+    /**
+     * Local upload dialog: what the archive has to be, the picker that is its source field, the
+     * file it will send, and the confirm. The dialog's title reuses importUpload.
+     */
+    uploadDesc:
+      "zip 压缩包，需带有 plugin.json：放在压缩包根目录，或放在其中任意一层目录里（取最浅一层含 plugin.json 的目录作为插件根）。",
+    uploadPickFile: "选择 zip 文件",
+    uploadPicked: (file: string): string => `已选择 ${file}`,
+    uploadAction: "上传并导入",
+    /** Success toast of both imports; the library list and the directory line are re-read with it, which is how the new plugin appears. */
+    importDoneToast: (name: string): string => `已导入插件 ${name}`,
+    /** Overwrite confirmation both imports raise on the 409 plugin_exists they answer with (the confirm resends the same request with overwrite: true). */
+    importOverwriteTitle: "覆盖同名用户插件",
+    importOverwriteBody: (name: string): string =>
+      `用户插件「${name}」已存在，覆盖导入会替换其全部文件（含本地改动），不可恢复。确认继续？`,
+    importOverwriteAction: "覆盖导入",
+    /**
+     * The name field both import dialogs carry. The label stays bare on purpose — the app's
+     * marker rule is that a field with no red "*" is the optional one, and never that a label
+     * says so (test/required-mark.test.ts) — while the hint says what leaving it empty does and
+     * names the ONE case that needs a value: plugin.json at the very root of the zip, where there
+     * is no directory to take a name from and the server refuses the request rather than guessing
+     * one.
+     */
+    pluginNameLabel: "插件名称",
+    pluginNameHint:
+      "留空时，取压缩包内含 plugin.json 的那层目录名作为插件名；仅当 plugin.json 就放在 zip 根目录、没有目录可供取名时才需要填写（此时留空会被服务端拒绝，不会自动取名）。",
+    pluginNamePlaceholder: "my-plugin",
+    /** Sits under the field, and holds the submit back, while the typed name breaks the rule the server applies to the directory a plugin is installed into. */
+    pluginNameInvalid: "只能用字母、数字、下划线和中划线（^[A-Za-z0-9_-]+$）。",
+    /** Remote download dialog. */
+    downloadTitle: "远程下载插件",
+    downloadUrlLabel: "插件地址",
+    downloadUrlHint:
+      "zip 直链，或 GitHub 仓库地址（https://github.com/<owner>/<repo>，取默认分支）与仓库内目录地址（…/tree/<ref>/<subdir>）",
+    downloadUrlPlaceholder: "https://github.com/<owner>/<repo> 或 https://…/plugin.zip",
+    downloadDesc:
+      "压缩包需带有 plugin.json；GitHub 仓库或目录地址会自动选取最浅一层含 plugin.json 的目录作为插件根。",
+    downloadAction: "下载并导入",
+    /** "User" badge on a card whose plugin comes from the user plugin directory rather than the build. */
+    userBadge: "用户",
+    userBadgeHint: "来自用户插件目录：可导出备份，由管理员导入或删除",
+    /** Card actions of a user plugin (a built-in plugin keeps today's actions only). */
+    exportPlugin: "导出插件",
+    deletePluginAction: "删除插件",
+    deleteConfirmTitle: (name: string): string => `删除 ${name}`,
+    deleteConfirmBody: (name: string): string =>
+      `确定删除用户插件 ${name} 吗？其目录会从磁盘删除，不可恢复。`,
+    deletedToast: (name: string): string => `已删除插件 ${name}`,
+    /** User plugin directory line under the title (path + copy button + count). */
+    dirLabel: "用户插件目录",
+    dirPathCopy: "复制目录路径",
+    dirCount: (n: number): string => `${n} 个用户插件`,
+    /** Count line at zero: worded rather than "0 个用户插件", which reads like a fault. */
+    dirEmpty: "目录中还没有用户插件",
+    /** The directory read failed: the line says so in words, since there is no path to show. */
+    dirUnavailable: "无法读取用户插件目录",
+    /** Appended to the page's "?" for a non-admin, who sees no import or delete action. */
+    adminOnly: "只有管理员可以导入或删除插件。",
+    /** Import and delete failures, keyed by the code the route answers with (pluginImportErrorText falls back to the server's own message for anything not named here). */
+    importErrors: {
+      plugin_exists: "已存在同名用户插件。",
+      plugin_builtin: "内置插件不能被覆盖或删除（导入同名插件请另起一个名字）。",
+      unsupported_url: "该地址不受支持：请填 zip 直链，或 GitHub 仓库／目录地址。",
+      blocked_url: "该地址被拒绝（内网或其他不允许的地址）。",
+      download_failed: "下载失败，请确认该地址可以访问。",
+      invalid_plugin: "压缩包里没有合法的 plugin.json。",
+      plugin_too_large: "插件包超过了服务端的大小上限。",
+    },
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */

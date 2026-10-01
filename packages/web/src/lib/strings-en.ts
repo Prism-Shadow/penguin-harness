@@ -2125,6 +2125,116 @@ export const en: Strings = {
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (plugin: string, agent: string): string =>
       `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
+    /** Import actions in the page header (admin only — the plugin directory belongs to the server, not to a Project). */
+    importUpload: "Upload plugin",
+    importDownload: "Download from URL",
+    /** Busy states: the upload one replaces the file-picker label, the download one its dialog's confirm button. */
+    importUploading: "Uploading\u2026",
+    importDownloading: "Downloading\u2026",
+    /** Client-side refusal of a picked zip over the decoded-archive cap; the file is dropped unread, so the server's own 413 never has to be earned. */
+    importTooLarge: (mb: number): string =>
+      `A plugin archive cannot exceed ${mb} MB \u2014 compress it and try again`,
+    /**
+     * The import rules, shown as one numbered block at the foot of BOTH dialogs: they are the
+     * shape a plugin has to arrive in, not the property of one source, and a reader who opened
+     * the wrong dialog should still learn them. Ordered, because the name is decided by a
+     * precedence the reader has to walk (typed \u2192 URL \u2192 the archive's own layout), and that order
+     * is the trap a repository URL sets: it carries the repository's name.
+     */
+    importRulesTitle: "Plugin import rules",
+    importRules: [
+      "The source is a local zip, or a URL: a direct zip link, a GitHub repository (its default branch), or a directory inside one (\u2026/tree/<ref>/<subdir>).",
+      "The archive must be a zip carrying plugin.json; the plugin root is the shallowest directory holding one, and two of them at the same depth are refused.",
+      "The name is taken in this order: what you type here \u2192 the name the URL carries (a directory URL's last segment, a repository URL's repository name, a zip link's file name) \u2192 the plugin root's directory name; letters, digits, underscores and hyphens only. Importing from a repository URL therefore installs it under the repository's name.",
+      "Caps: an uploaded zip is at most 14 MB and a downloaded archive 32 MB; after unpacking, only the plugin root counts \u2014 200 files, 5 MB each, 20 MB in total.",
+      "A name a built-in plugin already holds cannot be imported (pick another); a user plugin of the same name is confirmed first, and overwriting replaces every one of its files.",
+    ],
+    /**
+     * The other half, under it: what a plugin has to BE, rather than what the import does with
+     * it. Written here rather than in any one plugin repository for the reason the rules exist
+     * at all \u2014 a plugin outlives the repository it was published in, and the two rules that keep
+     * being broken (account details and credentials inside the plugin) are broken by whoever is
+     * writing one, who is looking at this surface and not at that repository's README.
+     */
+    authoringRulesTitle: "Plugin authoring rules",
+    authoringRules: [
+      "One directory per plugin, named after it; plugins share no files \u2014 copy what you need rather than reaching across.",
+      "The directory carries plugin.json (description, version) and skills/<skill>/SKILL.md; to hand it to someone, zip it with the plugin name as the top-level directory.",
+      "No account details inside a plugin: the AppID, keys, mail addresses and phone numbers belong to whoever installs it \u2014 read them from their memory or the environment, and make every script take them as an argument instead of defaulting to yours.",
+      "No credentials in the plugin directory: private keys, tokens and cookies stay out.",
+    ],
+    /**
+     * Local upload dialog: what the archive has to be, the picker that is its source field, the
+     * file it will send, and the confirm. The dialog's title reuses importUpload.
+     */
+    uploadDesc:
+      "A zip archive carrying plugin.json: at its root, or inside any one of its directories (the shallowest directory holding plugin.json becomes the plugin root).",
+    uploadPickFile: "Choose a zip file",
+    uploadPicked: (file: string): string => `Selected ${file}`,
+    uploadAction: "Upload and import",
+    /** Success toast of both imports; the library list and the directory line are re-read with it, which is how the new plugin appears. */
+    importDoneToast: (name: string): string => `Imported the plugin ${name}`,
+    /** Overwrite confirmation both imports raise on the 409 plugin_exists they answer with (the confirm resends the same request with overwrite: true). */
+    importOverwriteTitle: "Overwrite the user plugin of that name",
+    importOverwriteBody: (name: string): string =>
+      `The user plugin \u201c${name}\u201d already exists. Overwriting replaces every one of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    /**
+     * The name field both import dialogs carry. The label stays bare on purpose \u2014 the app's
+     * marker rule is that a field with no red "*" is the optional one, and never that a label
+     * says so (test/required-mark.test.ts) \u2014 while the hint says what leaving it empty does
+     * and names the ONE case that needs a value: plugin.json at the very root of the zip, where
+     * there is no directory to take a name from and the server refuses the request rather than
+     * guessing one.
+     */
+    pluginNameLabel: "Plugin name",
+    pluginNameHint:
+      "When left empty, the plugin is named after the directory inside the archive that holds plugin.json; it is needed only when plugin.json sits at the very root of the zip, where there is no directory to name it after (the server refuses that request instead of inventing a name).",
+    pluginNamePlaceholder: "my-plugin",
+    /** Sits under the field, and holds the submit back, while the typed name breaks the rule the server applies to the directory a plugin is installed into. */
+    pluginNameInvalid: "Letters, digits, underscores and hyphens only (^[A-Za-z0-9_-]+$).",
+    /** Remote download dialog. */
+    downloadTitle: "Download a plugin from a URL",
+    downloadUrlLabel: "Plugin URL",
+    downloadUrlHint:
+      "A direct zip link, or a GitHub repository URL (https://github.com/<owner>/<repo>, default branch) or a directory inside one (\u2026/tree/<ref>/<subdir>)",
+    downloadUrlPlaceholder: "https://github.com/<owner>/<repo> or https://\u2026/plugin.zip",
+    downloadDesc:
+      "The archive must carry plugin.json; for a GitHub repository or directory URL the shallowest directory containing plugin.json becomes the plugin root.",
+    downloadAction: "Download and import",
+    /** "User" badge on a card whose plugin comes from the user plugin directory rather than the build. */
+    userBadge: "User",
+    userBadgeHint:
+      "From the user plugin directory: exportable as a backup, imported and deleted by an admin",
+    /** Card actions of a user plugin (a built-in plugin keeps today's actions only). */
+    exportPlugin: "Export plugin",
+    deletePluginAction: "Delete plugin",
+    deleteConfirmTitle: (name: string): string => `Delete ${name}`,
+    deleteConfirmBody: (name: string): string =>
+      `Delete the user plugin ${name}? Its directory is removed from disk and cannot be recovered.`,
+    deletedToast: (name: string): string => `Deleted the plugin ${name}`,
+    /** User plugin directory line under the title (path + copy button + count). */
+    dirLabel: "User plugin directory",
+    dirPathCopy: "Copy the directory path",
+    dirCount: (n: number): string => (n === 1 ? "1 user plugin" : `${n} user plugins`),
+    /** Count line at zero: worded rather than "0 user plugins", which reads like a fault. */
+    dirEmpty: "No user plugins in it yet",
+    /** The directory read failed: the line says so in words, since there is no path to show. */
+    dirUnavailable: "Could not read the user plugin directory",
+    /** Appended to the page's "?" for a non-admin, who sees no import or delete action. */
+    adminOnly: "Only an admin can import or delete plugins.",
+    /** Import and delete failures, keyed by the code the route answers with (pluginImportErrorText falls back to the server's own message for anything not named here). */
+    importErrors: {
+      plugin_exists: "A user plugin of that name already exists.",
+      plugin_builtin:
+        "A built-in plugin cannot be overwritten or deleted (import it under another name).",
+      unsupported_url:
+        "That URL is not supported: use a direct zip link, or a GitHub repository or directory URL.",
+      blocked_url: "That URL was refused (an internal address, or one that is not allowed).",
+      download_failed: "The download failed \u2014 check that the URL is reachable.",
+      invalid_plugin: "The archive carries no valid plugin.json.",
+      plugin_too_large: "The plugin archive exceeds the server's size limit.",
+    },
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */

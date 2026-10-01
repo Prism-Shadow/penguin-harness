@@ -42,6 +42,7 @@ import type {
   AgentSummary,
   HookItem,
   InstalledPluginsResponse,
+  PluginDirectoryResponse,
   PluginGroupItem,
   PluginIndexEntry,
   PluginItem,
@@ -49,9 +50,12 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  Badge,
   Button,
   CollapsibleSection,
   ConfirmModal,
+  CopyButton,
+  DownloadIcon,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -87,7 +91,10 @@ import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedShortText, localizedText } from "../chat/skill-use";
+import { downloadArchive } from "../agents/archive-download";
 import { PluginDetailModal } from "./plugin-detail";
+import { PluginImportActions } from "./plugin-import-dialog";
+import { pluginImportErrorText } from "./plugin-import";
 import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
@@ -222,6 +229,9 @@ export function PluginsPage() {
 
   const [groups, setGroups] = useState<PluginGroupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** GET /api/plugins/directory: the directory line's data (null until it answers, or when the read failed). */
+  const [directory, setDirectory] = useState<PluginDirectoryResponse | null>(null);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [installed, setInstalled] = useState<InstalledMap>(new Map());
   /** What this Project asks for of the module plugins, and which of those the process runs. */
   const [deployment, setDeployment] = useState<InstalledPluginsResponse | null>(null);
@@ -348,22 +358,45 @@ export function PluginsPage() {
     }
   };
 
-  // Library list: readable once logged in, fetched once on page entry.
-  useEffect(() => {
-    let cancelled = false;
-    setError(null);
-    api
-      .getPluginLibrary()
-      .then((res) => {
-        if (!cancelled) setGroups(res.groups);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(apiErrorText(e));
-      });
-    return () => {
-      cancelled = true;
-    };
+  /**
+   * The directory line alone — what a delete moves. The listing is updated in place there, so
+   * re-fetching it too would only flash a skeleton over a card the user just removed.
+   */
+  const reloadDirectory = useCallback(async () => {
+    try {
+      setDirectory(await api.getPluginDirectory());
+      setDirectoryError(null);
+    } catch (e) {
+      setDirectoryError(apiErrorText(e));
+    }
   }, []);
+
+  /**
+   * The page's two reads in one call — the library listing and the directory line. Every import
+   * wants both (it adds a card AND moves the count behind it), and neither half may take the
+   * other down with it: a read that fails still leaves the other half on screen, and only the
+   * listing has a page-level error state (it is the page's content; the directory's own line
+   * carries its failure).
+   */
+  const reloadLibrary = useCallback(async () => {
+    await Promise.all([
+      api.getPluginLibrary().then(
+        (res) => {
+          setGroups(res.groups);
+          setError(null);
+        },
+        (e: unknown) => setError(apiErrorText(e)),
+      ),
+      reloadDirectory(),
+    ]);
+  }, [reloadDirectory]);
+
+  // Library list and directory line: readable once logged in, read once on page entry and again
+  // after every import (reloadLibrary above). Both writes are whole-state replacements, so an
+  // answer that arrives after the page unmounted is discarded rather than guarded against.
+  useEffect(() => {
+    void reloadLibrary();
+  }, [reloadLibrary]);
 
   // Installed skills and hook packages for every Agent in the current Project (fetched in
   // parallel, same convention as the sessions context): a single Agent's failure is silently
@@ -579,6 +612,50 @@ export function PluginsPage() {
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };
 
+  /**
+   * "Export" on a user plugin's card: the shared archive download (archive-download.ts, the same
+   * one the Skills and Hooks tabs export with). Open to any member — GET
+   * /api/plugins/:plugin/archive is a plain read of a directory everyone can already browse —
+   * and the way to keep a copy of a plugin an admin may delete off the machine.
+   */
+  const exportPlugin = async (name: string) => {
+    try {
+      await downloadArchive(api.pluginArchiveUrl(name), name);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
+  /**
+   * Delete one user plugin (admin-only server-side): optimistic on the local listing — the card
+   * goes at once, the way install/uninstall move the install snapshot — and rolled back with a
+   * toast when the server refuses (a built-in name, or a right the account no longer has). The
+   * directory line is re-read afterwards, since the on-disk directory is what it reports.
+   */
+  const removePlugin = async (plugin: PluginItem) => {
+    const prev = groups;
+    setGroups(
+      (current) =>
+        current
+          ?.map((group) => ({
+            ...group,
+            plugins: group.plugins.filter((p) => p.name !== plugin.name),
+          }))
+          // A category the deleted plugin was the only member of goes with it: the grouping is
+          // the server's, and an empty section would stand under the title until the next load.
+          .filter((group) => group.plugins.length > 0) ?? current,
+    );
+    try {
+      await api.deletePlugin(plugin.name);
+      toastSuccess(S.plugins.deletedToast(plugin.name));
+    } catch (e) {
+      setGroups(prev);
+      toastError(pluginImportErrorText(e));
+      return;
+    }
+    await reloadDirectory();
+  };
+
   const allInstalled = installedPluginRows(groups ?? [], locale, deployment, index ?? [], view);
   const allAvailable = availablePluginRows(deployment, index ?? [], view);
   const facets = pluginFacets([...allInstalled, ...allAvailable]);
@@ -611,6 +688,12 @@ export function PluginsPage() {
         actions={
           isAdmin ? (
             <>
+              {/* Importing into the plugin directory, in the title row beside the gear: a
+                  server-level resource, so both actions are the admin's and the routes answer
+                  403 without the right. Rendered only for an admin — a button that always
+                  refuses is worse than no button — and disabled while either runs, since one
+                  import at a time is what the overwrite confirmation's slot can carry. */}
+              <PluginImportActions onImported={reloadLibrary} />
               {/* Which machine's plugins the rows show, and which table an install or a
                   removal edits: the shared one, or that machine's own. */}
               {otherMachines.length > 0 && (
@@ -634,6 +717,10 @@ export function PluginsPage() {
           ) : undefined
         }
       >
+        {/* Where an import lands and what a delete removes from: the server's own plugin
+            directory, named under the title rather than left for the reader to find in a
+            settings page. A read, so every member sees it. */}
+        <PluginDirectoryLine directory={directory} failed={directoryError !== null} />
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody
@@ -712,9 +799,12 @@ export function PluginsPage() {
                     plugin={row.plugin}
                     category={row.category}
                     installed={installed}
+                    canDelete={isAdmin}
                     onQuickInvoke={quickInvoke}
                     onToggleInstall={toggleInstall}
                     onUpdateOutdated={updateOutdated}
+                    onExport={exportPlugin}
+                    onDelete={removePlugin}
                   />
                 ) : (
                   <ModuleRow
@@ -1211,22 +1301,73 @@ function Tag({
   );
 }
 
+/**
+ * The user plugin directory line under the title: the absolute path in monospace with the
+ * shared copy button, and how many user plugins are inside it — the answer to where an import
+ * landed, which is also the directory a delete removes from.
+ *
+ * Deliberately quiet (one line of small gray text) and worded rather than counted at zero:
+ * "0 user plugins" reads like a fault where the directory is simply still empty. Nothing is
+ * rendered until the read answers, so the list below never jumps for a line that is not there
+ * yet; a failed read states itself in the same line instead of hiding, since silence under the
+ * title would leave the count missing for no visible reason.
+ */
+function PluginDirectoryLine({
+  directory,
+  failed,
+}: {
+  directory: PluginDirectoryResponse | null;
+  /** The read failed: say so in words (there is no path to show then). */
+  failed: boolean;
+}) {
+  if (directory === null && !failed) return null;
+  return (
+    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-gray-400 dark:text-gray-500">
+      <span className="shrink-0">{S.plugins.dirLabel}</span>
+      {directory === null ? (
+        <span>{S.plugins.dirUnavailable}</span>
+      ) : (
+        <>
+          {/* The path is the one value here worth taking away, so it is selectable, truncating
+              with the full path in the tooltip, and carries the app's copy button beside it. */}
+          <span className="min-w-0 truncate font-mono" data-tooltip={directory.path}>
+            {directory.path}
+          </span>
+          <CopyButton text={directory.path} label={S.plugins.dirPathCopy} size="sm" />
+          <span className="shrink-0">
+            {directory.plugins.length === 0
+              ? S.plugins.dirEmpty
+              : S.plugins.dirCount(directory.plugins.length)}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** A single plugin card: metadata display (contents badges + a semantic metadata line) + update reminder + quick start + "manage installs" Modal. */
 function PluginCard({
   plugin,
   category,
   installed,
+  canDelete,
   onQuickInvoke,
   onToggleInstall,
   onUpdateOutdated,
+  onExport,
+  onDelete,
 }: {
   plugin: PluginItem;
   /** The library's category, shown as the row's first tag (the page has no groups). */
   category: string;
   installed: InstalledMap;
+  /** Whether this account may delete, which is the account's admin right and not a Project role (see the page header). */
+  canDelete: boolean;
   onQuickInvoke: (skillName: string) => void;
   onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<void>;
   onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
+  onExport: (name: string) => Promise<void>;
+  onDelete: (plugin: PluginItem) => Promise<void>;
 }) {
   const { locale } = useLocale();
   const { agents, currentAgent } = useProject();
@@ -1236,6 +1377,10 @@ function PluginCard({
   const [updating, setUpdating] = useState(false);
   // Agent pending an uninstall confirmation (null = none): uninstalling deletes the installed files, local edits included.
   const [pendingUninstall, setPendingUninstall] = useState<string | null>(null);
+  // Whether this card's delete confirmation is open: deleting a user plugin removes its directory from disk, so it confirms first, like the uninstall above.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  /** A user plugin, i.e. one from the server's plugin directory: the only kind the library can delete, and the only kind that carries a "user" mark. */
+  const isUser = plugin.source === "user";
 
   const confirmUpdate = async () => {
     if (!pendingUpdate) return;
@@ -1330,10 +1475,16 @@ function PluginCard({
         >
           {meta}
         </p>
-        {/* Tag line: the category, "built in" (the library ships with the build), what it carries. */}
+        {/* Tag line: the category, where the plugin came from (the build, or the server's plugin
+            directory — the two kinds carry different actions, so this is what says which a card
+            is), and what it carries. */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
           <Tag>{category}</Tag>
-          <Tag title={S.plugins.libraryBuiltinHint}>{S.plugins.builtin}</Tag>
+          {isUser ? (
+            <Tag title={S.plugins.userBadgeHint}>{S.plugins.userBadge}</Tag>
+          ) : (
+            <Tag title={S.plugins.libraryBuiltinHint}>{S.plugins.builtin}</Tag>
+          )}
           {plugin.skills.length > 0 && <Tag mono>{S.skills.skillCount(plugin.skills.length)}</Tag>}
           {plugin.hooks.length > 0 && <Tag mono>{S.hooks.hookCount(plugin.hooks.length)}</Tag>}
         </div>
@@ -1388,6 +1539,35 @@ function PluginCard({
         >
           <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
         </Button>
+        {/* Export, for a user plugin only (a built-in is in the build, so there is nothing to take
+            a copy of): the archive download the Skills and Hooks rows export with, open to every
+            member — the route is a read. */}
+        {isUser && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 w-8 shrink-0 justify-center p-0"
+            aria-label={`${S.plugins.exportPlugin} ${plugin.name}`}
+            title={S.plugins.exportPlugin}
+            onClick={() => void onExport(plugin.name)}
+          >
+            <DownloadIcon size={ICON_SIZE.iconButton} />
+          </Button>
+        )}
+        {/* Delete, for a user plugin and an admin: the one action that removes files from the
+            machine, so it takes the danger variant and confirms first. */}
+        {isUser && canDelete && (
+          <Button
+            size="sm"
+            variant="danger"
+            className="h-8 w-8 shrink-0 justify-center p-0"
+            aria-label={`${S.plugins.deletePluginAction} ${plugin.name}`}
+            title={S.plugins.deletePluginAction}
+            onClick={() => setDeleteOpen(true)}
+          >
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+          </Button>
+        )}
       </div>
       {installOpen && (
         <Modal
@@ -1470,6 +1650,25 @@ function PluginCard({
         >
           <p className="text-sm text-gray-600 dark:text-gray-300">
             {S.plugins.uninstallConfirmBody(plugin.name, uninstallAgentName ?? pendingUninstall)}
+          </p>
+        </ConfirmModal>
+      )}
+      {/* Delete confirmation: unlike an uninstall, this takes the plugin's directory — and with
+          it every skill and hook it ships — off the machine, so it asks first and says so. */}
+      {deleteOpen && (
+        <ConfirmModal
+          open
+          title={S.plugins.deleteConfirmTitle(plugin.name)}
+          confirmLabel={S.plugins.deletePluginAction}
+          cancelLabel={S.common.cancel}
+          onClose={() => setDeleteOpen(false)}
+          onConfirm={() => {
+            setDeleteOpen(false);
+            void onDelete(plugin);
+          }}
+        >
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.plugins.deleteConfirmBody(plugin.name)}
           </p>
         </ConfirmModal>
       )}
