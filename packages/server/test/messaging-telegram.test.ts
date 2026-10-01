@@ -47,7 +47,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   approvalDecision,
   assistantText,
@@ -58,12 +58,14 @@ import {
   toolCall,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import type {
   FeishuBindingResponse,
   MessagingBindingsResponse,
   TelegramBindingResponse,
   TelegramTestResponse,
 } from "../src/api/types.js";
+import { ProjectsRepo } from "../src/db/repos/projects.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
@@ -94,12 +96,11 @@ import {
 import { TelegramConnector, telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
 import { FakeFeishuSdk } from "./fixtures/feishu.js";
 import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
-import { fakeSession, sessionRow } from "./fixtures/session.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-26-10-00-00-t9000001";
-const SID2 = "session-2026-08-26-10-00-01-t9000002";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/telegram`;
 const TOKEN = "7000000001:test-secret-AAAA-1111";
 
@@ -513,10 +514,19 @@ describe("telegram binding routes and connector loop", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeTelegramTransport;
-  let projectId: string;
   let runs: InputPayload[][];
   /** The server log, so a delivery that succeeded only in a degraded form is observable. */
-  let logLines: string[];
+  let logLines: string[] = [];
+  /**
+   * The case's Project and its two Sessions, fresh per case: the app is the describe's, a
+   * binding, a poll and a status belong to their Session, and the error log dedupes and reads
+   * per Project. The Project is birder's row alone — every Session here is a fake, so nothing
+   * opens a default Agent's tree.
+   */
+  let projectId: string;
+  let SID: string;
+  let SID2: string;
+  let cases = 0;
 
   /** Save the token, then flip the toggle on and wait for the poll loop's handshake. */
   const bindEnabled = async (sid: string, botToken = TOKEN) => {
@@ -525,25 +535,40 @@ describe("telegram binding routes and connector loop", () => {
     await waitFor(() => t.deps.messaging.statusOf(sid, "telegram").state === "connected");
   };
 
-  beforeEach(async () => {
-    fake = new FakeTelegramTransport();
-    logLines = [];
+  beforeAll(async () => {
     t = await createTestApp({
-      telegramTransport: fake,
+      telegramTransport: forwardingTo(() => fake),
       telegramRetryDelayMs: () => 1,
       feishuSdk: new FakeFeishuSdk(),
       log: (line) => logLines.push(line),
     });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    projectId = "birder-default_project";
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    fake = new FakeTelegramTransport();
+    logLines = [];
     runs = [];
+    cases += 1;
+    projectId = `birder-case-${cases}`;
+    wire(ProjectsRepo, { db: t.deps.db }).insert({
+      projectId,
+      ownerUserId: "birder",
+      createdAt: new Date().toISOString(),
+    });
+    SID = uniqueSessionId();
+    SID2 = uniqueSessionId();
     const row = sessionRow(SID, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   });
-  afterEach(async () => {
-    await t.cleanup();
+  afterEach(() => {
+    // What the case bound goes with it, poll loop and all, and so does the error log it wrote.
+    for (const row of t.deps.messagingRepo.listAll()) t.deps.messaging.unbindSession(row.sessionId);
+    t.deps.db.prepare("DELETE FROM error_records").run();
   });
 
   it("PUT saves the token only (masked, bot id extracted, disabled, no poll); blank keeps the stored token", async () => {

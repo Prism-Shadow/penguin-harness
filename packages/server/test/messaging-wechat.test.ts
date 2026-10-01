@@ -28,7 +28,7 @@
  *   refusal; outbound, a picture goes as a picture and any other file as an attachment, and
  *   Markdown renders only when the binding asks.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
@@ -60,12 +60,11 @@ import {
   wechatConfigOf,
   wechatRetryDelayMs,
 } from "../src/runtime/messaging/wechat-connector.js";
-import { fakeSession, sessionRow } from "./fixtures/session.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-28-11-00-00-w9100001";
-const SID2 = "session-2026-08-28-11-00-01-w9100002";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/wechat`;
 const PROJECT = "birder-default_project";
 
@@ -322,6 +321,12 @@ describe("wechat binding routes and the long poll", () => {
   let api: ReturnType<typeof apiClient>;
   let fake: FakeWeChatTransport;
   let runs: InputPayload[][];
+  /**
+   * The case's two Sessions, fresh per case: the app is the describe's, and a binding, a poll
+   * and a status belong to their Session.
+   */
+  let SID: string;
+  let SID2: string;
 
   /** Store a scanned config as the scan route would, then flip the toggle on. */
   const bindEnabled = async (sid: string, config: Record<string, unknown> = SCANNED_CONFIG) => {
@@ -335,20 +340,31 @@ describe("wechat binding routes and the long poll", () => {
     await waitFor(() => t.deps.messaging.statusOf(sid, "wechat").state === "connected");
   };
 
-  beforeEach(async () => {
-    fake = new FakeWeChatTransport();
-    runs = [];
+  beforeAll(async () => {
     // A small non-zero backoff rather than zero: the loop retries in a tight cycle during
     // the outage test, and a zero delay would spin without yielding.
-    t = await createTestApp({ wechatTransport: fake, wechatRetryDelayMs: () => 5 });
+    t = await createTestApp({
+      wechatTransport: forwardingTo(() => fake),
+      wechatRetryDelayMs: () => 5,
+    });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    fake = new FakeWeChatTransport();
+    runs = [];
+    SID = uniqueSessionId();
+    SID2 = uniqueSessionId();
     const row = sessionRow(SID, { projectId: PROJECT });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   });
-  afterEach(async () => {
-    await t.cleanup();
+  afterEach(() => {
+    // What the case bound goes with it, long poll and all.
+    for (const row of t.deps.messagingRepo.listAll()) t.deps.messaging.unbindSession(row.sessionId);
   });
 
   // —— Routes ——————————————————————————————————————————————————————————————
