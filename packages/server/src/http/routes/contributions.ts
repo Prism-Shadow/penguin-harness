@@ -27,10 +27,11 @@ export function contributionsRoutes(deps: ContributionsRouteDeps): Hono<AppEnv> 
  * crosses this boundary — only data.
  */
 
-export abstract class WebShell extends Interface<{
+@Interface()
+export abstract class WebShell {
   /** Every contribution to the web slots, by slot, in module order. */
-  contributions(): ContributionsResponse;
-}>() {}
+  abstract contributions(): ContributionsResponse;
+}
 
 export interface WebShellSlots {
   /** A page: its route, whether it sits in the main nav, whether it is admin-only. */

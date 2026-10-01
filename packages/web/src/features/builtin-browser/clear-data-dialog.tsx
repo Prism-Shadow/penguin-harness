@@ -4,12 +4,11 @@
  * on each opening; the confirm stays disabled while none is.
  */
 import { useEffect, useState } from "react";
+import { Checkbox, ConfirmModal, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { BuiltinBrowserStorage } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 
 type ClearKind = BuiltinBrowserStorage | "history";
 
@@ -68,24 +67,21 @@ export function ClearDataDialog({ open, onClose }: { open: boolean; onClose: () 
       onClose={onClose}
       onConfirm={() => void run()}
       confirmLabel={S.builtinBrowser.clearConfirm}
+      cancelLabel={S.common.cancel}
       confirmDisabled={chosen.size === 0}
       busy={busy}
     >
       <p className="text-sm text-gray-600 dark:text-gray-300">{S.builtinBrowser.clearBody}</p>
       <div className="mt-3 flex flex-col gap-1.5">
         {KINDS.map((kind) => (
-          <label
+          <Checkbox
             key={kind}
-            className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300"
-          >
-            <input
-              type="checkbox"
-              checked={chosen.has(kind)}
-              disabled={busy}
-              onChange={(e) => toggle(kind, e.target.checked)}
-            />
-            {kindLabel(kind)}
-          </label>
+            checked={chosen.has(kind)}
+            disabled={busy}
+            onChange={(on) => toggle(kind, on)}
+            label={kindLabel(kind)}
+            className="text-gray-700 dark:text-gray-300"
+          />
         ))}
       </div>
     </ConfirmModal>

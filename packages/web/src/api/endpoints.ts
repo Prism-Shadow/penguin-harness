@@ -1157,6 +1157,12 @@ export const importAgentTrace = (projectId: string, agentId: string, body: Trace
 // Usage statistics ----------------------------------------------------------------------
 
 /**
+ * The browser's own offset east of UTC, in minutes. The error table folds a day's repeats into
+ * one row, and the day it folds by is the reader's rather than the server's.
+ */
+const viewerUtcOffsetMinutes = (): string => String(-new Date().getTimezoneOffset());
+
+/**
  * One page of the cost center's error table (newest first). The dashboard response already
  * carries the first page; this is for paging back to earlier ones without refetching the
  * whole aggregate. Takes the dashboard's date/agent filter (and its trailing window, when one
@@ -1187,6 +1193,7 @@ export const getUsageErrors = (
       toTs: params.toTs,
       agentId: params.agentId,
       kind: params.kind,
+      utcOffsetMinutes: viewerUtcOffsetMinutes(),
     },
   });
 
@@ -1250,6 +1257,7 @@ export const getUsage = (
       agentId: params.agentId,
       provider: params.provider,
       modelId: params.modelId,
+      utcOffsetMinutes: viewerUtcOffsetMinutes(),
     },
   });
 

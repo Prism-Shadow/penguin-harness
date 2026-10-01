@@ -8,14 +8,11 @@ import type {
   BuiltinBrowserImportResult,
   BuiltinBrowserImportSource,
 } from "@prismshadow/penguin-server/api";
+import { Button, Checkbox, FieldLabel, Input, Modal, Radio } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
-import { FieldLabel } from "../../components/ui/field";
-import { Input } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
 import {
   groupSources,
   importRequest,
@@ -23,7 +20,8 @@ import {
   sourceImportable,
 } from "./import-options";
 
-const optionClass = "flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300";
+/** The option rows' ink. */
+const optionInk = "text-gray-700 dark:text-gray-300";
 
 export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [sources, setSources] = useState<BuiltinBrowserImportSource[] | null>(null);
@@ -127,21 +125,24 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
                         {group.browserName}
                       </span>
                       {group.sources.map((s) => (
-                        <label key={s.id} className={`${optionClass} pl-3`}>
-                          <input
-                            type="radio"
-                            name="builtin-browser-import-source"
-                            checked={s.id === sourceId}
-                            disabled={!sourceImportable(s) || running}
-                            onChange={() => setSourceId(s.id)}
-                          />
-                          <span className="min-w-0 truncate">{s.profileName}</span>
-                          {s.profileName !== s.profile && (
-                            <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                              {s.profile}
+                        <Radio
+                          key={s.id}
+                          name="builtin-browser-import-source"
+                          checked={s.id === sourceId}
+                          disabled={!sourceImportable(s) || running}
+                          onChange={() => setSourceId(s.id)}
+                          className={`${optionInk} pl-3`}
+                          label={
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="min-w-0 truncate">{s.profileName}</span>
+                              {s.profileName !== s.profile && (
+                                <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                                  {s.profile}
+                                </span>
+                              )}
                             </span>
-                          )}
-                        </label>
+                          }
+                        />
                       ))}
                     </div>
                   ))}
@@ -150,24 +151,20 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
               <div role="group" aria-label={S.builtinBrowser.importWhat}>
                 <FieldLabel>{S.builtinBrowser.importWhat}</FieldLabel>
                 <div className="flex flex-col gap-1.5">
-                  <label className={optionClass}>
-                    <input
-                      type="checkbox"
-                      checked={cookies && source?.hasCookies === true}
-                      disabled={source?.hasCookies !== true || running}
-                      onChange={(e) => setCookies(e.target.checked)}
-                    />
-                    {S.builtinBrowser.importCookies}
-                  </label>
-                  <label className={optionClass}>
-                    <input
-                      type="checkbox"
-                      checked={history && source?.hasHistory === true}
-                      disabled={source?.hasHistory !== true || running}
-                      onChange={(e) => setHistory(e.target.checked)}
-                    />
-                    {S.builtinBrowser.importHistory}
-                  </label>
+                  <Checkbox
+                    checked={cookies && source?.hasCookies === true}
+                    disabled={source?.hasCookies !== true || running}
+                    onChange={setCookies}
+                    label={S.builtinBrowser.importCookies}
+                    className={optionInk}
+                  />
+                  <Checkbox
+                    checked={history && source?.hasHistory === true}
+                    disabled={source?.hasHistory !== true || running}
+                    onChange={setHistory}
+                    label={S.builtinBrowser.importHistory}
+                    className={optionInk}
+                  />
                 </div>
               </div>
               {/* Filters cookies only: history is small and not a credential. */}

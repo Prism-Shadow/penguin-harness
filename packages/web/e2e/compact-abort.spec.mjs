@@ -74,7 +74,7 @@ test("aborting before any turn completes: /compact says so instead of doing noth
   await expect(page.getByRole("button", { name: "停止" })).toHaveCount(0);
 
   // The actual user path: type /compact in the input box and press Enter (slash menu).
-  // Feedback goes through a **top toast** (the Toaster from components/ui/toast; the toast
+  // Feedback goes through a **top toast** (the shared UI package's Toaster; the toast
   // itself is a clickable, dismissible button), not a native browser alert — the latter would
   // trigger Playwright's dialog event, which lets us assert we didn't fall back to it.
   const nativeDialogs = [];

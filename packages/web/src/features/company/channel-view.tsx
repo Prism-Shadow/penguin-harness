@@ -16,16 +16,11 @@
  * older stays behind "earlier", which prepends one day file per click.
  *
  * The stream is drawn the way every chat client draws one, because a channel is read the way
- * every chat is. Somebody else's run stands on the left: the avatar once, top-aligned so that
- * it sits beside the sender's name — with the relay chip beside it from the second hop on, the
- * whole @-chain rule in its tooltip — and the run's bubbles under both, in the column the name
- * starts. Who is speaking is one mark, so the two halves of it stay on one line: an avatar tied
- * to the run's last bubble drifts a screenful below its own name as soon as a message runs
- * long. The reader's own run stands on the right in its own tint, with no avatar and no name
- * (a screen reader gets one, since a side and a colour are not something every reader can
- * read). Each bubble carries its own time at its bottom-right, inside it: a time that only
- * appears on hover is a time a touch reader never sees, and one time per run leaves every
- * later message in a long run unstamped.
+ * every chat is: the UI package's ChannelRun and ChannelBubble draw a run and its messages —
+ * somebody else's on the left under its avatar and name, the reader's own on the right in its
+ * own tint, each bubble with its own time — and this view decides who is speaking, which side a
+ * run stands on, and what hangs beside the name: the relay chip from the second hop on, the
+ * whole @-chain rule in its tooltip.
  *
  * A `system` line is one sentence, so it stays one muted line rather than a Markdown body: the
  * server writes it twice — as English text and as a structured notice — and the notice is what
@@ -42,22 +37,29 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ChannelBubble,
+  ChannelRun,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  NoticeStrip,
+  Skeleton,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
+import type { ChannelSender } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
@@ -89,9 +91,8 @@ import {
   lastMessageId,
   messageCount,
 } from "./channel-stream";
-import type { BubbleShape, ChannelDay, StreamItem } from "./channel-stream";
+import type { ChannelDay, StreamItem } from "./channel-stream";
 import { parsePrincipal } from "./principals";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
@@ -103,35 +104,6 @@ interface StreamMeta {
 
 /** Downward arrow on the return-to-latest pill (lucide arrow-down). */
 const ARROW_DOWN_ICON = "M12 5v14M6 13l6 6 6-6";
-
-/** The avatar that leads somebody else's run, in pixels — a tile, so one rung above a line glyph. */
-const RUN_AVATAR_PX = 28;
-
-/**
- * The two bubble surfaces. The reader's own takes the app's brand blue rather than a tone from
- * lib/tone.ts: which side of a conversation wrote a message is an identity, not a judgement,
- * and a status hue would announce a state the message does not have. It is also the only tint
- * that stays clearly apart from the neutral bubble under every accent — `--ui-accent` is grey
- * in the default neutral theme, where a wash of it is the neutral bubble again.
- */
-const BUBBLE_SURFACE = {
-  other: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
-  own: "bg-brand-50 text-gray-900 dark:bg-brand-950 dark:text-gray-100",
-} as const;
-
-/**
- * A bubble's corners: 2xl all round, except on the last bubble of a run, where the corner
- * nearest the run's tail is squared — bottom-left on somebody else's side of the stream,
- * bottom-right on the reader's own. Every corner is named rather than layering a per-corner
- * utility over the all-corner one, so the result does not depend on which of the two the
- * stylesheet emits last.
- */
-function bubbleCorners(shape: BubbleShape): string {
-  if (!shape.last) return "rounded-2xl";
-  return shape.own
-    ? "rounded-bl-2xl rounded-br-sm rounded-tl-2xl rounded-tr-2xl"
-    : "rounded-bl-sm rounded-br-2xl rounded-tl-2xl rounded-tr-2xl";
-}
 
 export function ChannelView() {
   const { projectId, orgId, org } = useOrg();
@@ -498,11 +470,11 @@ export function ChannelView() {
             : null;
       return (
         <div key={`day-${item.date}`} className={`flex items-center ${ICON_GAP.menu} py-3`}>
-          <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
-          <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+          <span className="h-px flex-1 bg-divider" />
+          <span className="text-xs font-medium text-fg-muted">
             {dayLabel !== null ? `${dayLabel} · ${item.date}` : item.date}
           </span>
-          <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+          <span className="h-px flex-1 bg-divider" />
         </div>
       );
     }
@@ -515,7 +487,7 @@ export function ChannelView() {
           aria-label={S.company.channels.unreadDivider}
         >
           <span className={`h-px flex-1 ${toneDot.attention}`} />
-          <span className={`text-[11px] font-medium ${toneInk.attention}`}>
+          <span className={`text-xs font-medium ${toneInk.attention}`}>
             {S.company.channels.unreadDivider}
           </span>
           <span className={`h-px flex-1 ${toneDot.attention}`} />
@@ -556,91 +528,48 @@ export function ChannelView() {
     }
     const first = item.messages[0]!;
     const p = parsePrincipal(item.sender);
-    const senderLabel = principalLabel(item.sender, names);
-    const own = isOwnRun(item.sender, me);
+    // An employee's tile colour hashes its agent id, so a rename keeps the colour; every other
+    // sender is drawn as a person's initial tile.
+    const sender: ChannelSender = {
+      kind: p.kind === "agent" ? "agent" : "user",
+      id: p.kind === "agent" || p.kind === "user" ? p.id : item.sender,
+      name: principalLabel(item.sender, names),
+    };
     return (
-      <div key={first.id} className={`flex items-start ${ICON_GAP.card} py-1.5`}>
-        {/* One avatar per run, top-aligned so it lands beside the name row: a run is one person
-            speaking, and an avatar per line turns a burst of three into three arrivals. The
-            face and the name are one identity and have to be read as one — aligning the avatar
-            to the run's last bubble instead puts a ten-line message between them. */}
-        {!own &&
-          (p.kind === "agent" ? (
-            <AgentAvatar
-              id={p.id}
-              name={senderLabel}
-              size={RUN_AVATAR_PX}
-              className="shrink-0 rounded-md"
-            />
-          ) : (
-            <span
-              aria-hidden
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
-            >
-              {senderLabel.slice(0, 1).toUpperCase()}
+      <ChannelRun
+        key={first.id}
+        sender={sender}
+        own={isOwnRun(item.sender, me)}
+        ownLabel={S.company.channels.you}
+        meta={
+          // The relay chip names what it is and carries the @-chain rule in its tooltip: "hop 3"
+          // alone tells a reader nothing about why a message arrived.
+          hopChipShown(item.hop) ? (
+            <span data-tooltip={S.company.channels.hopInfo} className="text-fg-muted">
+              {S.company.channels.hop(item.hop)}
             </span>
-          ))}
-        <div
-          className={`flex min-w-0 flex-1 flex-col gap-0.5 ${own ? "items-end" : "items-start"}`}
-        >
-          {own ? (
-            // The side and the tint are the whole of "this one is mine" on screen, and neither
-            // survives a screen reader: it gets the word instead.
-            <span className="sr-only">{S.company.channels.you}</span>
-          ) : (
-            <div
-              className={`flex max-w-full flex-wrap items-baseline ${ICON_GAP.row} px-1 text-[11px]`}
+          ) : undefined
+        }
+      >
+        {item.messages.map((m, i) => {
+          const shape = bubbleShape(item, i, me);
+          const at = formatDateTime(m.time);
+          return (
+            <ChannelBubble
+              key={m.id}
+              id={m.id}
+              own={shape.own}
+              last={shape.last}
+              time={clockTime(m.time)}
+              timeTooltip={at}
+              timeLabel={S.company.channels.sentAt(at)}
+              footer={renderRefs(m)}
             >
-              <span className="truncate font-semibold text-gray-700 dark:text-gray-300">
-                {senderLabel}
-              </span>
-              {/* The relay chip names what it is and carries the @-chain rule in its tooltip:
-                  "hop 3" alone tells a reader nothing about why a message arrived. */}
-              {hopChipShown(item.hop) && (
-                <span
-                  data-tooltip={S.company.channels.hopInfo}
-                  className="text-gray-500 dark:text-gray-400"
-                >
-                  {S.company.channels.hop(item.hop)}
-                </span>
-              )}
-            </div>
-          )}
-          {item.messages.map((m, i) => {
-            const shape = bubbleShape(item, i, me);
-            const at = formatDateTime(m.time);
-            return (
-              <div
-                key={m.id}
-                id={m.id}
-                /* A message that names the reader is marked by its mention chip alone: a
-                   tinted bubble reads as a state of the whole message, and in a channel where
-                   most messages name someone it turns the stream into a highlight. */
-                className={`channel-bubble max-w-[75%] px-3 py-1.5 text-sm leading-relaxed ${bubbleCorners(shape)} ${own ? BUBBLE_SURFACE.own : BUBBLE_SURFACE.other}`}
-              >
-                {/* The time is a column of its own at the bubble's end, bottom-aligned: on a
-                    one-line message it lands beside the words, on a longer one it settles
-                    into the bottom-right corner, and it never overlaps the body. */}
-                <div className={`flex items-end ${ICON_GAP.menu}`}>
-                  <div className="min-w-0 flex-1">
-                    <div className="md-body md-compact">
-                      <ChannelMessageBody text={m.text} />
-                    </div>
-                    {renderRefs(m)}
-                  </div>
-                  <span
-                    data-tooltip={at}
-                    className="shrink-0 text-[11px] tabular-nums text-gray-600 dark:text-gray-400"
-                  >
-                    <span className="sr-only">{S.company.channels.sentAt(at)}</span>
-                    <span aria-hidden>{clockTime(m.time)}</span>
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+              <ChannelMessageBody text={m.text} />
+            </ChannelBubble>
+          );
+        })}
+      </ChannelRun>
     );
   };
 
@@ -662,7 +591,13 @@ export function ChannelView() {
           }}
         />
         {detailError !== null && detail === null && (
-          <NoticeStrip tone="danger" as="p" role="alert" className="border-b px-4 py-1.5 text-xs">
+          <NoticeStrip
+            banner
+            tone="danger"
+            as="p"
+            role="alert"
+            className="border-b px-4 py-1.5 text-xs"
+          >
             {S.company.channels.channelLoadFailed} · {detailError}
           </NoticeStrip>
         )}
@@ -701,7 +636,7 @@ export function ChannelView() {
                       </div>
                     ) : (
                       messageCount(days) > 0 && (
-                        <p className="py-2 text-center text-[11px] text-gray-400 dark:text-gray-500">
+                        <p className="py-2 text-center text-xs text-fg-subtle">
                           {S.company.channels.noEarlier}
                         </p>
                       )
@@ -736,7 +671,7 @@ export function ChannelView() {
               <ChannelComposer candidates={candidates} names={names} onSend={send} />
             ) : detail !== null && detail.archived ? (
               <NoticeStrip
-                tone="muted"
+                tone="neutral"
                 as="p"
                 className="mt-3 rounded-md border px-3 py-2 text-xs"
                 role="status"
@@ -794,7 +729,7 @@ function RefChip({
       type="button"
       data-tooltip={title}
       onClick={onClick}
-      className={`inline-flex items-center ${ICON_GAP.tight} rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+      className={`inline-flex items-center ${ICON_GAP.tight} rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
     >
       {icon !== undefined && <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} />}
       {children}

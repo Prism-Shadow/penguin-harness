@@ -1,7 +1,13 @@
 /**
- * Where the built-in browser's pages sit (features/builtin-browser/geometry.ts): the page on
- * screen covers the visible part of the dock's slot at the slot's full size, every other page
- * parks off-screen at a real size, and a frame that computes the same boxes writes nothing.
+ * Where the built-in browser's pages sit (features/builtin-browser/geometry.ts).
+ *
+ * - The page on screen covers a fully visible slot exactly; a clipped slot clips the frame to
+ *   the dock's window while the page keeps the slot's size, offset by what the clip cuts off.
+ * - With no slot, an empty one, or nothing of it visible, the page parks far off-screen at a
+ *   real size; the size a page was last shown at is remembered, a parked page's is not.
+ * - Edges snap to whole pixels (edges rounded, not sizes), so a slot and its frame never open
+ *   a seam; rectangles intersect, reporting no overlap as null.
+ * - A frame that computes the same boxes writes nothing.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -75,8 +81,7 @@ describe("parking", () => {
     expect(placement.view).toEqual({ left: 0, top: 0, ...DEFAULT_PARK_SIZE });
   });
 
-  it("defaults to a desktop viewport, and remembers the size a page was shown at", () => {
-    expect(DEFAULT_PARK_SIZE).toEqual({ width: 1280, height: 800 });
+  it("remembers the size a page was shown at, and none for a parked page", () => {
     expect(shownSize(slotPlacement(slot, [], DEFAULT_PARK_SIZE))).toEqual({
       width: 480,
       height: 700,

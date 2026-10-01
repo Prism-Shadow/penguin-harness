@@ -19,18 +19,21 @@
  *   out of reach on a phone.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Button,
+  ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Input,
+  Modal,
+  PlusIcon,
+  Textarea,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { PlusIcon } from "../../components/ui/icons";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { PENCIL_ICON, TRASH_ICON } from "../../components/ui/session-row-menu";
-import { toastError } from "../../components/ui/toast";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
 import {
   SHORTCUT_MAX_COUNT,
@@ -167,7 +170,7 @@ export function ShortcutsFolder({
            folder's height plus the New-shortcut row. */
         <div className="mt-0.5 pl-4">
           {loaded && (
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {shortcuts.map((shortcut) => (
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button
@@ -180,12 +183,12 @@ export function ShortcutsFolder({
                   </button>
                   <RowAction
                     label={S.common.edit}
-                    glyph={PENCIL_ICON}
+                    glyph={ICONS.pencil}
                     onClick={() => setDraft({ ...shortcut })}
                   />
                   <RowAction
                     label={S.common.delete}
-                    glyph={TRASH_ICON}
+                    glyph={ICONS.trash}
                     danger
                     onClick={() => setDeleting(shortcut)}
                   />
@@ -275,6 +278,7 @@ export function ShortcutsFolder({
         open={deleting !== null}
         title={S.chat.shortcuts.deleteTitle}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         onClose={() => setDeleting(null)}
         onConfirm={() => {
           if (deleting !== null) persist(removeShortcut(shortcuts, deleting.id));

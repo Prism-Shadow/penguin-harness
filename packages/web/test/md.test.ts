@@ -1,8 +1,10 @@
 /**
- * Md (chat markdown) rendering contract, via react-dom/server static markup (node env, no DOM):
+ * Md (the shared UI package's Markdown) as the app wires it, via react-dom/server static markup
+ * (node env, no DOM):
  * - outside a conversation every link — explicit [text](url), bare autolinked URL (remark-gfm),
  *   relative or #anchor — opens in a new tab: target="_blank" + rel="noreferrer";
- * - inside one (WorkspaceLinksProvider, as MessageStream renders it) only an external link does:
+ * - inside one (WorkspaceLinksProvider, features/chat/workspace-links.tsx, as MessageStream
+ *   renders it) only an external link does:
  *   a link to a Workspace file, an #anchor and a relative href with nowhere to go render without
  *   a target, because a relative href resolves against the SPA's own route. What their clicks do
  *   is covered in reply-link.test.ts — static markup carries no handlers;
@@ -13,7 +15,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Md, WorkspaceLinksProvider } from "../src/features/chat/md";
+import { Md } from "@prismshadow/penguin-ui";
+import { WorkspaceLinksProvider } from "../src/features/chat/workspace-links";
 import { replyLinkBehavior, resolveReplyLink } from "../src/lib/reply-link";
 
 const render = (text: string, streaming = false) =>

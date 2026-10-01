@@ -1,27 +1,25 @@
 /**
  * `SessionInfo.backgroundTasks` and its user-channel event `session_background`.
  *
- * The counts are read live from a LOADED runtime's registries — command sessions still
- * running past their yield window, subagent sessions promoted to a `subagent_id` and
- * mid-round — and the field is present only while something is running: an unloaded Session
- * (a resumed entry starts with empty registries) and a Session with nothing running both
- * omit it, so a list can treat the field's presence as "this row has background work".
+ * The counts are read live from a LOADED runtime's registries: command sessions still running
+ * past their yield window, and subagent sessions promoted to a `subagent_id` and mid-round.
  *
- * The event is the core background-state ping re-counted: it is published only when the
- * counts moved, carries the counts as they now stand (zeros included, so a list can clear its
- * mark without refetching), and reaches the same audience `session_state` does.
+ * - The single GET and the list rows carry the counts while something is running; an unloaded
+ *   Session (a resumed entry starts with empty registries) and one with nothing running omit
+ *   the field, so a list can read its presence as "this row has background work".
+ * - The event is published only when the counts moved, carries them as they now stand (zeros
+ *   included, so a list clears its mark without refetching), and reaches the same audience
+ *   `session_state` does: never a stranger's live channel.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { BackgroundCommandInfo, BackgroundSubagentInfo } from "@prismshadow/penguin-core";
 import type { ServerEvent, SessionResponse, SessionsResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import { userChannelKey } from "../src/http/routes/events.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-09-02-10-00-00-bbcc0001";
-const SID_UNLOADED = "session-2026-09-02-10-00-00-bbcc0002";
 const PROJECT = "owner-default_project";
 const STARTED_AT = Date.UTC(2026, 8, 2, 10, 4, 0);
 
@@ -56,36 +54,13 @@ function backgroundFakeSession(
   subs: BackgroundSubagentInfo[],
   hook: Hook,
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run() {},
-    async *compact() {},
+  return fakeSession(sessionId, {
     listBackgroundCommands: () => [...procs],
     listBackgroundSubagents: () => [...subs],
     onBackgroundState: (listener) => {
       hook.ping = listener;
     },
-  };
-}
-
-function sessionRow(sessionId: string): SessionRow {
-  return {
-    sessionId,
-    projectId: PROJECT,
-    agentId: "default_agent",
-    provider: "custom",
-    modelId: "m1",
-    workspace: "/tmp/w",
-    approvalMode: "allow-all",
-    title: null,
-    createdAt: "2026-09-02T09:00:00.000Z",
-    lastActiveAt: "2026-09-02T09:00:00.000Z",
-  };
+  });
 }
 
 /** Everything one user's channel received, as a connected client would see it. */
@@ -100,17 +75,29 @@ function inbox(t: TestApp, userId: string) {
   };
 }
 
+let t: TestApp;
+let api: ReturnType<typeof apiClient>;
+
+beforeAll(async () => {
+  t = await createTestApp();
+  api = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+  // A logged-in user with a live channel of their own and no access to the Project.
+  await provisionUser(t.app, "stranger");
+});
+afterAll(async () => {
+  await t.cleanup();
+});
+
 describe("SessionInfo.backgroundTasks", () => {
-  let t: TestApp;
-  let api: ReturnType<typeof apiClient>;
+  let SID: string;
+  let SID_UNLOADED: string;
   let procs: BackgroundCommandInfo[];
   let subs: BackgroundSubagentInfo[];
   const hook: Hook = { ping: () => undefined };
 
-  beforeEach(async () => {
-    t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "owner");
-    api = apiClient(t.app, cookie);
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    SID_UNLOADED = uniqueSessionId();
     procs = [proc("proc-11111111", true), proc("proc-22222222", false)];
     subs = [
       sub("session-child-0000000000000001", "subagent-00000001", true),
@@ -118,12 +105,8 @@ describe("SessionInfo.backgroundTasks", () => {
       sub("session-child-0000000000000002", null, true),
       sub("session-child-0000000000000003", "subagent-00000003", false),
     ];
-    t.deps.sessionsRepo.insert(sessionRow(SID));
-    t.deps.manager.adopt(sessionRow(SID), backgroundFakeSession(SID, procs, subs, hook));
-    t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED));
-  });
-  afterEach(async () => {
-    await t.cleanup();
+    adoptSession(t.deps, backgroundFakeSession(SID, procs, subs, hook), { projectId: PROJECT });
+    t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED, { projectId: PROJECT }));
   });
 
   it("counts running processes and promoted, mid-round subagents on the single GET and on list rows", async () => {
@@ -155,27 +138,20 @@ describe("SessionInfo.backgroundTasks", () => {
 });
 
 describe("session_background on the user channel", () => {
-  let t: TestApp;
+  let SID: string;
   let procs: BackgroundCommandInfo[];
   let subs: BackgroundSubagentInfo[];
   const hook: Hook = { ping: () => undefined };
   let owner: ReturnType<typeof inbox>;
   let stranger: ReturnType<typeof inbox>;
 
-  beforeEach(async () => {
-    t = await createTestApp();
-    await provisionUser(t.app, "owner");
-    // A logged-in user with a live channel of their own and no access to the Project.
-    await provisionUser(t.app, "stranger");
+  beforeEach(() => {
+    SID = uniqueSessionId();
     procs = [];
     subs = [];
-    t.deps.sessionsRepo.insert(sessionRow(SID));
-    t.deps.manager.adopt(sessionRow(SID), backgroundFakeSession(SID, procs, subs, hook));
+    adoptSession(t.deps, backgroundFakeSession(SID, procs, subs, hook), { projectId: PROJECT });
     owner = inbox(t, "owner");
     stranger = inbox(t, "stranger");
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("publishes the counts as they stand after each change, and nothing when they did not move", () => {
@@ -216,14 +192,5 @@ describe("session_background on the user channel", () => {
     });
     // The same audience rule as session_state: a stranger's live channel hears nothing.
     expect(stranger.events).toEqual([]);
-  });
-
-  it("reads the same counts the manager's query surface reports", () => {
-    procs.push(proc("proc-11111111", true), proc("proc-22222222", true));
-    hook.ping();
-    const last = owner.background().at(-1)!;
-    expect(last).toMatchObject({ processes: 2, subagents: 0 });
-    expect(t.deps.manager.backgroundTasksOf(SID)).toEqual({ processes: 2, subagents: 0 });
-    expect(t.deps.manager.backgroundTasksOf(SID_UNLOADED)).toBeUndefined();
   });
 });

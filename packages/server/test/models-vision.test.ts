@@ -1,9 +1,13 @@
 /**
- * Round-trip of a model's vision flag (whether image input is supported) through
- * PUT/GET: explicit false is persisted and read back; omission means supported
- * (the response carries no field); a non-boolean value returns 400.
+ * A model's vision flag (image input supported) through PUT/GET.
+ *
+ * - An explicit false is persisted and read back; omission means supported (no field) for a
+ *   model outside the catalog, and a catalog model without an annotation takes the catalog's.
+ * - The visionModel pointer round-trips, survives omission, and goes once its target is
+ *   invalid; one naming a model that is absent or has no image support is a 400.
+ * - A non-boolean vision is a 400.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ModelsResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -13,17 +17,26 @@ describe("models vision annotation", () => {
   let owner: ReturnType<typeof apiClient>;
   let projectId: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_v");
     owner = apiClient(t.app, a.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_v-vision", name: "vision project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_v-vision_${projects}`,
+        name: "vision project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("vision=false persists and reads back; omitted on a non-catalog model = supported (no field)", async () => {

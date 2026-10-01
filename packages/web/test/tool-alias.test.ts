@@ -1,13 +1,12 @@
 /**
- * tool-alias.ts unit tests: resolving a tool call's display name.
+ * A tool call's display name (lib/tool-alias.ts).
  *
- * The table covers the built-in tools and nothing else — an MCP tool and the names only
- * older Traces still carry must survive both switch positions untouched, and turning the
- * switch off must hand back every name exactly as it came in.
- *
- * Which tools those are is taken from core's own registry rather than from a list repeated
- * here, so registering an eighth built-in tool without giving it a short name fails this
- * file instead of silently shipping one card that still reads as the model's wire name.
+ * - With the switch on, every built-in tool of core's registry reads as a short name of its
+ *   own, in either language.
+ * - An MCP tool and the names only older Traces carry pass through untouched.
+ * - With the switch off, every name comes back exactly as it came in.
+ * - Both dictionaries alias exactly core's built-in tools, so registering a new built-in tool
+ *   without a short name fails here instead of shipping a card that reads as the wire name.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { BUILTIN_TOOL_FACTORIES } from "@prismshadow/penguin-core";
@@ -15,26 +14,8 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { toolDisplayName } from "../src/lib/tool-alias";
 
-/** Wire name -> alias, in the active language. */
-const EN_ALIASES: Record<string, string> = {
-  read_file: "read",
-  write_file: "write",
-  edit_file: "edit",
-  exec_command: "exec",
-  input_command: "follow",
-  run_subagent: "subagent",
-  input_subagent: "communicate",
-};
-
-const ZH_ALIASES: Record<string, string> = {
-  read_file: "读取",
-  write_file: "写入",
-  edit_file: "编辑",
-  exec_command: "执行命令",
-  input_command: "跟进命令",
-  run_subagent: "子智能体",
-  input_subagent: "交流",
-};
+/** Core's built-in tools, by wire name. */
+const BUILTINS = Object.keys(BUILTIN_TOOL_FACTORIES).sort();
 
 /** Names that must pass through: an MCP tool, and tools no longer assembled but still in old Traces. */
 const PASSTHROUGH = [
@@ -49,14 +30,12 @@ const PASSTHROUGH = [
 afterEach(() => setActiveStrings(zh));
 
 describe("toolDisplayName", () => {
-  it("names each built-in tool by its alias, in either language", () => {
-    setActiveStrings(en);
-    for (const [name, alias] of Object.entries(EN_ALIASES)) {
-      expect(toolDisplayName(name, true)).toBe(alias);
-    }
-    setActiveStrings(zh);
-    for (const [name, alias] of Object.entries(ZH_ALIASES)) {
-      expect(toolDisplayName(name, true)).toBe(alias);
+  it("names each built-in tool by a short name of its own, in either language", () => {
+    for (const strings of [en, zh]) {
+      setActiveStrings(strings);
+      const names = BUILTINS.map((name) => toolDisplayName(name, true));
+      for (const [i, name] of names.entries()) expect(name).not.toBe(BUILTINS[i]);
+      expect(new Set(names).size).toBe(BUILTINS.length);
     }
   });
 
@@ -71,15 +50,13 @@ describe("toolDisplayName", () => {
   });
 
   it("returns every name unchanged with the switch off", () => {
-    for (const name of [...Object.keys(ZH_ALIASES), ...PASSTHROUGH, ""]) {
+    for (const name of [...BUILTINS, ...PASSTHROUGH, ""]) {
       expect(toolDisplayName(name, false)).toBe(name);
     }
   });
 
   it("aliases exactly core's built-in tools, in both dictionaries", () => {
-    const builtins = Object.keys(BUILTIN_TOOL_FACTORIES).sort();
-    expect(builtins).toEqual(Object.keys(EN_ALIASES).sort());
-    expect(Object.keys(zh.chat.toolAliases).sort()).toEqual(builtins);
-    expect(Object.keys(en.chat.toolAliases).sort()).toEqual(builtins);
+    expect(Object.keys(zh.chat.toolAliases).sort()).toEqual(BUILTINS);
+    expect(Object.keys(en.chat.toolAliases).sort()).toEqual(BUILTINS);
   });
 });

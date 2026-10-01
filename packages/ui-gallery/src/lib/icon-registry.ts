@@ -1,15 +1,14 @@
 /**
- * Reads the Web App's line-icon path strings out of its source text, for the Icons foundation page.
+ * Reads line-icon path strings out of source text, for the Icons foundation page.
  *
- * Until W1 moves the icons into one registry in `packages/ui`, the paths are spread over a few web
- * modules, several re-export each other, and some are template literals built from shared
- * fragments. The gallery must not import web modules (they pull in the app's strings and state),
- * so it takes their raw text (`?raw`) and extracts:
+ * The page shows the shared registry (`packages/ui/src/components/icons/icons.ts`) as it is
+ * written, including the fragments its entries are composed from, so it reads the file's raw text
+ * (`?raw`) rather than importing it, and extracts:
  *
  *   export const TRASH_ICON = "M4 6h16…";                  → TRASH_ICON
  *   export const HIDDEN_ICON = `${EYE_OUTLINE}M3 3l18 18`;  → HIDDEN_ICON (fragment resolved)
- *   export const NAV_ICONS = { usage: "M4 20V10…", agents: AGENT_GROUP_ICON };
- *                                                          → NAV_ICONS.usage, NAV_ICONS.agents
+ *   export const ICONS = { trash: "M4 6h16…", eyeOff: `${EYE_OUTLINE}M3 3l18 18` };
+ *                                                          → ICONS.trash, ICONS.eyeOff
  *
  * Constants resolve across every given file. Only strings that are SVG path data survive, and
  * entries sharing one path are merged, so the page shows each distinct glyph once with every name
@@ -169,7 +168,7 @@ export function extractIconPaths(sources: Readonly<Record<string, string>>): Ico
   return [...byPath.values()];
 }
 
-/** `ICON_SIZE = { rowMark: 12, … }` → its rungs, from `lib/icon-scale.ts`'s text. */
+/** `ICON_SIZE = { rowMark: 12, … }` → its rungs, from `icon-scale.ts`'s text. */
 export function extractIconSizes(raw: string): { name: string; px: number }[] {
   const text = stripComments(raw);
   const decl = /\bconst\s+ICON_SIZE\s*(?::[^=;]*)?=\s*\{/.exec(text);

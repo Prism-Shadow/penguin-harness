@@ -1,18 +1,27 @@
 /**
- * Integration tests for the hook package routes: the installed list (a package written by
- * hand included), the zip archive install (layouts, manifest validation, zip-slip, 409
- * hook_exists + overwrite, a user_prompt command's trigger) and the byte-identical export
- * round-trip. Whether Sessions run hooks at all is the Agent-level `hooks.enabled` switch,
- * tested with the rest of the Agent config (prompt-sections.test.ts).
+ * Hook packages: the routes that list, install, export and remove them, and what an installed
+ * package does to a conversation. Whether Sessions run hooks at all is the Agent-level
+ * `hooks.enabled` switch, tested with the rest of the Agent config (prompt-sections.test.ts).
  *
- * The last block drives real Sessions against a loopback model endpoint: what an
- * every-prompt package adds to a conversation, and an install or uninstall through these
- * routes reaching a conversation that is already open.
+ * - The list shows what a library install wrote (with no switch written into the manifest) and
+ *   a package written by hand whose manifest names only the hook point it uses.
+ * - A zip installs under its top directory's name, or the manifest's for a root layout, and
+ *   uninstalls; a manifest the loader or a Session could not run is refused, writing nothing; a
+ *   user_prompt command's trigger is kept.
+ * - Zip-slip paths, malformed bodies, an entry over the per-file cap (however small the
+ *   archive) and an entry lying about its size are refused, writing nothing.
+ * - Installing over an installed package is a 409 hook_exists; overwrite replaces the whole
+ *   directory.
+ * - An export round-trips byte-identically and re-imports on another Agent; a package not
+ *   installed is a 404.
+ * - In a real conversation, an every-prompt package's context follows the user's message,
+ *   stamped harness, live and in the history; a package installed or removed through the
+ *   routes reaches the open conversation on its next Task.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { hooksDir } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
@@ -46,7 +55,8 @@ describe("hooks api", () => {
   const manifestFile = (agentId: string, name: string) =>
     path.join(hooksDir(t.root, projectId, agentId), name, "hooks.json");
 
-  beforeEach(async () => {
+  // Every case works on an Agent of its own, so one app serves them all.
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_h");
     const b = await provisionUser(t.app, "member_h");
@@ -62,7 +72,7 @@ describe("hooks api", () => {
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_h" })).status,
     ).toBe(201);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
   });
 

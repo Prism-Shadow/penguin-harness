@@ -38,29 +38,29 @@
  */
 import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { formatPercent, humanizeTokens } from "../../lib/format";
-import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import {
   ChartBar,
   ChartBarHit,
+  ChartFrame,
   ChartHit,
   ChartLine,
   ChartPoint,
   ChartSwatch,
-  type ChartPaint,
-} from "../../components/ui/chart";
-import {
-  makeGeom,
-  makeRangeGeom,
+  Legend,
+  LineHits,
+  PAD_R_AXIS,
   autoLabelIdx,
   barSegments,
+  makeGeom,
+  makeRangeGeom,
   seriesPoints,
   stackSegments,
-  PAD_R_AXIS,
-  type TokenBucketKey,
-} from "./chart-geom";
-import { ChartFrame, LineHits, useChartWidth } from "./chart-svg";
+  useChartWidth,
+} from "@prismshadow/penguin-ui";
+import type { ChartPaint, LegendItem, TokenBucketKey } from "@prismshadow/penguin-ui";
+import { S } from "../../lib/strings";
+import { formatPercent, humanizeTokens } from "../../lib/format";
+import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import {
   bucketAxisLabel,
   bucketFullLabel,
@@ -139,28 +139,26 @@ function RequestsLegend({
   active: number | null;
   onHover: (i: number | null) => void;
 }) {
+  const items: LegendItem[] = [
+    ...entities.map((e, i) => ({ key: String(i), label: e.label, paint: entityPaint(e, i) })),
+    // The lines wear each entity's own hue, so their legend item is about shape, not color: a
+    // neutral dash saying "the lines are the success rate, on the right axis".
+    {
+      key: "successRate",
+      label: S.usage.legendSuccessRate,
+      paint: NEUTRAL_PAINT,
+      shape: "dash",
+      interactive: false,
+    },
+  ];
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400">
-      {entities.map((e, i) => (
-        <button
-          key={`${e.label}:${i}`}
-          type="button"
-          onMouseEnter={() => onHover(i)}
-          onMouseLeave={() => onHover(null)}
-          className={`flex min-w-0 items-center gap-1.5 transition-opacity duration-150 ${
-            active != null && active !== i ? "opacity-30" : ""
-          }`}
-        >
-          <ChartSwatch paint={entityPaint(e, i)} />
-          <span className="max-w-40 truncate font-mono">{e.label}</span>
-        </button>
-      ))}
-      {/* The lines wear each entity's own hue, so their legend item is about shape, not color: a neutral dash saying "the lines are the success rate, on the right axis". */}
-      <span className="flex items-center gap-1.5">
-        <ChartSwatch paint={NEUTRAL_PAINT} shape="dash" />
-        {S.usage.legendSuccessRate}
-      </span>
-    </div>
+    <Legend
+      items={items}
+      mono
+      active={active === null ? null : String(active)}
+      onHover={(key) => onHover(key === null ? null : Number(key))}
+      className="mt-1.5"
+    />
   );
 }
 
@@ -594,36 +592,26 @@ export function TokenLegend({
   active?: TokenLegendKey | null;
   onHover?: (key: TokenLegendKey | null) => void;
 }) {
-  const items: Array<[TokenBucketKey, string]> = [
-    ["cacheRead", S.usage.colCacheRead],
-    ["cacheWrite", S.usage.colCacheWrite],
-    ["output", S.usage.colOutput],
+  const bucket = (key: TokenBucketKey, label: string): LegendItem => ({
+    key,
+    label,
+    paint: tokenPaint(key),
+    shape: "chip",
+  });
+  const items: LegendItem[] = [
+    bucket("cacheRead", S.usage.colCacheRead),
+    bucket("cacheWrite", S.usage.colCacheWrite),
+    bucket("output", S.usage.colOutput),
+    // The curve's item wears a line-shaped swatch: it is a line on its own axis, not a fourth
+    // stack segment.
+    { key: "hitRate", label: S.usage.legendHitRate, paint: HIT_RATE_PAINT, shape: "dash" },
   ];
-  const dim = (key: TokenLegendKey) => (active != null && active !== key ? "opacity-30" : "");
   return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1">
-      {items.map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onMouseEnter={() => onHover?.(key)}
-          onMouseLeave={() => onHover?.(null)}
-          className={`flex items-center gap-1 text-[10px] text-gray-500 transition-opacity duration-150 dark:text-gray-400 ${dim(key)}`}
-        >
-          <ChartSwatch paint={tokenPaint(key)} shape="chip" />
-          {label}
-        </button>
-      ))}
-      {/* The curve's legend item wears a line-shaped swatch: it is a line on its own axis, not a fourth stack segment. */}
-      <button
-        type="button"
-        onMouseEnter={() => onHover?.("hitRate")}
-        onMouseLeave={() => onHover?.(null)}
-        className={`flex items-center gap-1 text-[10px] text-gray-500 transition-opacity duration-150 dark:text-gray-400 ${dim("hitRate")}`}
-      >
-        <ChartSwatch paint={HIT_RATE_PAINT} shape="dash" />
-        {S.usage.legendHitRate}
-      </button>
-    </div>
+    <Legend
+      items={items}
+      active={active ?? null}
+      // The items' keys are the legend keys, so the key a hover reports is one of them.
+      onHover={onHover && ((key) => onHover(key as TokenLegendKey | null))}
+    />
   );
 }

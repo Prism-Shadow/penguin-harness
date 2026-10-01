@@ -12,30 +12,19 @@
 import { useState } from "react";
 import type { ReactNode, Ref } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk } from "../../lib/tone";
-import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { AGENT_GROUP_ICON } from "../../components/ui/group-list";
 import {
-  ARROW_BACK_ICON,
-  ARROW_FORWARD_ICON,
-  CODE_ICON,
   CloseIcon,
-  DOWNLOAD_ICON,
-  EXTERNAL_LINK_ICON,
-  HOME_ICON,
-  REFRESH_ICON,
-  WARNING_ICON,
-} from "../../components/ui/icons";
-import {
-  ELLIPSIS_ICON,
-  TRASH_ICON,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
-import { Tooltip } from "../../components/ui/tooltip";
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  Tooltip,
+} from "@prismshadow/penguin-ui";
+import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
 import { AddressBar } from "./address-bar";
 import type { BrowserActivity } from "./browser-state";
 
@@ -120,14 +109,14 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         disabled={tab?.canGoBack !== true}
         onClick={props.onBack}
       >
-        <GlyphIcon d={ARROW_BACK_ICON} size={ICON_SIZE.iconButton} />
+        <GlyphIcon d={ICONS.arrowLeftCentered} size={ICON_SIZE.iconButton} />
       </ToolButton>
       <ToolButton
         label={S.builtinBrowser.forward}
         disabled={tab?.canGoForward !== true}
         onClick={props.onForward}
       >
-        <GlyphIcon d={ARROW_FORWARD_ICON} size={ICON_SIZE.iconButton} />
+        <GlyphIcon d={ICONS.arrowRightCentered} size={ICON_SIZE.iconButton} />
       </ToolButton>
       {tab?.loading === true ? (
         <ToolButton label={S.builtinBrowser.stop} onClick={props.onStop}>
@@ -139,12 +128,12 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
           disabled={tab === null}
           onClick={props.onReload}
         >
-          <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.rowLead} />
+          <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.rowLead} />
         </ToolButton>
       )}
       {props.onHome !== null && (
         <ToolButton label={S.builtinBrowser.home} onClick={props.onHome}>
-          <GlyphIcon d={HOME_ICON} size={ICON_SIZE.rowLead} />
+          <GlyphIcon d={ICONS.house} size={ICON_SIZE.rowLead} />
         </ToolButton>
       )}
       {/* Keyed by tab: switching tabs drops a half-typed address instead of carrying it over. */}
@@ -162,7 +151,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
             data-testid="builtin-browser-agent-busy"
             className={`flex h-7 w-7 shrink-0 items-center justify-center ${toneInk.busy}`}
           >
-            <GlyphIcon d={AGENT_GROUP_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.robot} size={ICON_SIZE.iconButton} />
           </span>
         </Tooltip>
       )}
@@ -174,7 +163,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
             data-testid="builtin-browser-load-warning"
             className={`flex h-7 w-7 shrink-0 items-center justify-center ${toneInk.attention}`}
           >
-            <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.iconButton} />
           </span>
         </Tooltip>
       )}
@@ -191,41 +180,42 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(!menuOpen)}
           >
-            <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.rowLead} filled />
+            <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} filled />
           </ToolButton>
         }
       >
-        <button type="button" className={overflowMenuRowClass} onClick={item(props.onImport)}>
-          {overflowMenuGlyph(DOWNLOAD_ICON)}
-          {S.builtinBrowser.importAction}
-        </button>
-        <button type="button" className={overflowMenuRowClass} onClick={item(props.onClearData)}>
-          {overflowMenuGlyph(TRASH_ICON)}
-          {S.builtinBrowser.clearDataAction}
-        </button>
-        <button type="button" className={overflowMenuRowClass} onClick={item(props.onSetHomepage)}>
-          {overflowMenuGlyph(HOME_ICON)}
-          {S.builtinBrowser.setHomepageAction}
-        </button>
-        {(props.onOpenExternal !== null || props.hostsPage) && (
-          <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />
-        )}
-        {props.onOpenExternal !== null && (
-          <button
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={item(props.onOpenExternal)}
-          >
-            {overflowMenuGlyph(EXTERNAL_LINK_ICON)}
-            {S.builtinBrowser.openExternal}
-          </button>
-        )}
-        {props.hostsPage && (
-          <button type="button" className={overflowMenuRowClass} onClick={item(props.onDevTools)}>
-            {overflowMenuGlyph(CODE_ICON)}
-            {S.builtinBrowser.devTools}
-          </button>
-        )}
+        <Menu density="sm">
+          <MenuItem
+            glyph={ICONS.download}
+            label={S.builtinBrowser.importAction}
+            onSelect={item(props.onImport)}
+          />
+          <MenuItem
+            glyph={ICONS.trash}
+            label={S.builtinBrowser.clearDataAction}
+            onSelect={item(props.onClearData)}
+          />
+          <MenuItem
+            glyph={ICONS.house}
+            label={S.builtinBrowser.setHomepageAction}
+            onSelect={item(props.onSetHomepage)}
+          />
+          {(props.onOpenExternal !== null || props.hostsPage) && <MenuSeparator />}
+          {props.onOpenExternal !== null && (
+            <MenuItem
+              glyph={ICONS.externalLink}
+              label={S.builtinBrowser.openExternal}
+              onSelect={item(props.onOpenExternal)}
+            />
+          )}
+          {props.hostsPage && (
+            <MenuItem
+              glyph={ICONS.angleBrackets}
+              label={S.builtinBrowser.devTools}
+              onSelect={item(props.onDevTools)}
+            />
+          )}
+        </Menu>
       </Dropdown>
     </div>
   );

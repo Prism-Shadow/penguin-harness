@@ -1,18 +1,31 @@
 /**
- * The Markdown conversion the four messaging channels relay a reply through: the shared
- * parse and chunking (markdown.ts), and each channel's own renderer.
+ * The Markdown conversion the four messaging channels relay a reply through: the shared parse
+ * and chunking (markdown.ts), and each channel's own renderer. Four renderers because the four
+ * platforms accept four different subsets; how a construct a channel CANNOT show degrades is
+ * the part a chat reader notices, and model output that merely looks like markup must arrive
+ * as text everywhere. Delivery itself is proven against each channel's wire fake in the
+ * channel suites; nothing here sends anything.
  *
- * Four renderers rather than one because the four platforms accept four different
- * subsets, and the tests are organized to say so: every construct the model actually writes
- * is asserted per channel, including the ones a channel CANNOT show, because how a missing
- * construct degrades is the part a reader of a chat notices. The escaping cases are grouped
- * on their own — a reply is model output steered by whoever is in the chat, so text that
- * looks like markup has to arrive as text on every channel.
- *
- * Delivery — that a rendered send actually goes out with the right `parse_mode` / `msg_type`,
- * and that a refused one falls back to plain text — is proven against each channel's own
- * wire fake in messaging.test.ts, messaging-telegram.test.ts, messaging-qq.test.ts,
- * messaging-wechat.test.ts and messaging-wire.test.ts. Nothing here sends anything.
+ * - Parsing reads GFM (tables, task lists) and never throws; only schemes a chat can open are
+ *   safe link targets.
+ * - Telegram gets its inline tags, fenced blocks in pre/code with the language, headings as
+ *   bold lines, list markers as text, tables in pre, rules as text and images as links, the
+ *   model's own HTML escaped and a link target's quotes escaped in the href.
+ * - Feishu keeps every construct its rich text renders, escapes literal text with entities in
+ *   one pass, leaves code literal, neutralizes a paragraph opening with a block marker, sends an
+ *   over-long table as a code block, and wraps the content in the schema 2.0 card envelope.
+ * - QQ keeps its documented constructs and rule, sends code as escaped lines and a table as
+ *   its rows, and escapes with backslashes.
+ * - WeChat keeps the most (code and its fence and language, tables, emphasis around Latin but
+ *   not CJK), escapes a table cell's markers, widens a fence past its content's backticks,
+ *   flattens over-deep headings, turns an inline image into a link, escapes outside code only.
+ * - Every renderer keeps an unopenable link's label and drops only its clickability.
+ * - A reply quoting an inbound file's attachment line keeps the marker literal, carries a
+ *   scratchpad path through a code span byte for byte, escapes its HTML characters, and
+ *   degrades a path that is genuinely emphasis without losing characters.
+ * - Chunking returns a fitting reply whole, cuts between blocks, re-fences an over-long code
+ *   block, cuts a paragraph between inline runs, keeps blockquote and list prefixes, bounds an
+ *   unbreakable line as a last resort, and yields chunks every renderer accepts.
  */
 import { describe, expect, it } from "vitest";
 import { attachedFileLine } from "@prismshadow/penguin-core";
@@ -123,8 +136,7 @@ describe("telegramHtmlOf", () => {
     expect(telegramHtmlOf("<b>not mine</b>")).toBe("&lt;b&gt;not mine&lt;/b&gt;");
   });
 
-  it("keeps an unopenable link's label and drops only its clickability", () => {
-    expect(telegramHtmlOf("[click](javascript:alert(1))")).toBe("click");
+  it("escapes a link target's quotes inside the href", () => {
     expect(telegramHtmlOf('[q](https://x.com/?a="b")')).toBe(
       '<a href="https://x.com/?a=&quot;b&quot;">q</a>',
     );
@@ -195,10 +207,6 @@ describe("feishuMarkdownOf", () => {
       body: { elements: [{ tag: "markdown", content: "**hi**" }] },
     });
   });
-
-  it("keeps an unopenable link's label and drops only its clickability", () => {
-    expect(feishuMarkdownOf("[click](javascript:alert(1))")).toBe("click");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -241,10 +249,6 @@ describe("qqMarkdownOf", () => {
     expect(qqMarkdownOf("issue \\#12 and a > b")).toBe("issue #12 and a > b");
     // At the head of one they are escaped, so a paragraph is not re-read as a heading.
     expect(qqMarkdownOf("\\# not a heading")).toBe("\\# not a heading");
-  });
-
-  it("keeps an unopenable link's label and drops only its clickability", () => {
-    expect(qqMarkdownOf("[click](javascript:alert(1))")).toBe("click");
   });
 });
 
@@ -335,10 +339,20 @@ describe("wechatMarkdownOf", () => {
     // would land in code the reader is meant to copy.
     expect(wechatMarkdownOf("```\nrm -rf *_[x]\n```")).toBe("```\nrm -rf *_[x]\n```");
   });
+});
 
-  it("keeps an unopenable link's label and drops only its clickability", () => {
-    expect(wechatMarkdownOf("[click](javascript:alert(1))")).toBe("click");
-  });
+describe("every renderer", () => {
+  it.each([
+    ["telegram", telegramHtmlOf],
+    ["feishu", feishuMarkdownOf],
+    ["qq", qqMarkdownOf],
+    ["wechat", wechatMarkdownOf],
+  ] as const)(
+    "%s keeps an unopenable link's label and drops only its clickability",
+    (_, render) => {
+      expect(render("[click](javascript:alert(1))")).toBe("click");
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

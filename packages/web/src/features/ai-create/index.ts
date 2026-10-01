@@ -11,5 +11,5 @@ export { AiCreatePanel, PromptFold } from "./ai-create-panel";
 export type { AiCreatePanelProps, AiExample } from "./ai-create-panel";
 export { AiCreateModal } from "./ai-create-modal";
 export type { AiCreateModalProps } from "./ai-create-modal";
-export { CreateButtons } from "./create-buttons";
-export type { CreateButtonsProps } from "./create-buttons";
+export { AiCreateButtons } from "./ai-create-buttons";
+export type { AiCreateButtonsProps } from "./ai-create-buttons";

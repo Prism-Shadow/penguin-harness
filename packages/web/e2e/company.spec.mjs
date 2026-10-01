@@ -158,7 +158,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await page.goto(`/org/${projectId}/${ORG}/chart`);
   // The card's face is inert; its kebab menu is the way into the desk session.
   await page.getByRole("button", { name: "Dana Dev · 员工操作" }).click();
-  await page.getByRole("button", { name: "打开工位会话" }).click();
+  await page.getByRole("menuitem", { name: "打开工位会话" }).click();
   await expect(page).toHaveURL(/\/chat\/session-/);
   await expect(page.getByText("Dana Dev 的工位").first()).toBeVisible();
   await expect(sidebar.getByRole("button", { name: /Dana Dev 的工位/ })).toHaveAttribute(

@@ -5,9 +5,9 @@
  * (Round inputs themselves render as regular user messages with a harness-origin caption —
  * see message-item.tsx; no goal-specific message rendering remains.)
  */
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeTokens } from "../../lib/format";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { GOAL_ICON, UNLIMITED_BUDGET } from "./goal-use";
 import type { GoalBannerState } from "./goal-use";
 import { toneSurface } from "../../lib/tone";

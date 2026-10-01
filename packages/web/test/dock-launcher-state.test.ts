@@ -1,8 +1,19 @@
 /**
- * The floating dock launcher's decisions (features/dock/dock-launcher-state.ts): when it
- * shows, how its resting position clamps to the chat body and round-trips through the
- * stored ratio, whether the user put it away, how a drag is bounded, and where on the ring
- * its entries land.
+ * The floating dock launcher's decisions (features/dock/dock-launcher-state.ts).
+ *
+ * - It shows on a wide layout while the right dock is hidden and on a narrow one while neither
+ *   dock is up, hides behind the narrow merged surface, and stays away once put away.
+ * - Put away reads only the stored "1"; writing either state notifies subscribers (both
+ *   renderers follow), and a throwing storage still tells this session.
+ * - A resting position clamps inside the body with the edge margin and the caption, pinning to
+ *   the top margin when the body is too short and treating a non-finite offset as the top.
+ * - The stored ratio centres the ball by default, clamps the extremes, round-trips a top offset,
+ *   falls back for a body with no height, parses and clamps a decimal, rejects anything else,
+ *   and survives a throwing storage.
+ * - A drag tracks the pointer inside the bounds, rubberbands past the ends, pulls off the edge
+ *   only a damped distance, and settles back inside on release.
+ * - The fan spreads its entries evenly over one circle left of the ball, widening only where the
+ *   arc is trimmed near the body's top or bottom, keeping every entry inside and apart.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -30,25 +41,11 @@ import {
   writeLauncherHidden,
   writeLauncherRatio,
 } from "../src/features/dock/dock-launcher-state";
-import type {
-  FanSlot,
-  LauncherStorage,
-  LauncherVisibility,
-} from "../src/features/dock/dock-launcher-state";
+import type { FanSlot, LauncherVisibility } from "../src/features/dock/dock-launcher-state";
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const BODY = 600;
 const MAX_TOP = BODY - LAUNCHER_SIZE - LAUNCHER_CAPTION_HEIGHT - LAUNCHER_EDGE_MARGIN;
-
-function fakeStorage(initial: Record<string, string> = {}): LauncherStorage & {
-  map: Map<string, string>;
-} {
-  const map = new Map(Object.entries(initial));
-  return {
-    map,
-    getItem: (key) => map.get(key) ?? null,
-    setItem: (key, value) => void map.set(key, value),
-  };
-}
 
 describe("visibility", () => {
   const at = (v: Partial<LauncherVisibility>): boolean =>
@@ -86,14 +83,14 @@ describe("visibility", () => {
 
 describe("put away", () => {
   it('hides only on the stored "1"; anything else — absent, stale, garbage — shows it', () => {
-    expect(readLauncherHidden(fakeStorage({ [LAUNCHER_HIDDEN_KEY]: "1" }))).toBe(true);
-    expect(readLauncherHidden(fakeStorage())).toBe(false);
-    expect(readLauncherHidden(fakeStorage({ [LAUNCHER_HIDDEN_KEY]: "0" }))).toBe(false);
-    expect(readLauncherHidden(fakeStorage({ [LAUNCHER_HIDDEN_KEY]: "yes" }))).toBe(false);
+    expect(readLauncherHidden(memoryStorage({ [LAUNCHER_HIDDEN_KEY]: "1" }))).toBe(true);
+    expect(readLauncherHidden(memoryStorage())).toBe(false);
+    expect(readLauncherHidden(memoryStorage({ [LAUNCHER_HIDDEN_KEY]: "0" }))).toBe(false);
+    expect(readLauncherHidden(memoryStorage({ [LAUNCHER_HIDDEN_KEY]: "yes" }))).toBe(false);
   });
 
   it("writes both states and notifies subscribers, so both renderers of it follow", () => {
-    const storage = fakeStorage();
+    const storage = memoryStorage();
     let seen = 0;
     const stop = subscribeLauncherHidden(() => {
       seen += 1;
@@ -111,14 +108,7 @@ describe("put away", () => {
   });
 
   it("survives a storage that throws, and still tells this session", () => {
-    const broken: LauncherStorage = {
-      getItem: () => {
-        throw new Error("blocked");
-      },
-      setItem: () => {
-        throw new Error("blocked");
-      },
-    };
+    const broken = blockedStorage();
     expect(readLauncherHidden(broken)).toBe(false);
     const before = launcherHiddenVersion();
     expect(() => writeLauncherHidden(true, broken)).not.toThrow();
@@ -185,26 +175,21 @@ describe("stored ratio", () => {
   });
 
   it("reads back what it wrote, under the one global key", () => {
-    const storage = fakeStorage();
+    const storage = memoryStorage();
     writeLauncherRatio(0.3, storage);
     expect(storage.map.get(LAUNCHER_Y_KEY)).toBe("0.3");
     expect(readLauncherRatio(storage)).toBe(0.3);
   });
 
   it("falls back to the default when the entry is missing or malformed", () => {
-    expect(readLauncherRatio(fakeStorage())).toBe(DEFAULT_LAUNCHER_RATIO);
-    expect(readLauncherRatio(fakeStorage({ [LAUNCHER_Y_KEY]: "{}" }))).toBe(DEFAULT_LAUNCHER_RATIO);
+    expect(readLauncherRatio(memoryStorage())).toBe(DEFAULT_LAUNCHER_RATIO);
+    expect(readLauncherRatio(memoryStorage({ [LAUNCHER_Y_KEY]: "{}" }))).toBe(
+      DEFAULT_LAUNCHER_RATIO,
+    );
   });
 
   it("survives a storage that throws", () => {
-    const broken: LauncherStorage = {
-      getItem: () => {
-        throw new Error("blocked");
-      },
-      setItem: () => {
-        throw new Error("blocked");
-      },
-    };
+    const broken = blockedStorage();
     expect(readLauncherRatio(broken)).toBe(DEFAULT_LAUNCHER_RATIO);
     expect(() => writeLauncherRatio(0.4, broken)).not.toThrow();
   });

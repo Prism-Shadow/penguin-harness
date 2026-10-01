@@ -3287,13 +3287,22 @@ export interface UsageErrorCount {
   count: number;
 }
 
-/** A single error summary (one row in the stats center's error panel table). */
+/**
+ * One row of the stats center's error panel table: the records of one calendar day that share
+ * a source, code, kind and message. The day is the viewer's when the request carried
+ * `utcOffsetMinutes`, and the server's own otherwise.
+ */
 export interface UsageErrorItem {
+  /** The latest of the records this row stands for. */
   ts: string;
   source: string;
   code: string;
   kind: string;
   message: string;
+  /** How many records this row stands for (the panel's "×N"). */
+  count: number;
+  /** The earliest of them; equal to `ts` for a single record. */
+  firstTs: string;
 }
 
 /**
@@ -3305,14 +3314,16 @@ export interface UsageErrorItem {
  * items.
  */
 export interface UsageErrors {
-  /** Filtered row count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
+  /** Filtered record count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
   total: number;
   /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */
   topCode: UsageErrorCount | null;
-  /** Most recent N items (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
+  /** Most recent N rows (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
   recent: UsageErrorItem[];
+  /** How many rows the table has for this filter (records folded per {@link UsageErrorItem}) — what the pager counts. */
+  rows: number;
 }
 
 /**
@@ -3323,12 +3334,15 @@ export interface UsageErrors {
  * or neither), so a page never widens what the summary counted, plus an optional `kind`
  * ({@link UsageErrorKind}) narrowing to one of the two categories — which
  * is how the cost-center badge asks "are there unexpected errors, and how new is the newest"
- * with `limit=1` instead of pulling the whole dashboard aggregate.
+ * with `limit=1` instead of pulling the whole dashboard aggregate. `utcOffsetMinutes` (minutes
+ * east of UTC, the dashboard takes it too) says whose calendar day a row's records share.
  */
 export interface UsageErrorsPage {
   items: UsageErrorItem[];
-  /** Filtered row count, so the caller knows when it has reached the end. */
+  /** Filtered record count — the occurrences, which is what the cost-center badge counts. */
   total: number;
+  /** Filtered row count (records folded per {@link UsageErrorItem}), so the caller knows when it has reached the end. */
+  rows: number;
 }
 
 /**

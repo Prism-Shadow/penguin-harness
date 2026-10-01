@@ -7,11 +7,8 @@
  * Each child node shows its wall-clock elapsed time (ticking while it runs, frozen at its last
  * activity when done — never a sum of its items); the root carries no stamps and shows none.
  */
+import { AgentAvatar, DurationSlot, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { humanizeDuration } from "../../lib/format";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { StatusIcon } from "../../components/ui/status-icon";
-import { LiveDuration } from "./live-duration";
 import { layoutTopology, NODE_H, NODE_W } from "./agent-topology";
 import type { TopologyNode } from "./agent-topology";
 
@@ -68,7 +65,7 @@ export function AgentTopologyView({
               data-tooltip={tooltip}
               onClick={() => onSelect(node)}
               style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
-              className={`absolute flex flex-col justify-center gap-0.5 rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${
+              className={`absolute flex flex-col justify-center gap-px rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${
                 selected
                   ? "border-brand-500 ring-1 ring-brand-500"
                   : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:bg-gray-800/60"
@@ -82,19 +79,15 @@ export function AgentTopologyView({
                 {/* Elapsed: ticking from first appearance while running, frozen at the settled
                     span when done; omitted when the stamps are unknown (always for the root).
                     Decorative next to the label — the aria-label pins the accessible name. */}
-                {node.running
-                  ? node.startedMs !== undefined && (
-                      <span className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
-                        <LiveDuration sinceMs={node.startedMs} />
-                      </span>
-                    )
-                  : node.elapsedMs !== undefined && (
-                      <span className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
-                        {humanizeDuration(node.elapsedMs)}
-                      </span>
-                    )}
+                {(node.running ? node.startedMs !== undefined : node.elapsedMs !== undefined) && (
+                  <DurationSlot
+                    running={node.running}
+                    sinceMs={node.startedMs}
+                    durationMs={node.elapsedMs}
+                  />
+                )}
                 {/* Status is already part of the button's accessible name: keep the glyph decorative. */}
-                <StatusIcon state={node.running ? "running" : "done"} size={10} />
+                <StatusIcon state={node.running ? "running" : "done"} size="xs" />
               </span>
               {/* Second line: what this child was spawned to do. Indented to the label's own
                   left edge (avatar width + gap) and truncated to one line — the model writes a
@@ -102,7 +95,7 @@ export function AgentTopologyView({
                   Nodes without one (the root, a standalone child, an omitted description) drop
                   the line and the single row centers itself in the box instead. */}
               {node.description !== null && (
-                <span className="w-full truncate pl-[24px] text-[10px] leading-tight text-gray-400 dark:text-gray-500">
+                <span className="w-full truncate pl-[24px] text-xs leading-tight text-fg-subtle">
                   {node.description}
                 </span>
               )}
