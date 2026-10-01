@@ -100,10 +100,10 @@ export function MachinePortsPage() {
         ) : (
           groups.map(([workspace, rows]) => (
             <section key={workspace} className="mt-5" data-testid="machine-ports-workspace">
-              <h2 className={`${MONO} truncate px-2 text-gray-500`} title={workspace}>
+              <h2 className={`${MONO} truncate px-2 text-gray-500`} data-tooltip={workspace}>
                 {workspace}
               </h2>
-              <ul className="mt-1 space-y-0.5">
+              <ul className="mt-1 space-y-1">
                 {rows.map((forward) => (
                   <ForwardRow
                     key={forward.id}
@@ -112,7 +112,7 @@ export function MachinePortsPage() {
                     actions={
                       <button
                         type="button"
-                        title={S.ports.remove}
+                        data-tooltip={S.ports.remove}
                         aria-label={S.ports.remove}
                         onClick={() => void remove(forward)}
                         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"

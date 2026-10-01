@@ -36,7 +36,7 @@ export function Plug({
   children?: ReactNode;
 }) {
   return (
-    <span className={PLUG} title={name}>
+    <span className={PLUG} data-tooltip={name}>
       <span className={PLUG_NAME}>{name}</span>
       {port !== undefined && <span className={PLUG_PORT}>:{port}</span>}
       {children}
@@ -65,9 +65,12 @@ export function Cable({ tone, label }: { tone: Tone; label: string }) {
           strokeLinecap="round"
         />
       </svg>
+      {/* The arrowhead is the cable's own geometry on its 8×12 box, drawn beside the line, not
+          a registry glyph: every theme draws each registry key in its own style, and a cable
+          tip restyled apart from the line it ends would no longer meet it. */}
       <svg viewBox="0 0 8 12" className="-ml-px h-3 w-2 shrink-0" aria-hidden="true">
-        <path
-          d="M1 2l5 4-5 4"
+        <polyline
+          points="1,2 6,6 1,10"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.7"
@@ -113,7 +116,7 @@ export function ForwardRow({
         )}
       </div>
       <div
-        className={`mt-1 truncate pl-1 text-[11px] ${tone === "link" ? "text-gray-500 dark:text-gray-400" : toneInk[tone]}`}
+        className={`mt-1 truncate pl-1 text-xs ${tone === "link" ? "text-gray-500 dark:text-gray-400" : toneInk[tone]}`}
       >
         {status}
       </div>

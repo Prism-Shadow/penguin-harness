@@ -177,7 +177,7 @@ function MachinePorts({
         ) : forwards.length === 0 ? (
           <p className="p-1 text-xs text-gray-500">{S.ports.empty}</p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {forwards.map((forward) => {
               const address = `localhost:${forward.localPort}`;
               return (
@@ -196,7 +196,7 @@ function MachinePorts({
                         href={`http://${address}/`}
                         target="_blank"
                         rel="noreferrer noopener"
-                        title={S.ports.open}
+                        data-tooltip={S.ports.open}
                         aria-label={S.ports.open}
                         className={ROW_BUTTON}
                       >
@@ -204,7 +204,7 @@ function MachinePorts({
                       </a>
                       <button
                         type="button"
-                        title={S.ports.remove}
+                        data-tooltip={S.ports.remove}
                         aria-label={S.ports.remove}
                         onClick={() => void remove(forward)}
                         className={ROW_BUTTON}
@@ -230,7 +230,7 @@ function MachinePorts({
           {direction === "in" ? machinePlug : herePlug}
           <button
             type="button"
-            title={direction === "in" ? S.ports.directionIn : S.ports.directionOut}
+            data-tooltip={direction === "in" ? S.ports.directionIn : S.ports.directionOut}
             aria-label={S.ports.flipDirection}
             aria-pressed={direction === "out"}
             onClick={() => setDirection(direction === "in" ? "out" : "in")}
