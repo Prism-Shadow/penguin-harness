@@ -3,7 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** fix
 - **Scope:** `core`
-- **PR:** [#614](https://github.com/Prism-Shadow/penguin-harness/pull/614)
+- **PR:** [#798](https://github.com/Prism-Shadow/penguin-harness/pull/798)
 
 [English](2026-09-04-plugin-library-host-package.md)
 
@@ -14,4 +14,5 @@
 - 每个起点各自向上，走到第一份 `dependencies` 点名插件包的 package.json；先试加载器自身所在的安装。途中不点名插件包、或读不出来、无法解析的 package.json 都会被跨过去，不拿它当答案。
 - 不再退回「第一份读得出来的 package.json」：两个起点都找不到宿主时，插件库调用失败，错误列出实际试过的两个起点，而不是让推送失败、或让插件库悄悄变空。
 - 程序路径先解析符号链接，于是包管理器的 bin 会指回它所属的那份安装。
-- 插件包通过宿主包自己的 `require` 解析，于是推送的平台读到的是随程序安装的插件，而不是去 store 旁边找。
+- 插件包通过宿主包自己的 `require` 解析，插件库不会去 store 旁边找。
+- 热推送随包带来的插件库（[见其条目](2026-09-19-pushed-plugin-library.zh.md)）排在两个起点之前，按同样的方式向上走；没有它时，推送的平台读到的是随程序安装的插件。

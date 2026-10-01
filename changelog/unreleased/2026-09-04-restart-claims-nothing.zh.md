@@ -3,7 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [#614](https://github.com/Prism-Shadow/penguin-harness/pull/614)
+- **PR:** [#798](https://github.com/Prism-Shadow/penguin-harness/pull/798)
 
 [English](2026-09-04-restart-claims-nothing.md)
 
