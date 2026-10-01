@@ -7,8 +7,10 @@
 
 [English](2026-09-19-pushed-plugin-library.md)
 
-core 通过 Node 从一个「宿主包」读取 Skill 与 hook 插件库——即 `dependencies` 里点名 `@penguinharness/*` 各包的那个包。热推送来的平台位于数据根的 store 里，它上方没有任何包，于是回落到「启动它的那个程序」旁边安装的库。因此，某个插件出现之前安装的机器永远不会提供该插件，无论它的平台多新：创建组织要给 CEO 安装 `agent-company`，在早于公司模式的程序上每次创建都得到「该插件不在插件库中」。同一个缺口也使更新过的 Skill 始终到不了被推送实例的库里。
+一台机器装的是早于公司模式的程序，之后经热推送升级到带公司模式的平台，在它上面创建组织每一次都失败，报「This plugin is not in the plugin library」。创建组织要给 CEO 安装 `agent-company`，而 Agent 插件库（Skill 与钩子，即 `@penguinharness/*` 各包）用的是恰好启动平台的那个程序旁边的那一份——12 个插件，没有 `agent-company`——推送的平台再新也没用。现在热推送带上自己的库。
 
-`scripts/deploy.mjs` 现在把 core 声明的库——13 个插件、约 0.4 MB，与其他资产一样按内容寻址——打成 `archives/library.tgz`，布局即一个宿主包（`library/package.json` 点名各包，`library/node_modules/@penguinharness/<name>/…`）。平台启动时让 core 指向它（`usePushedPluginLibrary`），core 先在那里找，再看自己模块的上方与正在运行的程序的上方。不带该归档的推送、以及根本不是推送来的平台，仍在原来的位置读取库。
-
-Agent 已安装的 Skill 仍是副本：更新的库表现为 Agent 上该插件的「更新」按钮，不会改写已安装的内容。
+- 部署多产出一件按内容寻址的资产 `archives/library.tgz`：core 的包清单所声明的全部 Agent 插件，排成一个宿主包（`library/package.json` 点名各包，加 `library/node_modules/@penguinharness/<名>/…`）。core 声明了、仓库里却找不到的插件让部署失败，而不是推出一份缺插件的库。当前规模为 13 个插件、约 0.4 MB。
+- core 新增 `usePushedPluginLibrary(dir)`。设置后宿主包的查找顺序为：推送来的库 → loader 自身所在的安装 → 运行中的程序所在的安装；传 `null` 回到后两处。设置即生效，下一次读库按新顺序重新查找。
+- 平台由运行时以热推送方式装载时，在任何代码读插件库之前，用 `pushedLibraryDir` 在已解开的资产里找到这份库并交给 core。
+- 推送里没有这件资产，或平台根本不是推送来的（普通安装、桌面应用、开发模式），行为与之前一致。推送来的库优先于程序旁那一份，即便程序比推送更新：正在运行的是被推送的平台，与它配套的库才对。查找逻辑在推送的 core 里，所以对早于本改动的运行时同样有效。
+- Agent 已装的 Skill 与钩子是副本，不被改写：库变新后，Agent 上对应插件显示「更新」，由用户决定何时更新。
