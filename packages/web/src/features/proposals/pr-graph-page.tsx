@@ -38,6 +38,7 @@ import { ErrorLine, TitleButton } from "../company/shared";
 import {
   baseStacks,
   focusedProposal,
+  foldedAsMerged,
   layoutGraph,
   rowOfProposal,
   graphGeometry,
@@ -162,6 +163,25 @@ export function GraphPage() {
     const undrawn = new Set(layout?.detached.map((n) => n.number));
     return graph?.nodes.filter((n) => !n.onChain && !undrawn.has(n.number)) ?? [];
   }, [graph, layout]);
+  // Merged proposals off the chain are finished business: folded into one line unless asked for.
+  const [showMerged, setShowMerged] = useState(false);
+  const lists = useMemo(() => {
+    const keep = <T,>(items: readonly T[], status: (item: T) => string | null | undefined) =>
+      showMerged ? [...items] : items.filter((item) => !foldedAsMerged(status(item)));
+    const off = drawnOff;
+    const detached = layout?.detached ?? [];
+    const unplaced = graph?.unplaced ?? [];
+    const folded =
+      off.filter((n) => foldedAsMerged(n.proposal?.status)).length +
+      detached.filter((n) => foldedAsMerged(n.proposal?.status)).length +
+      unplaced.filter((u) => foldedAsMerged(u.status)).length;
+    return {
+      off: keep(off, (n) => n.proposal?.status),
+      detached: keep(detached, (n) => n.proposal?.status),
+      unplaced: keep(unplaced, (u) => u.status),
+      folded,
+    };
+  }, [drawnOff, layout, graph, showMerged]);
 
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
@@ -271,7 +291,7 @@ export function GraphPage() {
             graph={graph}
             title={t.offSection}
             info={t.offSectionHint}
-            nodes={drawnOff}
+            nodes={lists.off}
             onOpenProposal={openProposal}
             wrapRow={deployable}
           />
@@ -279,12 +299,28 @@ export function GraphPage() {
             graph={graph}
             title={t.detached}
             info={t.detachedHint}
-            nodes={layout.detached}
+            nodes={lists.detached}
             onOpenProposal={openProposal}
             wrapRow={deployable}
           />
           <DeploymentsOff deployments={graph.deployments} />
-          <UnplacedSection graph={graph} focus={focus} onOpenProposal={openProposal} />
+          <UnplacedSection
+            graph={graph}
+            unplaced={lists.unplaced}
+            focus={focus}
+            onOpenProposal={openProposal}
+          />
+          {lists.folded > 0 && (
+            <p className="text-xs text-fg-subtle">
+              <TitleButton
+                onClick={() => setShowMerged((v) => !v)}
+                hint={t.mergedFoldTitle}
+                className="text-xs"
+              >
+                {showMerged ? t.mergedFoldHide(lists.folded) : t.mergedFoldShow(lists.folded)}
+              </TitleButton>
+            </p>
+          )}
         </div>
       )}
       {openJob !== null && (

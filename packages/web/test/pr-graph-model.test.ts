@@ -15,6 +15,7 @@ import {
   graphGeometry,
   graphTops,
   layoutGraph,
+  foldedAsMerged,
   rowOfProposal,
   rowWidths,
   splitArgs,
@@ -246,5 +247,14 @@ describe("graphGeometry", () => {
     expect(large.row / base.row).toBe(20 / 16);
     expect(large.lane / base.lane).toBe(20 / 16);
     expect(large.rowY(2)).toBeCloseTo(2.5 * large.row);
+  });
+});
+
+describe("foldedAsMerged", () => {
+  it("folds a merged proposal and nothing else", () => {
+    expect(foldedAsMerged("merged")).toBe(true);
+    for (const s of ["ready", "approved", "drafting", "rejected", null, undefined]) {
+      expect(foldedAsMerged(s)).toBe(false);
+    }
   });
 });

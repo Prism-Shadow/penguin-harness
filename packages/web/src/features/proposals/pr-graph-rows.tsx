@@ -213,19 +213,22 @@ export function NodeListSection({
 /** The proposals whose impl PR is not an open PR on the delivery repository, each with why. */
 export function UnplacedSection({
   graph,
+  unplaced = graph.unplaced,
   focus,
   onOpenProposal,
 }: {
   graph: ProposalGraphResponse;
+  /** The entries to list; the page passes them without the folded merged ones. */
+  unplaced?: ProposalGraphResponse["unplaced"];
   focus: number | null;
   onOpenProposal: (n: number) => void;
 }) {
   const t = S.company.proposals.graph;
-  if (graph.unplaced.length === 0) return null;
+  if (unplaced.length === 0) return null;
   return (
-    <RuledSection title={t.unplaced} count={graph.unplaced.length} info={t.unplacedHint}>
+    <RuledSection title={t.unplaced} count={unplaced.length} info={t.unplacedHint}>
       <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-        {graph.unplaced.map((u) => (
+        {unplaced.map((u) => (
           <li
             key={u.number}
             data-focus={focus === u.number ? "true" : undefined}
