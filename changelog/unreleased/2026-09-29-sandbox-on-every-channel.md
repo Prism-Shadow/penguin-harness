@@ -1,24 +1,19 @@
-# The sandbox backends reach the Docker image and an npm global install
+# The sandbox backends reach the Docker image, and a registry fetch runs without npm on PATH
 
 - **Date:** 2026-09-29
 - **Type:** feature
-- **Scope:** `server`, `cli`, `docker`, `docs`
+- **Scope:** `server`, `docker`, `docs`
 - **PR:** [Myriad-Dreamin/penguin-harness#98](https://github.com/Myriad-Dreamin/penguin-harness/pull/98)
 
 [中文版](2026-09-29-sandbox-on-every-channel.zh.md)
 
-Before this change, the builtin plugins reached a server through three channels: the CLI package's `lib/plugins`, the desktop app's `plugins/`, and a hot push. The Docker image and an npm global install of `@prismshadow/penguin-cli` now bring them too, and a fetch from the registry now runs where no npm is on `PATH`. A shipped plugin still loads only when a Project asks for it, and the sandbox mode still starts at Off.
+Before this change, the builtin plugins reached a server through three channels: the CLI package's `lib/plugins`, the desktop app's `plugins/`, and a hot push. The Docker image now brings them too. An npm global install of `@prismshadow/penguin-cli` carries none: there a backend is fetched from the npm registry into the plugin store on the Plugins page, like any other plugin, and that fetch now runs where no npm is on `PATH`. A shipped plugin still loads only when a Project asks for it, and the sandbox mode still starts at Off.
 
 ## Docker image
 
 - The image builds the builtin plugins prefix with the release's own `build-plugins` step, into `/opt/penguin/lib/plugins`. It is the same prefix the CLI package ships, and it serves both the amd64 and the arm64 image.
 - The server looks for the installation's prefix beside the entry's real path. The image starts the program through the `/usr/local/bin/penguin` link, so the server used to look in `/usr/local/plugins`. The same resolution applies when a stored plugin borrows the host's `@prismshadow/penguin-core`.
 - The Docker quickstart gains a section on running the sandbox in a container. It lists the options that let bubblewrap create user namespaces (`seccomp`, `apparmor` and `systempaths` set to `unconfined`) and describes what happens without them: the Sandbox card says the backend is not in use and why, and every mode except Off refuses every agent command.
-
-## npm global install
-
-- `@prismshadow/penguin-cli` declares the four sandbox backends as optional dependencies. They are not published to npm yet, and npm skips an optional dependency it cannot install, so the install still succeeds without them. Once they are published they install with the CLI.
-- An installation without a builtin plugins prefix (no `plugins/index.json` beside its program) imports, as what it ships, the server plugins among its package's optional dependencies that npm installed: those carrying a generated `ifaces.json`. The server resolves them the way Node would from the package and stores each once per process. A workspace link in a dev checkout is not imported.
 
 ## Registry fetch
 

@@ -8,19 +8,15 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { activatePlugins, readGeneration } from "../src/plugin/activation.js";
 import {
   fetchIntoStore,
   PluginIntegrityMismatch,
   pluginStoreDir,
   programEntry,
-  programPackages,
   readStore,
   shippedNames,
-  storeEntryDir,
   storePackage,
   storeSources,
-  syncPluginStore,
 } from "../src/plugin/store.js";
 import {
   archiveIntegrity,
@@ -241,99 +237,5 @@ describe("the installation's prefix", () => {
     expect(programEntry(link)).toBe(path.join(real, "dist", "penguin.js"));
     expect(storeSources(null, link)).toEqual([path.join(real, "plugins")]);
     expect(await withEntry(link, () => shippedNames(null))).toEqual(["@acme/sandbox-x"]);
-  });
-});
-
-describe("an npm global install", () => {
-  /**
-   * `<prefix>/lib/node_modules/@acme/cli`, its bin linked from `<prefix>/bin/penguin`: the
-   * program declares its plugins as optional dependencies, npm nested the one it could get
-   * inside the program's own node_modules and hoisted that plugin's dependency one level up.
-   */
-  async function globalInstall(): Promise<{ bin: string; cli: string }> {
-    const cli = path.join(dir, "global", "lib", "node_modules", "@acme", "cli");
-    await write(cli, {
-      "package.json": JSON.stringify({
-        name: "@acme/cli",
-        version: "1.0.0",
-        dependencies: { commander: "^13.0.0" },
-        optionalDependencies: {
-          "@acme/sandbox-x": "1.0.0",
-          "@acme/sandbox-unpublished": "1.0.0",
-          "native-binary": "1.0.0",
-        },
-      }),
-      "dist/penguin.js": "",
-      "node_modules/commander/package.json": JSON.stringify({
-        name: "commander",
-        version: "13.0.0",
-      }),
-      // An optional package that is not a server plugin (no generated ifaces.json).
-      "node_modules/native-binary/package.json": JSON.stringify({
-        name: "native-binary",
-        version: "1.0.0",
-      }),
-      "node_modules/@acme/sandbox-x/package.json": JSON.stringify({
-        name: "@acme/sandbox-x",
-        version: "1.0.0",
-        dependencies: { native: "^2.0.0" },
-      }),
-      "node_modules/@acme/sandbox-x/ifaces.json": "{}",
-      "node_modules/@acme/sandbox-x/dist/index.js": "export default {};",
-    });
-    await write(path.join(dir, "global", "lib"), {
-      "node_modules/native/package.json": JSON.stringify({ name: "native", version: "2.0.1" }),
-      "node_modules/native/index.js": "module.exports = 1;",
-    });
-    const bin = path.join(dir, "global", "bin", "penguin");
-    await fs.mkdir(path.dirname(bin), { recursive: true });
-    await fs.symlink(path.join(cli, "dist", "penguin.js"), bin);
-    return { bin, cli: await fs.realpath(cli) };
-  }
-
-  it("ships the plugins npm installed among the program's optional dependencies, and nothing else", async () => {
-    const { bin, cli } = await globalInstall();
-    // Not commander (a dependency), not the one npm could not get, not a non-plugin binary.
-    expect(programPackages(bin)).toEqual(
-      new Map([["@acme/sandbox-x", path.join(cli, "node_modules", "@acme", "sandbox-x")]]),
-    );
-    const shipped = await withEntry(bin, () => syncPluginStore(root, null));
-    const [row] = await readStore(root);
-    expect(row).toMatchObject({ name: "@acme/sandbox-x", version: "1.0.0" });
-    expect([...shipped]).toEqual([row!.integrity]);
-    // Its dependency, hoisted above the program's package, travels inside the entry.
-    const entry = storeEntryDir(root, row!.name, row!.version, row!.integrity);
-    expect(await exists(path.join(entry, "package", "node_modules", "native", "index.js"))).toBe(
-      true,
-    );
-    expect(await withEntry(bin, () => shippedNames(null))).toEqual(["@acme/sandbox-x"]);
-  });
-
-  it("shipped is not enabled: the boot stores what the program ships and activates only what a Project asks for", async () => {
-    const { bin } = await globalInstall();
-    const { current, missing } = await withEntry(bin, () => activatePlugins(root, new Map(), null));
-    expect(missing.size).toBe(0);
-    expect((await readStore(root)).map((e) => e.name)).toEqual(["@acme/sandbox-x"]);
-    expect(await readGeneration(root, current)).toEqual([]);
-  });
-
-  it("leaves a workspace link alone: a dev checkout's source tree is not something the program installed", async () => {
-    const cli = path.join(dir, "ws", "packages", "cli");
-    await write(cli, {
-      "package.json": JSON.stringify({
-        name: "@acme/cli",
-        version: "1.0.0",
-        optionalDependencies: { "@acme/sandbox-x": "workspace:*" },
-      }),
-      "src/penguin.ts": "",
-    });
-    const plugin = path.join(dir, "ws", "plugins", "sandbox-x");
-    await write(plugin, {
-      "package.json": JSON.stringify({ name: "@acme/sandbox-x", version: "1.0.0" }),
-      "ifaces.json": "{}",
-    });
-    await fs.mkdir(path.join(cli, "node_modules", "@acme"), { recursive: true });
-    await fs.symlink(plugin, path.join(cli, "node_modules", "@acme", "sandbox-x"));
-    expect(programPackages(path.join(cli, "src", "penguin.ts"))).toEqual(new Map());
   });
 });

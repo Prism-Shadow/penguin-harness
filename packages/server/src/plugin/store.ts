@@ -27,9 +27,7 @@
  *               the installation's — `lib/plugins` of the CLI package and the Docker image,
  *               `plugins/` of the desktop app), each listed with its integrity in the prefix's
  *               `index.json` the build wrote; an entry already stored is not copied again
- *               (`syncPluginStore`). An npm global install carries no prefix: there, the
- *               plugins the program's own package declares as optional dependencies and npm
- *               installed with it are what it ships (`programPackages`);
+ *               (`syncPluginStore`);
  *   - registry  a package fetched by npm into `.staging/`, packed, hashed, compared with the
  *               integrity its index entry names, and stored (`fetchIntoStore`).
  *
@@ -47,7 +45,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
-import { IFACES_FILE, PACKAGE_NAME } from "./loader.js";
+import { PACKAGE_NAME } from "./loader.js";
 import { npmInvocation, npmReason, PluginInstallError } from "./install.js";
 import {
   entryDir,
@@ -327,57 +325,6 @@ export function storeSources(
 }
 
 /**
- * The plugins the program's own package ships as dependencies, by name, located the way Node
- * resolves them from it — `node_modules` upward: what an npm global install brings, which can
- * carry no nested prefix. They are its `optionalDependencies` (penguin-cli declares the sandbox
- * backends there), and only those npm actually installed that are server plugins (their
- * generated `ifaces.json` beside the manifest): an optional package npm skipped — not
- * published yet, or refused for this platform — is not shipped, nor is another program's
- * optional native binary (a test runner's). A package reached through
- * a workspace link (a dev checkout's `pnpm install`) is a source tree, not something the
- * program installed, and is left alone.
- */
-export function programPackages(entry: string | undefined = process.argv[1]): Map<string, string> {
-  const out = new Map<string, string>();
-  const program = programEntry(entry);
-  if (program === undefined) return out;
-  let pkgRoot: string | null = null;
-  for (let dir = path.dirname(program); ; dir = path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, "package.json"))) {
-      pkgRoot = dir;
-      break;
-    }
-    if (path.dirname(dir) === dir) return out;
-  }
-  let manifest: { optionalDependencies?: unknown };
-  try {
-    manifest = JSON.parse(fs.readFileSync(path.join(pkgRoot, "package.json"), "utf8"));
-  } catch {
-    return out;
-  }
-  const optional = manifest.optionalDependencies;
-  const names = optional !== null && typeof optional === "object" ? Object.keys(optional) : [];
-  for (const name of names) {
-    for (let dir = pkgRoot; ; dir = path.dirname(dir)) {
-      const candidate = path.join(dir, "node_modules", ...name.split("/"));
-      if (fs.existsSync(path.join(candidate, "package.json"))) {
-        let real: string;
-        try {
-          real = fs.realpathSync(candidate);
-        } catch {
-          break;
-        }
-        const installed = real.split(path.sep).includes("node_modules");
-        if (installed && fs.existsSync(path.join(real, IFACES_FILE))) out.set(name, real);
-        break;
-      }
-      if (path.dirname(dir) === dir) break;
-    }
-  }
-  return out;
-}
-
-/**
  * The plugins the running build carries: the prefix of the first of `storeSources` that has an
  * `index.json` (scripts/build-plugins.mjs writes it), with its rows. Null when none does — a
  * server run from source ships no prefix. The rows are as written; the registry validates them.
@@ -425,11 +372,9 @@ const storedAs = new Map<string, StoredEntry>();
 
 /**
  * Stores every plugin the running build carries that is not stored yet, and answers the
- * integrities its `index.json` lists together with what each was stored as. With no prefix
- * (an npm global install), what it carries is `programPackages`, stored — and so hashed —
- * once per process. On the store's queue, best effort: a failure is logged and never fails
- * the boot — a package that did not reach the store is reported by the activation that cannot
- * find it (plugin/activation.ts).
+ * integrities its `index.json` lists together with what each was stored as. On the store's
+ * queue, best effort: a failure is logged and never fails the boot — a package that did not
+ * reach the store is reported by the activation that cannot find it (plugin/activation.ts).
  */
 export async function syncPluginStore(
   root: string,
@@ -439,26 +384,7 @@ export async function syncPluginStore(
   const shipped = new Set<string>();
   await onStoreQueue(async () => {
     const index = await readShippedIndex(assetsDir);
-    if (index === null) {
-      for (const [name, pkgDir] of programPackages()) {
-        const memo = `${root}\0${pkgDir}`;
-        const known = storedAs.get(memo);
-        if (known !== undefined && isStored(known.dir)) {
-          shipped.add(known.integrity);
-          continue;
-        }
-        try {
-          // Its hoisted dependencies are looked up as far as Node would look: to the root.
-          const entry = await storePackage(root, pkgDir, path.parse(pkgDir).root);
-          storedAs.set(memo, entry);
-          shipped.add(entry.integrity);
-        } catch (err) {
-          log(`[plugin-store] ${name}: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-      return;
-    }
-    for (const row of index.entries) {
+    for (const row of index?.entries ?? []) {
       const { name, version, integrity } = row as Partial<Record<string, unknown>>;
       if (typeof name !== "string" || typeof version !== "string") continue;
       if (typeof integrity !== "string" || entryKey(integrity) === null) continue;
@@ -485,11 +411,10 @@ export async function syncPluginStore(
   return shipped;
 }
 
-/** The names the running build ships: its index's, or with no prefix the program's own. */
+/** The names the running build ships. */
 export async function shippedNames(assetsDir: string | null): Promise<string[]> {
   const index = await readShippedIndex(assetsDir).catch(() => null);
-  if (index === null) return [...programPackages().keys()].sort();
-  const names = index.entries.flatMap((row) => {
+  const names = (index?.entries ?? []).flatMap((row) => {
     const name = (row as { name?: unknown }).name;
     return typeof name === "string" ? [name] : [];
   });
