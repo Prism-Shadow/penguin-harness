@@ -1,18 +1,23 @@
 /**
- * Organization routes over the real app: the admin master switch starts off, 404s the whole
- * group while it is off, and is reported by /api/me and /api/admin/settings; Project
- * authorization gates reads and writes (an outsider gets 404, a member may write) and only
- * the owner deletes an organization; bodies are validated before the service is asked; and the
- * calling session and employee ride write bodies as `sessionId` / `agentId` (a read's query
- * string), but only from the control environment's API token — a signed-in member's claim is
- * dropped. The service itself is a recording fake here — its semantics have their
- * own suites — so no Agent is created and no session runs. The one exception is the sessions
- * route's desk mark, which is wiring rather than semantics: an organization written straight to
- * disk is served by the real service, and a desk's enabled messaging binding has to reach its
- * row from the real bindings table.
+ * Organization routes over the real app. The service is a recording fake — its semantics have
+ * their own suites — so no Agent is created and no Session runs, except in the sessions-route
+ * case, which is wiring rather than semantics.
+ *
+ * - The admin master switch starts off; while it is off every route answers 404
+ *   company_mode_off, and /api/me and /api/admin/settings report it.
+ * - Project authorization gates the group: an outsider gets 404, a member reads and writes, and
+ *   only the owner deletes an organization (pausing stays a setting any writer may change).
+ * - Bodies are validated before the service is asked: organizations, tickets (owner and slug
+ *   included), handbook documents by their relative path, the channel family and its members.
+ * - The organization's language, a ticket's owner and slug, and the channel of the path reach
+ *   the service.
+ * - The calling session and employee ride a read's query and a write's body only from the
+ *   control environment's API token; a signed-in member's claim is dropped.
+ * - The sessions route marks a desk whose Session has an enabled messaging binding, read from
+ *   the real bindings table for an organization written straight to disk.
  */
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type {
   MeResponse,
   OrgSessionsResponse,
@@ -97,25 +102,28 @@ function fromSession(t: TestApp, apiPath: string, body: unknown) {
 
 describe("organization routes", () => {
   let t: TestApp;
-  let calls: Call[];
+  const calls: Call[] = [];
   let owner: ReturnType<typeof apiClient>;
-  let ownerProject: string;
+  const ownerProject = "olivia-default_project";
 
-  beforeEach(async () => {
-    calls = [];
-    // The service is a recording fake: it goes in as a boot override, since the route
-    // group takes the one the module tree provides at creation.
+  // One app serves the group. The service is a recording fake: it goes in as a boot override,
+  // since the route group takes the one the module tree provides at creation.
+  beforeAll(async () => {
     t = await createTestApp({ orgService: fakeService(calls) });
-    // Company mode is off on a server nobody turned it on (its own test below): every case
-    // here is about what the routes do once an admin has enabled it.
-    t.deps.serverSettingsRepo.setCompanyMode(true);
-    const u = await provisionUser(t.app, "olivia");
-    owner = apiClient(t.app, u.cookie);
-    ownerProject = "olivia-default_project";
+    owner = apiClient(t.app, (await provisionUser(t.app, "olivia")).cookie);
+    // The control environment's credential is the admin's: it joins the Project the CLI
+    // writes to, as the Session-attribution cases below need.
+    const grant = await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" });
+    expect([200, 201]).toContain(grant.status);
   });
-
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    calls.length = 0;
+    // Company mode is off on a server nobody turned it on (its own case below): every other
+    // case is about what the routes do once an admin has enabled it.
+    t.deps.serverSettingsRepo.setCompanyMode(true);
   });
 
   it("is off on a server whose admin never touched the switch", async () => {
@@ -189,10 +197,10 @@ describe("organization routes", () => {
     // A Project-level management operation, like deleting an Agent: a member who can write
     // everything else in the organization cannot make it go away.
     const path = `/api/projects/${ownerProject}/organizations/acme`;
-    const mia = await provisionUser(t.app, "mia");
-    await owner.post(`/api/projects/${ownerProject}/members`, { userId: "mia" });
+    const mira = await provisionUser(t.app, "mira");
+    await owner.post(`/api/projects/${ownerProject}/members`, { userId: "mira" });
     calls.length = 0;
-    expect((await apiClient(t.app, mia.cookie).delete(path)).status).toBe(403);
+    expect((await apiClient(t.app, mira.cookie).delete(path)).status).toBe(403);
     expect(calls).toEqual([]);
     expect((await owner.delete(path)).status).toBe(204);
     expect(calls.at(-1)).toEqual({ method: "delete", args: [ownerProject, "acme"] });
@@ -437,9 +445,6 @@ describe("organization routes", () => {
 
   it("honours a read's sessionId only from the control environment", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/channels`;
-    expect([200, 201]).toContain(
-      (await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" })).status,
-    );
     const res = await t.app.request(`${base}?sessionId=session-desk&agentId=acme_dev`, {
       headers: { authorization: `Bearer ${t.deps.authService.localApiToken()}` },
     });
@@ -462,9 +467,6 @@ describe("organization routes", () => {
 
   it("passes the calling session through write bodies so the file records the employee", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/tickets/2026-09-01-site`;
-    // The control environment's credential: the admin joins the Project the CLI writes to.
-    const grant = await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" });
-    expect([200, 201]).toContain(grant.status);
     const res = await fromSession(t, `${base}/progress`, {
       text: "half done",
       sessionId: "session-desk",

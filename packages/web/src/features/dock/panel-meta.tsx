@@ -4,18 +4,9 @@
  * menus. One table, so a panel never has two names or two marks.
  */
 import type { ReactNode } from "react";
+import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
-import {
-  AGENTS_PAIR_ICON,
-  GLOBE_ICON,
-  MEMORY_ICON,
-  MESSAGING_RELAY_ICON,
-  NAV_ICONS,
-  SCHEDULE_ICON,
-} from "../../components/ui/icons";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import type { PanelKind } from "./dock-state";
 
 /** The panel's short display name (read at call time — `S` is a live locale binding). */
@@ -38,21 +29,26 @@ export function panelLabel(kind: PanelKind): string {
   }
 }
 
-export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton): ReactNode {
+/** The panel's mark, as the registry path a Menu row draws on its own. */
+export function panelGlyphPath(kind: PanelKind): string {
   switch (kind) {
     case "agents":
-      return <GlyphIcon d={AGENTS_PAIR_ICON} size={size} />;
+      return ICONS.robotPair;
     case "workspace":
-      return <GlyphIcon d={FOLDER_ICON} size={size} />;
+      return ICONS.folder;
     case "memory":
-      return <GlyphIcon d={MEMORY_ICON} size={size} />;
+      return ICONS.brain;
     case "trace":
-      return <GlyphIcon d={NAV_ICONS.traces} size={size} />;
+      return NAV_ICONS.traces;
     case "messaging":
-      return <GlyphIcon d={MESSAGING_RELAY_ICON} size={size} />;
+      return ICONS.paperPlane;
     case "schedules":
-      return <GlyphIcon d={SCHEDULE_ICON} size={size} />;
+      return ICONS.alarmClock;
     case "builtin-browser":
-      return <GlyphIcon d={GLOBE_ICON} size={size} />;
+      return ICONS.globe;
   }
+}
+
+export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton): ReactNode {
+  return <GlyphIcon d={panelGlyphPath(kind)} size={size} />;
 }

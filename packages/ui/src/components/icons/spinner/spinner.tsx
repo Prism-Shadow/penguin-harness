@@ -10,9 +10,8 @@
  * linear in Primer and Frost and steps it eight times a turn in Console, without either theme
  * redrawing the arc.
  *
- * The one component the package exports so far (`index.ts`): the Web App renders it where it
- * used to hand-draw a ring, and the gallery reviews it as the Web App's screens render it — the
- * package ships no demos of its own.
+ * The Web App renders it where it used to hand-draw a ring, and the gallery reviews it as the
+ * Web App's screens render it — the package ships no demos of its own.
  */
 import type { ToneName } from "../../../tokens";
 

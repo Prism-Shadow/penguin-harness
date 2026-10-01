@@ -10,9 +10,8 @@
  * request answered rather than on what was clicked.
  */
 import { useState, useSyncExternalStore } from "react";
+import { PrefRow, Segmented, ToggleRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Segmented } from "../../components/ui/segmented";
-import { Switch } from "../../components/ui/switch";
 import {
   enableNotifications,
   notificationHintFor,
@@ -28,7 +27,6 @@ import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { PrefRow } from "./setting-row";
 import { TraceImportRow } from "./trace-import-row";
 
 export function GeneralSection() {
@@ -72,39 +70,35 @@ export function GeneralSection() {
       <PrefRow label={S.models.currency} info={S.settings.currencyInfo}>
         <Segmented options={currencyOptions} value={currency} onChange={setCurrency} cols={2} />
       </PrefRow>
-      <PrefRow
+      <ToggleRow
         label={S.settings.notifications}
         hint={notificationHint}
         info={S.settings.notificationsInfo}
-      >
-        <Switch
-          checked={notificationsOn}
-          disabled={access === "unsupported"}
-          onChange={(on) => {
-            if (!on) {
-              writeNotificationsEnabled(false);
-              return;
-            }
-            // Only a granted request stores the preference, so anything else leaves the
-            // switch where it was and turns the hint on instead.
-            void enableNotifications().then((answer) => {
-              setAccess(answer);
-              setAsked(true);
-            });
-          }}
-        />
-      </PrefRow>
+        checked={notificationsOn}
+        disabled={access === "unsupported"}
+        onChange={(on) => {
+          if (!on) {
+            writeNotificationsEnabled(false);
+            return;
+          }
+          // Only a granted request stores the preference, so anything else leaves the
+          // switch where it was and turns the hint on instead.
+          void enableNotifications().then((answer) => {
+            setAccess(answer);
+            setAsked(true);
+          });
+        }}
+      />
       {/* The personal company-mode switch: off hides this user's mode switch and nothing else.
           Offered only while the server allows company mode at all — a switch that changes
           nothing would only invite the question of why. */}
       {serverEnabled && (
-        <PrefRow label={S.settings.companyModePersonal} info={S.settings.companyModePersonalInfo}>
-          <Switch
-            checked={personalEnabled}
-            onChange={setPersonalEnabled}
-            aria-label={S.settings.companyModePersonal}
-          />
-        </PrefRow>
+        <ToggleRow
+          label={S.settings.companyModePersonal}
+          info={S.settings.companyModePersonalInfo}
+          checked={personalEnabled}
+          onChange={setPersonalEnabled}
+        />
       )}
       <TraceImportRow />
     </div>

@@ -1,7 +1,40 @@
 /**
- * stream-model.ts unit tests: partial aggregation, full-message
- * convergence/replacement, orphan delta handling, overlap dedup, origin nested routing,
- * approval/abort/compaction events, Task segmentation and stats triggering.
+ * The chat stream's model (lib/omni/stream-model.ts): OmniMessages in, the items the chat
+ * renders out, and the same items whether a conversation arrives live or is rebuilt from
+ * history.
+ *
+ * - Streaming fragments accumulate into one item that the complete message then replaces;
+ *   an orphan fragment (joined mid-stream) is ignored; a late streaming copy never duplicates
+ *   a card history already built; tool-output images show as soon as a delta carries them.
+ * - A live-tail start carrying an accumulated prefix seeds its item on top of history, and a
+ *   start for an already complete call or output changes nothing.
+ * - Approval decisions annotate their card (manual when registered here, even across a resync
+ *   rebuild; remote otherwise), including decisions that arrive before the card; fatal errors
+ *   and aborts render their own items.
+ * - A compaction renders one banner: its summary and thinking stream onto it, each body
+ *   section is timed over the window it shows itself running (retries included), history
+ *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
+ * - The MCP connect row sums tools, keeps per-server outcomes and its wall time.
+ * - Retries render one ladder line per streak, with their countdown inputs, settling as
+ *   gave-up on abort, exhaustion or a new Task; request events inside a compaction do not.
+ * - Subagent output routes into the nearest approved, unfinished run_subagent card, one hop
+ *   per level, else a standalone card; a child's tokens count toward the parent's stats.
+ * - Messages carry their time; a Task starts at a user message or image and closes with a
+ *   stats row (tokens, output speed, elapsed from Trace timestamps, the copy target, the
+ *   fork position), compaction and approval waits attributed by position.
+ * - Compaction-internal messages and steering never start a Task; background notices ride
+ *   inside the running Task unless they arrived idle.
+ * - Elapsed time survives a reload mid-run and never leaks the local clock.
+ * - Tool cards are found at any depth by origin chain, and an approval key tells apart the
+ *   same call id under different origins.
+ * - Overlap dedup matches identical envelopes in its window (Trace positions ignored) and
+ *   discards the matching in-flight fragment, nested ones included.
+ * - Thinking and tool durations cover generation and execution, minus approval waits; aborts
+ *   and idle close running cards.
+ * - A repeated tool_call_id opens a new card and closes the superseded one.
+ * - Empty or blank fidelity-only messages render nothing, live or rebuilt.
+ * - A Task's stats row lists the memory files it changed (completed writes and edits under
+ *   the memory root only).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -2277,11 +2310,14 @@ describe("elapsed comes from Trace timestamps (#5/#20: settled spans, reload-sta
 
 describe("approval keys and tool-card lookup (#7/#19)", () => {
   it("approvalKey distinguishes identical toolCallIds by origin chain", () => {
-    expect(approvalKey(undefined, "t1")).toBe(" t1");
-    expect(approvalKey([], "t1")).toBe(" t1");
-    expect(approvalKey(["c1"], "t1")).toBe("c1 t1");
-    expect(approvalKey(["c1", "c2"], "t1")).toBe("c1/c2 t1");
-    expect(approvalKey(["c1"], "t1")).not.toBe(approvalKey(undefined, "t1"));
+    expect(approvalKey([], "t1")).toBe(approvalKey(undefined, "t1"));
+    const keys = [
+      approvalKey(undefined, "t1"),
+      approvalKey(["c1"], "t1"),
+      approvalKey(["c1", "c2"], "t1"),
+      approvalKey(["c1"], "t2"),
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("findToolCard locates tool cards at any depth by origin chain", () => {

@@ -7,16 +7,16 @@
  * renders exactly as the app would.
  *
  * The mock network is installed as in the app frame: a component that fetches (the file
- * browser's preview, a chart) gets the demo store's answer.
+ * browser's preview, a chart) gets the demo store's answer. Code is highlighted by the app's own
+ * worker-backed highlighter, handed to the package's code surfaces as the app hands it; KaTeX's
+ * stylesheet comes with the package's Markdown.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { Toaster } from "../../../web/src/components/ui/toast";
-import { TooltipLayer } from "../../../web/src/components/ui/tooltip";
+import { CodeHighlighterProvider, Toaster, TooltipLayer } from "@prismshadow/penguin-ui";
+import { highlightCode } from "../../../web/src/features/chat/code-highlight";
 import { LocaleProvider, LocaleScope } from "../../../web/src/state/locale";
 import { ThemeProvider } from "../../../web/src/state/theme";
-// The app's dependency, reached through its own node_modules, ahead of the app's own sheet.
-import "../../../web/node_modules/katex/dist/katex.min.css";
 import "./library.css";
 import { installFetchShim } from "../app/mock/fetch-shim";
 import { getStore } from "../app/mock/store";
@@ -47,16 +47,18 @@ if (!container) throw new Error("#root mount point not found");
 
 createRoot(container).render(
   <StrictMode>
-    <LocaleProvider>
-      <ThemeProvider>
-        <LocaleScope>
-          <GalleryProvider>
-            <LibraryBoardPage topic={params.topic} />
-          </GalleryProvider>
-          <Toaster />
-          <TooltipLayer />
-        </LocaleScope>
-      </ThemeProvider>
-    </LocaleProvider>
+    <CodeHighlighterProvider highlight={highlightCode}>
+      <LocaleProvider>
+        <ThemeProvider>
+          <LocaleScope>
+            <GalleryProvider>
+              <LibraryBoardPage topic={params.topic} />
+            </GalleryProvider>
+            <Toaster />
+            <TooltipLayer />
+          </LocaleScope>
+        </ThemeProvider>
+      </LocaleProvider>
+    </CodeHighlighterProvider>
   </StrictMode>,
 );

@@ -96,22 +96,3 @@ export const toneDot: Record<Tone, string> = {
   danger: "bg-red-500",
   muted: "bg-gray-400 dark:bg-gray-600",
 };
-
-/**
- * Border plus tinted background for the bordered notice strips (the degraded-mode banner, the
- * missing-placeholder alerts): a heavier treatment than `toneSurface`, for a notice that owns a
- * whole row rather than sitting inside one.
- */
-export const toneStrip: Record<Tone, string> = {
-  busy: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  attention:
-    "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  success:
-    "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  // A filled tone box takes the neutral line: the tint alone says which tone it is.
-  link: "border-gray-200 bg-blue-50 text-blue-800 dark:border-gray-800 dark:bg-blue-950/40 dark:text-blue-300",
-  danger:
-    "border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/40 dark:text-red-300",
-  muted:
-    "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400",
-};

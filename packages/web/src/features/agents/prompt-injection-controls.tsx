@@ -28,17 +28,21 @@ import type {
   AgentSkillsConfigDto,
   AgentVaultConfigDto,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Card,
+  InfoPopover,
+  Notice,
+  Textarea,
+  ToggleRow,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
-import { Textarea } from "../../components/ui/input";
-import { Switch } from "../../components/ui/switch";
-import { useSaveConfirm } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { NoticeStrip } from "../../components/ui/notice-strip";
+import { useSaveConfirm } from "./save-confirm";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -205,47 +209,42 @@ export function usePromptInjection({
     });
 
   const toggleCard = state !== null && (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
-      {/* The "?" sits inside the label so it modifies a title rather than standing alone (see info-popover.tsx). */}
-      <p className="flex items-center gap-1.5 text-sm font-medium text-gray-800 dark:text-gray-200">
-        {strings.enable}
-        {strings.enableHint !== undefined && (
-          <InfoPopover label={strings.enable}>{strings.enableHint}</InfoPopover>
-        )}
-      </p>
-      <Switch
-        checked={state.enabled}
-        onChange={(v) => void toggleEnabled(v)}
-        disabled={switchBusy || !canEdit}
-      />
-    </div>
+    <ToggleRow
+      variant="card"
+      label={strings.enable}
+      info={strings.enableHint}
+      checked={state.enabled}
+      onChange={(v) => void toggleEnabled(v)}
+      disabled={switchBusy || !canEdit}
+    />
   );
 
   // Legacy templates get the migration wording (and the legacy strings always exist for the
   // features that can report legacySectionPresent); everything else gets the plain insert.
   const legacy = state?.legacySectionPresent === true;
   const alertStrip = promptStrings !== null && state !== null && !state.templateHasPlaceholder && (
-    <NoticeStrip
+    <Notice
       tone="attention"
-      className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
+      variant="callout"
+      action={
+        canEdit
+          ? {
+              label: legacy
+                ? (promptStrings.migrate ?? promptStrings.insertPlaceholder)
+                : promptStrings.insertPlaceholder,
+              onClick: () => void insertPlaceholder(),
+            }
+          : undefined
+      }
     >
-      <p className="text-xs">
-        {legacy
-          ? (promptStrings.legacyTemplate ?? promptStrings.templateMissing)
-          : promptStrings.templateMissing}
-      </p>
-      {canEdit && (
-        <Button size="sm" className="shrink-0" onClick={() => void insertPlaceholder()}>
-          {legacy
-            ? (promptStrings.migrate ?? promptStrings.insertPlaceholder)
-            : promptStrings.insertPlaceholder}
-        </Button>
-      )}
-    </NoticeStrip>
+      {legacy
+        ? (promptStrings.legacyTemplate ?? promptStrings.templateMissing)
+        : promptStrings.templateMissing}
+    </Notice>
   );
 
   const promptSection = promptStrings !== null && state !== null && (
-    <section className="space-y-2.5 rounded-lg border border-gray-200 p-3.5 dark:border-gray-800">
+    <Card as="section" padding="md" className="space-y-3">
       <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
         {promptStrings.promptSection}
         <InfoPopover label={promptStrings.promptSection}>
@@ -262,8 +261,9 @@ export function usePromptInjection({
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
       />
-      {/* Placeholder reference, the Prompt/Memory tab convention — a chip inserts at the cursor. */}
-      <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+      {/* Placeholder reference, the Prompt/Memory tab convention — a chip inserts at the cursor.
+          Inside the card it takes the step below the card's radius. */}
+      <div className="rounded-sm border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
         <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
         <ul className="space-y-1">
           {promptStrings.promptPlaceholders.map(([token, desc]) => (
@@ -290,7 +290,7 @@ export function usePromptInjection({
         </div>
       )}
       {saveConfirm}
-    </section>
+    </Card>
   );
 
   return { applyConfig, toggleCard, alertStrip, promptSection };

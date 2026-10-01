@@ -28,6 +28,7 @@
  */
 import { useState } from "react";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
+import { ConfirmModal, CopyButton, Spinner, StatChip } from "@prismshadow/penguin-ui";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -39,9 +40,6 @@ import {
 } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CopyButton } from "../../components/ui/copy-button";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
@@ -49,40 +47,6 @@ export interface ForkTarget {
   assistantText: string;
   atMs?: number;
   position?: TracePosition;
-}
-
-/**
- * Icon + value; hover explains what this item is (the icon alone doesn't convey the exact
- * meaning). `display` swaps the default `flex` for a responsive variant (the TPS chip is
- * `hidden sm:flex`); `compactValue`, when it differs, replaces the value below sm — fewer
- * decimals so the one-line stats row fits a phone without needing its scroll fallback.
- */
-function StatChip({
-  icon,
-  value,
-  compactValue,
-  label,
-  display = "flex",
-}: {
-  icon: string;
-  value: string;
-  compactValue?: string;
-  label: string;
-  display?: string;
-}) {
-  return (
-    <span data-tooltip={label} aria-label={label} className={`${display} items-center gap-1`}>
-      <GlyphIcon d={icon} />
-      {compactValue !== undefined && compactValue !== value ? (
-        <>
-          <span className="sm:hidden">{compactValue}</span>
-          <span className="hidden sm:inline">{value}</span>
-        </>
-      ) : (
-        value
-      )}
-    </span>
-  );
 }
 
 export function TaskStatsLine({
@@ -144,7 +108,7 @@ export function TaskStatsLine({
   // The copy button sits outside the scrollable span, so it stays pinned at the row's end
   // instead of scrolling out of reach.
   return (
-    <div className="-mt-2 flex h-5 items-center justify-start gap-x-2 overflow-hidden whitespace-nowrap text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:gap-x-3 sm:opacity-0 dark:text-gray-500">
+    <div className="-mt-2 flex h-5 items-center justify-start gap-x-2 overflow-hidden whitespace-nowrap text-xs text-fg-subtle transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:gap-x-3 sm:opacity-0">
       <span className="no-scrollbar flex min-w-0 items-center gap-x-2 overflow-x-auto sm:gap-x-3">
         {/* Timestamp leads: it's this reply's identity (when it was said), the stat numbers are an
             annotation. When this turn has no token_usage (reply was aborted), only the timestamp
@@ -153,31 +117,31 @@ export function TaskStatsLine({
         {stats && b && (
           <>
             <StatChip
-              icon={STAT_ICONS.input}
+              glyph={STAT_ICONS.input}
               value={humanizeTokens(input)}
               label={S.chat.statInput}
             />
             <StatChip
-              icon={STAT_ICONS.output}
+              glyph={STAT_ICONS.output}
               value={humanizeTokens(b.output)}
               label={S.chat.statOutput}
             />
             <StatChip
-              icon={STAT_ICONS.tps}
+              glyph={STAT_ICONS.tps}
               value={formatTps(stats.outputTps)}
               label={S.chat.statTps}
-              display="hidden sm:flex"
+              wideOnly
             />
             {cost != null && (
               <StatChip
-                icon={STAT_ICONS.cost}
+                glyph={STAT_ICONS.cost}
                 value={formatMoney(cost, currency)}
                 compactValue={formatMoney(cost, currency, { compact: true })}
                 label={`${S.common.cost}（${currency}）`}
               />
             )}
             <StatChip
-              icon={STAT_ICONS.elapsed}
+              glyph={STAT_ICONS.elapsed}
               value={humanizeDuration(stats.elapsedDeltaMs)}
               compactValue={humanizeDuration(stats.elapsedDeltaMs, { compact: true })}
               label={S.chat.statElapsed}
@@ -186,11 +150,7 @@ export function TaskStatsLine({
         )}
       </span>
       {/* Pinned at the row's end, outside the scrollable stats span. */}
-      <CopyButton
-        text={copyText}
-        label={S.chat.copyReply}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-      />
+      <CopyButton text={copyText} label={S.chat.copyReply} size="sm" className="shrink-0" />
       {/* Fork sits to the RIGHT of copy (review request): copy is the frequent action and
           keeps its accustomed spot; the click only opens the confirmation below — the fork
           request fires on Confirm, never directly. */}
@@ -204,29 +164,33 @@ export function TaskStatsLine({
             onClick={() => setConfirmingFork(true)}
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-300"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className={forking ? "animate-pulse" : ""}
-            >
-              <circle cx="6" cy="5" r="2" />
-              <circle cx="18" cy="7" r="2" />
-              <circle cx="6" cy="19" r="2" />
-              <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
-            </svg>
+            {forking ? (
+              <Spinner size="sm" label={S.common.loading} />
+            ) : (
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <circle cx="6" cy="5" r="2" />
+                <circle cx="18" cy="7" r="2" />
+                <circle cx="6" cy="19" r="2" />
+                <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
+              </svg>
+            )}
           </button>
           <ConfirmModal
             open={confirmingFork}
             title={S.chat.forkSession}
             tone="primary"
             confirmLabel={S.chat.forkSessionConfirmAction}
+            cancelLabel={S.common.cancel}
             busy={forking}
             onClose={() => setConfirmingFork(false)}
             onConfirm={() => {

@@ -30,31 +30,37 @@ import type {
   OrgTicketStatus,
   OrganizationDetail,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  Chevron,
+  EmptyState,
+  GlyphIcon,
+  Heading,
+  ICON_GAP,
+  ICON_SIZE,
+  RuledSection,
+  Segmented,
+  Text,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatRelativeShort } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { Chevron } from "../../components/ui/chevron";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
-import { Segmented } from "../../components/ui/segmented";
-import { toastError } from "../../components/ui/toast";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { orgChannelPath, orgKey, orgPagePath } from "./company-nav";
 import type { CompanyNavKey } from "./company-nav";
 import { CHANNEL_ICON } from "./channel-sidebar";
-import { OrgEmptyLine, OrgPage, OrgPageSkeleton, OrgSection, useOrg } from "./org-layout";
+import { OrgEmptyLine, OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   BudgetBar,
   ErrorLine,
@@ -153,9 +159,9 @@ function SummaryLabel({
 }) {
   return (
     <div className="flex items-start justify-between gap-2">
-      <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <Text variant="eyebrow" as="span" className="block">
         {label}
-      </span>
+      </Text>
       <JumpButton label={jump} onClick={onJump} />
     </div>
   );
@@ -223,9 +229,7 @@ function MissionFold({ mission }: { mission: string }) {
   const toggle = expanded ? S.company.overview.collapse : S.company.overview.expand;
   return (
     <div className="mt-3 max-w-3xl">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {S.company.overview.mission}
-      </p>
+      <Text variant="eyebrow">{S.company.overview.mission}</Text>
       <div className="mt-0.5 flex items-baseline gap-3">
         <p
           ref={textRef}
@@ -511,7 +515,10 @@ export function OverviewPage() {
           period's spend is not repeated here — it is the last cell of the KPI strip. */}
       <header className="min-w-0 border-b border-gray-200 pb-5 dark:border-gray-800">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-2xl font-semibold tracking-tight">{detail.name}</h2>
+          {/* The organization's name on the h1 rung, one outline level under the page title. */}
+          <Heading level={1} as="h2">
+            {detail.name}
+          </Heading>
           <OrgStatusPill org={detail} />
         </div>
         <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
@@ -672,7 +679,7 @@ export function OverviewPage() {
       </div>
 
       {steps.fresh ? (
-        <OrgSection
+        <RuledSection
           title={S.company.overview.firstStepsTitle}
           info={S.company.overview.firstStepsInfo}
           className="mt-8"
@@ -690,11 +697,11 @@ export function OverviewPage() {
               />
             ))}
           </ol>
-        </OrgSection>
+        </RuledSection>
       ) : (
         <>
           {/* The inbox: everything that needs the reader, newest first. */}
-          <OrgSection
+          <RuledSection
             title={S.company.overview.inbox}
             info={S.company.overview.inboxInfo}
             count={inbox.length}
@@ -716,7 +723,7 @@ export function OverviewPage() {
             {visibleInbox.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.inboxEmpty}</OrgEmptyLine>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {visibleInbox.map((row) => (
                   <li key={row.key} className={rowClass}>
                     <span
@@ -754,12 +761,12 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
-          </OrgSection>
+          </RuledSection>
 
           {/* Today's timeline: a dot per instance on a rule, in the tone of its outcome. */}
           {/* No jump of its own: the KPI cell above carries the one button to the calendar,
               and every row's title opens it too. */}
-          <OrgSection title={S.company.overview.today} count={today.total} className="mt-8">
+          <RuledSection title={S.company.overview.today} count={today.total} className="mt-8">
             {today.entries.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.todayEmpty}</OrgEmptyLine>
             ) : (
@@ -800,10 +807,10 @@ export function OverviewPage() {
                 )}
               </ol>
             )}
-          </OrgSection>
+          </RuledSection>
 
           {/* Budget alerts: who, warned or paused, when. */}
-          <OrgSection
+          <RuledSection
             title={S.company.overview.alerts}
             count={detail.alerts.length}
             className="mt-8"
@@ -811,7 +818,7 @@ export function OverviewPage() {
             {detail.alerts.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.alertsEmpty}</OrgEmptyLine>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {detail.alerts.map((a) => (
                   <li key={`${a.agentId}/${a.period}`} className={rowClass}>
                     <TitleButton
@@ -822,9 +829,9 @@ export function OverviewPage() {
                       <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
                     </TitleButton>
                     {a.pausedAt !== undefined ? (
-                      <Badge tone="red">{S.company.finance.paused}</Badge>
+                      <Badge tone="danger">{S.company.finance.paused}</Badge>
                     ) : (
-                      <Badge tone="amber">{S.company.finance.warned}</Badge>
+                      <Badge tone="attention">{S.company.finance.warned}</Badge>
                     )}
                     <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                       {formatRelativeShort(a.pausedAt ?? a.warnedAt ?? "", locale)}
@@ -833,7 +840,7 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
-          </OrgSection>
+          </RuledSection>
         </>
       )}
     </OrgPage>

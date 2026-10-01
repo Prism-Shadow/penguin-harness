@@ -23,10 +23,11 @@
  * tested against the region with `contains`, so where the pointer is decides everything and
  * no state accumulates (see dropRegionAction in lib/file-drop.ts for why that matters).
  *
- * The overlay is pure feedback: `pointer-events-none` (so it never becomes the drag target
- * itself and the hit test keeps seeing the real element underneath), `aria-hidden` — it
- * exists only during a pointer drag, and the accessible entry point stays the "+" menu —
- * and `absolute inset-0` portaled into the region, on the overlay z tier (z-50).
+ * The overlay is the UI package's `DropOverlay` veil, pure feedback: `pointer-events-none` (so
+ * it never becomes the drag target itself and the hit test keeps seeing the real element
+ * underneath), `aria-hidden` — it exists only during a pointer drag, and the accessible entry
+ * point stays the "+" menu — and `absolute inset-0` portaled into the region, on the overlay z
+ * tier (z-50).
  *
  * Interplay with the app-shell guard (see lib/file-drop.ts): over the chat area this
  * component claims the drag — preventDefault on dragover plus a copy cursor — so the guard's
@@ -38,10 +39,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { DropOverlay } from "@prismshadow/penguin-ui";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal, DropRegionAction } from "../../lib/file-drop";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 
 /** The chat area's DOM node, or null when the composer is mounted outside a region. */
@@ -135,18 +136,12 @@ export function FileDropZone({ onFiles }: { onFiles: (files: File[]) => void }) 
 
   if (!active || !region) return null;
   return createPortal(
-    <div
-      aria-hidden
-      className="anim-fade pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-white/70 p-6 backdrop-blur-sm dark:bg-gray-950/70"
-    >
-      <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-gray-400 bg-white/80 px-10 py-8 text-center dark:border-gray-500 dark:bg-gray-900/80">
-        <GlyphIcon d={PAPERCLIP_ICON} size={28} className="text-gray-400 dark:text-gray-500" />
-        <p className="text-base font-medium text-gray-800 dark:text-gray-100">
-          {S.chat.dropFilesTitle}
-        </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.chat.dropFilesDesc}</p>
-      </div>
-    </div>,
+    <DropOverlay
+      variant="veil"
+      glyph={PAPERCLIP_ICON}
+      title={S.chat.dropFilesTitle}
+      description={S.chat.dropFilesDesc}
+    />,
     region,
   );
 }

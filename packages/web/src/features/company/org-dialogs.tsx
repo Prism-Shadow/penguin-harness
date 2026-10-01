@@ -38,6 +38,21 @@ import type {
   OrganizationPatchRequest,
   OrganizationSettings,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ConfirmModal,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  ICON_GAP,
+  InfoPopover,
+  Input,
+  Modal,
+  Select,
+  Textarea,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -47,16 +62,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { ICON_GAP } from "../../lib/icon-scale";
-import { ModelSelect, modelLabel } from "../chat/model-select";
+import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
@@ -119,8 +125,8 @@ function useProjectModels(projectId: string, open: boolean) {
 }
 
 /**
- * The model field: the App's own model picker (ModelSelect in its form shape — the same
- * searchable, grouped, key-configured-first panel the chat composer and the Project's
+ * The model field: the App's own model picker (ModelCatalogSelect in its form shape — the same
+ * searchable, grouped, key-configured-first dialog the chat composer and the Project's
  * default-model setting open), with this field's two extra states around it.
  *
  * Empty is a choice here, not a gap: it means "follow the Project's default", named after
@@ -163,7 +169,7 @@ function ModelField({
         <FieldLabel block={false}>{S.company.modelField}</FieldLabel>
         <InfoPopover label={S.company.modelField}>{S.company.modelInfo}</InfoPopover>
       </span>
-      <ModelSelect
+      <ModelCatalogSelect
         models={list}
         value={value}
         {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
@@ -219,10 +225,8 @@ function WorkspaceField({
         variant="form"
         fieldLabel={S.company.workspaceField}
         emptyLabel={S.company.workspaceEmpty}
-        menuHint={S.company.workspaceMenuHint}
         clearLabel={S.company.workspaceClear}
       />
-      <FieldHint>{S.company.workspaceHint}</FieldHint>
     </div>
   );
 }
@@ -258,7 +262,7 @@ function MissionExamples({
             data-tooltip-content="text"
             disabled={disabled}
             onClick={() => onPick(copy)}
-            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             {copy.name}
           </button>
@@ -836,6 +840,8 @@ export function OrganizationSettingsDialog({
         title={S.company.deleteOrg}
         busy={busy}
         confirmDisabled={typedId.trim() !== orgId}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
       >

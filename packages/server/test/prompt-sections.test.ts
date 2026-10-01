@@ -1,14 +1,17 @@
 /**
- * Integration tests for the Vault / Skills / Schedules prompt-injection config (the
- * memory-style placeholder + toggle + editable prompt pattern): the config route reports
- * effective values plus template facts (placeholder presence, legacy-section presence),
- * toggles and prompts round-trip through PUT …/config, and each feature's
- * POST …/template-placeholder inserts — or, for a legacy hardcoded section, migrates to —
- * its placeholder, with the routers' own permission models (skills member-level,
- * vault/schedules owner-only). The Hooks tab's switch rides on the same config route with no
- * prompt half — `hooks.enabled` decides whether a new Session runs the installed hook packages.
+ * The Vault, Skills and Schedules prompt sections (placeholder, toggle and editable prompt,
+ * as Memory has) and the Hooks switch, all on the Agent config route.
+ *
+ * - A fresh Agent reports the three sections enabled, with default prompts, placeholders
+ *   present and no legacy section.
+ * - Each toggle, a custom prompt (the other sections untouched) and the hook switch (no prompt
+ *   half) round-trip through PUT …/config.
+ * - POST …/template-placeholder migrates a legacy template's hardcoded sections placeholder by
+ *   placeholder, and otherwise inserts {{SCHEDULES}} before # Environment.
+ * - Skills is member-level; the vault and schedules endpoints are owner-only; outsiders get 404
+ *   everywhere.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { LEGACY_SKILLS_SECTION, LEGACY_VAULT_SECTION } from "@prismshadow/penguin-core";
 import type {
   AgentConfigResponse,
@@ -31,7 +34,7 @@ describe("prompt-injection config (vault / skills / schedules)", () => {
   let configPath: string;
   let agentBase: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
@@ -39,17 +42,25 @@ describe("prompt-injection config (vault / skills / schedules)", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-sections", name: "sections" })
+      await owner.post("/api/projects", {
+        projectId: `owner_a-sections_${projects}`,
+        name: "sections",
+      })
     ).json()) as { project: { projectId: string } };
     projectId = created.project.projectId;
     await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" });
     agentBase = `/api/projects/${projectId}/agents/default_agent`;
     configPath = `${agentBase}/config`;
-  });
-
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   const getConfig = async (): Promise<AgentConfigResponse> =>

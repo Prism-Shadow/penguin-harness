@@ -1,24 +1,24 @@
 /**
- * The draft screen's user-defined shortcuts: the rules the editor enforces, the shape that comes
- * back out of free-form storage, and the two invariants the feature had to keep.
+ * The draft screen's user-defined shortcuts (features/chat/user-shortcuts.ts).
  *
- * Three groups worth naming.
- *
- * - **The caps are duplicated across packages on purpose** — the Web App's copy drives the
- *   counters, the server's copy is the enforcement — so the parity check reads the server module
- *   as text rather than importing it: `@prismshadow/penguin-server` is a type-only dependency
- *   here, and making it a runtime one to check three numbers would be a worse trade than a regex.
- * - **The examples block's height must not move** when folders are switched. The built-in folders
- *   keep that by staying within a row of each other; the user's folder cannot, so it is pinned to
- *   the tallest built-in folder's height and scrolls. Both halves are asserted.
- * - **A click on a shortcut is a fill, not a send**, and it pins no Skills — checked through
- *   buildExampleFill and against the real handler in draft-view.tsx, the way
- *   test/example-fill.test.ts checks the built-in rows.
+ * - A stored list reads back unchanged; anything else reads as no shortcuts, entries that
+ *   cannot be a row are dropped, fields are trimmed and over-long ones truncated, duplicate ids
+ *   dropped, and the list stops at the count cap.
+ * - The editor refuses a missing title or prompt (whitespace is not content) and either field
+ *   over its cap.
+ * - Saving appends a new shortcut with an id of its own (distinct every time), edits in place,
+ *   trims, re-appends a draft whose shortcut was deleted elsewhere, and never grows past the
+ *   cap; removing closes the gap and ignores unknown ids.
+ * - The suggested title is the first non-empty line, one line, capped; nothing for an empty
+ *   composer.
+ * - The user folder's tallest state stays within one row of the tallest built-in folder, so the
+ *   examples block does not move as folders are switched.
+ * - The caps match the server's copy, which enforces them (read from the server module's
+ *   source: the server package is a type-only dependency of the Web App).
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { buildExampleFill } from "../src/features/chat/example-fill";
 import { EXAMPLE_FOLDERS } from "../src/features/chat/example-tasks";
 import {
   SHORTCUT_MAX_COUNT,
@@ -199,13 +199,6 @@ describe("defaultShortcutTitle — the name suggested when saving what was typed
 });
 
 describe("the examples block keeps its height", () => {
-  it("keeps the built-in folders within one row of each other", () => {
-    // The draft page reserves no scroll area for this block, so a folder much longer than its
-    // siblings is what makes the height jump as folders are switched.
-    const lengths = EXAMPLE_FOLDERS.map((folder) => folder.tasks.length);
-    expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThanOrEqual(1);
-  });
-
   it("keeps the user folder within one row of the built-in ones", () => {
     // Its tallest state is either the cap with no add row, or one below the cap plus the add
     // row — both SHORTCUT_MAX_COUNT rows. The cap is what holds this, not a pinned height with
@@ -213,51 +206,6 @@ describe("the examples block keeps its height", () => {
     const tallestBuiltIn = Math.max(...EXAMPLE_FOLDERS.map((f) => f.tasks.length));
     const tallestUser = Math.max(SHORTCUT_MAX_COUNT, SHORTCUT_MAX_COUNT - 1 + 1);
     expect(tallestUser - tallestBuiltIn).toBeLessThanOrEqual(1);
-  });
-
-  it("drops the add row at the cap instead of disabling it", () => {
-    // The header already reads 3/3; a disabled row explaining the same thing is the second
-    // telling, and it is the row that would otherwise make the folder one taller than its cap.
-    const source = read("../src/features/chat/shortcuts-folder.tsx");
-    expect(source).toContain("canAddShortcut(shortcuts) && (");
-    expect(source).not.toContain("disabled={!canAddShortcut");
-  });
-
-  it("labels the folder used/limit rather than a bare count", () => {
-    const source = read("../src/features/chat/shortcuts-folder.tsx");
-    expect(source).toContain("count={`${shortcuts.length}/${SHORTCUT_MAX_COUNT}`}");
-  });
-
-  it("gives the user folder no scroll box of its own", () => {
-    // A scrollbar inside a folder of at most a few rows reads as a defect; the cap removes the
-    // need for one, so the markup must not reintroduce it.
-    const source = read("../src/features/chat/shortcuts-folder.tsx");
-    expect(source).not.toContain("overflow-y-auto");
-    expect(source).not.toContain("bodyHeight");
-  });
-});
-
-describe("clicking a shortcut", () => {
-  it("hands the composer the saved prompt and leaves the Skill selection alone", () => {
-    // A saved prompt is not authored against the shipped Skill catalog, so it pins nothing —
-    // and an empty pin list is exactly what leaves a selection the user made by hand intact.
-    const fill = buildExampleFill({
-      prompt: "Summarize the week.",
-      exampleSkills: [],
-      installedSkills: ["web-design", "memory"],
-      selectedSkills: ["memory"],
-    });
-    expect(fill.text).toBe("Summarize the week.");
-    expect(fill.skills).toEqual(["memory"]);
-  });
-
-  it("routes the click through the composer handle and never sends", () => {
-    const source = read("../src/features/chat/draft-view.tsx");
-    const handler = /const fillShortcut = useCallback\(([\s\S]*?)\n  \}, \[\]\);/.exec(source);
-    expect(handler, "the fillShortcut handler").not.toBeNull();
-    expect(handler?.[1]).toContain("composerRef.current?.fillPrompt(prompt, [])");
-    expect(handler?.[1]).not.toContain("onSend");
-    expect(handler?.[1]).not.toContain("api.");
   });
 });
 

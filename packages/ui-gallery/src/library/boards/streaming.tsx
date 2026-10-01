@@ -1,21 +1,19 @@
 /**
  * 流式输出: an assistant reply as it streams in, under the current theme's reveal. A scripted
  * Markdown answer (the streaming demo Session's, src/app/mock/transcripts.ts) arrives in bursty
- * chunks (src/app/mock/stream-script.ts) and goes to the app's own reply body, which paces the
- * reveal by the theme's `--ui-stream-reveal` and `--ui-stream-rate`: Primer shows each chunk at
- * once, Frost fades it in by word under a glowing veil, Console types it out behind a block
- * caret. It plays once on load and again on Replay, always on the same seed, so every theme
- * replays the same chunks at the same gaps and the reveals compare. The caption names the mode
- * read from this frame root.
+ * chunks (src/app/mock/stream-script.ts) and goes to the package's AssistantText — the body the
+ * app renders every reply through — which paces the reveal by the theme's `--ui-stream-reveal`
+ * and `--ui-stream-rate`: Primer shows each chunk at once, Frost fades it in by word under a
+ * glowing veil, Console types it out behind a block caret. It plays once on load and again on
+ * Replay, always on the same seed, so every theme replays the same chunks at the same gaps and
+ * the reveals compare. The caption names the mode read from this frame root.
  *
  * The box is the finished reply's height from the first chunk on (an invisible copy of it
  * shares the live reply's grid cell), so the frame does not grow line by line as text arrives.
  */
 import { useEffect, useMemo, useState } from "react";
-import { STREAM_REVEALS } from "@prismshadow/penguin-ui";
+import { AssistantText, STREAM_REVEALS, usePrefersReducedMotion } from "@prismshadow/penguin-ui";
 import type { StreamReveal } from "@prismshadow/penguin-ui";
-import { usePrefersReducedMotion } from "../../../../web/src/components/ui/use-reduced-motion";
-import { AssistantReplyBody } from "../../../../web/src/features/chat/assistant-reply-body";
 import { streamScript } from "../../app/mock/stream-script";
 import { streamingAnswer } from "../../app/mock/transcripts";
 import { BoardGroup, ReplayButton } from "../../foundations/shared";
@@ -132,11 +130,11 @@ export function StreamingBoard() {
       >
         <div className="lib-box lib-stream">
           <div className="lib-stream-sizer" aria-hidden inert>
-            <AssistantReplyBody text={answer} streaming={false} />
+            <AssistantText text={answer} streaming={false} />
           </div>
           <div className="lib-stream-live">
             {/* A replay mounts a fresh reply, so no pacing state carries over. */}
-            <AssistantReplyBody key={run} text={stream.text} streaming={stream.streaming} />
+            <AssistantText key={run} text={stream.text} streaming={stream.streaming} />
           </div>
         </div>
         {tokens === null ? (

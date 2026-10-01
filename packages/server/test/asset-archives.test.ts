@@ -1,12 +1,17 @@
 /**
  * Pushed assets travel as archives: the deploy packs each package into one deterministic
- * `.tgz` (the same files give the same bytes, so an unchanged package is an unchanged blob), and
- * the platform unpacks `archives/` once into `.unpacked/` before resolving from it.
+ * `.tgz`, and the platform unpacks `archives/` once into `.unpacked/` before resolving from it.
+ *
+ * - The same files give the same bytes whatever their order, their mtimes on disk and the
+ *   clock at packing time, so an unchanged package is an unchanged blob; a scoped package's
+ *   archive is named flat.
+ * - Unpacking happens once (a marker records completion), keeps exec bits, is redone from
+ *   scratch after a crash mid-extraction, and leaves a directory without archives alone.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UNPACKED_DIR, unpackedAssetsDir } from "../src/hmr/asset-archives.js";
 // @ts-expect-error — a plain .mjs build script, no declarations.
 import { archiveName, packArchive } from "../../../scripts/asset-archives.mjs";
@@ -40,9 +45,16 @@ describe("asset archives", () => {
       "node_modules/a/package.json": "{}",
     });
     const first = (await packArchive(entries)) as Buffer;
-    await new Promise((r) => setTimeout(r, 1100)); // a later mtime on disk must not show
-    const second = (await packArchive([...entries].reverse())) as Buffer;
-    expect(first.equals(second)).toBe(true);
+    // An hour later, on disk and on the clock: neither may show in the bytes.
+    const later = new Date(Date.now() + 3_600_000);
+    for (const entry of entries) await fs.utimes(entry.abs, later, later);
+    vi.useFakeTimers({ toFake: ["Date"], now: later });
+    try {
+      const second = (await packArchive([...entries].reverse())) as Buffer;
+      expect(first.equals(second)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(archiveName("plugins.", "@scope/name")).toBe("plugins.scope__name.tgz");
   });
 

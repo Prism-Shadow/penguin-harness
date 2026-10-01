@@ -20,9 +20,9 @@
  * - **Keyboard**: the search field keeps focus the whole time and drives a highlight (the
  *   combobox pattern, via `aria-activedescendant`), so typing always lands in it. ↑/↓ walk the
  *   list or the rail, ←/→ or Tab switch between them, ⌥1–9 (Alt off macOS) jump to a group,
- *   Enter chooses, Escape closes (the Modal's esc layer, so a picker opened from a dialog closes
- *   alone). Rows and rail entries are not in the Tab order, and no click takes focus away
- *   from the search field.
+ *   Enter chooses, Escape empties a typed query first (the shared search box) and then closes
+ *   (the Modal's esc layer, so a picker opened from a dialog closes alone). Rows and rail
+ *   entries are not in the Tab order, and no click takes focus away from the search field.
  * - **Phone width**: the dialog fills the screen and the rail becomes a strip of group chips
  *   scrolling sideways above the list.
  *
@@ -32,14 +32,17 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
+import {
+  ChoiceCheck,
+  CloseButton,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Modal,
+  ProviderLogo,
+  SearchInput,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseButton } from "../../components/ui/icons";
-import { Modal } from "../../components/ui/modal";
-import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ProviderLogo } from "../../components/ui/provider-logo";
-import { ChoiceCheck } from "../../components/ui/field";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { TAG_SHAPE } from "../models/model-tags";
@@ -57,13 +60,6 @@ import {
   stepIndex,
 } from "./model-picker-logic";
 import type { PickerGroup, PickerNavKey, PickerRegion } from "./model-picker-logic";
-
-/**
- * "No key" marker for key-less rows: a key struck through by a prohibition slash (24x24 line
- * art, grayscale via currentColor, matching the approval-mode icon style).
- */
-const NO_KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
 
 const NAV_KEYS: Record<string, PickerNavKey> = {
   ArrowUp: "up",
@@ -294,7 +290,7 @@ function ModelPickerBody({
               aria-label={S.models.noKey}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <GlyphIcon d={NO_KEY_ICON} size={ICON_SIZE.inlineGlyph} />
+              <GlyphIcon d={ICONS.keyOff} size={ICON_SIZE.inlineGlyph} />
             </span>
           )}
           <ChoiceCheck on={current} />
@@ -319,12 +315,13 @@ function ModelPickerBody({
       className="flex h-[calc(100dvh_-_env(safe-area-inset-bottom))] flex-col pt-[env(safe-area-inset-top)] sm:h-[min(32rem,80vh)] sm:pt-0"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2.5 dark:border-gray-800">
-        <input
+        <SearchInput
           ref={inputRef}
+          variant="panel"
           autoFocus
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
+          onChange={(next) => {
+            setQuery(next);
             setSearchRow(0);
           }}
           placeholder={S.models.searchPlaceholder}
@@ -334,8 +331,7 @@ function ModelPickerBody({
           aria-controls={listId}
           aria-autocomplete="list"
           {...(highlighted ? { "aria-activedescendant": optionId(highlighted) } : {})}
-          {...noAutofill}
-          className={`${panelSearchClass} min-w-0 flex-1 px-2.5 py-1.5`}
+          className="min-w-0 flex-1"
         />
         <CloseButton onClose={onClose} />
       </div>

@@ -25,6 +25,20 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ChevronDown,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  NoticeStrip,
+  PageFrame,
+  PageHeader,
+  SearchInput,
+  Skeleton,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
@@ -33,14 +47,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
-import { Dropdown } from "../../components/ui/dropdown";
-import { Skeleton } from "../../components/ui/skeleton";
-import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
   anyJobPending,
@@ -57,7 +64,6 @@ import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machin
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 import { SshHostDialog } from "./ssh-host-dialog";
 import type { HostFormMode } from "./ssh-host-dialog";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
@@ -70,8 +76,6 @@ const POLL_MS = 1500;
 const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
 const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
 
-/** The + in the picker's foot: a new host for the ssh config. */
-const PLUS_PATH = "M12 5v14M5 12h14";
 /** The expand verb's glyph, on the 24-grid like the others; turned over when unfolded. */
 const CHEVRON_PATH = "M6 9l6 6 6-6";
 /** Select all: a box with a check. Select none: the empty box. */
@@ -323,11 +327,13 @@ export function MachinesPage() {
   const noImage = state !== null && imageVersion === null;
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="ui-display text-xl font-semibold">{S.machines.pageTitle}</h1>
-          <div className="flex items-center gap-2">
+    <PageFrame width="sm">
+      {/* The notices belong to the header: they sit under the title, and the selection bar
+          keeps one gap below whichever block ends the header. */}
+      <PageHeader
+        title={S.machines.pageTitle}
+        actions={
+          <>
             {behind.length > 0 && (
               <Button
                 size="sm"
@@ -359,15 +365,13 @@ export function MachinesPage() {
               {/* The search row: matched characters bright and the rest dimmed — with a
                   subsequence match, an unmarked row looks wrong. */}
               <div className="px-2 pt-2 pb-1">
-                <input
-                  type="search"
+                <SearchInput
+                  variant="panel"
                   autoFocus
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={setQuery}
                   placeholder={S.machines.search}
                   aria-label={S.machines.search}
-                  {...noAutofill}
-                  className={`${panelSearchClass} px-2.5 py-1.5`}
                 />
               </div>
               <ul
@@ -440,7 +444,7 @@ export function MachinesPage() {
                 <Verb
                   label={S.machines.host.newVerb}
                   title={S.machines.host.addTitle}
-                  d={PLUS_PATH}
+                  d={ICONS.plus}
                   onClick={() => {
                     setPickerOpen(false);
                     setHostForm({ kind: "add" });
@@ -466,21 +470,9 @@ export function MachinesPage() {
                 </div>
               )}
             </Dropdown>
-          </div>
-        </div>
-        {projectId !== null && hostForm !== null && (
-          <SshHostDialog
-            key={hostForm.kind === "edit" ? hostForm.host.alias : "add"}
-            mode={hostForm}
-            projectId={projectId}
-            onClose={() => setHostForm(null)}
-            onSaved={(next) => {
-              setState(next);
-              setError(null);
-            }}
-          />
-        )}
-
+          </>
+        }
+      >
         {error !== null && (
           <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {error}
@@ -491,85 +483,97 @@ export function MachinesPage() {
             {S.machines.noImage}
           </NoticeStrip>
         )}
+      </PageHeader>
+      {projectId !== null && hostForm !== null && (
+        <SshHostDialog
+          key={hostForm.kind === "edit" ? hostForm.host.alias : "add"}
+          mode={hostForm}
+          projectId={projectId}
+          onClose={() => setHostForm(null)}
+          onSaved={(next) => {
+            setState(next);
+            setError(null);
+          }}
+        />
+      )}
 
-        {/* The selection bar: a fixed slot between the title and the cards, so the cards
-            never move when a selection appears or goes. The count is the slot's label; on the
-            right, select all and none, then the two verbs — bare glyphs here (see Verb), each
-            dimmed when it would do nothing. */}
-        <div className="mt-3 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
-          <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
-          <span className="ml-auto flex flex-wrap items-center gap-1">
-            <Verb
-              wordless
-              label={S.machines.pickAll}
-              d={SELECT_ALL_PATH}
-              disabled={inUse.length === 0 || selectedIds.length === inUse.length}
-              onClick={pickAll}
-            />
-            <Verb
-              wordless
-              label={S.machines.pickNone}
-              d={SELECT_NONE_PATH}
-              disabled={selectedIds.length === 0}
-              onClick={pickNone}
-            />
-            <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-            <Verb
-              wordless
-              label={S.machines.use}
-              d={PLUG_PATH}
-              disabled={selectedIds.length === 0 || posting || noImage}
-              onClick={() => void use(selectedIds)}
-            />
-            <Verb
-              wordless
-              label={S.machines.stopUsing}
-              d={UNPLUG_PATH}
-              disabled={selectedIds.length === 0 || posting}
-              onClick={() => void stopUsing(selectedIds)}
-            />
-          </span>
-        </div>
-
-        {state === null ? (
-          <Skeleton className="h-40 w-full rounded-xl" />
-        ) : (
-          <ul className="space-y-2">
-            {local !== null && (
-              <LocalCard
-                machine={local}
-                locale={locale}
-                open={expanded.has(local.id)}
-                onToggleOpen={() => toggleExpanded(local.id)}
-              />
-            )}
-            {inUse.map((machine) => (
-              <MachineCard
-                key={machine.id}
-                machine={machine}
-                job={jobFor(jobs, machine.id)}
-                imageVersion={imageVersion}
-                locale={locale}
-                selected={selection.has(machine.id)}
-                onToggle={() => togglePicked(machine.id)}
-                open={expanded.has(machine.id)}
-                onToggleOpen={() => toggleExpanded(machine.id)}
-                busy={posting}
-                onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
-                onStopUsing={() => void stopUsing([machine.id])}
-                onConfigure={() => void configure(machine.alias)}
-              />
-            ))}
-            {inUse.length === 0 && (
-              <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700">
-                <p>{S.machines.noneInUse}</p>
-                <p className="mt-1 text-xs">{S.machines.sshHint}</p>
-              </li>
-            )}
-          </ul>
-        )}
+      {/* The selection bar: a fixed slot between the title and the cards, so the cards
+          never move when a selection appears or goes. The count is the slot's label; on the
+          right, select all and none, then the two verbs — bare glyphs here (see Verb), each
+          dimmed when it would do nothing. */}
+      <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
+        <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
+        <span className="ml-auto flex flex-wrap items-center gap-1">
+          <Verb
+            wordless
+            label={S.machines.pickAll}
+            d={SELECT_ALL_PATH}
+            disabled={inUse.length === 0 || selectedIds.length === inUse.length}
+            onClick={pickAll}
+          />
+          <Verb
+            wordless
+            label={S.machines.pickNone}
+            d={SELECT_NONE_PATH}
+            disabled={selectedIds.length === 0}
+            onClick={pickNone}
+          />
+          <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
+          <Verb
+            wordless
+            label={S.machines.use}
+            d={PLUG_PATH}
+            disabled={selectedIds.length === 0 || posting || noImage}
+            onClick={() => void use(selectedIds)}
+          />
+          <Verb
+            wordless
+            label={S.machines.stopUsing}
+            d={UNPLUG_PATH}
+            disabled={selectedIds.length === 0 || posting}
+            onClick={() => void stopUsing(selectedIds)}
+          />
+        </span>
       </div>
-    </div>
+
+      {state === null ? (
+        <Skeleton className="h-40 w-full rounded-xl" />
+      ) : (
+        <ul className="space-y-2">
+          {local !== null && (
+            <LocalCard
+              machine={local}
+              locale={locale}
+              open={expanded.has(local.id)}
+              onToggleOpen={() => toggleExpanded(local.id)}
+            />
+          )}
+          {inUse.map((machine) => (
+            <MachineCard
+              key={machine.id}
+              machine={machine}
+              job={jobFor(jobs, machine.id)}
+              imageVersion={imageVersion}
+              locale={locale}
+              selected={selection.has(machine.id)}
+              onToggle={() => togglePicked(machine.id)}
+              open={expanded.has(machine.id)}
+              onToggleOpen={() => toggleExpanded(machine.id)}
+              busy={posting}
+              onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
+              onStopUsing={() => void stopUsing([machine.id])}
+              onConfigure={() => void configure(machine.alias)}
+            />
+          ))}
+          {inUse.length === 0 && (
+            <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700">
+              <p>{S.machines.noneInUse}</p>
+              <p className="mt-1 text-xs">{S.machines.sshHint}</p>
+            </li>
+          )}
+        </ul>
+      )}
+    </PageFrame>
   );
 }
 
@@ -843,7 +847,7 @@ function MachineCard({
           <Verb
             label={S.machines.host.configureVerb}
             title={S.machines.host.configure}
-            d={GEAR_ICON}
+            d={ICONS.gear}
             disabled={busy}
             onClick={onConfigure}
           />

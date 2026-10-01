@@ -11,8 +11,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
+import { Button, NoticeStrip } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { Button } from "../../components/ui/button";
 import { formatDateTime } from "../../lib/format";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
@@ -33,7 +33,6 @@ import {
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat/skill-use";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
 export function useWorkflowTabs(
@@ -96,7 +95,7 @@ const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 const TAB_BASE =
   "relative h-9 shrink-0 border-b-2 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
-const TAB_ACTIVE = "border-[var(--accent-bg)] font-medium text-gray-900 dark:text-gray-100";
+const TAB_ACTIVE = "border-accent font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 
@@ -119,7 +118,7 @@ export function WorkflowTabStrip({
       {notices.map((n) => (
         <NoticeStrip
           key={n.workflowId}
-          tone={n.error === null ? "muted" : "attention"}
+          tone={n.error === null ? "neutral" : "attention"}
           role="status"
           className="shrink-0 truncate px-3 py-1 text-xs"
           data-tooltip={n.error ?? n.hints.join("\n")}
@@ -372,12 +371,12 @@ export function WorkflowFrame({
         )}
       </div>
       {tab.error !== null && !bare && (
-        <NoticeStrip tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
           {S.workflows.loadError}: {tab.error}
         </NoticeStrip>
       )}
       {failure !== null && (
-        <NoticeStrip tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
           {failure}
         </NoticeStrip>
       )}

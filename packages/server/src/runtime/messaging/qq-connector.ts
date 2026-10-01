@@ -665,9 +665,10 @@ export class QqMessaging {
 }
 
 /** The QQ OpenAPI + gateway transport as a node, so a test stands in a fake for the network. */
-export abstract class QQTransportHandle extends Interface<{
-  transport: Opaque<"QQTransport", QQTransport>;
-}>() {}
+@Interface()
+export abstract class QQTransportHandle {
+  abstract transport: Opaque<"QQTransport", QQTransport>;
+}
 @Module()
 export class QQTransportProvider {
   @Provide() qqTransport!: QQTransportHandle;

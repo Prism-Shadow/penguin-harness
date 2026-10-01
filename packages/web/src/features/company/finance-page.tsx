@@ -33,11 +33,36 @@ import type {
   OrgEmployeeState,
   OrgFinanceResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Chevron,
+  CloseIcon,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  InfoPopover,
+  Segmented,
+  StatTile,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  noAutofill,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatPercent } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
@@ -45,24 +70,14 @@ import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon, NAV_ICONS } from "../../components/ui/icons";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { noAutofill } from "../../components/ui/input";
-import { Segmented } from "../../components/ui/segmented";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { TrendChart } from "../usage/trend-chart";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
+  ErrorLine,
   INVALID_ICON,
   MoneyPerMonthUnit,
   PrincipalChip,
-  StatTile,
   StoredUsdNote,
   TicketStatusBadge,
   TitleButton,
@@ -86,20 +101,13 @@ import {
 } from "./finance-tree";
 import type { SpendStateKey } from "./finance-tree";
 import { agentPrincipal } from "./principals";
-import { NoticeStrip } from "../../components/ui/notice-strip";
-
-/** Pencil (lucide): the budget cell's edit affordance. */
-const PENCIL_ICON =
-  "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4";
 
 /** Percent (lucide percent): the ratio tile's glyph. */
 const PERCENT_ICON =
   "M19 5 5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z";
 
-const cellClass = "px-2 py-2 text-right tabular-nums";
-const headClass = "px-2 py-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400";
 const iconButtonClass =
-  "inline-flex items-center justify-center rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200";
+  "inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200";
 
 /** The tree's indentation step per reporting depth, and the elbow that joins a child to the row above. */
 const INDENT_PX = 20;
@@ -123,7 +131,7 @@ function TreeElbow() {
 function StateMark({ tone, children }: { tone: Tone; children: string }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} text-[11px] ${toneInk[tone]}`}
+      className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} text-xs ${toneInk[tone]}`}
     >
       <span className={`block h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
       {children}
@@ -139,9 +147,10 @@ function stateMarkLabel(key: SpendStateKey): string {
 }
 
 /**
- * One panel of the finance page: a bordered card with its title inside it and the "?" anchored
- * to that title — the shape the KPI tiles and the cost centre's charts already use. The
- * period switch is the page's, not a panel's, so a card carries no controls of its own.
+ * One panel of the finance page: the package's card with its title inside it and the "?"
+ * anchored to that title — the shape the KPI tiles and the cost centre's charts already use.
+ * The period switch is the page's, not a panel's, so a card carries no controls of its own.
+ * The title sits under the page's own, so it is an h2.
  */
 function FinanceCard({
   title,
@@ -155,17 +164,10 @@ function FinanceCard({
   className?: string;
 }) {
   return (
-    <section
-      className={`min-w-0 rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900 ${className}`}
-    >
-      <h2
-        className={`mb-2 flex min-w-0 items-center ${ICON_GAP.row} text-xs font-medium text-gray-500 dark:text-gray-400`}
-      >
-        {title}
-        {info !== undefined && <InfoPopover label={title}>{info}</InfoPopover>}
-      </h2>
+    <Card as="section" className={className}>
+      <CardHeader title={title} {...(info !== undefined ? { info } : {})} level={2} />
       {children}
-    </section>
+    </Card>
   );
 }
 
@@ -205,7 +207,7 @@ function BudgetEditor({
   return (
     <span
       ref={wrapRef}
-      className="inline-flex flex-col items-end gap-0.5"
+      className="inline-flex flex-col items-end gap-1"
       onBlur={(e) => {
         if (!wrapRef.current?.contains(e.relatedTarget as Node | null)) commit();
       }}
@@ -257,7 +259,7 @@ function BudgetEditor({
           <CloseIcon />
         </button>
       </span>
-      <span className="text-[10px] text-gray-400 dark:text-gray-500">
+      <span className="text-xs text-gray-400 dark:text-gray-500">
         {S.company.finance.budgetEmptyHint}
       </span>
       <StoredUsdNote usd={toStoredUsd(text, currency)} currency={currency} />
@@ -442,17 +444,12 @@ export function FinancePage() {
   return (
     <OrgPage title={S.nav.org.finance} info={S.company.finance.info} actions={periodSwitch}>
       {error !== null && (
-        <NoticeStrip
-          tone="danger"
-          className="mb-4 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs"
-        >
-          <span>
-            {S.company.finance.refreshFailed} · {error}
-          </span>
-          <Button size="sm" onClick={() => void load()}>
-            {S.common.retry}
-          </Button>
-        </NoticeStrip>
+        <ErrorLine
+          message={S.company.finance.refreshFailed}
+          detail={error}
+          onRetry={() => void load()}
+          className="mb-4"
+        />
       )}
       <div className={stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
         {/* Top row: what the period cost against the budget, beside how it accumulated. */}
@@ -527,143 +524,137 @@ export function FinancePage() {
             below the threshold they stack rather than scroll sideways. */}
         <div className="mt-4 grid grid-cols-1 gap-4 2xl:grid-cols-2">
           <FinanceCard title={S.company.finance.spendTree} info={S.company.finance.spendTreeInfo}>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[20rem] text-xs">
-                <thead>
-                  <tr>
-                    <th className={`${headClass} text-left`}>{S.company.overview.employees}</th>
-                    <th className={`${headClass} text-left`}>{S.company.status}</th>
-                    <th className={`${headClass} text-right`}>
-                      <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
-                        {S.company.finance.cumulativeBudget}
-                        <InfoPopover label={S.company.finance.cumulativeBudget}>
-                          {S.company.finance.cumulativeInfo}
-                        </InfoPopover>
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-                  {rows.map(({ employee, depth }) => {
-                    const editing = editingId === employee.agentId;
-                    const marks = spendStateMarks(employee, states.get(employee.agentId));
-                    return (
-                      <tr
-                        key={employee.agentId}
-                        data-tooltip={spendRowTooltip(
-                          employee,
-                          {
-                            own: S.company.finance.own,
-                            cumulative: S.company.finance.cumulative,
-                            budget: S.company.finance.budget,
-                            noBudget: S.company.noBudget,
-                          },
-                          (value) => formatMoney(value, currency),
-                        )}
-                      >
-                        <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
-                          <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
-                            {depth > 0 && <TreeElbow />}
-                            <AgentAvatar
-                              id={employee.agentId}
-                              name={employee.name}
-                              size={ICON_SIZE.navRow}
-                              className="shrink-0 rounded"
-                            />
-                            <span className="truncate font-medium text-gray-900 dark:text-gray-100">
-                              {employee.name}
-                            </span>
-                            {employee.reportsTo === null &&
-                              employee.title.trim().toLowerCase() !== "ceo" && (
-                                <Badge tone="gray">{S.company.ceo}</Badge>
-                              )}
-                            <span className="truncate text-gray-400 dark:text-gray-500">
-                              {employee.title}
-                            </span>
+            <Table size="sm" framed={false} tableClassName="min-w-[20rem]">
+              <TableHead>
+                <TableHeaderCell>{S.company.overview.employees}</TableHeaderCell>
+                <TableHeaderCell>{S.company.status}</TableHeaderCell>
+                <TableHeaderCell align="right">
+                  <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
+                    {S.company.finance.cumulativeBudget}
+                    <InfoPopover label={S.company.finance.cumulativeBudget}>
+                      {S.company.finance.cumulativeInfo}
+                    </InfoPopover>
+                  </span>
+                </TableHeaderCell>
+              </TableHead>
+              <TableBody>
+                {rows.map(({ employee, depth }) => {
+                  const editing = editingId === employee.agentId;
+                  const marks = spendStateMarks(employee, states.get(employee.agentId));
+                  return (
+                    <TableRow
+                      key={employee.agentId}
+                      data-tooltip={spendRowTooltip(
+                        employee,
+                        {
+                          own: S.company.finance.own,
+                          cumulative: S.company.finance.cumulative,
+                          budget: S.company.finance.budget,
+                          noBudget: S.company.noBudget,
+                        },
+                        (value) => formatMoney(value, currency),
+                      )}
+                    >
+                      <TableCell style={{ paddingLeft: 8 + depth * INDENT_PX }}>
+                        <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
+                          {depth > 0 && <TreeElbow />}
+                          <AgentAvatar
+                            id={employee.agentId}
+                            name={employee.name}
+                            size={ICON_SIZE.navRow}
+                            className="shrink-0 rounded"
+                          />
+                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">
+                            {employee.name}
                           </span>
-                        </td>
-                        {/* How the employee stands: what it is doing right now, and what its
+                          {employee.reportsTo === null &&
+                            employee.title.trim().toLowerCase() !== "ceo" && (
+                              <Badge>{S.company.ceo}</Badge>
+                            )}
+                          <span className="truncate text-gray-400 dark:text-gray-500">
+                            {employee.title}
+                          </span>
+                        </span>
+                      </TableCell>
+                      {/* How the employee stands: what it is doing right now, and what its
                             budget has done to it. Empty while the chart join is in flight and
                             nothing has crossed a threshold — an empty cell says exactly that. */}
-                        <td className="whitespace-nowrap px-2 py-2">
-                          <span className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
-                            {marks.map((mark) => (
-                              <StateMark key={mark.key} tone={mark.tone}>
-                                {stateMarkLabel(mark.key)}
-                              </StateMark>
-                            ))}
-                          </span>
-                        </td>
-                        {/* The meter carries the percent, the amounts follow it, and the budget
+                      <TableCell nowrap>
+                        <span className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
+                          {marks.map((mark) => (
+                            <StateMark key={mark.key} tone={mark.tone}>
+                              {stateMarkLabel(mark.key)}
+                            </StateMark>
+                          ))}
+                        </span>
+                      </TableCell>
+                      {/* The meter carries the percent, the amounts follow it, and the budget
                             half of them is the button that edits it — so the pencil still sits
                             on the number it changes. Own spend rides in the row's tooltip. */}
-                        <td className={`${cellClass} whitespace-nowrap`}>
-                          {editing ? (
-                            <BudgetEditor
-                              initial={employee.budget}
-                              name={employee.name}
-                              currency={currency}
-                              busy={busy}
-                              onSave={(value) => void saveBudget(employee.agentId, value)}
-                              onCancel={() => setEditingId(null)}
-                            />
-                          ) : (
-                            <span className={`flex items-center ${ICON_GAP.menu}`}>
-                              {/* Fixed width, first in the cell: every meter then starts at the
+                      <TableCell numeric nowrap>
+                        {editing ? (
+                          <BudgetEditor
+                            initial={employee.budget}
+                            name={employee.name}
+                            currency={currency}
+                            busy={busy}
+                            onSave={(value) => void saveBudget(employee.agentId, value)}
+                            onCancel={() => setEditingId(null)}
+                          />
+                        ) : (
+                          <span className={`flex items-center ${ICON_GAP.menu}`}>
+                            {/* Fixed width, first in the cell: every meter then starts at the
                                   same x and the column reads as one chart. */}
-                              <span className="w-20 shrink-0">
-                                <SpendMeter
-                                  label={spendLabel(
-                                    employee.cumulative,
-                                    employee.budget,
-                                    employee.ratio,
-                                  )}
-                                  {...(employee.ratio !== undefined
-                                    ? { ratio: employee.ratio }
-                                    : {})}
-                                />
-                              </span>
-                              <span className="flex-1 text-right">
-                                <span className="font-semibold text-gray-900 dark:text-gray-100">
-                                  {formatMoney(employee.cumulative, currency)}
-                                </span>
-                                <span aria-hidden className="px-1 text-gray-300 dark:text-gray-600">
-                                  {employee.budget === undefined ? "·" : "/"}
-                                </span>
-                                <button
-                                  type="button"
-                                  data-tooltip={S.company.finance.editBudget}
-                                  aria-label={S.company.finance.editBudgetOf(employee.name)}
-                                  onClick={() => setEditingId(employee.agentId)}
-                                  className={`group inline-flex items-center ${ICON_GAP.tight} rounded px-1 py-0.5 tabular-nums transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-                                >
-                                  <span
-                                    className={
-                                      employee.budget === undefined
-                                        ? "text-gray-400 dark:text-gray-500"
-                                        : "text-gray-900 dark:text-gray-100"
-                                    }
-                                  >
-                                    {employee.budget === undefined
-                                      ? S.company.noBudget
-                                      : formatMoney(employee.budget, currency)}
-                                  </span>
-                                  <GlyphIcon
-                                    d={PENCIL_ICON}
-                                    size={ICON_SIZE.inlineGlyph}
-                                    className="text-gray-300 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-300"
-                                  />
-                                </button>
-                              </span>
+                            <span className="w-20 shrink-0">
+                              <SpendMeter
+                                label={spendLabel(
+                                  employee.cumulative,
+                                  employee.budget,
+                                  employee.ratio,
+                                )}
+                                {...(employee.ratio !== undefined ? { ratio: employee.ratio } : {})}
+                              />
                             </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                            <span className="flex-1 text-right">
+                              <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                {formatMoney(employee.cumulative, currency)}
+                              </span>
+                              <span aria-hidden className="px-1 text-gray-300 dark:text-gray-600">
+                                {employee.budget === undefined ? "·" : "/"}
+                              </span>
+                              <button
+                                type="button"
+                                data-tooltip={S.company.finance.editBudget}
+                                aria-label={S.company.finance.editBudgetOf(employee.name)}
+                                onClick={() => setEditingId(employee.agentId)}
+                                className={`group inline-flex items-center ${ICON_GAP.tight} rounded px-1 py-0.5 tabular-nums transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+                              >
+                                <span
+                                  className={
+                                    employee.budget === undefined
+                                      ? "text-gray-400 dark:text-gray-500"
+                                      : "text-gray-900 dark:text-gray-100"
+                                  }
+                                >
+                                  {employee.budget === undefined
+                                    ? S.company.noBudget
+                                    : formatMoney(employee.budget, currency)}
+                                </span>
+                                <GlyphIcon
+                                  d={ICONS.pencil}
+                                  size={ICON_SIZE.inlineGlyph}
+                                  className="text-gray-300 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-300"
+                                />
+                              </button>
+                            </span>
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </FinanceCard>
 
           <FinanceCard title={S.company.finance.ticketsTable} info={S.company.finance.ticketsInfo}>
@@ -672,97 +663,95 @@ export function FinancePage() {
                 {S.company.finance.ticketsEmpty}
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[17rem] text-xs">
-                  <thead>
-                    <tr>
-                      <th className={`${headClass} text-left`}>{S.nav.org.tickets}</th>
-                      <th className={`${headClass} text-left`}>{S.company.status}</th>
-                      <th className={`${headClass} text-right`}>
-                        <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
-                          {S.company.finance.rolledUp}
-                          <InfoPopover label={S.company.finance.rolledUp}>
-                            {S.company.finance.rolledUpInfo}
-                          </InfoPopover>
-                        </span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-                    {ticketRows.map(({ ticket, depth, children }) => {
-                      const owner = owners.get(ticket.ticketId);
-                      const open = expandedTickets.has(ticket.ticketId);
-                      return (
-                        // The id, the owner and the ticket's own cost ride in the row's
-                        // tooltip: three columns the table cannot afford beside the spend tree.
-                        <tr
-                          key={ticket.ticketId}
-                          data-tooltip={ticketRowTooltip(
-                            ticket,
-                            owner === undefined ? undefined : principalLabel(owner, names),
-                            {
-                              owner: S.company.tickets.owner,
-                              noOwner: S.company.tickets.noOwner,
-                              cost: S.company.tickets.cost,
-                              rolledUp: S.company.finance.rolledUp,
-                            },
-                            (value) => formatMoney(value, currency),
-                          )}
-                        >
-                          <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
-                            <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
-                              {depth > 0 && <TreeElbow />}
-                              {children > 0 ? (
-                                <button
-                                  type="button"
-                                  aria-expanded={open}
-                                  data-tooltip={
-                                    open
-                                      ? S.company.finance.collapseChildren
-                                      : S.company.finance.expandChildren
-                                  }
-                                  aria-label={`${
-                                    open
-                                      ? S.company.finance.collapseChildren
-                                      : S.company.finance.expandChildren
-                                  } · ${ticket.title}`}
-                                  onClick={() => toggleTicket(ticket.ticketId)}
-                                  className={`${iconButtonClass} ${FOLD_BOX}`}
-                                >
-                                  <Chevron open={open} size={ICON_SIZE.chevronDense} />
-                                </button>
-                              ) : (
-                                <span aria-hidden className={FOLD_BOX} />
-                              )}
-                              {/* The title is the link; the rest of the row reads. */}
-                              <TitleButton
-                                className="truncate font-medium text-gray-900 dark:text-gray-100"
-                                title={S.company.finance.openTicket}
-                                onClick={() => openTicket(ticket.ticketId)}
+              <Table size="sm" framed={false} tableClassName="min-w-[17rem]">
+                <TableHead>
+                  <TableHeaderCell>{S.nav.org.tickets}</TableHeaderCell>
+                  <TableHeaderCell>{S.company.status}</TableHeaderCell>
+                  <TableHeaderCell align="right">
+                    <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
+                      {S.company.finance.rolledUp}
+                      <InfoPopover label={S.company.finance.rolledUp}>
+                        {S.company.finance.rolledUpInfo}
+                      </InfoPopover>
+                    </span>
+                  </TableHeaderCell>
+                </TableHead>
+                <TableBody>
+                  {ticketRows.map(({ ticket, depth, children }) => {
+                    const owner = owners.get(ticket.ticketId);
+                    const open = expandedTickets.has(ticket.ticketId);
+                    return (
+                      // The id, the owner and the ticket's own cost ride in the row's
+                      // tooltip: three columns the table cannot afford beside the spend tree.
+                      <TableRow
+                        key={ticket.ticketId}
+                        data-tooltip={ticketRowTooltip(
+                          ticket,
+                          owner === undefined ? undefined : principalLabel(owner, names),
+                          {
+                            owner: S.company.tickets.owner,
+                            noOwner: S.company.tickets.noOwner,
+                            cost: S.company.tickets.cost,
+                            rolledUp: S.company.finance.rolledUp,
+                          },
+                          (value) => formatMoney(value, currency),
+                        )}
+                      >
+                        <TableCell style={{ paddingLeft: 8 + depth * INDENT_PX }}>
+                          <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
+                            {depth > 0 && <TreeElbow />}
+                            {children > 0 ? (
+                              <button
+                                type="button"
+                                aria-expanded={open}
+                                data-tooltip={
+                                  open
+                                    ? S.company.finance.collapseChildren
+                                    : S.company.finance.expandChildren
+                                }
+                                aria-label={`${
+                                  open
+                                    ? S.company.finance.collapseChildren
+                                    : S.company.finance.expandChildren
+                                } · ${ticket.title}`}
+                                onClick={() => toggleTicket(ticket.ticketId)}
+                                className={`${iconButtonClass} ${FOLD_BOX}`}
                               >
-                                {ticket.title}
-                              </TitleButton>
-                              {children > 0 && !open && (
-                                <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                                  {S.company.finance.childCount(children)}
-                                </span>
-                              )}
-                            </span>
-                          </td>
-                          <td className="whitespace-nowrap px-2 py-2">
-                            <TicketStatusBadge status={ticket.status} />
-                          </td>
-                          <td
-                            className={`${cellClass} whitespace-nowrap font-semibold text-gray-900 dark:text-gray-100`}
-                          >
-                            {formatMoney(ticket.rolledUp, currency)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                                <Chevron open={open} size={ICON_SIZE.chevronDense} />
+                              </button>
+                            ) : (
+                              <span aria-hidden className={FOLD_BOX} />
+                            )}
+                            {/* The title is the link; the rest of the row reads. */}
+                            <TitleButton
+                              className="truncate font-medium text-gray-900 dark:text-gray-100"
+                              title={S.company.finance.openTicket}
+                              onClick={() => openTicket(ticket.ticketId)}
+                            >
+                              {ticket.title}
+                            </TitleButton>
+                            {children > 0 && !open && (
+                              <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                                {S.company.finance.childCount(children)}
+                              </span>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell nowrap>
+                          <TicketStatusBadge status={ticket.status} />
+                        </TableCell>
+                        <TableCell
+                          numeric
+                          nowrap
+                          className="font-semibold text-gray-900 dark:text-gray-100"
+                        >
+                          {formatMoney(ticket.rolledUp, currency)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             )}
           </FinanceCard>
         </div>
@@ -777,7 +766,7 @@ export function FinancePage() {
               {S.company.finance.alertsEmpty}
             </p>
           ) : (
-            <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
               <AlertGroup
                 title={S.company.finance.pausedGroup}
                 tone="danger"
@@ -792,7 +781,7 @@ export function FinancePage() {
               />
             </div>
           )}
-          <p className="mt-3 text-[11px] text-gray-400 dark:text-gray-500">
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
             {S.company.finance.alertsHint}
           </p>
         </FinanceCard>
@@ -816,7 +805,7 @@ function AlertGroup({
   if (alerts.length === 0) return null;
   return (
     <div>
-      <p className={`text-[11px] font-medium ${toneInk[tone]}`}>
+      <p className={`text-xs font-medium ${toneInk[tone]}`}>
         {title} · {alerts.length}
       </p>
       <ul className="mt-1 divide-y divide-gray-100 dark:divide-gray-800/60">

@@ -17,7 +17,7 @@
  * `title-scroll-reveal` keyframes) driven by the two custom properties set here:
  * this component only measures and publishes numbers. There are no timers, and
  * the reduced-motion query is one app-wide subscription shared by every row
- * (use-reduced-motion.ts), not one per row.
+ * (the UI package's usePrefersReducedMotion), not one per row.
  *
  * Which of the two discloses the tail is `titleDisclosure` (title-reveal.ts), and
  * they are alternatives: the tooltip covers the text the scroll cannot reach —
@@ -34,9 +34,8 @@
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { Tooltip, usePrefersReducedMotion } from "@prismshadow/penguin-ui";
 import { revealDistancePx, revealDurationMs, titleDisclosure } from "../../lib/title-reveal";
-import { Tooltip } from "./tooltip";
-import { usePrefersReducedMotion } from "./use-reduced-motion";
 
 export function Truncated({
   text,

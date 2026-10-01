@@ -1,11 +1,14 @@
-/** 提示弹窗: the toast after an action completes, in its four kinds, fired from buttons (the Toaster is mounted by the frame). */
-import { Button } from "../../../../web/src/components/ui/button";
+/**
+ * 提示弹窗: the package's toast after an action completes, in its four kinds, fired from buttons
+ * (the Toaster is mounted by the frame).
+ */
 import {
+  Button,
   toastAttention,
   toastError,
   toastInfo,
   toastSuccess,
-} from "../../../../web/src/components/ui/toast";
+} from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 

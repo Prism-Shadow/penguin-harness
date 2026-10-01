@@ -1,6 +1,6 @@
 /** 标签页: the app's Tabs, plain and with an update badge on one tab. */
 import { useState } from "react";
-import { Tabs } from "../../../../web/src/components/ui/tabs";
+import { Tabs } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 

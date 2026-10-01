@@ -1,6 +1,5 @@
-/** 悬停提示: the app's one tooltip, by attribute (read by the frame's TooltipLayer) and by component, and on a truncated line. */
-import { Button } from "../../../../web/src/components/ui/button";
-import { Tooltip } from "../../../../web/src/components/ui/tooltip";
+/** 悬停提示: the package's one tooltip, by attribute (read by the frame's TooltipLayer) and by component, and on a truncated line. */
+import { Button, ICONS, Tooltip } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -48,11 +47,16 @@ export function TooltipsBoard() {
       </BoardGroup>
       <BoardGroup title={t.component} aside={t.componentHint}>
         <div className="lib-row">
-          <Tooltip label={t.beside} placement="right">
-            <Button size="sm">{t.beside}</Button>
+          {/* Icon-only triggers: a hint never shows over a label the reader can already read whole. */}
+          <Tooltip label={t.besideTip} placement="right">
+            <Button size="icon" aria-label={t.besideTip}>
+              <Glyph d={ICONS.chevronRight} />
+            </Button>
           </Tooltip>
-          <Tooltip label={t.below} placement="bottom">
-            <Button size="sm">{t.below}</Button>
+          <Tooltip label={t.belowTip} placement="bottom">
+            <Button size="icon" aria-label={t.belowTip}>
+              <Glyph d={ICONS.arrowDownToLine} />
+            </Button>
           </Tooltip>
         </div>
       </BoardGroup>

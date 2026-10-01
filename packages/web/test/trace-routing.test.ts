@@ -1,38 +1,38 @@
 /**
- * Every call that names a Session reaches the machine the Session lives on.
+ * Calls that name a Session without declaring it in the path still reach the machine the
+ * Session lives on. The routing rule reads `/api/sessions/<id>/…` (lib/session-machines.ts);
+ * the Agent-level Trace endpoints bury the id deeper, and a bare URL for `<img>`, `<iframe>` or
+ * a download never passes through the fetch wrapper, so each carries the machine itself.
  *
- * The routing rule reads `/api/sessions/<id>/…` off the path (lib/session-machines.ts). Two
- * kinds of call escape it and have to carry the machine by hand: an endpoint that buries a
- * Session id in an Agent-level path (the Trace endpoints), and a bare URL used in `<img>`,
- * `<iframe>`, `fetch` or a download link, which never passes through the fetch wrapper. Both
- * failed the same way — asked of this server about a Session on a machine, which truthfully
- * had no such file — and both are pinned here by scanning the source, so the next endpoint of
- * either shape is caught the moment it is written.
+ * - Reading a Trace's events or its analysis through the Agent-level endpoints goes to the
+ *   Session's machine, and to this server for a Session that lives here.
+ * - A Workspace file's address follows its Session to the machine.
+ * - A Trace download link does too.
  */
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { agentTraceDownloadUrl, workspaceFileUrl } from "../src/api/endpoints";
+import {
+  agentTraceDownloadUrl,
+  getAgentTraceAnalysis,
+  getAgentTraceEvents,
+  workspaceFileUrl,
+} from "../src/api/endpoints";
 import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
-
-const SOURCE = fs.readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "api", "endpoints.ts"),
-  "utf8",
-);
+import { json, stubFetch } from "./helpers/fetch";
 
 afterEach(() => forgetSessionMachines());
 
 describe("Session ids buried in Agent-level paths", () => {
-  it("every /traces/<sessionId> endpoint passes the Session's machine explicitly", () => {
-    // Each `export const … =` block that builds a `/traces/${…sessionId…}` path must mention
-    // machineForSession: the rule cannot read the id out of that path.
-    const blocks = SOURCE.split(/\nexport const /).slice(1);
-    const offenders = blocks
-      .filter((block) => /\/traces\/\$\{encodeURIComponent\(sessionId\)\}/.test(block))
-      .filter((block) => !block.includes("machineForSession(sessionId)"))
-      .map((block) => block.split(/[\s=(]/)[0]);
-    expect(offenders).toEqual([]);
+  it("the Agent-level Trace reads go to the machine the Session lives on", async () => {
+    const fetch = stubFetch(() => json({}));
+    rememberSessionMachine("s1", "M1");
+    await getAgentTraceEvents("p", "a", "s1", 3, 0, 50);
+    await getAgentTraceAnalysis("p", "a", "s1", 3);
+    await getAgentTraceEvents("p", "a", "here", 0, 0, 50);
+    expect(fetch.requests.map((r) => [r.machine, r.path])).toEqual([
+      ["M1", "/api/projects/p/agents/a/traces/s1/3"],
+      ["M1", "/api/projects/p/agents/a/traces/s1/3/analysis"],
+      [null, "/api/projects/p/agents/a/traces/here/0"],
+    ]);
   });
 });
 

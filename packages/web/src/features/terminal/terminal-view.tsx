@@ -64,9 +64,9 @@ export type TerminalStatus = "connecting" | "ready" | "exited" | "error";
 /**
  * The screen's own palette, one per appearance. Two things matter here.
  *
- * The surface colours are the app's, not a terminal's: `#000000`/`#ffffff` are the body
- * tones (the default theme, `themes/github.css` in @prismshadow/penguin-ui, overrides the
- * neutral gray scale to pure black in dark mode), and the selection matches its `::selection`. A panel docked inside the app that brought its
+ * The surface colours are the app's, not a terminal's: `#121212`/`#ffffff` are the default
+ * theme's canvas (`themes/github.css` in @prismshadow/penguin-ui) and its neutral ink, and the
+ * selection matches its `::selection`. A panel docked inside the app that brought its
  * own charcoal along read as a foreign window sitting on top of it.
  *
  * The sixteen ANSI slots are NOT the app's palette and must not be: programs pick them by
@@ -76,10 +76,10 @@ export type TerminalStatus = "connecting" | "ready" | "exited" | "error";
  * VGA-bright and unreadable on white.
  */
 const DARK_THEME = {
-  background: "#000000",
-  foreground: "#f3f4f6",
-  cursor: "#f3f4f6",
-  cursorAccent: "#000000",
+  background: "#121212",
+  foreground: "#f5f5f5",
+  cursor: "#f5f5f5",
+  cursorAccent: "#121212",
   selectionBackground: "rgba(255, 255, 255, 0.18)",
   black: "#000000",
   red: "#cd3131",
@@ -101,8 +101,8 @@ const DARK_THEME = {
 
 const LIGHT_THEME = {
   background: "#ffffff",
-  foreground: "#111827",
-  cursor: "#111827",
+  foreground: "#171717",
+  cursor: "#171717",
   cursorAccent: "#ffffff",
   selectionBackground: "rgba(0, 0, 0, 0.12)",
   black: "#000000",

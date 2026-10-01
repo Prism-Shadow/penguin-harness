@@ -1,12 +1,17 @@
 /**
- * Integration tests for Session deletion cleanup: DELETE /api/sessions/:id
- * removes the Session's scratchpad directory (model-generated temp files and
- * input images saved to disk for models without image support) in addition
- * to its Trace and index row.
+ * A Session's scratchpad through its routes: the per-Session directory holding the files its
+ * Tasks attached and the model wrote.
+ *
+ * - Deleting a Session removes its scratchpad along with its Trace and index row; deleting one
+ *   that never had a scratchpad succeeds too.
+ * - A scratchpad file reads back with its content type, a non-ASCII name included; a missing
+ *   file and any name that is a path (separators either way, traversal) are 404s.
+ *
+ * Both cases create their own Sessions, so one app serves them.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { scratchpadDir } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, SessionCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
@@ -26,7 +31,7 @@ describe("session deletion cleans up the scratchpad", () => {
   let owner: ReturnType<typeof apiClient>;
   let projectId: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_s");
     owner = apiClient(t.app, a.cookie);
@@ -42,7 +47,7 @@ describe("session deletion cleans up the scratchpad", () => {
       models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6" }],
     });
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
   });
 

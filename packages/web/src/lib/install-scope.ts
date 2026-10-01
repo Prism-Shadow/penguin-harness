@@ -84,8 +84,8 @@ export interface KeyRule {
  *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (lib/remark-autolink-boundary.ts) is the product's domain inside an
- *     example URL in a doc comment. It is not a storage key.
+ *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
   // ---------------------------------------------------------------- browser preferences
@@ -214,6 +214,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarNavGroupCollapsed",
     scope: "browser",
     why: "Whether the static page-nav group is folded; the nav is built from a compile-time manifest.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.sidebarNavPinned",
+    scope: "browser",
+    why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
   },
   {
     kind: "exact",

@@ -24,11 +24,8 @@
  * status dot, the "+") stay, each naming itself.
  */
 import { useCallback, useMemo, useState } from "react";
-import { ADD_ICON } from "../../components/ui/icons";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import { ConfirmModal, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useVisualViewportHeight } from "../../lib/use-visual-viewport-height";
 import { useTerminalChrome } from "./terminal-appearance";
@@ -228,7 +225,7 @@ export function TerminalPage() {
           data-tooltip={S.terminal.newShell}
           className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1 ${chrome.outlineButton}`}
         >
-          <GlyphIcon d={ADD_ICON} size={ICON_SIZE.rowLead} />
+          <GlyphIcon d={ICONS.plus} size={ICON_SIZE.rowLead} />
           <span className="hidden sm:inline">{S.terminal.newShell}</span>
         </button>
       </header>
@@ -246,6 +243,7 @@ export function TerminalPage() {
         onClose={() => setConfirmKill(false)}
         onConfirm={() => void killConfirmed()}
         confirmLabel={S.terminal.killShell}
+        cancelLabel={S.common.cancel}
       >
         {info && (
           <p className="break-words text-sm text-gray-600 dark:text-gray-300">
