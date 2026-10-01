@@ -1,10 +1,15 @@
 /**
- * avatar-image.ts: the crop rectangle and the format decision behind a picked avatar.
+ * The crop rectangle and the format decision behind a picked avatar (lib/avatar-image.ts). The
+ * encoder is a parameter rather than a canvas call, so the PNG-or-JPEG-or-refuse rule runs here
+ * against a fake encoder.
  *
- * vitest runs node-only here (`environment: "node"`, no jsdom), which is why the encoder is a
- * parameter rather than a canvas call: the rule that decides PNG-or-JPEG-or-refuse is the part
- * a user hits, and it is exercised here with a fake encoder instead of being unreachable.
+ * - The crop is the image's centred square.
+ * - A PNG that fits its budget is kept; otherwise a JPEG that fits the cap; otherwise the pick is
+ *   refused.
+ * - The cap is the one the server enforces, in the same unit (characters of data URL), read from
+ *   the server's route.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   AVATAR_JPEG_QUALITY,
@@ -83,11 +88,17 @@ describe("fitAvatarDataUrl", () => {
 });
 
 describe("the cap", () => {
-  it("is the same number the server enforces, in the same unit", () => {
-    // server/src/http/routes/me.ts rejects an avatar over 131072 CHARACTERS of data URL. Both
-    // sides measuring the string rather than the decoded bytes is what keeps a picture this
-    // module just accepted from being refused by the request that carries it.
-    expect(AVATAR_MAX_CHARS).toBe(131072);
+  it("is the number the server enforces, in the same unit", () => {
+    // The server's route rejects an avatar over its cap in CHARACTERS of data URL. Both sides
+    // measuring the string rather than the decoded bytes is what keeps a picture this module
+    // just accepted from being refused by the request that carries it. The server is a
+    // type-only dependency of the Web App, so its route is read as text.
+    const route = readFileSync(
+      new URL("../../server/src/http/routes/me.ts", import.meta.url),
+      "utf8",
+    );
+    const serverCap = Number(/const AVATAR_MAX_CHARS = (\d+);/.exec(route)?.[1]);
+    expect(AVATAR_MAX_CHARS).toBe(serverCap);
     expect(AVATAR_PNG_BUDGET).toBeLessThan(AVATAR_MAX_CHARS);
   });
 });
