@@ -1,6 +1,7 @@
 {
   "name": "@prismshadow/penguin-plugin-company-roadmaps",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "description": "Roadmaps for PenguinHarness company mode: employees discuss in an organization channel through sessions cloned for that room, the moderator keeps a draft, and an established roadmap is archived and delegates each of its proposals — brief and owner — through company-proposals.",
   "license": "Apache-2.0",
