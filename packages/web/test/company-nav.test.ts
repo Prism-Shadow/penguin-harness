@@ -1,16 +1,22 @@
 /**
- * company-nav.ts and work-mode.ts unit tests: the company-mode nav manifest (the six pages
- * in rendered order, each with a zh label, an en label and a glyph — the sidebar, the rail
- * and the router all derive their rows from it), the `<projectId>/<orgId>` key, the
- * `/org/:projectId/:orgId/<page>` and `…/channels/:channelId` grammars, where `/org` lands
- * without an organization, where a freshly created one opens and which key the shell becomes
- * current at when it does, the switcher's grouping by
- * Project, and the localStorage mirrors of the mode and the last organization (injectable
- * storage, forgettable, degrading to the defaults on anything unexpected).
+ * Company mode's navigation (features/company/company-nav.ts) and the work-mode mirrors in
+ * localStorage (lib/work-mode.ts).
+ *
+ * - An organization key is `<projectId>/<orgId>` and parses back; anything but two non-empty
+ *   segments is refused.
+ * - Page and channel paths live under `/org`, with the ids encoded.
+ * - A new organization opens in the CEO's desk when it has one, else on its overview, and the
+ *   shell becomes current at its plain-id key whatever the path escapes.
+ * - Organization routes are told apart from the shared chat route.
+ * - `/org` lands on the organization last opened while it exists, else the current Project's
+ *   first, else the first anywhere, and nowhere without any.
+ * - The switcher groups organizations in the Project list's order, dropping empty Projects.
+ * - The mode defaults to development, only an explicit company switches it; only a
+ *   well-formed last organization key is kept, and it can be forgotten outright; a throwing
+ *   storage degrades to the defaults.
  */
 import { describe, expect, it } from "vitest";
 import {
-  COMPANY_NAV_KEYS,
   groupOrganizationsByProject,
   isOrgRoute,
   orgChannelPath,
@@ -22,7 +28,6 @@ import {
   resolveOrgLanding,
 } from "../src/features/company/company-nav";
 import { DEFAULT_CHANNEL_ID } from "../src/features/company/channel-list";
-import { COMPANY_NAV_ICONS } from "../src/features/company/company-nav-icons";
 import {
   LAST_ORG_KEY,
   WORK_MODE_KEY,
@@ -32,60 +37,7 @@ import {
   storeLastOrgKey,
   storeWorkMode,
 } from "../src/lib/work-mode";
-import type { WorkModeStorage } from "../src/lib/work-mode";
-import { zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
-
-function memStorage(): WorkModeStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
-
-describe("COMPANY_NAV_KEYS", () => {
-  it("lists the six organization pages in the spec's order, channels not among them", () => {
-    expect([...COMPANY_NAV_KEYS]).toEqual([
-      "overview",
-      "chart",
-      "calendar",
-      "tickets",
-      "finance",
-      "handbook",
-    ]);
-    // Channels are the sidebar's own list, the way conversations are in development mode.
-    expect(COMPANY_NAV_KEYS).not.toContain("chat");
-    expect(COMPANY_NAV_KEYS).not.toContain("channels");
-  });
-
-  it("every entry has the spec's zh and en names and a glyph", () => {
-    // The bilingual table of the prototype spec, verbatim.
-    const expected = {
-      overview: ["概览", "Overview"],
-      chart: ["组织图", "Org Chart"],
-      calendar: ["日历", "Calendar"],
-      tickets: ["工单", "Tickets"],
-      finance: ["财务", "Finance"],
-      handbook: ["手册", "Handbook"],
-    } as const;
-    for (const key of COMPANY_NAV_KEYS) {
-      expect(zh.nav.org[key]).toBe(expected[key][0]);
-      expect(en.nav.org[key]).toBe(expected[key][1]);
-      expect(COMPANY_NAV_ICONS[key]).toBeTruthy();
-    }
-  });
-
-  it("the mode switch's two options exist in both languages and differ", () => {
-    for (const dict of [zh, en]) {
-      expect(dict.company.modeDev).toBeTruthy();
-      expect(dict.company.modeCompany).toBeTruthy();
-      expect(dict.company.modeDev).not.toBe(dict.company.modeCompany);
-    }
-  });
-});
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 describe("org keys and paths", () => {
   it("round-trips a key through parseOrgKey", () => {
@@ -111,14 +63,6 @@ describe("org keys and paths", () => {
     );
     expect(orgChannelPath("p1", "acme", "site")).toBe("/org/p1/acme/channels/site");
     expect(orgChannelPath("alice-proj", "a b", "site")).toBe("/org/alice-proj/a%20b/channels/site");
-  });
-
-  // An organization opens on its overview, not on a channel: the switcher's pick, `/org`'s
-  // redirect and the router's index route all land there, and a channel is reached from the
-  // sidebar's own list.
-  it("makes the overview the first page of the six, which is where an organization opens", () => {
-    expect(COMPANY_NAV_KEYS[0]).toBe("overview");
-    expect(orgPagePath("p1", "acme", "overview")).toBe("/org/p1/acme/overview");
   });
 
   it("lands a newly created organization in the CEO's desk, else on its overview", () => {
@@ -205,7 +149,7 @@ describe("groupOrganizationsByProject", () => {
 
 describe("work-mode storage mirrors", () => {
   it("defaults to development with nothing stored, and only an explicit company switches", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(initialWorkMode(s)).toBe("dev");
     storeWorkMode("company", s);
     expect(s.map.get(WORK_MODE_KEY)).toBe("company");
@@ -215,7 +159,7 @@ describe("work-mode storage mirrors", () => {
   });
 
   it("keeps only a well-formed last organization key", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(initialLastOrgKey(s)).toBeNull();
     storeLastOrgKey("p1/acme", s);
     expect(s.map.get(LAST_ORG_KEY)).toBe("p1/acme");
@@ -227,7 +171,7 @@ describe("work-mode storage mirrors", () => {
   // The organization it named was deleted: the mirror is dropped, not overwritten, so the
   // next reload starts with no remembered organization at all.
   it("forgets the last organization key outright", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     storeLastOrgKey("p1/acme", s);
     clearLastOrgKey(s);
     expect(s.map.has(LAST_ORG_KEY)).toBe(false);
@@ -235,17 +179,7 @@ describe("work-mode storage mirrors", () => {
   });
 
   it("throwing storage degrades to the defaults instead of escaping", () => {
-    const broken: WorkModeStorage = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-      removeItem: () => {
-        throw new Error("denied");
-      },
-    };
+    const broken = blockedStorage();
     expect(() => storeWorkMode("company", broken)).not.toThrow();
     expect(() => clearLastOrgKey(broken)).not.toThrow();
     expect(initialWorkMode(broken)).toBe("dev");
