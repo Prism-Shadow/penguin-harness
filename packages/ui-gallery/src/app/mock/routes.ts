@@ -2607,6 +2607,7 @@ router
   .get("/api/projects/:projectId/organizations/:orgId/proposals", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/proposals", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/proposals/:number", companyOff)
+  .post("/api/projects/:projectId/organizations/:orgId/proposals/deploys", companyOff)
   .put("/api/projects/:projectId/organizations/:orgId/proposals/:number", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/proposals/:number/*", companyOff)
   .put("/api/projects/:projectId/organizations/:orgId/proposals/:number/*", companyOff)
