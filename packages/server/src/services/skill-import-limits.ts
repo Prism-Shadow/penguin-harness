@@ -29,12 +29,24 @@ export const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
  * Throws the caps as 400s, matching the archive route this was factored out of; a corrupt
  * archive still throws whatever fflate throws, for the caller to translate.
  */
-export function unzipBounded(archive: Uint8Array): Record<string, Uint8Array> {
+export function unzipBounded(
+  archive: Uint8Array,
+  /**
+   * Which entries this caller wants, asked before counting and before inflation. A caller that
+   * already knows — the plugin import, which reads ONE plugin out of an archive that may hold a
+   * whole repository beside it — passes the plugin root's prefix here, and the caps then bound
+   * that plugin rather than everything around it. It is not an escape hatch from the caps: the
+   * entries it accepts are counted and capped exactly as before, and the ones it refuses are
+   * never inflated, so they cannot allocate anything either.
+   */
+  wanted: (name: string) => boolean = () => true,
+): Record<string, Uint8Array> {
   let files = 0;
   let declared = 0;
   return unzipSync(archive, {
     filter: ({ name, originalSize }) => {
-      if (name.endsWith("/")) return true;
+      if (name.endsWith("/")) return wanted(name);
+      if (!wanted(name)) return false;
       files += 1;
       if (files > MAX_ARCHIVE_FILES) {
         throw badRequest(`The zip archive exceeds the ${MAX_ARCHIVE_FILES}-file limit.`);

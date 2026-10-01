@@ -3750,8 +3750,18 @@ export interface HookItem {
   icon?: string;
 }
 
+/**
+ * Where a library plugin comes from: `builtin` = shipped with the build (the
+ * `@penguinharness/*` packages under the repo's `plugins/`), `user` = installed by an operator
+ * into the user plugin directory (a remote download or a local upload), which is the only kind
+ * the library can also delete again.
+ */
+export type PluginSource = "builtin" | "user";
+
 /** One library plugin as the listing describes it: the manifest fields plus what it ships (skill bodies and scripts are never sent). */
 export interface PluginItem {
+  /** Where the plugin comes from (see PluginSource); a user plugin of the same name as a built-in is never loaded — the built-in wins. */
+  source: PluginSource;
   name: string;
   description: string;
   descriptionZh?: string;
@@ -3803,6 +3813,64 @@ export interface PluginInstallRequest {
 export interface AgentPluginsInstallResponse {
   skills: SkillMetadataItem[];
   hooks: HookItem[];
+}
+
+/**
+ * GET /api/plugins/directory: the user plugin directory — where a remote download and a local
+ * upload land, and what "delete" removes from. `plugins` lists the names found there (each one
+ * a directory carrying plugin.json), sorted; a name that collides with a built-in is listed
+ * here but never loaded (the built-in wins).
+ */
+export interface PluginDirectoryResponse {
+  /** Absolute path of the directory (a plain directory of plugin directories; it may not exist yet). */
+  path: string;
+  /** Names of the plugin directories inside it, sorted. */
+  plugins: string[];
+}
+
+/** What an import (upload or download) put into the library: the plugin as the listing describes it, plus where it landed. */
+export interface PluginImportResponse {
+  plugin: PluginItem;
+  /** Absolute path of the installed plugin directory. */
+  path: string;
+}
+
+/**
+ * POST /api/plugins/upload: install a plugin from an uploaded zip archive. Layout: plugin.json
+ * at the archive root, or anywhere inside it (the shallowest directory carrying plugin.json is
+ * the plugin root — one, unambiguous). `name` overrides the name the installer would pick (the
+ * plugin root's directory name) and is required when plugin.json sits at the archive root;
+ * `overwrite` replaces an existing user plugin of that name. Admin-only.
+ *
+ * Errors, shared with the download route below: 403 `admin_required`, 404 `unknown_plugin`
+ * (delete only), 409 `plugin_exists` (`overwrite` was not set) and `plugin_builtin` (the name is
+ * one the build ships), 413 `plugin_too_large`, 400 `invalid_plugin` (the name is not a plugin
+ * name, or the manifest does not read as one) and 400 `bad_request` for everything else the
+ * archive can be wrong about (not a zip, no plugin.json, two plugins, name required, an entry
+ * path that would escape the directory).
+ */
+export interface PluginUploadRequest {
+  dataBase64: string;
+  name?: string;
+  overwrite?: boolean;
+}
+
+/**
+ * POST /api/plugins/download: the same import, fetched server-side from a URL. Accepts a zip
+ * archive, a GitHub repository URL (`https://github.com/<owner>/<repo>`, the default branch) or
+ * a GitHub tree URL (`…/tree/<ref>/<subdir>` — `subdir` picks the plugin root inside the
+ * archive), and answers the same errors as the upload route above, plus 400 `unsupported_url`
+ * (not an http(s) URL, or a GitHub page that is not a repository or tree), 400 `blocked_url`
+ * (a loopback, private or link-local host) and 400 `download_failed` (the request or its
+ * status). Admin-only.
+ */
+export interface PluginDownloadRequest {
+  url: string;
+  /** Overrides the derived plugin name. */
+  name?: string;
+  /** Path inside the archive the plugin root must live under (a `/tree/<ref>/<subdir>` URL fills it in). */
+  subdir?: string;
+  overwrite?: boolean;
 }
 
 /** GET /api/projects/:p/agents/:a/skills: Skills installed on this Agent. */

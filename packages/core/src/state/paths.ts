@@ -30,6 +30,20 @@ export function projectDir(root: string, projectId: string): string {
 }
 
 /**
+ * `<root>/plugins`: the user plugin directory — the library's second source, beside the
+ * `@penguinharness/*` packages the build ships (see plugins/index.ts). One directory per
+ * plugin, laid out exactly like a library plugin package (`plugin.json`, `icon.svg`, `skills/`,
+ * `hooks/`), put there by a remote download or a local upload rather than by the installer. It
+ * is a peer of the Project directories rather than something inside one: a plugin is part of
+ * the installation, shared by every Project on the machine, so anything in it is read by every
+ * Project's library and installed on an Agent the same way a built-in is. Doesn't exist until
+ * the first import.
+ */
+export function userPluginsDir(root: string): string {
+  return path.join(root, "plugins");
+}
+
+/**
  * `<projectDir>/agents` from an already-resolved Project directory path — the single
  * definition point of the agents-container layout.
  */

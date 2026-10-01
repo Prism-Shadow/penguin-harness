@@ -128,9 +128,13 @@ import type {
   OrgTicketStartResponse,
   OrgTicketUpdateRequest,
   PasswordChangeRequest,
+  PluginDirectoryResponse,
+  PluginDownloadRequest,
   PluginFilesResponse,
+  PluginImportResponse,
   PluginInstallRequest,
   PluginLibraryResponse,
+  PluginUploadRequest,
   PrefsResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -1527,6 +1531,39 @@ export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plug
 /** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
 export const getPluginFiles = (plugin: string) =>
   apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
+
+/**
+ * The user plugin directory: its absolute path and the names of the plugins currently inside
+ * it — where an import lands and what a delete removes from, and therefore the one line the
+ * page shows about it. Answers whether or not the directory exists yet.
+ */
+export const getPluginDirectory = () => apiFetch<PluginDirectoryResponse>("/api/plugins/directory");
+
+/**
+ * Imports one plugin from an uploaded zip (base64), admin-only like every write into the
+ * directory. The archive carries `plugin.json` plus its `skills/`, `hooks/` and `icon.svg`;
+ * 409 `plugin_exists` when a user plugin of that name is already installed and `overwrite` is
+ * not set. 201 answers with the plugin as the library now lists it, plus where it landed.
+ */
+export const importPluginArchive = (body: PluginUploadRequest) =>
+  apiFetch<PluginImportResponse>("/api/plugins/upload", { method: "POST", body });
+
+/**
+ * The same import, fetched server-side from a URL: a zip link, a GitHub repository
+ * (`https://github.com/<owner>/<repo>`, default branch) or a GitHub tree URL
+ * (`…/tree/<ref>/<subdir>`, whose subdirectory is the plugin root). Same 409 `plugin_exists`
+ * as the upload, and the same admin-only gate.
+ */
+export const importPluginFromUrl = (body: PluginDownloadRequest) =>
+  apiFetch<PluginImportResponse>("/api/plugins/download", { method: "POST", body });
+
+/** Deletes one user plugin from the library and from disk (admin-only); 409 `plugin_builtin` for a built-in name, 404 `unknown_plugin` for one the library does not hold. */
+export const deletePlugin = (plugin: string) =>
+  apiFetch<void>(`/api/plugins/${encodeURIComponent(plugin)}`, { method: "DELETE" });
+
+/** Zip download URL for one library plugin (server sets Content-Disposition attachment): the card's export, which round-trips through importPluginArchive. */
+export const pluginArchiveUrl = (plugin: string): string =>
+  `/api/plugins/${encodeURIComponent(plugin)}/archive`;
 
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed

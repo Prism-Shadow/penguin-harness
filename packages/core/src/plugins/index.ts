@@ -2,10 +2,19 @@
  * PenguinHarness plugin library: the built-in plugins and the loader that reads them (part
  * of core — hooks, skills and their loading all live in one SDK).
  *
- * A plugin is its own npm package (`@penguinharness/<name>`, `plugins/<name>/` in the repo;
- * resolved through Node from the host package's dependency list — see pluginRoots): a
- * directory carrying a `plugin.json` manifest, an `icon.svg` beside it (every built-in plugin
- * ships one; it is the icon of everything the plugin ships), and any of two kinds of content:
+ * The library has two sources, loaded the same way and distinguished only by
+ * `LibraryPlugin.source`: the built-ins (a plugin is its own npm package,
+ * `@penguinharness/<name>`, `plugins/<name>/` in the repo; resolved through Node from the host
+ * package's dependency list — see pluginRoots) and the user plugin directory
+ * (`<data root>/plugins`, see userPluginDirs), where a remote download or a local upload lands.
+ * A user plugin of the same name as a built-in is not loaded — the built-in wins — and a user
+ * directory the loader cannot read (no plugin.json, a malformed one, a version in the wrong
+ * shape) is skipped rather than thrown, so one bad directory left on disk cannot take the whole
+ * library down; the directory listing still shows it, so it can be deleted again.
+ *
+ * Either way a plugin is a directory carrying a `plugin.json` manifest, an `icon.svg` beside it
+ * (every built-in plugin ships one; it is the icon of everything the plugin ships), and any of
+ * two kinds of content:
  * skills (`skills/<name>/SKILL.md`, installed into an Agent's `agent_state/skills/`) and a
  * hook package (`hooks/*.mjs`, installed into `agent_state/hooks/<plugin>/` together with a
  * generated `hooks.json`). The files are the runtime source of truth — read and parsed on
@@ -28,6 +37,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { resolveRoot, userPluginsDir } from "../state/paths.js";
 
 /** A skill's metadata. A library SKILL.md's frontmatter carries only `name` and `description`; the short descriptions and `version` are stamped from plugin.json by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
 export interface SkillMetadata {
@@ -100,10 +110,15 @@ export interface LibraryHooks {
   files: Record<string, string>;
 }
 
+/** Where a plugin in the library comes from (see the module header). */
+export type PluginSource = "builtin" | "user";
+
 /** A plugin in the library: the manifest fields plus the content it ships. */
 export interface LibraryPlugin {
   /** Plugin name (its directory name). */
   name: string;
+  /** Which of the two sources it was read from. */
+  source: PluginSource;
   /** English one-line description (plugin.json `description`). */
   description: string;
   /** Chinese description (plugin.json `description_zh`, optional). */
@@ -319,7 +334,7 @@ export function workspacePluginRoot(
  * their own copy, and a workspace checkout is redirected to its `plugins/<name>/` directory
  * (see workspacePluginRoot). Read fresh on every call, like the plugin files themselves.
  */
-function pluginRoots(): Map<string, string> {
+function builtinRoots(): Map<string, string> {
   const roots = new Map<string, string>();
   const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
@@ -339,6 +354,49 @@ function pluginRoots(): Map<string, string> {
     }
     const name = dep.slice(PLUGIN_PKG_PREFIX.length);
     roots.set(name, workspacePluginRoot(name, path.dirname(manifest)));
+  }
+  return roots;
+}
+
+/**
+ * Where every plugin is read from, name → its directory and which source it came from: the
+ * built-ins first, then the user plugin directory, and only for names no built-in claimed — an
+ * import that collides with a plugin the build ships must not be able to shadow it (the API
+ * refuses such an import up front; this is what makes a directory left there by hand harmless).
+ */
+function pluginRoots(
+  root: string = resolveRoot(),
+): Map<string, { dir: string; source: PluginSource }> {
+  const roots = new Map<string, { dir: string; source: PluginSource }>();
+  for (const [name, dir] of builtinRoots()) roots.set(name, { dir, source: "builtin" });
+  for (const [name, dir] of userPluginRoots(root)) {
+    if (!roots.has(name)) roots.set(name, { dir, source: "user" });
+  }
+  return roots;
+}
+
+/**
+ * The user plugin directories, name → absolute path: `<data root>/plugins/<name>` for every
+ * entry of the user plugin directory that could be a plugin — a directory, named like a plugin
+ * (PLUGIN_NAME_PATTERN, which also excludes the dot-prefixed staging directory an install
+ * writes through). Read fresh on every call, like everything else here. Whether the entry is a
+ * *valid* plugin is the reader's question (see readPluginDir), not this scan's: the directory
+ * listing must show a broken one too, so its owner can delete it.
+ */
+export function userPluginRoots(root: string = resolveRoot()): Map<string, string> {
+  const dir = userPluginsDir(root);
+  const roots = new Map<string, string>();
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    // No user plugin directory: nothing has ever been imported here.
+    return roots;
+  }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isDirectory() && PLUGIN_NAME_PATTERN.test(entry.name)) {
+      roots.set(entry.name, path.join(dir, entry.name));
+    }
   }
   return roots;
 }
@@ -436,8 +494,13 @@ interface PluginManifestFile {
   };
 }
 
-/** Reads one plugin directory. */
-function readPluginDir(name: string, dir: string): LibraryPlugin {
+/**
+ * Reads one plugin directory. Throws on anything that makes it not a plugin — the manifest is
+ * missing or unparseable, or its version is not `YYYY.MM.DD.N` — which is the check an import
+ * runs against the files it is about to install, and the reason a built-in that fails to read
+ * is a broken install rather than a smaller library.
+ */
+export function readPluginDir(name: string, dir: string, source: PluginSource): LibraryPlugin {
   const manifestFile = path.join(dir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as PluginManifestFile;
   if (!PLUGIN_VERSION_PATTERN.test(manifest.version)) {
@@ -484,6 +547,7 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
       : undefined;
   return {
     name,
+    source,
     description,
     ...(descriptionZh !== undefined ? { descriptionZh } : {}),
     ...(shortDescription !== undefined ? { shortDescription } : {}),
@@ -504,29 +568,54 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
   };
 }
 
-/** Reads every plugin in the library (one per plugin package, see pluginRoots), sorted by name. */
-export function loadLibraryPlugins(): LibraryPlugin[] {
-  return [...pluginRoots()]
-    .map(([name, dir]) => readPluginDir(name, dir))
-    .sort((a, b) => a.name.localeCompare(b.name));
+/**
+ * Reads one plugin from where pluginRoots found it. A built-in that fails to read throws; a
+ * user plugin that fails to read is skipped (see the module header) — the library stays usable
+ * and the directory listing still shows the directory, so its owner can delete it.
+ */
+function readLibraryPlugin(
+  name: string,
+  dir: string,
+  source: PluginSource,
+): LibraryPlugin | undefined {
+  if (source === "builtin") return readPluginDir(name, dir, source);
+  try {
+    return readPluginDir(name, dir, source);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Reads every plugin in the library (one per plugin package and one per user plugin directory, see pluginRoots), sorted by name. */
+export function loadLibraryPlugins(root: string = resolveRoot()): LibraryPlugin[] {
+  const plugins: LibraryPlugin[] = [];
+  for (const [name, { dir, source }] of pluginRoots(root)) {
+    const plugin = readLibraryPlugin(name, dir, source);
+    if (plugin) plugins.push(plugin);
+  }
+  return plugins.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The plugins default_agent installs at initialization: every library plugin except those whose manifest sets `preinstall: false`. */
-export function loadPreinstalledPlugins(): LibraryPlugin[] {
-  return loadLibraryPlugins().filter((plugin) => plugin.preinstall);
+export function loadPreinstalledPlugins(root: string = resolveRoot()): LibraryPlugin[] {
+  return loadLibraryPlugins(root).filter((plugin) => plugin.preinstall);
 }
 
-/** Reads a single library plugin by name; undefined when the library has no such plugin (names are looked up, never joined into a path). */
-export function libraryPlugin(name: string): LibraryPlugin | undefined {
-  const dir = pluginRoots().get(name);
-  return dir !== undefined ? readPluginDir(name, dir) : undefined;
+/** Reads a single library plugin by name; undefined when the library has no such plugin, or when the user plugin of that name cannot be read (names are looked up, never joined into a path). */
+export function libraryPlugin(
+  name: string,
+  dataRoot: string = resolveRoot(),
+): LibraryPlugin | undefined {
+  const root = pluginRoots(dataRoot).get(name);
+  return root !== undefined ? readLibraryPlugin(name, root.dir, root.source) : undefined;
 }
 
 /** Finds a library skill by its own name (across every plugin), with the plugin that ships it. */
 export function librarySkill(
   name: string,
+  root: string = resolveRoot(),
 ): { plugin: LibraryPlugin; skill: LibrarySkill } | undefined {
-  for (const plugin of loadLibraryPlugins()) {
+  for (const plugin of loadLibraryPlugins(root)) {
     const skill = plugin.skills.find((s) => s.name === name);
     if (skill) return { plugin, skill };
   }
@@ -570,6 +659,6 @@ export function groupPlugins(all: LibraryPlugin[]): ResolvedPluginGroup[] {
 }
 
 /** Reads the library and groups it (see groupPlugins). */
-export function loadPluginGroups(): ResolvedPluginGroup[] {
-  return groupPlugins(loadLibraryPlugins());
+export function loadPluginGroups(root: string = resolveRoot()): ResolvedPluginGroup[] {
+  return groupPlugins(loadLibraryPlugins(root));
 }
