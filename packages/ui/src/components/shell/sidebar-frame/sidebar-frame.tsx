@@ -211,7 +211,6 @@ export function SidebarNavGroup({
             onClick={onToggle}
             aria-expanded={!collapsed}
             aria-label={label}
-            data-tooltip={label}
             className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-colors duration-150 hover:bg-fg/10 hover:text-fg`}
           >
             <ChevronFlip up={!collapsed} />

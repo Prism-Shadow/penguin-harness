@@ -52,7 +52,6 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
-      "credits",
       "proxy",
       "uploads",
       "company",
@@ -72,7 +71,6 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
-      "credits",
     ]);
   });
 
@@ -85,7 +83,6 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
-      "credits",
       "proxy",
       "uploads",
       "company",
@@ -102,7 +99,6 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
-      "credits",
       "proxy",
       "uploads",
       "company",

@@ -103,9 +103,10 @@ describe("SidebarNavGroup", () => {
     expect(classTokens(group(false)).filter((t) => t.startsWith("transition-["))).toEqual([]);
   });
 
-  it("names its toggle by what pressing it does", () => {
-    expect(group(false)).toContain('aria-expanded="true" aria-label="折叠" data-tooltip="折叠"');
-    expect(group(true)).toContain('aria-expanded="false" aria-label="展开" data-tooltip="展开"');
+  it("names its toggle by what pressing it does, with no hover hint on a bare chevron", () => {
+    expect(group(false)).toContain('aria-expanded="true" aria-label="折叠"');
+    expect(group(true)).toContain('aria-expanded="false" aria-label="展开"');
+    expect(group(false)).not.toMatch(/aria-label="折叠"[^>]*data-tooltip/);
   });
 
   it("spaces its rows on the rhythm", () => {

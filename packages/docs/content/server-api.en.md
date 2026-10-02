@@ -270,7 +270,7 @@ That switch turns off this check and nothing else. Model requests, an enabled re
 
 ### GET /api/version/update
 
-Admin only. Returns the self-update job's status: `{state: idle | running | done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`. The update dialog polls it while a run is in progress.
+Admin only. Returns the self-update job's status: `{state: idle | running | done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`. The Web App polls it while a run is in progress.
 
 - While the job runs, `phase` is `resolving`, `downloading` or `installing`, and `percent` is read from the installer's progress bar.
 - When the job is done, `result` is `{status, reason?, output, needsRestart}`.

@@ -594,7 +594,7 @@ export const zh = {
       menuRows: "菜单行",
       menuRowsHint: "两种密度：账号与项目菜单用正文字号，行的更多菜单与右键菜单用小字号。",
       menuSettings: "设置",
-      menuUpdate: "检查更新",
+      menuAppInfo: "应用信息",
       menuVersion: "v0.2.13",
       menuSignOut: "退出登录",
       menuGroupBy: "分组方式",

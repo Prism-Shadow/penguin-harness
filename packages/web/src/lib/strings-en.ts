@@ -374,16 +374,6 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
-    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
-    creditsTitle: "Credits",
-    creditsThemes: "Used by",
-    creditsNoTheme: "Not a theme's default",
-    creditsLicense: "License",
-    creditsSource: "Source",
-    creditsLicenseText: "Full license text",
-    /** The Credits page's two groups: the bundled fonts, and the icon families the icons are drawn from. */
-    creditsFonts: "Fonts",
-    creditsIcons: "Icons",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -654,36 +644,66 @@ export const en: Strings = {
     fields: "fields",
     slots: "slots",
   },
+  /** The App info dialog, opened from the avatar menu: identity, links, update, release notes, credits. */
+  appInfo: {
+    title: "About PenguinHarness",
+    /** The avatar-menu row. */
+    menuEntry: "About",
+    /** The muted labels before the two addresses the identity block links to. */
+    homepage: "Homepage",
+    repository: "GitHub",
+    /** Read after a link out of the app: the glyph that shows it is decorative. */
+    opensInNewTab: "opens in a new tab",
+    releaseNotes: "What's new",
+    /** The fold under the newest release note, holding the rest; `n` = how many. */
+    earlierVersions: (n: number) => `Earlier versions (${n})`,
+    /** Pill on the release-notes entry of the running version. */
+    current: "Current",
+    credits: "Credits",
+    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    /** Disclosure row that expands the font and icon credits. */
+    licenses: "Font and icon licenses",
+    // —— the credit lists: the bundled fonts and the icon families, each with its licence ——
+    creditsThemes: "Used by",
+    creditsNoTheme: "Not a theme's default",
+    creditsLicense: "License",
+    creditsSource: "Source",
+    creditsLicenseText: "Full license text",
+    creditsFonts: "Fonts",
+    creditsIcons: "Icons",
+  },
   /**
-   * The software-update flow (lib/update-flow.ts): the one modal for both the server release
-   * and the desktop client, the account-menu row, the version-line badge, and the toasts for
-   * outcomes that land while the modal is closed. Null version = the backend named none.
+   * The software-update flow (lib/update-flow.ts): the App info dialog's update section for
+   * both the server release and the desktop client, the account-menu row's status line, the
+   * version-line badge, and the toasts for outcomes that land while the dialog is closed. Null
+   * version = the backend named none.
    */
   update: {
     /** Version-line date label; `date` is formatMonthDay output, e.g. "Last updated Jul 26". */
     lastUpdated: (date: string) => `Last updated ${date}`,
-    /** The version line's superscript, a button into the modal; the other two follow the flow. */
+    /** The version line's superscript, a button into the App info dialog; the other two follow the flow. */
     newVersionBadge: "New version available",
     badgeDownloading: "Downloading update",
     badgeReady: "Restart to update",
-    /** A release offered: the row's label and the avatar badges' sentence. */
+    /** A release offered: the row's status line and the avatar badges' sentence. */
     newVersion: (v: string) => `New version v${v} available`,
-    /** A release downloaded / installed and waiting for the restart: the row's label and the badges' sentence. */
+    /** A release downloaded / installed and waiting for the restart: the row's status line and the badges' sentence. */
     restartToUpdate: (v: string | null) =>
       v !== null ? `Restart to update to v${v}` : "Restart to finish updating",
     /** The combined wording for an anchor covering several update trails at once. */
     updatesAvailable: "Updates available",
-    // —— the account-menu row ——
+    /** The update section's button that forces a fresh check. */
     checkNow: "Check for updates",
+    // —— the account-menu row's status line ——
     checking: "Checking…",
     rowDownloading: (v: string | null, percent: number | null) =>
       `Downloading${v !== null ? ` v${v}` : " update"}${percent !== null ? ` ${percent}%` : "…"}`,
     rowRestarting: "Restarting…",
-    rowUnsupported: "Cannot update from here",
-    // —— the modal ——
+    // —— the App info dialog's update section ——
     title: "Software Update",
-    currentVersion: (v: string) => `Current version v${v}`,
     checkingBody: "Checking for updates…",
+    /** Nothing is known yet: no check has answered since the page loaded. */
+    notChecked: "Not checked yet",
     upToDate: "You're on the latest version",
     checkFailed: "Update check failed — try again later",
     checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
@@ -697,8 +717,6 @@ export const en: Strings = {
     /** Shown to non-admins in place of the body above (they can read the notes but cannot run the update). */
     adminOnly: "Only an administrator can run the update from here.",
     downloadAndInstall: "Download and update",
-    later: "Later",
-    background: "Continue in background",
     downloading: (v: string | null) =>
       v !== null ? `Downloading v${v}…` : "Downloading the update…",
     /** The progress bar's accessible name. */
@@ -729,12 +747,12 @@ export const en: Strings = {
     unsupportedNotViaCli:
       "This service was not started through penguin web or penguin server, so it cannot be updated from here",
     unsupportedCli: "This install cannot be updated from the web UI",
-    // —— toasts: outcomes that land while the modal is closed ——
-    foundNew: (v: string) => `New version v${v} found — open the update entry to download it`,
-    foundNewUnnamed: "New version found — open the update entry to download it",
+    // —— toasts: outcomes that land while the dialog is closed ——
+    foundNew: (v: string) => `New version v${v} found — open About to download it`,
+    foundNewUnnamed: "New version found — open About to download it",
     readyToast: (v: string | null) =>
       v !== null ? `v${v} is ready — restart to update` : "The update is ready — restart to update",
-    failedToast: "Update failed — open the update entry for details",
+    failedToast: "Update failed — open About for details",
     unsupportedToast: "This install cannot be updated from the web UI",
     /** The shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
     clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,
@@ -3121,7 +3139,7 @@ Scenarios:
     unpinSession: "Unpin",
     pinnedSession: "Pinned",
     /** The hover ellipsis button that opens the row's full context menu. */
-    moreActions: "More",
+    moreActions: "More actions",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -4306,9 +4324,6 @@ Scenarios:
       openBoard: "Open the ticket board",
       openCalendar: "Open the calendar",
       openFinance: "Open finance",
-      /** The tooltip of an inbox row's title: the row is inert, its title is what goes there. */
-      openTicket: "Open the ticket",
-      openChannel: "Open the channel",
       /** The counts under the board bar: each opens the board filtered to the column it counts. */
       openColumn: (column: string): string => `Open the "${column}" tickets`,
       /** The three first steps of a new organization (replaces the empty sections). */
@@ -4571,8 +4586,6 @@ Scenarios:
       blockByHint: "The ticket or principal it waits on",
       sessions: "Ticket sessions",
       sessionsCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
-      openSession: "Open session",
-      openTicket: "Open ticket",
       progress: "Progress",
       progressEmpty: "No progress recorded yet",
       addProgress: "Add progress",
@@ -4689,8 +4702,6 @@ Scenarios:
       saveBudget: "Save budget",
       cancelEdit: "Cancel",
       editBudgetOf: (name: string): string => `Edit the budget of ${name}`,
-      /** The ticket table's owner column and row action. */
-      openTicket: "Open ticket",
       /** The trend section. */
       trendInfo:
         "The daily cost of every session in the organization, by the organization's timezone; only days with spend are drawn.",

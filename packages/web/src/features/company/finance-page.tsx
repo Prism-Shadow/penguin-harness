@@ -700,11 +700,6 @@ export function FinancePage() {
                               <button
                                 type="button"
                                 aria-expanded={open}
-                                data-tooltip={
-                                  open
-                                    ? S.company.finance.collapseChildren
-                                    : S.company.finance.expandChildren
-                                }
                                 aria-label={`${
                                   open
                                     ? S.company.finance.collapseChildren
@@ -721,7 +716,7 @@ export function FinancePage() {
                             {/* The title is the link; the rest of the row reads. */}
                             <TitleButton
                               className="truncate font-medium text-gray-900 dark:text-gray-100"
-                              title={S.company.finance.openTicket}
+                              hint={ticket.title}
                               onClick={() => openTicket(ticket.ticketId)}
                             >
                               {ticket.title}

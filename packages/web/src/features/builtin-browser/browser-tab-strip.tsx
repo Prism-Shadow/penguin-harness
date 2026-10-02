@@ -148,7 +148,6 @@ export function BrowserTabStrip({
               </button>
               <button
                 type="button"
-                data-tooltip={S.builtinBrowser.closeTab}
                 aria-label={`${S.builtinBrowser.closeTab}: ${label}`}
                 onClick={() => onClose(tab.id)}
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:text-fg"

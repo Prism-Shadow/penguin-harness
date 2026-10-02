@@ -270,7 +270,7 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 ### GET /api/version/update
 
-仅管理员。返回自更新任务的状态：`{state: idle | running | done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`。更新运行期间，更新对话框会轮询这个接口。
+仅管理员。返回自更新任务的状态：`{state: idle | running | done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`。更新运行期间，Web App 会轮询这个接口。
 
 - 任务运行期间，`phase` 为 `resolving`、`downloading` 或 `installing`，`percent` 取自安装器的进度条。
 - 任务完成后，`result` 为 `{status, reason?, output, needsRestart}`。

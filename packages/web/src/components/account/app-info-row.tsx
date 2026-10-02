@@ -1,10 +1,12 @@
 /**
- * The account-menu update row — one row for both backends, reading the update flow. It
- * names where the flow stands (check / checking / a release offered / downloading with its
- * percentage / restart to update / restarting / cannot update), and every state opens the
- * update modal, which is where the flow is explained and acted on. The running version
- * sits muted on the right. Renders nothing where this session can update nothing. A Menu row,
- * like the menu's other entries.
+ * The account-menu App info row — one row for every session, opening the App info dialog. Its
+ * label never changes and the running version sits muted on the right. While the update flow
+ * moves or waits (checking / a release offered / downloading with its percentage / restart to
+ * update / restarting), a status line under the label says so, in the same words the avatar's
+ * badge uses, so the badge leads to its own sentence; idle, and for an install that cannot
+ * update itself, the row says nothing more. A session that can update nothing (see
+ * updateModeFor) still gets the row: the version, the release notes and the licences are for
+ * everyone. A Menu row, like the menu's other entries.
  */
 import { MenuItem, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -12,20 +14,19 @@ import { updateRowModel } from "../../lib/update-flow";
 import type { UpdateFlow } from "../../lib/update-flow";
 import { useUpdateFlow } from "../../lib/use-update-flow";
 
-export function UpdateRow({
+export function AppInfoRow({
   onOpen,
 }: {
-  /** Click: the account menu closes and the update modal opens. */
+  /** Click: the account menu closes and the App info dialog opens. */
   onOpen: () => void;
 }) {
-  const { mode, flow, currentVersion } = useUpdateFlow();
-  if (mode === "none") return null;
+  const { flow, currentVersion } = useUpdateFlow();
   const row = updateRowModel(flow);
   return (
     <MenuItem
       glyph={
         row.busy ? (
-          // The row's words already say what is running; hidden, the spinner stays out of the
+          // The status line already says what is running; hidden, the spinner stays out of the
           // menu item's accessible name.
           <span aria-hidden className="flex shrink-0">
             <Spinner size="sm" label={S.common.loading} />
@@ -34,14 +35,15 @@ export function UpdateRow({
           <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent" />
         ) : undefined
       }
-      label={rowLabel(flow)}
+      label={S.appInfo.menuEntry}
+      description={row.announces ? rowLabel(flow) : undefined}
       trailing={currentVersion !== null ? `v${currentVersion}` : undefined}
       onSelect={onOpen}
     />
   );
 }
 
-/** The row's wording for one flow — read at render time (`S` is a live binding). */
+/** The row's status line for one flow — read at render time (`S` is a live binding). */
 export function rowLabel(flow: UpdateFlow): string {
   switch (flow.kind) {
     case "checking":
@@ -54,8 +56,6 @@ export function rowLabel(flow: UpdateFlow): string {
       return S.update.restartToUpdate(flow.version);
     case "restarting":
       return S.update.rowRestarting;
-    case "unsupported":
-      return S.update.rowUnsupported;
     default:
       return S.update.checkNow;
   }

@@ -74,7 +74,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { versionBadgeFor } from "../../lib/update-flow";
-import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
+import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { APPROVAL_MODES } from "./approval-mode";
@@ -1035,7 +1035,7 @@ const versionBadgeClass =
  * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
  * and show the version alone. When the update flow has something waiting — a release
  * offered, a download in the background, a restart pending — a small superscript badge
- * follows, a button into the update modal (the same modal the sidebar's update row opens).
+ * follows, a button into the App info dialog (the same dialog the sidebar's App info row opens).
  * Fetching starts on mount — useVersionInfo caches at module level, so after the first
  * resolution anywhere in the app this renders instantly and never refetches. Nothing
  * renders until the version resolves (no placeholder flicker under the brand).
@@ -1056,8 +1056,8 @@ function VersionLine() {
 }
 
 /**
- * The superscript on the version line: a button into the update modal, worded by where the
- * flow stands. Its title and accessible name carry the update row's own sentence, so the
+ * The superscript on the version line: a button into the App info dialog, worded by where the
+ * flow stands. Its title and accessible name carry the App info row's own sentence, so the
  * two surfaces say the same thing about the same release.
  */
 function VersionBadge() {
@@ -1081,7 +1081,7 @@ function VersionBadge() {
   return (
     <button
       type="button"
-      onClick={openUpdateModal}
+      onClick={openAppInfo}
       data-tooltip={note}
       aria-label={note}
       className={`${versionBadgeClass} hover:underline`}

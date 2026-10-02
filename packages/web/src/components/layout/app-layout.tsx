@@ -54,7 +54,7 @@ import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { UpdateModal } from "../account/update-modal";
+import { AppInfoDialog } from "../account/app-info-dialog";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
@@ -89,7 +89,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /**
    * Passive: the layout above owns the one fetch per session, so the rail only reads the
    * shared caches — and gets pushed a result that lands while it is mounted. The avatar
-   * mirrors the pinned sidebar's software dot (the user menu behind it holds the update row);
+   * mirrors the pinned sidebar's software dot (the user menu behind it holds the App info row);
    * every other badge here rides on a page entry, which is where its trail continues.
    */
   const badges = useUpdateBadges();
@@ -184,7 +184,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
    * avatar, so without this the collapsed rail offers a control with no name at all; the visible
    * tooltip says what the control does instead, because neither an initial in a circle nor a
    * photograph is a name a reader needs read back. Both carry what the update trail is waiting
-   * on, which from this rail is the only route left to the update row.
+   * on, which from this rail is the only route left to the App info row.
    */
   const accountName = user?.displayName ?? user?.userId;
   const avatarName =
@@ -224,7 +224,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       }
       foot={
         /* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
-           first: appearance and Settings, the update row and signing out all stay one click
+           first: appearance and Settings, the App info row and signing out all stay one click
            away while collapsed. Same component as the pinned sidebar's (user-menu.tsx). */
         <UserMenu
           className="mt-auto shrink-0"
@@ -250,7 +250,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
                   {...(user?.displayName !== undefined ? { displayName: user.displayName } : {})}
                   {...(user?.avatar !== undefined ? { avatar: user.avatar } : {})}
                 >
-                  {/* Update reminder, mirroring the pinned sidebar's avatar: the update row sits
+                  {/* Update reminder, mirroring the pinned sidebar's avatar: the App info row sits
                       in the menu this opens, and the label above names what is waiting. */}
                   {badges.software !== null && <UpdateDot />}
                 </UserAvatar>
@@ -441,9 +441,9 @@ export function AppLayout() {
       }
       overlays={
         <>
-          {/* The software-update modal, opened from the sidebar's update row and the draft
+          {/* The App info dialog, opened from the account menu's App info row and the draft
               page's version badge alike; mounted here so it outlives both. */}
-          <UpdateModal />
+          <AppInfoDialog />
           <ChangePasswordDialog
             open={changePasswordOpen}
             onClose={() => setChangePasswordOpen(false)}
@@ -464,7 +464,7 @@ export function AppLayout() {
     >
       {/* The outermost menu on a phone: it carries a dot for EITHER trail, so its wording is
           the combined one — naming one of two updates would point at the wrong trail. Both
-          trails continue inside the drawer's sidebar (the Agents entry, the user row's update
+          trails continue inside the drawer's sidebar (the Agents entry, the user row's App info
           entry). */}
       <MobileTopBar
         title={S.appName}
@@ -501,7 +501,6 @@ export function AppLayout() {
           <button
             type="button"
             aria-label={S.common.close}
-            data-tooltip={S.common.close}
             onClick={dismissPasswordBanner}
             className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
           >

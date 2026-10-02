@@ -237,7 +237,7 @@ function EvaluationRow({
       </TableCell>
       <TableCell
         className="max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400"
-        data-tooltip={evaluation.provider}
+        data-tooltip={`${evaluation.provider}/${evaluation.modelId}`}
         data-tooltip-content="code"
       >
         {evaluation.modelId}

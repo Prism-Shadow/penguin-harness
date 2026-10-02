@@ -2256,10 +2256,7 @@ export function ChatPage() {
                 compacting state stays in the stream banner rather than being repeated here.
                 Below sm only the glyph remains so the title keeps its room. */}
             {headerActivity === "running" && (
-              <span
-                data-tooltip={sessionActivityLabel(headerActivity)}
-                className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-              >
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 <ActivityIcon
                   activity={headerActivity}
                   label={sessionActivityLabel(headerActivity)}

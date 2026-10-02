@@ -545,17 +545,14 @@ function OverviewTab({
             <p className="mt-0.5 font-mono text-sm font-semibold">v{data.config.version}</p>
           </div>
           {/* State path row (the chat details card's Session id convention): selectable mono
-              text with the shared CopyButton beside it; the title attribute carries the full
-              path for hover. */}
+              text with the shared CopyButton beside it; the path wraps, so it is always shown
+              whole. */}
           <div>
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
               {S.agent.stateDir}
             </p>
             <div className="flex items-start gap-1.5">
-              <span
-                data-tooltip={data.stateDir}
-                className="min-w-0 flex-1 break-all font-mono text-xs leading-5"
-              >
+              <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">
                 {data.stateDir}
               </span>
               <CopyButton

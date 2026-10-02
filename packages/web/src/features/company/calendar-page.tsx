@@ -1084,7 +1084,6 @@ function DayOverflow({
       <button
         ref={triggerRef}
         type="button"
-        data-tooltip={label}
         aria-label={label}
         aria-expanded={open}
         aria-controls={panelId}

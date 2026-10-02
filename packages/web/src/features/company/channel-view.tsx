@@ -655,7 +655,6 @@ export function ChannelView() {
               <button
                 type="button"
                 aria-label={S.chat.jumpToLatest}
-                data-tooltip={S.chat.jumpToLatest}
                 onClick={jumpToLatest}
                 className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
               >

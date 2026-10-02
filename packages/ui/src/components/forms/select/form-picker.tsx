@@ -28,7 +28,11 @@ export interface FormPickerTriggerProps {
   labelClassName?: string;
   /** Grays the label as a placeholder (nothing selected yet). */
   muted?: boolean;
-  title: string;
+  /**
+   * The tooltip, only when it says more than the visible value (the field name with the value in
+   * it, e.g. "Model: GPT-6"). Omit it when it would repeat the field label above the control.
+   */
+  title?: string;
   ariaLabel: string;
   ariaHaspopup?: "listbox" | "dialog";
   /** Whether the thing it opens is open (announced as `aria-expanded`). */

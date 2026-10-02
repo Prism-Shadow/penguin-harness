@@ -181,7 +181,7 @@ export function PickersBoard() {
           <div className={`${menuPanelClass} w-56`}>
             <Menu density="md">
               <MenuItem label={t.menuSettings} />
-              <MenuItem label={t.menuUpdate} trailing={t.menuVersion} />
+              <MenuItem label={t.menuAppInfo} trailing={t.menuVersion} />
               <MenuItem label={t.menuSignOut} danger />
             </Menu>
           </div>

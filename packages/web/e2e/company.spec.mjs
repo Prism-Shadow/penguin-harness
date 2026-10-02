@@ -223,7 +223,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
     await card(title).click();
     const dialog = page.getByRole("dialog", { name: title });
     await dialog.getByRole("button", { name: /^关联工单会话/ }).click();
-    await dialog.locator('button[title="打开会话"]').first().click();
+    await dialog.locator(`button[data-tooltip$="${sessionId}"]`).first().click();
     await expect(page).toHaveURL(new RegExp(`/chat/${sessionId}$`));
     await expect(page.getByPlaceholder(/输入消息/)).toBeVisible();
     expect(new URL(page.url()).pathname).toBe(`/chat/${sessionId}`);
