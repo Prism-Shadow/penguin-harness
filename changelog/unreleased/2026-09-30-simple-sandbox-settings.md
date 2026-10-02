@@ -24,7 +24,7 @@ named file mode, network level and approval mode, and one pick saves all three o
   or made the default. Two more presets, Workspace Write with Ask and Denied All, start
   unpinned. The table fits the settings dialog in a bordered box with a tinted header and even
   columns: the name wraps and holds the effective name, the three choice columns are the same
-  width with short option names ("Approve all", "Approve reads", "Ask every time", "Deny all"),
+  width with short option names ("Approve all", "Approve reads", "Always ask", "Deny all"),
   Pin is a pin toggle, and Full Access's locked cells show their value as plain text. Every
   column header has a "?" saying what the column means.
 - **Explanations sit behind a "?" beside their title** on every settings card: the card's

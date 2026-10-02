@@ -142,7 +142,7 @@ export const SANDBOX_GROUP = "sandbox";
                 options: [
                   { value: "allow-all", title: "Approve all", titleZh: "全部批准" },
                   { value: "read-only", title: "Approve reads", titleZh: "批准只读" },
-                  { value: "always-ask", title: "Ask every time", titleZh: "每次询问" },
+                  { value: "always-ask", title: "Always ask", titleZh: "每次询问" },
                   { value: "deny-all", title: "Deny all", titleZh: "全部拒绝" },
                 ],
               },
