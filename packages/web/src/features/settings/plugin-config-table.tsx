@@ -462,7 +462,9 @@ function Cell({
           // Typing it back, or clearing the box, restores it.
           value={typeof cell === "string" && cell !== "" ? cell : declared}
           disabled={disabled}
-          onChange={(value) => onCell(row.declared !== undefined && value === declared ? "" : value)}
+          onChange={(value) =>
+            onCell(row.declared !== undefined && value === declared ? "" : value)
+          }
         />
       )}
     </td>

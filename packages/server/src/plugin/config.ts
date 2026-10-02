@@ -240,7 +240,10 @@ export function resolveTable(field: PluginConfigField, stored: unknown): PluginC
   const cells = isRecord(stored) ? stored : {};
   const declared = declaredRowsOf(field, cells);
   if (field.extensible === undefined) return declared;
-  return inStoredOrder([...declared, ...addedRowsOf(field, cells[TABLE_ADDED])], cells[TABLE_ORDER]);
+  return inStoredOrder(
+    [...declared, ...addedRowsOf(field, cells[TABLE_ADDED])],
+    cells[TABLE_ORDER],
+  );
 }
 
 function declaredRowsOf(

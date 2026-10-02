@@ -138,7 +138,11 @@ export const SANDBOX_GROUP = "sandbox";
                     title: "Off (full access)",
                     titleZh: "关闭（完全访问）",
                   },
-                  { value: "workspace-write", title: "Workspace write only", titleZh: "仅工作区可写" },
+                  {
+                    value: "workspace-write",
+                    title: "Workspace write only",
+                    titleZh: "仅工作区可写",
+                  },
                   { value: "read-only", title: "Read-only", titleZh: "只读" },
                 ],
               },
