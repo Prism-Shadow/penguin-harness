@@ -7,7 +7,7 @@
 
 [中文版](2026-09-29-sandbox-on-every-channel.zh.md)
 
-Before this change, the builtin plugins reached a server through three channels: the CLI package's `lib/plugins`, the desktop app's `plugins/`, and a hot push. The Docker image now brings them too. An npm global install of `@prismshadow/penguin-cli` carries none: there a backend is fetched from the npm registry into the plugin store on the Plugins page, like any other plugin, and that fetch now runs where no npm is on `PATH`. A shipped plugin still loads only when a Project asks for it, and the sandbox mode still starts at Off.
+Before this change, the builtin plugins reached a server through three channels: the CLI package's `lib/plugins`, the desktop app's `plugins/`, and a hot push. The Docker image now brings them too. An npm global install of `@prismshadow/penguin-cli` carries no plugin, only the build's index of the ones published beside it (`plugins/index.json`): there a backend is fetched from the npm registry into the plugin store on the Plugins page, checked against the integrity that index names. A plugin the build's prefix only lists, without carrying it, counts as fetched rather than shipped. A shipped plugin still loads only when a Project asks for it, and the sandbox mode still starts at Off.
 
 ## Docker image
 

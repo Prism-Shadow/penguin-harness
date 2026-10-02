@@ -678,6 +678,15 @@ jobs:
       - name: Every package this publishes already exists on npm
         run: node scripts/check-publishable.mjs --registry --strict
 
+      # The CLI's npm package carries no plugins, only the build's index of the ones published
+      # beside it: an npm install of the CLI then fetches a plugin from the registry when a
+      # Project asks for it, checked against the integrity this build computed. Built after the
+      # version stamp, so each row names the version this run publishes.
+      - name: The CLI package's plugin index
+        run: |
+          node scripts/build-plugins.mjs --out out/cli-plugins
+          node scripts/cli-plugin-index.mjs out/cli-plugins/index.json
+
       - name: Publish to npm
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"

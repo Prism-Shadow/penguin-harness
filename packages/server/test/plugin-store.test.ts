@@ -17,7 +17,9 @@ import {
   shippedNames,
   storePackage,
   storeSources,
+  syncPluginStore,
 } from "../src/plugin/store.js";
+import { shippedIndex } from "../src/plugin/registry.js";
 import {
   archiveIntegrity,
   entryDir,
@@ -224,6 +226,7 @@ describe("the installation's prefix", () => {
   it("is found beside the entry's target, not beside a link to it (the Docker image)", async () => {
     // /opt/penguin/lib/{dist/penguin.js, plugins/}, started as /usr/local/bin/penguin → the entry.
     const lib = path.join(dir, "opt", "penguin", "lib");
+    await prefix(path.join(lib, "plugins"));
     await write(lib, {
       "dist/penguin.js": "",
       "plugins/index.json": JSON.stringify([
@@ -237,5 +240,31 @@ describe("the installation's prefix", () => {
     expect(programEntry(link)).toBe(path.join(real, "dist", "penguin.js"));
     expect(storeSources(null, link)).toEqual([path.join(real, "plugins")]);
     expect(await withEntry(link, () => shippedNames(null))).toEqual(["@acme/sandbox-x"]);
+  });
+
+  it("of the CLI's npm package lists plugins without carrying them: they are fetched, not shipped", async () => {
+    // <pkg>/{dist/penguin.js, plugins/index.json} and no node_modules: what `npm install -g`
+    // leaves (scripts/cli-plugin-index.mjs writes the index).
+    const pkg = path.join(dir, "global", "lib", "node_modules", "@prismshadow", "penguin-cli");
+    const row = {
+      name: "@acme/sandbox-x",
+      version: "1.0.0",
+      integrity: `sha256-${"1".repeat(64)}`,
+    };
+    await write(pkg, { "dist/penguin.js": "", "plugins/index.json": JSON.stringify([row]) });
+    const entry = path.join(pkg, "dist", "penguin.js");
+    const logged: string[] = [];
+    // Not shipped: an install of it is a registry fetch, not a copy from the prefix.
+    expect(await withEntry(entry, () => shippedNames(null))).toEqual([]);
+    // Nothing to store at boot, and nothing to complain about.
+    const shipped = await withEntry(entry, () =>
+      syncPluginStore(root, null, (m) => logged.push(m)),
+    );
+    expect([...shipped]).toEqual([]);
+    expect(logged).toEqual([]);
+    expect(await readStore(root)).toEqual([]);
+    // Still listed, with its content: the entry a registry fetch is checked against.
+    const listed = await withEntry(entry, () => shippedIndex(null));
+    expect(listed.map((e) => [e.name, e.integrity])).toEqual([[row.name, row.integrity]]);
   });
 });

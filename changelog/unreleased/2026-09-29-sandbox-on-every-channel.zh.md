@@ -7,7 +7,7 @@
 
 [English](2026-09-29-sandbox-on-every-channel.md)
 
-此前内置插件经三条渠道到达服务器：CLI 安装包的 `lib/plugins`、桌面端的 `plugins/`、热推送。现在 Docker 镜像也带上它们。`@prismshadow/penguin-cli` 的 npm 全局安装不带：在那里，后端与其它插件一样在插件页上从 npm registry 现取进插件仓；`PATH` 上没有 npm 时，这次现取也能运行。随包下发的插件仍要等某个 Project 要求时才加载，沙盒模式默认仍是关闭。
+此前内置插件经三条渠道到达服务器：CLI 安装包的 `lib/plugins`、桌面端的 `plugins/`、热推送。现在 Docker 镜像也带上它们。`@prismshadow/penguin-cli` 的 npm 全局安装不带插件本体，只带这次构建对随之发布的插件的索引（`plugins/index.json`）：在那里，后端在插件页上从 npm registry 现取进插件仓，并按该索引写明的 integrity 校验。构建前缀只列出、未携带的插件，算作现取而非随包下发。随包下发的插件仍要等某个 Project 要求时才加载，沙盒模式默认仍是关闭。
 
 ## Docker 镜像
 

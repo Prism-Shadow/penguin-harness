@@ -325,9 +325,13 @@ export function storeSources(
 }
 
 /**
- * The plugins the running build carries: the prefix of the first of `storeSources` that has an
+ * The plugins the running build lists: the prefix of the first of `storeSources` that has an
  * `index.json` (scripts/build-plugins.mjs writes it), with its rows. Null when none does — a
  * server run from source ships no prefix. The rows are as written; the registry validates them.
+ *
+ * A row is LISTED by the build; it is CARRIED only when its package sits in the prefix
+ * (`carried`). The npm package of the CLI carries none: its prefix is the build's index alone,
+ * so an npm install knows each plugin's content and fetches it from the registry on demand.
  */
 export async function readShippedIndex(
   assetsDir: string | null,
@@ -345,6 +349,22 @@ export async function readShippedIndex(
     return { prefix, entries };
   }
   return null;
+}
+
+/** Where a listed row's package sits in its prefix, when the build carries it there. */
+function packageDirOf(prefix: string, name: string): string {
+  return path.join(prefix, "node_modules", ...name.split("/"));
+}
+
+/** The rows whose package the prefix carries; a row it only lists is fetched from the registry. */
+function carried(index: { prefix: string; entries: unknown[] }): unknown[] {
+  return index.entries.filter((row) => {
+    const name = (row as { name?: unknown }).name;
+    return (
+      typeof name === "string" &&
+      fs.existsSync(path.join(packageDirOf(index.prefix, name), "package.json"))
+    );
+  });
 }
 
 let chain: Promise<unknown> = Promise.resolve();
@@ -372,7 +392,7 @@ const storedAs = new Map<string, StoredEntry>();
 
 /**
  * Stores every plugin the running build carries that is not stored yet, and answers the
- * integrities its `index.json` lists together with what each was stored as. On the store's
+ * integrities of those it carries together with what each was stored as. On the store's
  * queue, best effort: a failure is logged and never fails the boot — a package that did not
  * reach the store is reported by the activation that cannot find it (plugin/activation.ts).
  */
@@ -384,7 +404,7 @@ export async function syncPluginStore(
   const shipped = new Set<string>();
   await onStoreQueue(async () => {
     const index = await readShippedIndex(assetsDir);
-    for (const row of index?.entries ?? []) {
+    for (const row of index === null ? [] : carried(index)) {
       const { name, version, integrity } = row as Partial<Record<string, unknown>>;
       if (typeof name !== "string" || typeof version !== "string") continue;
       if (typeof integrity !== "string" || entryKey(integrity) === null) continue;
@@ -397,7 +417,7 @@ export async function syncPluginStore(
         continue;
       }
       try {
-        const pkgDir = path.join(index!.prefix, "node_modules", ...name.split("/"));
+        const pkgDir = packageDirOf(index!.prefix, name);
         const entry = await storePackage(root, pkgDir, index!.prefix);
         storedAs.set(memo, entry);
         shipped.add(entry.integrity);
@@ -411,10 +431,10 @@ export async function syncPluginStore(
   return shipped;
 }
 
-/** The names the running build ships. */
+/** The names the running build ships: the rows its prefix carries, not those it only lists. */
 export async function shippedNames(assetsDir: string | null): Promise<string[]> {
   const index = await readShippedIndex(assetsDir).catch(() => null);
-  const names = (index?.entries ?? []).flatMap((row) => {
+  const names = (index === null ? [] : carried(index)).flatMap((row) => {
     const name = (row as { name?: unknown }).name;
     return typeof name === "string" ? [name] : [];
   });
