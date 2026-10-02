@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-30
 - **Type:** feat
-- **Scope:** `server`, `web`
+- **Scope:** `server`, `web`, `ui`
 
 [中文版](2026-09-30-simple-sandbox-settings.zh.md)
 
@@ -21,35 +21,48 @@ named file mode, network level and approval mode, and one pick saves all three o
   dialog's Plugins page. At the top of the card is a table with one row per preset and columns
   for the name, whether the menu lists it, and its file mode, network level and approval mode.
   Renaming a preset keeps its mapping. Full Access can only be renamed or hidden. Two more
-  presets, Workspace Write with Ask and Denied All, start out of the menu. The table sits in a
-  bordered box with a tinted header; the name is an inline text box, "In menu" is a switch, and
-  Full Access's locked cells show their value with a lock mark.
+  presets, Workspace Write with Ask and Denied All, start out of the menu. The table fits the
+  settings dialog in a bordered box with a tinted header: the name is an inline text box holding
+  the effective name, "In menu" is a switch, the selects are compact with short option names
+  ("Approve all", "Approve reads", "Ask every time", "Deny all"), and Full Access's locked cells
+  show their value with a lock mark.
+- **New Sessions start from the default preset.** A Default column picks one row, Workspace
+  Write until changed. While the switch is on, a new Session and the composer's draft take that
+  row's file mode, network and approval mode; a default that confines nothing (Full Access)
+  starts Sessions unconfined. Changing the default reaches new Sessions only. The card no longer
+  has its own confinement mode and network fields; settings stored before the default preset
+  keep their mode and network until the card is saved once (see backward compatibility).
 - **The Sandbox card has an on/off switch at the top.** It decides whether new Sessions start
   confined; a Session that exists keeps its own policy. Off, a new Session has full file and
   network access and is held only by its approval mode, and the composer's permission menu
-  lists the four approval modes instead of the presets. The mode, network and presets are kept
+  lists the four approval modes instead of the presets. The presets and the default are kept
   while it is off and apply again when it is turned on. A fresh install starts off. Settings
-  saved before the switch existed read it as on when they confined anything; see
-  [backward compatibility](2026-10-02-backward-compatibility-sandbox-switch.md).
-- **The default mode, network, temp directory and masked paths moved into an Advanced fold**,
-  collapsed by default, under the switch and the presets table.
+  saved before the switch existed read it as on when they confined anything (a mode other than
+  Off, a network that is not open, or masked paths); see
+  [backward compatibility](2026-10-02-backward-compatibility-sandbox-switch.md). While the
+  switch is off, the card hides its warning that no sandbox backend is usable.
+- **The temp directory and masked paths moved into an Advanced fold**, collapsed by default,
+  under the switch and the presets table.
 - **Turning the switch on offers to install a sandbox backend** when the machine has none for
   its OS: `@penguinharness/sandbox-bwrap` on Linux, `@penguinharness/sandbox-seatbelt` on
-  macOS, `@penguinharness/sandbox-wsl` on Windows. The choices are Install and Not now, with
+  macOS, `@penguinharness/sandbox-wsl` on Windows. The dialog wears a download mark. The
+  choices are Install and Not now, with
   "Don't ask again", which this browser remembers per machine. Installing goes through the
   Plugins page's install, into the current Project for that machine; the switch stays on
   either way.
-- **Saving the table does not change what is confined.** The presets only name combinations.
-  A Session still stores its own mode, network level and approval mode, and the sandbox policy
-  is still read from the card's other fields.
 - Settings groups gain a `table` field type: fixed rows, columns of `string`, `boolean` or `enum`,
   and cells that can be locked. Only the cells that differ from the declaration are stored, and a
   refused cell is named `<field>.<row>.<column>`. An `unavailable` option can name a table
-  column.
+  column. A table can declare a `rowChoice`: a single-choice column stored in an `enum` field of
+  the same group whose options are the row ids.
 - Settings fields can be marked `advanced: true`; the Plugins page folds such fields on every
   card.
-- The sandbox's settings entry gains `backend` (`installed`, `recommended`) and its group an
-  `enabled` field.
+- The sandbox's settings entry gains `backend` (`installed`, `recommended`); its group gains
+  `enabled` and `defaultPreset` and loses `mode` and `network`. A notice may name a switch in
+  `onlyWhen`, and the page shows it only while that switch is on.
+- `ConfirmModal` (UI package) takes a `glyph` for its leading mark.
 - The Session's `sandbox` object in the API gains three response-only fields: `presets` (the
   table, disabled rows included), `advanced`, and `switchOn` (the Sandbox switch). The chat
-  defaults carry them too.
+  defaults carry them too, plus `defaultApprovalMode`: the default preset's approval mode
+  while the switch is on. A Session created without an approval mode takes it; an
+  organization's Session keeps `allow-all`.

@@ -269,10 +269,11 @@ The **Plugins** page is admin-only and server-global. It shows the options each 
 
 The sandbox is the first card on the page. It sets the policy a new Session is confined under. One policy governs the commands the agent runs, the hook scripts its Session runs, the MCP Servers it starts over `stdio`, and the file tools (`read_file`, `edit_file`, `write_file`):
 
-- **Confinement mode**: off (full access), workspace write only, or read-only. Workspace write allows writes to the Session's Workspace, its scratchpad (the plan file, a goal's state file, attachments) and the temporary directory; read-only allows the temporary directory only.
-- **Network**: full access, local network (localhost only), or no network. It applies to the image URLs `read_file` fetches too. The local level needs a backend that can enforce it.
-- **Temporary directory**: whether it stays writable. On by default, in either confining mode, because shells and most tools cannot start without one.
-- **Masked paths**: paths hidden from the agent's commands, hook scripts, `stdio` MCP Servers and file tools, reads included; one absolute path per line, at most 64.
+- **Confine new sessions**: the switch at the top. Off (a fresh install), a new Session has full file and network access and is held only by its approval mode, and the composer's permission menu lists the approval modes alone.
+- **Presets**: the table of what the permission menu offers, one row per preset: its name, whether the menu lists it, its file mode (off, workspace, read-only), network (full, localhost, none) and approval mode. Workspace allows writes to the Session's Workspace, its scratchpad (the plan file, a goal's state file, attachments) and the temporary directory; read-only allows the temporary directory only. The network level applies to the image URLs `read_file` fetches too, and localhost needs a backend that can enforce it. The **Default** column picks the row a new Session starts from while the switch is on — its file mode, network and approval mode; Workspace Write until changed.
+- Under **Advanced**, folded by default:
+  - **Temporary directory**: whether it stays writable. On by default, in either confining mode, because shells and most tools cannot start without one.
+  - **Masked paths**: paths hidden from the agent's commands, hook scripts, `stdio` MCP Servers and file tools, reads included; one absolute path per line, at most 64.
 
 Neither confining mode lets the agent write its Agent State: `AGENTS.md`, `system_config.yaml`, Skills, hook packages, memory, the vault and scheduled tasks. To let an agent write memory, write its own Skills or hook packages, or change its configuration, switch that conversation to full access with its **Permissions** button. An MCP Server started over `stdio` is confined the same way when it starts — at a context open or a reconnect — so a Server that must write outside those directories, or reach a network the level cuts, fails to connect in a confining Session; MCP Servers reached over `http` or `sse` are not processes of this machine and are not confined.
 

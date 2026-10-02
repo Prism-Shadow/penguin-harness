@@ -173,7 +173,7 @@ PUT 按如下规则校验：
 
 字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。标记 `advanced: true` 的字段画在卡片默认折叠的「高级选项」里，存储与校验与其他字段相同。
 
-沙盒条目另带 `backend`：`installed` 表示是否装有适用于本机操作系统的沙盒后端，`recommended` 是本系统的默认后端包（Linux 为 `@penguinharness/sandbox-bwrap`，macOS 为 `@penguinharness/sandbox-seatbelt`，Windows 为 `@penguinharness/sandbox-wsl`）。其 `enabled` 开关决定新建 Session 是否进入沙盒；开关出现之前保存的设置，旧策略有任何封禁即视为打开，且不改写磁盘上的文档。
+沙盒条目另带 `backend`：`installed` 表示是否装有适用于本机操作系统的沙盒后端，`recommended` 是本系统的默认后端包（Linux 为 `@penguinharness/sandbox-bwrap`，macOS 为 `@penguinharness/sandbox-seatbelt`，Windows 为 `@penguinharness/sandbox-wsl`）。其 `enabled` 开关决定新建 Session 是否进入沙盒，`defaultPreset`（画作预设表的「默认」列，即 `rowChoice`）指定新 Session 取哪一行的封禁模式、网络与审批方式。开关出现之前保存的设置，旧策略有任何封禁（封禁模式不是「关闭」、网络不是完全开放，或设置了屏蔽路径）即视为打开；默认预设出现之前保存的设置，在卡片保存之前沿用自身的 `mode` 与 `network`。读取时都不改写文档。chat defaults 的 `sandbox.defaultApprovalMode` 是开关打开时默认预设的审批方式。
 
 PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，密钥按掩码原样送回即保持存储值。被拒的字段返回 `400` `plugin_config_invalid` 并点名该字段；没有分组叫这个名字时返回 `404` `plugin_config_unknown`。声明它的模块自己经 watch 或下次读取拿到改动，无需重启。
 
