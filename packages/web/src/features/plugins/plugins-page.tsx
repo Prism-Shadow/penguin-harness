@@ -603,65 +603,61 @@ export function PluginsPage() {
   // would otherwise take the scrollbar with it and shift everything sideways at the click.
   return (
     <PageFrame className="[scrollbar-gutter:stable]">
-      {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
-          admin's page; the header's gear opens the dialog there rather than sending anyone
-          through the user menu to find it. */}
-      <PageHeader
-        title={S.plugins.pageTitle}
-        info={S.plugins.pageDesc}
-        actions={
-          isAdmin ? (
-            <>
-              {/* Which machine's plugins the rows show, and which table an install or a
-                  removal edits: the shared one, or that machine's own. */}
-              {otherMachines.length > 0 && (
-                <MachinePicker
-                  aria-label={S.plugins.viewMachine}
-                  choices={machineChoices}
-                  value={viewMachine ?? ALL_MACHINES_CHOICE}
-                  onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
-                />
-              )}
-              <Button
-                size="sm"
-                className="h-8 w-8 shrink-0 justify-center p-0"
-                aria-label={S.plugins.openSettings}
-                title={S.plugins.openSettings}
-                onClick={() => setSettingsOpen(true)}
-              >
-                <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
-              </Button>
-            </>
-          ) : undefined
-        }
-      >
-        {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
+      {/* The wrapper is the @container the header buttons' words answer to (see
+          PluginsHeaderActions). The options loaded plugins declare live on the Settings
+          dialog's Plugins page, an admin's page; the header's gear opens the dialog there rather
+          than sending anyone through the user menu to find it. */}
+      <div className="@container">
+        <PageHeader
+          title={S.plugins.pageTitle}
+          info={S.plugins.pageDesc}
+          actions={
+            <PluginsHeaderActions
+              query={query}
+              onQuery={setQuery}
+              isAdmin={isAdmin}
+              machinePicker={
+                otherMachines.length > 0 ? (
+                  <MachinePicker
+                    aria-label={S.plugins.viewMachine}
+                    choices={machineChoices}
+                    value={viewMachine ?? ALL_MACHINES_CHOICE}
+                    onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
+                  />
+                ) : null
+              }
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
+          }
+        >
+          {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody
             has installed is not waiting for anyone — so the line states the upgradable count
             alone rather than padding it with a zero. The per-card update buttons below remain
             the way to take just one. */}
-        {todo && (
-          <TodoNotice
-            text={S.todo.changesUpgradable(noticeCounts(todo).updated)}
-            actionLabel={S.todo.updateNow}
-            busy={bulkRunning}
-            onAction={() => setPendingBulk(pluginUpdatePlan(agents))}
-            dismissLabel={S.todo.dismiss}
-            onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
-          />
-        )}
-        {remote !== null && "error" in remote && remote.machineId === viewMachine && (
-          <Notice tone="attention" className="mt-4">
-            {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
-          </Notice>
-        )}
-        {deployment !== null && viewIncludesHere && deployment.restartPending && (
-          <Notice tone="attention" className="mt-4">
-            {S.plugins.restartPending}
-          </Notice>
-        )}
-      </PageHeader>
+          {todo && (
+            <TodoNotice
+              text={S.todo.changesUpgradable(noticeCounts(todo).updated)}
+              actionLabel={S.todo.updateNow}
+              busy={bulkRunning}
+              onAction={() => setPendingBulk(pluginUpdatePlan(agents))}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
+            />
+          )}
+          {remote !== null && "error" in remote && remote.machineId === viewMachine && (
+            <Notice tone="attention" className="mt-4">
+              {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
+            </Notice>
+          )}
+          {deployment !== null && viewIncludesHere && deployment.restartPending && (
+            <Notice tone="attention" className="mt-4">
+              {S.plugins.restartPending}
+            </Notice>
+          )}
+        </PageHeader>
+      </div>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -690,13 +686,6 @@ export function PluginsPage() {
       ) : (
         <div className="mt-2 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
           <div className="min-w-0 space-y-3">
-            <SearchInput
-              size="sm"
-              value={query}
-              placeholder={S.plugins.searchPlaceholder}
-              aria-label={S.plugins.searchPlaceholder}
-              onChange={setQuery}
-            />
             {/* ONE list, one plugin per row, every kind in the same card: what is installed
                   first — the library's plugins (they ship with the build and every Agent may use
                   them) and the module plugins this Project asks for — then what could be. A
@@ -878,6 +867,57 @@ export interface PluginView {
 
 /** The picker's value for all machines: a machine id is never this short. */
 const ALL_MACHINES_CHOICE = "*";
+
+/**
+ * The page header's actions, the Models page's shape: search for everyone (a member filters the
+ * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
+ * which table an install or a removal edits: the shared one, or that machine's own) and the gear
+ * that opens the Settings dialog's Plugins page. The gear's words sit beside its icon once the
+ * header's `@container` is wide enough.
+ */
+export function PluginsHeaderActions({
+  query,
+  onQuery,
+  isAdmin,
+  machinePicker,
+  onOpenSettings,
+}: {
+  query: string;
+  onQuery: (query: string) => void;
+  isAdmin: boolean;
+  /** The machine picker, when there is another machine to pick; null otherwise. */
+  machinePicker: React.ReactNode;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <>
+      <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+        <SearchInput
+          size="sm"
+          value={query}
+          placeholder={S.plugins.searchPlaceholder}
+          aria-label={S.plugins.searchPlaceholder}
+          onChange={onQuery}
+        />
+      </div>
+      {isAdmin && (
+        <>
+          {machinePicker}
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            aria-label={S.plugins.openSettings}
+            title={S.plugins.openSettings}
+            onClick={onOpenSettings}
+          >
+            <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.openSettings}</span>
+          </Button>
+        </>
+      )}
+    </>
+  );
+}
 
 const ALL_MACHINES: PluginView = { machineId: null, remote: null, nameOf: (id) => id };
 
@@ -1286,7 +1326,7 @@ function PluginCard({
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
-    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+    <div className="@container flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
       <button
         type="button"
         onClick={() => setDetailOpen(true)}
@@ -1341,8 +1381,9 @@ function PluginCard({
       {detailOpen && (
         <PluginDetailModal plugin={plugin} meta={meta} onClose={() => setDetailOpen(false)} />
       )}
-      {/* Actions: equal-square light icon buttons in a single row, vertically centered at the
-          card's right edge (copy goes into aria-label and title). */}
+      {/* Actions: light buttons in a single row, vertically centered at the card's right edge —
+          the Models page's group-header shape: the icon always, its copy beside it once the card
+          is wide enough (@3xl), and aria-label and title carrying the name either way. */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
         {/* Light (secondary): an update nudge, not the card's primary action. The last stop on
             the plugins trail, so it carries the dot itself — straddling the top-right corner of
@@ -1353,12 +1394,13 @@ function PluginCard({
           <Button
             size="sm"
             variant="secondary"
-            className="relative h-8 w-8 shrink-0 justify-center p-0"
+            className="relative h-8 shrink-0"
             aria-label={`${S.plugins.updateOutdated(outdated.length)} ${plugin.name}`}
             title={S.plugins.updateOutdated(outdated.length)}
             onClick={() => setPendingUpdate(outdated)}
           >
             <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.updateOutdated(outdated.length)}</span>
             <UpdateDot
               size="inline"
               position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
@@ -1368,7 +1410,7 @@ function PluginCard({
         {plugin.skills.length > 0 && (
           <Button
             size="sm"
-            className="h-8 w-8 shrink-0 justify-center p-0"
+            className="h-8 shrink-0"
             aria-label={`${S.skills.quickInvoke} ${plugin.name}`}
             title={quickStartSkill ? S.skills.quickInvoke : S.plugins.quickInvokeNeedsInstall}
             disabled={quickStartSkill === undefined}
@@ -1377,16 +1419,18 @@ function PluginCard({
             }}
           >
             <GlyphIcon d={ICONS.paperPlane} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.skills.quickInvoke}</span>
           </Button>
         )}
         <Button
           size="sm"
-          className="h-8 w-8 shrink-0 justify-center p-0"
+          className="h-8 shrink-0"
           aria-label={`${S.skills.manageInstall} ${plugin.name}`}
           title={S.skills.manageInstall}
           onClick={() => setInstallOpen(true)}
         >
           <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
+          <span className="hidden @3xl:inline">{S.skills.manageInstall}</span>
         </Button>
       </div>
       {installOpen && (
@@ -1559,7 +1603,7 @@ function InstallRow({
  * knows the package; the cluster sits BESIDE that link — a button inside an anchor is invalid
  * markup, and the click would have two meanings.
  */
-function ModuleRow({
+export function ModuleRow({
   specifier,
   entry,
   state,
@@ -1678,7 +1722,7 @@ function ModuleRow({
     </>
   );
   return (
-    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+    <div className="@container flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
       {entry !== undefined ? (
         <Link to={`/plugins/registry/${specifier}`} className="min-w-0 flex-1">
           {body}
@@ -1686,14 +1730,15 @@ function ModuleRow({
       ) : (
         <div className="min-w-0 flex-1">{body}</div>
       )}
-      {/* The verb, in the library card's shape: one square light icon button, its copy in
-          aria-label and title. While it runs, a spinner stands in for the glyph. */}
+      {/* The verb, in the library card's shape: a light button, its icon always and its copy
+          beside it once the row is wide enough (@3xl), aria-label and title naming it either
+          way. While it runs, a spinner stands in for the glyph. */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
         {state === "none"
           ? onInstall !== null && (
               <Button
                 size="sm"
-                className="h-8 w-8 shrink-0 justify-center p-0"
+                className="h-8 shrink-0"
                 aria-label={`${busy ? S.plugins.installing : S.plugins.install} ${specifier}`}
                 aria-busy={busy}
                 title={busy ? S.plugins.installing : S.plugins.install}
@@ -1705,12 +1750,15 @@ function ModuleRow({
                 ) : (
                   <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
                 )}
+                <span className="hidden @3xl:inline">
+                  {busy ? S.plugins.installing : S.plugins.install}
+                </span>
               </Button>
             )
           : onRemove !== null && (
               <Button
                 size="sm"
-                className="h-8 w-8 shrink-0 justify-center p-0"
+                className="h-8 shrink-0"
                 aria-label={`${S.plugins.uninstall} ${specifier}`}
                 aria-busy={busy}
                 title={removeBlocked ?? S.plugins.uninstall}
@@ -1722,6 +1770,7 @@ function ModuleRow({
                 ) : (
                   <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
                 )}
+                <span className="hidden @3xl:inline">{S.plugins.uninstall}</span>
               </Button>
             )}
       </div>

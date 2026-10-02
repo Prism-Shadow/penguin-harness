@@ -22,16 +22,18 @@ export interface GenerativeModelConfig {
   apiKey?: string;
   /**
    * Optional host-owned credential resolver, called before every upstream request. When it
-   * returns a different key, the AgentHub client is rebuilt with its stateful history intact.
+   * returns a different key, the MMSP client is rebuilt with its stateful history intact.
    * Core assigns no provider semantics to this hook.
    */
   resolveApiKey?: () => Promise<string | undefined>;
   baseUrl?: string;
   /**
-   * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /
-   * `deepseek-v4` / …; the bare `openai` spelling is a deprecated alias of `openai-chat`). If
-   * omitted, AgentHub infers it from `modelId`; custom-named models or third-party models
-   * using an OpenAI protocol must specify it explicitly.
+   * MMSP client type (`openai-chat` / `openai-responses` / `ant-messages` /
+   * `google-genai` / `anthropic-official` / …; the bare `openai` spelling is a
+   * deprecated alias of `openai-chat`). If omitted, MMSP routes by the vendor family
+   * `modelId` begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`,
+   * `minimax-`); custom-named models or third-party models using an OpenAI protocol must
+   * specify it explicitly.
    */
   clientType?: string;
   tools: ToolDefinition[];
@@ -53,9 +55,9 @@ export interface GenerativeModelConfig {
   maxTokens?: number;
   /**
    * Per-model fast mode (from the model entry's `fast_mode` annotation): when true, every
-   * request opts into the provider's faster serving tier at premium pricing (AgentHub
+   * request opts into the provider's faster serving tier at premium pricing (MMSP
    * UniConfig `fast_mode`). Off by default. Models without a fast tier reject the parameter
-   * before any network I/O (AgentHub `UnsupportedParameterError`); `streamGenerate` reports
+   * before any network I/O (MMSP `UnsupportedParameterError`); `streamGenerate` reports
    * that as a `fatal` outcome so the engine surfaces it instead of retrying.
    */
   fastMode?: boolean;

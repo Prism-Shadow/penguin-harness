@@ -47,5 +47,48 @@ export const PERMISSION_LEVEL_GLYPH: Record<PermissionLevel, string> = {
   off: ICONS.shieldOff,
 };
 
+/**
+ * Why a sandbox level cannot be picked on this server, or null when it can. With no backend
+ * mounted, every level short of full access would refuse every command: `unavailable` when a
+ * backend is enabled but failed to load or failed its check (see `firstUnavailableBackend`),
+ * `no-backend` when none is enabled at all. Otherwise, the network level the mounted backends
+ * cannot enforce. Only an explicit false from the server counts — one that does not report a
+ * level is not second-guessed.
+ */
+export type LevelBlock = "no-backend" | "unavailable" | "local-unsupported" | "none-unsupported";
+
+/** The first enabled backend that is not in use, whose reason the composer shows, or null. */
+export function firstUnavailableBackend(
+  sandbox: SessionSandbox,
+): { name: string; reason: string } | null {
+  return sandbox.unavailableBackends?.[0] ?? null;
+}
+
+/** The block for a level no mounted backend can enforce: why nothing is mounted. */
+function unmounted(sandbox: SessionSandbox): LevelBlock {
+  return firstUnavailableBackend(sandbox) === null ? "no-backend" : "unavailable";
+}
+
+export function fsModeBlock(
+  sandbox: SessionSandbox,
+  mode: SessionSandbox["mode"],
+): LevelBlock | null {
+  if (mode === "danger-full-access") return null;
+  return sandbox.confinementSupported === false ? unmounted(sandbox) : null;
+}
+
+export function networkBlock(
+  sandbox: SessionSandbox,
+  network: SessionSandbox["network"],
+): LevelBlock | null {
+  if (network === "open") return null;
+  if (sandbox.confinementSupported === false) return unmounted(sandbox);
+  // `local` predates the other two flags, and has always been refused unless reported true.
+  if (network === "local") {
+    return sandbox.localNetworkSupported === true ? null : "local-unsupported";
+  }
+  return sandbox.noNetworkSupported === false ? "none-unsupported" : null;
+}
+
 /** What a Session starts from when the server has not said: confinement off, network open. */
 export const UNCONFINED: SessionSandbox = { mode: "danger-full-access", network: "open" };

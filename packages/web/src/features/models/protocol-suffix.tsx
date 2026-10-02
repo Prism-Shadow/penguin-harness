@@ -3,7 +3,7 @@
  * field — it is the grey protocol-path suffix that field always had, promoted from a
  * passive label into the protocol picker itself.
  *
- * The suffix already displayed the very thing this control selects: the path the AgentHub
+ * The suffix already displayed the very thing this control selects: the path the MMSP
  * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions`),
  * which is one-to-one with the three generic protocol clients. So protocol selection
  * reuses that component rather than occupying a form row of their own: the trigger keeps

@@ -23,7 +23,7 @@ export interface PlatformCatalogModel {
   /** Fraction off `pricing` the platform is running (0.5 = half price); absent when none. */
   discount?: number;
   baseUrl: string;
-  clientType: "gemini-3.8" | "deepseek-v4";
+  clientType: "google-genai" | "deepseek-official";
 }
 
 /** Validated snapshot returned by Penguin Go's client-model catalog. */

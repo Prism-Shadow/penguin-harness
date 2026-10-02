@@ -2,7 +2,7 @@
  * Endpoint model listing (POST /api/projects/:p/models/list).
  *
  * - The service returns a listing verbatim (the legacy openai spelling canonicalized), omits an
- *   absent key, flags AgentHub's UnsupportedOperationError so the dialog can point at the
+ *   absent key, flags MMSP's UnsupportedOperationError so the dialog can point at the
  *   manual path, and collapses every other failure — a timeout included — into ok:false with
  *   the reason truncated.
  * - The route refuses a non-http(s) base URL and a missing clientType before anything is
@@ -56,15 +56,15 @@ describe("ProjectConfigService.listEndpointModels", () => {
     expect(calls[0]).toEqual({ clientType: "ant-messages", baseUrl: "https://gw.example/v1" });
   });
 
-  it("flags AgentHub's UnsupportedOperationError so the dialog can point at the manual path", async () => {
+  it("flags MMSP's UnsupportedOperationError so the dialog can point at the manual path", async () => {
     const res = await service.listEndpointModels(req, async () => {
-      throw Object.assign(new Error("Claude5Client cannot list models"), {
+      throw Object.assign(new Error("Bedrock does not support listing models."), {
         name: "UnsupportedOperationError",
       });
     });
     expect(res.ok).toBe(false);
     expect(res.unsupported).toBe(true);
-    expect(res.message).toBe("Claude5Client cannot list models");
+    expect(res.message).toBe("Bedrock does not support listing models.");
   });
 
   it("collapses SDK failures into ok:false with the reason truncated", async () => {

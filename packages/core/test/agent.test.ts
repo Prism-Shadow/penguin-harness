@@ -1522,7 +1522,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
 describe("Agent.createSession credential rule (a keyless gateway row never borrows a vendor key)", () => {
   it("refuses a keyless gateway preset before any client exists, even with OPENAI_API_KEY set", async () => {
     // stubProviderKeys has set OPENAI_API_KEY and friends: the pre-rule behaviour was to hand
-    // AgentHub no key and let its generic client read the variable — sending the user's
+    // MMSP no key and let its generic client read the variable — sending the user's
     // OpenAI key to the gateway. The preset carries the gateway's base URL and no key.
     const preset = MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.retired !== true)!;
     expect(process.env.OPENAI_API_KEY).toBeDefined();

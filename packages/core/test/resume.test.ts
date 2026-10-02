@@ -6,7 +6,7 @@
  * - Pairing-fallback placeholders, once constructed, are written into the original trace file;
  *   session_meta is never written twice.
  * - Errors when the session doesn't exist / the workspace is missing / the model is no longer in the project config.
- * - `groupHistoryToUniMessages` groups by adjacent same role; `GenerativeModel.setHistory` injects into AgentHub.
+ * - `groupHistoryToUniMessages` groups by adjacent same role; `GenerativeModel.setHistory` injects into MMSP.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -435,12 +435,12 @@ describe("setHistory injection", () => {
       assistantText("done"),
     ]);
     expect(uni.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
-    expect(uni[1]!.content_items.map((c) => c.type)).toEqual(["text", "tool_call"]);
-    expect(uni[2]!.content_items.map((c) => c.type)).toEqual(["tool_result", "text"]);
+    expect(uni[1]!.content_items.map((c) => c.type)).toEqual(["text.done", "tool_call.done"]);
+    expect(uni[2]!.content_items.map((c) => c.type)).toEqual(["tool_result.done", "text.done"]);
   });
 
-  it("GenerativeModel.setHistory seeds the AgentHub client history", () => {
-    // GenerativeModel takes the request id sent to AgentHub (the upstream id), not the storage id.
+  it("GenerativeModel.setHistory seeds the MMSP client history", () => {
+    // GenerativeModel takes the request id sent to MMSP (the upstream id), not the storage id.
     const model = new GenerativeModel({ modelId: "claude-sonnet-4-6", tools: [] });
     model.setHistory([userText("hello"), assistantText("hi")]);
     const client = (model as unknown as { client: { getHistory(): unknown[] } }).client;

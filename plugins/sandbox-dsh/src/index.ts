@@ -1,5 +1,5 @@
 /**
- * @prismshadow/penguin-plugin-sandbox-dsh — the DeepSeek Harness sandbox ecosystem
+ * @penguinharness/sandbox-dsh — the DeepSeek Harness sandbox ecosystem
  * behind this harness's own sandbox interface.
  *
  * A PLUGIN PACKAGE, not part of the platform: a Project asks for it on the Plugins page

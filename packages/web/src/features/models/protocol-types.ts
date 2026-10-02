@@ -13,8 +13,9 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 
 /**
- * AgentHub's generic protocol client types, in detection order (custom / user-defined
- * groups select among these; see the in-field protocol menu and the /models/detect probes).
+ * MMSP's generic protocol client types (three of its compatible clients), in detection order
+ * (custom / user-defined groups select among these; see the in-field protocol menu and the
+ * /models/detect probes).
  */
 export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
 export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
@@ -26,16 +27,17 @@ export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
  * Per maintainer, this fallback is unconditional for those groups — nothing is ever
  * inferred from the model id there, and a detection that comes back empty resolves here
  * instead of blocking the save. Vendor and gateway groups are unaffected: their entries
- * are auto-routed by a catalog-known id or pinned by the group's preset.
+ * are routed by the vendor family their id begins with, or pinned by the group's preset.
  */
 export const DEFAULT_CUSTOM_CLIENT_TYPE = "openai-chat";
 
 /**
  * Whether a stored client_type belongs to the generic protocol family the picker can
  * represent: the three protocol clients, the bare `openai` alias (legacy default for
- * custom groups; routes to openai-chat), or empty. Any other explicit type (a legacy
- * vendor-pinned config like `deepseek-v4`) keeps the read-only note instead — showing
- * the picker there would silently rewrite it.
+ * custom groups; routes to openai-chat), or empty. Any other explicit type (a vendor client
+ * such as `deepseek-official`, another compatible client such as `google-genai`,
+ * or a legacy vendor-pinned config like `deepseek-v4` that MMSP no longer knows) keeps the
+ * read-only note instead — showing the picker there would silently rewrite it.
  */
 export function isGenericProtocolClientType(clientType: string): boolean {
   const t = clientType.trim().toLowerCase();
@@ -96,10 +98,12 @@ export function isCustomLikeGroup(provider: string): boolean {
 /**
  * The `client_type` actually persisted for a row.
  *
- * A custom-like entry must never reach the config with an empty protocol: AgentHub's
- * AutoLLMClient resolves an unmatched client type by THROWING (`"<type> is not
- * supported"`) rather than falling back, and a custom model id matches none of its
- * substring rules — so an entry saved with no protocol is a model that cannot start.
+ * A custom-like entry must never reach the config with an empty protocol: MMSP's
+ * AutoLLMClient routes an entry with no client type by the vendor family its id begins
+ * with, and THROWS for an id of no known family (`No client for model "<id>": its family is
+ * not known`) rather than falling back — so a custom entry saved with no protocol is a
+ * model that cannot start, or, when its id happens to begin with a vendor family, one sent
+ * to that vendor's official client instead of speaking the endpoint's protocol.
  * The dialog's save path detects the protocol before submitting; this is the last-resort
  * net for the paths that do not (set-default, set-vision-proxy, remove), where probing
  * the endpoint would be the wrong thing to do.
@@ -109,8 +113,8 @@ export function isCustomLikeGroup(provider: string): boolean {
  * that reaches here without one takes it rather than the compatible-client default.
  *
  * Preset and vendor-group entries are returned untouched: their model ids ARE routable,
- * so an empty value there correctly means "let AgentHub infer from the id", and the
- * empty default must not leak into them as a bogus pin.
+ * so an empty value there correctly means "let MMSP route by the id's vendor family", and
+ * the empty default must not leak into them as a bogus pin.
  */
 export function protocolForPersist(provider: string, clientType: string): string {
   const t = clientType.trim();

@@ -130,7 +130,8 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
       if (typeof m.clientType !== "string" || m.clientType.length > 64) {
         throw badRequest(`models[${i}].clientType must be a string of at most 64 characters.`);
       }
-      // An empty string is treated as "unspecified", leaving AgentHub to infer it from modelId.
+      // An empty string is treated as "unspecified", leaving MMSP to route by the vendor
+      // family the modelId begins with.
       if (m.clientType) entry.clientType = m.clientType;
     }
     if (m.vision !== undefined) {
@@ -351,7 +352,7 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   });
 
   // Endpoint model listing (owner): given a base URL plus the protocol /detect reported,
-  // returns every model id the endpoint serves (AgentHub's listModels() on the routed
+  // returns every model id the endpoint serves (MMSP's listModels() on the routed
   // client) so the add-group dialog can import a provider's whole listing in one go.
   // Owner-only and server-fetches-a-caller-URL for exactly the reasons /detect documents
   // above; like /detect, the reply is reduced to a DTO (ids / outcome flags / truncated

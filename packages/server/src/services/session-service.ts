@@ -30,6 +30,7 @@ import type {
   SessionSandbox,
   SessionSource,
   ServerEvent,
+  UnavailableSandboxBackend,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -41,7 +42,7 @@ import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
-import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
+import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 
 const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
   "read-only": 0,
@@ -60,12 +61,25 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
   return policy.network ?? "open";
 }
 
-/** A stored policy as the composer sees it, with whether this server can enforce `local`. */
+/**
+ * A stored policy as the composer sees it, with which of its levels this server can enforce:
+ * `dimensions` is what the mounted sandbox backends implement between them — none on a
+ * deployment that has not installed one. `unavailable` is each backend that is enabled but
+ * failed to load or failed its check, with why; one for another platform is not among them.
+ */
 export function sessionSandboxOf(
   policy: SandboxSettings,
-  localNetworkSupported = false,
+  dimensions: readonly SandboxDimension[] = [],
+  unavailable: readonly UnavailableSandboxBackend[] = [],
 ): SessionSandbox {
-  return { mode: policy.mode, network: networkOf(policy), localNetworkSupported };
+  return {
+    mode: policy.mode,
+    network: networkOf(policy),
+    confinementSupported: dimensions.includes("fs-write"),
+    noNetworkSupported: dimensions.includes("network"),
+    localNetworkSupported: dimensions.includes("network-local"),
+    unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
+  };
 }
 
 /**
@@ -186,8 +200,10 @@ export interface SessionServiceDeps {
   sandboxDefaults?: () => SandboxSettings;
   /** Host-owned model-request hooks, forwarded to core for every Session LLM. */
   assembly?: AgentAssembly;
-  /** Whether a mounted sandbox backend implements the `local` network level. */
-  sandboxLocalNetwork?: () => boolean;
+  /** The dimensions the mounted sandbox backends implement between them (none when absent). */
+  sandboxDimensions?: () => readonly SandboxDimension[];
+  /** The enabled sandbox backends that failed to load or failed their check, with why. */
+  sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
 }
 
 export class SessionService {
@@ -200,12 +216,20 @@ export class SessionService {
 
   /** Whether this server can enforce the `local` network level right now. */
   localNetworkSupported(): boolean {
-    return this.deps.sandboxLocalNetwork?.() ?? false;
+    return this.sandboxDimensions().includes("network-local");
   }
 
-  /** A policy as the composer sees it, with this server's support for `local`. */
+  private sandboxDimensions(): readonly SandboxDimension[] {
+    return this.deps.sandboxDimensions?.() ?? [];
+  }
+
+  /** A policy as the composer sees it, with which of its levels this server can enforce. */
   sandboxView(policy: SandboxSettings): SessionSandbox {
-    return sessionSandboxOf(policy, this.localNetworkSupported());
+    return sessionSandboxOf(
+      policy,
+      this.sandboxDimensions(),
+      this.deps.sandboxUnavailable?.() ?? [],
+    );
   }
 
   /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */

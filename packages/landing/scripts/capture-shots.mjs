@@ -2,7 +2,7 @@
  * Capture real product screenshots for the landing page.
  *
  * Flow: host a scripted mock LLM (speaks BOTH Anthropic SSE and OpenAI chat-completions
- * SSE, so whichever client AgentHub routes to gets a valid stream) -> start the Web
+ * SSE, so whichever client MMSP routes to gets a valid stream) -> start the Web
  * server against a temp data root serving the built web dist -> drive a genuine
  * "build an Agent app" conversation (tools actually execute in the workspace) ->
  * screenshot the chat page, its Trace panel and the evaluation center, per UI language
@@ -492,7 +492,7 @@ async function provisionUser(adminCookie, lang) {
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
         // The mock speaks Anthropic Messages and OpenAI Chat Completions; pinning the
-        // protocol keeps it off the Responses path AgentHub would otherwise pick.
+        // protocol keeps it off the Responses path MMSP would otherwise pick.
         clientType: "openai-chat",
         apiKey: "sk-demo",
         baseUrl: MOCK,

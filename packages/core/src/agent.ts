@@ -240,7 +240,7 @@ export interface CreateSessionOptions {
   /**
    * Explicit credentials; if unspecified, falls back to the credentials in the Project config,
    * then — only when the entry's requests go to the vendor's own endpoint (no base URL, or a
-   * vendor endpoint) — to the vendor's environment variable, read by AgentHub. A keyless entry
+   * vendor endpoint) — to the vendor's environment variable, read by MMSP. A keyless entry
    * pointed anywhere else (a gateway, a self-hosted server) is refused with a
    * ModelCredentialError; see resolveModelCredential.
    */
@@ -758,7 +758,7 @@ export class Agent {
    * runs on — and the context is assembled from the current Agent State, keeping the recorded
    * system prompt when the file's context is still open (see below). A resume never changes the
    * model on its own; switching goes through `Session.switchModel`. The replayed,
-   * already-committed history is injected once via AgentHub's
+   * already-committed history is injected once via MMSP's
    * setHistory (used only on resume); any leftover input is rebuilt as carry-over (paired
    * fallback placeholders are synthesized in memory only, never written to the Trace).
    * Messages after resume continue in the original Trace file (the file follows the
@@ -1338,8 +1338,8 @@ export class Agent {
     // compaction don't collide with earlier cards' ids.
     const toolCallIds = new ToolCallIdAllocator();
     // The LLM object of one context: the context's model entry and its credentials, plus the
-    // context's prompt, toolset and model defaults. The model id sent to AgentHub is always
-    // the entry's upstream `model_id` (client_type inference/passing follows it);
+    // context's prompt, toolset and model defaults. The model id sent to MMSP is always
+    // the entry's upstream `model_id` (client_type routing/passing follows it);
     // session_meta, Trace, usage, pricing, and catalog matching all use the (provider,
     // model_id) pair as the primary key.
     const buildLLM = (context: AssembledContext, tools: ToolDefinition[]): GenerativeModel => {

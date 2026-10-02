@@ -31,9 +31,9 @@ export const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"]
 /**
  * The levels the picker offers, in menu order: "none" is deliberately excluded (many models
  * don't support disabling thinking) — it can still be displayed (a stored legacy value) but
- * never picked. "max" carries no such caveat: every AgentHub client maps it onto the deepest
- * effort its vendor accepts and degrades silently where there is no such tier, so it is
- * offered like any other tier.
+ * never picked. "max" carries no such caveat: MMSP maps every level onto the closest effort
+ * the model supports and degrades silently where there is no such tier, so it is offered
+ * like any other tier.
  */
 export const SELECTABLE_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 

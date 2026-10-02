@@ -2,7 +2,7 @@
 
 Loaded on demand from `SKILL.md`. `packages/core/src/state/model-catalog.ts` is the single source
 of truth for presets, shared by core's defaults, the server's initial config, and web/CLI display.
-It is a *catalog*, not a routing table — AgentHub owns routing.
+It is a *catalog*, not a routing table — MMSP owns routing.
 
 ## Pricing
 
@@ -31,10 +31,17 @@ It is a *catalog*, not a routing table — AgentHub owns routing.
 - Uniqueness is the `(provider, model_id)` pair, never the bare id — gateways resell vendor models
   under their upstream ids.
 - Set `client_type` only when the id cannot be auto-routed or a protocol must be pinned, and inline
-  `baseUrl` with it. Everything else is auto-routed by AgentHub.
+  `baseUrl` with it. Everything else is routed by MMSP from the vendor family its id begins with.
 - A provider group is split only when the vendor genuinely has separate endpoints or billing paths
   (Qwen Token Plan vs Pay-As-You-Go). One endpoint serving several key types is one group.
-- `resolveModelEnv` mirrors AgentHub's exact routing; a lookalike id must stay unroutable.
+- `routedClientType` mirrors MMSP's routing exactly: the pinned client type (lowercased, `openai`
+  read as `openai-chat`), else the official client of the family prefix the lowercased id begins
+  with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`,
+  `minimax-`), with `openai-official` handing `text-embedding-` ids to `openai-embedding`; a pin
+  MMSP does not have, or an id of no family, gives nothing. `resolveModelEnv`,
+  `fastModeProtocol` and the web's protocol path look the result up in `MMSP_CLIENTS`. MMSP does
+  not export its family table, so core keeps a copy: move it only with the MMSP release that
+  changes it, and never let it place an id MMSP refuses.
 
 ## What a change touches
 

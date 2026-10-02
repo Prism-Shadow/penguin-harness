@@ -92,7 +92,7 @@ describe("resumeTrace", () => {
   it("re-carries the uncommitted round's raw input into the retried round", () => {
     // The synthesized carry-over (flatten) is never written to Trace: replay does its best,
     // merging the unanswered raw input as-is into the retried round (the history content differs
-    // in wording from the flatten AgentHub actually received, but matches in structure and information).
+    // in wording from the flatten MMSP actually received, but matches in structure and information).
     const result = resumeTrace([
       meta(),
       userText("A"),
@@ -494,7 +494,7 @@ describe("engine trace round-trip", () => {
   it("replaying an engine-written trace reconstructs the committed history", async () => {
     // Two rounds of dialogue: the first round issues and executes a tool call, the second round
     // wraps up -- the engine writes Trace (including request events); replay should reconstruct
-    // history matching what was actually committed to AgentHub, with no leftover carry-over.
+    // history matching what was actually committed to MMSP, with no leftover carry-over.
     let call = 0;
     const llm: LLMInterface = {
       async *streamGenerate() {
@@ -624,7 +624,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1" }),
-      requestEnd("retryable"), // this round is dropped: tc1 never entered AgentHub history
+      requestEnd("retryable"), // this round is dropped: tc1 never entered MMSP history
       requestBegin(),
       assistantText("recovered"),
       requestEnd("completed"),
@@ -689,7 +689,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
     ]);
     expect(result.contextClosed).toBe(false);
     expect(result.pendingSummary).toBeUndefined();
-    // Full original history, including the committed compaction exchange (AgentHub committed
+    // Full original history, including the committed compaction exchange (MMSP committed
     // it, so the next request builds on top of it).
     expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
       "text",

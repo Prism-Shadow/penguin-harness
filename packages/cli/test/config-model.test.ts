@@ -223,7 +223,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(by("mylab", "special-1").client_type).toBe("verbatim-type");
   });
 
-  it("refuses a NEW vendor-group entry whose id AgentHub cannot route, and leaves the config untouched", async () => {
+  it("refuses a NEW vendor-group entry whose id MMSP cannot route, and leaves the config untouched", async () => {
     // The Web App no longer offers an add entry point on a vendor group at all; this command
     // writes the same file without passing through the server, so it has to refuse the same
     // configuration rather than leave a second way into it.
@@ -263,9 +263,8 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     ]);
     expect(custom.code).toBe(0);
 
-    // Naming its own protocol makes the id routable inside a vendor group, which is what the
-    // two presets whose ids do not route rely on; but a model that is no preset is not added
-    // there by hand at all.
+    // Naming its own protocol makes the id routable inside a vendor group; but a model that is
+    // no preset is not added there by hand at all.
     const pinned = await runModel([
       "add",
       "--model-id",
@@ -381,10 +380,30 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
   });
 
   it("a new entry naming a catalog row inherits that row's pinned client_type and base_url; --client-type still wins", async () => {
-    // deepseek-flash is a direct-vendor preset that pins the deepseek-v4 client and the
-    // vendor endpoint, because AgentHub routes DeepSeek on a substring the bare id lacks.
-    // Removing it first is the case that matters: re-adding it by hand into a Project that
-    // no longer holds the row must not write an entry AgentHub would refuse to route.
+    // The Penguin Go presets pin the generateContent client and the relay endpoint, because
+    // a `gemini-` id would otherwise route to Google's Interactions API, which the relay does
+    // not serve. Removing a row first is the case that matters: re-adding it by hand into a
+    // Project that no longer holds the row must write the pin back.
+    await runModel([
+      "remove",
+      "--model-id",
+      "gemini-3.8-flash",
+      "--provider",
+      "penguin-go",
+      "--root",
+      tmpRoot,
+    ]);
+    await runModel([
+      "add",
+      "--model-id",
+      "gemini-3.8-flash",
+      "--provider",
+      "penguin-go",
+      "--root",
+      tmpRoot,
+    ]);
+    // A catalog row that pins nothing hands nothing down: the direct deepseek-flash routes by
+    // its `deepseek-` prefix to DeepSeek's own client and endpoint.
     await runModel([
       "remove",
       "--model-id",
@@ -419,18 +438,18 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     await runModel([
       "remove",
       "--model-id",
-      "MiniMax-M3",
+      "deepseek-v4-pro",
       "--provider",
-      "minimax",
+      "penguin-go",
       "--root",
       tmpRoot,
     ]);
     await runModel([
       "add",
       "--model-id",
-      "MiniMax-M3",
+      "deepseek-v4-pro",
       "--provider",
-      "minimax",
+      "penguin-go",
       "--client-type",
       "openai-chat",
       "--base-url",
@@ -444,11 +463,13 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     ) as { models: Array<Record<string, unknown>> };
     const by = (p: string, id: string) =>
       parsed.models.find((m) => m.provider === p && m.model_id === id)!;
-    expect(by("deepseek", "deepseek-flash").client_type).toBe("deepseek-v4");
-    expect(by("deepseek", "deepseek-flash").base_url).toBe("https://api.deepseek.com");
+    expect(by("penguin-go", "gemini-3.8-flash").client_type).toBe("google-genai");
+    expect(by("penguin-go", "gemini-3.8-flash").base_url).toBe("https://token.penguin.ooo/api");
+    expect(by("deepseek", "deepseek-flash").client_type).toBeUndefined();
+    expect(by("deepseek", "deepseek-flash").base_url).toBeUndefined();
     expect(by("openrouter", "deepseek-flash")).toBeUndefined();
-    expect(by("minimax", "MiniMax-M3").client_type).toBe("openai-chat");
-    expect(by("minimax", "MiniMax-M3").base_url).toBe("https://proxy.example/v1");
+    expect(by("penguin-go", "deepseek-v4-pro").client_type).toBe("openai-chat");
+    expect(by("penguin-go", "deepseek-v4-pro").base_url).toBe("https://proxy.example/v1");
   });
 
   it("--max-tokens round-trips to the entry's max_tokens; 0/negative/non-number are rejected before anything is written", async () => {

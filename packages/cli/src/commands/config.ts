@@ -12,7 +12,7 @@
  *   penguin config vault remove --key <name> [--agent-id <id>] [--root <dir>]
  *   penguin config lang <en|zh>
  *
- * `--model-id` always takes the **upstream id** (the request id sent to AgentHub verbatim),
+ * `--model-id` always takes the **upstream id** (the request id sent to MMSP verbatim),
  * which together with `--provider` forms a `(provider, model_id)` paired reference —
  * **no string concatenation is ever performed**. `--provider` is **required** on every model
  * subcommand that names an entry: the group is never guessed, so `--api-key` can never land on
@@ -22,7 +22,7 @@
  * group's semantics (not set for first-party vendors; the protocol a group pins where it
  * pins one, and otherwise openai-chat for custom / self-hosted groups / gateways, with the
  * gateway's endpoint base URL pre-filled); adding a NEW entry to a first-party vendor group
- * under a model id AgentHub cannot route is refused, since nothing there would carry a
+ * under a model id MMSP cannot route is refused, since nothing there would carry a
  * protocol for it, and so is adding one that is not a preset to any built-in group but custom
  * and vLLM. For `model default` / `model vision`, core
  * validation raises an error when the reference is not
@@ -167,15 +167,16 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       // client_type / base_url default rule, only injected for new entries (updating an
       // existing entry never overrides an explicit config). The catalog row for this exact
       // (provider, model_id) pair is consulted first: a preset that pins a protocol and an
-      // endpoint does so because its own id would not route otherwise — MiniMax M3 and the
-      // direct DeepSeek `deepseek-flash` — and an entry added by hand must inherit that pin
-      // or it is written unroutable. Failing a catalog row, the group decides: a group that
-      // pins a protocol (OpenRouter, vLLM) gets that pin, whatever the id; otherwise not set
-      // for first-party vendor groups (AgentHub auto-routes by upstream id, with env fallback
-      // keyed on id), and openai-chat for the remaining custom / user-defined / gateway
-      // groups, with the gateway's endpoint base URL pre-filled as well. (An explicit
-      // --client-type / --base-url is passed through and outranks both; core's addModel
-      // normalizes the deprecated bare "openai" alias.)
+      // endpoint does so because its own id would not reach the right client otherwise — the
+      // Penguin Go rows, whose relay serves Gemini through generateContent rather than the
+      // Interactions API a `gemini-` id routes to — and an entry added by hand must inherit
+      // that pin or it is written to the wrong client. Failing a catalog row, the group
+      // decides: a group that pins a protocol (OpenRouter, vLLM) gets that pin, whatever the
+      // id; otherwise not set for first-party vendor groups (MMSP routes by the vendor family
+      // the upstream id begins with, with env fallback keyed on id), and openai-chat for the
+      // remaining custom / user-defined / gateway groups, with the gateway's endpoint base URL
+      // pre-filled as well. (An explicit --client-type / --base-url is passed through and
+      // outranks both; core's addModel normalizes the deprecated bare "openai" alias.)
       const pInfo = providerInfo(provider);
       const catalogEntry = catalogEntryFor(provider, modelId);
       // Every group but a vendor one ends up on the compatible client when nothing above has
@@ -193,11 +194,11 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       // route, so the rule that route enforces is enforced again here — otherwise the door
       // the Web App closed is still open from the shell, and an agent following the
       // "add models with AI" prompt walks straight through it. A first-party vendor group
-      // persists no client_type, so AgentHub places its entries by the model id alone; an id
-      // it cannot place is refused before anything is written. Judged on the protocol the
-      // entry would actually be saved with, so a preset that pins one (MiniMax M3, the direct
-      // `deepseek-flash`) and an explicit --client-type both pass. An entry that is already
-      // stored is left alone: updating it is not the act that put it there.
+      // persists no client_type, so MMSP places its entries by the vendor family their id
+      // begins with; an id of no known family is refused before anything is written. Judged on
+      // the protocol the entry would actually be saved with, so a preset that pins one (the
+      // Penguin Go rows) and an explicit --client-type MMSP has both pass. An entry that is
+      // already stored is left alone: updating it is not the act that put it there.
       if (!existed && unroutableVendorModel(provider, modelId, clientType)) {
         process.stderr.write(`${t.error(t.modelNotRoutable(formatModelRef(ref)))}\n`);
         process.exitCode = 1;
@@ -240,7 +241,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
         ? t.modelUpdated(formatModelRef(ref), defaultRef)
         : t.modelAdded(formatModelRef(ref), defaultRef);
       process.stdout.write(`${line}\n`);
-      // Fast mode on a model whose AgentHub client cannot carry it makes every session
+      // Fast mode on a model whose MMSP client cannot carry it makes every session
       // request fail. The Web dialog does not offer the switch there at all, so this flag is
       // the remaining way into that state: warn rather than silently write a config that only
       // reveals itself at request time. A warning, not a refusal — the entry may point at an

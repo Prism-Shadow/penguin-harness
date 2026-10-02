@@ -988,7 +988,7 @@ describe("project-config round trip", () => {
   });
 
   it('normalizes the pre-0.4.2 client_type = "openai" alias to openai-chat on read and write', async () => {
-    // A config saved before AgentHub 0.4.2 renamed the generic Chat Completions client must
+    // A config saved before the generic Chat Completions client was renamed (AgentHub 0.4.2) must
     // keep working: the stored bare "openai" spelling reads back as the canonical
     // "openai-chat" (normalize-on-read, no error and no disk rewrite required).
     const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
@@ -1030,6 +1030,83 @@ describe("project-config round trip", () => {
     expect(getModel(third, { provider: "custom", model_id: "responses-model" })?.client_type).toBe(
       "openai-responses",
     );
+  });
+
+  it("rewrites the client types of AgentHub 0.4 to MMSP's once, on load, keeping the rest of the file", async () => {
+    // A Project written before MMSP 0.5.0 holds the per-generation names the old router
+    // accepted; MMSP refuses them at client construction, so the loader maps each to the
+    // client that speaks the same wire protocol and writes the file back — every other key
+    // (a display name, the default chat block) intact.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        'name = "Legacy"',
+        'default_model = { provider = "deepseek", model_id = "deepseek-flash" }',
+        "",
+        "[default_chat]",
+        'thinking_level = "high"',
+        "",
+        "[[models]]",
+        'provider = "deepseek"',
+        'model_id = "deepseek-flash"',
+        'client_type = "deepseek-v4"',
+        'base_url = "https://api.deepseek.com"',
+        "",
+        "[[models]]",
+        'provider = "penguin-go"',
+        'model_id = "gemini-3.8-flash"',
+        'client_type = "gemini-3.8"',
+        'base_url = "https://go.example/api"',
+        "",
+        "[[models]]",
+        'provider = "minimax"',
+        'model_id = "MiniMax-M3"',
+        'client_type = "minimax-m3"',
+        "",
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "my-claude"',
+        'client_type = "Claude-5"',
+        'base_url = "https://proxy.example"',
+        'api_key = "sk-keep"',
+        "",
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "kept"',
+        'client_type = "openai-responses"',
+        'base_url = "https://proxy.example/v1"',
+      ].join("\n"),
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    const typeOf = (provider: string, modelId: string): string | undefined =>
+      getModel(loaded, { provider, model_id: modelId })?.client_type;
+    expect(typeOf("deepseek", "deepseek-flash")).toBe("deepseek-official");
+    expect(typeOf("penguin-go", "gemini-3.8-flash")).toBe("google-genai");
+    expect(typeOf("minimax", "MiniMax-M3")).toBe("minimax-official");
+    expect(typeOf("custom", "my-claude")).toBe("anthropic-official"); // matched case-insensitively
+    expect(typeOf("custom", "kept")).toBe("openai-responses"); // a 0.5.0 name passes through
+    expect(loaded.name).toBe("Legacy");
+    expect(loaded.default_chat?.thinking_level).toBe("high");
+    expect(loaded.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-flash" });
+    // The file was rewritten with the new names and nothing else lost.
+    const rewritten = await fs.readFile(file, "utf8");
+    expect(rewritten).toContain('client_type = "deepseek-official"');
+    expect(rewritten).toContain('client_type = "google-genai"');
+    expect(rewritten).toContain('client_type = "minimax-official"');
+    expect(rewritten).toContain('client_type = "anthropic-official"');
+    expect(rewritten).not.toMatch(/deepseek-v4|gemini-3\.8"|minimax-m3|Claude-5/);
+    expect(rewritten).toContain('api_key = "sk-keep"');
+    expect(rewritten).toContain('base_url = "https://go.example/api"');
+    expect(rewritten).toContain('thinking_level = "high"');
+    expect(rewritten).toContain('name = "Legacy"');
+    // Once: a second load finds nothing to migrate and leaves the file untouched.
+    const { mtimeMs } = await fs.stat(file);
+    await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect((await fs.stat(file)).mtimeMs).toBe(mtimeMs);
+    expect(await fs.readFile(file, "utf8")).toBe(rewritten);
   });
 
   it("addModel files the entry under the provider it was given, never one of its own choosing", async () => {
@@ -1320,16 +1397,16 @@ describe("project-config round trip", () => {
         m.provider === cfg.default_model!.provider && m.modelId === cfg.default_model!.model_id,
     );
     expect(chosen?.supportsVision).toBe(true);
-    // And it has to be routable as written. deepseek-flash carries no `deepseek-v4`
-    // substring, which is all AgentHub routes DeepSeek on, so the preset entry for the
-    // default must carry the catalog row's pinned client and endpoint — a default that
-    // resolved to no client would fail every first request.
+    // And it has to be routable as written: `deepseek-flash` begins with the family MMSP
+    // routes to its DeepSeek client, so the preset entry for the default pins nothing — a
+    // default that resolved to no client would fail every first request.
     const defaultEntry = cfg.models.find(
       (m) =>
         m.provider === cfg.default_model!.provider && m.model_id === cfg.default_model!.model_id,
     );
-    expect(defaultEntry?.client_type).toBe("deepseek-v4");
-    expect(defaultEntry?.base_url).toBe("https://api.deepseek.com");
+    expect(defaultEntry).toBeDefined();
+    expect(defaultEntry?.client_type).toBeUndefined();
+    expect(defaultEntry?.base_url).toBeUndefined();
     // The catalog is presented in full, retired rows aside (they are kept only for Projects
     // that already carry them): provider and model_id are separate columns, model_id being the
     // plain upstream id (vision is only persisted as false for models that don't support images).

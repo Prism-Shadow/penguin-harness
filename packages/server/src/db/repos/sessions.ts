@@ -19,7 +19,7 @@ export interface SessionRow {
    * `session_meta` is the durable truth, and the runtime reconciles a row it disagrees with.
    */
   provider: string;
-  /** Upstream model_id of the session's current model (sent as-is to AgentHub; never concatenated). */
+  /** Upstream model_id of the session's current model (sent as-is to MMSP; never concatenated). */
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;

@@ -79,7 +79,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，三条预置都固定使用通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，三条预置都固定使用通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
@@ -100,9 +100,9 @@ openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-yo
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `provider` | 字符串 | — | 供应商分组；与 `model_id` 一起构成条目的唯一键 |
-| `model_id` | 字符串 | — | 上游请求 id，原样发给 AgentHub |
+| `model_id` | 字符串 | — | 上游请求 id，原样发给 MMSP |
 | `context_window` | 数字 | — | 上下文窗口大小 |
-| `client_type` | 字符串 | 从 `model_id` 推断 | AgentHub 客户端协议 |
+| `client_type` | 字符串 | 按 `model_id` 开头的厂商系列路由 | MMSP 客户端类型 |
 | `display_name` | 字符串 | 内置模型目录中的名称 | 显示名；与模型目录不同时才会持久化 |
 | `vision` | 布尔 | `true` | 模型是否接受图像输入 |
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
@@ -114,10 +114,10 @@ openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-yo
 
 字段说明：
 
-- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages` 或 `openai-chat`。Web 对话框能根据 base URL 识别用的是哪一种。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。
-- `fast_mode`：只持久化 `true`。只有 AgentHub 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
+- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages` 或 `openai-chat`。Web 对话框能根据 base URL 识别用的是哪一种。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`gemini-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`、`google-genai`）。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
+- `fast_mode`：只持久化 `true`。只有 MMSP 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
-- `base_url`：内置模型目录为网关以及固定客户端的直连条目预设了这个字段，即 MiniMax M3 和 DeepSeek 的 `deepseek-flash`。
+- `base_url`：内置模型目录为网关条目预设了这个字段。直连厂商的条目不设置它，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
 - `api_key`：为空时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的 key。
 
 ```toml
@@ -128,8 +128,6 @@ provider = "deepseek"
 model_id = "deepseek-flash"
 context_window = 1000000
 vision = true
-client_type = "deepseek-v4"
-base_url = "https://api.deepseek.com"
 api_key = "sk-..."
 
 [models.pricing]
@@ -165,7 +163,7 @@ output = 1.142857
 
 ```toml
 [plugins]
-"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"
+"@penguinharness/sandbox-bwrap" = "*"
 "@scope/name" = "1.2.3"
 "@scope/other" = { version = "1.2" }
 ```

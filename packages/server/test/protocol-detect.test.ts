@@ -11,7 +11,7 @@
  * - Probes run openai-responses → ant-messages → openai-chat, candidate by candidate, stop at the
  *   first served protocol and report the base URL it was served on; a probe that fails or
  *   floods (abandoned at the body cap) does not stop the sequence.
- * - Auth headers mirror AgentHub's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
+ * - Auth headers mirror MMSP's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
  *   and anthropic-version for ant-messages); a keyless probe sends no credential; the key never
  *   reaches a URL or the reported probes.
  * - With no key typed or stored, each probe of a vendor's own URL borrows that protocol's
@@ -419,7 +419,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(pushed).toBeLessThanOrEqual(MAX_PROBE_BODY_BYTES * 2);
   });
 
-  it("auth headers mirror the AgentHub clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {
+  it("auth headers mirror the MMSP clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {
     const seen: SeenCall[] = [];
     await detectModelProtocol({
       baseUrl: `${BASE}/`, // trailing slash must not double up
@@ -467,7 +467,7 @@ describe("envApiKeyForProtocol", () => {
   const OPENAI = "https://api.openai.com/v1";
   const ANTHROPIC = "https://api.anthropic.com";
 
-  it("maps each protocol to the variable its AgentHub client actually reads, for the vendor's own endpoint", () => {
+  it("maps each protocol to the variable its MMSP client actually reads, for the vendor's own endpoint", () => {
     const env = { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" };
     expect(envApiKeyForProtocol("openai-responses", OPENAI, env)).toBe("sk-openai");
     expect(envApiKeyForProtocol("openai-chat", OPENAI, env)).toBe("sk-openai");

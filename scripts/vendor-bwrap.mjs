@@ -35,7 +35,7 @@ const tar = createRequire(path.join(ROOT, "packages", "server", "package.json"))
 const decompress = promisify(zstdDecompress);
 
 /** Bump when what this script WRITES changes, so a stale vendor directory is rebuilt. */
-const VENDOR_FORMAT = 1;
+const VENDOR_FORMAT = 2;
 
 /**
  * What each architecture gets, pinned. A version moves only by editing this table: the sandbox
@@ -71,10 +71,18 @@ const TARGETS = [
   },
 ];
 
-/** What is taken out of a package: the program, the library it loads, and their licenses. */
+/**
+ * What is taken out of a package: the program, the library it loads, and their licenses.
+ *
+ * The library is kept under its versioned names only — `libcap.so.2`, the SONAME bwrap asks the
+ * loader for, and the file it points at — and every one of them as a regular file. A package
+ * tarball carries no symlinks (`pnpm pack` drops them), so a `libcap.so.2 → libcap.so.2.78` link
+ * reached an npm install as nothing, and the vendored bwrap there could not start. The bare
+ * `libcap.so` is a link-time name nothing loads.
+ */
 const WANTED = [
   { from: "bin/bwrap", to: "bin/bwrap", exec: true },
-  { from: /^lib\/libcap\.so(\.\d+)*$/, to: "lib", exec: false },
+  { from: /^lib\/libcap\.so(\.\d+)+$/, to: "lib", exec: false },
   { from: /^(info\/)?licenses?\/.+/i, to: "licenses", exec: false },
 ];
 
@@ -210,17 +218,10 @@ async function extract(file, stage) {
             ? path.join(stage, want.to)
             : path.join(stage, want.to, path.basename(rel));
         await fsp.mkdir(path.dirname(target), { recursive: true });
-        const source = path.join(scratch, rel);
-        const link = await fsp.lstat(source);
-        if (link.isSymbolicLink()) {
-          // libcap.so.2 → libcap.so.2.78: kept as a link, the way the loader expects it.
-          const to = await fsp.readlink(source);
-          await fsp.rm(target, { force: true });
-          await fsp.symlink(to, target);
-        } else {
-          await fsp.copyFile(source, target);
-          await fsp.chmod(target, want.exec ? 0o755 : 0o644);
-        }
+        // copyFile follows a link, so libcap.so.2 lands as a copy of libcap.so.2.78.
+        await fsp.rm(target, { force: true });
+        await fsp.copyFile(path.join(scratch, rel), target);
+        await fsp.chmod(target, want.exec ? 0o755 : 0o644);
       }
     }
   } finally {

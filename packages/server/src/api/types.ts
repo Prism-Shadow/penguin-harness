@@ -487,7 +487,7 @@ export interface MemberAddResponse {
 
 /**
  * Model reference DTO: `(provider, modelId)` pair.
- * `modelId` is the upstream request id, sent to AgentHub as-is — `<provider>/<id>` string
+ * `modelId` is the upstream request id, sent to MMSP as-is — `<provider>/<id>` string
  * concatenation is forbidden throughout the pipeline.
  */
 export interface ModelRefDto {
@@ -512,7 +512,7 @@ export interface CredentialInfo {
 export interface ModelInfo {
   /** Provider group id (anthropic / openai / …, see core's MODEL_PROVIDERS; custom models use `custom`). */
   provider: string;
-  /** Upstream model id (the request id actually sent to AgentHub); paired with `provider` forms the entry's unique key. */
+  /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
   modelId: string;
   /**
    * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
@@ -522,7 +522,7 @@ export interface ModelInfo {
    */
   displayName?: string;
   contextWindow?: number;
-  /** AgentHub client protocol (`openai-chat`, `openai-responses`, etc.); defaults to AgentHub inferring it from modelId. */
+  /** MMSP client type (`openai-chat`, `openai-responses`, etc.); absent = MMSP routes by the vendor family the modelId begins with. */
   clientType?: string;
   /**
    * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation takes
@@ -540,7 +540,7 @@ export interface ModelInfo {
   /**
    * Per-model fast mode (TOML `fast_mode` annotation; user-only, never preset by the
    * built-in catalog): when true, session requests opt into the provider's faster serving
-   * tier at premium pricing (AgentHub UniConfig `fast_mode`). Only `true` is reported;
+   * tier at premium pricing (MMSP UniConfig `fast_mode`). Only `true` is reported;
    * unset = off. Models without a fast tier reject requests carrying it.
    */
   fastMode?: boolean;
@@ -587,7 +587,7 @@ export interface ModelsResponse {
 export interface ModelUpdateEntry {
   /** Provider group (an independent entry field, always submitted with the request). */
   provider: string;
-  /** Upstream model id (sent to AgentHub as-is). */
+  /** Upstream model id (sent to MMSP as-is). */
   modelId: string;
   /**
    * Display name; the server does not persist it when it matches the built-in catalog (keeps
@@ -603,7 +603,7 @@ export interface ModelUpdateEntry {
    */
   renamedFrom?: ModelRefDto;
   contextWindow?: number;
-  /** Empty string/omitted = unspecified (AgentHub infers it from modelId). */
+  /** Empty string/omitted = unspecified (MMSP routes by the vendor family the modelId begins with). */
   clientType?: string;
   /** Whether image input (vision/multimodal) is supported; omitted = supported (not persisted). */
   vision?: boolean;
@@ -643,7 +643,7 @@ export interface ModelsUpdateRequest {
 export interface ModelTestRequest {
   /** Provider group of the model under test (paired with modelId). */
   provider: string;
-  /** Upstream id of the model under test (sent to AgentHub as-is). */
+  /** Upstream id of the model under test (sent to MMSP as-is). */
   modelId: string;
   /** Newly entered API key (plaintext); used for the test if provided. */
   apiKey?: string;
@@ -657,7 +657,7 @@ export interface ModelTestRequest {
    * `undefined` means fall back to the stored value only when not provided.
    */
   baseUrl?: string | null;
-  /** AgentHub client protocol; required for unsaved custom models (otherwise the id can't be auto-routed). */
+  /** MMSP client type; required for an unsaved custom model whose id begins with no known vendor family (otherwise it can't be routed). */
   clientType?: string;
   /**
    * Test with fast mode (the frontend always sends the form's current value, so an unsaved
@@ -725,7 +725,7 @@ export interface ModelTestResponse {
 
 /**
  * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
- * AgentHub's generic protocol clients a custom base URL serves — `openai-responses` first,
+ * MMSP's generic protocol clients a custom base URL serves — `openai-responses` first,
  * then `ant-messages`, then `openai-chat` — and reports the first hit. Used by the custom
  * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
  * is a minimal invalid request whose error reveals the protocol shape).
@@ -754,7 +754,7 @@ export type ProtocolProbeOutcome =
 
 /** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
 export interface ModelProtocolProbeDto {
-  /** AgentHub client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
+  /** MMSP client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
   clientType: string;
   /** Full URL probed (base URL + the protocol's path). */
   url: string;
@@ -769,7 +769,7 @@ export interface ModelProtocolProbeDto {
  * ones actually run, in order.
  */
 export interface ModelProtocolDetectResponse {
-  /** The first protocol an endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  /** The first protocol an endpoint serves (an MMSP client type); absent when none of the three matched. */
   detected?: string;
   /**
    * The base URL the detected protocol answered at — the typed URL normalized (endpoint
@@ -784,14 +784,14 @@ export interface ModelProtocolDetectResponse {
 
 /**
  * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
- * the protocol `/detect` reported, returns every model id the endpoint serves (AgentHub's
+ * the protocol `/detect` reported, returns every model id the endpoint serves (MMSP's
  * `listModels()` on the routed client). Used by the add-group dialog to import a provider's
  * whole listing in one go; the ids come back in the endpoint's own order.
  */
 export interface EndpointModelListRequest {
   /** Endpoint base URL (as typed in the add-group dialog). */
   baseUrl: string;
-  /** AgentHub client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
+  /** MMSP client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
   clientType: string;
   /** Newly entered API key (plaintext); omitted = the SDK's environment fallback for the protocol. */
   apiKey?: string;
@@ -802,7 +802,7 @@ export interface EndpointModelListResponse {
   ok: boolean;
   /** The model ids the endpoint serves, in the order the endpoint returned them (ok only). */
   models?: string[];
-  /** The routed client has no models endpoint (AgentHub UnsupportedOperationError) — callers offer the manual path. */
+  /** The routed client has no models endpoint (MMSP UnsupportedOperationError) — callers offer the manual path. */
   unsupported?: boolean;
   message?: string;
 }
@@ -1470,10 +1470,32 @@ export interface SessionSandbox {
   network: SessionSandboxNetwork;
   /**
    * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `read-only` and `workspace-write` modes. False on a deployment with no backend
+   * installed, where either mode would refuse every command: the composer shows them greyed
+   * out, saying no backend is installed.
+   */
+  confinementSupported?: boolean;
+  /** Response only, ignored in requests: the same for the `none` network level. */
+  noNetworkSupported?: boolean;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
    * the `local` level. When false the composer shows it greyed out, and picking it is refused
    * (400 `sandbox_unsupported`).
    */
   localNetworkSupported?: boolean;
+  /**
+   * Response only, ignored in requests: the sandbox backends that are enabled here but failed
+   * to load or failed their check (a WSL distro not set up, a wrong program path), each with
+   * why. A backend for another platform is not listed. With none mounted and one listed, the
+   * composer marks the confining levels unavailable and gives the first one's reason.
+   */
+  unavailableBackends?: UnavailableSandboxBackend[];
+}
+
+/** An enabled sandbox backend that is not in use on this server, and why. */
+export interface UnavailableSandboxBackend {
+  name: string;
+  reason: string;
 }
 
 /** The network levels, widest first. */
@@ -1488,7 +1510,7 @@ export interface SessionInfo {
    * reference). It moves with each in-session switch (`POST /api/sessions/:id/switch-model`).
    */
   provider: string;
-  /** Upstream model_id of the session's current model (the request id sent to AgentHub). */
+  /** Upstream model_id of the session's current model (the request id sent to MMSP). */
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;

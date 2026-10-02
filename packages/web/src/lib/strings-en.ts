@@ -3,7 +3,7 @@
  * locale switching goes through state/locale.tsx.
  * Keep domain terms capitalized — Workspace, Token, Task, Session, Project, Trace.
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
- * of a label/sentence or in a proper name (Agent State, AgentHub).
+ * of a label/sentence or in a proper name (Agent State).
  */
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { Strings } from "./strings";
@@ -1386,27 +1386,28 @@ export const en: Strings = {
     addProtocolHintPinnedGateway: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; the base URL is preset to the gateway's endpoint`,
     autoRouteNone:
-      "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
+      "A vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-), and this model ID cannot be routed. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
-    /** Warning on a hand-added vendor-group row whose model id AgentHub cannot route (such a row can no longer be created, only inherited). */
+    /** Warning on a hand-added vendor-group row whose model id MMSP cannot route — it begins with no known vendor prefix (such a row can no longer be created, only inherited). */
     vendorRowUnroutable:
-      "This model ID cannot be routed and will fail at request time: a vendor group carries built-in models only.",
+      "This model ID cannot be routed and will fail at request time: a vendor group only routes IDs that begin with a known vendor prefix.",
     /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
     moveToCustomGroup: "Move to a custom group",
     /**
-     * Warning on a built-in row saved before the catalog pinned the protocol its id needs:
-     * re-merging the catalog repairs it, and a move would be the wrong advice. It never
-     * quotes the sync button's own label — a member sees this sentence with no button beside
-     * it, and the owner who does have one reads the label right there.
+     * Warning on a built-in row whose stored protocol pin differs from the one the catalog
+     * sets for it today (a pin MMSP no longer has, or one the catalog added since), so it
+     * cannot be routed: re-merging the catalog repairs it, and a move would be the wrong
+     * advice. It never quotes the sync button's own label — a member sees this sentence with
+     * no button beside it, and the owner who does have one reads the label right there.
      */
     vendorRowStalePin:
-      "This built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed; re-syncing the built-in catalog restores that pin.",
-    /** Connectivity test on a hand-added row: replaces the upstream "is not supported" sentence, which names client types the user has no way to act on. */
+      "This built-in model's entry does not carry the protocol the catalog now sets for it, so it cannot be routed; re-syncing the built-in catalog restores it.",
+    /** Connectivity test on a hand-added row: replaces MMSP's "No client for model" sentence, which names client types the user has no way to act on. */
     testNotRoutable:
-      "Failed: this model ID cannot be routed. A vendor group carries built-in models only — move it to a custom group and pick or detect its protocol.",
-    /** Connectivity test on a built-in row missing its pin: the same split the card makes, so the two never give opposite advice. */
+      "Failed: this model ID cannot be routed. A vendor group only routes IDs that begin with a known vendor prefix — move it to a custom group and pick or detect its protocol.",
+    /** Connectivity test on a built-in row with a stale pin: the same split the card makes, so the two never give opposite advice. */
     testStalePin:
-      "Failed: this built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed. Re-syncing the built-in catalog restores that pin; it does not belong in a custom group.",
+      "Failed: this built-in model's entry does not carry the protocol the catalog now sets for it, so it cannot be routed. Re-syncing the built-in catalog restores it; it does not belong in a custom group.",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
@@ -2121,7 +2122,7 @@ export const en: Strings = {
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
-    openSettings: "Plugin settings",
+    openSettings: "Settings",
     pageDesc:
       "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
@@ -2704,6 +2705,15 @@ Scenarios:
       } as Record<string, string>,
       unsupported: "Not supported",
       localUnsupported: "No sandbox backend on this machine can limit the network to localhost",
+      /** The short note beside a level nothing can enforce because no backend is installed. */
+      notInstalled: "Not installed",
+      noBackend:
+        "No sandbox backend is installed on this server, so commands cannot be confined. An administrator can enable this platform's backend on the Plugins page (More…).",
+      noNetworkUnsupported: "No sandbox backend on this machine can cut the network off",
+      /** The short note beside a level whose enabled backend failed its check. */
+      notAvailable: "Unavailable",
+      backendUnavailable: (name: string, reason: string) =>
+        `The sandbox backend ${name} is enabled but not in use: ${reason}. An administrator can fix this on the Sandbox card (More…).`,
       more: "More…",
       approval: "Approval",
     },
@@ -4899,7 +4909,7 @@ Scenarios:
       model_not_addable:
         "This group carries its built-in models only; add the model under a custom group.",
       model_not_routable:
-        "This model ID cannot be routed by a vendor group's protocol. Vendor groups carry built-in models only — add the model under a custom group and pick or detect its protocol.",
+        "This model ID cannot be routed: a vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:

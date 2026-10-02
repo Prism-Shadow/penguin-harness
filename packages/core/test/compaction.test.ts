@@ -63,7 +63,7 @@ import { ContextEngine, SUMMARY_RETRY_GUIDANCE } from "../src/engine/context-eng
 import { Session } from "../src/session.js";
 import type { CompactionSettings } from "../src/engine/context-engine.js";
 import { GenerativeModel } from "../src/llm/index.js";
-import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/agenthub";
+import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/mmsp";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 
 // ---------------------------------------------------------------------------
@@ -1539,10 +1539,19 @@ describe("context compaction", () => {
         configs.push(config);
         const next = scripted.shift()!;
         return (async function* () {
-          const event: UniEvent = {
+          const event = (item: UniEvent["content_items"][number]): UniEvent => ({
             role: "assistant",
             event_type: "delta",
-            content_items: [{ type: "text", text: next.text }],
+            content_items: [item],
+            finish_reason: null,
+            usage_metadata: null,
+          });
+          yield event({ type: "text.delta", text: next.text });
+          yield event({ type: "text.done", text: next.text });
+          yield {
+            role: "assistant",
+            event_type: "stop",
+            content_items: [],
             finish_reason: "stop",
             usage_metadata: {
               cached_tokens: 0,
@@ -1551,7 +1560,6 @@ describe("context compaction", () => {
               response_tokens: 1,
             },
           };
-          yield event;
         })();
       }
     }
@@ -1788,7 +1796,7 @@ describe("context compaction", () => {
 
   it("manual compaction that commits nothing restores the prior carry-over verbatim", async () => {
     // The carry seam's binary (PR #87 review): every attempt was a transport failure, so
-    // nothing reached AgentHub — the folded carry-over comes back exactly as it was (the very
+    // nothing reached MMSP — the folded carry-over comes back exactly as it was (the very
     // same message objects, not routed through any absorption logic), and with zero committed
     // attempts there are no repairs to interleave with.
     const llm1 = new ScriptedLLM(
@@ -1833,7 +1841,7 @@ describe("context compaction", () => {
 
   it("manual compaction with a committed attempt consumes the carry-over; only repairs remain pending", async () => {
     // The other side of the binary: the first committed attempt put the folded carry-over
-    // into AgentHub history, so it is disposed of at the seam — never restored — and the next
+    // into MMSP history, so it is disposed of at the seam — never restored — and the next
     // input reflects the committed state plus the repair stash left by the final rejection.
     const llm1 = new ScriptedLLM(
       [

@@ -5,7 +5,9 @@
  * administrator, More…, which opens the Settings page's Sandbox card.
  *
  * Filesystem and Network edit the Session's own sandbox policy: a Session keeps the policy it
- * was created with, so the Settings page only decides what NEW Sessions start from.
+ * was created with, so the Settings page only decides what NEW Sessions start from. The menu is
+ * the same on every platform; a level this server cannot enforce is greyed out rather than
+ * hidden — with no sandbox backend installed, every level short of full access, marked so.
  *
  * Approval lists the modes the composer passes in (see approval-mode.ts): an organization's
  * Session is not offered `always-ask` unless it is the current value.
@@ -29,8 +31,12 @@ import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
   PERMISSION_LEVEL_TONE,
+  firstUnavailableBackend,
+  fsModeBlock,
+  networkBlock,
   permissionLevel,
 } from "../../lib/permission-level";
+import type { LevelBlock } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
 import { SettingsDialog } from "../settings/settings-dialog";
 
@@ -39,18 +45,21 @@ const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
 
 /**
  * One choice row: its text, and a check when it is the current value. An unavailable choice
- * stays listed, greyed out, with a short note saying why (`unavailable`).
+ * stays listed, greyed out, with a short note (`note`, "Not supported" unless given) and the
+ * reason in its title (`unavailable`).
  */
 function Choice({
   label,
   selected,
   onPick,
   unavailable,
+  note,
 }: {
   label: string;
   selected: boolean;
   onPick: () => void;
   unavailable?: string;
+  note?: string;
 }) {
   const off = unavailable !== undefined;
   return (
@@ -59,7 +68,7 @@ function Choice({
       checked={selected}
       disabled={off}
       data-tooltip={unavailable}
-      trailing={off ? S.chat.permission.unsupported : undefined}
+      trailing={off ? (note ?? S.chat.permission.unsupported) : undefined}
       onSelect={onPick}
     />
   );
@@ -102,6 +111,21 @@ export function PermissionSelect({
   // The Sandbox card lives on the Plugins page, which only an administrator can open.
   const isAdmin = useAuth().user?.isAdmin === true;
   const P = S.chat.permission;
+  // A level this server cannot enforce stays listed, greyed out, saying why — with no backend
+  // mounted, that is every level short of full access: not installed, or enabled but failing
+  // its check, with the first such backend's reason.
+  const failed = firstUnavailableBackend(sandbox);
+  const blocked = (block: LevelBlock | null) =>
+    block === null
+      ? {}
+      : block === "no-backend"
+        ? { unavailable: P.noBackend, note: P.notInstalled }
+        : block === "unavailable" && failed !== null
+          ? { unavailable: P.backendUnavailable(failed.name, failed.reason), note: P.notAvailable }
+          : {
+              unavailable:
+                block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported,
+            };
   const level = permissionLevel(approvalMode, sandbox);
   // The swap animation plays only for a CHANGE of level, never on the first paint — React's
   // "adjust state while rendering" pattern for information from the previous render.
@@ -162,6 +186,7 @@ export function PermissionSelect({
               key={mode}
               label={P.fsModes[mode] ?? mode}
               selected={sandbox.mode === mode}
+              {...blocked(fsModeBlock(sandbox, mode))}
               onPick={() =>
                 mode === sandbox.mode
                   ? setOpen(false)
@@ -175,10 +200,7 @@ export function PermissionSelect({
               key={network}
               label={P.networkModes[network] ?? network}
               selected={sandbox.network === network}
-              // The local level needs a backend that can enforce it on this server.
-              {...(network === "local" && sandbox.localNetworkSupported !== true
-                ? { unavailable: P.localUnsupported }
-                : {})}
+              {...blocked(networkBlock(sandbox, network))}
               onPick={() =>
                 network === sandbox.network
                   ? setOpen(false)

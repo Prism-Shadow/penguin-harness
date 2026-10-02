@@ -1,5 +1,5 @@
 /**
- * @prismshadow/penguin-plugin-sandbox-wsl — a Windows sandbox backend that confines in a Linux
+ * @penguinharness/sandbox-wsl — a Windows sandbox backend that confines in a Linux
  * distro: each agent command runs in a dedicated WSL2 distro, as an unprivileged account, under
  * bubblewrap.
  *

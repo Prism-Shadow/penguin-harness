@@ -955,7 +955,7 @@ export interface Messages {
   modelRemoved(model: string, defaultModel: string | undefined): string;
   /** `model remove` on a pair the Project config doesn't have. */
   modelNotConfigured(model: string): string;
-  /** `model add` refused: a new entry in a first-party vendor group under a model id AgentHub cannot route. */
+  /** `model add` refused: a new entry in a first-party vendor group under a model id MMSP cannot route (it begins with no known vendor prefix). */
   modelNotRoutable(model: string): string;
   /** A new entry in a built-in group that takes no hand-added models (everything but custom and vLLM). */
   modelNotAddable(model: string, group: string): string;
@@ -1044,7 +1044,7 @@ const en: Messages = {
     desc: "Manage Project configuration",
     modelDesc: "Manage model credentials and the default model",
     addDesc: "Add or update a model, optionally writing a credential",
-    addModelId: "Upstream model id sent to AgentHub as-is (e.g. claude-sonnet-4-6)",
+    addModelId: "Upstream model id sent to MMSP as-is (e.g. claude-sonnet-4-6)",
     addProvider:
       "Provider group stored alongside model_id; required, never inferred (use custom for anything without a vendor group)",
     addApiKey: "API key, stored inline in the Project's hidden .project_config.toml",
@@ -1052,15 +1052,14 @@ const en: Messages = {
     addContextWindow: "Context window size (tokens)",
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
-    addClientType:
-      "AgentHub client type (e.g. openai-chat); defaults by provider group when omitted",
+    addClientType: "MMSP client type (e.g. openai-chat); defaults by provider group when omitted",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
     addFastMode:
       "Enable fast mode: faster output at premium pricing (models without a fast tier reject requests carrying it)",
     addNoFastMode: "Disable fast mode (the default); omit both to keep current",
     fastModeUnsupported: (ref: string): string =>
-      `Warning: ${ref} cannot serve fast mode — AgentHub's client for it rejects the parameter, so its requests will fail. Re-run with --no-fast-mode to turn it off.`,
+      `Warning: ${ref} cannot serve fast mode — MMSP's client for it rejects the parameter, so its requests will fail. Re-run with --no-fast-mode to turn it off.`,
     addPriceCacheRead: "Price per 1M tokens: cache read (USD)",
     addPriceCacheWrite: "Price per 1M tokens: cache write (USD)",
     addPriceOutput: "Price per 1M tokens: output (USD)",
@@ -1928,7 +1927,8 @@ const en: Messages = {
   modelRemoved: (model, def) => `Removed model ${model}. Default model: ${def ?? "(unset)"}`,
   modelNotConfigured: (model) => `Model ${model} is not in the Project config.`,
   modelNotRoutable: (model) =>
-    `Model ${model} cannot be routed: a vendor group carries built-in models only. ` +
+    `Model ${model} cannot be routed: a vendor group routes a model by the vendor prefix its id ` +
+    `begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). ` +
     `Add it under a custom group (--provider custom) with --client-type and --base-url, ` +
     `or pass --client-type to pin the protocol this model speaks.`,
   modelNotAddable: (model, group) =>
@@ -2002,20 +2002,20 @@ const zh: Messages = {
     desc: "管理 Project 配置",
     modelDesc: "管理模型 credential 与默认模型",
     addDesc: "新增或更新一个模型，并可写入 credential",
-    addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 AgentHub）",
+    addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 MMSP）",
     addProvider: "与 model_id 分列存储的 provider 分组；必填，不作推断（无厂商分组时填 custom）",
     addApiKey: "API key，内联存入 Project 的隐藏文件 .project_config.toml",
     addBaseUrl: "自定义 base url",
     addContextWindow: "上下文窗口大小（token 数）",
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
-    addClientType: "AgentHub 客户端协议（如 openai-chat）；缺省按 provider 分组的语义取值",
+    addClientType: "MMSP 客户端协议（如 openai-chat）；缺省按 provider 分组的语义取值",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
     addFastMode: "开启快速模式：输出更快、按溢价计费（不支持 fast 档位的模型会拒绝请求）",
     addNoFastMode: "关闭快速模式（缺省即关闭）；两者都不给则保留原值",
     fastModeUnsupported: (ref: string): string =>
-      `警告：${ref} 不支持快速模式——AgentHub 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-fast-mode 重新执行以关闭。`,
+      `警告：${ref} 不支持快速模式——MMSP 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-fast-mode 重新执行以关闭。`,
     addPriceCacheRead: "每百万 token 价格：缓存命中（USD）",
     addPriceCacheWrite: "每百万 token 价格：缓存未命中（USD）",
     addPriceOutput: "每百万 token 价格：输出（USD）",
@@ -2821,7 +2821,8 @@ const zh: Messages = {
   modelRemoved: (model, def) => `已删除模型 ${model}。当前默认模型：${def ?? "(未设置)"}`,
   modelNotConfigured: (model) => `模型 ${model} 不在当前 Project 配置中。`,
   modelNotRoutable: (model) =>
-    `模型 ${model} 无法路由：厂商分组只承载内置模型。` +
+    `模型 ${model} 无法路由：厂商分组按模型 id 开头的厂商前缀` +
+    `（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。` +
     `请改用自定义分组（--provider custom）并附上 --client-type 与 --base-url，` +
     `或用 --client-type 指定该模型所用的协议。`,
   modelNotAddable: (model, group) =>

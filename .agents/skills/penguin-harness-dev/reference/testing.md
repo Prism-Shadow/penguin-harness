@@ -70,7 +70,7 @@ Fake at the edge of the system, never inside it. Each package keeps its fakes in
 
 | Boundary | The one fake |
 | --- | --- |
-| An LLM provider | The package's mock LLM (a scripted AgentHub client in core; `mock-llm.mjs` for e2e). Never `vi.mock("@prismshadow/agenthub")` in a new test when the scripted client can do it. |
+| An LLM provider | The package's mock LLM (a scripted MMSP client in core; `mock-llm.mjs` for e2e). Never `vi.mock("@prismshadow/agenthub")` in a new test when the scripted client can do it. |
 | Outbound HTTP (vendors, gateways, messaging platforms) | One fetch fake per package that records requests and answers from a script; installed with `vi.stubGlobal("fetch", …)` and restored in `afterEach`. No real network. |
 | The server, from a test | The package's `createTestApp()` / request helpers against a temp data root. Build one app per `describe` when the scenarios do not interfere, not one per `it`. |
 | Filesystem | A real temp directory (`mkdtemp`) removed in `afterEach`. Do not mock `fs`. |

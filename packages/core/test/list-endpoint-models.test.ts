@@ -1,5 +1,5 @@
 /**
- * listEndpointModels: the thin AgentHub wrapper — routes by the given client type,
+ * listEndpointModels: the thin MMSP wrapper — routes by the given client type,
  * resolves the credential itself (the environment lends a key only to the vendor's own
  * endpoint and refuses the listing otherwise, before any client exists), forwards the base
  * URL only when present, and returns the listing verbatim (order preserved, no dedup:
@@ -13,8 +13,8 @@ const captured = vi.hoisted(() => ({
   fail: undefined as Error | undefined,
 }));
 
-vi.mock("@prismshadow/agenthub", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@prismshadow/agenthub")>();
+vi.mock("@prismshadow/mmsp", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@prismshadow/mmsp")>();
   class FakeAutoLLMClient {
     constructor(options: Record<string, unknown>) {
       captured.options.push(options);
@@ -85,7 +85,7 @@ describe("listEndpointModels", () => {
     expect(captured.options).toEqual([]);
   });
 
-  it("propagates AgentHub errors unchanged (callers collapse them into their outcome shape)", async () => {
+  it("propagates MMSP errors unchanged (callers collapse them into their outcome shape)", async () => {
     captured.fail = Object.assign(new Error("listing models is not supported"), {
       name: "UnsupportedOperationError",
     });

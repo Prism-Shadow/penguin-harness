@@ -187,7 +187,7 @@ describe("hasKey / keyStatusText (the model card's key judgement)", () => {
 describe("clientTypeAfterProviderChange", () => {
   it("uses openai-chat when moving to Custom and otherwise preserves the current client", () => {
     expect(clientTypeAfterProviderChange("custom", "")).toBe("openai-chat");
-    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai-chat");
+    expect(clientTypeAfterProviderChange("custom", "anthropic-official")).toBe("openai-chat");
     expect(clientTypeAfterProviderChange("google", "openai-chat")).toBe("openai-chat");
   });
 });
@@ -353,9 +353,9 @@ describe("nextPointers (where the default/vision-agent model pointers land after
 });
 
 describe("fastModeState (whether the dialog offers the fast-mode switch, and on which protocol)", () => {
-  // The provider defaults to a real vendor group, whose entries are auto-routed by a
-  // catalog-known model id — the custom-like groups, which resolve to a protocol instead,
-  // are exercised explicitly below.
+  // The provider defaults to a real vendor group, whose entries are routed by the vendor
+  // family their model id begins with — the custom-like groups, which resolve to a protocol
+  // instead, are exercised explicitly below.
   const draft = (partial: {
     modelId: string;
     provider?: string;
@@ -370,7 +370,7 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
     fastMode: partial.fastMode ?? false,
   });
 
-  it("offers it where AgentHub's routed client carries the parameter, with the protocol", () => {
+  it("offers it where MMSP's routed client carries the parameter, with the protocol", () => {
     // Gateway / custom rows pin the OpenAI protocol; first-party Claude ids take the
     // Anthropic one, which is what selects the research-preview paragraph in the warning.
     expect(fastModeState(draft({ modelId: "z-ai/glm-5.2", clientType: "openai" }))).toEqual({
@@ -382,16 +382,23 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
       show: true,
     });
     expect(fastModeState(draft({ modelId: "gpt-5.5" })).protocol).toBe("openai");
+    // Google's Interactions API takes the priority service tier the way OpenAI's API does.
+    expect(fastModeState(draft({ modelId: "gemini-3.5-flash" })).protocol).toBe("openai");
   });
 
   it("withholds it where the client would reject the parameter", () => {
     // The whole point of the gate: these ids would fail the next turn with fast mode on.
-    for (const modelId of ["gemini-3.5-flash", "glm-5.2", "kimi-k3", "deepseek-v4-pro"]) {
+    for (const modelId of ["glm-5.2", "kimi-k3", "deepseek-v4-pro"]) {
       expect(fastModeState(draft({ modelId })), modelId).toEqual({
         protocol: undefined,
         show: false,
       });
     }
+    // A Gemini id pinned to the generateContent client (what the Penguin Go rows pin) loses
+    // the tier its unpinned id would have.
+    expect(
+      fastModeState(draft({ modelId: "gemini-3.5-flash", clientType: "google-genai" })),
+    ).toEqual({ protocol: undefined, show: false });
     // Claude 4.6 is refused by name even though the client serves the family, and Bedrock
     // has no fast tier at all — the base URL is read from the draft, not the saved row.
     expect(fastModeState(draft({ modelId: "claude-sonnet-4-6" })).show).toBe(false);
@@ -411,13 +418,16 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
   });
 
   it("follows the draft as it is typed: an unsaved protocol change flips the answer", () => {
-    // Same upstream id, different client: routed to Kimi it is rejected, pinned to the
-    // OpenAI protocol (a gateway reselling it) it is served.
-    expect(fastModeState(draft({ modelId: "moonshotai/kimi-k3" })).show).toBe(false);
-    expect(fastModeState(draft({ modelId: "moonshotai/kimi-k3", clientType: "openai" }))).toEqual({
+    // Same upstream id, different client: routed to Kimi's own client it is rejected, pinned
+    // to the OpenAI protocol (as a gateway reselling it would be) it is served.
+    expect(fastModeState(draft({ modelId: "kimi-k3" })).show).toBe(false);
+    expect(fastModeState(draft({ modelId: "kimi-k3", clientType: "openai" }))).toEqual({
       protocol: "openai",
       show: true,
     });
+    // An owner-prefixed gateway id routes nowhere unpinned (no vendor family begins with
+    // "moonshotai/"), so it has no fast tier until a protocol is pinned.
+    expect(fastModeState(draft({ modelId: "moonshotai/kimi-k3" })).show).toBe(false);
     // Whitespace-only fields are treated as absent, matching what the form submits.
     expect(fastModeState(draft({ modelId: "claude-fable-5", clientType: "  " })).protocol).toBe(
       "anthropic",
@@ -436,7 +446,7 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
       });
       // Ids that WOULD route to a client with no fast tier if they were read by name: the
       // group still saves them on the compatible client, so the switch stays offered.
-      for (const modelId of ["kimi-k3", "gemini-3.5-flash", "deepseek-v4-pro"]) {
+      for (const modelId of ["kimi-k3", "glm-5.2", "deepseek-v4-pro"]) {
         expect(fastModeState(draft({ provider, modelId })), `${provider}/${modelId}`).toEqual({
           protocol: "openai",
           show: true,
@@ -453,7 +463,7 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
         draft({ provider: "custom", modelId: "my-model", clientType: "openai-responses" }),
       ).protocol,
     ).toBe("openai");
-    // The Bedrock carve-out belongs to the claude5 client, so it applies where routing
+    // The Bedrock carve-out belongs to the anthropic-official client, so it applies where routing
     // actually reaches that client: a vendor group withholds the switch, while the same id
     // and base URL under a custom group is pinned to the compatible client and keeps it.
     // The gate mirrors AutoLLMClient's routing; it does not promise the endpoint honours
@@ -472,7 +482,7 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
 
   it("leaves preset and vendor groups on id-based routing when no protocol is set", () => {
     // The fallback is scoped to custom-like groups: a vendor group with an empty protocol
-    // must keep deferring to AgentHub's id routing, so a no-fast-tier id stays withheld.
+    // must keep deferring to MMSP's id routing, so a no-fast-tier id stays withheld.
     expect(fastModeState(draft({ provider: "moonshot", modelId: "kimi-k3" }))).toEqual({
       protocol: undefined,
       show: false,

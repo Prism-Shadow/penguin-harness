@@ -38,7 +38,7 @@ A `session_meta` message describes **one model context**:
 interface SessionMetaPayload {
   session_id: string;
   provider: string;                       // one half of the model-identity pair
-  model_id: string;                       // the upstream request id sent to AgentHub
+  model_id: string;                       // the upstream request id sent to MMSP
   model_context_window: number | string;
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
@@ -187,7 +187,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. `PartialAggregator` (`aggregate.ts`) is a ready-made aggregator.
+Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. Each run of fragments ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself.
 
 ## event_msg
 

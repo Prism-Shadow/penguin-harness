@@ -185,7 +185,7 @@ describe("models preset & catalog enrichment", () => {
     }
 
     // A vendor's own row falls back to its client's environment variable; it has no stored
-    // credential and no client_type (AgentHub routes it by its upstream id).
+    // credential and no client_type (MMSP routes it by the family its upstream id begins with).
     const sonnet = pick(body, "anthropic", "claude-sonnet-4-6");
     expect(sonnet.isDefault).toBe(false);
     expect(sonnet.envKey).toBe("ANTHROPIC_API_KEY");
@@ -291,13 +291,13 @@ describe("models preset & catalog enrichment", () => {
           {
             provider: "penguin-go",
             modelId: "gemini-3.8-flash",
-            clientType: "gemini-3.8",
+            clientType: "google-genai",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
           {
             provider: "penguin-go",
             modelId: "deepseek-flash",
-            clientType: "deepseek-v4",
+            clientType: "deepseek-official",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
         ],
@@ -374,7 +374,7 @@ describe("models preset & catalog enrichment", () => {
     expect(opaque.envKey).toBeUndefined();
 
     // Listed under one vendor's group but using the openai protocol (a model added at a group header):
-    // AgentHub's openai client actually reads OPENAI_API_KEY, so the env fallback reports that, not the vendor's var name.
+    // MMSP's openai-chat client actually reads OPENAI_API_KEY, so the env fallback reports that, not the vendor's var name.
     expect(pick(body, "anthropic", "claude-via-gateway").envKey).toBe("OPENAI_API_KEY");
 
     // GET again: vision was persisted (not just echoed from the request body), and the disk
@@ -399,9 +399,9 @@ describe("models preset & catalog enrichment", () => {
 
   it("PUT refuses an id a vendor group cannot route when the request introduces it, and carries a stored one through", async () => {
     const cfgFile = path.join(t.root, projectId, ".project_config.toml");
-    // A row in the shape a vendor-group add used to produce: no client_type, and an id
-    // AgentHub places nowhere, so it fails at request time with its "is not supported"
-    // sentence. Rows like this exist in configs written before the rule below.
+    // A row in the shape a vendor-group add used to produce: no client_type, and an id of no
+    // family MMSP knows, so it fails at request time with its `No client for model` sentence.
+    // Rows like this exist in configs written before the rule below.
     await writeFile(
       cfgFile,
       ["[[models]]", 'provider = "deepseek"', 'model_id = "qwen/qwen3.8-flash-next"'].join("\n"),
@@ -592,6 +592,46 @@ describe("models preset & catalog enrichment", () => {
     expect(legacy.envKey).toBeUndefined();
   });
 
+  it("a config stored with AgentHub 0.4 client types is migrated on its first read: GET reports MMSP's names and the file is rewritten once", async () => {
+    // A Project written before MMSP 0.5.0: the old router's per-generation names, which MMSP
+    // refuses at client construction. The service's reader rewrites the file the moment it
+    // reads it, so every consumer of the table — this GET, a Session's credential resolution,
+    // the scheduler — sees the new names, and the row stays exactly where it was.
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    await writeFile(
+      cfgFile,
+      [
+        'name = "Legacy"',
+        "[[models]]",
+        'provider = "penguin-go"',
+        'model_id = "gemini-3.8-flash"',
+        'client_type = "gemini-3.8"',
+        'base_url = "https://go.example/api"',
+        "",
+        "[[models]]",
+        'provider = "deepseek"',
+        'model_id = "deepseek-flash"',
+        'client_type = "deepseek-v4"',
+        'base_url = "https://api.deepseek.com"',
+        'api_key = "sk-keep"',
+      ].join("\n"),
+      "utf8",
+    );
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "penguin-go", "gemini-3.8-flash").clientType).toBe("google-genai");
+    expect(pick(body, "deepseek", "deepseek-flash").clientType).toBe("deepseek-official");
+    const rewritten = await readFile(cfgFile, "utf8");
+    expect(rewritten).toContain('client_type = "google-genai"');
+    expect(rewritten).toContain('client_type = "deepseek-official"');
+    expect(rewritten).not.toMatch(/gemini-3\.8"|deepseek-v4/);
+    expect(rewritten).toContain('name = "Legacy"');
+    expect(rewritten).toContain('api_key = "sk-keep"');
+    // The rewritten file is what later reads serve, and they leave it alone.
+    const { mtimeMs } = await stat(cfgFile);
+    await api.get(url());
+    expect((await stat(cfgFile)).mtimeMs).toBe(mtimeMs);
+  });
+
   it("a configured model that has since been dropped from the built-in catalog still loads, keeps its data, and stays usable", async () => {
     // Migration guard for catalog removals (the 2026-08-18 inclusionai/ling-3.0-flash:free
     // delisting is the live example): a user who configured the preset before it was removed
@@ -738,14 +778,14 @@ describe("default_project presets", () => {
   let prevKey: string | undefined;
 
   beforeEach(() => {
-    // The default model (DeepSeek) uses the OpenAI protocol, whose SDK requires a credential at
+    // The default model routes to MMSP's DeepSeek client, which requires a credential at
     // **construction time** — this case creates a Session, so we stuff in a fake key (no real request is sent). CI has no keys.
-    prevKey = process.env.OPENAI_API_KEY;
-    process.env.OPENAI_API_KEY = "test-key-not-used";
+    prevKey = process.env.DEEPSEEK_API_KEY;
+    process.env.DEEPSEEK_API_KEY = "test-key-not-used";
   });
   afterEach(async () => {
-    if (prevKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = prevKey;
     await t.cleanup();
   });
 
@@ -895,8 +935,9 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(moved.provider).toBe("custom");
     expect(moved.modelId).toBe("deepseek-v4-pro");
     expect(moved.credential?.apiKeyMasked).toBe("sk-s…1234");
-    // The env fallback follows client resolution — with no client_type on the entry,
-    // AgentHub still routes by id to the DeepSeek client (reading DEEPSEEK_API_KEY), regardless of group membership.
+    // The env fallback follows client resolution — with no client_type on the entry, MMSP
+    // still routes the `deepseek-` id to the DeepSeek client (reading DEEPSEEK_API_KEY),
+    // regardless of group membership.
     expect(moved.envKey).toBe("DEEPSEEK_API_KEY");
   });
 
@@ -1347,7 +1388,7 @@ describe("model-reference rekeying and the connectivity test", () => {
   });
 
   it("the connectivity test and the group speed test refuse a keyless gateway row without touching the environment", async () => {
-    // The #786 review's finding: a keyless gateway row handed AgentHub no key, and its
+    // The #786 review's finding: a keyless gateway row handed the library no key, and its
     // generic client read OPENAI_API_KEY / ANTHROPIC_API_KEY itself — one speed test on a
     // gateway group sent the user's vendor keys to the gateway once per model. Both paths run
     // through testModel; both must refuse before any request leaves the process.

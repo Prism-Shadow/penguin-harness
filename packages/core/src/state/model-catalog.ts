@@ -1,5 +1,5 @@
 /**
- * Built-in model catalog (single source of truth): official chat models that AgentHub can
+ * Built-in model catalog (single source of truth): official chat models that MMSP can
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
@@ -35,14 +35,14 @@
  * every rate above 512K input; this catalog records their base tier (the cost center uses a
  * single rate, so long-context usage will be underestimated).
  *
- * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
- * auto-route (deprecated 2026-07-24), glm-5v-turbo (AgentHub's GLM client forwards images
+ * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases (deprecated 2026-07-24),
+ * glm-5v-turbo (MMSP's Z.AI client forwards images
  * only for glm-5.3-flash, so a vision model cannot do the one thing it exists for), the
  * OpenRouter z-ai/glm-5.1 and SiliconFlow Pro/zai-org/GLM-5.1 gateway listings
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
- * auto-routed by AgentHub and leave client_type unset; seven gateway groups (OpenRouter,
+ * auto-routed by MMSP and leave client_type unset; seven gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan)
  * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
  * inlines its preset base URL. ModelScope's rows pin one protocol too (see below).
@@ -50,17 +50,17 @@
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
  * OpenRouter, whose do — see each group's own block comment.
- * That pin is load-bearing, not decoration: AgentHub's AutoLLMClient matches raw substrings
- * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
- * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
- * GPT-5.6 client aimed at a gateway, and `anthropic/claude-opus-4.8` would throw outright
- * (dotted "4.8" matches neither "4-8" nor "-5"). Four protocols are pinned:
+ * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
+ * the family its spelling begins with and never looks at base_url (see routedClientType), so
+ * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
+ * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
+ * outright (no known family begins with "openai/"). Four protocols are pinned:
  * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
  *   every upstream at the same base URL the rows already carry, and the group pins the same
  *   protocol so a user-added entry inherits it;
- * - `openai-chat` for the other OpenAI-compatible gateway rows (AgentHub 0.4.2's canonical
- *   name for the generic Chat Completions client — the bare "openai" spelling is a
- *   deprecated upstream alias, see canonicalClientType);
+ * - `openai-chat` for the other OpenAI-compatible gateway rows (the generic Chat Completions
+ *   client — the bare "openai" spelling is a deprecated upstream alias, see
+ *   canonicalClientType);
  * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
  *   but maps the thinking level onto the served model's own chat template
  *   (VLLM_CLIENT_TYPE);
@@ -70,11 +70,6 @@
  * ModelScope's rows all pin `openai-responses`: ModelScope serves every preset through its
  * OpenAI Responses endpoint, and the explicit pin keeps a Qwen or DeepSeek id from auto-routing
  * to a vendor client with a different request shape.
- *
- * Two direct-vendor rows pin anyway, because their own id does not route: the MiniMax M3
- * preset pins AgentHub's first-party `minimax-m3` protocol and direct API endpoint, and
- * `deepseek-flash` pins `deepseek-v4` because AgentHub 0.4.11 routes DeepSeek on that
- * substring alone and the released V4.1 Flash id no longer carries it.
  *
  * App attribution (`attributionHeaders`, bottom of this file) rides alongside the protocol
  * pins: it names PenguinHarness to the gateways that read such a header, keyed on the
@@ -143,7 +138,7 @@ export interface ModelProviderInfo {
   /** Display name (brand name, shared by Chinese and English UI). */
   label: string;
   /**
-   * API key env var name: the pair AgentHub's client for this group's rows reads when handed no
+   * API key env var name: the pair MMSP's client for this group's rows reads when handed no
    * key. Whether a keyless row may actually lean on it is decided per entry by
    * modelEnvFallback — a gateway group records OPENAI_* because that is what its generic
    * client reads, and precisely for that reason its rows never get the fallback.
@@ -186,7 +181,7 @@ export interface ModelProviderInfo {
    */
   addable?: boolean;
   /**
-   * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
+   * The MMSP protocol EVERY entry in this group speaks, models the user adds included.
    *
    * Set it only where the group itself decides the answer and no other property already
    * implies it: the other gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
@@ -241,9 +236,9 @@ export interface ModelCatalogEntry {
   offPeakDiscount?: OffPeakDiscount;
   /** Whether image input (vision modality) is supported. */
   supportsVision: boolean;
-  /** AgentHub client protocol: required when an id cannot be auto-routed or a shared protocol must be pinned. */
+  /** MMSP client type: required when an id cannot be auto-routed or a shared protocol must be pinned. */
   clientType?: string;
-  /** Preset base URL: inlined into gateway and direct MiniMax entries so only an API key is required. */
+  /** Preset base URL: inlined into gateway entries so only an API key is required. */
   baseUrl?: string;
   /**
    * The seller no longer offers this row, but Projects created while it did still carry it: a
@@ -267,11 +262,10 @@ export interface ModelCatalogEntry {
 }
 
 /**
- * AgentHub's client for models served by vLLM's OpenAI-compatible Chat Completions API. It
- * is Chat Completions on the wire, but a distinct client: it maps the thinking level onto
- * the `chat_template_kwargs` the SERVED model's chat template reads, which differs per model
- * family, and AgentHub matches this name by exact equality (before its `openai` substring
- * branches) so `openai-chat` would silently lose that mapping.
+ * MMSP's client for models served by vLLM's OpenAI-compatible Chat Completions API. It is
+ * Chat Completions on the wire, but a distinct client: it maps the thinking level onto the
+ * `chat_template_kwargs` the SERVED model's chat template reads, which differs per model
+ * family, so `openai-chat` would silently lose that mapping.
  */
 const VLLM_CLIENT_TYPE = "openai-chat-vllm-adapter";
 
@@ -310,7 +304,7 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * key stored already, so it keeps the arrangement its user built.
  *
  * The seven gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, OpenCode Go,
- * Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through AgentHub's generic
+ * Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through MMSP's generic
  * protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest, and all
  * three generic clients within OpenCode Go). Those clients read the vendor variables
  * (**OPENAI_API_KEY / OPENAI_BASE_URL**, and ANTHROPIC_* for OpenCode Go's `ant-messages`
@@ -489,7 +483,7 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // because inference requests are routed through that bridge.
     //
     // The endpoint host is still inlined on every preset row; the row's own `client_type` tells
-    // the frontend which AgentHub protocol that upstream model uses, as with Penguin Go.
+    // the frontend which MMSP protocol that upstream model uses, as with Penguin Go.
     id: MODELSCOPE_PROVIDER_ID,
     label: "ModelScope",
     envKey: "OPENAI_API_KEY",
@@ -682,12 +676,6 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // DeepSeek's pricing page names this model `deepseek-flash` (model version
     // DeepSeek-V4.1-Flash, released as of the 2026-09-10 read): 1M context, image input, and
     // the Flash series peak price and off-peak schedule.
-    // The id carries no `deepseek-v4` substring, and that substring is the only thing
-    // AgentHub 0.4.11's AutoLLMClient routes DeepSeek on (it matches raw substrings against
-    // `client_type || model_id`), so the bare name would be rejected as unsupported. This
-    // direct-vendor row therefore pins the `deepseek-v4` client and inlines the vendor
-    // endpoint — the same shape the MiniMax row uses, and the one exception to direct rows
-    // leaving both unset. Drop the two fields once AgentHub routes the bare id.
     modelId: "deepseek-flash",
     displayName: "DeepSeek V4.1 Flash",
     provider: "deepseek",
@@ -695,13 +683,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
-    clientType: "deepseek-v4",
-    baseUrl: DEEPSEEK_BASE_URL,
   },
   {
     // Retired 2026-09-16 (see ModelCatalogEntry.retired): the default model of new Projects
     // from 0.2.0 to 0.2.8. DeepSeek still accepts the id and serves it from V4.1 Flash at the
-    // Flash price, off-peak schedule included. Text only: AgentHub's DeepSeek client refuses
+    // Flash price, off-peak schedule included. Text only: MMSP's DeepSeek client refuses
     // image parts for this id.
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
@@ -729,9 +715,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // 2026-09-16), which is what the display name says — the same 0813 release the gateway
     // groups sell under dated ids. Text only. DeepSeek states that V4 Pro stays available
     // after 2026-09-14 with its billing unchanged, so the row keeps the V4 Pro peak price on
-    // the shared off-peak schedule. AgentHub 0.4.11's DeepSeek client also matches this bare
-    // id against its text-only deny-list /^deepseek-v4-(flash|pro)(-\d{4})?$/, so image parts
-    // never leave the harness for it.
+    // the shared off-peak schedule. MMSP's DeepSeek client also matches this bare id against
+    // its text-only deny-list /^deepseek-v4-(flash|pro)(-\d{4})?$/, so image parts never
+    // leave the harness for it.
     modelId: "deepseek-v4-pro",
     displayName: "DeepSeek V4 Pro 0813",
     provider: "deepseek",
@@ -751,8 +737,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
   // the rows already carry, and the group pins the same protocol so an entry added to it by
   // hand inherits it. The generic Responses client sends a text-only tool result as a plain
-  // string (AgentHub 0.4.11) and replays reasoning items only where the upstream returned
-  // them.
+  // string and replays reasoning items only where the upstream returned them.
   //
   // Price buckets: cache_read stores the published input_cache_read
   // (falling back to the input price for the rows without one — the :free rows and the
@@ -1800,8 +1785,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Penguin Go (mixed-protocol relay). The model ids are the generation rows
   // provisioned by Penguin Go's generic-client authorization contract. Both
-  // protocols share the /api base: the Google client appends /v1beta itself, while the
-  // DeepSeek Responses client appends /responses. The rows carry Penguin Go's current list
+  // protocols share the /api base: the google-genai client appends /v1beta itself, while
+  // DeepSeek's Responses client appends /responses. The rows carry Penguin Go's current list
   // prices so a new Project is complete before its first authorization, and no `discount`:
   // the platform delivers any promotion it runs at authorization and Sync, and both stay
   // authoritative when the relay later publishes changed metadata. The DeepSeek rows follow
@@ -1814,7 +1799,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "gemini-3.8",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1824,7 +1809,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "gemini-3.8",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1834,7 +1819,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "gemini-3.8",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1844,7 +1829,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 9),
     supportsVision: true,
-    clientType: "gemini-3.8",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1854,7 +1839,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
-    clientType: "gemini-3.8",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1864,7 +1849,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.025, 0.25, 1.5),
     supportsVision: true,
-    clientType: "gemini-3.8",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1874,7 +1859,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.2, 2, 12),
     supportsVision: true,
-    clientType: "gemini-3.8",
+    clientType: "google-genai",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1885,7 +1870,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
-    clientType: "deepseek-v4",
+    clientType: "deepseek-official",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1896,7 +1881,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.3, 9, 27),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
-    clientType: "deepseek-v4",
+    clientType: "deepseek-official",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   // -- OpenCode Go (subscription gateway). The lineup, model ids, endpoints and per-token rates
@@ -1914,8 +1899,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // /responses, both on OPENCODE_GO_BASE_URL, and `ant-messages` for /v1/messages on
   // OPENCODE_GO_MESSAGES_BASE_URL. The paths are not interchangeable: /chat/completions refuses
   // grok-4.6 and fails for gpt-5.6-luna. The pins are load-bearing too: unpinned, gpt-5.6-luna,
-  // glm-*, kimi-k3, kimi-k2.6, deepseek-v4* and minimax-m3 would reach their first-party
-  // clients, and the other ids would not route at all. The gateway refuses a request that does
+  // glm-*, kimi-*, deepseek-* and minimax-* would reach their official clients, and the other
+  // ids would not route at all. The gateway refuses a request that does
   // not name its conversation (400 "Request is missing x-opencode-session"), which
   // attributionHeaders does for this host on every request: a Session's requests carry its id,
   // and a request outside any Session — a connectivity test, a vision probe — a fresh one.
@@ -2393,7 +2378,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // listing (2026-09-18), and the Qwen additions from their public model pages (2026-09-20).
   //
   // ModelScope serves all three presets through its OpenAI Responses endpoint, so every row pins
-  // AgentHub's generic Responses client. Keeping the protocol explicit also prevents ids from
+  // MMSP's generic Responses client. Keeping the protocol explicit also prevents ids from
   // auto-routing to vendor-specific clients with a different request shape.
   //
   // The window and vision flags are NOT read from ModelScope's own docs — its model pages are
@@ -2432,8 +2417,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-responses",
     baseUrl: MODELSCOPE_BASE_URL,
   },
-  // -- MiniMax (direct M3 Responses client; official USD pay-as-you-go list prices, standard
-  // tier at <=512K input — every rate doubles above 512K, and the priority tier is 1.5x). --
+  // -- MiniMax (official USD pay-as-you-go list prices, standard tier at <=512K input — every
+  // rate doubles above 512K, and the priority tier is 1.5x). --
   {
     modelId: "MiniMax-M3",
     displayName: "MiniMax M3",
@@ -2441,8 +2426,6 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.06, 0.3, 1.2),
     supportsVision: true,
-    clientType: "minimax-m3",
-    baseUrl: MINIMAX_BASE_URL,
   },
   // -- Google Gemini (official USD pricing) --
   {
@@ -2461,8 +2444,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   {
-    // Google's list price, identical to gemini-3.6-flash (per AgentHub 0.4.2's registry and
-    // Google's price page), halved through 2026-12-31 by a launch discount on all three
+    // Google's list price, identical to gemini-3.6-flash (per MMSP's registry and Google's
+    // price page), halved through 2026-12-31 by a launch discount on all three
     // rates. That promotion is declared in `discount` — same treatment as gemini-3.8-flash
     // above — so the list price survives it and there is one field to delete when it lapses.
     modelId: "gemini-3.7-flash",
@@ -2590,7 +2573,6 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // cache-write price of 12.5; the $10 rate applies only to input that is not written to
     // cache, a split the three buckets do not express. Every rate doubles above 272K input
     // tokens (output 1.5x) — the base tier is what this row records, as the header says.
-    // Served by AgentHub's gpt6 client from the release that ships it.
     modelId: "gpt-6-astra",
     displayName: "GPT-6 Astra",
     provider: "openai",
@@ -2601,8 +2583,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // The bare gpt-5.6 id routes to gpt-5.6-sol upstream and is priced as that tier, so the
     // row names the Sol codename its siblings and the openai/gpt-5.6-sol row already show —
-    // the id stays bare, only the label says which variant this is; served by AgentHub
-    // 0.4.2's native gpt-5.6 client. This row and the two gpt-5.6 rows below mirror the
+    // the id stays bare, only the label says which variant this is. This row and the two
+    // gpt-5.6 rows below mirror the
     // openai/gpt-5.6-* OpenRouter rows above, which carry the gateway's (currently
     // discounted) rates instead of this list price.
     modelId: "gpt-5.6",
@@ -2680,7 +2662,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Z.AI (GLM) --
   {
-    // Announced 2026-08-14 and served by AgentHub 0.4.2's unified GLM client. Z.AI's price
+    // Announced 2026-08-14. Z.AI's price
     // list (docs.z.ai/guides/overview/pricing, read 2026-08-18) publishes the same USD rates
     // as glm-5.2 / glm-5.1.
     modelId: "glm-5.3",
@@ -2698,11 +2680,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // default endpoint bills, which runs a promotion of its own.
     //
     // The model is natively multimodal (docs.z.ai/guides/vlm/glm-5.3-flash: images, video
-    // and files), and it is the one GLM id whose images AgentHub's GLM client forwards — as
+    // and files), and it is the one GLM id whose images MMSP's Z.AI client forwards — as
     // image_url parts, in a prompt and in a tool result alike. Every other GLM id refuses
     // one outright ("GLM <id> does not support image inputs."), which is why the rest of
-    // this group is vision-off. That forwarding is why core's dependency range floors
-    // @prismshadow/agenthub at 0.4.8.
+    // this group is vision-off.
     modelId: "glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "zhipu",
@@ -2759,7 +2740,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.7, 4, 21),
     supportsVision: true,
   },
-  // -- vLLM (self-hosted: the models AgentHub's openai-chat-vllm-adapter client carries a
+  // -- vLLM (self-hosted: the models MMSP's openai-chat-vllm-adapter client carries a
   // per-model thinking switch for, as published at recipes.vllm.ai — read 2026-09-03).
   //
   // Every row prices at zero, and omits two other things, all because the user runs the server:
@@ -2770,9 +2751,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   //   truthful reading of a self-hosted endpoint that bills nobody.
   // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
   // - **no auto-routing**. Each row pins openai-chat-vllm-adapter explicitly, and the pin is
-  //   load-bearing twice over: `Qwen/*` matches none of AutoLLMClient's substring rules and
-  //   would be rejected outright, while `deepseek-ai/DeepSeek-V4-*` contains "deepseek-v4"
-  //   and would reach DeepSeek's first-party Responses client — pointed at a vLLM server.
+  //   load-bearing twice over: `Qwen/*` begins with no family AutoLLMClient knows and would
+  //   be rejected outright, while `deepseek-ai/DeepSeek-V4-*` begins with "deepseek-" and
+  //   would reach DeepSeek's official Responses client — pointed at a vLLM server.
   //
   // contextWindow is the recipe's NATIVE length, which is the most a deployment can serve
   // without reconfiguration; an operator may serve less (`--max-model-len` below the native
@@ -2880,8 +2861,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
 ];
 
 /**
- * Canonical spelling of an AgentHub client-type string. AgentHub 0.4.2 renamed the generic
- * Chat Completions client from `openai` to `openai-chat`; the bare `openai` spelling still
+ * Canonical spelling of an MMSP client-type string. The generic Chat Completions client was
+ * renamed from `openai` to `openai-chat` (AgentHub 0.4.2); the bare `openai` spelling still
  * routes upstream as a deprecated alias, but the harness converges on the canonical name —
  * config reads/writes and API request handling all normalize through here, so configs saved
  * before the rename keep working while comparisons (legacy-protocol display, catalog sync)
@@ -2930,10 +2911,11 @@ export function providerClientType(providerId: string): string | undefined {
  * Z.AI, Moonshot, MiniMax, and the Penguin Go relay.
  *
  * What distinguishes it is that nothing in it decides a protocol: its entries persist no
- * `client_type`, so AgentHub places every one of them by the spelling of the upstream model
- * id alone. That makes the group's contents a closed set — the ids this catalog ships, plus
- * the few whose preset pins a protocol because their own id would not route — and an id
- * outside it cannot be started at all, whatever else is configured on the entry. Every
+ * `client_type`, so MMSP places every one of them by the spelling of the upstream model
+ * id alone — the vendor family it begins with. An id of no known family cannot be started at
+ * all, whatever else is configured on the entry (the Penguin Go rows pin their protocol
+ * instead: the relay serves Gemini through generateContent, not the API a `gemini-` id routes
+ * to). Every
  * surface that has to answer "is this one routable?" reads the group's shape through this one
  * predicate rather than re-deriving it: the models page's cards and its config dialog, the
  * models PUT, and the CLI's `config model add`. Whether a model may be added to the group at
@@ -2954,14 +2936,14 @@ export function isVendorGroup(providerId: string): boolean {
 }
 
 /**
- * Whether this entry would be written into a vendor group with an id AgentHub cannot place
- * — the configuration that produces `"<id> is not supported. Supported client types: …"` on
+ * Whether this entry would be written into a vendor group with an id MMSP cannot place —
+ * the configuration that produces `No client for model "<id>": its family is not known` on
  * the first request, and nothing before it.
  *
- * `resolveModelEnv` is the authority: it mirrors AutoLLMClient's routing rules branch for
- * branch and returns undefined on exactly the ids that client rejects. A blank id is not a
- * routing failure — the entry is still being typed, and the required-field validation is
- * what has something to say about it.
+ * `routedClientType` is the authority: it mirrors AutoLLMClient's routing rule and returns
+ * undefined on exactly the entries that client rejects. A blank id is not a routing failure —
+ * the entry is still being typed, and the required-field validation is what has something
+ * to say about it.
  */
 export function unroutableVendorModel(
   provider: string,
@@ -2969,9 +2951,7 @@ export function unroutableVendorModel(
   clientType?: string,
 ): boolean {
   const id = modelId.trim();
-  if (id === "" || !isVendorGroup(provider)) return false;
-  const pinned = clientType?.trim();
-  return resolveModelEnv(id, pinned === "" ? undefined : pinned) === undefined;
+  return id !== "" && isVendorGroup(provider) && routedClientType(id, clientType) === undefined;
 }
 
 /**
@@ -2996,74 +2976,96 @@ export function unaddableModel(provider: string, modelId: string): boolean {
   return !isAddableGroup(provider) && catalogEntryFor(provider, modelId.trim()) === undefined;
 }
 
-/** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */
+/** Env var fallback for a single model (the var names MMSP's client actually reads when api_key / base_url is blank). */
 export interface ModelEnvInfo {
   envKey: string;
   envBaseUrlKey: string;
 }
 
 /**
- * Resolves the env var fallback for a model: mirrors AgentHub's
- * AutoLLMClient routing rules - an explicit client_type takes priority; otherwise the lowercase
- * model_id is matched by the same exact or family-specific rules, returning the var pair that
- * client reads. Branch order matches AutoLLMClient.
- * Returns undefined on no match (AgentHub will reject that id: it needs an explicit
- * client_type, or should be added under custom / a self-built group via the OpenAI protocol).
+ * MMSP's routing rule, mirrored: without a client type, the family a model id begins with
+ * names its official client (AutoLLMClient's `MODEL_FAMILIES`, which the package does not
+ * export), and an id of no known family cannot be started at all.
+ */
+const MODEL_FAMILIES: readonly (readonly [prefix: string, clientType: string])[] = [
+  ["gpt-", "openai-official"],
+  ["text-embedding-", "openai-official"],
+  ["claude-", "anthropic-official"],
+  ["gemini-", "gemini-official"],
+  ["glm-", "zai-official"],
+  ["kimi-", "moonshot-official"],
+  ["deepseek-", "deepseek-official"],
+  ["minimax-", "minimax-official"],
+];
+
+/**
+ * The wire protocol that carries MMSP's `fast_mode` on a client: `"openai"` for the clients
+ * that send `service_tier: "priority"` (the OpenAI protocols, and Google's Interactions API
+ * and MiniMax alike), `"anthropic"` for those that send `speed: "fast"` plus the
+ * `fast-mode-2026-02-01` beta header. The two differ in what the user must be warned about,
+ * not just in wire shape (see fastModeProtocol).
+ */
+export type FastModeProtocol = "openai" | "anthropic";
+
+/**
+ * What the harness mirrors about each MMSP client, in one place: the environment variable
+ * prefix it reads its key and base URL from when handed none (an official client its vendor's,
+ * a compatible client the vendor's whose wire protocol it speaks), the path it appends to its
+ * base URL, and the protocol that carries `fast_mode` (absent = the client rejects it). A
+ * client type this table does not name is one MMSP does not have either.
+ */
+export const MMSP_CLIENTS: Readonly<
+  Record<string, { env: string; path: string; fastMode?: FastModeProtocol }>
+> = {
+  "openai-official": { env: "OPENAI", path: "/responses", fastMode: "openai" },
+  "anthropic-official": { env: "ANTHROPIC", path: "/v1/messages", fastMode: "anthropic" },
+  "gemini-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
+  "zai-official": { env: "ZAI", path: "/chat/completions" },
+  "moonshot-official": { env: "MOONSHOT", path: "/chat/completions" },
+  "deepseek-official": { env: "DEEPSEEK", path: "/responses" },
+  "minimax-official": { env: "MINIMAX", path: "/responses", fastMode: "openai" },
+  "openai-responses": { env: "OPENAI", path: "/responses", fastMode: "openai" },
+  "openai-chat": { env: "OPENAI", path: "/chat/completions", fastMode: "openai" },
+  "openai-chat-vllm-adapter": { env: "OPENAI", path: "/chat/completions", fastMode: "openai" },
+  "openai-embedding": { env: "OPENAI", path: "/embeddings" },
+  "ant-messages": { env: "ANTHROPIC", path: "/v1/messages", fastMode: "anthropic" },
+  "google-genai": { env: "GEMINI", path: "/v1beta/models" },
+  // MMSP 0.5.1 keeps the 0.5.0 name of google-genai as an alias.
+  "gemini-generate-content": { env: "GEMINI", path: "/v1beta/models" },
+};
+
+/**
+ * The MMSP client that serves an entry, exactly as AutoLLMClient picks it: the pinned client
+ * type (lowercased; the bare `openai` alias canonicalized), else the official client of the
+ * family the model id begins with — where `openai-official` hands a `text-embedding-` id to
+ * the Embeddings client. `undefined` when MMSP refuses the entry: an id of no known family,
+ * or a pin MMSP does not have.
+ */
+export function routedClientType(modelId: string, clientType?: string): string | undefined {
+  const id = modelId.toLowerCase();
+  const routed =
+    canonicalClientType(clientType)?.trim().toLowerCase() ||
+    MODEL_FAMILIES.find(([prefix]) => id.startsWith(prefix))?.[1];
+  if (routed === "openai-official" && id.startsWith("text-embedding-")) return "openai-embedding";
+  return routed !== undefined && Object.hasOwn(MMSP_CLIENTS, routed) ? routed : undefined;
+}
+
+/**
+ * Resolves the env var fallback for a model: the pair the client MMSP routes it to reads
+ * (see routedClientType). Returns undefined when nothing routes — an id of no known family
+ * with no client type, or a client type MMSP does not have — which is exactly when MMSP
+ * rejects the entry: it needs an explicit client_type, or should be added under custom / a
+ * self-built group via the OpenAI protocol.
  */
 export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvInfo | undefined {
-  const explicitClientType = clientType?.toLowerCase();
-  const t = explicitClientType || modelId.toLowerCase();
-  const env = (prefix: string): ModelEnvInfo => ({
-    envKey: `${prefix}_API_KEY`,
-    envBaseUrlKey: `${prefix}_BASE_URL`,
-  });
-  if (t.includes("gemini-3") || t.includes("gemini-embedding")) return env("GEMINI");
-  if (
-    t.includes("claude") &&
-    (t.includes("4-7") || t.includes("4-8") || t.includes("-5") || t.includes("4-6"))
-  ) {
-    return env("ANTHROPIC");
-  }
-  if (
-    t.includes("gpt-5.4") ||
-    t.includes("gpt-5.5") ||
-    t.includes("gpt-5.6") ||
-    t.includes("gpt-6")
-  ) {
-    return env("OPENAI");
-  }
-  // agenthub 0.4.2's unified GLM client serves the whole glm-5 series (5.3 included).
-  if (t.includes("glm-5")) return env("ZAI");
-  // agenthub 0.4.2's unified Kimi client serves the whole K2.5+ series; every spelling reads
-  // the same MOONSHOT_* pair.
-  if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) {
-    return env("MOONSHOT");
-  }
-  if (t === "minimax-m3" && modelId.toLowerCase() === "minimax-m3") {
-    return env("MINIMAX");
-  }
-  // AgentHub 0.4.11 routes DeepSeek on this substring alone, so the released V4.1 Flash id
-  // `deepseek-flash` matches nothing here and stays unroutable on its own — which is exactly
-  // why its catalog row pins client_type "deepseek-v4" and lands on this branch instead.
-  // Mirroring AgentHub is the contract; do not widen the test to the bare name until
-  // AgentHub itself does.
-  if (t.includes("deepseek-v4")) return env("DEEPSEEK");
-  // agenthub 0.4.2's generic Anthropic Messages protocol client reads the ANTHROPIC_* pair.
-  // Order mirrors AutoLLMClient: ant-messages before the openai substring match.
-  if (t.includes("ant-messages")) return env("ANTHROPIC");
-  // The generic OpenAI-protocol clients — openai-chat (canonical since agenthub 0.4.2, with
-  // bare "openai" as a deprecated alias), openai-responses, openai-embedding, and
-  // openai-chat-vllm-adapter (an openai_chat subclass, so it reads the same pair) — all
-  // read the OPENAI_* pair. AutoLLMClient matches openai-chat-vllm-adapter by exact
-  // equality one branch earlier; the substring lands on the same answer, so the order costs
-  // nothing here.
-  if (t.includes("openai")) return env("OPENAI");
-  return undefined;
+  const client = MMSP_CLIENTS[routedClientType(modelId, clientType) ?? ""];
+  if (client === undefined) return undefined;
+  return { envKey: `${client.env}_API_KEY`, envBaseUrlKey: `${client.env}_BASE_URL` };
 }
 
 /**
  * Resolves the credential environment for a configured model entry. Most groups follow the
- * AgentHub client selected by model id / protocol. Aggregate groups are deliberately different:
+ * MMSP client selected by model id / protocol. Aggregate groups are deliberately different:
  * Penguin Go's Google and DeepSeek routes share one relay credential, and ModelScope's rows
  * share one api-inference token, so the provider-scoped variable must win over the selected
  * protocol everywhere the harness resolves a key. Whether a keyless row may use
@@ -3085,12 +3087,12 @@ export function resolveProviderModelEnv(
 }
 
 /**
- * The endpoints AgentHub's vendor clients talk to when handed no base URL, per credential
+ * The endpoints MMSP's official clients talk to when handed no base URL, per credential
  * variable: the OpenAI and Anthropic SDK defaults, Google's Generative Language host, the
- * defaults the vendor-specific clients (deepseek_v4, glm5_3, kimi_k3, minimax_m3) carry, plus
- * the second official host where a vendor runs two (Z.AI's mainland bigmodel.cn, Moonshot's
- * international .ai, MiniMax's mainland minimaxi.com). A key taken from the environment is
- * sent only to one of these — see modelEnvFallback.
+ * defaults the DeepSeek, Z.AI, Moonshot and MiniMax clients carry, plus the second official
+ * host where a vendor runs two (Z.AI's mainland bigmodel.cn, Moonshot's international .ai,
+ * MiniMax's mainland minimaxi.com). A key taken from the environment is sent only to one of
+ * these — see modelEnvFallback.
  */
 export const VENDOR_ENDPOINTS: Readonly<Record<string, readonly string[]>> = {
   OPENAI_API_KEY: ["https://api.openai.com/v1"],
@@ -3124,7 +3126,7 @@ export function sameEndpoint(a: string, b: string): boolean {
 export interface ModelCredentialShape {
   provider: string;
   modelId: string;
-  /** Pinned AgentHub client type; blank or absent = auto-routed by model id. */
+  /** Pinned MMSP client type; blank or absent = auto-routed by model id. */
   clientType?: string | undefined;
   /** Inline base URL; blank or absent = the routed client's default endpoint (or its `*_BASE_URL` variable). */
   baseUrl?: string | undefined;
@@ -3133,10 +3135,11 @@ export interface ModelCredentialShape {
 /** The environment pair a keyless entry may fall back to, and who reads it. */
 export interface ModelEnvFallback extends ModelEnvInfo {
   /**
-   * `true`: AgentHub's routed client reads this pair itself, so the harness hands it no key
-   * and the client's own environment lookup — and its own error when the variable is unset —
-   * apply unchanged. `false`: a provider-scoped pair no AgentHub client knows (the Penguin Go
-   * relay's); the harness reads it and passes the value explicitly, refusing when it is unset.
+   * `true`: MMSP's routed client reads this pair itself, so an entry with no base URL is
+   * handed no key and the client's own environment lookup — and its own error when the
+   * variable is unset — apply unchanged. `false`: a provider-scoped pair no MMSP client knows
+   * (the Penguin Go relay's); the harness reads it and passes the value explicitly, refusing
+   * when it is unset.
    */
   readByClient: boolean;
 }
@@ -3145,22 +3148,21 @@ export interface ModelEnvFallback extends ModelEnvInfo {
  * The environment fallback a keyless model entry is allowed, or `undefined` when it gets
  * none and must carry its own key.
  *
- * AgentHub's clients read a vendor variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …)
- * whenever they are handed no key, whatever base URL they were pointed at — so a keyless row
- * in a gateway group would send the user's own OpenAI or Anthropic key to the gateway. The
- * rule here is about the **destination**, not the group's label: environment keys are for
- * official endpoints only.
+ * MMSP's clients read a vendor variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) whenever
+ * they are handed no key — so a keyless row in a gateway group would send the user's own
+ * OpenAI or Anthropic key to the gateway. The rule here is about the **destination**, not the
+ * group's label: environment keys are for official endpoints only.
  *
  * - No base URL on the entry: the routed client talks to its own default endpoint, or to the
- *   `*_BASE_URL` the user set beside the key — that pairing is AgentHub's own and is left to
- *   it entirely; the client reads the pair itself.
- * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS; the
- *   catalog pins the DeepSeek and MiniMax rows this way) — allowed.
+ *   `*_BASE_URL` the user set beside the key — that pairing is MMSP's own and is left to it
+ *   entirely; the client reads the pair itself.
+ * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS) —
+ *   allowed, the harness reading the variable and passing it explicitly.
  * - Anything else — every gateway group's preset endpoint, custom / user-defined / vLLM rows
  *   with their own endpoints, a vendor row re-pointed at a proxy — refused. A row's own base
  *   URL equal to the `*_BASE_URL` variable's value earns no exception either (per the user:
  *   environment keys are for official endpoints only): put the key on the row.
- * - A group with a provider-scoped pair (Penguin Go, whose key no AgentHub client reads) is
+ * - A group with a provider-scoped pair (Penguin Go, whose key no MMSP client reads) is
  *   allowed that pair for every one of its rows, regardless of base URL; the harness reads it.
  *   A group pair that is itself a vendor variable (ModelScope records OPENAI_*) is not
  *   provider-scoped: its rows follow the destination rule like any other gateway's.
@@ -3172,7 +3174,7 @@ export function modelEnvFallback(entry: ModelCredentialShape): ModelEnvFallback 
   const clientType = entry.clientType?.trim() || undefined;
   const clientPair = resolveModelEnv(entry.modelId, clientType);
   const groupPair = resolveProviderModelEnv(entry.provider, entry.modelId, clientType);
-  // VENDOR_ENDPOINTS keys every variable an AgentHub client reads (each pair resolveModelEnv
+  // VENDOR_ENDPOINTS keys every variable an MMSP client reads (each pair resolveModelEnv
   // can name), so a group pair outside it is one only the harness knows.
   if (
     groupPair !== undefined &&
@@ -3210,7 +3212,7 @@ export function providerEnvFallbackKey(providerId: string): string | undefined {
 }
 
 /**
- * A model entry that cannot be given to an AgentHub client as configured: no key, and no
+ * A model entry that cannot be given to an MMSP client as configured: no key, and no
  * environment variable it may use; or a relay row with no endpoint for its relay key. The
  * message names the model and what to do, and says "API key" so hosts that classify
  * credential errors by message (the server's `isMissingCredential`) file it with the SDKs'
@@ -3230,19 +3232,21 @@ export interface ResolvedModelCredential {
 }
 
 /**
- * The credential an AgentHub client is built with for a **model entry**, applying
+ * The credential an MMSP client is built with for a **model entry**, applying
  * modelEnvFallback's rule (the one function every path shares): Session creation and resume,
  * the vision describer, the connectivity / speed / vision probes and the utility completion
  * go through here; the endpoint listing and protocol detection, which have a protocol and a
  * URL but no entry, apply the same rule through endpointEnvApiKey.
  *
  * - An inline key (the entry's, or an explicit override) is used as given.
- * - No key, fallback allowed and read by the client: no key is handed over, the client reads
- *   the pair itself — byte-for-byte what happened before this rule existed, including the
- *   SDK's own error when the variable is unset too (an entry with no base URL under a Bedrock
- *   `ANTHROPIC_BASE_URL` and no `ANTHROPIC_API_KEY` stays valid).
- * - No key, fallback allowed but provider-scoped: the variable's value is passed explicitly,
- *   and an unset variable is refused here rather than letting the client read a vendor's.
+ * - No key, no base URL, fallback allowed and read by the client: nothing is handed over, the
+ *   client reads the pair itself — including the SDK's own error when the variable is unset
+ *   (an entry with no base URL under a Bedrock `ANTHROPIC_BASE_URL` and no `ANTHROPIC_API_KEY`
+ *   stays valid).
+ * - No key, fallback allowed, but a base URL on the entry (the vendor's own) or a
+ *   provider-scoped pair: the variable's value is passed explicitly — MMSP refuses a base URL
+ *   without a key rather than lend the vendor's variable to it — and an unset variable is
+ *   refused here.
  * - No key, no fallback: refused with a ModelCredentialError before any client exists.
  * - A provider-scoped group's row (Penguin Go) is also refused without a base URL, whatever
  *   the key's source: the relay key must not travel to the vendor's default endpoint.
@@ -3263,7 +3267,7 @@ export function resolveModelCredential(
   if (apiKey !== undefined) return { apiKey, ...(baseUrl !== undefined ? { baseUrl } : {}) };
   if (fallback === undefined) {
     // A Bedrock region on the entry is not "not the vendor's": it is AWS, whose usual
-    // credential is the default provider chain rather than a key. Until AgentHub stops
+    // credential is the default provider chain rather than a key. Until MMSP stops
     // letting its Bedrock client attach ANTHROPIC_API_KEY, a keyless row here is refused,
     // and the message says what still works.
     if (baseUrl?.trim().toLowerCase().startsWith("bedrock://")) {
@@ -3275,7 +3279,7 @@ export function resolveModelCredential(
       `Model ${ref} has no API key. Its endpoint is not the vendor's own, so no environment variable is used for it: set the API key on the model entry.`,
     );
   }
-  if (fallback.readByClient) return baseUrl !== undefined ? { baseUrl } : {};
+  if (fallback.readByClient && baseUrl === undefined) return {};
   const value = env[fallback.envKey]?.trim();
   if (!value) {
     throw new ModelCredentialError(
@@ -3323,45 +3327,29 @@ export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefi
 }
 
 /**
- * The wire protocol that would carry AgentHub's `fast_mode` for a model: `"openai"` for the
- * OpenAI-protocol clients (openai_chat / openai_responses / gpt6 / minimax_m3), which send
- * `service_tier: "priority"`, and `"anthropic"` for the Anthropic-protocol ones (ant_messages
- * / claude5), which send `speed: "fast"` plus the `fast-mode-2026-02-01` beta header. The two
- * differ in what the user must be warned about, not just in wire shape (see fastModeProtocol).
- */
-export type FastModeProtocol = "openai" | "anthropic";
-
-/**
  * Whether a model can carry fast mode at all, and on which protocol - `undefined` means no.
  *
- * The fast tier is a property of the **client AgentHub routes to**, never of the catalog row:
- * the registry carries no fast-tier capability flag, but the routing is deterministic, so the
- * answer is too. This mirrors AutoLLMClient's branch order exactly (the same discipline as
- * resolveModelEnv above) and reports what the selected client does with the parameter:
+ * The fast tier is a property of the **client MMSP routes to** (routedClientType), never of
+ * the catalog row: the registry carries no fast-tier capability flag, but the routing is
+ * deterministic, so the answer is too. This reports what the selected client does with the
+ * parameter:
  *
  * - maps it -> the protocol, and the toggle may be offered;
- * - raises UnsupportedParameterError (gemini3_7, glm5_3, kimi_k3, deepseek_v4,
- *   openai_embedding, and claude5 on Bedrock or a Claude 4.6 id) -> `undefined`;
- * - routes nowhere (AutoLLMClient throws for an id it cannot place; there is no openai_chat
- *   fallback) -> `undefined` as well, since a model that cannot run has no fast tier either.
+ * - raises UnsupportedParameterError (the Z.AI, Moonshot, DeepSeek, google-genai and
+ *   embedding clients, and anthropic-official on Bedrock or for the generations that reject
+ *   the `speed` parameter) -> `undefined`;
+ * - routes nowhere (AutoLLMClient throws for an id it cannot place) -> `undefined` as well,
+ *   since a model that cannot run has no fast tier either.
  *
  * A rule rather than a per-model list on purpose: catalog rows added later inherit the right
  * answer without anyone remembering to update a table.
- *
- * Routing reads `(clientType || modelId).toLowerCase()`, exactly as AutoLLMClient resolves it,
- * so an entry that pins no client_type self-routes on its model id - which does not always
- * agree with its provider group (`anthropic/claude-fable-5` with a blank client_type reaches
- * the native claude5 client, not openai_chat, and the dotted `anthropic/claude-opus-4.8`
- * matches no branch at all). The two claude5 carve-outs are therefore checked against the raw
- * `modelId` / `baseUrl`, not against the routing token: the client tests its own `_model` for
- * `"4-6"` and its base URL for the `bedrock://` prefix.
  *
  * `"anthropic"` is reported for every Claude the client serves, including ids outside the
  * research preview's Opus allowlist: Anthropic answers those with a 429 at request time, which
  * is something to warn about before enabling, not grounds to hide the setting.
  *
  * Two runtime inputs stay invisible to a pure function of the config and can still flip the
- * answer: the server's `CLIENT_TYPE` env var overrides the entry's client type, and
+ * answer: the server's `CLIENT_TYPE` env var names the client for an entry that pins none, and
  * `ANTHROPIC_BASE_URL` supplies the base URL when the entry leaves it blank (so a `bedrock://`
  * there sends Claude to Bedrock, which has no fast tier). Third-party OpenAI-compatible
  * endpoints are a third: they accept `service_tier` and may quietly serve the standard tier.
@@ -3372,52 +3360,27 @@ export function fastModeProtocol(
   clientType?: string,
   baseUrl?: string,
 ): FastModeProtocol | undefined {
-  const t = clientType?.toLowerCase() || modelId.toLowerCase();
-  // Branch order mirrors AutoLLMClient. Every test is a substring of `t` except minimax-m3,
-  // which the router matches by exact equality; no trimming, matching the router.
-  if (t === "minimax-m3") return "openai";
-  if (t.includes("gemini-3") || t.includes("gemini-embedding")) return undefined;
+  const routed = routedClientType(modelId, clientType);
+  // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter; both
+  // tests run against what the client was constructed with, as the client's own do.
   if (
-    t.includes("claude") &&
-    (t.includes("4-6") || t.includes("4-7") || t.includes("4-8") || t.includes("-5"))
+    routed === "anthropic-official" &&
+    (baseUrl?.startsWith("bedrock://") ||
+      ["4-6", "sonnet-5-5", "fable-5-1"].some((generation) => modelId.includes(generation)))
   ) {
-    // claude5 refuses fast mode on Bedrock and across the Claude 4.6 family; both tests run
-    // against what the client was constructed with, not against the routing token.
-    if (baseUrl?.startsWith("bedrock://")) return undefined;
-    if (modelId.includes("4-6")) return undefined;
-    return "anthropic";
+    return undefined;
   }
-  if (
-    t.includes("gpt-5.4") ||
-    t.includes("gpt-5.5") ||
-    t.includes("gpt-5.6") ||
-    t.includes("gpt-6")
-  ) {
-    return "openai";
-  }
-  if (t.includes("glm-5")) return undefined;
-  if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return undefined;
-  if (t.includes("deepseek-v4")) return undefined;
-  if (t.includes("ant-messages")) return "anthropic";
-  // openai-chat-vllm-adapter is not carved out: it subclasses openai_chat without touching
-  // fast mode, so it maps the parameter exactly as the substring branch below reports. What
-  // a self-hosted server then does with `service_tier` is the third-party residue named
-  // above.
-  if (t.includes("openai-responses")) return "openai";
-  if (t.includes("openai") && t.includes("embedding")) return undefined;
-  if (t.includes("openai")) return "openai";
-  return undefined;
+  return MMSP_CLIENTS[routed ?? ""]?.fastMode;
 }
 
 /**
  * Catalog -> preset ModelEntry list (shared by defaultProjectConfig and the server's initial
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
- * auto-routed by AgentHub leave client_type unset; gateway models (OpenRouter / SiliconFlow)
+ * auto-routed by MMSP leave client_type unset; gateway models (OpenRouter / SiliconFlow)
  * always pin a client_type — openai-responses for the OpenRouter rows, each OpenCode Go row's
- * own endpoint protocol, openai-chat for the rest — and inline a preset base_url. The direct
- * MiniMax M3 entry also pins its protocol and endpoint. No secrets are included, so only an
- * API key is needed.
+ * own endpoint protocol, openai-chat for the rest — and inline a preset base_url. No secrets
+ * are included, so only an API key is needed.
  *
  * Pricing is written as the LIST price the catalog records (a scheduled row's PEAK price),
  * never a discounted number. What is on disk then stays true whatever promotion is live and
@@ -3560,7 +3523,7 @@ function hostMatches(host: string, domain: string): boolean {
  * entry pointed at OpenRouter is still PenguinHarness talking to OpenRouter and is attributed
  * identically. The flip side is that an entry carrying no `base_url` of its own gets no
  * headers even when `OPENAI_BASE_URL` sends it to a gateway — that variable is read inside
- * AgentHub and never reaches this side.
+ * MMSP and never reaches this side.
  *
  * - OpenRouter (https://openrouter.ai/docs/app-attribution): `HTTP-Referer` is the identity
  *   that creates the app page and drives the rankings, `X-OpenRouter-Title` is its display

@@ -2703,8 +2703,8 @@ export class SessionsModule {
       confineSpawn: env.confineSpawn,
       assembly,
       sandboxDefaults: () => sandbox.currentSettings(),
-      sandboxLocalNetwork: () =>
-        sandbox.backends().some((b) => b.dimensions.includes("network-local")),
+      sandboxDimensions: () => [...new Set(sandbox.backends().flatMap((b) => b.dimensions))],
+      sandboxUnavailable: () => sandbox.failures(),
     });
     this.manager = manager;
     this.sessionService = sessionService;

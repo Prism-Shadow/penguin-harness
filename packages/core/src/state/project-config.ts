@@ -15,7 +15,7 @@
  * Model references are **fully split into separate fields**: an entry stores
  * `provider` and `model_id` as two independent fields, with the `(provider, model_id)` pair as
  * the unique key — string concatenation like `<provider>/<id>` is forbidden anywhere in the
- * pipeline. `model_id` is the upstream request id, sent to AgentHub unchanged; `default_model` /
+ * pipeline. `model_id` is the upstream request id, sent to MMSP unchanged; `default_model` /
  * `vision_model` are paired `{ provider, model_id }` references (a TOML inline table).
  *
  * A caller always supplies the **complete pair**: `provider` is never guessed from the builtin
@@ -40,7 +40,7 @@ import { projectConfigPath } from "./paths.js";
 /** Model reference: a `(provider, model_id)` pair (never string-concatenated anywhere). */
 export interface ModelRef {
   provider: string;
-  /** Upstream model id (the request id sent to AgentHub unchanged). */
+  /** Upstream model id (the request id sent to MMSP unchanged). */
   model_id: string;
 }
 
@@ -71,17 +71,19 @@ export interface ModelPricing {
 export interface ModelEntry {
   /** provider group (stored separately from `model_id`; the pair is the entry's unique key). */
   provider: string;
-  /** Upstream model id: the actual request id sent to AgentHub, used paired with provider for display, pricing, and stats. */
+  /** Upstream model id: the actual request id sent to MMSP, used paired with provider for display, pricing, and stats. */
   model_id: string;
   context_window?: number;
   /**
-   * AgentHub client protocol (`openai-responses` / `ant-messages` / `openai-chat` /
-   * `claude-4-8` / `deepseek-v4` / …); defaults to being inferred by AgentHub from the
-   * request id (`model_id`). Third-party endpoints use one of the generic protocol clients:
-   * `openai-responses` (OpenAI Responses API), `ant-messages` (Anthropic Messages API), or
-   * `openai-chat` (OpenAI Chat Completions; the bare `openai` spelling from configs saved
-   * before AgentHub 0.4.2's rename is normalized to it on read — see canonicalClientType).
-   * The Web models page can detect which one a custom base URL serves.
+   * MMSP client type (`openai-responses` / `ant-messages` / `openai-chat` /
+   * `google-genai` / `anthropic-official` / …); when absent, MMSP routes the
+   * request id (`model_id`) by the vendor family it begins with (`gpt-`, `claude-`,
+   * `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Third-party endpoints use one of
+   * the generic protocol clients: `openai-responses` (OpenAI Responses API), `ant-messages`
+   * (Anthropic Messages API), or `openai-chat` (OpenAI Chat Completions; the bare `openai`
+   * spelling from configs saved before the client was renamed (MMSP 0.4.2) is normalized
+   * to it on read — see canonicalClientType). The Web models page can detect which one a
+   * custom base URL serves.
    */
   client_type?: string;
   /**
@@ -108,11 +110,11 @@ export interface ModelEntry {
    */
   max_tokens?: number;
   /**
-   * Per-model fast mode (AgentHub UniConfig `fast_mode`): opts session requests into the
+   * Per-model fast mode (MMSP UniConfig `fast_mode`): opts session requests into the
    * provider's faster serving tier at premium pricing (OpenAI-protocol clients send
    * `service_tier: "priority"`, Anthropic-protocol clients send `speed: "fast"`). Only `true`
    * is ever persisted; absent = off (the default). Models without a fast tier reject the
-   * parameter (AgentHub raises UnsupportedParameterError), which ends the request with a
+   * parameter (MMSP raises UnsupportedParameterError), which ends the request with a
    * clear non-retried failure (see llm/generative-model.ts). User-only, never preset by the
    * builtin catalog.
    */
@@ -226,10 +228,9 @@ export function defaultProjectConfig(): ProjectConfig {
     // DeepSeek V4.1 Flash, which the vendor serves under the bare name `deepseek-flash`: the
     // current generation of the Flash series, at the same price and schedule as the V4 rows
     // it replaces, and it reads images — so a new Project can take a pasted screenshot
-    // without anyone having to notice why it could not. Its catalog row pins the
-    // `deepseek-v4` client and the vendor endpoint (AgentHub 0.4.11 routes DeepSeek on that
-    // substring, which the bare id lacks), and presetModelEntries copies both into the new
-    // Project, so the default is routable as written. A Project's default is copied in at
+    // without anyone having to notice why it could not. The bare id begins with the
+    // `deepseek-` family, so MMSP routes it to DeepSeek's official client without a pin. A
+    // Project's default is copied in at
     // creation and owned by it from then on, so this reaches new Projects alone; an existing
     // one keeps whatever it stored, and "sync presets" never touches the stored default.
     default_model: { provider: "deepseek", model_id: "deepseek-flash" },
@@ -275,8 +276,8 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
       `A models entry in .project_config.toml is in a legacy/invalid format (provider and model_id must be two separate fields): ${file}. ${OLD_FORMAT_HINT}`,
     );
   }
-  // Backward compatibility for configs saved before AgentHub 0.4.2 renamed the generic Chat
-  // Completions client: a stored `client_type = "openai"` is normalized to the canonical
+  // Backward compatibility for configs saved before the generic Chat Completions client was
+  // renamed (MMSP 0.4.2): a stored `client_type = "openai"` is normalized to the canonical
   // "openai-chat" on read (copied, never mutated in place — callers may hand in a cached
   // parse), so old configs keep working and every consumer sees one spelling.
   if (typeof m.client_type === "string") {
@@ -286,6 +287,57 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
     }
   }
   return entry as ModelEntry;
+}
+
+/**
+ * The client types AgentHub 0.4 named after model generations, matched the way its router
+ * matched them (anywhere in the lowercased value, in its branch order), and the MMSP 0.5
+ * client that speaks the same wire protocol: the 0.4 Gemini client spoke generateContent,
+ * which the compatible `google-genai` client still does (and what the Penguin Go relay
+ * serves); the rest became their vendor's official client. No 0.5 name matches any of these.
+ */
+const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
+  [/gemini-(3|embedding)/, "google-genai"],
+  [/^(?=.*claude).*(4-[678]|-5)/, "anthropic-official"],
+  [/gpt-(5\.[456]|6)/, "openai-official"],
+  [/glm-5/, "zai-official"],
+  [/kimi-k(3|2\.[56])/, "moonshot-official"],
+  [/^minimax-m3$/, "minimax-official"],
+  [/deepseek-v4/, "deepseek-official"],
+];
+
+/**
+ * One-time migration of a parsed `.project_config.toml` table: MMSP 0.5.0 refuses the client
+ * types AgentHub 0.4 accepted (`Unknown client type "gemini-3.8"`), so every `[[models]]` entry
+ * carrying one is rewritten in place to the client that speaks the same wire protocol. Both
+ * loaders — `loadProjectConfig` here and the server's `ProjectConfigService.readTable` — write
+ * the table back the moment this returns true, so a file is rewritten once and an old name
+ * that reappears later (a models PUT from a page opened before the upgrade, a machine sync
+ * from an older install) is repaired at its next read. Nothing is written when nothing
+ * matched. Entries the catalog has since unpinned (`deepseek/deepseek-flash`,
+ * `minimax/MiniMax-M3`) come out pinned to their vendor's official client, which routes; the
+ * Models page's preset sync clears the pin like any other catalog difference.
+ *
+ * Removal: at the 0.3.0 release preparation, by whoever prepares it, once its release notes
+ * say a Project last opened before the release that shipped this migration must be opened once
+ * on a 0.2.x release first. Takes out LEGACY_CLIENT_TYPES, this function, the write-back in the
+ * two loaders, and their tests (core `state.test.ts`, server `models.test.ts`); see
+ * changelog/unreleased/2026-10-01-backward-compatibility.md.
+ */
+export function migrateLegacyClientTypes(table: Record<string, unknown>): boolean {
+  let changed = false;
+  for (const entry of Array.isArray(table.models) ? table.models : []) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const m = entry as { client_type?: unknown };
+    if (typeof m.client_type !== "string") continue;
+    const t = m.client_type.trim().toLowerCase();
+    const replacement = LEGACY_CLIENT_TYPES.find(([legacy]) => legacy.test(t))?.[1];
+    if (replacement !== undefined) {
+      m.client_type = replacement;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -522,7 +574,16 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
     throw err;
   }
   // Defensive: parseToml may return null/undefined for an empty file, and destructuring it would throw a TypeError.
-  return projectConfigFromTable(file, (parseToml(raw) ?? {}) as Record<string, unknown>);
+  const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
+  // The raw table is written back, not the typed config, so every key the file carries
+  // survives the rewrite (this loader keeps known keys only).
+  if (migrateLegacyClientTypes(table)) {
+    await atomicWriteFile(file, renderProjectConfigToml(table), {
+      mode: 0o600,
+      followSymlinks: true,
+    });
+  }
+  return projectConfigFromTable(file, table);
 }
 
 /** A TOML inline table for a paired reference (reuses smol-toml's string serialization, guaranteeing correct escaping). */
@@ -611,7 +672,7 @@ export async function addModel(
   entry: {
     /** provider group (required; never inferred — pass `"custom"` for a model outside the known groups). */
     provider: string;
-    /** Upstream model id (sent to AgentHub unchanged). */
+    /** Upstream model id (sent to MMSP unchanged). */
     model_id: string;
     context_window?: number;
     client_type?: string;

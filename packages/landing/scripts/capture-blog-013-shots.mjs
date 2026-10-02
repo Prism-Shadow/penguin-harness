@@ -3,7 +3,7 @@
  * conversation) and goal mode (round loop + live status banner).
  *
  * Same machinery as capture-shots.mjs — a scripted mock LLM (Anthropic SSE and OpenAI
- * chat-completions SSE, whichever client AgentHub routes to), the built Web server on a
+ * chat-completions SSE, whichever client MMSP routes to), the built Web server on a
  * temp data root, real tool execution in a staged Workspace, Playwright screenshots
  * re-encoded to WebP inside Chromium — with two deliberately staged scenes:
  *

@@ -902,7 +902,7 @@ export class Session {
     return this.meta.payload.provider;
   }
 
-  /** The running context's model: its upstream model_id (the request id sent to AgentHub). */
+  /** The running context's model: its upstream model_id (the request id sent to MMSP). */
   get modelId(): string {
     return this.meta.payload.model_id;
   }
