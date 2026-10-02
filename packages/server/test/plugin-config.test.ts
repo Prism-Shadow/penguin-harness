@@ -581,3 +581,140 @@ describe("a table's row choice", () => {
     expect(() => pinned({ column: "on", on: "Pinned" })).toThrow(/needs an on and an off text/);
   });
 });
+
+describe("an extensible table's save", () => {
+  const SCHEMA_X = parsePluginConfiguration(
+    {
+      properties: {
+        rows: {
+          type: "table",
+          title: "Rows",
+          columns: [
+            { name: "name", type: "string", title: "Name" },
+            {
+              name: "level",
+              type: "enum",
+              title: "Level",
+              options: [
+                { value: "low", title: "Low" },
+                { value: "high", title: "High" },
+              ],
+            },
+          ],
+          rows: [
+            { id: "a", values: { name: "A", level: "low" } },
+            { id: "b", values: { name: "B", level: "high" } },
+          ],
+          rowChoice: { field: "pick", title: "Default" },
+          extensible: { add: "Add", values: { name: "New", level: "low" } },
+        },
+        pick: {
+          type: "enum",
+          title: "Pick",
+          options: [
+            { value: "a", title: "A" },
+            { value: "b", title: "B" },
+          ],
+        },
+      },
+    },
+    "acme/package.json",
+  )!;
+  const field = SCHEMA_X.properties.rows!;
+
+  it("an extensible table keeps only well-formed added rows and an order of ids that exist", () => {
+    const next = applyUpdate(
+      SCHEMA_X,
+      {},
+      {
+        rows: {
+          $added: { mine: { name: " Mine ", level: "high" } },
+          $order: ["mine", "ghost", "b", "mine"],
+        },
+      },
+    );
+    // Stored trimmed, every column present; the order keeps each existing id once.
+    expect(next).toEqual({
+      rows: { $added: { mine: { name: "Mine", level: "high" } }, $order: ["mine", "b"] },
+    });
+    // Rows the order does not list follow it, in their own order.
+    expect(resolveTable(field, next.rows).map((r) => r.id)).toEqual(["mine", "b", "a"]);
+    expect(resolveTable(field, next.rows)[0]).toEqual({
+      id: "mine",
+      values: { name: "Mine", level: "high" },
+      added: true,
+    });
+
+    // A save refuses an added row missing a column or holding a value its column refuses.
+    const refused = (added: unknown) => () =>
+      applyUpdate(SCHEMA_X, {}, { rows: { $added: added } });
+    expect(refused({ mine: { name: "Mine" } })).toThrow(
+      '"rows.mine.level" must be one of low, high',
+    );
+    expect(refused({ mine: { name: "Mine", level: "max" } })).toThrow(
+      '"rows.mine.level" must be one of low, high',
+    );
+    expect(refused({ mine: { name: " ", level: "low" } })).toThrow(
+      '"rows.mine.name" may not be empty',
+    );
+    // A row id may not be a reserved key, nor a declared row's id.
+    expect(refused({ $order: { name: "X", level: "low" } })).toThrow(
+      '"rows.$order" is not an id a new row may take',
+    );
+    expect(refused({ $added: { name: "X", level: "low" } })).toThrow(
+      '"rows.$added" is not an id a new row may take',
+    );
+    expect(refused({ a: { name: "X", level: "low" } })).toThrow(
+      '"rows.a" is not an id a new row may take',
+    );
+    expect(() =>
+      parsePluginConfiguration(
+        {
+          properties: {
+            rows: {
+              type: "table",
+              title: "Rows",
+              columns: [{ name: "name", type: "string", title: "Name" }],
+              rows: [{ id: "$added", values: { name: "X" } }],
+            },
+          },
+        },
+        "acme/package.json",
+      ),
+    ).toThrow(/rows\[0\]\.id must be a unique lower-case id/);
+
+    // On read, a malformed added row (stored by hand, or by an older table) is dropped.
+    const read = resolveTable(field, {
+      $added: {
+        bad: { name: "Bad" },
+        worse: { name: "W", level: "max" },
+        ok: { name: "Ok", level: "low" },
+      },
+    });
+    expect(read.map((r) => r.id)).toEqual(["a", "b", "ok"]);
+  });
+
+  it("refuses a save that leaves the row choice pointing at a removed row", () => {
+    const stored = applyUpdate(
+      SCHEMA_X,
+      {},
+      { rows: { $added: { mine: { name: "Mine", level: "high" } } }, pick: "mine" },
+    );
+    expect(stored.pick).toBe("mine");
+    // Deleting the chosen row while it is chosen: refused, naming the choice.
+    expect(() => applyUpdate(SCHEMA_X, stored, { rows: { $added: {} } })).toThrow(
+      new PluginConfigError(
+        "pick",
+        '"pick" must name a row of "rows": "mine" is not one (choose another row before deleting it)',
+      ),
+    );
+    // Choosing another row first, in the same save, lets the deletion through.
+    expect(applyUpdate(SCHEMA_X, stored, { rows: { $added: {} }, pick: "a" })).toEqual({
+      pick: "a",
+    });
+    // No row chosen at all is not refused.
+    expect(applyUpdate(SCHEMA_X, {}, { rows: { a: { name: "Renamed" } } })).toEqual({
+      rows: { a: { name: "Renamed" } },
+    });
+  });
+});
