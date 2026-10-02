@@ -2725,11 +2725,8 @@ export class SessionsModule {
       sandboxSwitchOn: () => sandboxEnabledOf(pluginConfig.get(SANDBOX_GROUP)),
       // The default preset's approval mode, while the switch is on.
       sandboxDefaultApproval: () =>
-        sandboxStartOf(
-          pluginConfig.schema(SANDBOX_GROUP),
-          pluginConfig.get(SANDBOX_GROUP),
-          pluginConfig.saved(SANDBOX_GROUP),
-        ).approvalMode,
+        sandboxStartOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP))
+          .approvalMode,
     });
     this.manager = manager;
     this.sessionService = sessionService;

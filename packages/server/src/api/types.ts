@@ -5517,7 +5517,12 @@ export interface PluginConfigPinColumn {
   offZh?: string;
 }
 
-/** A table's single-choice column: the `enum` field it stores into, and its header. */
+/**
+ * A table's single-choice column: the `enum` field it stores into, and its header. The choice
+ * may name no row (nothing stored, and the group's `derive` gives none): the column is drawn
+ * with no row chosen and a save is not refused for it. A save that leaves it naming a row the
+ * table no longer has is refused.
+ */
 export interface PluginConfigRowChoice {
   field: string;
   title: string;

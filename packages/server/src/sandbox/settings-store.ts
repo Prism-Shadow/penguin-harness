@@ -20,7 +20,13 @@ import { PluginConfig } from "../plugin/config.js";
 import type { SettingsGroupStatus } from "../plugin/config-page.js";
 import { Sandbox, SandboxModule } from "./service.js";
 import { requestedDimensions } from "./dimensions.js";
-import { DEFAULT_PRESET, sandboxEnabledOf, sandboxStartOf } from "./settings-policy.js";
+import {
+  DEFAULT_PRESET,
+  prePresetNotice,
+  prePresetStartOf,
+  sandboxEnabledOf,
+  sandboxStartOf,
+} from "./settings-policy.js";
 
 /**
  * The backend package each OS defaults to: what the card offers to install when the switch is
@@ -258,8 +264,9 @@ export const SANDBOX_GROUP = "sandbox";
             ],
           },
           // The row a new Session starts from while the switch is on, drawn only as the table's
-          // Default column. No declared default: the derive hook shows DEFAULT_PRESET, and a
-          // document stored without it is read by its own mode and network (settings-policy.ts).
+          // Default column. No declared default: the derive hook shows DEFAULT_PRESET, or for a
+          // document stored before it the row giving that document's start, else none
+          // (settings-policy.ts, prePresetStartOf).
           defaultPreset: {
             type: "enum",
             title: "Default preset",
@@ -317,10 +324,10 @@ export class SandboxSettings {
     // applying the defaults here would un-confine a deployment on every hot update.
     const schema = () => pluginConfig.schema(SANDBOX_GROUP);
     if (pluginConfig.saved(SANDBOX_GROUP)) {
-      sandbox.configure(sandboxStartOf(schema(), pluginConfig.get(SANDBOX_GROUP), true).policy);
+      sandbox.configure(sandboxStartOf(schema(), pluginConfig.get(SANDBOX_GROUP)).policy);
     }
     pluginConfig.watch(SANDBOX_GROUP, (doc) =>
-      sandbox.configure(sandboxStartOf(schema(), doc, true).policy),
+      sandbox.configure(sandboxStartOf(schema(), doc).policy),
     );
   }
 }
@@ -343,19 +350,27 @@ export class SandboxSettingsStatus {
   setup() {
     const sandbox = this.sandbox;
     this.status = {
-      // The switch as the card shows it: derived for a document saved before it existed.
-      derive: (values, stored) => ({
-        ...values,
+      // The switch and the default as the card shows them, for a document saved before they
+      // existed: the switch off its old policy; the default the row that gives that document's
+      // start, or none when no row does.
+      derive: (values, stored, configuration) => {
         // Read off the whole document: a pre-switch one's mode and network are not fields.
-        enabled: sandboxEnabledOf(stored),
-        defaultPreset: values.defaultPreset ?? DEFAULT_PRESET,
-      }),
-      // Every save pins the default preset: a document stored before it existed is read by
-      // its own mode and network until then (settings-policy.ts).
+        const prePreset = prePresetStartOf(configuration, stored);
+        const { defaultPreset: chosen, ...rest } = values;
+        const defaultPreset = prePreset !== undefined ? prePreset.row : (chosen ?? DEFAULT_PRESET);
+        return {
+          ...rest,
+          enabled: sandboxEnabledOf(stored),
+          ...(defaultPreset !== undefined ? { defaultPreset } : {}),
+        };
+      },
+      // A save pins the default the card shows, so what new Sessions start from changes only
+      // when an administrator picks a row. A document saved before the default preset that no
+      // row matches shows none: the save writes none, and its own start stays (settings-policy.ts).
       saving: (update, current) =>
-        update.defaultPreset !== undefined
+        update.defaultPreset !== undefined || current.defaultPreset === undefined
           ? update
-          : { ...update, defaultPreset: current.defaultPreset ?? DEFAULT_PRESET },
+          : { ...update, defaultPreset: current.defaultPreset },
       // A backend for this OS is installed when it is in use or failed (to load, or its check):
       // one that declined is for another OS. Installing the default would not fix a failure.
       backend: () => {
@@ -379,8 +394,10 @@ export class SandboxSettingsStatus {
         };
         return [{ field: "presets", column: "network", ...why }];
       },
-      notices: (): PluginConfigNotice[] => {
+      notices: (stored, configuration): PluginConfigNotice[] => {
         const notices: PluginConfigNotice[] = [];
+        const prePreset = prePresetNotice(stored, configuration);
+        if (prePreset !== undefined) notices.push(prePreset);
         const backends = sandbox.backends();
         const settings = sandbox.currentSettings();
         if (settings.mode !== "danger-full-access") {

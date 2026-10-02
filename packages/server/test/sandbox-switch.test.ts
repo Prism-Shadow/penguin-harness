@@ -4,7 +4,11 @@
  * - Given settings saved before the switch existed (no `enabled` on disk), when the server
  *   boots, the card shows the switch on exactly when the old policy confined anything — a mode
  *   other than Off, a network that is not open, or masked paths — the service applies that
- *   policy, and the stored document is not rewritten. Saved once, the default preset rules.
+ *   policy, and the stored document is not rewritten.
+ * - Given settings saved before the default preset (`mode`/`network`, no `defaultPreset`), the
+ *   card shows as the default the first row giving exactly the same start, and a save pins it;
+ *   with no such row it shows none and says what is in effect, and a save of other fields
+ *   keeps that start until an administrator picks a row.
  * - Given the switch on, a new Session (and the composer's draft) starts from the default
  *   preset's mode, network and approval mode; changing the default reaches only new Sessions.
  * - Given the switch off, a new Session starts unconfined with no approval mode from the
@@ -103,22 +107,13 @@ describe("the sandbox switch", () => {
     };
     try {
       const confined = await restartWith({ mode: "read-only", network: "none" });
-      // The card shows the switch on, and its shipped default preset; the document's own
-      // mode and network still decide new Sessions, unshown, until the card is saved.
-      expect((await confined.card()).values).toMatchObject({
-        enabled: true,
-        defaultPreset: "workspace-write",
-      });
+      // The card shows the switch on; the document's own mode and network decide new Sessions
+      // (what the card's Default column shows for it is the next case's).
+      expect((await confined.card()).values.enabled).toBe(true);
       expect(confined.sandbox.currentSettings()).toEqual({ mode: "read-only", network: "none" });
       expect(confined.t.deps.serverSettingsRepo.get("plugin-config:sandbox")).toBe(
         JSON.stringify({ mode: "read-only", network: "none" }),
       );
-      // One save of the card, of anything, pins the default preset: from then on it rules.
-      expect((await confined.save({ writableTemp: true })).status).toBe(200);
-      expect(confined.sandbox.currentSettings()).toEqual({ mode: "workspace-write" });
-      expect(
-        JSON.parse(confined.t.deps.serverSettingsRepo.get("plugin-config:sandbox")!),
-      ).toMatchObject({ defaultPreset: "workspace-write" });
       await apps.pop()!.cleanup();
 
       // Off with the network cut still confined: it reads as on, and stays confined.
@@ -137,6 +132,100 @@ describe("the sandbox switch", () => {
       for (const t of apps.splice(0)) await t.cleanup();
       await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
+  });
+
+  it("shows the row a pre-preset document matches as the default, and none when no row matches", async () => {
+    const { t, card } = await boot();
+    apps.push(t);
+    const store = (doc: Record<string, unknown>) =>
+      t.deps.serverSettingsRepo.set("plugin-config:sandbox", JSON.stringify(doc));
+    const prePresetNotice = (entry: PluginConfigEntry) =>
+      entry.notices?.find((n) => n.text.includes("saved before the presets"));
+
+    // Nothing saved is no pre-preset document: the shipped default.
+    expect((await card()).values.defaultPreset).toBe("workspace-write");
+
+    // The rows whose start is the old one: the same mode and network, approving everything.
+    for (const [doc, row] of [
+      [{ mode: "read-only" }, "read-only"],
+      [{ mode: "workspace-write", network: "open" }, "workspace-write"],
+      // Masked paths are the card's own, laid over every row alike.
+      [{ mode: "workspace-write", maskPaths: ["/secret"] }, "workspace-write"],
+      // An added row counts, in table order.
+      [
+        {
+          mode: "read-only",
+          network: "none",
+          presets: {
+            $added: {
+              cut: {
+                name: "Cut",
+                enabled: false,
+                mode: "read-only",
+                network: "none",
+                approvalMode: "allow-all",
+              },
+            },
+          },
+        },
+        "cut",
+      ],
+    ] as const) {
+      store(doc);
+      const entry = await card();
+      expect(entry.values.defaultPreset, JSON.stringify(doc)).toBe(row);
+      expect(prePresetNotice(entry)).toBeUndefined();
+    }
+
+    // No row starts there: a cut or local network, or Off with masked paths (Full Access
+    // confines nothing). The Default column marks none, and the card says what is in effect.
+    for (const doc of [
+      { mode: "read-only", network: "none" },
+      { mode: "workspace-write", network: "local" },
+      { maskPaths: ["/secret"] },
+      { mode: "danger-full-access", maskPaths: ["/secret"] },
+    ]) {
+      store(doc);
+      const entry = await card();
+      expect(entry.values.defaultPreset, JSON.stringify(doc)).toBeUndefined();
+      expect(entry.values.enabled).toBe(true);
+      expect(prePresetNotice(entry), JSON.stringify(doc)).toMatchObject({ tone: "attention" });
+    }
+    store({ mode: "read-only", network: "none" });
+    expect(prePresetNotice(await card())).toEqual({
+      tone: "attention",
+      text: "While the sandbox is on, new sessions start from the settings saved before the presets: files Read-only, network No network, ask mode Approve everything. No preset has these values, so no row is the default, and saving the card keeps them. To change that, star a row, or add a preset with these values and star it.",
+      textZh:
+        "沙盒打开时，新会话从预设出现之前保存的设置开始：文件「只读」、网络「无网络」、询问模式「全部批准」。没有预设与之相同，因此没有一行是默认，保存卡片也会保留这些值。要改变它，给一行标星，或先添加一条同值的预设再给它标星。",
+    });
+  });
+
+  it("keeps a pre-preset document's start across a save that picks no default", async () => {
+    const { t, save, sandbox } = await boot();
+    apps.push(t);
+    const store = (doc: Record<string, unknown>) =>
+      t.deps.serverSettingsRepo.set("plugin-config:sandbox", JSON.stringify(doc));
+    const onDisk = () =>
+      JSON.parse(t.deps.serverSettingsRepo.get("plugin-config:sandbox")!) as Record<
+        string,
+        unknown
+      >;
+
+    // No row matches: saving an unrelated field writes no default, and the start stays.
+    store({ mode: "read-only", network: "none" });
+    expect((await save({ presets: { "read-only": { name: "Look only" } } })).status).toBe(200);
+    expect(onDisk().defaultPreset).toBeUndefined();
+    expect(sandbox.currentSettings()).toEqual({ mode: "read-only", network: "none" });
+    // An administrator's pick is what moves it.
+    expect((await save({ defaultPreset: "workspace-write" })).status).toBe(200);
+    expect(onDisk().defaultPreset).toBe("workspace-write");
+    expect(sandbox.currentSettings()).toEqual({ mode: "workspace-write" });
+
+    // A row matches: the save pins it, and the start is what it was.
+    store({ mode: "read-only" });
+    expect((await save({ presets: { "read-only": { name: "Look only" } } })).status).toBe(200);
+    expect(onDisk().defaultPreset).toBe("read-only");
+    expect(sandbox.currentSettings()).toEqual({ mode: "read-only" });
   });
 
   it("on, a new Session starts from the default preset (mode, network, approval); off, unconfined; existing Sessions keep theirs", async () => {

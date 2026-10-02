@@ -9,7 +9,12 @@
  */
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
-import type { PluginConfigBackend, PluginConfigEntry, PluginConfigNotice } from "../api/types.js";
+import type {
+  PluginConfigBackend,
+  PluginConfigEntry,
+  PluginConfigNotice,
+  PluginConfiguration,
+} from "../api/types.js";
 import {
   PluginConfig,
   PluginConfigEntries,
@@ -29,7 +34,14 @@ import {
  * on whoever reads it; an action lets the module do it and report back.
  */
 export interface SettingsGroupStatus {
-  notices(): PluginConfigNotice[];
+  /**
+   * The live notices, asked per read. `stored` and `configuration` are the group's document
+   * whole and its declaration, as `derive` gets them, for a notice about what is stored.
+   */
+  notices(
+    stored: Record<string, unknown>,
+    configuration: PluginConfiguration,
+  ): PluginConfigNotice[];
   /**
    * After a save of this group or of one drawn inside its card: does what that save sets in
    * motion beyond the group's own watchers, and resolves once it has settled, so the notices
@@ -50,19 +62,21 @@ export interface SettingsGroupStatus {
    * its fields existed (the sandbox's `enabled`, read off its old mode). Read-side only: the
    * document on disk is never rewritten, and the module applying the group derives the same way
    * from the document it reads. `stored` is that document whole — the stored keys merged onto
-   * the defaults, including keys the schema no longer declares, which `values` leaves out.
+   * the defaults, including keys the schema no longer declares, which `values` leaves out;
+   * `configuration` is the group's declaration (what `resolveTable` reads a table by).
    */
   derive?(
     values: Record<string, unknown>,
     stored: Record<string, unknown>,
+    configuration: PluginConfiguration,
   ): Record<string, unknown>;
   /** For a group a backend plugin enforces: whether one for this OS is installed, and the default. */
   backend?(): PluginConfigBackend;
   /**
    * Completes a save of this group before it is validated and stored: what every save must
    * write besides the fields the page changed. `current` is the group's values as the page
-   * reads them (`derive` applied) (the sandbox pins its default preset, so the
-   * first save ends a document's pre-preset reading).
+   * reads them (`derive` applied) (the sandbox pins the default preset the card shows, which a
+   * document saved before the default preset may not have).
    */
   saving?(
     update: Record<string, unknown>,
@@ -135,14 +149,15 @@ export class PluginConfigPage {
     }
     const withStatus = (entry: PluginConfigEntry): PluginConfigEntry => {
       const group = status.get(entry.name);
-      const notices = group?.notices() ?? [];
+      const stored = pluginConfig.get(entry.name);
+      const notices = group?.notices(stored, entry.configuration) ?? [];
       const actions = group?.actions?.() ?? [];
       const unavailable = group?.unavailable?.() ?? [];
       const backend = group?.backend?.();
       return {
         ...entry,
         ...(group?.derive !== undefined
-          ? { values: group.derive(entry.values, pluginConfig.get(entry.name)) }
+          ? { values: group.derive(entry.values, stored, entry.configuration) }
           : {}),
         ...(notices.length > 0 ? { notices } : {}),
         ...(actions.length > 0 ? { actions } : {}),
@@ -152,8 +167,11 @@ export class PluginConfigPage {
     };
     /** A group's values as the page reads them: stored onto defaults, then derived. */
     const readValues = (name: string, group: SettingsGroupStatus) => {
-      const values = entries.describe().find((e) => e.name === name)?.values ?? {};
-      return group.derive?.(values, pluginConfig.get(name)) ?? values;
+      const entry = entries.describe().find((e) => e.name === name);
+      if (entry === undefined) return {};
+      return (
+        group.derive?.(entry.values, pluginConfig.get(name), entry.configuration) ?? entry.values
+      );
     };
     this.pluginConfigAdmin = {
       describe: () => entries.describe().map(withStatus),
