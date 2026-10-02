@@ -4,7 +4,8 @@
  * sideways on a narrow screen rather than squeezing its cells.
  *
  * Each cell is drawn by its column's type: a `string` cell is a borderless inline text box whose
- * placeholder is the declared text (empty means "the declared text", in the page's language);
+ * value is the effective text (an empty override shows the declared text, in the page's
+ * language, and clearing the box or typing the declared text back restores it);
  * a `boolean` cell is a switch; an `enum` cell is a compact select, its options this machine
  * cannot honour greyed out with the reason. A cell the row locks is not a control at all: it is
  * the value's text with a lock mark beside it, since a disabled select would read as broken.
@@ -57,14 +58,14 @@ export function ConfigTable({
       <p className="text-sm font-medium">{label}</p>
       {hint !== undefined && <p className="text-xs text-fg-muted">{hint}</p>}
       <div className="overflow-x-auto rounded-lg border border-line">
-        <table className="w-full min-w-[36rem] border-collapse text-sm">
+        <table className="w-full min-w-max border-collapse text-sm">
           <thead>
             <tr className="bg-surface-muted">
               {columns.map((c) => (
                 <th
                   key={c.name}
                   scope="col"
-                  className="px-3 py-2 text-left text-xs font-medium text-fg-muted"
+                  className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-fg-muted"
                 >
                   {localized(c.title, c.titleZh)}
                 </th>
@@ -80,6 +81,7 @@ export function ConfigTable({
                 {columns.map((c) => {
                   const cell = table[row.id]?.[c.name];
                   const locked = row.locked?.includes(c.name) === true;
+                  const declared = localized(String(row.values[c.name] ?? ""), row.valuesZh?.[c.name]);
                   const cellLabel = `${localized(String(row.values.name ?? row.id), row.valuesZh?.name)} · ${localized(c.title, c.titleZh)}`;
                   const optionTitle = (value: unknown) => {
                     const option = c.options?.find((o) => o.value === value);
@@ -88,7 +90,7 @@ export function ConfigTable({
                       : String(value);
                   };
                   return (
-                    <td key={c.name} className="px-2 py-1 align-middle">
+                    <td key={c.name} className="whitespace-nowrap px-1 py-1 align-middle">
                       {locked ? (
                         <span
                           aria-label={`${cellLabel}: ${c.type === "boolean" ? String(cell) : optionTitle(cell)} (${S.settings.pluginCellLocked})`}
@@ -156,17 +158,21 @@ export function ConfigTable({
                         <Input
                           size="sm"
                           aria-label={cellLabel}
-                          value={typeof cell === "string" ? cell : ""}
-                          placeholder={localized(
-                            String(row.values[c.name] ?? ""),
-                            row.valuesZh?.[c.name],
-                          )}
+                          // The effective text: an empty override is the declared text, in the
+                          // page's language. Typing it back, or clearing the box, restores it.
+                          value={typeof cell === "string" && cell !== "" ? cell : declared}
                           disabled={disabled}
                           autoComplete="off"
                           // Borderless until pointed at or focused: the row reads as a table
                           // of names, and the box shows itself when it is about to be edited.
-                          className="!border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
-                          onChange={(e) => onCell(row.id, c.name, e.target.value)}
+                          className="!w-32 !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
+                          onChange={(e) =>
+                            onCell(
+                              row.id,
+                              c.name,
+                              e.target.value === declared ? "" : e.target.value,
+                            )
+                          }
                         />
                       )}
                     </td>

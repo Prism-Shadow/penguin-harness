@@ -152,7 +152,7 @@ export function sandboxPresetsOf(
                 titleZh: "文件",
                 options: [
                   { value: "danger-full-access", title: "Off", titleZh: "关闭" },
-                  { value: "workspace-write", title: "Workspace write", titleZh: "仅工作区可写" },
+                  { value: "workspace-write", title: "Workspace", titleZh: "仅工作区" },
                   { value: "read-only", title: "Read-only", titleZh: "只读" },
                 ],
               },
@@ -163,8 +163,8 @@ export function sandboxPresetsOf(
                 titleZh: "网络",
                 options: [
                   { value: "open", title: "Full", titleZh: "完全" },
-                  { value: "local", title: "Localhost only", titleZh: "仅本机" },
-                  { value: "none", title: "None", titleZh: "无网络" },
+                  { value: "local", title: "Localhost", titleZh: "仅本机" },
+                  { value: "none", title: "None", titleZh: "无"} ,
                 ],
               },
               {
@@ -173,10 +173,10 @@ export function sandboxPresetsOf(
                 title: "Ask mode",
                 titleZh: "询问模式",
                 options: [
-                  { value: "allow-all", title: "Approve everything", titleZh: "全部批准" },
-                  { value: "read-only", title: "Approve read-only", titleZh: "批准只读" },
+                  { value: "allow-all", title: "Approve all", titleZh: "全部批准" },
+                  { value: "read-only", title: "Approve reads", titleZh: "批准只读" },
                   { value: "always-ask", title: "Ask every time", titleZh: "每次询问" },
-                  { value: "deny-all", title: "Deny everything", titleZh: "全部拒绝" },
+                  { value: "deny-all", title: "Deny all", titleZh: "全部拒绝" },
                 ],
               },
             ],
@@ -402,6 +402,8 @@ export class SandboxSettingsStatus {
             declined.length === 0 ? "" : `已安装 ${declined.join("、")}，但它们适用于其他平台。`;
           notices.push({
             tone: "attention",
+            // Only confinement needs a backend: with the switch off nothing is refused.
+            onlyWhen: "enabled",
             text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command and hook script.${elsewhere}`,
             textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「关闭」外的任何模式都会拒绝 Agent 的每条命令与钩子脚本。${elsewhereZh}`,
           });

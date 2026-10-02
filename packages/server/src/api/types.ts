@@ -5514,6 +5514,12 @@ export interface PluginConfigNotice {
   tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
+  /**
+   * A boolean field of the same group: the notice matters only while it is on, so the page
+   * shows it only while that field — as drafted, before Save — is on (the sandbox's backend
+   * warning, under its `enabled` switch).
+   */
+  onlyWhen?: string;
 }
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */

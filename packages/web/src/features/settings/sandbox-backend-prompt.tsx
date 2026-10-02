@@ -8,7 +8,7 @@
  * cost, which the body says: the App is re-assembled, stopping runs in progress.
  */
 import { useState } from "react";
-import { Checkbox, ConfirmModal } from "@prismshadow/penguin-ui";
+import { Checkbox, ConfirmModal, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
 export function SandboxBackendPrompt({
@@ -33,6 +33,7 @@ export function SandboxBackendPrompt({
       open={pkg !== null}
       title={P.title}
       tone="primary"
+      glyph={ICONS.download}
       busy={busy}
       confirmLabel={busy ? P.installing : P.install}
       cancelLabel={P.later}

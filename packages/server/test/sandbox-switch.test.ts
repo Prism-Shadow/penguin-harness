@@ -208,10 +208,15 @@ describe("the sandbox switch", () => {
   it("reports no backend for this OS, and the OS's default package, when none is installed", async () => {
     const { t, card } = await boot();
     apps.push(t);
-    expect((await card()).backend).toEqual({
+    const entry = await card();
+    expect(entry.backend).toEqual({
       installed: false,
       ...(recommended !== undefined ? { recommended } : {}),
     });
+    // The missing-backend warning matters only while the switch is on: the page hides it otherwise.
+    expect(entry.notices?.find((n) => n.text.startsWith("This deployment has no usable"))).toMatchObject(
+      { tone: "attention", onlyWhen: "enabled" },
+    );
   });
 
   it("counts a backend in use, or one installed and failing, but not one that declined", async () => {

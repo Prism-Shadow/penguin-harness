@@ -13,12 +13,15 @@ import { localizedText } from "../chat/skill-use";
 
 export function ConfigHeading({
   entry,
+  draft,
   nested,
   disabled,
   onAction,
   locale,
 }: {
   entry: PluginConfigEntry;
+  /** The entry's draft: a notice tied to a switch (`onlyWhen`) shows only while it is on. */
+  draft: Record<string, unknown> | undefined;
   /** Drawn inside another entry's card (a sandbox backend's group): a step smaller. */
   nested: boolean;
   disabled: boolean;
@@ -59,7 +62,9 @@ export function ConfigHeading({
           })}
         </div>
       )}
-      {(entry.notices ?? []).map((notice, i) =>
+      {(entry.notices ?? [])
+        .filter((n) => n.onlyWhen === undefined || draft?.[n.onlyWhen] === true)
+        .map((notice, i) =>
         notice.tone === "progress" ? (
           <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
             <Spinner size="sm" label={S.common.loading} />
