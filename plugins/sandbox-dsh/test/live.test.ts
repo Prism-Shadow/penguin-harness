@@ -21,14 +21,16 @@ import { mustRun } from "../../../scripts/must-run.mjs";
 const win32 = process.platform === "win32";
 
 // Windows runs the probes through PowerShell, the shell DSH's ACL runner is built and tested
-// for. The harness's own Windows default, bash (Git for Windows, or the bundled MinGit), does
-// not run under the runner, measured on windows-latest: handed the bare name, the runner's
-// CreateProcessAsUserW search reaches System32's WSL launcher before PATH ("Bash/Service/
-// CreateInstance/E_ACCESSDENIED", fork CI run 36579953129); handed Git's bash.exe by path,
-// the MSYS runtime aborts under the write-restricted token ("CreateFileMapping S-1-5-21-…,
-// Win32 error 5", run 36581181568). TODO(win32): so a bash session confined by DSH is not
-// guaranteed on Windows; only pwsh is. Set before the first spawn: core resolves the session
-// shell once per process.
+// for. The harness's own Windows default, bash (Git for Windows, or the bundled MinGit), is
+// refused there by the adaptor before the runner — its load fails under a bash session shell,
+// and a bash command is refused — because the runner cannot start it, measured on
+// windows-latest: handed the bare name, the runner's CreateProcessAsUserW search reaches
+// System32's WSL launcher before PATH ("Bash/Service/CreateInstance/E_ACCESSDENIED"); handed
+// Git's bash.exe by path, the MSYS runtime aborts under the write-restricted token
+// ("CreateFileMapping S-1-5-21-…, Win32 error 5").
+// TODO(win32): so a bash session confined by DSH is not guaranteed on Windows; only pwsh is,
+// until the runner starts an MSYS bash. Set before the adaptor loads and before the first
+// spawn: core resolves the session shell once per process, and the load reads it.
 if (win32) process.env.PENGUIN_SHELL = "pwsh";
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-dsh-live-"));
@@ -48,7 +50,10 @@ const cannotOpen =
     ? loadError
     : (() => {
         try {
-          provider.confine(["true"], { mode: "workspace-write", workspaceRoot: ws });
+          // An absolute program: on Windows the adaptor resolves a bare name on PATH and refuses
+          // one PATH lacks (no `true.exe` there), which would fail this probe as if the host could
+          // not confine.
+          provider.confine([process.execPath], { mode: "workspace-write", workspaceRoot: ws });
           return null;
         } catch (err) {
           return err instanceof Error ? err.message : String(err);
@@ -105,7 +110,7 @@ const shellReady =
 
 const usable = mustRun(
   "sandbox-dsh",
-  cannotOpen ?? (shellReady ? null : "the session shell is not pwsh (PowerShell 7), which the probes are written for"),
+  cannotOpen ?? (shellReady ? null : "the session shell is not pwsh (PowerShell 7)"),
 );
 
 /**
