@@ -1,7 +1,8 @@
 /**
  * The "?" disclosure (src/components/overlays/info-popover/info-popover.tsx): a real button that
- * names itself in the interface's words, folds the subject into that name, and keeps its panel
- * out of the tree until it is opened.
+ * names itself in the interface's words, folds the subject into that name, asks for no hover
+ * tooltip (the mark beside a title says what it is, and a click shows the rest), and keeps its
+ * panel out of the tree until it is opened.
  *
  * Where it may appear — only beside a title — is the web app's `disclosure-anchor.test.ts`; the
  * field layout it forces is this package's `field.test.ts`.
@@ -25,11 +26,15 @@ describe("InfoPopover", () => {
     createElement(InfoPopover, { children: "Values take effect from the next task." }),
   );
 
-  it("is a real button carrying an accessible name, shown through the tooltip layer", () => {
+  it("is a real button named for assistive technology, and nothing more", () => {
     expect(html).toMatch(/^<button type="button"/);
     expect(html).toContain('aria-label="More info"');
-    expect(html).toContain('data-tooltip="More info"');
     expect(html).not.toContain("title=");
+  });
+
+  it("asks the tooltip layer for nothing: the mark beside a title says what it is, and a click shows the rest", () => {
+    // A data-tooltip is the only way a hover panel opens (tooltip.tsx), so its absence is the behaviour.
+    expect(html).not.toContain("data-tooltip");
   });
 
   it("starts collapsed, and points at the panel it will open", () => {

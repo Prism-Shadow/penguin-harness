@@ -118,7 +118,7 @@ const rowClass = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-lef
 /** A small tone-marked count: the dot, the label, the number. */
 function ToneCount({ tone, label, value }: { tone: Tone; label: string; value: number }) {
   return (
-    <span className={`inline-flex items-center ${ICON_GAP.tight}`} data-tooltip={label}>
+    <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
       <span className={`block h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
       <span>{label}</span>
       <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">{value}</span>
@@ -244,7 +244,6 @@ function MissionFold({ mission }: { mission: string }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            data-tooltip={toggle}
             aria-expanded={expanded}
             aria-controls={bodyId}
             className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} rounded text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
@@ -737,11 +736,7 @@ export function OverviewPage() {
                     <InboxDot row={row} />
                     <TitleButton
                       className="flex-1 truncate"
-                      title={
-                        row.target.kind === "ticket"
-                          ? S.company.overview.openTicket
-                          : S.company.overview.openChannel
-                      }
+                      hint={row.title}
                       onClick={() => openInboxRow(row.target)}
                     >
                       {row.title}
@@ -785,7 +780,7 @@ export function OverviewPage() {
                         </span>
                         <TitleButton
                           className="flex-1 truncate"
-                          title={S.company.overview.openCalendar}
+                          hint={entry.title}
                           onClick={() => page("calendar")}
                         >
                           {entry.title}
@@ -821,11 +816,7 @@ export function OverviewPage() {
               <ul className="space-y-1">
                 {detail.alerts.map((a) => (
                   <li key={`${a.agentId}/${a.period}`} className={rowClass}>
-                    <TitleButton
-                      className="flex-1 truncate"
-                      title={S.company.overview.openFinance}
-                      onClick={() => page("finance")}
-                    >
+                    <TitleButton className="flex-1 truncate" onClick={() => page("finance")}>
                       <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
                     </TitleButton>
                     {a.pausedAt !== undefined ? (

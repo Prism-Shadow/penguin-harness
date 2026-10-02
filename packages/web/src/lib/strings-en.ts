@@ -3121,7 +3121,7 @@ Scenarios:
     unpinSession: "Unpin",
     pinnedSession: "Pinned",
     /** The hover ellipsis button that opens the row's full context menu. */
-    moreActions: "More",
+    moreActions: "More actions",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -4306,9 +4306,6 @@ Scenarios:
       openBoard: "Open the ticket board",
       openCalendar: "Open the calendar",
       openFinance: "Open finance",
-      /** The tooltip of an inbox row's title: the row is inert, its title is what goes there. */
-      openTicket: "Open the ticket",
-      openChannel: "Open the channel",
       /** The counts under the board bar: each opens the board filtered to the column it counts. */
       openColumn: (column: string): string => `Open the "${column}" tickets`,
       /** The three first steps of a new organization (replaces the empty sections). */
@@ -4571,8 +4568,6 @@ Scenarios:
       blockByHint: "The ticket or principal it waits on",
       sessions: "Ticket sessions",
       sessionsCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
-      openSession: "Open session",
-      openTicket: "Open ticket",
       progress: "Progress",
       progressEmpty: "No progress recorded yet",
       addProgress: "Add progress",
@@ -4689,8 +4684,6 @@ Scenarios:
       saveBudget: "Save budget",
       cancelEdit: "Cancel",
       editBudgetOf: (name: string): string => `Edit the budget of ${name}`,
-      /** The ticket table's owner column and row action. */
-      openTicket: "Open ticket",
       /** The trend section. */
       trendInfo:
         "The daily cost of every session in the organization, by the organization's timezone; only days with spend are drawn.",

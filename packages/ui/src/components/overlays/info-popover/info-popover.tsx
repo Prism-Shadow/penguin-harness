@@ -16,7 +16,10 @@
  * a portaled node sits in the root stacking context and must clear the modal overlay's z-50.
  *
  * The trigger's accessible name is the interface's "More info" (`UiStrings.moreInfo`), with the
- * subject folded in when the caller names one (`UiStrings.moreInfoAbout`).
+ * subject folded in when the caller names one (`UiStrings.moreInfoAbout`). It carries no tooltip:
+ * a circled "?" beside a title already reads as help for that title, and a click shows the
+ * explanation itself, so a hover panel saying "More info" adds nothing. The name exists for
+ * assistive technology only.
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
@@ -64,7 +67,6 @@ export function InfoPopover({
         ref={triggerRef}
         type="button"
         aria-label={name}
-        data-tooltip={name}
         aria-expanded={open}
         aria-controls={panelId}
         // While open the panel is also the trigger's description, so a screen reader reads the

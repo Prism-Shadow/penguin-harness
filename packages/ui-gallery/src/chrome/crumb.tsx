@@ -15,7 +15,7 @@ export function Breadcrumb({ text, className = "" }: { text: string; className?:
       type="button"
       className={`g-crumb ${className}`}
       aria-label={S.section.copyBreadcrumb}
-      data-tooltip={S.section.copyBreadcrumb}
+      data-tooltip={text}
       onClick={() => copy("crumb", text)}
     >
       <ChromeIcon name={copied ? "check" : "copy"} size={13} />

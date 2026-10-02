@@ -3171,7 +3171,7 @@ Benchmark：
     unpinSession: "取消置顶",
     pinnedSession: "已置顶",
     /** The hover ellipsis button that opens the row's full context menu. */
-    moreActions: "更多",
+    moreActions: "更多操作",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -4340,9 +4340,6 @@ Benchmark：
       openBoard: "打开工单看板",
       openCalendar: "打开日历",
       openFinance: "打开财务",
-      /** The tooltip of an inbox row's title: the row is inert, its title is what goes there. */
-      openTicket: "查看工单",
-      openChannel: "打开频道",
       /** The counts under the board bar: each opens the board filtered to the column it counts. */
       openColumn: (column: string): string => `查看「${column}」的工单`,
       /** The three first steps of a new organization (replaces the empty sections). */
@@ -4577,9 +4574,6 @@ Benchmark：
       blockByHint: "等哪张工单或哪位主体",
       sessions: "关联工单会话",
       sessionsCount: (n: number): string => `${n} 个会话`,
-      openSession: "打开会话",
-      /** The row action of a child ticket, and the tooltip of every ticket title that opens one. */
-      openTicket: "打开工单",
       progress: "进度",
       progressEmpty: "还没有进度记录",
       addProgress: "追加进度",
@@ -4690,8 +4684,6 @@ Benchmark：
       saveBudget: "保存预算",
       cancelEdit: "取消",
       editBudgetOf: (name: string): string => `编辑 ${name} 的预算`,
-      /** The ticket table's owner column and row action. */
-      openTicket: "打开工单",
       /** The trend section. */
       trendInfo: "组织全部会话每天的成本合计，按组织时区分日；只画有支出的日子。",
       trendEmpty: "本周期还没有支出记录",

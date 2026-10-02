@@ -797,7 +797,8 @@ export function WorkspaceFinder({
     key: string;
     icon: string;
     label: string;
-    title: string;
+    /** The tooltip, when it shows more than the label (a folder's full path). */
+    title?: string;
     active: boolean;
     onClick: () => void;
     extra?: ReactNode;
@@ -967,7 +968,6 @@ export function WorkspaceFinder({
                   : `machine-unusable:${index}`,
                 icon: ICONS.server,
                 label: entry.label,
-                title: entry.label,
                 active: entry.selectable && entry.id === machine,
                 onClick: () => {
                   if (entry.id !== machine) switchMachine(entry.id);

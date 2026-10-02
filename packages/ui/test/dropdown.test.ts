@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { FormPicker } from "../src/components/forms/select/form-picker";
+import { FormPicker, FormPickerTrigger } from "../src/components/forms/select/form-picker";
 import { Dropdown } from "../src/components/overlays/dropdown/dropdown";
 import { menuPanelClass } from "../src/components/overlays/menu-panel/menu-panel";
 import { classTokens, renderStatic } from "../src/testing";
@@ -106,6 +106,29 @@ describe("FormPicker", () => {
     expect(html).toContain('data-tooltip="Model"');
     expect(html).not.toContain("title=");
     expect(classTokens(html)).toEqual(expect.arrayContaining(["w-full", "truncate"]));
+  });
+
+  it("hints only what the caller gives it: no title, no data-tooltip, the aria-label stays", () => {
+    const html = renderStatic(
+      createElement(FormPickerTrigger, {
+        label: "3 picked",
+        ariaLabel: "Plugins",
+        expanded: false,
+        onClick: () => {},
+      }),
+    );
+    expect(html).toContain('aria-label="Plugins"');
+    expect(html).not.toContain("data-tooltip");
+    const titled = renderStatic(
+      createElement(FormPickerTrigger, {
+        label: "GPT-6",
+        title: "Model: GPT-6",
+        ariaLabel: "Model",
+        expanded: false,
+        onClick: () => {},
+      }),
+    );
+    expect(titled).toContain('data-tooltip="Model: GPT-6"');
   });
 
   it("greys a placeholder with the subtle ink, and colours only through tokens", () => {

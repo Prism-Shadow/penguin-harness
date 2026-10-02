@@ -46,7 +46,7 @@ export function IconsBoard() {
       >
         <div className="gf-icon-sizes">
           {WEB_ICON_SIZES.map(({ name, px }) => (
-            <span key={name} className="gf-icon-size" data-tooltip={`ICON_SIZE.${name}`}>
+            <span key={name} className="gf-icon-size">
               <GlyphIcon d={sample} size={px} />
               <span className="gf-caption gf-mono">
                 {name} {px}

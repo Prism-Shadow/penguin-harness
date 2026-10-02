@@ -295,10 +295,7 @@ export function HooksTab({
                   </p>
                 </div>
                 {hook.version !== "" && (
-                  <span
-                    className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500"
-                    data-tooltip={hook.version}
-                  >
+                  <span className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500">
                     {hook.version}
                   </span>
                 )}

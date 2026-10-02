@@ -31,11 +31,7 @@ import type { AskEvaluationParams } from "./benchmark-prompts";
 /** Session id, for correlating a Run with what the side panel shows: identification only, reading a Trace is the side panel's job. */
 function SessionCell({ sessionId }: { sessionId?: string }) {
   if (!sessionId) return <span className="text-gray-400">—</span>;
-  return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" data-tooltip={sessionId}>
-      {sessionId}
-    </span>
-  );
+  return <span className="font-mono text-gray-600 dark:text-gray-300">{sessionId}</span>;
 }
 
 /**

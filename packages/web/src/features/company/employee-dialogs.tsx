@@ -301,7 +301,6 @@ export function HireDialog({
                           : S.company.chart.pluginsPicked(plugins.length)
                       }
                       muted={plugins.length === 0}
-                      title={S.company.chart.plugins}
                       ariaLabel={S.company.chart.plugins}
                       disabled={busy}
                       menuClass="w-[26rem]"

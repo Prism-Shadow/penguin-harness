@@ -501,7 +501,6 @@ export function AppLayout() {
           <button
             type="button"
             aria-label={S.common.close}
-            data-tooltip={S.common.close}
             onClick={dismissPasswordBanner}
             className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
           >

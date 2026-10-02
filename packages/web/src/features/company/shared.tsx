@@ -85,18 +85,22 @@ export function JumpButton({
  * inert. Where a row has no natural title, JumpButton is the way out instead. (The ticket
  * board's card is the one surface that is a button whole: see tickets-page.tsx.)
  *
- * The visible text is the accessible name; `title` carries the destination as the tooltip, so
- * the name is still the thing the reader sees.
+ * The visible text is the accessible name. Its tooltip opens only when a row cuts that text off,
+ * so `hint` is the text whole, never the verb of the click.
  */
 export function TitleButton({
   onClick,
-  title,
+  hint,
   className = "",
   children,
 }: {
   onClick: () => void;
-  /** The tooltip: what a click opens, e.g. 「打开工单」. */
-  title?: string;
+  /**
+   * The whole of what the button shows, for when the row cuts it (a long ticket title), with
+   * the id when the reader may need it ("<title> · <id>"). Shown as text, so it wraps at words.
+   * The click needs no hint: the underline on hover already says the title opens something.
+   */
+  hint?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -104,12 +108,20 @@ export function TitleButton({
     <button
       type="button"
       onClick={onClick}
-      {...(title !== undefined ? { "data-tooltip": title } : {})}
+      {...(hint !== undefined ? { "data-tooltip": hint, "data-tooltip-content": "text" } : {})}
       className={`min-w-0 text-left hover:underline focus-visible:underline ${className}`}
     >
       {children}
     </button>
   );
+}
+
+/**
+ * A cut-off line's whole text for its hint: the title with the id after it, or the id alone when
+ * no title is known (a stand-in title that is the id itself counts as none).
+ */
+export function titledHint(title: string | undefined, id: string): string {
+  return title === undefined || title === id ? id : `${title} · ${id}`;
 }
 
 /** The label of an organization's headline state. */

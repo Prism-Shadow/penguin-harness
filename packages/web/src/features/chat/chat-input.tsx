@@ -2101,7 +2101,6 @@ export function ChatInput({
             aria-invalid={goalBudgetDraftInvalid}
             aria-describedby="goal-budget-hint"
             {...noAutofill}
-            data-tooltip={goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint}
             className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-xs leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
               goalBudgetDraftInvalid
                 ? "border-red-400 text-red-600 focus:border-red-500 focus:ring-red-400/20 dark:border-red-500 dark:text-red-400"

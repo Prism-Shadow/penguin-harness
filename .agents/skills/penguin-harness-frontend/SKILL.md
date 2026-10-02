@@ -67,6 +67,18 @@ split it, keep it visible — a visible sentence is never a bug, a hidden format
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
 
+### Tooltips: when a mark gets one
+
+A hover hint shows only where its words are not on screen (`hintAllowedFor` in the UI package's
+tooltip.tsx): an icon-only control, a wordless mark, an input, or text that is cut off. Three
+glyphs are read without one and must not carry `data-tooltip` — the circled "?" beside a title
+(`InfoPopover`), a close or clear × beside the thing it dismisses, and a fold chevron under the
+rows it folds. They keep their `aria-label`; that name is for assistive technology, not a panel.
+Add a hint to such a mark only when it says something the glyph cannot: a shortcut ("Close (Esc)"),
+a consequence ("Kill this terminal"), the subject when it is not beside it. A hint on text that may
+truncate shows that text whole (plus an id when one helps), never the verb of the click — the
+underline already says it opens.
+
 ### Which disclosure — the "?" or the fold
 
 Two forms, and **a title decides between them, not taste**:

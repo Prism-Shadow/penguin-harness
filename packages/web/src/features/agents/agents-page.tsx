@@ -893,7 +893,6 @@ export function AgentsPage() {
                       : S.agent.createPluginsPicked(createPlugins.length)
                   }
                   muted={createPlugins.length === 0}
-                  title={S.agent.createPlugins}
                   ariaLabel={S.agent.createPlugins}
                   disabled={busy}
                   menuClass="w-[26rem]"
@@ -944,7 +943,6 @@ export function AgentsPage() {
                           : S.agent.createSkillsPicked(createDirSkills.length)
                       }
                       muted={createDirSkills.length === 0}
-                      title={S.agent.createDirSkills}
                       ariaLabel={S.agent.createDirSkills}
                       disabled={busy}
                       menuClass="w-[26rem]"

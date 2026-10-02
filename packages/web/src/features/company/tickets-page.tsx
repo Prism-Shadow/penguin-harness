@@ -69,6 +69,7 @@ import {
   PriorityBadge,
   TitleButton,
   principalLabel,
+  titledHint,
 } from "./shared";
 import {
   TICKET_COLUMNS,
@@ -282,7 +283,7 @@ export function TicketsPage() {
         {t.parent !== undefined && (
           <span
             className="mt-2 block truncate text-xs text-gray-400 dark:text-gray-500"
-            data-tooltip={t.parent}
+            data-tooltip={titledHint(titles.get(t.parent), t.parent)}
             data-tooltip-content="text"
           >
             {S.company.tickets.parentLine(titles.get(t.parent) ?? t.parent)}
@@ -455,7 +456,6 @@ export function TicketsPage() {
                 {invalids.map((t) => (
                   <li key={t.ticketId} className="flex items-baseline">
                     <TitleButton
-                      title={S.company.tickets.openTicket}
                       className="shrink-0 font-mono"
                       onClick={() => openTicket(t.ticketId)}
                     >

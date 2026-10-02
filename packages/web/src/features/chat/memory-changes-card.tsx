@@ -51,9 +51,7 @@ export function MemoryChangesCard({
             row.op === "write"
               ? { glyph: ICONS.filePlus, label: S.chat.memoryOpWrite }
               : { glyph: ICONS.penLine, label: S.chat.memoryOpEdit },
-          ...(onLocateChange
-            ? { tooltip: S.chat.memoryRowOpen, onOpen: () => onLocateChange(row) }
-            : {}),
+          ...(onLocateChange ? { tooltip: row.file, onOpen: () => onLocateChange(row) } : {}),
         };
       })}
       openHint={S.chat.memoryRowOpen}

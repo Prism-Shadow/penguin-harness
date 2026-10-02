@@ -26,12 +26,10 @@ describe("SearchInput", () => {
     expect(html).toContain("data-1p-ignore");
   });
 
-  it("offers the clear button only while there is something to clear", () => {
+  it("offers the clear button only while there is something to clear, named but not hinted", () => {
     expect(search()).not.toContain("<button");
     const filled = search({ value: "agent" });
-    expect(filled).toMatch(
-      /<button type="button" aria-label="Clear search" data-tooltip="Clear search"/,
-    );
+    expect(filled).toMatch(/<button type="button" aria-label="Clear search"(?! data-tooltip)/);
   });
 
   it("names the clear button in the injected words, and a caller's label over both", () => {
