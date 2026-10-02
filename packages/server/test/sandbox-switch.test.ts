@@ -143,7 +143,7 @@ describe("the sandbox switch", () => {
     const owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
     const projectId = (
       (await (
-        await owner.post("/api/projects", { projectId: "switch", name: "project" })
+        await owner.post("/api/projects", { projectId: "owner-switch", name: "project" })
       ).json()) as { project: { projectId: string } }
     ).project.projectId;
     await owner.put(`/api/projects/${projectId}/models`, {
@@ -224,7 +224,8 @@ describe("the sandbox switch", () => {
     const failing = await boot({
       plugins: backendPlugin({
         "elsewhere.provider": Promise.resolve(null),
-        "broken.provider": Promise.reject(new Error("'bwrap' is missing")),
+        // A loader, so the failure is not an unhandled rejection before the service asks.
+        "broken.provider": () => Promise.reject(new Error("'bwrap' is missing")),
       }),
     });
     apps.push(failing.t);
