@@ -122,7 +122,7 @@ packages/
 ├── core/src
 │   ├── agent.ts / session.ts       # the createAgent composition layer and Session (run / compact / generateTitle)
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
-│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · aggregate.ts partial aggregation · markers/
+│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · markers/
 │   ├── interfaces/                 # llm.ts · environment.ts · shared.ts (ApproveFn and the vocabulary both sides share)
 │   ├── llm/                        # generative-model.ts MMSP adapter · tool-call-ids.ts id uniqueness · context-limits.ts
 │   ├── environment/                # environment.ts execution close-out · tools/ registry, 7 builtin tools, background sessions · mcp/

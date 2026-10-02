@@ -15,10 +15,8 @@
  *
  * Fed by SessionManager.drive in the same synchronous tick as each channel publish, so a
  * "channel cursor + fragments" capture between two publishes is always a consistent
- * snapshot. Mirrors core PartialAggregator's merge semantics (fragment key = payload type
- * + tool_call_id; start reopens, delta accumulates, stop closes) with the origin chain
- * added to the key — the aggregator collapses fragments into complete messages, while
- * this keeps the running prefix instead. A complete model message with the same identity
+ * snapshot. A fragment is keyed by origin chain + payload type + tool_call_id; start
+ * reopens it, delta accumulates its running prefix, stop closes it. A complete model message with the same identity
  * also closes the fragment (covers stop-less closures, e.g. interruption cleanup); the
  * whole session entry is dropped when the run ends (SessionManager.drive's finally).
  */
@@ -79,7 +77,7 @@ function partialKindFor(p: CompleteModelPayload): PartialKind | null {
   }
 }
 
-/** Fragment key: origin chain + payload type + tool_call_id (same merge rule as core's PartialAggregator, origin added). */
+/** Fragment key: origin chain + payload type + tool_call_id. */
 function fragmentKey(origin: string[] | undefined, kind: PartialKind, toolCallId: string): string {
   // "\0" (the escape, not a raw byte -- a raw NUL makes git classify the file as binary)
   // separates the origin chain from the kind: session ids are [A-Za-z0-9_-], so the
@@ -189,7 +187,7 @@ export class LiveTailTracker {
     }
     let frag = open?.get(key);
     if (!frag) {
-      // delta/stop without a start: lenient, same as core's PartialAggregator.
+      // delta/stop without a start: lenient, a delta opens the fragment.
       if (p.event_type === "stop") return; // nothing was open; nothing to keep or clear
       if (!open) {
         open = new Map();
