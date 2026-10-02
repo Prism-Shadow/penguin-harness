@@ -292,7 +292,9 @@ describe("the sandbox switch", () => {
       sandbox: { mode: "read-only", network: "open" },
     });
     expect(picked.status).toBe(200);
-    expect(((await picked.json()) as { session: { approvalMode: string } & View }).session).toMatchObject({
+    expect(
+      ((await picked.json()) as { session: { approvalMode: string } & View }).session,
+    ).toMatchObject({
       approvalMode: "allow-all",
       sandbox: { mode: "read-only", network: "open" },
     });
