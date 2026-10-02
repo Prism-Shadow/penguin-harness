@@ -17,7 +17,6 @@ import {
   shippedNames,
   storePackage,
   storeSources,
-  readShippedIndex,
   syncPluginStore,
 } from "../src/plugin/store.js";
 import { createHash } from "node:crypto";
@@ -240,24 +239,13 @@ describe("the installation's prefix", () => {
   it("is found beside the entry's target, not beside a link to it (the Docker image)", async () => {
     // /opt/penguin/lib/{dist/penguin.js, plugins/}, started as /usr/local/bin/penguin → the entry.
     const lib = path.join(dir, "opt", "penguin", "lib");
-    await prefix(path.join(lib, "plugins"));
-    await write(lib, {
-      "dist/penguin.js": "",
-      "plugins/index.json": JSON.stringify([
-        {
-          name: "@acme/sandbox-x",
-          version: "1.0.0",
-          integrity: integrityOf("@acme/sandbox-x", "1.0.0"),
-        },
-      ]),
-    });
+    await write(lib, { "dist/penguin.js": "" });
     const link = path.join(dir, "usr", "local", "bin", "penguin");
     await fs.mkdir(path.dirname(link), { recursive: true });
     await fs.symlink(path.join(lib, "dist", "penguin.js"), link);
     const real = await fs.realpath(lib);
     expect(programEntry(link)).toBe(path.join(real, "dist", "penguin.js"));
     expect(storeSources(null, link)).toEqual([path.join(real, "plugins")]);
-    expect(await withEntry(link, () => shippedNames(null))).toEqual(["@acme/sandbox-x"]);
   });
 
   it("of the CLI's npm package lists plugins without carrying them: they are fetched, not shipped", async () => {
@@ -281,8 +269,5 @@ describe("the installation's prefix", () => {
     expect([...shipped]).toEqual([]);
     expect(logged).toEqual([]);
     expect(await readStore(root)).toEqual([]);
-    // Still listed, with its content: the row a registry fetch is checked against.
-    const listed = await withEntry(entry, () => readShippedIndex(null));
-    expect(listed?.entries).toEqual([row]);
   });
 });

@@ -256,24 +256,16 @@ export async function stagePushedPlugins(root: string, dirs: readonly string[]):
       const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
         name: string;
         version: string;
-        description?: string;
-        license?: string;
-        author?: unknown;
       };
       names.push(pkg.name);
       tarballs.push(file);
-      const author =
-        typeof pkg.author === "string"
-          ? pkg.author
-          : typeof (pkg.author as { name?: unknown } | undefined)?.name === "string"
-            ? (pkg.author as { name: string }).name
-            : null;
+      // The rest of a row (description, authors, license) is for a listing; a test needs none.
       rows.push({
         name: pkg.name,
         version: pkg.version,
-        description: pkg.description ?? "",
-        authors: author === null ? [] : [author],
-        license: pkg.license ?? "",
+        description: "",
+        authors: [],
+        license: "",
         integrity: await npmIntegrity(file),
       });
     }
