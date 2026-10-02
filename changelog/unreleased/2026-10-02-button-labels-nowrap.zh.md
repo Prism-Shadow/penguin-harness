@@ -3,6 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** [#954](https://github.com/Prism-Shadow/penguin-harness/pull/954)
 
 [English](2026-10-02-button-labels-nowrap.md)
 
