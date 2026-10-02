@@ -34,7 +34,9 @@ interface ServiceUnderTest {
 const { SandboxService } = (await import(
   fileURLToPath(new URL("../../../packages/server/src/sandbox/index.ts", import.meta.url))
 )) as {
-  SandboxService: new (registrations: Iterable<[string, SandboxProviderSource]>) => ServiceUnderTest;
+  SandboxService: new (
+    registrations: Iterable<[string, SandboxProviderSource]>,
+  ) => ServiceUnderTest;
 };
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-bwrap-live-"));

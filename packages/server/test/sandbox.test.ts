@@ -197,7 +197,12 @@ describe("sandbox service — the built-in interface and its optional dimensions
         {
           confine(argv, policy) {
             existedWhenConfined.push(policy.writableRoots!.every((root) => fs.existsSync(root)));
-            return { argv: [...argv], enforcement: "full", denialSignatures: [], runnerFailureRules: [] };
+            return {
+              argv: [...argv],
+              enforcement: "full",
+              denialSignatures: [],
+              runnerFailureRules: [],
+            };
           },
         },
       ],
