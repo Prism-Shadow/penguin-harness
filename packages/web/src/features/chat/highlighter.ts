@@ -65,9 +65,9 @@ export async function highlightToHtml(
   language: string,
   options: HighlightOptions = {},
 ): Promise<string | undefined> {
-  // An installed extension registers its languages on THIS thread (code-languages.ts); the
-  // worker's copy of that registry never hears of them. So the resolution is made here and an
-  // extension language travels with the request, with the URL its grammar is served at.
+  // An installed plugin registers its languages on THIS thread (code-languages.ts); the
+  // worker's copy of that registry never hears of them. So the resolution is made here and a
+  // plugin's language travels with the request, with the URL its grammar is served at.
   const resolved = resolveLanguage(language);
   const runtime: RuntimeGrammar | undefined =
     resolved !== undefined && isRuntimeLanguage(resolved)

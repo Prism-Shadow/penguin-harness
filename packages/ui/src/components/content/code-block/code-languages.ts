@@ -13,7 +13,7 @@
  * plain object would resolve `constructor` or `__proto__` through Object.prototype to a function or
  * an object where a language id is expected (React throws when that reaches a text node).
  *
- * Extensions add languages on top of these tables at RUNTIME (see registerRuntimeLanguages): the
+ * Plugins add languages on top of these tables at RUNTIME (see registerRuntimeLanguages): the
  * bundled set is resolved by the bundler and cannot grow by installing anything, so a contributed
  * grammar arrives from the server instead and is registered here before its first fence is met.
  */
@@ -157,7 +157,7 @@ export function isPlainTextLanguage(id: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Languages contributed by extensions
+// Languages contributed by plugins
 // ---------------------------------------------------------------------------
 
 /** One language the server reported (GET /api/languages); the grammar is fetched per id. */
@@ -183,11 +183,11 @@ const listeners = new Set<() => void>();
 
 /**
  * Adopt the languages the server reported. Replaces the previous set rather than merging: the
- * listing is the whole truth about what this App offers, and an extension removed by a hot push
+ * listing is the whole truth about what this App offers, and a plugin removed by a hot push
  * has to stop being offered.
  *
  * A bundled id always wins a collision. The bundled grammar is the one whose chunk is already
- * built and tested against this Shiki version; letting an extension shadow `typescript` would
+ * built and tested against this Shiki version; letting a plugin shadow `typescript` would
  * trade that for whatever it shipped, silently.
  */
 export function registerRuntimeLanguages(languages: readonly RuntimeLanguage[]): void {
@@ -224,7 +224,7 @@ export function runtimeLanguageGeneration(): number {
   return runtimeGeneration;
 }
 
-/** True when `id` is one an extension contributed, so highlighter.ts fetches its grammar. */
+/** True when `id` is one a plugin contributed, so highlighter.ts fetches its grammar. */
 export function isRuntimeLanguage(id: string): boolean {
   return RUNTIME_LANGUAGES.has(id);
 }

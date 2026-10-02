@@ -471,14 +471,14 @@ The plugins in this section are server-side packages: modules the server loads i
 - A write takes effect without a restart: the App [re-assembles itself](/server-boot#re-assembly) around the new list, with the effects of a hot swap. Agent runs in progress are stopped in every Project, because all Projects share one module tree. If the new App fails to boot, the edit is undone and the previous App is restored.
 - The list is the `[plugins]` table of the Project's `.project_config.toml` (see [Project config](/configuration#project-config)). The process loads the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
 
-## Extension-Contributed Languages
+## Plugin-Contributed Languages
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/languages` | The languages this App's extensions registered: `{languages: [{id, displayName, aliases?, extensions?}]}` — no grammars |
-| GET | `/api/languages/:id/grammar` | One language's TextMate grammar, in the shape Shiki's `loadLanguage` takes; `404` for an id nothing registered |
+| GET | `/api/languages` | The languages this App's plugins contributed: `{languages: [{id, displayName, aliases?, extensions?}]}` — no grammars |
+| GET | `/api/languages/:id/grammar` | One language's TextMate grammar, in the shape Shiki's `loadLanguage` takes; `404` for an id nothing contributed |
 
-The listing carries no grammars: one is tens to hundreds of kilobytes, and only the languages a conversation shows are worth fetching. A grammar response is cached for an hour, since it cannot change without a new App, and a new App is a new page load. The aliases and file extensions have to arrive *before* the grammar, because Shiki registers a grammar's own aliases only once it is loaded, and the fence info string is what decides whether to load it. A grammar is data, not code: nothing on this path evaluates anything an extension ships.
+The listing carries no grammars: one is tens to hundreds of kilobytes, and only the languages a conversation shows are worth fetching. A grammar response is cached for an hour, since it cannot change without a new App, and a new App is a new page load. The aliases and file extensions have to arrive *before* the grammar, because Shiki registers a grammar's own aliases only once it is loaded, and the fence info string is what decides whether to load it. A grammar is data, not code: nothing on this path evaluates anything a plugin ships.
 
 ## Schedules
 

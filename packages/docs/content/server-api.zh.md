@@ -471,14 +471,14 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
 - 列表就是 Project 的 `.project_config.toml` 中的 `[plugins]` 表（见 [Project 配置](/configuration#project-配置)）。进程加载所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
 
-## 扩展提供的语言
+## 插件提供的语言
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/languages` | 本 App 的扩展注册的语言：`{languages: [{id, displayName, aliases?, extensions?}]}`——不含语法 |
-| GET | `/api/languages/:id/grammar` | 单个语言的 TextMate 语法，形状即 Shiki 的 `loadLanguage` 所接受的；没有注册过的 id 返回 `404` |
+| GET | `/api/languages` | 本 App 的插件贡献的语言：`{languages: [{id, displayName, aliases?, extensions?}]}`——不含语法 |
+| GET | `/api/languages/:id/grammar` | 单个语言的 TextMate 语法，形状即 Shiki 的 `loadLanguage` 所接受的；没有插件贡献的 id 返回 `404` |
 
-列表不带语法：一份语法有几十到几百 KB，只有对话中真正出现的语言才值得抓取。语法响应缓存一小时——它不换新 App 就不会变，而新 App 意味着一次新的页面加载。别名与文件扩展名必须*先于*语法到达：Shiki 只有在语法加载之后才会注册它自带的别名，而决定是否加载语法的，正是代码块的 info string。语法是数据而非代码：这条路径上不会执行扩展提供的任何东西。
+列表不带语法：一份语法有几十到几百 KB，只有对话中真正出现的语言才值得抓取。语法响应缓存一小时——它不换新 App 就不会变，而新 App 意味着一次新的页面加载。别名与文件扩展名必须*先于*语法到达：Shiki 只有在语法加载之后才会注册它自带的别名，而决定是否加载语法的，正是代码块的 info string。语法是数据而非代码：这条路径上不会执行插件提供的任何东西。
 
 ## 定时任务
 

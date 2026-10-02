@@ -118,7 +118,7 @@ export function CodeSurface({
 }) {
   const highlighter = resolveHighlighter(highlight, useCodeHighlighter());
   const [highlighted, setHighlighted] = useState<{ code: string; html: string }>();
-  // An extension's languages arrive after the first paint, so a block rendered before them
+  // A plugin's languages arrive after the first paint, so a block rendered before them
   // resolved to "no grammar" and would stay unhighlighted for the life of the page. The
   // generation is part of the effect's deps, so a registration re-runs the highlight once.
   const languageGeneration = useSyncExternalStore(

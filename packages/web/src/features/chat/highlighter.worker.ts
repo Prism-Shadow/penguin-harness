@@ -19,7 +19,7 @@ export interface HighlightRequest {
   language: string;
   /** Block lines and marks, as the package's code surfaces ask for them. */
   options: HighlightOptions;
-  /** An extension language the main thread resolved (its registry lives there); the engine fetches its grammar. */
+  /** A plugin's language the main thread resolved (its registry lives there); the engine fetches its grammar. */
   runtime?: RuntimeGrammar;
 }
 

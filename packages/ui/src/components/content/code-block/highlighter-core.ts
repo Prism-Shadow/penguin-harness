@@ -16,7 +16,7 @@
  * block.
  *
  * The trade is coverage — a fence in a language not listed in code-languages.ts renders
- * unhighlighted instead of highlighted, where the full bundle would have known it. An installed extension closes
+ * unhighlighted instead of highlighted, where the full bundle would have known it. An installed plugin closes
  * that gap for the languages it contributes: its grammar is fetched from the server and loaded
  * into this same core, through the same one-load-per-language cache as a bundled chunk.
  *
@@ -88,7 +88,7 @@ const BLOCK_LINES = {
 };
 
 /**
- * An extension language the caller already resolved (code-languages.ts, registerRuntimeLanguages),
+ * A plugin's language the caller already resolved (code-languages.ts, registerRuntimeLanguages),
  * and where its grammar is served. The app knows its own API; this engine only fetches the URL.
  */
 export interface RuntimeGrammar {
@@ -97,10 +97,10 @@ export interface RuntimeGrammar {
 }
 
 /**
- * Fetches an extension-contributed grammar, in the `{default}` shape loadGrammar expects.
+ * Fetches a plugin-contributed grammar, in the `{default}` shape loadGrammar expects.
  *
  * The grammar is DATA — a TextMate document Shiki's JS engine interprets — so nothing here
- * evaluates anything the extension shipped. Note the engine is the pure-JS one, not oniguruma:
+ * evaluates anything the plugin shipped. Note the engine is the pure-JS one, not oniguruma:
  * a grammar leaning on an oniguruma-only construct fails to compile, which loadGrammar reports
  * as a load failure and CodeBlock renders as an unhighlighted block.
  */
@@ -124,7 +124,7 @@ function fetchGrammar({ id, grammarUrl }: RuntimeGrammar): Promise<{ default: La
  * `<span class="line">` a caller can cut the markup at. Empty ranges are dropped; the ranges must
  * not overlap.
  *
- * `runtime` is an extension language the caller already resolved: an extension registers on the
+ * `runtime` is a plugin's language the caller already resolved: a plugin registers on the
  * main thread, so a worker's own registry cannot resolve it, and its grammar comes from the server
  * rather than from this bundle.
  */
