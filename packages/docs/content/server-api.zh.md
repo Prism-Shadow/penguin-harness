@@ -646,7 +646,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/usage/errors` | 错误详情表的一页，按时间倒序：→ `{items, total, rows}` |
 | DELETE | `/usage/errors` | 按当前过滤条件清空错误表：→ `{deleted}`（仅限 Project 所有者） |
 | GET | `/agents/:agentId/traces` | Trace 文件，按日期 → Session 逐级下钻 |
-| GET | `/agents/:agentId/traces/:sessionId/:index` | 读取 Trace 事件（`offset` / `limit` 分页） |
+| GET | `/agents/:agentId/traces/:sessionId/:index` | 读取 Trace 事件（`offset` / `limit` 分页，由按文件维护的行索引提供） |
 | GET | `/agents/:agentId/traces/:sessionId/:index/analysis` | Trace 性能分析 |
 | GET | `/agents/:agentId/traces/:sessionId/:index/download` | 下载原始 Trace 文件（JSONL 附件） |
 | POST | `/agents/:agentId/traces/import` | 导入 Trace 文件：`{dataBase64}` → `{sessionId, index, date}` |
@@ -681,6 +681,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | PATCH | `/` | 更新 Session：`{approvalMode?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | 删除 Session，连同它的 Trace 和暂存文件 |
 | GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
+| GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
 | GET | `/context` | 当前模型上下文的组成，以及压缩将从哪里开始 |
@@ -688,7 +689,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
-- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。内置 Web App 打开一段对话时先显示最近 50 轮，滚动时再加载更早的内容。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
 
@@ -862,7 +864,7 @@ GET  /preview/<token>/<relative path>          (unauthenticated; the token is th
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/traces` | 列出当前 Session 的 Trace 文件 |
-| GET | `/traces/:index` | 读取 Trace 事件（分页） |
+| GET | `/traces/:index` | 读取 Trace 事件（分页，由按文件维护的行索引提供） |
 | GET | `/traces/:index/analysis` | Trace 性能分析 |
 
 ## 消息渠道绑定（飞书、Telegram、QQ、微信）

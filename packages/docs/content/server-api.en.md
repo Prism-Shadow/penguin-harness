@@ -646,7 +646,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/usage/errors` | One page of the error detail table, newest first: → `{items, total, rows}` |
 | DELETE | `/usage/errors` | Empties the error table for the current filter: → `{deleted}` (Project owner only) |
 | GET | `/agents/:agentId/traces` | Trace files as a date → Session drill-down |
-| GET | `/agents/:agentId/traces/:sessionId/:index` | Reads Trace events (`offset` / `limit` pagination) |
+| GET | `/agents/:agentId/traces/:sessionId/:index` | Reads Trace events (`offset` / `limit` pagination, served from a per-file line index) |
 | GET | `/agents/:agentId/traces/:sessionId/:index/analysis` | Trace performance analysis |
 | GET | `/agents/:agentId/traces/:sessionId/:index/download` | Downloads the raw Trace file (JSONL attachment) |
 | POST | `/agents/:agentId/traces/import` | Imports a Trace file: `{dataBase64}` → `{sessionId, index, date}` |
@@ -681,6 +681,7 @@ Two conventions apply to every route here. A Session the caller cannot access al
 | PATCH | `/` | Updates the Session: `{approvalMode?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | Deletes the Session, with its Traces and scratch files |
 | GET | `/messages` | The OmniMessage history, in full or as a window of Tasks |
+| GET | `/trace-image?file=&ordinal=[&i=]` | One image of a Trace record, as a windowed `/messages` page references it |
 | POST | `/fork` | Forks an idle Session after a completed assistant reply: `{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | The SSE event stream; see [Streaming (SSE)](#streaming-sse) |
 | GET | `/context` | What the current model context is made of, and where compaction will start |
@@ -688,7 +689,8 @@ Two conventions apply to every route here. A Session the caller cannot access al
 
 - `GET /` returns the Session's info. Unlike the list rows, the single-Session response also carries `tracePath`, the absolute path of the latest Trace file. `orgId` marks a Session that company mode's caches own (a desk session, or a session contributing to one of that organization's tickets); it is absent on every ordinary Session, and the list route sets it too.
 - `PATCH /` with `thinkingLevel` pins the level on this Session durably, from its very next LLM request. The thinking level is soft-limited: it can change mid-context, at the cost of the provider's cached context, which is why the level picker advises compacting first. The pinned level comes back as `SessionInfo.thinkingLevel`; when that is absent, no level was ever pinned and the agent config applies.
-- `GET /messages` without parameters returns the full OmniMessage history. `tailLimit=n` reads the newest n Task-aligned units instead, and `before=<cursor>&limit=n` reads the n units before a cursor. The two forms are exclusive, `n` is between 1 and 1000, and `limit` defaults to 200. The bundled Web App opens a conversation on its latest 50 turns and loads earlier ones as you scroll. A windowed response carries `page`, with the cursor for the next page (`before`), the number of turns before the window (`earlierTurns`), the cumulative stats before it (`prior`), and the model of the context the window starts in (`contextModel`): a Session can switch models between contexts, and a window that starts partway into one does not hold the `session_meta` that names its model. While a Task runs, the response also carries `live`; see [The live field on GET /messages](#the-live-field-on-get-messages).
+- `GET /messages` without parameters returns the full OmniMessage history. `tailLimit=n` reads the newest n Task-aligned units instead, and `before=<cursor>&limit=n` reads the n units before a cursor. The two forms are exclusive, `n` is between 1 and 1000, and `limit` defaults to 200. A window also stays within 4 MiB of serialized messages: it stops before the unit that would pass that, but always holds at least one, so it can hold fewer units than asked for and still carry a `before` cursor. The bundled Web App opens a conversation on its latest 20 turns and loads 20 more each time you scroll to the top. A windowed response carries `page`, with the cursor for the next page (`before`), the number of turns before the window (`earlierTurns`), the cumulative stats before it (`prior`), and the model of the context the window starts in (`contextModel`): a Session can switch models between contexts, and a window that starts partway into one does not hold the `session_meta` that names its model. While a Task runs, the response also carries `live`; see [The live field on GET /messages](#the-live-field-on-get-messages).
+- A windowed page serves images by reference. In each record that carries a `tracePosition`, a PNG, JPEG, GIF or WebP `data:` URL, whether a user's `image_url` or an entry of a tool output's `images`, is replaced by `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`, with `&i=<k>` for the k-th entry of `images`. That route answers the decoded image with its own type, `Cache-Control: private, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. It returns 404 `trace_image_not_found` when the record holds no such image, and 400 for a missing or malformed parameter. Subagent messages, other image types and the full read keep their `data:` URLs.
 - `GET /context` returns the parts the current model context is made of, plus `compactionThreshold`: the context size, in tokens, at which the Session's next request starts compaction. That threshold is the agent's `compaction.max_context_length`, capped by the room the model's context window leaves. It is `null` when compaction is disabled, when the agent's config cannot be read, or when the threshold is not below the window. The route reads the newest Trace file on every call, so the figures are a snapshot rather than a live counter.
 - `GET /goal` returns `{goal}`, which is `null` if the Session never ran a goal, or otherwise `{objective, status, budget, used, rounds}`. `status` is `active`, `complete`, `blocked`, `budget_limited` or `aborted`, and a `budget` of -1 means unlimited. A goal lives only inside its run, so a goal that still reads as active while the Session is not running is reported as `aborted`. See [Goal mode](/goal-mode).
 
@@ -862,7 +864,7 @@ GET  /preview/<token>/<relative path>          (unauthenticated; the token is th
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/traces` | Lists this Session's Trace files |
-| GET | `/traces/:index` | Reads Trace events (paginated) |
+| GET | `/traces/:index` | Reads Trace events (paginated, served from a per-file line index) |
 | GET | `/traces/:index/analysis` | Trace performance analysis |
 
 ## Messaging Bindings (Feishu, Telegram, QQ, WeChat)

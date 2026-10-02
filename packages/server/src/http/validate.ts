@@ -50,7 +50,7 @@ export function requireValidId(c: Context, name: string): string {
  * isSafeInteger (not isInteger) additionally rejects overlong runs like
  * "99999999999999999999", which parse to an imprecise float (1e20).
  */
-function parseNonNegativeInt(raw: string): number | null {
+export function parseNonNegativeInt(raw: string): number | null {
   if (!/^\d+$/.test(raw)) return null;
   const v = Number.parseInt(raw, 10);
   return Number.isSafeInteger(v) ? v : null;

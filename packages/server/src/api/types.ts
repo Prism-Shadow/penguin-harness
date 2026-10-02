@@ -1801,7 +1801,10 @@ export interface MessagesLiveTail {
  * only; the parameterless full read never carries it). A window is a run of whole
  * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
  * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
- * or steering group ever splits across windows.
+ * or steering group ever splits across windows. Besides the unit count, a window stops
+ * before the unit that would take its serialized messages past 4 MiB, but always holds at
+ * least one unit; such a window carries `before` like any other, with fewer units than
+ * asked for.
  */
 export interface MessagesPageInfo {
   /**
@@ -1849,6 +1852,15 @@ export interface MessagesPageInfo {
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
+  /**
+   * On windowed requests, images are served by reference: in every record that carries a
+   * `tracePosition`, an inline PNG / JPEG / GIF / WebP `data:` URL — a user `image_url`, or
+   * an entry of a tool output's `images` — is replaced by
+   * `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
+   * (`i` = the index into `images`), an immutable, access-checked image response. Expanded
+   * subagent messages, held inputs not yet in the Trace, other image types and the
+   * parameterless full read keep their data URLs.
+   */
   messages: HistoryMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
@@ -2864,7 +2876,10 @@ export interface TraceEventsResponse {
   events: OmniMessage[];
   offset: number;
   limit: number;
-  /** Total line count of the file (basis for pagination). */
+  /**
+   * Record count of the file (basis for pagination), in the ordinals `tracePosition` and the
+   * analysis' `messageFrom` / `messageTo` use: malformed lines are not records.
+   */
   total: number;
 }
 

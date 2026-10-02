@@ -44,6 +44,7 @@ import type {
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
 import type { MessagesPageRequest } from "../../services/trace-service.js";
+import { withImagesByReference } from "../../services/trace-images.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -57,6 +58,7 @@ import {
   optionalPagingQuery,
   optionalString,
   paginationQuery,
+  parseNonNegativeInt,
   pathParam,
   positiveIntParam,
   readJson,
@@ -896,6 +898,40 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     });
   });
 
+  // One image of one Trace record, the URL a windowed history page puts in place of an
+  // inline data URL (services/trace-images.ts). The record never changes, so the answer is
+  // immutable; only inert raster types are ever served (the page references nothing else).
+  app.get("/:sessionId/trace-image", async (c) => {
+    const row = resolveSession(c);
+    const intQuery = (name: string, min: number): number | undefined => {
+      const raw = c.req.query(name);
+      if (raw === undefined) return undefined;
+      const v = parseNonNegativeInt(raw);
+      if (v === null || v < min) {
+        throw badRequest(`${name} must be an integer of at least ${min}.`);
+      }
+      return v;
+    };
+    const fileIndex = intQuery("file", 1);
+    const ordinal = intQuery("ordinal", 0);
+    if (fileIndex === undefined || ordinal === undefined) {
+      throw badRequest("file and ordinal are required.");
+    }
+    const image = await deps.traceService.readTraceImage(
+      row.projectId,
+      row.agentId,
+      row.sessionId,
+      fileIndex,
+      ordinal,
+      intQuery("i", 0),
+    );
+    return c.body(new Uint8Array(image.bytes), 200, {
+      "content-type": image.mime,
+      "x-content-type-options": "nosniff",
+      "cache-control": "private, max-age=31536000, immutable",
+    });
+  });
+
   app.get("/:sessionId/messages", async (c) => {
     const row = resolveSession(c);
     const page = messagesPageQuery(c);
@@ -958,8 +994,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         },
         ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
       };
+      // Images by reference, after the held inputs were merged: the dedup compares raw
+      // envelopes, and a held input carries its image inline exactly as its Trace copy does.
+      const messages = appendPendingInputs(result.messages, pendingInputs).map((m) =>
+        withImagesByReference(row.sessionId, m),
+      );
       return c.json({
-        messages: appendPendingInputs(result.messages, pendingInputs),
+        messages,
         ...(live !== undefined ? { live } : {}),
         page: info,
       } satisfies MessagesResponse);
