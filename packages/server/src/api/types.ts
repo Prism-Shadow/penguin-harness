@@ -3184,6 +3184,13 @@ export interface TraceAnalysisResponse {
    * scope every total here shares). Absent exactly when the turns carry no `cost`.
    */
   cost?: number;
+  /**
+   * The model's context window as the file's head `session_meta` records it
+   * (`model_context_window`), for the context ring. The panel no longer reads every event, so the
+   * analysis carries it; absent when the head records none (an older server, or a file without
+   * one), and the panel then falls back as it always has.
+   */
+  modelContextWindow?: number | string;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];
