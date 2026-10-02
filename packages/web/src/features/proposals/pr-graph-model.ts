@@ -175,12 +175,15 @@ export function rowWidths(rows: readonly GraphRow[]): number[] {
   const widest = rows.map((r) => r.lane);
   rows.forEach((row, child) => {
     if (row.parentRow === null) return;
-    // Either direction: the edge runs the child's lane on every row between the two.
+    // Either direction: the edge runs the child's lane on every row between the two, and its
+    // bend into the parent's lane sits in the parent's own row — so the parent's text starts
+    // after that lane too, or it is drawn across the curve.
     const lo = Math.min(child, row.parentRow);
     const hi = Math.max(child, row.parentRow);
     for (let i = lo + 1; i < hi; i++) {
       widest[i] = Math.max(widest[i]!, row.lane);
     }
+    widest[row.parentRow] = Math.max(widest[row.parentRow]!, row.lane);
   });
   return widest.map((w) => w + 1);
 }

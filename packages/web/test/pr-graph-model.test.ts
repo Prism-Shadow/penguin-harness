@@ -208,13 +208,14 @@ describe("rowWidths", () => {
   it("gives each row only the lanes it crosses, so a stack forking near the base indents only there", () => {
     // 0, 1: the main stack (lane 0); 2: a side stack (lane 1) hanging from the fork at 3; 4: base.
     const rows = [row(0, 1), row(0, 3), row(1, 3), row(0, 4), row(0, null)];
-    expect(rowWidths(rows)).toEqual([1, 1, 2, 1, 1]);
+    // Row 3 is the fork: the side stack's edge bends into it there.
+    expect(rowWidths(rows)).toEqual([1, 1, 2, 2, 1]);
   });
 
   it("counts an edge's lane on every row it passes", () => {
     // 0: lane 1, hanging from row 3; rows 1 and 2 sit on lane 0 but the edge passes them.
     const rows = [row(1, 3), row(0, 2), row(0, 3), row(0, null)];
-    expect(rowWidths(rows)).toEqual([2, 2, 2, 1]);
+    expect(rowWidths(rows)).toEqual([2, 2, 2, 2]);
   });
 });
 

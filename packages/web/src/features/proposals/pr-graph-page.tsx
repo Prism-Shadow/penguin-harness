@@ -64,7 +64,7 @@ const GRAPH_READ_TRIES = 4;
 const GRAPH_RETRY_MS = 2_000;
 
 /** Row height and lane pitch of the drawn graph, in px. */
-const ROW = 52;
+const ROW = 60;
 const LANE = 16;
 const DOT = 4.5;
 
