@@ -3,6 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** refactor
 - **Scope:** `core`, `docs`
+- **PR:** [#949](https://github.com/Prism-Shadow/penguin-harness/pull/949)
 - **Breaking:** yes — `PartialAggregator`, `aggregateAll` and `Writer.aggregateAndWrite` are no longer exported by `@prismshadow/penguin-core`
 
 [中文版](2026-10-02-drop-partial-aggregator.zh.md)
