@@ -292,6 +292,9 @@ jobs:
             build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
+            # PENGUIN_MUST_RUN, as on ubuntu and macOS: the DSH live suite must run here
+            # (through pwsh, see plugins/sandbox-dsh test/live.test.ts).
+            must_run: sandbox-dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -314,6 +317,8 @@ jobs:
       # regression fails both attempts.
       - name: Unit tests (vitest)
         shell: bash
+        env:
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
         run: |
           ${{ matrix.tests }} && exit 0
           echo "::warning::vitest failed on Windows; retrying once (see the pool-teardown note in ci.yml)"
