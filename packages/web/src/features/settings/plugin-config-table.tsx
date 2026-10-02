@@ -73,7 +73,7 @@ export function ConfigTable({
                 <th
                   key={c.name}
                   scope="col"
-                  className="whitespace-nowrap px-1.5 py-2 text-left text-xs font-medium text-fg-muted"
+                  className="whitespace-nowrap px-1 py-2 text-left text-xs font-medium text-fg-muted"
                 >
                   {localized(c.title, c.titleZh)}
                 </th>
@@ -81,7 +81,7 @@ export function ConfigTable({
               {rowChoice !== undefined && (
                 <th
                   scope="col"
-                  className="whitespace-nowrap px-1.5 py-2 text-left text-xs font-medium text-fg-muted"
+                  className="whitespace-nowrap px-1 py-2 text-left text-xs font-medium text-fg-muted"
                 >
                   {localized(rowChoice.title, rowChoice.titleZh)}
                 </th>
@@ -184,7 +184,7 @@ export function ConfigTable({
                           autoComplete="off"
                           // Borderless until pointed at or focused: the row reads as a table
                           // of names, and the box shows itself when it is about to be edited.
-                          className="!w-20 !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
+                          className="!w-[6.75rem] !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
                           onChange={(e) =>
                             onCell(
                               row.id,
@@ -198,7 +198,7 @@ export function ConfigTable({
                   );
                 })}
                 {rowChoice !== undefined && (
-                  <td className="px-1.5 py-1 align-middle">
+                  <td className="px-1 py-1 align-middle">
                     {/* One radio group per table: exactly one row is the choice. */}
                     <input
                       type="radio"
