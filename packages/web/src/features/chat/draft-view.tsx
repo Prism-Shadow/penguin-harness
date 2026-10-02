@@ -99,6 +99,7 @@ import {
   type ChatDefaultsChangedDetail,
 } from "./chat-defaults-event";
 import { newChatAgentId } from "./new-chat";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { FilesPanelToggle } from "./dock-toggles";
@@ -452,6 +453,25 @@ export function DraftView({
   /** Latest-closure mirror for the window listener (same convention as persistRef). */
   const onDefaultsChangedRef = useRef(onDefaultsChanged);
   onDefaultsChangedRef.current = onDefaultsChanged;
+  // The Sandbox card was saved (from the composer's More…, say): the permission menu reads the
+  // sandbox view again, and an approval mode nobody picked follows the new default preset.
+  useEffect(
+    () =>
+      onPluginConfigSaved("sandbox", () => {
+        void api.getChatDefaults(projectId).then(
+          (res) => {
+            setChatDefaults((prev) => ({
+              ...(prev ?? {}),
+              ...(res.sandbox !== undefined ? { sandbox: res.sandbox } : {}),
+            }));
+            const seeded = res.approvalMode ?? res.sandbox?.defaultApprovalMode;
+            if (seeded !== undefined && !touchedRef.current.approval) setApprovalMode(seeded);
+          },
+          () => undefined,
+        );
+      }),
+    [projectId],
+  );
   useEffect(() => {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);

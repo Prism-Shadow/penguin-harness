@@ -33,6 +33,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useSessions } from "../../state/sessions";
 import { useProject } from "../../state/project";
 import { backendToOffer, dismissBackendPrompt } from "../../lib/sandbox-backend-prompt";
+import { dispatchPluginConfigSaved } from "../../lib/plugin-config-event";
 import { MachinePicker } from "../machines/machine-picker";
 import { AdvancedFold } from "./advanced-fold";
 import { baselineOf, draftOf, sameValue, valueOf } from "./plugin-config-draft";
@@ -268,6 +269,10 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         }
       }
       toastSuccess(S.common.saved);
+      // Pages showing what the card configures (the composer's permission menu) read it again.
+      for (const [entry] of updates) {
+        dispatchPluginConfigSaved({ group: entry.name, card: card.name });
+      }
     } finally {
       setBusy(null);
     }

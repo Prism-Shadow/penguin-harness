@@ -37,4 +37,25 @@ describe("the permission menu by the Sandbox switch", () => {
       expect(rows.map((r) => (r.kind === "preset" ? r.preset.id : r.kind))).toEqual(inMenu);
     }
   });
+
+  it("lists a server's presets in its order, an added one included and unpinned ones left out", () => {
+    const preset = (id: string, enabled: boolean) => ({
+      id,
+      name: id,
+      enabled,
+      mode: "read-only" as const,
+      network: "open" as const,
+      approvalMode: "allow-all" as const,
+    });
+    const sandbox: SessionSandbox = {
+      ...UNCONFINED,
+      switchOn: true,
+      presets: [preset("mine", true), preset("read-only", true), preset("denied-all", false)],
+    };
+    const rows = permissionMenu(sandbox, APPROVAL_MODES, null);
+    expect(rows.map((r) => (r.kind === "preset" ? r.preset.id : r.kind))).toEqual([
+      "mine",
+      "read-only",
+    ]);
+  });
 });

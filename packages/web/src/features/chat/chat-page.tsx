@@ -100,6 +100,7 @@ import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { approvalModeChoices } from "./approval-mode";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import {
@@ -1637,6 +1638,19 @@ export function ChatPage() {
     },
     [selected, modeSaving, replace],
   );
+
+  // The Sandbox card was saved: the open Session's view (switch, presets) is read again, so the
+  // permission menu shows what the card now says.
+  const selectedId = selected?.sessionId;
+  useEffect(() => {
+    if (selectedId === undefined) return;
+    return onPluginConfigSaved("sandbox", () => {
+      void api.getSession(selectedId).then(
+        (res) => replace(res.session),
+        () => undefined,
+      );
+    });
+  }, [selectedId, replace]);
 
   // Starts a context compaction — the single path to the server for it (the composer's
   // /compact command and the thinking-switch dialog's "compact, then switch" both come

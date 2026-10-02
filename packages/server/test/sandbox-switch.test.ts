@@ -237,6 +237,67 @@ describe("the sandbox switch", () => {
     });
   });
 
+  it("serves the card's presets to the composer in the stored order, added ones included, and a pick applies", async () => {
+    const { t, save } = await boot();
+    apps.push(t);
+    const owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+    const projectId = (
+      (await (
+        await owner.post("/api/projects", { projectId: "owner-order", name: "project" })
+      ).json()) as { project: { projectId: string } }
+    ).project.projectId;
+    await owner.put(`/api/projects/${projectId}/models`, {
+      defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+      models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
+    });
+    const order = ["mine", "read-only", "full-access", "always-ask", "workspace-write"];
+    const saved = await save({
+      enabled: true,
+      defaultPreset: "mine",
+      presets: {
+        $added: {
+          mine: {
+            name: "Mine",
+            enabled: true,
+            mode: "read-only",
+            network: "open",
+            approvalMode: "always-ask",
+          },
+        },
+        $order: order,
+      },
+    });
+    expect(saved.status).toBe(200);
+    type View = { sandbox: SessionSandbox };
+    const defaults = (await (
+      await owner.get(`/api/projects/${projectId}/chat-defaults`)
+    ).json()) as View;
+    // The stored order first, then the rows it does not name, as declared.
+    expect(defaults.sandbox.presets?.map((p) => p.id)).toEqual([
+      ...order,
+      "workspace-write-ask",
+      "denied-all",
+    ]);
+    expect(defaults.sandbox.presets?.[0]).toMatchObject({ name: "Mine", enabled: true });
+    expect(defaults.sandbox).toMatchObject({ switchOn: true, defaultApprovalMode: "always-ask" });
+
+    const created = (await (
+      await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
+    ).json()) as { session: { sessionId: string; approvalMode: string } & View };
+    expect(created.session.approvalMode).toBe("always-ask");
+    expect(created.session.sandbox.presets?.map((p) => p.id).slice(0, 5)).toEqual(order);
+    // A preset picked from the menu: its three values land on the Session.
+    const picked = await owner.patch(`/api/sessions/${created.session.sessionId}`, {
+      approvalMode: "allow-all",
+      sandbox: { mode: "read-only", network: "open" },
+    });
+    expect(picked.status).toBe(200);
+    expect(((await picked.json()) as { session: { approvalMode: string } & View }).session).toMatchObject({
+      approvalMode: "allow-all",
+      sandbox: { mode: "read-only", network: "open" },
+    });
+  });
+
   it("reports no backend for this OS, and the OS's default package, when none is installed", async () => {
     const { t, card } = await boot();
     apps.push(t);
