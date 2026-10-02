@@ -955,9 +955,9 @@ export const en: Strings = {
     avatarTooLarge: "That image is too large. Please pick a smaller one.",
     /** The picked file could not be decoded as an image at all. */
     avatarUnreadable: "That image could not be read. Please pick another file.",
-    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    /** Nickname row: the field, and its length and blank-clears rule, disclosed by the "?" (user decision, 2026-10-03). */
     displayName: "Nickname",
-    displayNameHint: "1–32 characters; leave blank to clear",
+    displayNameInfo: "1–32 characters; leave blank to clear",
     displayNamePlaceholder: "Blank shows the username",
   },
 

@@ -64,6 +64,11 @@ Two kinds of prose, and the split decides *whether* it is disclosed.
 A string that mixes both is a string that should be split, not a judgement call. When you cannot
 split it, keep it visible — a visible sentence is never a bug, a hidden format rule is.
 
+One exception: a rule the control already enforces or already shows goes behind the "?". The
+Profile nickname's "1–32 characters, blank clears" is the case. `maxLength` stops the 33rd
+character, and the placeholder says what blank means, so a visible line would only repeat them
+(user decision, 2026-10-03).
+
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
 

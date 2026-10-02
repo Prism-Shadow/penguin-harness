@@ -1004,9 +1004,9 @@ export const zh = {
     avatarTooLarge: "图片过大，请换一张尺寸更小的图片。",
     /** The picked file could not be decoded as an image at all. */
     avatarUnreadable: "无法读取这张图片，请换一个文件。",
-    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    /** Nickname row: the field, and its length and blank-clears rule, disclosed by the "?" (user decision, 2026-10-03). */
     displayName: "昵称",
-    displayNameHint: "1–32 个字符，留空即清除",
+    displayNameInfo: "1–32 个字符，留空即清除",
     displayNamePlaceholder: "留空则显示用户名",
   },
 

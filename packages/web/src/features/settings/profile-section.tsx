@@ -160,7 +160,7 @@ export function ProfileSection() {
             </Button>
           </div>
         </PrefRow>
-        <PrefRow label={S.profile.displayName} hint={S.profile.displayNameHint}>
+        <PrefRow label={S.profile.displayName} info={S.profile.displayNameInfo}>
           <div className="flex items-center gap-2">
             <Input
               size="sm"
