@@ -3,6 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#947](https://github.com/Prism-Shadow/penguin-harness/pull/947)
 
 [中文版](2026-10-02-first-workflow-race.zh.md)
 
