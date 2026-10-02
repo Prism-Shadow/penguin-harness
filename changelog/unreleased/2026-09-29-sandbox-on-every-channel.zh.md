@@ -24,6 +24,6 @@
 
 ## 从 registry 现取
 
-- 现取运行 `PATH` 上的 `npm`。在 Windows 上经 shell 启动 `npm.cmd`（Node 启动 `.cmd` 文件必须经 shell），每个参数都按 cmd.exe 的规则加引号；会被 cmd.exe 展开或拆开的参数直接拒绝。
+- 现取运行 `PATH` 上的 `npm`。CLI 安装包的启动脚本把自带 Node 运行时的目录（含 npm）追加到 `PATH` 末尾：没有 npm 的机器也能现取，用户自己的 node 与 npm 仍然优先——现取如此，Agent 的每条命令也如此。在 Windows 上经 shell 启动 `npm.cmd`（Node 启动 `.cmd` 文件必须经 shell），每个参数都按 cmd.exe 的规则加引号；会被 cmd.exe 展开或拆开的参数直接拒绝。
 - 现取失败时报告 npm 的首条 `npm error` 行，跳过它之前的警告与之后的日志路径提示，并能处理 Windows 换行。
 - 插件、Skill 与 Server API 三页不再说「不会下载任何东西」：构建未发布的包会从 registry 现取；`PUT` 加入本机没有的名称时返回 `plugin_not_installed`。

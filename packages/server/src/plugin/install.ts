@@ -337,7 +337,8 @@ function cmdQuote(arg: string): string {
 }
 
 /**
- * The npm on PATH, the way every other npm consumer on the machine runs it. On Windows that is
+ * The npm on PATH, the way every other npm consumer on the machine runs it (the CLI bundle's
+ * launcher appends its own runtime to PATH, so a machine without npm still has one). On Windows that is
  * `npm.cmd`, which Node starts only through a shell (EINVAL without one), so there it runs
  * through cmd.exe with every argument quoted.
  */

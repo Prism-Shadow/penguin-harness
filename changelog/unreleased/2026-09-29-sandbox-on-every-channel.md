@@ -24,6 +24,6 @@ Every build now carries a bundled plugin directory: the plugins it built, instal
 
 ## Registry fetch
 
-- The fetch runs the `npm` on `PATH`. On Windows it starts `npm.cmd` through a shell, which Node requires for a `.cmd` file, with every argument quoted for cmd.exe; an argument that cmd.exe would expand or split is refused.
+- The fetch runs the `npm` on `PATH`. The CLI bundle's launchers append the bundled Node runtime's directory, npm included, to the end of `PATH`: a machine without npm still fetches, and a user's own node and npm keep coming first, for the fetch and for every agent command. On Windows it starts `npm.cmd` through a shell, which Node requires for a `.cmd` file, with every argument quoted for cmd.exe; an argument that cmd.exe would expand or split is refused.
 - A failed fetch reports npm's first `npm error` line. Warnings printed before it and the log pointer printed after it are skipped, and Windows line endings are handled.
 - The Plugins, Skills and Server API pages no longer say that nothing is downloaded. A package the build does not ship is fetched from the registry, and a `PUT` of a name that is not on the machine answers `plugin_not_installed`.
