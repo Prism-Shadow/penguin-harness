@@ -4847,10 +4847,10 @@ export interface PluginIndexEntry {
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
   /**
-   * `sha256-<64 hex digits>`: the entry's content, with the same algorithm as the plugin
-   * store's key (the deterministic archive of the package — scripts/plugin-entry.mjs). A
-   * fetched package is compared with it before it enters the store; an entry without one is
-   * listed and cannot be installed.
+   * npm's `dist.integrity` of the entry's package: `sha512-<base64>` of the published tarball's
+   * bytes (scripts/plugin-entry.mjs). A fetch is checked against it — what npm recorded for the
+   * tarball it downloaded must be this value — before it enters the store; an entry without
+   * one is listed and cannot be installed.
    */
   integrity?: string;
   /** A yanked entry stays in its source as a record and is left out of the listing. */
@@ -4872,7 +4872,7 @@ export interface PluginReadmeResponse {
 /** One content of a plugin name, as its detail page lists it. */
 export interface PluginContent {
   version: string;
-  /** `sha256-<hex>`; absent for an index entry that names none. */
+  /** npm's `sha512-<base64>`; absent for an index entry that names none. */
   integrity?: string;
   /** In this machine's plugin store. */
   stored: boolean;

@@ -5,7 +5,8 @@
  * and lowered the way its build would lower it, so the fixture exercises the same
  * decorators the host reads.
  */
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
@@ -85,8 +86,38 @@ export async function writeClassPackage(dir: string, pkg: ClassPackage): Promise
 }
 
 /**
- * Rebuilds a shipped prefix's `index.json` the way scripts/build-plugins.mjs does: every package
- * the prefix's own package.json names, laid out as an entry to learn its integrity.
+ * A stand-in for a package's npm integrity (`sha512-<base64>` of its tarball): what a fixture's
+ * index row and store entry are keyed by. Distinct per name, version and optional `content`
+ * tag, the way two packs of different content differ.
+ */
+export function integrityOf(name: string, version: string, content = ""): string {
+  return `sha512-${createHash("sha512").update(`${name}@${version}#${content}`).digest("base64")}`;
+}
+
+/** A digest of every file under `dir`, path and bytes: what a tarball of it would differ by. */
+async function contentTag(dir: string): Promise<string> {
+  const hash = createHash("sha256");
+  const walk = async (at: string, rel: string): Promise<void> => {
+    for (const e of (await readdir(at, { withFileTypes: true })).sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    )) {
+      const sub = rel === "" ? e.name : `${rel}/${e.name}`;
+      if (e.isDirectory()) await walk(path.join(at, e.name), sub);
+      else if (e.isFile())
+        hash
+          .update(sub)
+          .update("\0")
+          .update(await readFile(path.join(at, e.name)));
+    }
+  };
+  await walk(dir, "");
+  return hash.digest("hex");
+}
+
+/**
+ * Rebuilds a shipped prefix's `index.json` the way scripts/build-plugins.mjs does: a row per
+ * package the prefix's own package.json names, with the integrity its tarball would have
+ * (`integrityOf`).
  */
 export async function writeShippedIndex(prefix: string): Promise<void> {
   const manifest = JSON.parse(await readFile(path.join(prefix, "package.json"), "utf8")) as {
@@ -97,7 +128,12 @@ export async function writeShippedIndex(prefix: string): Promise<void> {
     const stage = await mkdtemp(path.join(tmpdir(), "shipped-entry-"));
     try {
       const pkgDir = path.join(prefix, "node_modules", ...name.split("/"));
-      index.push((await layOutEntry(stage, pkgDir, prefix, { stringifyToml })).manifest);
+      const { version } = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8")) as {
+        version: string;
+      };
+      // Different content packs to a different tarball, so it is tagged by what it holds.
+      const integrity = integrityOf(name, version, await contentTag(pkgDir));
+      index.push((await layOutEntry(stage, pkgDir, prefix, { stringifyToml, integrity })).manifest);
     } finally {
       await rm(stage, { recursive: true, force: true });
     }

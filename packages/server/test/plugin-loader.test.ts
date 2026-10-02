@@ -43,15 +43,6 @@ async function writeProject(projectId: string, text: string): Promise<void> {
   await writeFile(path.join(root, projectId, PLUGINS_FILE), text, "utf8");
 }
 
-/** A plugin module on disk, imported by absolute specifier (the dev-checkout path). */
-async function writePluginModule(name: string, body: string): Promise<string> {
-  const dir = path.join(root, "mods");
-  await mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${name}.mjs`);
-  await writeFile(file, body, "utf8");
-  return file;
-}
-
 /**
  * The decorators, as a plugin's bundle would carry them — here imported from this
  * checkout's built SDK by file URL, since a package under a temp dir resolves nothing.
@@ -176,21 +167,47 @@ describe("plugin loading", () => {
     }`;
 
   /**
-   * A package on disk: its package.json, the generated table beside it, and an index.mjs
-   * default export (`null` table = a package that ships no modules, or was never built).
+   * A package as a hot push brings it: its package.json, the generated table beside it, and an
+   * index.mjs default export (`null` table = a package that ships no modules, or was never
+   * built), installed in the push assets' bundled plugin directory, which that directory's
+   * index lists and `hmr/harness.json` names. Answers the package name, which a Project lists.
    */
   async function writePackage(name: string, table: unknown | null, index: string): Promise<string> {
-    const dir = path.join(root, "node_modules", ...name.split("/"));
+    const assetsRel = "test-assets";
+    const prefix = path.join(root, "hmr", assetsRel, "plugins");
+    const dir = path.join(prefix, "node_modules", ...name.split("/"));
     await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({ name, main: "./index.mjs" }),
+      JSON.stringify({ name, version: "1.0.0", main: "./index.mjs" }),
       "utf8",
     );
     if (table !== null) await writeFile(path.join(dir, IFACES_FILE), JSON.stringify(table), "utf8");
     await writeFile(path.join(dir, "index.mjs"), lower(index), "utf8");
-    return path.join(dir, "index.mjs");
+    const manifestFile = path.join(prefix, "package.json");
+    const manifest = JSON.parse(await readFile(manifestFile, "utf8").catch(() => "{}")) as {
+      dependencies?: Record<string, string>;
+    };
+    manifest.dependencies = { ...manifest.dependencies, [name]: "1.0.0" };
+    await writeFile(manifestFile, JSON.stringify(manifest), "utf8");
+    await writeShippedIndex(prefix);
+    await writeFile(
+      path.join(root, "hmr", "harness.json"),
+      JSON.stringify({ assets: { dir: assetsRel } }),
+      "utf8",
+    );
+    return name;
   }
+
+  it("a path in the table names no plugin: it is not loaded, and the reason says so", async () => {
+    const file = path.join(root, "mods", "thing.mjs");
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, "export default { modules: [] };", "utf8");
+    await writeConfig({ plugins: [file] });
+    const result = await loadPlugins(root);
+    expect(result.loaded).toEqual([]);
+    expect(result.failed.get(file)).toMatch(/is a path: a plugin is named by its package/);
+  });
 
   it("boots the classes the default export names, each against its manifest in the package's table", async () => {
     const file = await writePackage(

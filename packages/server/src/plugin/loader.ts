@@ -13,7 +13,9 @@
  *
  * A name resolves in ONE place: the current generation under `<root>/plugins/`, which the
  * closure is resolved to against the plugin store before anything is imported
- * (plugin/activation.ts). An absolute path — a dev checkout's plugin — is imported as it is.
+ * (plugin/activation.ts). Nothing else: a plugin is named by its package, never by a path — a
+ * source checkout gets its plugins the way the CLI bundle does, through its bundled plugin
+ * directory (scripts/dev-prebuild.mjs).
  *
  * Failure is per-entry and non-fatal: an unresolvable or malformed plugin is reported
  * and skipped, leaving its capability unavailable rather than failing the boot. A
@@ -217,8 +219,8 @@ export async function readPluginClosure(
  * under its own `node_modules` only.
  *
  * The loader has ONE: the current generation under `<root>/plugins/` (plugin/activation.ts).
- * The prefixes a hot push and the installation carry are sources of the plugin store, not
- * lookup locations; a path (a dev checkout's plugin) is the one specifier resolved elsewhere.
+ * The bundled plugin directories a hot push and the installation carry are sources of the
+ * plugin store, not lookup locations.
  * `builtin` marks a prefix the harness ships; whether a package in a generation is one the build
  * ships is the shipped list's (`shippedPlugins`).
  */
@@ -230,9 +232,12 @@ export interface PluginBase {
 /** A bare package name, scoped or not — never a subpath, a path, a URL or a version range. */
 export const PACKAGE_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 
-/** Why a specifier cannot name a plugin, or null when it is a package name or a path. */
+/** Why a specifier cannot name a plugin, or null when it is a package name. */
 export function specifierFault(specifier: string): string | null {
-  if (path.isAbsolute(specifier) || PACKAGE_NAME.test(specifier)) return null;
+  if (PACKAGE_NAME.test(specifier)) return null;
+  if (path.isAbsolute(specifier)) {
+    return `'${specifier}' is a path: a plugin is named by its package, and reaches a machine through its plugin store — build it into the bundled plugin directory of a dev build`;
+  }
   return `'${specifier}' is not a package name: a plugin is named by its package, never by a subpath, a URL or a version range`;
 }
 
@@ -318,13 +323,6 @@ function resolvePlugin(
   specifier: string,
   bases: readonly PluginBase[],
 ): { file: string; base: PluginBase } | null {
-  // A path IS the entry: what the operator named is the file to import, whatever the
-  // package above it declares (the dev-checkout path).
-  if (path.isAbsolute(specifier)) {
-    return existsSync(specifier)
-      ? { file: specifier, base: { file: specifier, builtin: false } }
-      : null;
-  }
   // A subpath would resolve to the PACKAGE (findPackageJSON finds its manifest) and load its
   // root entry — the wrong module, silently. Refused up front, by name.
   if (!PACKAGE_NAME.test(specifier)) return null;

@@ -20,12 +20,14 @@ import {
   readShippedIndex,
   syncPluginStore,
 } from "../src/plugin/store.js";
+import { createHash } from "node:crypto";
 import {
-  archiveIntegrity,
   entryDir,
+  entryKey,
   nameSegments,
-  packageIntegrity,
+  tarballIntegrity,
 } from "../../../scripts/plugin-entry.mjs";
+import { integrityOf } from "./plugin-fixtures.js";
 
 let dir: string;
 let root: string;
@@ -80,9 +82,23 @@ async function prefix(
   return path.join(at, "node_modules", "@acme", "sandbox-x");
 }
 
-/** Stores the plugin of a prefix made by `prefix`. */
+/**
+ * Stores the plugin of a prefix made by `prefix`, under the integrity its tarball would have:
+ * one per version and body, the way two packs of different content differ.
+ */
 async function store(at: string, options?: Parameters<typeof prefix>[1]) {
-  return storePackage(root, await prefix(at, options), at);
+  const version = options?.version ?? "1.0.0";
+  const integrity = integrityOf("@acme/sandbox-x", version, options?.body ?? "");
+  return storePackage(root, await prefix(at, options), at, integrity);
+}
+
+/** npm's lockfile for a prefix that installed `@acme/sandbox-x`, recording `integrity` for it. */
+async function writeLock(at: string, integrity: string | null): Promise<void> {
+  const entry = integrity === null ? { version: "1.0.0" } : { version: "1.0.0", integrity };
+  await fs.writeFile(
+    path.join(at, "package-lock.json"),
+    JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/@acme/sandbox-x": entry } }),
+  );
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -92,33 +108,17 @@ async function exists(p: string): Promise<boolean> {
   );
 }
 
-/**
- * A fixed file set and the integrity the index repository's archiver computes over it
- * (Prism-Shadow/penguin-plugins `packages/plugin-index/src/archive.ts` `archiveIntegrity`, at
- * 5c10e88d9): an index entry's integrity must be the store's key for the same package, so
- * the two archivers have to produce one byte stream. The set covers sort order, an
- * executable, a path too long for the ustar name field, and a non-ASCII path (a pax header).
- */
-const PARITY_FILES: Record<string, string> = {
-  "package/b.js": "b",
-  "package/a/package.json": "{}",
-  "package/bin/tool": "#!/bin/sh\n",
-  [`package/${"d".repeat(60)}/${"e".repeat(60)}.js`]: "long",
-  "package/grüße.txt": "unicode",
-};
-const PARITY_INTEGRITY = "sha256-92e4a245566237c24ce909fdc9dbb8cf8b43108ec7ab38e86311799ad4e9d2e5";
-
 describe("plugin store", () => {
-  it("hashes a package the way the index repository does", async () => {
-    const src = path.join(dir, "src");
-    await write(src, PARITY_FILES);
-    const files = Object.keys(PARITY_FILES).map((rel) => ({
-      rel,
-      abs: path.join(src, ...rel.split("/")),
-      exec: rel.endsWith("/bin/tool"),
-    }));
-    expect(await archiveIntegrity(files)).toBe(PARITY_INTEGRITY);
-    expect(await packageIntegrity(src)).toBe(PARITY_INTEGRITY);
+  it("integrity is npm's: the sha512 of the tarball's bytes, and the entry key is its first 16 hex digits", async () => {
+    const tarball = path.join(dir, "x-1.0.0.tgz");
+    await fs.writeFile(tarball, Buffer.from("a tarball's bytes"));
+    const digest = createHash("sha512").update("a tarball's bytes").digest();
+    const integrity = await tarballIntegrity(tarball);
+    expect(integrity).toBe(`sha512-${digest.toString("base64")}`);
+    expect(entryKey(integrity)).toBe(digest.toString("hex").slice(0, 16));
+    // Anything else is not a key: the sha256 form the store used before, or a truncated value.
+    expect(entryKey(`sha256-${"ab".repeat(32)}`)).toBeNull();
+    expect(entryKey(integrity.slice(0, -4))).toBeNull();
   });
 
   it("stores a package as one entry keyed by its content, its dependencies inside it", async () => {
@@ -132,17 +132,16 @@ describe("plugin store", () => {
         "nd",
         "sandbox-x",
         "1.0.0",
-        entry.integrity.slice(7, 23),
+        entryKey(entry.integrity)!,
       ),
     );
     const pkg = path.join(entry.dir, "package");
     expect(await exists(path.join(pkg, "node_modules", "native", "index.js"))).toBe(true);
     expect(await exists(path.join(pkg, "node_modules", "unrelated"))).toBe(false);
-    expect(await packageIntegrity(entry.dir)).toBe(entry.integrity);
     const manifest = parseToml(await fs.readFile(path.join(entry.dir, "manifest.toml"), "utf8"));
     expect(manifest).toMatchObject({ name: "@acme/sandbox-x", integrity: entry.integrity });
 
-    // The same content from another source, with other file modes, is the same entry; other
+    // The same integrity from another source, with other file modes, is the same entry; another
     // content under the same version, or another version, is another.
     const again = await store(path.join(dir, "b"), { mode: 0o664 });
     expect(again.integrity).toBe(entry.integrity);
@@ -165,7 +164,7 @@ describe("plugin store", () => {
       ["@penguinharness/sandbox-bwrap", "packages/@penguinharness/sa/nd/sandbox-bwrap"],
     ];
     for (const [name, want] of vectors) expect(nameSegments(name).join("/")).toBe(want);
-    const integrity = `sha256-${"ab".repeat(32)}`;
+    const integrity = `sha512-${Buffer.alloc(64, 0xab).toString("base64")}`;
     expect(entryDir("/t", "@penguinharness/sandbox-bwrap", "0.2.2", integrity)).toBe(
       path.join("/t", "packages/@penguinharness/sa/nd/sandbox-bwrap/0.2.2", "ab".repeat(8)),
     );
@@ -197,16 +196,31 @@ describe("plugin store", () => {
     );
   });
 
-  it("refuses a fetched package whose integrity is not the index's, and stores nothing", async () => {
-    const install = async (_: string, cwd: string) => {
+  it("a fetch is checked against the integrity npm recorded: the index's is stored, any other is refused", async () => {
+    const recorded = integrityOf("@acme/sandbox-x", "1.0.0", "registry");
+    // What npm leaves in the staging prefix: the package, and the lockfile naming what it checked.
+    const install = (lock: string | null) => async (_: string, cwd: string) => {
       await prefix(cwd);
+      await writeLock(cwd, lock);
     };
-    const expected = `sha256-${"0".repeat(64)}`;
-    const err = await fetchIntoStore(root, "@acme/sandbox-x", { install, expected }).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(PluginIntegrityMismatch);
-    expect(await readStore(root)).toEqual([]);
+
+    const entry = await fetchIntoStore(root, "@acme/sandbox-x@1.0.0", {
+      install: install(recorded),
+      expected: recorded,
+    });
+    expect(entry).toMatchObject({ name: "@acme/sandbox-x", version: "1.0.0", integrity: recorded });
+    expect((await readStore(root)).map((e) => e.integrity)).toEqual([recorded]);
+
+    // Another content than the index names, or no record at all: nothing more is stored.
+    const other = integrityOf("@acme/sandbox-x", "1.0.0", "other");
+    for (const lock of [other, null]) {
+      const err = await fetchIntoStore(root, "@acme/sandbox-x@1.0.0", {
+        install: install(lock),
+        expected: integrityOf("@acme/sandbox-x", "1.0.0", "index"),
+      }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(PluginIntegrityMismatch);
+    }
+    expect((await readStore(root)).map((e) => e.integrity)).toEqual([recorded]);
     expect(await fs.readdir(path.join(pluginStoreDir(root), ".staging"))).toEqual([]);
   });
 });
@@ -230,7 +244,11 @@ describe("the installation's prefix", () => {
     await write(lib, {
       "dist/penguin.js": "",
       "plugins/index.json": JSON.stringify([
-        { name: "@acme/sandbox-x", version: "1.0.0", integrity: `sha256-${"1".repeat(64)}` },
+        {
+          name: "@acme/sandbox-x",
+          version: "1.0.0",
+          integrity: integrityOf("@acme/sandbox-x", "1.0.0"),
+        },
       ]),
     });
     const link = path.join(dir, "usr", "local", "bin", "penguin");
@@ -249,7 +267,7 @@ describe("the installation's prefix", () => {
     const row = {
       name: "@acme/sandbox-x",
       version: "1.0.0",
-      integrity: `sha256-${"1".repeat(64)}`,
+      integrity: integrityOf("@acme/sandbox-x", "1.0.0"),
     };
     await write(pkg, { "dist/penguin.js": "", "plugins/index.json": JSON.stringify([row]) });
     const entry = path.join(pkg, "dist", "penguin.js");

@@ -5,12 +5,12 @@
  * `plugins/<gen>/`, an npm prefix:
  *
  *   package.json              `dependencies` name → version (the prefix npm would write), and
- *                             `plugins` name → { version, sha256 }, what the generation is
+ *                             `plugins` name → { version, integrity }, what the generation is
  *   node_modules/<name>       a link to the plugin store entry's `package/` (a symlink on
  *                             POSIX, a junction on Windows; a copy where neither can be made)
  *   .complete                 written last, before the directory is renamed into place
  *
- * A generation's key is the hash of the (name, sha256) list it holds, so the same selection is
+ * A generation's key is the hash of the (name, integrity) list it holds, so the same selection is
  * the same directory. Writing one is atomic for a reader: it is built in `plugins/.tmp-<pid>/`,
  * marked complete, renamed to `plugins/<gen>/`, and only then is `current` flipped — by writing a
  * temporary file and renaming it over the pointer. A reader sees the whole old generation or the
@@ -69,7 +69,7 @@ export function pluginsDir(root: string): string {
 /** What a Project asks of one name: a version range, and optionally the exact content. */
 export interface PluginAsk {
   version?: string;
-  /** `sha256-<hex>`: this content and no other. */
+  /** npm's integrity, `sha512-<base64>`: this content and no other. */
   integrity?: string;
 }
 
@@ -77,7 +77,7 @@ export interface PluginAsk {
 export interface GenerationEntry {
   name: string;
   version: string;
-  /** `sha256-<hex>`, the store entry's key. */
+  /** npm's integrity, `sha512-<base64>`; the store entry's key is derived from it. */
   integrity: string;
 }
 
@@ -113,20 +113,19 @@ export async function readGeneration(root: string, gen: string): Promise<Generat
   if (table === null || typeof table !== "object") return null;
   const out: GenerationEntry[] = [];
   for (const [name, row] of Object.entries(table as Record<string, unknown>)) {
-    const r = row as { version?: unknown; sha256?: unknown };
-    if (typeof r.version !== "string" || typeof r.sha256 !== "string") continue;
-    out.push({ name, version: r.version, integrity: `sha256-${r.sha256}` });
+    const r = row as { version?: unknown; integrity?: unknown };
+    if (typeof r.version !== "string" || typeof r.integrity !== "string") continue;
+    out.push({ name, version: r.version, integrity: r.integrity });
   }
   return out;
 }
 
-const hexOf = (integrity: string) => integrity.replace(/^sha256-/, "");
 const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** The key of a selection: the hash of its sorted (name, sha256) list, 16 hex digits. */
+/** The key of a selection: the hash of its sorted (name, integrity) list, 16 hex digits. */
 export function generationKey(entries: readonly GenerationEntry[]): string {
   const pairs = entries
-    .map((e) => [e.name, hexOf(e.integrity)] as const)
+    .map((e) => [e.name, e.integrity] as const)
     .sort(([a], [b]) => byCodeUnit(a, b));
   return createHash("sha256").update(JSON.stringify(pairs)).digest("hex").slice(0, 16);
 }
@@ -166,7 +165,7 @@ export async function writeGeneration(
       version: "0.0.0",
       dependencies: Object.fromEntries(sorted.map((e) => [e.name, e.version])),
       plugins: Object.fromEntries(
-        sorted.map((e) => [e.name, { version: e.version, sha256: hexOf(e.integrity) }]),
+        sorted.map((e) => [e.name, { version: e.version, integrity: e.integrity }]),
       ),
     };
     await fsp.writeFile(path.join(tmp, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -252,8 +251,8 @@ export interface Activation {
  * Resolves the closure against the store, writes that generation if it is new and points
  * `current` at it. The store is brought up to date with this boot's own sources first (their
  * entries are what "the running build carries" means). `asks` maps each listed package name to
- * what every Project asks of it; a path (a dev checkout's plugin) is not a store name and is
- * left to the loader.
+ * what every Project asks of it; a name that is not a package name finds no store entry and is
+ * reported by the loader with its reason.
  */
 export async function activatePlugins(
   root: string,
@@ -265,7 +264,6 @@ export async function activatePlugins(
   const chosen: GenerationEntry[] = [];
   const missing = new Map<string, string>();
   for (const [name, list] of asks) {
-    if (path.isAbsolute(name)) continue;
     const pick = chooseEntry(name, list, stored, shipped);
     if ("missing" in pick) missing.set(name, pick.missing);
     else chosen.push({ name: pick.name, version: pick.version, integrity: pick.integrity });

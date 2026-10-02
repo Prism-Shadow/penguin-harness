@@ -611,7 +611,7 @@ interface AgentApiKeyInfo {
 | PUT | `/api/projects/:projectId/plugins/installed` | 仅管理员。替换整个列表：`{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | 仅管理员。从列表中移除一个插件 |
 
-- 索引是一个扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories`、`updatedAt`、`yanked` 和 `integrity`。条目的 `name` 就是 Project 列表里使用的包名。`integrity` 为 `sha256-` 加 64 位十六进制：包的确定性归档的哈希，与本机插件仓存放它所用的键相同。
+- 索引是一个扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories`、`updatedAt`、`yanked` 和 `integrity`。条目的 `name` 就是 Project 列表里使用的包名。`integrity` 即该版本在 npm 上的 `dist.integrity`：`sha512-` 加上发布的 tarball 字节的 sha512 的 base64，也就是 `npm view <name>@<version> dist.integrity` 打印的值。本机插件仓以它的前 16 位十六进制存放条目。
 - 索引合并三个来源，形状相同：运行中构建自带的索引（构建时从它打出的包重建，即包旁的 `plugins/index.json`）、本机插件仓，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。响应是一个扁平数组，每份内容（名称、版本、integrity）一个条目；多个来源列出同一份内容时，按上述顺序保留第一个来源的条目。没有 `integrity` 的条目照列但不可安装，yanked 的条目不列。读不到的来源记入服务端日志，只会让列表变短、不会让它变空；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
 - 卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 与 `icon` 优先取本机包。只发送普通 SVG；远端索引及其历史缓存中的图标一律丢弃。
 - 除索引条目外，列表还为管理员从链接或 zip 安装的每个服务端模块包列出一行，描述取自包自己的 `package.json`。
@@ -621,7 +621,7 @@ interface AgentApiKeyInfo {
 - `POST …/installed/archive` 安装上传 zip 中的包目录：`package.json` 位于 zip 根目录或唯一的顶层目录内，带合法的 npm 包名（去掉 scope 后须是插件名）和发行版本号，不含 `node_modules/`，内容须是插件——带 `skills/`、`hooks/` 或 `penguin.mcp_servers` 中的 MCP 服务器且插件库能原样读取，或带服务端模块的 `ifaces.json`。上限为 zip 14 MB、2,000 个文件、单个文件 5 MB、合计 50 MB，在解压任何内容之前检查（`413` `plugin_too_large`）；其他问题返回 `400` `plugin_archive_invalid`。服务端用 `npm pack --ignore-scripts` 打包这些文件，再安装生成的 tarball，并把它保存在前缀的 `archives/` 中。zip 中不能带 `.npmrc`（打包时它会配置 npm）；与构建自带的服务端模块同名的包会在安装任何内容之前以 `409` `plugin_shipped` 拒绝。已安装同一版本时返回 `200` 并带 `unchanged`；已安装其他版本时，不带 `overwrite: true` 会返回 `409` `plugin_exists`。从 zip 安装的服务端模块包只加入本机的表。
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
 - 列表就是 Project 的 `.project_config.toml` 中的 `[plugins]` 表（见 [Project 配置](/configuration#project-配置)）。条目是版本范围（`"@scope/name" = "^1"`，`"*"` 表示任意），或 `{ version = "…", integrity = "…" }` 以钉住一份内容。激活按钉住的条目取、不取其他；只写范围的，取插件仓里满足它的最高版本。进程加载所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
-- 按 registry 名称下载时，先选择目录条目：指定的 `integrity`，或版本范围内的最高版本。在可见安装之前验证其准确内容；不符返回 `400` `plugin_integrity_mismatch`，无条目或条目没有完整性值返回 `400` `plugin_not_installable`。提供 `integrity` 会把 Project 需求固定到该内容。从库前缀卸载不删除已存储内容或激活代。
+- 按 registry 名称下载时，先选择目录条目：指定的 `integrity`，或版本范围内的最高版本。在可见安装之前比对 npm 为所下载 tarball 记录的 integrity；不符返回 `400` `plugin_integrity_mismatch`，无条目或条目没有完整性值返回 `400` `plugin_not_installable`。提供 `integrity` 会把 Project 需求固定到该内容。从库前缀卸载不删除已存储内容或激活代。
 
 ## 插件提供的语言
 

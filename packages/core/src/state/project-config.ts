@@ -703,7 +703,7 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
 /**
  * What a Project asks of one plugin. `version` absent (or `"*"` in the file) means any; the
  * machine takes the highest version it holds that satisfies it. `integrity` pins one content
- * (`sha256-<64 hex digits>`, the plugin index's and the plugin store's key): that entry and
+ * (npm's `dist.integrity`, `sha512-<base64>`, the plugin index's and the plugin store's): that entry and
  * no other.
  */
 export interface PluginRequirement {
@@ -711,8 +711,8 @@ export interface PluginRequirement {
   integrity?: string;
 }
 
-/** A pinned content: `sha256-` and 64 lowercase hex digits. */
-export const PLUGIN_INTEGRITY = /^sha256-[0-9a-f]{64}$/;
+/** A pinned content: npm's integrity, `sha512-` and the base64 of 64 bytes. */
+export const PLUGIN_INTEGRITY = /^sha512-[A-Za-z0-9+/]{86}==$/;
 
 /** A plugin table: package name → what is asked of it, in the file's order. */
 export type PluginTable = Record<string, PluginRequirement>;
@@ -723,7 +723,7 @@ export type PluginTable = Record<string, PluginRequirement>;
  *   [plugins]
  *   "@scope/everywhere" = "*"
  *
- *   "@scope/pinned" = { version = "1.2.3", integrity = "sha256-…" }
+ *   "@scope/pinned" = { version = "1.2.3", integrity = "sha512-…" }
  *
  *   [plugins.Xk3v9Qa_bT2mLp0z]
  *   "@scope/only-there" = "*"

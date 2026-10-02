@@ -641,6 +641,13 @@ function PluginContents({ name }: { name: string }) {
   return contents !== null && contents.length > 0 ? <Contents contents={contents} /> : null;
 }
 
+function integrityKey(integrity: string): string | null {
+  const b64 = /^sha512-([A-Za-z0-9+/]{86}==)$/.exec(integrity)?.[1];
+  if (b64 === undefined) return null;
+  const bytes = atob(b64).slice(0, 8);
+  return Array.from(bytes, (ch) => ch.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+}
+
 function Contents({ contents }: { contents: PluginContent[] }) {
   const mark = (on: boolean) => (on ? S.pluginRegistry.yes : "—");
   return (
@@ -664,7 +671,8 @@ function Contents({ contents }: { contents: PluginContent[] }) {
               <tr key={`${c.version}#${c.integrity ?? i}`}>
                 <td className="py-1 pr-4 font-mono">{c.version}</td>
                 <td className="py-1 pr-4 font-mono">
-                  {c.integrity?.slice(7, 23) ?? S.pluginRegistry.contentNoIntegrity}
+                  {(c.integrity !== undefined ? integrityKey(c.integrity) : null) ??
+                    S.pluginRegistry.contentNoIntegrity}
                 </td>
                 <td className="py-1 pr-4">{mark(c.stored)}</td>
                 <td className="py-1">{mark(c.linked)}</td>

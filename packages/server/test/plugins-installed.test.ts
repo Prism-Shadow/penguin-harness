@@ -198,7 +198,7 @@ describe("installed plugins", () => {
 
     // A pin no stored entry has is not quietly run as whatever version fits. (Another name
     // joins the list so the rewrite re-assembles, which is when activation reads the pin.)
-    const other = `sha256-${"0".repeat(64)}`;
+    const other = `sha512-${Buffer.alloc(64).toString("base64")}`;
     await ship({ name: "@acme/beside", module: "Beside" });
     await fs.writeFile(
       listFile(),
@@ -209,7 +209,7 @@ describe("installed plugins", () => {
     });
     const after = (await view()).plugins.find((p) => p.specifier === "@acme/pinned")!;
     expect(after.active).toBe(false);
-    expect(after.error).toMatch(/no stored '@acme\/pinned' satisfies sha256-0/);
+    expect(after.error).toContain(`no stored '@acme/pinned' satisfies ${other}`);
   });
 
   it("drops a specifier from the list on delete", async () => {

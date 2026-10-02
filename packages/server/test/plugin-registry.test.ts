@@ -42,6 +42,7 @@ import {
 import { pickIndexEntry } from "../src/api/plugin-pick.js";
 import type { PluginRegistry } from "../src/plugin/registry.js";
 import { storePackage } from "../src/plugin/store.js";
+import { integrityOf } from "./plugin-fixtures.js";
 import { activatePlugins } from "../src/plugin/activation.js";
 import { resolveServerConfig } from "../src/config.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
@@ -50,7 +51,8 @@ import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { manifestOf } from "../../../scripts/plugin-entry.mjs";
 
-const hash = (digit: string) => `sha256-${digit.repeat(64)}`;
+const hash = (digit: string) =>
+  `sha512-${Buffer.alloc(64, digit.charCodeAt(0)).toString("base64")}`;
 
 const VALID_ENTRY: PluginIndexEntry = {
   name: "@example/penguin-plugin-demo",
@@ -88,7 +90,8 @@ describe("parsePluginIndex", () => {
       { ...VALID_ENTRY, descriptionZh: 1 },
       // A present integrity must be a key the store can use.
       { ...VALID_ENTRY, integrity: "sha512-abc" },
-      { ...VALID_ENTRY, integrity: `sha256-${"A".repeat(64)}` },
+      // The sha256 form the store keyed by before npm's integrity: not a key any more.
+      { ...VALID_ENTRY, integrity: `sha256-${"a".repeat(64)}` },
       { ...VALID_ENTRY, yanked: "yes" },
     ]) {
       expect(() => parsePluginIndex([VALID_ENTRY, bad], "test")).toThrow(
@@ -155,7 +158,12 @@ describe("storePluginRegistry", () => {
       JSON.stringify({ name: "@acme/x", version: "1.0.0", description: "X", license: "MIT" }),
     );
     const stored = [
-      await storePackage(root, path.join(prefix, "node_modules", "@acme", "x"), prefix),
+      await storePackage(
+        root,
+        path.join(prefix, "node_modules", "@acme", "x"),
+        prefix,
+        integrityOf("@acme/x", "1.0.0"),
+      ),
     ];
     expect(await storePluginRegistry(root).index()).toEqual([
       expect.objectContaining({
@@ -665,7 +673,7 @@ describe("the route's own merge", () => {
         path.join(pkg, "package.json"),
         JSON.stringify({ name: "@acme/x", version: "1.0.0", description: "X", license: "MIT" }),
       );
-      const stored = await storePackage(root, pkg, prefix);
+      const stored = await storePackage(root, pkg, prefix, integrityOf("@acme/x", "1.0.0"));
       await activatePlugins(root, new Map([["@acme/x", [{}]]]), null);
 
       const bare: PluginIndexEntry = { ...VALID_ENTRY };

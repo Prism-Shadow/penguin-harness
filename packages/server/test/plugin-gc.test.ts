@@ -13,7 +13,7 @@ import { STORE_GRACE_MS, sweepPlugins } from "../src/plugin/gc.js";
 import { loadPlugins } from "../src/plugin/loader.js";
 import { pluginStoreDir, storePackage } from "../src/plugin/store.js";
 import type { StoredEntry } from "../src/plugin/store.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { integrityOf, writeClassPackage } from "./plugin-fixtures.js";
 
 let dir: string;
 let root: string;
@@ -46,7 +46,7 @@ async function stored(name: string, module: string): Promise<StoredEntry> {
   await fs.writeFile(path.join(prefix, "package.json"), "{}");
   const pkg = path.join(prefix, "node_modules", ...name.split("/"));
   await writeClassPackage(pkg, { name, module, version: "1.0.0" });
-  return storePackage(root, pkg, prefix);
+  return storePackage(root, pkg, prefix, integrityOf(name, "1.0.0", module));
 }
 
 /** Dates an entry's `.stored`, and so the entry, at `at`. */

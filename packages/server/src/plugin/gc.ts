@@ -43,7 +43,7 @@ export const STORE_GRACE_MS = 24 * 60 * 60 * 1000;
 /** One content a Project pins. */
 export interface PluginPin {
   name: string;
-  /** `sha256-<hex>`. */
+  /** npm's integrity, `sha512-<base64>`. */
   integrity: string;
 }
 

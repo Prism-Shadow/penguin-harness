@@ -1,7 +1,7 @@
 /**
  * Types for plugin-entry.mjs. The module is plain JavaScript because scripts/build-plugins.mjs
  * runs it directly; the server's plugin store imports the same file, so both lay an entry out
- * and hash it one way.
+ * one way.
  */
 export declare const MANIFEST_FILE: string;
 export declare const PACKAGE_DIR: string;
@@ -10,6 +10,7 @@ export declare const INTEGRITY: RegExp;
 export declare const KEY_LENGTH: number;
 
 export declare function entryKey(integrity: string): string | null;
+export declare function tarballIntegrity(file: string): Promise<string>;
 export declare const PACKAGES_DIR: string;
 export declare function bucketOf(name: string): string[];
 export declare function nameSegments(name: string): string[];
@@ -21,17 +22,8 @@ export declare function entryDir(
   integrity: string,
 ): string;
 
-/** One file of an archive: `rel` its posix path inside it, `abs` where it is read. */
-export interface ArchiveFile {
-  rel: string;
-  abs: string;
-  exec: boolean;
-}
-export declare function archiveChunks(files: Iterable<ArchiveFile>): AsyncGenerator<Buffer>;
-export declare function archiveIntegrity(files: Iterable<ArchiveFile>): Promise<string>;
 export declare function walkFiles(dir: string, prefix?: string): Promise<string[]>;
 export declare function isExecutable(abs: string): boolean;
-export declare function packageIntegrity(entry: string): Promise<string>;
 export declare function readPackageJson(dir: string): Promise<Record<string, unknown> | null>;
 
 /** An entry's `manifest.toml`: the index repository's fields, `integrity` required. */
@@ -63,7 +55,7 @@ export declare function layOutEntry(
   prefixDir: string,
   options: {
     stringifyToml: (value: Record<string, unknown>) => string;
-    check?: (entry: { name: string; version: string; integrity: string }) => void;
+    integrity: string;
   },
 ): Promise<{ name: string; version: string; integrity: string; manifest: EntryManifest }>;
 

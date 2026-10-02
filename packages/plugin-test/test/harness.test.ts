@@ -1,9 +1,13 @@
 /**
  * The harness against the real server: it starts on a scratch root, seeds the admin, lists
  * what the Project it seeded asks for, and stops. A plugin directory whose entry is not built is
- * refused before anything starts, with the fix in the message.
+ * refused before anything starts, with the fix in the message. A built directory is staged as a
+ * hot push brings plugins: packed, installed by npm into the push assets' plugin directory, and
+ * listed there with its tarball's npm integrity.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +16,7 @@ import {
   HarnessApiError,
   defaultServerEntry,
   resolvePluginEntry,
+  stagePushedPlugins,
   startHarness,
   type Harness,
 } from "../src/index.js";
@@ -33,6 +38,61 @@ describe("resolvePluginEntry", () => {
       await fs.rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe("stagePushedPlugins", () => {
+  it("installs a built package into the push assets and indexes it with its tarball's npm integrity", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-test-src-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-test-root-"));
+    try {
+      await fs.writeFile(
+        path.join(dir, "package.json"),
+        JSON.stringify({
+          name: "@acme/staged",
+          version: "1.2.3",
+          description: "A staged plugin",
+          license: "MIT",
+          author: "Ada",
+          main: "./dist/index.js",
+          files: ["dist"],
+        }),
+      );
+      await fs.mkdir(path.join(dir, "dist"));
+      await fs.writeFile(path.join(dir, "dist", "index.js"), "export default {};");
+      await fs.writeFile(path.join(dir, "notes.md"), "not in files");
+
+      expect(await stagePushedPlugins(root, [dir])).toEqual(["@acme/staged"]);
+
+      const prefix = path.join(root, "hmr", "plugin-test-assets", "plugins");
+      const installed = path.join(prefix, "node_modules", "@acme", "staged");
+      expect((await fs.readdir(installed)).sort()).toEqual(["dist", "package.json"]);
+      const harness = JSON.parse(await fs.readFile(path.join(root, "hmr", "harness.json"), "utf8"));
+      expect(harness).toEqual({ assets: { dir: "plugin-test-assets" } });
+      // The row's integrity is npm's for the very tarball pnpm packs from the directory.
+      const out = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-test-repack-"));
+      try {
+        execFileSync("pnpm", ["pack", "--pack-destination", out], { cwd: dir, stdio: "pipe" });
+        const [tarball] = await fs.readdir(out);
+        const expected = `sha512-${createHash("sha512")
+          .update(await fs.readFile(path.join(out, tarball!)))
+          .digest("base64")}`;
+        const [row] = JSON.parse(await fs.readFile(path.join(prefix, "index.json"), "utf8"));
+        expect(row).toEqual({
+          name: "@acme/staged",
+          version: "1.2.3",
+          description: "A staged plugin",
+          authors: ["Ada"],
+          license: "MIT",
+          integrity: expected,
+        });
+      } finally {
+        await fs.rm(out, { recursive: true, force: true });
+      }
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe("startHarness", () => {

@@ -25,6 +25,7 @@ import type { PluginPackageFields } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 import { readShippedIndex, readStore } from "./store.js";
+import { INTEGRITY } from "../../../../scripts/plugin-entry.mjs";
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
@@ -82,8 +83,8 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
   return value as PluginIndexEntry;
 }
 
-/** `sha256-<64 lowercase hex digits>`: an entry's content, the plugin store's key. */
-export const INTEGRITY = /^sha256-[0-9a-f]{64}$/;
+/** npm's integrity, `sha512-<base64>`: an entry's content (scripts/plugin-entry.mjs). */
+export { INTEGRITY };
 
 /**
  * Validates a whole index document. Strict, not per-entry-tolerant: an index is one

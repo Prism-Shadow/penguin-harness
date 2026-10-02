@@ -15,7 +15,7 @@ import {
 import type { PluginAsk } from "../src/plugin/activation.js";
 import { storeEntryDir, storePackage } from "../src/plugin/store.js";
 import type { StoreIndexEntry } from "../src/plugin/store.js";
-import { writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
+import { integrityOf, writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 
 let root: string;
 beforeEach(async () => {
@@ -49,7 +49,7 @@ async function fetched(name: string, module: string, version: string) {
   await writeFile(path.join(prefix, "package.json"), "{}");
   const dir = path.join(prefix, "node_modules", ...name.split("/"));
   await writeClassPackage(dir, { name, module, version });
-  return storePackage(root, dir, prefix);
+  return storePackage(root, dir, prefix, integrityOf(name, version, `fetched:${module}`));
 }
 
 const asks = (entries: Record<string, PluginAsk[]>) => new Map(Object.entries(entries));
@@ -99,13 +99,11 @@ describe("a generation", () => {
     await fetched("@acme/old", "Old", "1.0.0");
     const { missing } = await activatePlugins(
       root,
-      asks({ "@acme/old": [{ version: "^2.0.0" }], "@acme/absent": [{}], "/dev/x.js": [{}] }),
+      asks({ "@acme/old": [{ version: "^2.0.0" }], "@acme/absent": [{}] }),
       null,
     );
     expect(missing.get("@acme/absent")).toMatch(/not in the plugin store/);
     expect(missing.get("@acme/old")).toMatch(/no stored '@acme\/old' satisfies \^2\.0\.0/);
-    // A path is the loader's, not the store's.
-    expect(missing.has("/dev/x.js")).toBe(false);
   });
 });
 
@@ -116,7 +114,7 @@ describe("choosing an entry", () => {
     description: "",
     authors: [],
     license: "",
-    integrity: `sha256-${hex.repeat(64)}`,
+    integrity: integrityOf("@acme/p", version, hex),
   });
 
   it("takes a pin, else the highest version every ask admits, the build's content within one", () => {
@@ -144,5 +142,58 @@ describe("choosing an entry", () => {
         none,
       ),
     ).toMatchObject({ missing: expect.stringMatching(/pinned to 2 different contents/) });
+  });
+});
+
+describe("pre-generation installed modules", () => {
+  it("adopts the installed prefix without deleting it or fetching a registry replacement", async () => {
+    const name = "@acme/already-installed";
+    const prefix = path.join(root, "plugins");
+    const dir = path.join(prefix, "node_modules", "@acme", "already-installed");
+    await writeClassPackage(dir, { name, module: "AlreadyInstalled", version: "1.2.3" });
+    const integrity = integrityOf(name, "1.2.3", "installed-before-generations");
+    await writeFile(
+      path.join(prefix, "package.json"),
+      JSON.stringify({ dependencies: { [name]: "1.2.3" } }),
+    );
+    await writeFile(
+      path.join(prefix, "package-lock.json"),
+      JSON.stringify({ packages: { [`node_modules/${name}`]: { integrity } } }),
+    );
+    const activation = await activatePlugins(root, asks({ [name]: [{ version: "1.2.3" }] }), null);
+    expect(activation.missing.size).toBe(0);
+    expect(await readGeneration(root, activation.current)).toContainEqual({
+      name,
+      version: "1.2.3",
+      integrity,
+    });
+    expect(JSON.parse(await readFile(path.join(dir, "package.json"), "utf8")).version).toBe(
+      "1.2.3",
+    );
+    expect((await activatePlugins(root, asks({ [name]: [{}] }), null)).current).toBe(
+      activation.current,
+    );
+  });
+
+  it("keeps shipped modules available when a legacy prefix has a broken lockfile", async () => {
+    const name = "@acme/broken-legacy";
+    const prefix = path.join(root, "plugins");
+    await writeClassPackage(path.join(prefix, "node_modules", ...name.split("/")), {
+      name,
+      module: "Legacy",
+      version: "1.0.0",
+    });
+    await writeFile(
+      path.join(prefix, "package.json"),
+      JSON.stringify({ dependencies: { [name]: "1.0.0" } }),
+    );
+    await writeFile(path.join(prefix, "package-lock.json"), "invalid-json");
+    const assets = path.join(root, "assets");
+    await ship(assets, "@acme/shipped", "Shipped");
+    const result = await activatePlugins(root, asks({ "@acme/shipped": [{}] }), assets);
+    expect(result.missing.size).toBe(0);
+    expect(await readGeneration(root, result.current)).toEqual([
+      expect.objectContaining({ name: "@acme/shipped", version: "1.0.0" }),
+    ]);
   });
 });

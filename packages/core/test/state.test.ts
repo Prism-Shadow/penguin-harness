@@ -1770,7 +1770,7 @@ describe("plugins (shared and per-machine tables)", () => {
       all: { abcdefghijklmnop: { version: "1" } },
       machines: {},
     });
-    const integrity = `sha256-${"a".repeat(64)}`;
+    const integrity = `sha512-${Buffer.alloc(64, 0xaa).toString("base64")}`;
     expect(parsePluginTables({ abcdefghijklmnop: { integrity } })).toEqual({
       all: { abcdefghijklmnop: { integrity } },
       machines: {},
@@ -1778,7 +1778,7 @@ describe("plugins (shared and per-machine tables)", () => {
   });
 
   it("a pinned content survives a load → save round trip; a malformed pin drops its entry", async () => {
-    const integrity = `sha256-${"b".repeat(64)}`;
+    const integrity = `sha512-${Buffer.alloc(64, 0xbb).toString("base64")}`;
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     cfg.plugins = {
       all: {
@@ -1796,7 +1796,9 @@ describe("plugins (shared and per-machine tables)", () => {
 
     expect(
       parsePluginTables({
-        "@acme/typo": { version: "1.0.0", integrity: "sha256-XYZ" },
+        "@acme/typo": { version: "1.0.0", integrity: "sha512-XYZ" },
+        // The sha256 form the store keyed by before npm's integrity is not a pin either.
+        "@acme/old": { version: "1.0.0", integrity: `sha256-${"0".repeat(64)}` },
         "@acme/fine": { version: "1.0.0" },
       }),
     ).toEqual({ all: { "@acme/fine": { version: "1.0.0" } }, machines: {} });

@@ -362,54 +362,91 @@ export class NpmPluginPackages implements PluginPackages {
       // Verify before touching the visible library prefix. Install those exact stored bytes,
       // not a second registry fetch, which could resolve to different content.
       const { fetchIntoStore, PACKAGE_DIR } = await import("./store.js");
-      const { archiveChunks, walkFiles, isExecutable } =
-        await import("../../../../scripts/plugin-entry.mjs");
       const entry = await fetchIntoStore(root, source, { expected });
       const prefix = await ensurePrefix(root);
       const archives = path.join(prefix, ARCHIVES_DIR);
       await fs.mkdir(archives, { recursive: true });
-      const filename = `${randomUUID()}.tar`;
       const dir = path.join(entry.dir, PACKAGE_DIR);
-      const files = (await walkFiles(dir)).map((rel) => {
-        const abs = path.join(dir, ...rel.split("/"));
-        return { rel: `${PACKAGE_DIR}/${rel}`, abs, exec: isExecutable(abs) };
-      });
-      const output = await fs.open(path.join(archives, filename), "wx");
-      try {
-        for await (const chunk of archiveChunks(files)) await output.writeFile(chunk);
-      } finally {
-        await output.close();
-      }
-      await install(prefix, `./${ARCHIVES_DIR}/${filename}`);
+      // Pack the verified local bytes; never perform a second registry lookup for the package.
+      const packed = await npm(
+        prefix,
+        ["pack", "--ignore-scripts", "--json", "--pack-destination", archives],
+        dir,
+      );
+      await install(prefix, `./${ARCHIVES_DIR}/${packedFileName(packed)}`);
       await pruneArchives(prefix);
       return { name: entry.name, version: entry.version };
     }
     const installed = await installPluginSource(root, source);
-    await this.store(root, installed.name);
+    await storeInstalledPlugin(root, installed.name);
     return installed;
   }
 
   /** An uploaded package's files (see installPluginFiles). */
   async installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage> {
     const installed = await installPluginFiles(root, new Map(Object.entries(files)));
-    await this.store(root, installed.name);
+    await storeInstalledPlugin(root, installed.name);
     return installed;
-  }
-
-  /** Library content stays in its prefix; server modules load only from an activated store entry. */
-  private async store(root: string, name: string, expected?: string): Promise<void> {
-    const { storePackage } = await import("./store.js");
-    const prefix = pluginsPrefix(root);
-    const lock = await fs
-      .readFile(path.join(prefix, "package-lock.json"), "utf8")
-      .catch(() => undefined);
-    await storePackage(root, installedPackageDir(prefix, name), prefix, "registry", {
-      lock,
-      expected,
-    });
   }
 
   remove(root: string, name: string): Promise<void> {
     return removePluginPackage(root, name);
+  }
+}
+
+/** Library content stays in its prefix; server modules load only from an activated store entry. */
+export async function storeInstalledPlugin(root: string, name: string): Promise<void> {
+  const { storePackage } = await import("./store.js");
+  const { INTEGRITY, tarballIntegrity } = await import("../../../../scripts/plugin-entry.mjs");
+  const prefix = pluginsPrefix(root);
+  const dir = installedPackageDir(prefix, name);
+  const lock = JSON.parse(
+    await fs.readFile(path.join(prefix, "package-lock.json"), "utf8").catch(() => "{}"),
+  ) as {
+    packages?: Record<string, { integrity?: string }>;
+  };
+  const recorded = lock.packages?.[`node_modules/${name}`]?.integrity;
+  let integrity = recorded?.split(/\s+/).find((value) => INTEGRITY.test(value));
+  if (integrity === undefined) {
+    // Git links need not have npm lockfile integrity. Name their locally packed tarball,
+    // rather than pretending that the registry vouched for this non-registry source.
+    const archives = path.join(prefix, ARCHIVES_DIR);
+    await fs.mkdir(archives, { recursive: true });
+    const packed = await npm(
+      prefix,
+      ["pack", "--ignore-scripts", "--json", "--pack-destination", archives],
+      dir,
+    );
+    integrity = await tarballIntegrity(path.join(archives, packedFileName(packed)));
+  }
+  await storePackage(root, dir, prefix, integrity);
+  await pruneArchives(prefix);
+}
+
+/** Adopt server modules installed before generations existed; leave their library prefix intact. */
+export async function adoptInstalledPlugins(
+  root: string,
+  log: (message: string) => void,
+): Promise<void> {
+  const { PACKAGE_NAME } = await import("./loader.js");
+  const prefix = pluginsPrefix(root);
+  for (const name of Object.keys(await prefixDependencies(prefix))) {
+    if (!PACKAGE_NAME.test(name)) continue;
+    const dir = installedPackageDir(prefix, name);
+    if (
+      !(await fs.access(path.join(dir, "ifaces.json")).then(
+        () => true,
+        () => false,
+      ))
+    )
+      continue;
+    try {
+      // Reuse the exact recorded SRI, or locally pack sources without one. A matching
+      // name and version alone cannot establish that an entry has the same content.
+      // storePackage itself skips entries whose exact integrity is already stored.
+      await storeInstalledPlugin(root, name);
+    } catch (err) {
+      log(`[plugin-store] adopting ${name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }

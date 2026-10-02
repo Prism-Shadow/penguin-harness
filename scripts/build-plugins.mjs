@@ -37,15 +37,21 @@
  * under `node_modules/.cache/penguin-plugins/`, and an unchanged set is not built, packed or
  * installed again — a push of an unrelated change costs nothing here. Installing needs the registry (for the dependencies) the first time only.
  *
+ * THE INDEX'S INTEGRITY IS THE PUBLISHED TARBALL'S. Each plugin is packed once; the tarball is
+ * kept beside the prefix in the cache, its npm integrity (sha512 of its bytes, what the registry
+ * reports as `dist.integrity`) is the one the index names, and the release publishes that very
+ * file (`--tarballs`) rather than letting a publish command pack again — two packers pick the
+ * same files and still write different bytes.
+ *
  * Usage (a library for deploy.mjs / desktop build-assets.mjs, and a CLI):
- *   node scripts/build-plugins.mjs --out <dir>      stage the prefix into <dir>
+ *   node scripts/build-plugins.mjs --out <dir>         stage the prefix into <dir>
+ *   node scripts/build-plugins.mjs --tarballs <dir>    copy the packed tarballs into <dir>
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -56,7 +62,7 @@ import {
   readPnpmLock,
 } from "./lib/locked-prefix.mjs";
 import { readVendoredPackages, thirdPartyNotices } from "./lib/third-party-notices.mjs";
-import { INDEX_FILE, layOutEntry, entryDir, sortIndex } from "./plugin-entry.mjs";
+import { INDEX_FILE, layOutEntry, entryDir, sortIndex, tarballIntegrity } from "./plugin-entry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_SRC = path.join(ROOT, "plugins");
@@ -235,7 +241,9 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
   } else {
     await fsp.rm(out, { recursive: true, force: true });
     await fsp.mkdir(out, { recursive: true });
-    const packed = await fsp.mkdtemp(path.join(os.tmpdir(), "penguin-plugins-pack-"));
+    const packed = tarballsOf(out);
+    await fsp.rm(packed, { recursive: true, force: true });
+    await fsp.mkdir(packed, { recursive: true });
     try {
       const tarballs = [];
       for (const plugin of plugins) {
@@ -332,7 +340,7 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
           await fsp.chmod(path.join(out, rel), 0o755);
         }
       }
-      const index = await layOutTree(out, treeOf(out), plugins);
+      const index = await layOutTree(out, treeOf(out), plugins, await packedIntegrities(packed));
       await fsp.writeFile(path.join(out, INDEX_FILE), `${JSON.stringify(index, null, 2)}\n`);
       log(`${index.length} index entries: rebuilt from the tree`);
       await fsp.writeFile(path.join(out, COMPLETE), hash);
@@ -340,9 +348,8 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
     } catch (err) {
       await fsp.rm(out, { recursive: true, force: true });
       await fsp.rm(treeOf(out), { recursive: true, force: true });
-      throw err;
-    } finally {
       await fsp.rm(packed, { recursive: true, force: true });
+      throw err;
     }
   }
   const files = (await walk(out)).filter((f) => f !== COMPLETE && !NOT_SHIPPED.has(f));
@@ -351,7 +358,26 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
     files,
     plugins: plugins.map(({ name, version }) => ({ name, version })),
     tree: treeOf(out),
+    tarballs: tarballsOf(out),
   };
+}
+
+/** Where a prefix's packed tarballs are kept: beside it in the cache, never shipped. */
+function tarballsOf(prefix) {
+  return `${prefix}.tarballs`;
+}
+
+/** Each packed tarball's npm integrity, by the package name its own manifest gives. */
+async function packedIntegrities(dir) {
+  const out = new Map();
+  for (const file of (await fsp.readdir(dir)).filter((f) => f.endsWith(".tgz")).sort()) {
+    const abs = path.join(dir, file);
+    const manifest = JSON.parse(
+      execFileSync("tar", ["-xzOf", abs, "package/package.json"], { encoding: "utf8" }),
+    );
+    out.set(manifest.name, await tarballIntegrity(abs));
+  }
+  return out;
 }
 
 /** The store-shaped tree of a prefix: beside it in the cache, never shipped. */
@@ -364,7 +390,7 @@ function treeOf(prefix) {
  * machine's store writes its entries with — and answers the index rebuilt from the tree:
  * each entry's `manifest.toml`, sorted as every index is.
  */
-async function layOutTree(prefix, tree, plugins) {
+async function layOutTree(prefix, tree, plugins, integrities) {
   await fsp.rm(tree, { recursive: true, force: true });
   const stage = path.join(tree, ".staging");
   const index = [];
@@ -372,7 +398,10 @@ async function layOutTree(prefix, tree, plugins) {
     await fsp.rm(stage, { recursive: true, force: true });
     await fsp.mkdir(stage, { recursive: true });
     const pkgDir = path.join(prefix, "node_modules", ...plugin.name.split("/"));
-    const laid = await layOutEntry(stage, pkgDir, prefix, { stringifyToml });
+    const integrity = integrities.get(plugin.name);
+    if (integrity === undefined)
+      throw new Error(`${plugin.name}: no packed tarball to take its integrity from`);
+    const laid = await layOutEntry(stage, pkgDir, prefix, { stringifyToml, integrity });
     const dest = entryDir(tree, laid.name, laid.version, laid.integrity);
     await fsp.mkdir(path.dirname(dest), { recursive: true });
     await fsp.rename(stage, dest);
@@ -402,7 +431,17 @@ export async function stagePrefix(built, dest) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const outIdx = process.argv.indexOf("--out");
   const out = outIdx === -1 ? null : process.argv[outIdx + 1];
+  const tarIdx = process.argv.indexOf("--tarballs");
+  const tarDest = tarIdx === -1 ? null : process.argv[tarIdx + 1];
   const built = await buildBuiltinPlugins({ log: (m) => console.log(`[build-plugins] ${m}`) });
+  if (tarDest) {
+    const dest = path.resolve(tarDest);
+    await fsp.rm(dest, { recursive: true, force: true });
+    await fsp.mkdir(dest, { recursive: true });
+    const files = (await fsp.readdir(built.tarballs)).filter((f) => f.endsWith(".tgz"));
+    for (const f of files) await fsp.copyFile(path.join(built.tarballs, f), path.join(dest, f));
+    console.log(`[build-plugins] copied ${files.length} packed tarballs into ${dest}`);
+  }
   if (out) {
     await stagePrefix(built, path.resolve(out));
     console.log(

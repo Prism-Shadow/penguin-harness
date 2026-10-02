@@ -287,11 +287,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return { library: isLibraryPackage(dir), modules: existsSync(path.join(dir, "ifaces.json")) };
   };
 
-  /** A pinned content, `sha256-<64 hex digits>`, or undefined when none is asked. */
+  /** A pinned content, npm's `sha512-<base64>`, or undefined when none is asked. */
   const integrityOf = (value: unknown): string | undefined => {
     if (value === undefined || value === null || value === "") return undefined;
     if (typeof value !== "string" || !INTEGRITY.test(value)) {
-      throw new HttpError(400, "bad_request", "integrity must be sha256- and 64 hex digits.");
+      throw new HttpError(
+        400,
+        "bad_request",
+        "integrity must be npm's: sha512- and 88 base64 characters.",
+      );
     }
     return value;
   };
@@ -479,8 +483,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         integrity,
       });
       if ("refused" in pick) throw new HttpError(400, "plugin_not_installable", pick.refused);
+      const expected = pick.integrity;
+      if (expected === undefined) {
+        throw new HttpError(400, "plugin_not_installable", `'${source.name}' names no integrity`);
+      }
       installed = await viaNpm(() =>
-        deps.packages.install(deps.root, `${pick.name}@${pick.version}`, pick.integrity),
+        deps.packages.install(deps.root, `${pick.name}@${pick.version}`, expected),
       );
     }
     // A package of Skills, hooks or MCP servers alone is the library's from here on: no table

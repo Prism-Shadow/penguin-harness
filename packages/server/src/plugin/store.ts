@@ -15,21 +15,22 @@
  * write of the same content replaces it. Nothing outside `packages/` is read: a directory an
  * earlier layout left at the top is neither an entry nor linked.
  *
- * THE KEY IS THE CONTENT. `integrity` is `sha256-<hex>` over `package/` archived by the
- * deterministic ustar archiver of scripts/plugin-entry.mjs — the index repository's algorithm,
- * so the integrity an index entry names is the one this store computes over the package it
- * fetched. Two versions of one name, or two contents of one version, are two entries; one
- * content is stored once.
+ * THE KEY IS THE CONTENT, AND THE CONTENT IS NPM'S. `integrity` is npm's `dist.integrity` —
+ * `sha512-<base64>` of the tarball's bytes, the value the registry and every npm lockfile carry
+ * (scripts/plugin-entry.mjs). The store never hashes a directory: it is told the integrity.
+ * Two versions of one name, or two contents of one version, are two entries; one content is
+ * stored once.
  *
  * TWO WAYS IN, both through `storePackage`:
  *
- *   - shipped   the plugins the running build carries (a hot push's `plugins/` prefix, else
- *               the installation's — `lib/plugins` of the CLI package and the Docker image,
- *               `plugins/` of the desktop app), each listed with its integrity in the prefix's
- *               `index.json` the build wrote; an entry already stored is not copied again
- *               (`syncPluginStore`);
- *   - registry  a package fetched by npm into `.staging/`, packed, hashed, compared with the
- *               integrity its index entry names, and stored (`fetchIntoStore`).
+ *   - carried   the plugins the running build carries (a hot push's `plugins/`, else the
+ *               installation's — `lib/plugins` of the CLI bundle and the Docker image, `plugins/`
+ *               of the desktop app and of a dev build), each with the integrity its row in the
+ *               build's `index.json` names; an entry already stored is not copied again
+ *               (`syncPluginStore`). They arrive with the program and are trusted with it;
+ *   - registry  a package npm installs into `.staging/`, checked against the index row: the
+ *               integrity npm recorded in that install's lockfile for what it downloaded must be
+ *               the row's, or nothing is stored (`fetchIntoStore`).
  *
  * Every write and the sweep take turns on one queue (`onStoreQueue`): a fetch never lands an
  * entry in a directory the sweep is emptying. What the sweep keeps and removes is plugin/gc.ts.
@@ -75,7 +76,7 @@ export const STORED_FILE = ".stored";
 export interface StoredEntry {
   name: string;
   version: string;
-  /** `sha256-<64 hex digits>`. */
+  /** npm's `dist.integrity`, `sha512-<base64>`. */
   integrity: string;
   /** The entry's directory. */
   dir: string;
@@ -95,7 +96,7 @@ export class PluginIntegrityMismatch extends PluginStoreError {
     readonly actual: string,
   ) {
     super(
-      `${name}@${version}: the fetched package's integrity is ${actual}, the index names ${expected}; nothing was stored`,
+      `${name}@${version}: npm recorded ${actual} for what it downloaded, the index names ${expected}; nothing was stored`,
     );
   }
 }
@@ -112,7 +113,7 @@ export function storeEntryDir(
   integrity: string,
 ): string {
   if (entryKey(integrity) === null) {
-    throw new PluginStoreError(`'${integrity}' is not a sha256 integrity`);
+    throw new PluginStoreError(`'${integrity}' is not a sha512 integrity`);
   }
   return entryDir(pluginStoreDir(root), name, version, integrity);
 }
@@ -131,15 +132,14 @@ async function stagingDir(root: string): Promise<string> {
 
 /**
  * Stores the package at `pkgDir` — installed into the npm prefix `prefixDir`, whose hoisted
- * dependencies of it are copied into its own `node_modules` — and answers the entry. When
- * `expected` is given the package's integrity must equal it, or nothing is stored. A content
- * already stored is not written again.
+ * dependencies of it are copied into its own `node_modules` — under `integrity`, its npm
+ * integrity, and answers the entry. A content already stored is not written again.
  */
 export async function storePackage(
   root: string,
   pkgDir: string,
   prefixDir: string,
-  expected?: string,
+  integrity: string,
 ): Promise<StoredEntry> {
   const pkg = await readPackageJson(pkgDir);
   const name = typeof pkg?.name === "string" ? pkg.name : null;
@@ -150,19 +150,15 @@ export async function storePackage(
   if (version.includes("/") || version.includes("\\") || version.startsWith(".")) {
     throw new PluginStoreError(`${name}: '${version}' cannot name a directory`);
   }
+  const dest = storeEntryDir(root, name, version, integrity);
+  const entry: StoredEntry = { name, version, integrity, dir: dest };
+  if (isStored(dest)) return entry;
   const stage = await stagingDir(root);
   try {
-    const laid = await layOutEntry(stage, pkgDir, prefixDir, {
+    await layOutEntry(stage, pkgDir, prefixDir, {
       stringifyToml: (value) => stringifyToml(value),
-      check: ({ integrity }) => {
-        if (expected !== undefined && expected !== integrity) {
-          throw new PluginIntegrityMismatch(name, version, expected, integrity);
-        }
-      },
+      integrity,
     });
-    const dest = storeEntryDir(root, name, version, laid.integrity);
-    const entry: StoredEntry = { name, version, integrity: laid.integrity, dir: dest };
-    if (isStored(dest)) return entry;
     // A directory without the marker is a write that did not finish: replaced, not trusted.
     await fsp.rm(dest, { recursive: true, force: true });
     await fsp.mkdir(path.dirname(dest), { recursive: true });
@@ -181,20 +177,13 @@ export type RegistryInstall = (specifier: string, cwd: string) => Promise<void>;
 const FETCH_TIMEOUT_MS = 180_000;
 
 /**
- * npm, into a staging prefix, each package's dependencies nested inside it — so the package's
- * directory is the whole of what it runs, the shape an entry's `package/` has.
+ * npm, into a staging prefix, laid out the way npm lays out any install (hoisted); the store
+ * folds the package's hoisted dependencies into its entry. npm checks each tarball against the
+ * registry's integrity as it downloads, and records it in the prefix's lockfile.
  */
 const npmInstall: RegistryInstall = async (specifier, cwd) => {
   try {
-    const npm = npmCommand([
-      "install",
-      "--install-strategy=nested",
-      "--omit=dev",
-      "--no-audit",
-      "--no-fund",
-      "--",
-      specifier,
-    ]);
+    const npm = npmCommand(["install", "--omit=dev", "--no-audit", "--no-fund", "--", specifier]);
     await execFileAsync(npm.command, npm.args, {
       cwd,
       timeout: FETCH_TIMEOUT_MS,
@@ -215,14 +204,34 @@ function nameOf(specifier: string): string {
 }
 
 /**
- * Fetches `specifier` from the registry into the store: npm installs it into a staging prefix,
- * the package is packed and hashed, compared with `expected` (the integrity its index entry
- * names) when there is one, and stored; the staging directory is removed whatever happened.
+ * The integrity npm recorded for `name` in the prefix it just installed into: the lockfile's
+ * `packages["node_modules/<name>"].integrity`, i.e. what npm checked the downloaded tarball
+ * against. Null when the lockfile does not say.
+ */
+async function recordedIntegrity(prefix: string, name: string): Promise<string | null> {
+  for (const file of ["package-lock.json", path.join("node_modules", ".package-lock.json")]) {
+    let lock: { packages?: Record<string, { integrity?: unknown }> };
+    try {
+      lock = JSON.parse(await fsp.readFile(path.join(prefix, file), "utf8"));
+    } catch {
+      continue;
+    }
+    const value = lock.packages?.[`node_modules/${name}`]?.integrity;
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
+/**
+ * Fetches `name@version` from the registry into the store, as the index row `expected` (its
+ * npm integrity) names it: npm installs it into a staging prefix, the integrity npm recorded for
+ * what it downloaded must be `expected` — one of the lockfile's values when it lists several —
+ * or nothing is stored. The staging directory is removed whatever happened.
  */
 export function fetchIntoStore(
   root: string,
   specifier: string,
-  { expected, install = npmInstall }: { expected?: string; install?: RegistryInstall } = {},
+  { expected, install = npmInstall }: { expected: string; install?: RegistryInstall },
 ): Promise<StoredEntry> {
   return onStoreQueue(async () => {
     const prefix = await stagingDir(root);
@@ -233,7 +242,14 @@ export function fetchIntoStore(
         `${JSON.stringify({ name: "plugin-store-entry", private: true, version: "0.0.0" }, null, 2)}\n`,
       );
       await install(specifier, prefix);
-      const pkgDir = path.join(prefix, "node_modules", ...nameOf(specifier).split("/"));
+      const name = nameOf(specifier);
+      const pkgDir = path.join(prefix, "node_modules", ...name.split("/"));
+      const pkg = await readPackageJson(pkgDir);
+      const version = typeof pkg?.version === "string" ? pkg.version : "?";
+      const recorded = await recordedIntegrity(prefix, name);
+      if (recorded === null || !recorded.split(/\s+/).includes(expected)) {
+        throw new PluginIntegrityMismatch(name, version, expected, recorded ?? "nothing");
+      }
       return await storePackage(root, pkgDir, prefix, expected);
     } finally {
       await fsp.rm(prefix, { recursive: true, force: true });
@@ -384,15 +400,8 @@ export function onStoreQueue<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * What a listed integrity was stored as, when that differs: a filesystem without execute bits
- * (Windows) hashes a package built elsewhere to another content. Per process, so such a
- * package is copied once, not at every activation.
- */
-const storedAs = new Map<string, StoredEntry>();
-
-/**
- * Stores every plugin the running build carries that is not stored yet, and answers the
- * integrities of those it carries together with what each was stored as. On the store's
+ * Stores every plugin the running build carries that is not stored yet, under the integrity
+ * its index row names, and answers the integrities of those it carries. On the store's
  * queue, best effort: a failure is logged and never fails the boot — a package that did not
  * reach the store is reported by the activation that cannot find it (plugin/activation.ts).
  */
@@ -403,6 +412,13 @@ export async function syncPluginStore(
 ): Promise<Set<string>> {
   const shipped = new Set<string>();
   await onStoreQueue(async () => {
+    // Preserve modules already installed through the pre-generation npm prefix.
+    const { adoptInstalledPlugins } = await import("./install.js");
+    await adoptInstalledPlugins(root, log).catch((err: unknown) => {
+      log(
+        `[plugin-store] adopting installed modules: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
     const index = await readShippedIndex(assetsDir);
     for (const row of index === null ? [] : carried(index)) {
       const { name, version, integrity } = row as Partial<Record<string, unknown>>;
@@ -410,17 +426,8 @@ export async function syncPluginStore(
       if (typeof integrity !== "string" || entryKey(integrity) === null) continue;
       shipped.add(integrity);
       if (isStored(storeEntryDir(root, name, version, integrity))) continue;
-      const memo = `${root}\0${integrity}`;
-      const known = storedAs.get(memo);
-      if (known !== undefined && isStored(known.dir)) {
-        shipped.add(known.integrity);
-        continue;
-      }
       try {
-        const pkgDir = packageDirOf(index!.prefix, name);
-        const entry = await storePackage(root, pkgDir, index!.prefix);
-        storedAs.set(memo, entry);
-        shipped.add(entry.integrity);
+        await storePackage(root, packageDirOf(index!.prefix, name), index!.prefix, integrity);
       } catch (err) {
         log(`[plugin-store] ${name}: ${err instanceof Error ? err.message : String(err)}`);
       }

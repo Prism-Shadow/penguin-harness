@@ -1,22 +1,29 @@
-# 沙盒后端随 Docker 镜像到位，`PATH` 上没有 npm 时也能从 registry 现取
+# 沙盒后端到达每一条渠道，插件以 npm 的 integrity 标识
 
 - **Date:** 2026-09-29
 - **Type:** feature
-- **Scope:** `server`, `docker`, `docs`
+- **Scope:** `server`, `core`, `cli`, `docker`, `release`, `docs`
 - **PR:** [Myriad-Dreamin/penguin-harness#98](https://github.com/Myriad-Dreamin/penguin-harness/pull/98)
 
 [English](2026-09-29-sandbox-on-every-channel.md)
 
-此前内置插件经三条渠道到达服务器：CLI 安装包的 `lib/plugins`、桌面端的 `plugins/`、热推送。现在 Docker 镜像也带上它们。`@prismshadow/penguin-cli` 的 npm 全局安装不带插件本体，只带这次构建对随之发布的插件的索引（`plugins/index.json`）：在那里，后端在插件页上从 npm registry 现取进插件仓，并按该索引写明的 integrity 校验。构建前缀只列出、未携带的插件，算作现取而非随包下发。随包下发的插件仍要等某个 Project 要求时才加载，沙盒模式默认仍是关闭。
+每一份构建都带一个随包插件目录：它构建的插件，由 npm 装好，加一份 `index.json` 列出每个插件及其 integrity。CLI 安装包、桌面端与热推送早已如此；Docker 镜像与源码检出现在也一样。npm 上的 CLI 包只带索引，在某个 Project 要求时从 npm registry 现取插件。插件的 integrity 就是 npm 自己的 `dist.integrity`。随包下发的插件仍要等某个 Project 要求时才加载，沙盒模式默认仍是关闭。
 
-## Docker 镜像
+## 渠道
 
-- 镜像用发布流程同一个 `build-plugins` 步骤构建内置插件前缀，放在 `/opt/penguin/lib/plugins`。它与 CLI 安装包里的是同一份，amd64 与 arm64 镜像共用。
-- 服务器在入口的真实路径旁查找安装目录的前缀。镜像经由 `/usr/local/bin/penguin` 这个链接启动程序，服务器过去因此去 `/usr/local/plugins` 找。插件仓里的插件借用宿主的 `@prismshadow/penguin-core` 时，也按同样的方式解析。
-- Docker 快速上手新增一节，讲在容器里运行沙盒：列出让 bubblewrap 能创建 user namespace 的参数（`seccomp`、`apparmor`、`systempaths` 设为 `unconfined`），并说明不放行时会怎样——沙盒卡片显示该后端未启用及原因，除关闭以外的每种模式都会拒绝 Agent 的每条命令。
+- **Docker 镜像。** 镜像用发布流程同一个 `build-plugins` 步骤构建随包插件目录，放在 `/opt/penguin/lib/plugins`，与 CLI 安装包带的是同一份，同时服务 amd64 与 arm64 两种镜像。服务器在入口的真实路径旁找它：镜像经 `/usr/local/bin/penguin` 链接启动程序，此前服务器会去 `/usr/local/plugins` 找。Docker 快速上手新增一节「在容器里运行沙盒」：列出让 bubblewrap 能创建 user namespace 的选项（`seccomp`、`apparmor`、`systempaths` 设为 `unconfined`），以及不给这些选项时的情形（沙盒卡片写明后端未在使用及原因，关闭以外的每个模式都拒绝 Agent 的每条命令）。
+- **npm 全局安装。** `@prismshadow/penguin-cli` 带 `plugins/index.json`：本次构建索引中随之发布到 npm 的那些插件的行。索引列出、目录里却没带的插件不算随包下发；启用它时从 registry 现取进插件仓。
+- **源码检出。** `pnpm build` 把随包插件目录写到 `packages/cli/plugins/`，dev 预构建为开发服务器写到 `packages/server/plugins/`：源码检出跑的是它刚构建的插件，走 CLI 安装包那一路。Project 的插件表不再以绝对路径加载插件；这样的条目报为「不是包名」。`@prismshadow/penguin-plugin-test` 把被测插件按热推送带来的方式放进临时数据根。
+
+## Integrity
+
+- 插件的 integrity 就是 npm 的 `dist.integrity`：`sha512-` 加上发布的 tarball 字节的 sha512 的 base64。它只覆盖包本身，不含依赖。
+- `build-plugins` 对每个插件打包一次，以那份 tarball 的 integrity 写进索引；发布流程上传的就是这几份 tarball。
+- 从 registry 现取时以 npm 的常规布局安装，只有 npm 为所下载 tarball 记下的 integrity 与索引一致时才入仓。
+- 插件仓条目的目录名取该 sha512 的前 16 位十六进制。Project 插件表里的钉住、`POST …/plugins/installed` 的 `integrity` 与每条索引条目都用这一写法。
 
 ## 从 registry 现取
 
-- 在 Windows 上，现取经 shell 启动 `npm.cmd`（Node 启动 `.cmd` 文件必须经 shell），每个参数都按 cmd.exe 的规则加引号；会被 cmd.exe 展开或拆开的参数直接拒绝。
+- 现取运行 `PATH` 上的 `npm`。在 Windows 上经 shell 启动 `npm.cmd`（Node 启动 `.cmd` 文件必须经 shell），每个参数都按 cmd.exe 的规则加引号；会被 cmd.exe 展开或拆开的参数直接拒绝。
 - 现取失败时报告 npm 的首条 `npm error` 行，跳过它之前的警告与之后的日志路径提示，并能处理 Windows 换行。
 - 插件、Skill 与 Server API 三页不再说「不会下载任何东西」：构建未发布的包会从 registry 现取；`PUT` 加入本机没有的名称时返回 `plugin_not_installed`。
