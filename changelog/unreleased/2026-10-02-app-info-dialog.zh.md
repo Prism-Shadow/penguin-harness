@@ -3,7 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** feature
 - **Scope:** `web`, `docs`
-- **PR:** [#N](https://github.com/Prism-Shadow/penguin-harness/pull/N)
+- **PR:** [#950](https://github.com/Prism-Shadow/penguin-harness/pull/950)
 
 [English](2026-10-02-app-info-dialog.md)
 
