@@ -69,12 +69,14 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
  * failed to load or failed its check, with why; one for another platform is not among them.
  * `presets` is the Sandbox card's table the composer names levels by, when there is one; the
  * policy is `advanced` when it holds what no preset shows (masked paths, a read-only temp).
+ * `switchOn` is the card's switch, when the server reports it.
  */
 export function sessionSandboxOf(
   policy: SandboxSettings,
   dimensions: readonly SandboxDimension[] = [],
   unavailable: readonly UnavailableSandboxBackend[] = [],
   presets?: readonly SessionSandboxPreset[],
+  switchOn?: boolean,
 ): SessionSandbox {
   const advanced = (policy.maskPaths ?? []).length > 0 || policy.writableTemp === false;
   return {
@@ -86,6 +88,7 @@ export function sessionSandboxOf(
     unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
     ...(presets !== undefined ? { presets: presets.map((p) => ({ ...p })) } : {}),
     ...(advanced ? { advanced: true } : {}),
+    ...(switchOn !== undefined ? { switchOn } : {}),
   };
 }
 
@@ -251,6 +254,8 @@ export interface SessionServiceDeps {
   sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
   /** The Sandbox card's presets table, in table order (absent: the view carries none). */
   sandboxPresets?: () => readonly SessionSandboxPreset[];
+  /** The Sandbox card's switch: whether new Sessions start confined (absent: not reported). */
+  sandboxSwitchOn?: () => boolean;
 }
 
 export class SessionService {
@@ -277,6 +282,7 @@ export class SessionService {
       this.sandboxDimensions(),
       this.deps.sandboxUnavailable?.() ?? [],
       this.deps.sandboxPresets?.(),
+      this.deps.sandboxSwitchOn?.(),
     );
   }
 

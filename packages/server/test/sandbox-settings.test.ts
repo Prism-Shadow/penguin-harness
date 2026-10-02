@@ -104,7 +104,9 @@ describe("sandbox settings group", () => {
     const entries = await list();
     const sandbox = entries.find((e) => e.name === "sandbox")!;
     expect(entries[0]).toBe(sandbox);
+    // Nothing saved: the switch reads off, derived from the default mode.
     expect(sandbox.values).toEqual({
+      enabled: false,
       mode: "danger-full-access",
       network: "open",
       writableTemp: true,

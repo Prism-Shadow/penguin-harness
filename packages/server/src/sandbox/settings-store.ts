@@ -22,17 +22,53 @@ import type {
   SessionSandboxPreset,
 } from "../api/types.js";
 import { PluginConfig, resolveTable } from "../plugin/config.js";
-import type { SettingsGroupStatus } from "../plugin/config.js";
+import type { SettingsGroupStatus } from "../plugin/config-page.js";
 import { Sandbox, SandboxModule } from "./service.js";
 import { requestedDimensions } from "./dimensions.js";
+
+/**
+ * The backend package each OS defaults to: what the card offers to install when the switch is
+ * turned on and no backend for this OS is installed. sandbox-dsh serves every OS but is never
+ * the default, because it confines the file system only.
+ */
+const DEFAULT_BACKEND: Partial<Record<NodeJS.Platform, string>> = {
+  linux: "@penguinharness/sandbox-bwrap",
+  darwin: "@penguinharness/sandbox-seatbelt",
+  win32: "@penguinharness/sandbox-wsl",
+};
 
 /** The sandbox's group name (its contribution id), and the parent a backend's group names. */
 export const SANDBOX_GROUP = "sandbox";
 
 const MODES: readonly SandboxMode[] = ["read-only", "workspace-write", "danger-full-access"];
 
-/** A stored document (defaults merged) as the service's policy. */
+/**
+ * Whether the switch is on in a stored document (defaults merged). A document saved before the
+ * switch existed has no `enabled`: it reads as on exactly when its policy confined anything — a
+ * mode other than Off, or (under Off) a network cut or masked paths, which also need a backend —
+ * so a deployment that was confined stays confined. The document is never rewritten for it.
+ * TODO(sandbox-switch-compat): a save writes only the fields it changes, so a pre-switch
+ * document keeps lacking `enabled` until its switch is toggled; the fallback can go only when
+ * the maintainers choose a one-time migration or an announced break for such documents (see
+ * the 2026-10-02 backward-compatibility changelog entry).
+ */
+export function sandboxEnabledOf(doc: Record<string, unknown>): boolean {
+  if (typeof doc.enabled === "boolean") return doc.enabled;
+  const policy = configuredPolicyOf(doc);
+  return policy.mode !== "danger-full-access" || requestedDimensions(policy).length > 1;
+}
+
+/**
+ * A stored document (defaults merged) as the service's policy: the configured one while the
+ * switch is on, nothing confined while it is off. The mode, network and the rest stay stored
+ * while off, and apply again when the switch is turned back on.
+ */
 export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
+  return sandboxEnabledOf(doc) ? configuredPolicyOf(doc) : { mode: "danger-full-access" };
+}
+
+/** The policy the document's fields describe, whatever the switch says. */
+function configuredPolicyOf(doc: Record<string, unknown>): Policy {
   const mode = MODES.includes(doc.mode as SandboxMode)
     ? (doc.mode as SandboxMode)
     : "danger-full-access";
@@ -82,6 +118,17 @@ export function sandboxPresetsOf(
         descriptionZh:
           "新建会话的初始封禁策略，由沙盒后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
         properties: {
+          // No default: a document saved before the switch derives it (sandboxEnabledOf), and
+          // with nothing saved that reads as off, the default mode being Off.
+          enabled: {
+            type: "boolean",
+            title: "Confine new sessions",
+            titleZh: "新会话进入沙盒",
+            description:
+              "Off: a new session starts with full file and network access, held only by its approval mode. Sessions that already exist keep their own policy.",
+            descriptionZh:
+              "关闭时，新会话拥有完全的文件与网络访问，只受审批模式约束。已有会话保留各自的策略。",
+          },
           // The composer's menu: each preset a named mode, network level and approval mode.
           // Names and mappings only — the fields below are the policy, and sandboxPolicyOf never
           // reads this. Declared first so the card draws the table on top. Full Access keeps
@@ -206,6 +253,7 @@ export function sandboxPresetsOf(
           mode: {
             type: "enum",
             title: "Confinement mode",
+            advanced: true,
             titleZh: "封禁模式",
             default: "danger-full-access",
             options: [
@@ -221,6 +269,7 @@ export function sandboxPresetsOf(
           network: {
             type: "enum",
             title: "Network",
+            advanced: true,
             titleZh: "网络",
             description:
               "What a confined command, hook script or read_file URL may reach. Local network allows only this machine's localhost, and needs a backend that can enforce it.",
@@ -239,6 +288,7 @@ export function sandboxPresetsOf(
           },
           writableTemp: {
             type: "boolean",
+            advanced: true,
             title: "Temporary directory writable",
             titleZh: "临时目录可写",
             description:
@@ -249,6 +299,7 @@ export function sandboxPresetsOf(
           },
           maskPaths: {
             type: "list",
+            advanced: true,
             title: "Masked paths",
             titleZh: "屏蔽路径",
             description:
@@ -296,6 +347,17 @@ export class SandboxSettingsStatus {
   setup() {
     const sandbox = this.sandbox;
     this.status = {
+      // The switch as the card shows it: derived for a document saved before it existed.
+      derive: (values) => ({ ...values, enabled: sandboxEnabledOf(values) }),
+      // A backend for this OS is installed when it is in use or failed (to load, or its check):
+      // one that declined is for another OS. Installing the default would not fix a failure.
+      backend: () => {
+        const recommended = DEFAULT_BACKEND[process.platform];
+        return {
+          installed: sandbox.backends().length > 0 || sandbox.failures().length > 0,
+          ...(recommended !== undefined ? { recommended } : {}),
+        };
+      },
       // A backend reads its own group (drawn inside this card) at load: after a save of the
       // card, one that failed its check — a wrong program path — loads again, no restart.
       saved: () => sandbox.retryFailed(),

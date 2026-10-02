@@ -9,12 +9,12 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { PluginConfigResponse } from "../src/api/types.js";
 import {
   PluginConfigError,
-  PluginConfigPage,
   PluginConfigStore,
   applyUpdate,
   parsePluginConfiguration,
   resolveTable,
 } from "../src/plugin/config.js";
+import { PluginConfigPage } from "../src/plugin/config-page.js";
 import { PluginHost } from "../src/plugin/host.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -87,6 +87,23 @@ describe("parsePluginConfiguration", () => {
     expect(bad({ a: { type: "string", title: "A", pattern: "(" } })).toThrow(
       /\.a\.pattern is not a valid regular expression/,
     );
+    expect(bad({ a: { type: "string", title: "A", advanced: "yes" } })).toThrow(
+      /\.a\.advanced must be a boolean/,
+    );
+  });
+
+  it("keeps a field's advanced mark, and leaves it off a field not marked", () => {
+    const schema = parsePluginConfiguration(
+      {
+        properties: {
+          basic: { type: "boolean", title: "Basic", advanced: false },
+          tuned: { type: "number", title: "Tuned", advanced: true },
+        },
+      },
+      "acme/package.json",
+    )!;
+    expect(schema.properties.tuned).toEqual({ type: "number", title: "Tuned", advanced: true });
+    expect(schema.properties.basic).toEqual({ type: "boolean", title: "Basic" });
   });
 });
 

@@ -171,7 +171,9 @@ Two limits cannot be changed: the number of files per message (20) and the inlin
 
 A settings group is a contribution to `PluginConfigProvider.groups`; the sandbox's comes first. Each group in the list carries its schema (`configuration`), its stored values merged onto the defaults with secrets masked, the group whose card it is drawn inside (`parent`), and live status lines (`notices`).
 
-Field types are `string`, `secret`, `boolean`, `number`, `enum` (with `options`) and `list` (one value per line, optional `maxItems`). A `number` may declare `minimum` and `maximum`, and a `string` or `list` a `pattern` (with `patternErrorMessage`) that every value or line must match.
+Field types are `string`, `secret`, `boolean`, `number`, `enum` (with `options`) and `list` (one value per line, optional `maxItems`). A `number` may declare `minimum` and `maximum`, and a `string` or `list` a `pattern` (with `patternErrorMessage`) that every value or line must match. A field marked `advanced: true` is drawn in the card's Advanced fold, collapsed by default; it is stored and validated like any other.
+
+The sandbox's entry also carries `backend`: `installed` says whether a sandbox backend for this machine's OS is installed, and `recommended` names the package this OS defaults to (`@penguinharness/sandbox-bwrap` on Linux, `@penguinharness/sandbox-seatbelt` on macOS, `@penguinharness/sandbox-wsl` on Windows). Its `enabled` switch decides whether new Sessions start confined; a document saved before the switch existed reads it as on when its old policy confined anything, and is not rewritten.
 
 On PUT, fields the request omits keep their value, `null` or `""` clears one, and a secret sent back as its mask keeps the stored value. A refused field returns `400` `plugin_config_invalid` naming it; a name no group answers to returns `404` `plugin_config_unknown`. The declaring module picks the change up itself, through its watch or at its next read, with no restart.
 

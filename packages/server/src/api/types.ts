@@ -1612,6 +1612,12 @@ export interface SessionSandbox {
    * presets do not show — masked paths, or the temp directory not writable.
    */
   advanced?: boolean;
+  /**
+   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
+   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
+   * its own policy either way). A server that does not report it is read as on.
+   */
+  switchOn?: boolean;
 }
 
 /** One sandbox preset: a named mode, network level and approval mode. */
@@ -5435,6 +5441,11 @@ export interface PluginConfigField {
   placeholder?: string;
   /** The value a package with nothing stored reads; also what an empty field falls back to. */
   default?: string | number | boolean | string[];
+  /**
+   * Drawn in the card's Advanced fold, collapsed by default, rather than among the basic
+   * fields. Presentation only: it is stored, validated and read like any other field.
+   */
+  advanced?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -5520,6 +5531,21 @@ export interface PluginConfigEntry {
   actions?: PluginConfigActionDecl[];
   /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
   unavailable?: PluginConfigUnavailableDecl[];
+  /**
+   * For a group whose settings a backend plugin enforces (the sandbox): whether one that
+   * applies to this machine's OS is installed, and which package this OS defaults to. The card
+   * offers to install `recommended` when the group's switch is turned on and none is installed.
+   * Asked per read, like the notices; the client never guesses the OS.
+   */
+  backend?: PluginConfigBackend;
+}
+
+/** Whether a backend that applies to this machine is installed, and this OS's default one. */
+export interface PluginConfigBackend {
+  /** A backend for this OS is installed: loaded, or installed and failing its check. */
+  installed: boolean;
+  /** The npm package this OS defaults to; absent on an OS with no default backend. */
+  recommended?: string;
 }
 
 /** One enum option a settings group cannot honour on this machine, and why. */

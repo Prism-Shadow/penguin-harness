@@ -83,8 +83,11 @@ const DEFAULT_PRESETS = [
   },
 ];
 
-/** What the API serves beside a policy on a server with no backend: the presets too. */
-const SERVED = { ...NO_BACKEND, presets: DEFAULT_PRESETS };
+/**
+ * What the API serves beside a policy on a server with no backend: the presets too, and the
+ * switch, which settings saved without it read as on once they confine.
+ */
+const SERVED = { ...NO_BACKEND, presets: DEFAULT_PRESETS, switchOn: true };
 
 const ROW: SessionRow = {
   sessionId: "session-1",

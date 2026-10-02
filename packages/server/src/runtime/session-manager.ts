@@ -92,7 +92,7 @@ import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
-import { SANDBOX_GROUP, sandboxPresetsOf } from "../sandbox/settings-store.js";
+import { SANDBOX_GROUP, sandboxEnabledOf, sandboxPresetsOf } from "../sandbox/settings-store.js";
 import { PluginConfig } from "../plugin/config.js";
 import { SessionService } from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
@@ -2721,6 +2721,7 @@ export class SessionsModule {
       // The Sandbox card's presets, read per view: a rename there reaches the next read.
       sandboxPresets: () =>
         sandboxPresetsOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP)),
+      sandboxSwitchOn: () => sandboxEnabledOf(pluginConfig.get(SANDBOX_GROUP)),
     });
     this.manager = manager;
     this.sessionService = sessionService;
