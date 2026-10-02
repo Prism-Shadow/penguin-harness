@@ -184,7 +184,7 @@ export function ConfigTable({
                           autoComplete="off"
                           // Borderless until pointed at or focused: the row reads as a table
                           // of names, and the box shows itself when it is about to be edited.
-                          className="!w-24 !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
+                          className="!w-20 !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
                           onChange={(e) =>
                             onCell(
                               row.id,
