@@ -4,10 +4,9 @@
  * row. Both read the one store in balance.ts, and both show the amount in the display currency
  * the cost center and the model prices use.
  *
- * The header's menu holds what used to stand around the amount as two glyphs — the pin that
- * keeps the balance beside the user name, and the refresh — and, under them, a line that cannot
- * be clicked: the vendor's own figures and the read time, or, when no balance could be read, the
- * reason. A balance that cannot be read is a muted dash, never red text: it is information about
+ * The header's menu is three short lines: pin the balance at the sidebar's bottom-left (beside
+ * the user name), refresh it, and — not a row to choose — when it was read, or why the last read
+ * failed. A balance that cannot be read is a muted dash, never red text: it is information about
  * an account, not an error the user made on this page.
  */
 import { useEffect, useState } from "react";
@@ -35,54 +34,59 @@ import { HEADER_TEXT } from "./group-header";
 export const PINNED_BALANCE_REFRESH_MS = 5 * 60 * 1000;
 
 /**
- * What a balance reads as: the text shown — the amount in the display currency — and the
- * sentence behind it (the menu's information line and the trigger's spoken tail), which keeps
- * the vendor's own figures and the time they were read.
+ * What a balance reads as: the text shown — the amount in the display currency — the sentence
+ * spoken behind it (the vendor's own figures and the read time, or why there is no balance),
+ * and the balance menu's last line: when it was read, or why the read failed.
  */
 export function balanceView(
   state: BalanceState | undefined,
   label: string,
   currency: Currency,
-): { text: string; title: string } {
+): { text: string; title: string; updated: string } {
   const answer = state?.answer;
   if (answer === undefined) {
-    if (state?.requestError !== undefined) return { text: "—", title: state.requestError };
+    if (state?.requestError !== undefined) {
+      const failed = S.models.balanceFailed(state.requestError);
+      return { text: "—", title: failed, updated: failed };
+    }
     // Nothing read yet: a quiet placeholder, not a dash, which would claim a failure.
-    return { text: "…", title: S.models.balanceTitle(label, "…", "…") };
+    return {
+      text: "…",
+      title: S.models.balanceTitle(label, "…", "…"),
+      updated: S.models.balanceUpdatedAt("…"),
+    };
   }
   if (answer.ok) {
-    const title = S.models.balanceTitle(
-      label,
-      formatBalance(answer),
-      formatDateTime(answer.fetchedAt),
-    );
+    const time = formatDateTime(answer.fetchedAt);
+    const title = S.models.balanceTitle(label, formatBalance(answer), time);
     return {
       text: displayBalance(answer, currency),
       title: answer.available === false ? `${title} · ${S.models.balanceUnavailable}` : title,
+      updated: S.models.balanceUpdatedAt(time),
     };
   }
   const reason = S.models.balanceErrors[answer.error] ?? answer.message;
-  return {
-    text: "—",
-    title:
-      answer.status !== undefined ? `${reason}${S.models.balanceStatus(answer.status)}` : reason,
-  };
+  const failed = S.models.balanceFailed(
+    answer.status !== undefined ? `${reason}${S.models.balanceStatus(answer.status)}` : reason,
+  );
+  return { text: "—", title: failed, updated: failed };
 }
 
 /**
- * The balance menu's body: pin (or unpin) beside the user name, re-read the balance, and the
- * line with what was read. The pin is per account, so a member's menu holds it too. The line
- * sits outside the `menu` role: it is information, not a row to choose.
+ * The balance menu's body, three lines: pin (or unpin) at the sidebar's bottom-left, refresh,
+ * and when the balance was read (or why the read failed). The pin is per account, so a
+ * member's menu holds it too. The last line sits outside the `menu` role: it is information,
+ * not a row to choose.
  */
 export function BalanceMenu({
   pinned,
-  info,
+  updated,
   onPin,
   onRefresh,
 }: {
   pinned: boolean;
-  /** The vendor's figures and read time, or the reason there is no balance (balanceView's title). */
-  info: string;
+  /** When the balance was read, or why the read failed (balanceView's `updated`). */
+  updated: string;
   onPin: () => void;
   onRefresh: () => void;
 }) {
@@ -92,7 +96,7 @@ export function BalanceMenu({
         <MenuItem label={pinned ? S.models.unpinBalance : S.models.pinBalance} onSelect={onPin} />
         <MenuItem label={S.models.balanceRefresh} onSelect={onRefresh} />
       </Menu>
-      <p className="border-t border-line-muted px-3 py-1.5 text-xs text-fg-muted">{info}</p>
+      <p className="border-t border-line-muted px-3 py-1.5 text-xs text-fg-muted">{updated}</p>
     </>
   );
 }
@@ -116,14 +120,14 @@ export function GroupBalance({
   useEffect(() => {
     void requestBalance(projectId, provider.id);
   }, [projectId, provider.id]);
-  const { text, title } = balanceView(state, provider.label, currency);
+  const { text, title, updated } = balanceView(state, provider.label, currency);
   const refreshing = state?.loading === true && state.answer !== undefined;
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
       className="flex shrink-0"
-      menuClass="w-64 max-w-[calc(100vw-2rem)] origin-top-right"
+      menuClass="w-56 max-w-[calc(100vw-2rem)] origin-top-right"
       portal={{ direction: "down", align: "right" }}
       button={
         <button
@@ -141,7 +145,7 @@ export function GroupBalance({
     >
       <BalanceMenu
         pinned={pinned}
-        info={title}
+        updated={updated}
         onPin={() => {
           setOpen(false);
           setPinnedBalance(pinned ? null : { projectId, provider: provider.id });

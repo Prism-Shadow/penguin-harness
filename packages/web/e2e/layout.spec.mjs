@@ -280,20 +280,21 @@ test("models: group header actions collapse to icons instead of disappearing", a
   // Every group-level action, addressed by its accessible name (aria-label = "action vendor",
   // stable across widths). Narrow rows must never hide an action: it keeps its icon (with a
   // tooltip) and sheds only the visible text label. TokenDance, not yet connected, offers
-  // Connect (the one action with words) and Add model, then the speed test and the group
-  // settings — icons at every width, the settings last.
+  // its status as the connect button (words at every width: a grey dot alone would not read as
+  // a button) and Add model, then the speed test and the group settings — icons at every
+  // width, the settings last.
   const actions = [
-    { name: "连接 TokenDance", label: "连接" },
+    { name: "未连接 · 连接 TokenDance", words: "未连接" },
     { name: "添加模型 TokenDance", label: null },
     { name: "测速 TokenDance", label: null },
     { name: "设置 TokenDance", label: null },
   ];
+  // The header row: the collapse button sits in its left cluster, beside the group's lock.
+  const header = tokenDance.locator("xpath=../..");
   // The header's last action is the settings gear, on this group as on every other.
-  const lastAction = await tokenDance
-    .locator("xpath=..")
-    .evaluate((header) =>
-      header.querySelector("div.ml-auto > :last-child")?.getAttribute("aria-label"),
-    );
+  const lastAction = await header.evaluate((header) =>
+    header.querySelector("div.ml-auto > :last-child")?.getAttribute("aria-label"),
+  );
   expect(lastAction, "settings stands last in the header").toBe("设置 TokenDance");
 
   // The expected label regime is derived from the row's measured width against the @3xl
@@ -305,7 +306,7 @@ test("models: group header actions collapse to icons instead of disappearing", a
   const seen = { iconOnly: false, fullyLabeled: false };
   for (const width of [390, 900, 1180, 1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
-    const { rowWidth, rem } = await tokenDance.locator("xpath=..").evaluate((header) => {
+    const { rowWidth, rem } = await header.evaluate((header) => {
       // Container queries resolve against the content box, so strip the row's padding.
       const s = getComputedStyle(header);
       return {
@@ -319,11 +320,19 @@ test("models: group header actions collapse to icons instead of disappearing", a
     if (labels === false) seen.iconOnly = true;
     if (labels === true) seen.fullyLabeled = true;
 
-    for (const { name, label } of actions) {
-      const action = page.getByRole("button", { name });
+    for (const { name, label, words } of actions) {
+      const action = page.getByRole("button", { name, exact: true });
       await expect(action, `${name} reachable @${width}`).toBeVisible();
       await expect(action, `${name} has a tooltip @${width}`).toHaveAttribute("data-tooltip", /.+/);
-      const icon = action.locator("svg");
+      if (words !== undefined) {
+        await expect(
+          action.getByText(words, { exact: true }),
+          `${name} words @${width}`,
+        ).toBeVisible();
+        continue;
+      }
+      // The glyph's outer <svg>: a theme draws its own icon sets inside it.
+      const icon = action.locator("svg").first();
       if (label === null) {
         await expect(icon, `${name} icon shown @${width}`).toBeVisible();
         continue;
@@ -338,7 +347,7 @@ test("models: group header actions collapse to icons instead of disappearing", a
         await expect(text, `${label} label hidden @${width}`).toBeHidden();
       }
     }
-    const metrics = await tokenDance.locator("xpath=..").evaluate((header) => {
+    const metrics = await header.evaluate((header) => {
       const visible = (el) => {
         for (let node = el; node; node = node.parentElement) {
           const s = getComputedStyle(node);

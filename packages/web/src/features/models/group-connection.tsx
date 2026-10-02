@@ -2,12 +2,13 @@
  * A group's connection in its header (groups whose key comes from an authorization flow:
  * TokenDance, Penguin Go, ModelScope), as one control:
  *
- * - not connected: the status "Not connected" and, for the owner, the Connect button;
+ * - not connected, for the owner: one flat button — the muted dot and "Not connected" — that
+ *   starts the group's connect flow, so the status is also the way to change it;
  * - connected, for the owner: one flat trigger — the success dot, "Connected" and a chevron —
  *   opening a menu with Sync models (Penguin Go only: it reads the platform's catalog with the
  *   group key), Reconnect (the group's flow again, for a fresh key or another account) and
  *   Disconnect, in the danger tone;
- * - connected, for a member: the same status as plain text, with no menu.
+ * - for a member, either way: the status as plain text, with nothing to press.
  *
  * "Connected" is the group holding a key of its own, however it got there (group-header.ts).
  * Disconnect clears that key (`PUT …/models/providers/:id { clearApiKey: true }`) behind a danger
@@ -18,13 +19,9 @@ import { useState } from "react";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import {
-  Button,
   ChevronDown,
   ConfirmModal,
   Dropdown,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
   Menu,
   MenuItem,
   toastError,
@@ -34,12 +31,12 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneDot } from "../../lib/tone";
-import { HEADER_BUTTON, HEADER_LABEL, HEADER_TEXT, connectedMenuItems } from "./group-header";
+import { HEADER_TEXT, connectedMenuItems } from "./group-header";
 import type { ConnectedMenuItem } from "./group-header";
 
 /** What a menu row runs; the page supplies each. */
 export interface ConnectionActions {
-  /** Starts the group's connect flow (Connect, and Reconnect from the menu). */
+  /** Starts the group's connect flow (the Not connected button, and Reconnect from the menu). */
   onConnect: () => void;
   /** Penguin Go's platform sync. */
   onSyncModels: () => void;
@@ -48,17 +45,19 @@ export interface ConnectionActions {
 }
 
 /**
- * The status dot and words, shared by every state of the control. The words give way on a narrow
- * header (they stay for assistive technology); the dot and the tooltip on its container stay.
+ * The status dot and words, shared by every state of the control. Where a chevron or plain text
+ * carries the state, the words give way on a narrow header (they stay for assistive technology;
+ * the dot and the tooltip on its container stay). The Not connected button keeps them at every
+ * width (`keepWords`): a grey dot alone does not read as something to press.
  */
-function Status({ connected }: { connected: boolean }) {
+function Status({ connected, keepWords = false }: { connected: boolean; keepWords?: boolean }) {
   return (
     <>
       <span
         aria-hidden
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${connected ? toneDot.success : toneDot.muted}`}
       />
-      <span className="sr-only @2xl:not-sr-only">
+      <span className={keepWords ? undefined : "sr-only @2xl:not-sr-only"}>
         {connected ? S.models.connectedStatus : S.models.notConnectedStatus}
       </span>
     </>
@@ -92,6 +91,39 @@ export function ConnectionMenu({
   );
 }
 
+const STATUS_CLASS = `${HEADER_TEXT} gap-1 whitespace-nowrap text-gray-500 dark:text-gray-400`;
+const PRESSABLE =
+  "rounded-control transition-colors duration-150 hover:text-gray-800 disabled:opacity-50 dark:hover:text-gray-200";
+
+/**
+ * The owner's control while the group holds no key: the status itself, as a flat button that
+ * starts the group's connect flow. Its name starts with the words it shows, then says what
+ * pressing does; the tooltip says the latter.
+ */
+export function NotConnectedButton({
+  provider,
+  busy,
+  onConnect,
+}: {
+  provider: ModelProviderInfo;
+  busy: boolean;
+  onConnect: () => void;
+}) {
+  const connect = `${S.models.oauthKey} ${provider.label}`;
+  return (
+    <button
+      type="button"
+      aria-label={`${S.models.notConnectedStatus} · ${connect}`}
+      data-tooltip={connect}
+      disabled={busy}
+      onClick={onConnect}
+      className={`${STATUS_CLASS} ${PRESSABLE}`}
+    >
+      <Status connected={false} keepWords />
+    </button>
+  );
+}
+
 export function GroupConnection({
   provider,
   connected,
@@ -108,39 +140,19 @@ export function GroupConnection({
   actions: ConnectionActions;
 }) {
   const [open, setOpen] = useState(false);
-  const statusClass = `${HEADER_TEXT} gap-1 whitespace-nowrap text-gray-500 dark:text-gray-400`;
 
-  if (!connected) {
+  // A member reads the state; only the owner can act on it.
+  if (!isOwner) {
+    const status = connected ? S.models.connectedStatus : S.models.notConnectedStatus;
     return (
-      <span className="flex shrink-0 items-center gap-2">
-        <span className={statusClass} data-tooltip={S.models.notConnectedStatus}>
-          <Status connected={false} />
-        </span>
-        {isOwner && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className={HEADER_BUTTON}
-            disabled={busy}
-            aria-label={`${S.models.oauthKey} ${provider.label}`}
-            title={S.models.oauthKey}
-            onClick={actions.onConnect}
-          >
-            <GlyphIcon d={ICONS.chainLink} size={ICON_SIZE.groupHeaderAction} />
-            <span className={HEADER_LABEL}>{S.models.oauthKey}</span>
-          </Button>
-        )}
+      <span className={STATUS_CLASS} data-tooltip={status}>
+        <Status connected={connected} />
       </span>
     );
   }
 
-  // A member reads the state; only the owner can act on it.
-  if (!isOwner) {
-    return (
-      <span className={statusClass} data-tooltip={S.models.connectedStatus}>
-        <Status connected />
-      </span>
-    );
+  if (!connected) {
+    return <NotConnectedButton provider={provider} busy={busy} onConnect={actions.onConnect} />;
   }
 
   const run: Record<ConnectedMenuItem, () => void> = {
@@ -164,7 +176,7 @@ export function GroupConnection({
           data-tooltip={S.models.connectedStatus}
           disabled={busy}
           onClick={() => setOpen(!open)}
-          className={`${statusClass} rounded-control transition-colors duration-150 hover:text-gray-800 disabled:opacity-50 dark:hover:text-gray-200`}
+          className={`${STATUS_CLASS} ${PRESSABLE}`}
         >
           <Status connected />
           <ChevronDown size={10} />

@@ -1564,6 +1564,9 @@ export const en: Strings = {
      * needs first and is the element that truncates.
      */
     recommendedGroup: "Recommended",
+    pinGroup: "Pin",
+    unpinGroup: "Unpin",
+    foldedGroups: (n: number): string => (n === 1 ? "1 more group" : `${n} more groups`),
     discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
     offPeakTitle: (pct: number, peak: PeakWindows): string => {
@@ -1612,19 +1615,15 @@ export const en: Strings = {
       `Delete "${name}"? Its configuration and API key will be removed.`,
     getApiKey: "Manage keys",
     getModelIds: "Get model IDs",
+    modelList: "Model list",
     groupSettings: "Settings",
     groupSettingsTitle: (label: string): string => `${label} group settings`,
     clearGroupKey: "Clear the group key",
     baseUrlNone: "Not set: the client's default endpoint",
-    catalogReference: (value: string): string => `Catalog: ${value}`,
     detectNeedsBaseUrl: "Enter a base URL first",
     protocolNone: "Not set",
     protocolRoutedById: "Routed by model ID",
     protocolEachModel: "Each model sets its own",
-    groupOverridesNote: (k: number): string =>
-      k === 1
-        ? "1 model carries its own base URL, key or protocol; those fields do not follow the group"
-        : `${k} models carry their own base URL, key or protocol; those fields do not follow the group`,
     protocolFollowGroup: "Follow group",
     inheritFromGroup: "Leave blank to use the group's setting",
     keyNotReachedNote:
@@ -1641,25 +1640,27 @@ export const en: Strings = {
       `Disconnect ${label}? This deletes the group key; models that use it stop working, models with their own key are unaffected.`,
     disconnected: (label: string): string => `Disconnected ${label}`,
     /**
-     * A group's account balance in its header (and pinned beside the user name): the tooltip
-     * names the group, the vendor's own figures and the time of the reading. `amounts` and
-     * `time` are already formatted.
+     * A group's account balance in its header (and pinned beside the user name): the sentence
+     * spoken behind the amount names the group, the vendor's own figures and the time of the
+     * reading. `amounts` and `time` are already formatted.
      */
     balanceTitle: (label: string, amounts: string, time: string): string =>
       `${label} balance ${amounts}, read at ${time}`,
-    balanceRefresh: "Refresh",
+    balanceRefresh: "Refresh balance",
+    balanceUpdatedAt: (time: string): string => `Updated: ${time}`,
+    balanceFailed: (reason: string): string => `Update failed: ${reason}`,
     /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
     balanceUnavailable: "The account cannot make requests right now; its balance may be too low",
-    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    /** Why no balance could be read, by the server's code: the reason after balanceFailed's prefix. */
     balanceErrors: {
-      no_key: "This group has no API key to read its balance with",
-      upstream_failed: "The provider returned no balance; use Refresh to try again",
-      unsupported: "This group has no balance to read",
+      no_key: "no API key to read it with",
+      upstream_failed: "the provider returned no balance",
+      unsupported: "this group has no balance to read",
     } as Record<string, string | undefined>,
     /** Appended when the vendor answered with an HTTP error. */
-    balanceStatus: (status: number): string => ` (the provider answered HTTP ${status})`,
-    /** The balance menu's pin: keeps it beside the user name in the sidebar, one at a time. */
-    pinBalance: "Pin beside your name",
+    balanceStatus: (status: number): string => ` (HTTP ${status})`,
+    /** The balance menu's pin: keeps it beside the user name at the sidebar's bottom-left, one at a time. */
+    pinBalance: "Pin to bottom-left",
     unpinBalance: "Unpin",
     /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
     tokenDanceBanner: "Connect your TokenDance wallet — no model keys to set by hand",

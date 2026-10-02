@@ -1,7 +1,7 @@
 /**
  * A group's settings (provider-settings-dialog.tsx) and the inheritance a group's models read
  * off it (connection.ts). The file is the only source: a group's models follow its
- * `[providers.<id>]` table and nothing else, and the catalog is a reference shown beside it.
+ * `[providers.<id>]` table and nothing else, and the catalog only seeds a new Project's file.
  *
  * - Given the dialog opened on a group's stored connection and saved untouched, nothing is sent;
  *   given one field changed, exactly that field is sent — a cleared base URL or protocol as
@@ -17,32 +17,37 @@
  *   trigger it.
  * - Given a custom or user-defined group with a model that stores no base URL, a blank group base
  *   URL is refused; a built-in group never refuses one.
- * - Where the catalog gives the group an endpoint or protocol the field does not hold (blank
- *   included), a "Catalog: …" line names it; where the field matches, or the catalog has
- *   nothing for the group, there is no line.
+ * - Given a group whose file values differ from the catalog's, and models that carry values of
+ *   their own, the dialog shows the file's values and says nothing else: no catalog value, no
+ *   line under the fields, no count of the models' own values.
+ * - Given a group whose catalog names a model list (OpenRouter, TokenDance), the dialog links
+ *   to it in a new tab; custom and a user-defined group have none, and no link.
  * - A blank group key promises an environment variable only where it may be sent there.
  * - A model with nothing of its own follows the group's table field by field, and a field the
  *   table leaves blank is the client's default — never the catalog's value.
  * - A group key reaches a model with no base URL of its own or one on the group's origin; a
  *   model on another origin (Atria in custom, one re-pointed at a proxy) gets none.
- * - The dialog counts the models that store a base URL, key or protocol of their own.
  * - Given a group protocol stored outside the picker's three (set from the CLI), the picker
  *   shows that protocol, never "Not set", and saving untouched leaves it as it is.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { catalogEntryFor, presetProviderTable } from "@prismshadow/penguin-core/model-catalog";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  catalogEntryFor,
+  catalogGroupConnection,
+  presetProviderTable,
+  providerInfo,
+} from "@prismshadow/penguin-core/model-catalog";
 import type { ProviderConnectionDto } from "@prismshadow/penguin-server/api";
 import {
   applyProviderUpdate,
   groupKeyMissesRow,
   inheritedConnection,
   rowKey,
-  rowsWithOwnConnection,
 } from "../src/features/models/connection";
 import {
-  catalogHint,
+  ProviderSettingsDialog,
   groupEnvKey,
   initialDraft,
   protocolChoice,
@@ -51,8 +56,17 @@ import {
   providerDetectRequest,
   providerSettingsUpdate,
 } from "../src/features/models/provider-settings-dialog";
+import { userProviderInfo } from "../src/features/models/model-grouping";
 import { ProtocolSuffixMenu } from "../src/features/models/protocol-suffix";
 import { S } from "../src/lib/strings";
+
+// The dialog is a Modal, which portals to document.body; the server renderer has no portals, so
+// here a portal renders in place. Nothing else about react-dom changes. (The Modal also notes
+// where focus was when it opened; the describe below gives it a document with nothing focused.)
+vi.mock("react-dom", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react-dom")>()),
+  createPortal: (children: unknown) => children,
+}));
 
 /** The table a new Project writes for a built-in group, as GET /models reports it. */
 function presetGroup(id: string): ProviderConnectionDto {
@@ -215,35 +229,67 @@ describe("a blank group base URL", () => {
   });
 });
 
-describe("the catalog as a reference beside the fields", () => {
-  it("says nothing while the fields hold the catalog's values", () => {
-    for (const id of ["openrouter", "tokendance", "penguin-go", "vllm"]) {
-      expect(catalogHint(id, initialDraft(presetGroup(id))), id).toEqual({});
+describe("what the group settings dialog shows", () => {
+  /** A page with nothing focused, which is all the Modal reads from the document while rendering. */
+  beforeEach(() => {
+    vi.stubGlobal("HTMLElement", class {});
+    vi.stubGlobal("document", { activeElement: null, body: null });
+  });
+
+  /** The dialog's markup, opened on a group as stored. */
+  const dialog = (
+    id: string,
+    group: ProviderConnectionDto | undefined,
+    rows: ReturnType<typeof row>[] = [],
+  ) =>
+    renderToStaticMarkup(
+      createElement(ProviderSettingsDialog, {
+        projectId: "p1",
+        provider: providerInfo(id) ?? userProviderInfo(id),
+        group,
+        rows,
+        detectedEnvKeys: new Set<string>(),
+        onClose: () => {},
+        onSaved: () => {},
+      }),
+    );
+
+  it("shows the file's values and nothing about the catalog or the models' own values", () => {
+    // The catalog gives OpenRouter its endpoint and Responses; the file holds a proxy on Chat
+    // Completions, or no table at all.
+    const catalog = catalogGroupConnection("openrouter")!;
+    const proxied = {
+      baseUrl: "https://proxy.example/or/v1",
+      clientType: "openai-chat",
+      apiKeyMasked: "sk-or…4444",
+    };
+    const ownValues = [row({ key: true }), row({ baseUrl: "http://a/v1" }), row()];
+    for (const group of [proxied, undefined]) {
+      const html = dialog("openrouter", group, ownValues);
+      expect(html).not.toContain(catalog.base_url!);
+      expect(html).not.toContain(S.models.protocolNames[catalog.client_type!]!);
+      // No explanatory line under the fields: no catalog value, no count of overrides.
+      expect(html).not.toMatch(/<p[\s>]/);
+    }
+    expect(dialog("openrouter", proxied, ownValues)).toContain(`value="${proxied.baseUrl}"`);
+  });
+
+  it("links the vendor's model list in a new tab where the catalog names one", () => {
+    for (const id of ["openrouter", "tokendance"]) {
+      const html = dialog(id, presetGroup(id));
+      const anchors = html.match(/<a [^>]*>.*?<\/a>/g) ?? [];
+      const list = anchors.find((a) => a.includes(S.models.modelList));
+      expect(list, id).toBeDefined();
+      expect(list, id).toContain(`href="${providerInfo(id)!.modelsUrl}"`);
+      expect(list, id).toContain('target="_blank"');
     }
   });
 
-  it("names the catalog's endpoint and protocol where the field differs, blank included", () => {
-    const openrouter = presetGroup("openrouter");
-    expect(catalogHint("openrouter", { baseUrl: "", clientType: null })).toEqual({
-      baseUrl: openrouter.baseUrl,
-      clientType: openrouter.clientType,
-    });
-    expect(
-      catalogHint("openrouter", { baseUrl: "https://proxy.example/v1", clientType: "openai-chat" }),
-    ).toEqual({ baseUrl: openrouter.baseUrl, clientType: openrouter.clientType });
-    // Penguin Go's catalog names the relay but no group protocol (its rows pin their own).
-    expect(catalogHint("penguin-go", { baseUrl: "", clientType: "openai-chat" })).toEqual({
-      baseUrl: presetGroup("penguin-go").baseUrl,
-    });
-  });
-
-  it("has nothing to say for a group the catalog gives no connection", () => {
-    for (const id of ["deepseek", "anthropic", "custom", "my-group"]) {
-      expect(
-        catalogHint(id, { baseUrl: "https://proxy.example/v1", clientType: null }),
-        id,
-      ).toEqual({});
-    }
+  it("has no model-list link where the catalog names none", () => {
+    expect(dialog("custom", undefined)).not.toContain(S.models.modelList);
+    expect(dialog("my-ollama", { baseUrl: "http://127.0.0.1:11434/v1" })).not.toContain(
+      S.models.modelList,
+    );
   });
 });
 
@@ -298,110 +344,5 @@ describe("what a group's models inherit", () => {
     expect(next.apiKeyMasked).toBe(STORED.apiKeyMasked);
     expect(applyProviderUpdate(STORED, { clearApiKey: true }).apiKeyMasked).toBeUndefined();
     expect(applyProviderUpdate(undefined, { apiKey: "sk-n" }).apiKeyMasked).toBeDefined();
-  });
-
-  it("counts the models that store a field of their own, once each, Atria included", () => {
-    const rows = [
-      row(),
-      row({ key: true }),
-      row({ baseUrl: "http://a/v1", clientType: "openai-chat", key: true }),
-    ];
-    expect(rowsWithOwnConnection(rows)).toBe(2);
-    expect(rowsWithOwnConnection([row(), row()])).toBe(0);
-    expect(rowsWithOwnConnection([row(), atriaRow])).toBe(1);
-  });
-});
-
-describe("a group key follows its endpoint", () => {
-  const OLLAMA = {
-    baseUrl: "http://127.0.0.1:11434/v1",
-    clientType: "openai-chat",
-    apiKeyMasked: "sk-o…3333",
-  };
-  const keyless = { apiKeyInput: "", clearApiKey: false };
-
-  it("reaches a model with no base URL of its own, in every field", () => {
-    expect(inheritedConnection("custom", "qwen3.8-27b-local", OLLAMA)).toMatchObject({
-      baseUrl: OLLAMA.baseUrl,
-      clientType: OLLAMA.clientType,
-      apiKeySource: "provider",
-    });
-    expect(
-      rowKey({ ...keyless, provider: "custom", modelId: "qwen3.8-27b-local" }, OLLAMA),
-    ).toEqual({ source: "provider", masked: OLLAMA.apiKeyMasked });
-  });
-
-  it("does not reach Atria, which stores its own host, nor a model re-pointed at a proxy", () => {
-    const atria = {
-      ...keyless,
-      provider: "custom",
-      modelId: ATRIA.modelId,
-      baseUrl: ATRIA.baseUrl,
-    };
-    expect(rowKey(atria, OLLAMA)).toEqual({ source: "none" });
-    expect(groupKeyMissesRow(ATRIA.baseUrl!, OLLAMA)).toBe(true);
-    const openrouter = { ...presetGroup("openrouter"), apiKeyMasked: "sk-or…4444" };
-    const proxied = {
-      ...keyless,
-      provider: "openrouter",
-      modelId: "x-ai/grok-5",
-      baseUrl: "https://proxy.example/v1",
-    };
-    expect(rowKey(proxied, openrouter)).toEqual({ source: "none" });
-    expect(groupKeyMissesRow(proxied.baseUrl, openrouter)).toBe(true);
-  });
-
-  it("reaches a model on another path of the group's origin (OpenCode Go's Messages rows)", () => {
-    const opencode = { ...presetGroup("opencode-go"), apiKeyMasked: "sk-oc…5555" };
-    const messages = new URL(opencode.baseUrl!);
-    messages.pathname = "/zen/go";
-    const row = {
-      ...keyless,
-      provider: "opencode-go",
-      modelId: "claude-sonnet-4.6",
-      baseUrl: messages.toString(),
-    };
-    expect(rowKey(row, opencode)).toEqual({ source: "provider", masked: opencode.apiKeyMasked });
-    expect(groupKeyMissesRow(row.baseUrl, opencode)).toBe(false);
-  });
-
-  it("leaves nothing to miss where the group holds no key", () => {
-    expect(groupKeyMissesRow("https://proxy.example/v1", { baseUrl: OLLAMA.baseUrl })).toBe(false);
-  });
-});
-
-describe("a group protocol outside the picker's three", () => {
-  // vLLM's own adapter, which a new Project writes on its group: a protocol the picker does not list.
-  const STORED_ADAPTER = { clientType: "openai-chat-vllm-adapter" };
-
-  it("is what the picker shows checked, never Not set", () => {
-    const choice = protocolChoice(initialDraft(STORED_ADAPTER));
-    expect(choice).toBe("openai-chat-vllm-adapter");
-    const html = renderToStaticMarkup(
-      createElement(ProtocolSuffixMenu, {
-        value: choice,
-        path: "/chat/completions",
-        detecting: false,
-        tone: null,
-        follow: { label: S.models.protocolNone, onPick: () => {} },
-        onPick: () => {},
-      }),
-    );
-    expect(html).toContain(`aria-label="${S.models.protocol}: openai-chat-vllm-adapter"`);
-    expect(html).not.toContain(`aria-label="${S.models.protocol}: ${S.models.protocolNone}"`);
-    // The group's own pick from the three and an unset group read as before.
-    expect(protocolChoice(initialDraft({ clientType: "openai" }))).toBe("openai-chat");
-    expect(protocolChoice(initialDraft(undefined))).toBeNull();
-  });
-
-  it("is left as it is by a save that does not pick another", () => {
-    const draft = initialDraft(STORED_ADAPTER);
-    expect(providerSettingsUpdate(STORED_ADAPTER, draft)).toBeNull();
-    expect(
-      providerSettingsUpdate(STORED_ADAPTER, { ...draft, baseUrl: "http://gpu:8000/v1" }),
-    ).toEqual({ baseUrl: "http://gpu:8000/v1" });
-    expect(providerSettingsUpdate(STORED_ADAPTER, { ...draft, clientType: "openai-chat" })).toEqual(
-      { clientType: "openai-chat" },
-    );
   });
 });

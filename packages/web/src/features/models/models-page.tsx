@@ -14,11 +14,15 @@
  * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
  * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
  * delete). The group header's right side holds the group's actions in a fixed order
- * (group-header.ts): its balance (one menu: pin, refresh, the vendor's figures; a divider after
- * it), the connection (Connect, or one "Connected" menu: Sync models on Penguin Go, Reconnect,
- * Disconnect — group-connection.tsx), Add model (an icon) on the groups that take hand-added
- * models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined), the speed test, and
- * the group settings (provider-settings-dialog.tsx) last on every group.
+ * (group-header.ts): its balance (one menu: pin, refresh, when it was read; a divider after
+ * it), the connection ("Not connected", which connects, or one "Connected" menu: Sync models on
+ * Penguin Go, Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
+ * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined),
+ * the speed test, and the group settings (provider-settings-dialog.tsx) last on every group.
+ *
+ * The groups stand in two areas (model-group-pins.ts): the pinned ones, always shown, then the
+ * rest under one full-width bar that folds them away (folded by default). A lock on each
+ * header, shown on hover or focus, moves a group across; searching shows both areas, unfolded.
  *
  * A group holds its connection once — base URL, key and protocol in `[providers.<id>]`,
  * written by Connect and the group settings — and a model stores only what it overrides: every
@@ -59,21 +63,25 @@ import {
   Button,
   Checkbox,
   Chevron,
+  ChevronFlip,
   ConfirmModal,
   EmptyState,
   FieldError,
   FieldLabel,
   GlyphIcon,
   ICONS,
+  ICON_GAP,
   ICON_SIZE,
   Input,
   Link,
   Modal,
+  NAV_FILL,
   NoticeStrip,
   PageFrame,
   PageHeader,
   PasswordInput,
   ProviderLogo,
+  ROW_HOVER_BUTTON,
   Segmented,
   Select,
   SkeletonList,
@@ -150,6 +158,17 @@ import {
   saveExpandedProviders,
   toggleExpandedProvider,
 } from "./model-group-expansion";
+import {
+  initialModelGroupPins,
+  initialModelGroupsFolded,
+  isModelGroupPinned,
+  modelGroupLayout,
+  pinsAfterDrop,
+  storeModelGroupPins,
+  storeModelGroupsFolded,
+  withModelGroupPinned,
+} from "./model-group-pins";
+import type { ModelGroupPins } from "./model-group-pins";
 import { clearDraftModelRef } from "../chat/draft-cache";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
@@ -904,6 +923,21 @@ export function ModelsPage() {
     setGroupOrder(loadModelGroupOrder(projectId));
   }, [projectId]);
   /**
+   * Which groups stay out of the fold: the user's differences from the default pinned set
+   * (model-group-pins.ts), per browser like the sidebar nav's, so not re-read on a Project switch.
+   */
+  const [groupPins, setGroupPins] = useState(initialModelGroupPins);
+  /** Whether the collapsible groups are folded away under their bar; folded by default, remembered per browser. */
+  const [groupsFolded, setGroupsFolded] = useState(initialModelGroupsFolded);
+  /**
+   * The group whose lock takes focus once its header re-mounts in the other area: moving a
+   * group moves its section to another container, and the lock that had focus goes with the
+   * old one — a keyboard user would be dropped onto <body>.
+   */
+  const lockFocusRef = useRef<string | null>(null);
+  /** The fold bar: where focus goes when the moved group lands in the folded (inert) area. */
+  const foldBarRef = useRef<HTMLButtonElement | null>(null);
+  /**
    * Whether the reorder gesture is offered at all. A stored order still APPLIES without
    * it: the arrangement is per Project and implicit, so there is nothing to degrade —
    * a phone renders what its owner arranged at a desk.
@@ -1191,6 +1225,20 @@ export function ModelsPage() {
     saveExpandedProviders(projectId, next);
   };
 
+  /** Adopts new pin choices — the header's lock and a drop across the areas — unless nothing changed. */
+  const savePins = (next: ModelGroupPins) => {
+    if (next === groupPins) return;
+    storeModelGroupPins(next);
+    setGroupPins(next);
+  };
+
+  /** Fold or unfold the collapsible groups (store-then-set, as toggleGroup). */
+  const toggleGroupsFolded = () => {
+    const next = !groupsFolded;
+    storeModelGroupsFolded(next);
+    setGroupsFolded(next);
+  };
+
   /**
    * Drag-reorder wiring of one group header. Returns the props the header row spreads and
    * the edge a drop would land on, or nothing at all when the gesture is not offered:
@@ -1261,6 +1309,8 @@ export function ModelsPage() {
             setGroupOrder(next);
             saveModelGroupOrder(projectId, next);
           }
+          // A drop on a header in the other area moves the group into that area too.
+          savePins(pinsAfterDrop(groupPins, dragging, key));
           setDragGroup(null);
           setGroupDropHint(null);
         },
@@ -1311,8 +1361,8 @@ export function ModelsPage() {
       case "balance":
         return <GroupBalance projectId={projectId} provider={provider} />;
       case "connect":
-        // One control: "Not connected" with Connect, or a "Connected" menu (Sync models on
-        // Penguin Go, Reconnect, Disconnect); a member reads the status alone.
+        // One control: "Not connected", which connects when pressed, or a "Connected" menu (Sync
+        // models on Penguin Go, Reconnect, Disconnect); a member reads the status alone.
         return (
           <GroupConnection
             provider={provider}
@@ -1405,6 +1455,222 @@ export function ModelsPage() {
         );
     }
   };
+
+  /**
+   * One group: its header — the collapse button (logo, name, count, chevron, the recommended
+   * pill), the lock that moves it between the pinned and the collapsible area, and its actions —
+   * and its cards.
+   */
+  const renderGroup = (group: (typeof groups)[number]) => {
+    const open = isGroupExpanded(expanded, group.provider.id, searching);
+    const pinned = isModelGroupPinned(group.provider.id, groupPins);
+    const drag = groupDragProps(group.provider.id);
+    const keyStored = groupKeyStored(providers[group.provider.id]);
+    const actions = groupHeaderActions(group.provider, {
+      isOwner,
+      keyStored,
+      keyFromEnv: groupKeyFromEnv(group.rows),
+      balancePinned: isPinned(pinnedBalance, projectId, group.provider.id),
+    });
+    return (
+      // The drop indicator is drawn against the WHOLE group, so "below" reads as
+      // after this group and its model cards rather than between the header and
+      // its own first card. It needs this wrapper to live in: the section clips
+      // its children (overflow-hidden carries the expand/collapse transition).
+      // Absolutely positioned, so it costs no layout width and cannot push the
+      // header's actions out of a narrow page.
+      <div key={group.provider.id} className="relative">
+        {drag.dropEdge !== null && (
+          <div
+            aria-hidden
+            className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
+              drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
+            }`}
+          />
+        )}
+        <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          {/* Group header: collapse button (logo + vendor name + count + chevron) +
+              the group's actions on the right, in group-header.ts's order. Actions are
+              separate elements because buttons can't nest. The row is a size
+              container: the sidebar can narrow it while the viewport remains
+              desktop-sized, so labels respond to this row's actual width rather than
+              viewport breakpoints. Narrow rows never hide an action — each one keeps
+              its icon (with aria-label + title) and only sheds its text. When even the
+              icons leave the name too little room to be read whole, the actions move to
+              a line of their own below it, as one block: the left cluster's flex
+              basis is its content, so a short name is never truncated to keep the
+              actions beside it. Only a name wider than the whole row truncates, down to
+              a floor, so it is never squeezed to nothing. The row is also the drag
+              handle for reordering the group (groupDragProps), and the `group` its lock
+              shows on. */}
+          <div
+            {...drag.header}
+            className={`group @container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-1.5 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
+          >
+            {/* The left cluster: the collapse button, sized to what it shows, the lock right
+                  after it, and the rest of the cluster, which folds the group on a click as the
+                  button does (the button is the keyboard's way). */}
+            <div className="flex min-w-[10rem] flex-auto items-center">
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => toggleGroup(group.provider.id)}
+                className="flex min-w-0 items-center gap-2 py-2 pl-3 pr-2 text-left"
+              >
+                <ProviderLogo
+                  provider={group.provider.id}
+                  className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
+                />
+                {/* The vendor name is the only thing in this button allowed to take
+                    the remaining space, and the only one that truncates. */}
+                <span className="min-w-0 truncate text-sm font-semibold">
+                  {group.provider.label}
+                </span>
+                {/* The count as the model picker's rail writes it: a bare number, with
+                    the words kept for assistive tech. */}
+                <span
+                  aria-hidden
+                  className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                >
+                  {group.rows.length}
+                </span>
+                <span className="sr-only">{S.models.modelCount(group.rows.length)}</span>
+                {/* The chevron follows the name and its count rather than the row's far
+                    edge, so it reads as part of the group it folds. */}
+                <Chevron open={open} className="text-gray-400" />
+                {/* The recommendation rides the collapse bar itself, so it is read with
+                    the group's name rather than as a caption floating above the
+                    section. `shrink-0` keeps it whole: the vendor name beside it is
+                    the element allowed to truncate on a narrow page. */}
+                {group.provider.recommended && (
+                  // The theme's tag, outlined like the card marks below it: an outline is
+                  // enough to make it a tag, and a block of colour on the collapse bar
+                  // competes with the vendor name it is endorsing. `attention` asks the
+                  // reader to look here, and is the tone nearest the gold this mark has
+                  // always worn. It gives way on a narrow row before the name does.
+                  <span className="hidden shrink-0 @lg:inline-flex">
+                    <Badge tone="attention">{S.models.recommendedGroup}</Badge>
+                  </span>
+                )}
+              </button>
+              {/* The lock: closed while the group is pinned (always shown), open while it is
+                  collapsible (under the fold bar). The sidebar nav's row toggle — flat, shown on
+                  the header's hover or its own focus, always where nothing hovers since it is
+                  then the only way to move a group — and it keeps its place at rest, so nothing
+                  shifts when it shows. A view preference, so members have it too. */}
+              <button
+                ref={(el) => {
+                  if (el === null || lockFocusRef.current !== group.provider.id) return;
+                  lockFocusRef.current = null;
+                  el.focus();
+                  // A group that lands in the folded (inert) area cannot take focus: the bar
+                  // that unfolds it is the nearest place to stand. Read once this commit is
+                  // done, since it may be mounting the bar together with the group.
+                  if (document.activeElement !== el) {
+                    queueMicrotask(() => foldBarRef.current?.focus());
+                  }
+                }}
+                type="button"
+                aria-label={`${S.models.pinGroup} ${group.provider.label}`}
+                aria-pressed={pinned}
+                data-tooltip={pinned ? S.models.unpinGroup : S.models.pinGroup}
+                onClick={(e) => {
+                  // A keyboard toggle follows its group into the other area (lockFocusRef).
+                  if (e.currentTarget.matches(":focus-visible")) {
+                    lockFocusRef.current = group.provider.id;
+                  }
+                  savePins(withModelGroupPinned(groupPins, group.provider.id, !pinned));
+                }}
+                className={`${ROW_HOVER_BUTTON} hover:text-fg [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
+              >
+                <GlyphIcon d={pinned ? ICONS.lock : ICONS.lockOpen} size={ICON_SIZE.iconButton} />
+              </button>
+              <span
+                aria-hidden
+                className="min-w-0 flex-auto self-stretch"
+                onClick={() => toggleGroup(group.provider.id)}
+              />
+            </div>
+            {actions.length > 0 && (
+              <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
+                {actions.map((action) => (
+                  <Fragment key={action}>
+                    {renderGroupAction(group, action, keyStored)}
+                    {/* A rule between the account's figure and the group's status and
+                          actions, drawn only when something follows the balance. */}
+                    {action === "balance" && dividerAfterBalance(actions) && (
+                      <span
+                        aria-hidden
+                        className="h-7 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
+                      />
+                    )}
+                  </Fragment>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Expand/collapse: grid-template-rows goes between 0fr and 1fr, with the
+              inner overflow-hidden handling clipping — no need to measure content height.
+              The grid carries the theme's layout motion, which decides how the fold moves
+              (and stills it under reduced motion). Content stays in the DOM while
+              collapsed (height is 0), so both directions animate. The section keeps its
+              own head rather than being a CollapsibleSection: the head is the group's
+              drag handle and a size container, and its chevron follows the group's name. */}
+          <div
+            data-layout-motion
+            className={`grid ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+          >
+            {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
+            <div className="overflow-hidden" inert={!open}>
+              <div
+                className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-3 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+              >
+                {group.rows.length === 0 ? (
+                  // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
+                  <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
+                    {S.models.groupEmptyHint}
+                  </p>
+                ) : (
+                  group.rows.map((row) => (
+                    <ModelCard
+                      key={`${row.provider}:${row.modelId}`}
+                      row={row}
+                      group={providers[row.provider]}
+                      currency={currency}
+                      isDefault={sameModelRef(rowRef(row), defaultModel)}
+                      isVisionModel={sameModelRef(rowRef(row), visionModel)}
+                      speed={speedResults.get(refMapKey(row.provider, row.modelId))}
+                      usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
+                      hourTick={hourTick}
+                      onOpen={() => {
+                        setEditingMovedToCustom(false);
+                        setEditing(rowRef(row));
+                      }}
+                      onMoveToCustom={
+                        isOwner
+                          ? () => {
+                              setEditingMovedToCustom(true);
+                              setEditing(rowRef(row));
+                            }
+                          : undefined
+                      }
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  };
+
+  /** The two areas (model-group-pins.ts), each in the page's group order. */
+  const layout = modelGroupLayout(groups, (group) => group.provider.id, groupPins, {
+    searching,
+    folded: groupsFolded,
+  });
 
   return (
     <PageFrame>
@@ -1508,166 +1774,41 @@ export function ModelsPage() {
         <EmptyState title={S.models.noSearchResults} />
       ) : (
         <div className="space-y-3">
-          {groups.map((group) => {
-            const open = isGroupExpanded(expanded, group.provider.id, searching);
-            const drag = groupDragProps(group.provider.id);
-            const keyStored = groupKeyStored(providers[group.provider.id]);
-            const actions = groupHeaderActions(group.provider, {
-              isOwner,
-              keyStored,
-              keyFromEnv: groupKeyFromEnv(group.rows),
-              balancePinned: isPinned(pinnedBalance, projectId, group.provider.id),
-            });
-            return (
-              // The drop indicator is drawn against the WHOLE group, so "below" reads as
-              // after this group and its model cards rather than between the header and
-              // its own first card. It needs this wrapper to live in: the section clips
-              // its children (overflow-hidden carries the expand/collapse transition).
-              // Absolutely positioned, so it costs no layout width and cannot push the
-              // header's actions out of a narrow page.
-              <div key={group.provider.id} className="relative">
-                {drag.dropEdge !== null && (
+          {layout.shown.map(renderGroup)}
+          {layout.fold !== null && (
+            <>
+              {/* The bar that folds the collapsible groups away, the sidebar nav's toggle with
+                  the count of what it holds. It stands above them, so it stays put while they
+                  open and close. A search shows every match and no bar (modelGroupLayout). */}
+              <button
+                ref={foldBarRef}
+                type="button"
+                aria-expanded={!layout.fold.folded}
+                aria-controls="models-collapsible-groups"
+                onClick={toggleGroupsFolded}
+                className={`flex h-6 w-full items-center justify-center ${ICON_GAP.tight} rounded-md ${NAV_FILL.selected} text-xs text-fg-subtle transition-colors duration-150 hover:bg-fg/10 hover:text-fg`}
+              >
+                {S.models.foldedGroups(layout.fold.groups.length)}
+                <ChevronFlip up={!layout.fold.folded} />
+              </button>
+              {/* The fold: the nav's height tween, groups kept mounted but inert while folded.
+                  Its own bottom padding, not the list's gap, spaces it from what follows, so a
+                  folded area adds no second gap under the bar. */}
+              <div
+                id="models-collapsible-groups"
+                data-layout-motion
+                className={`mb-0 grid ${layout.fold.folded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
+              >
+                <div className="overflow-hidden" inert={layout.fold.folded}>
                   <div
-                    aria-hidden
-                    className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
-                      drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
-                    }`}
-                  />
-                )}
-                <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                  {/* Group header: collapse button (logo + vendor name + count + chevron) +
-                    the group's actions on the right, in group-header.ts's order. Actions are
-                    separate elements because buttons can't nest. The row is a size
-                    container: the sidebar can narrow it while the viewport remains
-                    desktop-sized, so labels respond to this row's actual width rather than
-                    viewport breakpoints. Narrow rows never hide an action — each one keeps
-                    its icon (with aria-label + title) and only sheds its text. When even the
-                    icons leave the name too little room to be read whole, the actions move to
-                    a line of their own below it, as one block: the collapse button's flex
-                    basis is its content, so a short name is never truncated to keep the
-                    actions beside it. Only a name wider than the whole row truncates, down to
-                    a floor, so it is never squeezed to nothing. The row is also the drag
-                    handle for reordering the group (groupDragProps). */}
-                  <div
-                    {...drag.header}
-                    className={`@container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-1.5 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
+                    className={`space-y-3 pb-3 transition-opacity duration-200 ${layout.fold.folded ? "opacity-0" : "opacity-100"}`}
                   >
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      onClick={() => toggleGroup(group.provider.id)}
-                      className="flex min-w-[10rem] flex-auto items-center gap-2 px-3 py-2 text-left"
-                    >
-                      <ProviderLogo
-                        provider={group.provider.id}
-                        className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
-                      />
-                      {/* The vendor name is the only thing in this button allowed to take
-                          the remaining space, and the only one that truncates. */}
-                      <span className="min-w-0 truncate text-sm font-semibold">
-                        {group.provider.label}
-                      </span>
-                      {/* The count as the model picker's rail writes it: a bare number, with
-                          the words kept for assistive tech. */}
-                      <span
-                        aria-hidden
-                        className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
-                      >
-                        {group.rows.length}
-                      </span>
-                      <span className="sr-only">{S.models.modelCount(group.rows.length)}</span>
-                      {/* The chevron follows the name and its count rather than the row's far
-                          edge, so it reads as part of the group it folds. */}
-                      <Chevron open={open} className="text-gray-400" />
-                      {/* The recommendation rides the collapse bar itself, so it is read with
-                          the group's name rather than as a caption floating above the
-                          section. `shrink-0` keeps it whole: the vendor name beside it is
-                          the element allowed to truncate on a narrow page. */}
-                      {group.provider.recommended && (
-                        // The theme's tag, outlined like the card marks below it: an outline is
-                        // enough to make it a tag, and a block of colour on the collapse bar
-                        // competes with the vendor name it is endorsing. `attention` asks the
-                        // reader to look here, and is the tone nearest the gold this mark has
-                        // always worn. It gives way on a narrow row before the name does.
-                        <span className="hidden shrink-0 @lg:inline-flex">
-                          <Badge tone="attention">{S.models.recommendedGroup}</Badge>
-                        </span>
-                      )}
-                    </button>
-                    {actions.length > 0 && (
-                      <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
-                        {actions.map((action) => (
-                          <Fragment key={action}>
-                            {renderGroupAction(group, action, keyStored)}
-                            {/* A rule between the account's figure and the group's status and
-                                actions, drawn only when something follows the balance. */}
-                            {action === "balance" && dividerAfterBalance(actions) && (
-                              <span
-                                aria-hidden
-                                className="h-7 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
-                              />
-                            )}
-                          </Fragment>
-                        ))}
-                      </div>
-                    )}
+                    {layout.fold.groups.map(renderGroup)}
                   </div>
-
-                  {/* Expand/collapse: grid-template-rows goes between 0fr and 1fr, with the
-                    inner overflow-hidden handling clipping — no need to measure content height.
-                    The grid carries the theme's layout motion, which decides how the fold moves
-                    (and stills it under reduced motion). Content stays in the DOM while
-                    collapsed (height is 0), so both directions animate. The section keeps its
-                    own head rather than being a CollapsibleSection: the head is the group's
-                    drag handle and a size container, and its chevron follows the group's name. */}
-                  <div
-                    data-layout-motion
-                    className={`grid ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-                  >
-                    {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
-                    <div className="overflow-hidden" inert={!open}>
-                      <div
-                        className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-3 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
-                      >
-                        {group.rows.length === 0 ? (
-                          // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
-                          <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
-                            {S.models.groupEmptyHint}
-                          </p>
-                        ) : (
-                          group.rows.map((row) => (
-                            <ModelCard
-                              key={`${row.provider}:${row.modelId}`}
-                              row={row}
-                              group={providers[row.provider]}
-                              currency={currency}
-                              isDefault={sameModelRef(rowRef(row), defaultModel)}
-                              isVisionModel={sameModelRef(rowRef(row), visionModel)}
-                              speed={speedResults.get(refMapKey(row.provider, row.modelId))}
-                              usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
-                              hourTick={hourTick}
-                              onOpen={() => {
-                                setEditingMovedToCustom(false);
-                                setEditing(rowRef(row));
-                              }}
-                              onMoveToCustom={
-                                isOwner
-                                  ? () => {
-                                      setEditingMovedToCustom(true);
-                                      setEditing(rowRef(row));
-                                    }
-                                  : undefined
-                              }
-                            />
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </section>
+                </div>
               </div>
-            );
-          })}
+            </>
+          )}
           {isOwner && query.trim() === "" && (
             // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
             <button
@@ -3637,7 +3778,9 @@ function ModelDialog({
       open
       title={isNew ? S.models.addTitle : S.models.editTitle}
       onClose={onClose}
-      widthClass="sm:max-w-lg"
+      // The group settings' width: the longest catalog endpoint and its protocol path read
+      // whole in the base URL field.
+      widthClass="sm:max-w-3xl"
       footer={
         <>
           <Button size="sm" onClick={onClose}>

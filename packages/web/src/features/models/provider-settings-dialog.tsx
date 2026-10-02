@@ -8,9 +8,10 @@
  * the base URL field's in-field suffix menu, whose first row "Not set" sets none (a model with no
  * protocol of its own is then routed by its id; on custom and user-defined groups each model
  * keeps its own). Every group takes a protocol, Penguin Go and OpenCode Go included: a model's
- * own protocol always wins over its group's. The fields hold the file's values and nothing else;
- * where the catalog gives the group another endpoint or protocol, a grey "Catalog: …" line says
- * so under the field, for reference — there is no fill button (Restore defaults puts it back).
+ * own protocol always wins over its group's. The fields hold the file's values and nothing else:
+ * the catalog only seeds a new Project's file and is never a fallback, so the dialog does not
+ * quote it (Restore defaults puts the catalog's values back). Where the catalog names the
+ * vendor's model list, a link to it closes the dialog's body.
  *
  * Saving sends the fields that changed and nothing else (`PUT …/models/providers/:id`), and never
  * probes the endpoint, with one exception: a custom or user-defined group given a base URL, left
@@ -41,18 +42,12 @@ import {
   toastInfo,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import {
-  catalogGroupConnection,
-  providerEnvFallbackKey,
-  sameClientType,
-  sameEndpoint,
-} from "@prismshadow/penguin-core/model-catalog";
+import { providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { rowsWithOwnConnection } from "./connection";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -67,7 +62,7 @@ import type { ProtocolClientType } from "./protocol-types";
 import type { RowState } from "./models-page";
 
 /** A group's row as this dialog reads it: what it stores of its own. */
-type GroupRow = Pick<RowState, "clientType" | "originalBaseUrl" | "credential">;
+type GroupRow = Pick<RowState, "clientType" | "originalBaseUrl">;
 
 /** The dialog's fields as typed. */
 export interface ProviderSettingsDraft {
@@ -185,31 +180,6 @@ export function providerDetectRequest(
 }
 
 /**
- * The catalog's endpoint and protocol for the group, where they differ from the field — a
- * reference line under the field, never a value the group follows. A blank field differs from a
- * catalog endpoint; a group the catalog gives nothing (a first-party vendor, custom, a
- * user-defined group) has no line.
- */
-export function catalogHint(
-  providerId: string,
-  draft: Pick<ProviderSettingsDraft, "baseUrl" | "clientType">,
-): { baseUrl?: string; clientType?: string } {
-  const catalog = catalogGroupConnection(providerId);
-  const hint: { baseUrl?: string; clientType?: string } = {};
-  if (catalog?.base_url !== undefined && !sameEndpoint(catalog.base_url, draft.baseUrl)) {
-    hint.baseUrl = catalog.base_url;
-  }
-  const picked = draft.clientType?.trim();
-  if (
-    catalog?.client_type !== undefined &&
-    !(picked && sameClientType(picked, catalog.client_type))
-  ) {
-    hint.clientType = catalog.client_type;
-  }
-  return hint;
-}
-
-/**
  * The environment variable a blank group key would be covered by, or undefined: core's
  * providerEnvFallbackKey on the group as drafted (a first-party vendor group left on the
  * vendor's own endpoint and client, or a provider-scoped variable on the group's endpoint —
@@ -261,7 +231,6 @@ export function ProviderSettingsDialog({
 
   const id = provider.id;
   const customLike = isCustomLikeGroup(id);
-  const overrides = rowsWithOwnConnection(rows);
   const envKey = group?.apiKeyMasked ? undefined : groupEnvKey(id, draft, detectedEnvKeys);
   const keyPlaceholder = group?.apiKeyMasked
     ? S.models.apiKeyKeepHint
@@ -280,7 +249,6 @@ export function ProviderSettingsDialog({
     draft.clientType !== null
       ? protocolPathForModel("custom", draft.clientType)
       : S.models.protocolNone;
-  const hint = catalogHint(id, draft);
   // Detect needs a URL to probe: the field's, else the one the group stores.
   const detectable = providerDetectRequest(id, group, draft) !== null;
 
@@ -377,7 +345,9 @@ export function ProviderSettingsDialog({
       open
       title={S.models.groupSettingsTitle(provider.label)}
       onClose={() => !saving && onClose()}
-      widthClass="sm:max-w-md"
+      // Wide enough for the longest catalog endpoint and its protocol path to read whole in
+      // the base URL field (66 + 17 monospace columns, plus the suffix menu's chevron).
+      widthClass="sm:max-w-3xl"
       footer={
         <>
           <Button size="sm" disabled={saving} onClick={onClose}>
@@ -495,26 +465,14 @@ export function ProviderSettingsDialog({
             </div>
           </div>
           {baseUrlError !== null && <FieldError>{baseUrlError}</FieldError>}
-          {/* The catalog's values for this group, where the file's differ: a reference, not a
-              fallback — the group's models use what the fields hold. */}
-          {hint.baseUrl !== undefined && (
-            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-              {S.models.catalogReference(hint.baseUrl)}
-            </p>
-          )}
-          {hint.clientType !== undefined && (
-            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-              {S.models.catalogReference(
-                S.models.protocolNames[hint.clientType] ?? hint.clientType,
-              )}
-            </p>
-          )}
         </div>
 
-        {overrides > 0 && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {S.models.groupOverridesNote(overrides)}
-          </p>
+        {/* The vendor's model list, for picking what to add or checking an id: the group's own
+            reference page, so it closes the body rather than sitting beside one field. */}
+        {provider.modelsUrl && (
+          <Link href={provider.modelsUrl} external variant="standalone" className="text-xs">
+            {S.models.modelList}
+          </Link>
         )}
       </div>
     </Modal>

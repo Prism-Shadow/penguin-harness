@@ -1615,6 +1615,11 @@ export const zh = {
      * group, so a user who drags that group elsewhere still sees why it is called out.
      */
     recommendedGroup: "官方推荐",
+    /** A group header's lock: its name (aria-pressed carries the state), and the hint while pinned. */
+    pinGroup: "常驻",
+    unpinGroup: "取消常驻",
+    /** The bar that folds the groups that are not pinned, naming how many it holds. */
+    foldedGroups: (n: number): string => `其余 ${n} 个分组`,
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
@@ -1668,6 +1673,8 @@ export const zh = {
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
     getApiKey: "前往密钥管理",
     getModelIds: "获取模型 id",
+    /** The group settings' link to the vendor's model list (the catalog's modelsUrl). */
+    modelList: "前往模型列表",
     // —— Group settings (the gear at the end of every group header) ——
     /** The header action and its accessible name. */
     groupSettings: "设置",
@@ -1676,8 +1683,6 @@ export const zh = {
     clearGroupKey: "清除分组密钥",
     /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
     baseUrlNone: "未设置：使用客户端默认端点",
-    /** Grey line under a group settings field whose value differs from what the catalog gives the group (no fill button: Restore defaults puts it back). */
-    catalogReference: (value: string): string => `目录参考：${value}`,
     /** The group settings' Detect while neither the field nor the group holds a base URL. */
     detectNeedsBaseUrl: "先填写 base URL",
     /** The protocol menu's first row in the group settings: the group sets none. */
@@ -1686,12 +1691,6 @@ export const zh = {
     protocolRoutedById: "按模型 id 路由",
     /** Its second line on custom and user-defined groups, where each model keeps its own. */
     protocolEachModel: "由各模型自行设置",
-    /**
-     * Shown when some models carry a value of their own — set on the model, or a preset's own
-     * that the group does not reach (custom's catalog models): those fields do not follow the group.
-     */
-    groupOverridesNote: (k: number): string =>
-      `${k} 个模型自带 base URL、密钥或协议，这些字段不随分组变化`,
     /** The model dialog's protocol menu row that drops a model's own protocol and follows its group. */
     protocolFollowGroup: "跟随分组",
     /** A model dialog's API key or base URL placeholder where the group's setting covers a blank field (no value after it). */
@@ -1716,27 +1715,31 @@ export const zh = {
       `断开 ${label}？将删除分组密钥；使用分组密钥的模型将无法调用，单独设置了 key 的模型不受影响。`,
     disconnected: (label: string): string => `已断开 ${label}`,
     /**
-     * A group's account balance in its header (and pinned beside the user name): the tooltip
-     * names the group, the vendor's own figures and the time of the reading. `amounts` and
-     * `time` are already formatted.
+     * A group's account balance in its header (and pinned beside the user name): the sentence
+     * spoken behind the amount names the group, the vendor's own figures and the time of the
+     * reading. `amounts` and `time` are already formatted.
      */
     balanceTitle: (label: string, amounts: string, time: string): string =>
       `${label} 余额 ${amounts}，查询于 ${time}`,
     /** The balance menu's re-read (skips the server's cache). */
-    balanceRefresh: "同步",
+    balanceRefresh: "更新余额",
+    /** The balance menu's last line: when the balance was read (`time` is YYYY-MM-DD HH:mm, local). */
+    balanceUpdatedAt: (time: string): string => `更新于：${time}`,
+    /** The same line, and the spoken sentence, when no balance could be read. */
+    balanceFailed: (reason: string): string => `更新失败：${reason}`,
     /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
     balanceUnavailable: "账户当前不可用，余额可能不足",
-    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    /** Why no balance could be read, by the server's code: the reason after balanceFailed's prefix. */
     balanceErrors: {
-      no_key: "该分组没有可用的 API key，无法查询余额",
-      upstream_failed: "服务商没有返回余额，可点「同步」重试",
+      no_key: "没有可用的 API key",
+      upstream_failed: "服务商没有返回余额",
       unsupported: "该分组不支持查询余额",
     } as Record<string, string | undefined>,
     /** Appended when the vendor answered with an HTTP error. */
-    balanceStatus: (status: number): string => `（服务商返回 HTTP ${status}）`,
-    /** The balance menu's pin: keeps it beside the user name in the sidebar, one at a time. */
-    pinBalance: "常驻到用户名旁",
-    unpinBalance: "取消常驻",
+    balanceStatus: (status: number): string => `（HTTP ${status}）`,
+    /** The balance menu's pin: keeps it beside the user name at the sidebar's bottom-left, one at a time. */
+    pinBalance: "置顶至左下角",
+    unpinBalance: "取消置顶",
     /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
     tokenDanceBanner: "连接 TokenDance 钱包，无需手动配置模型密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,

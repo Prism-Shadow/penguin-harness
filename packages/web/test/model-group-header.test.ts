@@ -12,20 +12,21 @@
  * - A member keeps the two read-only parts and nothing that writes. A divider follows the balance
  *   wherever something comes after it.
  * - "Connected" is the GROUP holding a key: a key set on one model is that model's alone.
- * - Not connected, the owner gets the status and Connect; connected, one "Connected" menu with
- *   Sync models (Penguin Go only), Reconnect and Disconnect in the danger tone. A member reads
- *   the status as plain text, with no menu and no Connect.
- * - The balance is one control: its menu pins (or unpins) it beside the user name and refreshes
- *   it, over a line with the vendor's figures and the read time — or, for a failed read, the
- *   reason, with a dash as the amount.
+ * - Not connected, the owner's status is one button: it shows "Not connected" and pressing it
+ *   starts the connect flow (once per press; never while the page is busy). Connected, one
+ *   "Connected" menu with Sync models (Penguin Go only), Reconnect and Disconnect in the danger
+ *   tone. A member reads the status as plain text, with nothing to press.
+ * - The balance is one control whose menu is exactly three lines: pin to the bottom-left (or
+ *   unpin), refresh, and — not a row to choose — when it was read, in local time; or, for a
+ *   failed read, "Update failed" with the reason, the amount reading as a dash.
  * - Given Disconnect confirmed, one `PUT …/models/providers/:id` clears the group key and the
  *   table the server answers with is adopted, so the group reads "Not connected" without a
  *   reload; given the server refuses, nothing is adopted and the group stays connected.
  */
-import { createElement } from "react";
-import type { ReactElement } from "react";
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import { MODEL_PROVIDERS, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -42,6 +43,7 @@ import {
   ConnectionMenu,
   DisconnectConfirm,
   GroupConnection,
+  NotConnectedButton,
 } from "../src/features/models/group-connection";
 import type { DisconnectHost } from "../src/features/models/group-connection";
 import { BalanceMenu, balanceView } from "../src/features/models/group-balance";
@@ -204,18 +206,47 @@ describe("the connection control", () => {
       }),
     );
 
-  it("not connected: the owner reads the status and gets Connect", () => {
-    const html = render("tokendance", false, true);
-    expect(html).toContain(S.models.notConnectedStatus);
-    expect(html).toContain(`aria-label="${S.models.oauthKey} TokenDance"`);
-    expect(html).not.toContain('aria-haspopup="menu"');
+  it("not connected: the owner's status is the one button, named for what it shows and does", () => {
+    for (const id of ["tokendance", "penguin-go", "modelscope"]) {
+      const html = render(id, false, true);
+      expect(html.match(/<button/g), id).toHaveLength(1);
+      expect(
+        renderedText(
+          createElement(GroupConnection, {
+            provider: group(id),
+            connected: false,
+            isOwner: true,
+            busy: false,
+            actions: noActions,
+          }),
+        ),
+        id,
+      ).toBe(S.models.notConnectedStatus);
+      const label = html.match(/aria-label="([^"]*)"/)?.[1] ?? "";
+      expect(label.startsWith(S.models.notConnectedStatus), id).toBe(true);
+      expect(label, id).toContain(`${S.models.oauthKey} ${group(id).label}`);
+      expect(html, id).not.toContain('aria-haspopup="menu"');
+    }
+  });
+
+  it("pressing Not connected starts the connect flow once, and a busy page waits", () => {
+    const onConnect = vi.fn();
+    const press = (busy: boolean) => {
+      const button = NotConnectedButton({ provider: group("modelscope"), busy, onConnect });
+      return button as ReactElement<{ onClick: () => void; disabled: boolean }>;
+    };
+    press(false).props.onClick();
+    expect(onConnect).toHaveBeenCalledTimes(1);
+    expect(press(false).props.disabled).toBe(false);
+    expect(press(true).props.disabled).toBe(true);
   });
 
   it("connected: the owner gets one Connected trigger that opens a menu, and no Connect button", () => {
     const html = render("penguin-go", true, true);
     expect(html).toContain(`aria-label="${S.models.connectedStatus} Penguin Go"`);
     expect(html).toContain('aria-haspopup="menu"');
-    expect(html).not.toContain(`aria-label="${S.models.oauthKey} Penguin Go"`);
+    expect(html.match(/<button/g)).toHaveLength(1);
+    expect(html).not.toContain(S.models.notConnectedStatus);
   });
 
   it("a member reads the status as plain text, connected or not, with nothing to press", () => {
@@ -262,41 +293,71 @@ describe("the balance menu", () => {
     fetchedAt: "2026-09-30T06:05:00.000Z",
   };
 
-  it("pins an unpinned balance, unpins a pinned one, and always offers a refresh", () => {
-    const menu = (pinned: boolean) =>
-      renderedText(
-        createElement(BalanceMenu, { pinned, info: "", onPin: () => {}, onRefresh: () => {} }),
-      );
-    expect(menu(false)).toBe(`${S.models.pinBalance} ${S.models.balanceRefresh}`);
-    expect(menu(true)).toBe(`${S.models.unpinBalance} ${S.models.balanceRefresh}`);
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
-  it("carries the vendor's figures and the read time on a line that is not a row", () => {
+  /** The menu's elements that can be chosen, in order, as the menu holds them (not rendered). */
+  function rows(node: ReactNode): { label: string; onSelect: () => void }[] {
+    if (!isValidElement(node)) {
+      return Array.isArray(node) ? node.flatMap(rows) : [];
+    }
+    const props = node.props as { label?: string; onSelect?: () => void; children?: ReactNode };
+    if (typeof props.onSelect === "function" && typeof props.label === "string") {
+      return [{ label: props.label, onSelect: props.onSelect }];
+    }
+    return rows(props.children);
+  }
+
+  const menu = (pinned: boolean, updated: string, onPin = () => {}, onRefresh = () => {}) =>
+    createElement(BalanceMenu, { pinned, updated, onPin, onRefresh });
+
+  it("holds exactly three lines: pin, refresh, and when it was read, which is not a row", () => {
     const view = balanceView({ loading: false, answer: reading }, "DeepSeek", "CNY");
-    const html = renderToStaticMarkup(
-      createElement(BalanceMenu, {
-        pinned: false,
-        info: view.title,
-        onPin: () => {},
-        onRefresh: () => {},
-      }),
-    );
-    // Two rows to choose, and the information line outside the menu role.
+    const html = renderToStaticMarkup(menu(false, view.updated));
     expect(html.match(/role="menuitem"/g)).toHaveLength(2);
+    expect(renderedText(menu(false, view.updated))).toBe(
+      `${S.models.pinBalance} ${S.models.balanceRefresh} ${view.updated}`,
+    );
+    // The last line sits after the menu, outside its role.
     const [, after] = html.split("</div>");
-    expect(after).toContain("¥110.00");
-    expect(after).toContain("DeepSeek");
+    expect(after).toContain(view.updated);
+    // The vendor's own figures are not repeated there.
+    expect(view.updated).not.toContain("¥110.00");
   });
 
-  it("a failed read shows a dash as the amount and the reason on the menu's line", () => {
+  it("pins an unpinned balance, unpins a pinned one, and refreshes from the second row", () => {
+    const onPin = vi.fn();
+    const onRefresh = vi.fn();
+    const unpinned = rows(BalanceMenu({ pinned: false, updated: "", onPin, onRefresh }));
+    expect(unpinned.map((r) => r.label)).toEqual([S.models.pinBalance, S.models.balanceRefresh]);
+    unpinned[0]!.onSelect();
+    expect(onPin).toHaveBeenCalledTimes(1);
+    unpinned[1]!.onSelect();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    const pinned = rows(BalanceMenu({ pinned: true, updated: "", onPin, onRefresh }));
+    expect(pinned.map((r) => r.label)).toEqual([S.models.unpinBalance, S.models.balanceRefresh]);
+  });
+
+  it("dates the reading in local time, to the minute", () => {
+    vi.stubEnv("TZ", "Asia/Shanghai");
+    const shanghai = balanceView({ loading: false, answer: reading }, "DeepSeek", "CNY");
+    expect(shanghai.updated).toContain("2026-09-30 14:05");
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    const pacific = balanceView({ loading: false, answer: reading }, "DeepSeek", "CNY");
+    expect(pacific.updated).toContain("2026-09-29 23:05");
+  });
+
+  it("a failed read reads as a dash, and its last line says the update failed and why", () => {
     const view = balanceView(
       {
         loading: false,
         answer: {
           ok: false,
           provider: "tokendance",
-          error: "no_key",
-          message: "The TokenDance group stores no API key.",
+          error: "upstream_failed",
+          status: 401,
+          message: "TokenDance answered the balance request with HTTP 401.",
           fetchedAt: reading.fetchedAt,
         },
       },
@@ -304,15 +365,21 @@ describe("the balance menu", () => {
       "CNY",
     );
     expect(view.text).toBe("—");
-    const text = renderedText(
-      createElement(BalanceMenu, {
-        pinned: true,
-        info: view.title,
-        onPin: () => {},
-        onRefresh: () => {},
-      }),
+    expect(view.updated.startsWith(S.models.balanceFailed(""))).toBe(true);
+    expect(view.updated).toContain(S.models.balanceErrors.upstream_failed!);
+    expect(view.updated).toContain("401");
+    expect(renderedText(menu(true, view.updated))).toBe(
+      `${S.models.unpinBalance} ${S.models.balanceRefresh} ${view.updated}`,
     );
-    expect(text).toContain(S.models.balanceErrors.no_key!);
+    // A request that never reached the server fails the same way, with its own reason.
+    const offline = balanceView(
+      { loading: false, requestError: "Network error" },
+      "TokenDance",
+      "CNY",
+    );
+    expect(offline.text).toBe("—");
+    expect(offline.updated.startsWith(S.models.balanceFailed(""))).toBe(true);
+    expect(offline.updated).toContain("Network error");
   });
 });
 

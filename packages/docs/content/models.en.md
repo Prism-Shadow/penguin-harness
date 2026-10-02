@@ -17,6 +17,7 @@ Each Project has its own model table: the models its conversations can use, grou
 In the sidebar, select **Models**. Models are listed in groups, one per provider.
 
 - **Groups.** Built-in groups follow the order in [Built-in provider groups](#built-in-provider-groups). Groups you create follow them, sorted by name. A built-in group with no models is hidden; **Custom** is always shown. The **TokenDance** group carries a **Recommended** tag.
+- **Pinned and folded groups.** TokenDance, Penguin Go, DeepSeek, OpenRouter, Google Gemini, OpenAI and Anthropic are pinned and always shown. Every other group, groups you create included, sits below them under a full-width bar that says how many it holds, such as "11 more groups"; select the bar to unfold or fold them. They start folded, and the browser remembers the choice. To pin a group or let it fold away, hover over its header or move focus to it, then select the lock after its name (**Pin** or **Unpin**); dragging a group onto a header in the other area moves it there too. Pins are saved in this browser and apply to every Project. While you search, matching groups from both areas show and the bar is hidden.
 - **Open and close groups.** Select a group's header to open or close it. On your first visit only the TokenDance group is open. The browser remembers which groups you opened, per Project.
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
@@ -36,18 +37,18 @@ Prices are shown per million Tokens, in the order cache read / cache write / out
 
 Select a card to open **Model settings**. It links to the provider's model list (**Get model IDs**), to the model's own page (**Model page**) and, like the group settings dialog, to the provider's key console (**Manage keys**).
 
-A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens. On the right it holds, from left to right:
+A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens, then, on hover or focus, the lock that pins it. On the right it holds, from left to right:
 
 - the group's balance, for TokenDance and DeepSeek once the group has a key, with a divider after it; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
-- the connection, for TokenDance, Penguin Go and ModelScope: **Not connected** with **Connect**, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
+- the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
 - **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and groups you created; see [Add a model](#add-a-model);
 - the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed) and [Group settings](#group-settings).
 
 While the TokenDance group has no key, a banner above the groups offers to connect your TokenDance wallet, so the models there need no key set by hand. Its **Connect** runs the same flow as the group's. Select × to hide the banner in this browser.
 
-The header has no button for entering a key: the group key is set in [Group settings](#group-settings) or written by **Connect**.
+The header has no button for entering a key: the group key is set in [Group settings](#group-settings) or written when the group connects.
 
-Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them in their own browser, see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
+Only the Project owner can change models and credentials. Members can search, open and close groups, reorder and pin them in their own browser, see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
 
 ## Add a model group
 
@@ -219,15 +220,15 @@ A key you type is stored in the hidden Project config file, which has mode 0600.
 
 ### Connect an account
 
-Three built-in groups can get their key for you: TokenDance, Penguin Go and ModelScope. Their header shows **Not connected** with **Connect** beside it. Once the group holds a group key, however the key got there (a key set on one model does not count), the two become one control, **Connected**, which opens a menu:
+Three built-in groups can get their key for you: TokenDance, Penguin Go and ModelScope. Their header shows **Not connected**, which starts the connection when you select it. Once the group holds a group key, however the key got there (a key set on one model does not count), it reads **Connected** instead and opens a menu:
 
 - **Sync models**, on Penguin Go only; see [The Penguin Go group](#the-penguin-go-group);
 - **Reconnect**, which runs the flow again for a fresh key or another account;
 - **Disconnect**, which deletes the group key after a confirmation. Models that use the group key stop working; models with a key of their own are unaffected. The header reads **Not connected** again right away, and the balance disappears unless it is pinned.
 
-Members see the status as plain text, without the menu. The key **Connect** gets becomes the group key, and a model with a key of its own keeps it.
+Members see the status as plain text, without the menu. The key the connection gets becomes the group key, and a model with a key of its own keeps it.
 
-1. On the group's header, select **Connect**.
+1. On the group's header, select **Not connected**.
 2. Select **Open authorization page**. The provider's authorization page opens in a new tab.
 3. Authorize there. The dialog, which shows "Waiting for the authorization to finish in the other tab…", reports the result on its own.
 
@@ -262,9 +263,9 @@ Keep in mind:
 
 TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance in the currency chosen under **Currency** in the settings, converted at the same fixed rate of 7 as prices. The balance is always read with the **group key**: keys set on single models never count, so models holding different keys do not change it. Without a group key, DeepSeek uses the server's `DEEPSEEK_API_KEY`, which its models already fall back to (see [Set API keys](#set-api-keys)), unless the group's settings point it at another base URL; TokenDance is a gateway, so its key must be stored on the group. An account holding several currencies shows their sum: ¥110 and $5 read `¥145`, or `$20.71`. The server asks the provider with the stored key, so the key never reaches the browser.
 
-- Select the amount to open its menu. **Refresh** reads the balance again, skipping the minute for which the server keeps an answer; a line below gives the provider's own figures and when they were read.
-- A balance that cannot be read shows "—"; its menu says why.
-- **Pin beside your name** keeps the balance next to your name at the bottom of the sidebar, in the same currency; **Unpin** takes it away. One balance can be pinned at a time: pinning another replaces it. The pin is saved with your account, not in the browser, and members can pin too. The pinned balance is read when the app loads and every five minutes after that.
+- Select the amount to open its menu of three lines: **Pin to bottom-left** (**Unpin** once pinned), **Refresh balance**, which reads the balance again, skipping the minute for which the server keeps an answer, and "Updated: YYYY-MM-DD HH:mm", when it was read, in your local time.
+- A balance that cannot be read shows "—", and the menu's last line reads "Update failed:" with the reason.
+- **Pin to bottom-left** keeps the balance next to your name at the bottom left of the sidebar, in the same currency; **Unpin** takes it away. One balance can be pinned at a time: pinning another replaces it. The pin is saved with your account, not in the browser, and members can pin too. The pinned balance is read when the app loads and every five minutes after that.
 
 The balance is read with `GET /api/projects/:id/models/balance?provider=<group>`, which every member of the Project may call.
 
@@ -276,11 +277,11 @@ The Project config file is the only source of these values. Each field resolves 
 
 The fields show what the group stores:
 
-- **API key**: the group key, the one **Connect** also writes; the header has no other place to enter it. A stored key is shown masked, with the time it was set; leave the field empty to keep it, or select **Clear the group key**. Where an environment variable covers the group (see [Set API keys](#set-api-keys)), the placeholder says it is used when the field is empty. The provider's key console link is beside the label.
-- **Custom base URL**: when empty, the placeholder says the client's default endpoint is used. Where the catalog gives the group an endpoint that differs from the field, empty included, a grey line below the field shows the catalog's for reference; there is no button to copy it in, since **Restore defaults** brings the whole group back. **Detect** at the top-right probes the field's URL, else the stored one, with the key in the field, else the group key; with neither URL it is unavailable. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
-- **Protocol**: the first option, **Not set**, leaves the protocol to each model or, failing that, to routing by model id; the others are the generic protocols. Where the catalog gives the group a protocol that differs from the pick, a grey line shows it for reference. Every group takes one, Penguin Go and OpenCode Go included: a protocol stored on a model always wins, so the group's reaches only the models that store none.
+- **API key**: the group key, the one connecting also writes; the header has no other place to enter it. A stored key is shown masked, with the time it was set; leave the field empty to keep it, or select **Clear the group key**. Where an environment variable covers the group (see [Set API keys](#set-api-keys)), the placeholder says it is used when the field is empty. The provider's key console link is beside the label.
+- **Custom base URL**: when empty, the placeholder says the client's default endpoint is used. **Restore defaults** brings the whole group back to the catalog's endpoint. **Detect** at the top-right probes the field's URL, else the stored one, with the key in the field, else the group key; with neither URL it is unavailable. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
+- **Protocol**: the first option, **Not set**, leaves the protocol to each model or, failing that, to routing by model id; the others are the generic protocols. Every group takes one, Penguin Go and OpenCode Go included: a protocol stored on a model always wins, so the group's reaches only the models that store none.
 
-When some of the group's models carry their own base URL, key or protocol, the dialog says how many: those fields do not follow the group.
+**Model list**, below the fields, opens the provider's model list in a new tab. **Custom** and groups you create have none.
 
 Saving sends only the fields you changed and detects nothing, with one exception: in **Custom** or a group you created, a base URL saved with protocol **Not set** while no model in the group sets its own is detected once first. In those groups the base URL is required while a model in the group has none of its own.
 

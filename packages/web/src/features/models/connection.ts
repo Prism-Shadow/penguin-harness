@@ -138,23 +138,3 @@ export function rowKey(
   if (row.envKeyMasked) return { source: "env", masked: row.envKeyMasked };
   return { source: "none" };
 }
-
-/**
- * How many of a group's rows store a field of their own — a base URL, a key or a protocol in the
- * row itself — which editing the group changes nothing for. Read off the file's fields alone, as
- * the group settings dialog states it.
- */
-export function rowsWithOwnConnection(
-  rows: ReadonlyArray<{
-    clientType: string;
-    originalBaseUrl: string;
-    credential?: CredentialInfo | undefined;
-  }>,
-): number {
-  return rows.filter(
-    (r) =>
-      r.clientType.trim() !== "" ||
-      r.originalBaseUrl.trim() !== "" ||
-      Boolean(r.credential?.apiKeyMasked),
-  ).length;
-}
