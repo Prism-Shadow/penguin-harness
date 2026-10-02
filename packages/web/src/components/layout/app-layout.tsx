@@ -487,7 +487,7 @@ export function AppLayout() {
           <span>{S.account.initialPasswordBanner}</span>
           <button
             type="button"
-            className="shrink-0 font-medium underline underline-offset-2 hover:text-amber-950 dark:hover:text-amber-100"
+            className="shrink-0 whitespace-nowrap font-medium underline underline-offset-2 hover:text-amber-950 dark:hover:text-amber-100"
             onClick={() => setChangePasswordOpen(true)}
           >
             {S.account.changeNow}

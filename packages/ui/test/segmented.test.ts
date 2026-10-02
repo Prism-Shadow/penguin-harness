@@ -34,9 +34,9 @@ describe("Segmented", () => {
 
   it("spells its column count as a whole class, for every count it takes", () => {
     for (const cols of [2, 3, 4, 5] as const) {
-      expect(classTokens(render(cols))).toContain(`grid-cols-${cols}`);
+      expect(classTokens(render(cols))).toContain(`grid-cols-[repeat(${cols},1fr)]`);
     }
-    expect(classTokens(render())).toContain("grid-cols-3");
+    expect(classTokens(render())).toContain("grid-cols-[repeat(3,1fr)]");
   });
 
   it("sits in a control-shaped well on the rhythm's steps", () => {

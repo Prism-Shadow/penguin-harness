@@ -133,8 +133,10 @@ export function ProfileSection() {
   return (
     <section>
       <SettingsGroup>
+        {/* Both rows wrap their controls, right-aligned, where a phone-width column cannot
+            hold them on one line: a button keeps its label whole and does not shrink. */}
         <PrefRow label={S.profile.avatar} info={S.profile.avatarInfo}>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <UserAvatar
               userId={user.userId}
               {...(user.displayName !== undefined ? { displayName: user.displayName } : {})}
@@ -161,20 +163,23 @@ export function ProfileSection() {
           </div>
         </PrefRow>
         <PrefRow label={S.profile.displayName} hint={S.profile.displayNameHint}>
-          <div className="flex items-center gap-2">
-            <Input
-              size="sm"
-              className="w-48 min-w-0"
-              maxLength={32}
-              value={draftName ?? user.displayName ?? ""}
-              placeholder={S.profile.displayNamePlaceholder}
-              disabled={busy}
-              aria-label={S.profile.displayName}
-              onChange={(e) => {
-                setDraftName(e.target.value);
-                setError(null);
-              }}
-            />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* The width sits on a box around the field: the control's own `w-full` outranks a
+                width passed to it, and a full-width field would take a line of its own. */}
+            <div className="w-48 min-w-0">
+              <Input
+                size="sm"
+                maxLength={32}
+                value={draftName ?? user.displayName ?? ""}
+                placeholder={S.profile.displayNamePlaceholder}
+                disabled={busy}
+                aria-label={S.profile.displayName}
+                onChange={(e) => {
+                  setDraftName(e.target.value);
+                  setError(null);
+                }}
+              />
+            </div>
             <Button
               size="sm"
               variant="primary"

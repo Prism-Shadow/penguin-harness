@@ -118,7 +118,7 @@ export function PluginDetailPage() {
                   type="button"
                   onClick={() => flash(entry.name)}
                   data-tooltip={S.pluginRegistry.copySpecifier}
-                  className="inline-flex items-center gap-1 rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+                  className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
                 >
                   <CopyCheckGlyph copied={copied} size={12} />
                   {S.pluginRegistry.copySpecifier}

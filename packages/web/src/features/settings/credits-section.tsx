@@ -36,7 +36,7 @@ function LicenseText({ text }: { text: string }) {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center ${ICON_GAP.row} text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
+        className={`flex items-center ${ICON_GAP.row} whitespace-nowrap text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
       >
         <Chevron open={open} size={12} />
         {S.settings.creditsLicenseText}

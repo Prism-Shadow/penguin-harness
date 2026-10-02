@@ -310,7 +310,7 @@ function SteerModeRow({
       data-tooltip={hint}
       aria-pressed={steerMode === mode}
       onClick={() => onChangeSteerMode(mode)}
-      className={`h-5 rounded px-1.5 text-xs transition-colors duration-150 ${
+      className={`h-5 whitespace-nowrap rounded px-1.5 text-xs transition-colors duration-150 ${
         steerMode === mode
           ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
           : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"

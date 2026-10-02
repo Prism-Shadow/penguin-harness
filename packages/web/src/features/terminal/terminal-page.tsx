@@ -205,7 +205,9 @@ export function TerminalPage() {
           // reach a screen reader from somewhere: the sr-only copy carries it, and the
           // tooltip shows it on hover either way.
           data-tooltip={statusText}
-          className={`flex shrink-0 items-center gap-1 ${
+          // A failure's sentence carries the server's whole error, so it truncates rather
+          // than push the new-shell button out of the bar.
+          className={`flex min-w-0 items-center gap-1 ${
             status === "ready"
               ? chrome.success
               : status === "connecting"
@@ -213,8 +215,10 @@ export function TerminalPage() {
                 : chrome.danger
           }`}
         >
-          <span aria-hidden>●</span>
-          <span className="hidden sm:inline">{statusText}</span>
+          <span aria-hidden className="shrink-0">
+            ●
+          </span>
+          <span className="hidden min-w-0 truncate sm:block">{statusText}</span>
           <span className="sr-only sm:hidden">{statusText}</span>
         </span>
         <button
@@ -223,7 +227,7 @@ export function TerminalPage() {
           onClick={restart}
           aria-label={S.terminal.newShell}
           data-tooltip={S.terminal.newShell}
-          className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1 ${chrome.outlineButton}`}
+          className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-2 py-1 ${chrome.outlineButton}`}
         >
           <GlyphIcon d={ICONS.plus} size={ICON_SIZE.rowLead} />
           <span className="hidden sm:inline">{S.terminal.newShell}</span>

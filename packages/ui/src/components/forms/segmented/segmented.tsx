@@ -13,12 +13,29 @@
  * with it: the well's radius less the well's inset (`p-1`, one space unit), so the chip follows the
  * well's curve at an even distance — a pill in a pill where controls are pills, a small corner in
  * a small one, square in a square. Below zero it is zero.
+ *
+ * Every option is a button, and a button keeps its label on one line: the chips share the width
+ * evenly while it allows, and a narrower well gives each chip its own label's width rather than
+ * breaking a label in two. Narrower than that, it is the row around the control that has to
+ * make room.
  */
 import type { ReactNode } from "react";
 
 /** The chip's corner: the well's `rounded-control` less its `p-1` inset. */
 const SEGMENTED_CHIP_RADIUS =
   "rounded-[max(0px,calc(var(--ui-radius-control)_-_var(--ui-space-unit)))]";
+
+/**
+ * Equal columns that never go narrower than their chip's label: a bare `1fr` is
+ * `minmax(auto, 1fr)`, where Tailwind's `grid-cols-N` is `minmax(0, 1fr)` and would let a column
+ * squeeze its label. Spelled whole, since Tailwind only emits the class names it finds.
+ */
+const COLUMNS: Record<2 | 3 | 4 | 5, string> = {
+  2: "grid-cols-[repeat(2,1fr)]",
+  3: "grid-cols-[repeat(3,1fr)]",
+  4: "grid-cols-[repeat(4,1fr)]",
+  5: "grid-cols-[repeat(5,1fr)]",
+};
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -38,11 +55,7 @@ export function Segmented<T extends string>({
   cols?: 2 | 3 | 4 | 5;
 }) {
   return (
-    <div
-      // Spelled out rather than interpolated: Tailwind scans for whole class names, and a
-      // `grid-cols-${n}` built at runtime is never emitted into the stylesheet.
-      className={`grid ${cols === 2 ? "grid-cols-2" : cols === 4 ? "grid-cols-4" : cols === 5 ? "grid-cols-5" : "grid-cols-3"} gap-1 rounded-control bg-line-muted p-1`}
-    >
+    <div className={`grid ${COLUMNS[cols]} gap-1 rounded-control bg-line-muted p-1`}>
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -52,7 +65,7 @@ export function Segmented<T extends string>({
           // where there is a badge to fold in — otherwise the label's own text is the name.
           aria-label={opt.badge ? `${opt.label} · ${opt.badge.name}` : undefined}
           aria-pressed={value === opt.value}
-          className={`${SEGMENTED_CHIP_RADIUS} px-1 py-1 text-xs transition-colors duration-150 ${
+          className={`${SEGMENTED_CHIP_RADIUS} whitespace-nowrap px-1 py-1 text-xs transition-colors duration-150 ${
             value === opt.value
               ? "bg-surface font-medium text-fg shadow-sm"
               : "text-fg-muted hover:text-fg"
