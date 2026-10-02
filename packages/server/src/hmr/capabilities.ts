@@ -20,6 +20,7 @@
  * instance `hmr.ensure()` already returns (in-process api members), never through the
  * registry.
  */
+import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import type { Resources, Opaque, ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "../config.js";
@@ -483,6 +484,20 @@ export abstract class Paths {
 }
 
 /**
+ * Directory watching, as the workflows service does it; a test replaces it with a watcher
+ * whose events reach nobody — which is what every real one is in the moments after it is
+ * created on macOS, where the FSEvents stream behind all of them starts on another thread.
+ */
+@Interface()
+export abstract class FileWatch {
+  abstract watch(
+    dir: string,
+    recursive: boolean,
+    onChange: (filename: string | null) => void,
+  ): Opaque<"FSWatcher", fs.FSWatcher>;
+}
+
+/**
  * A replacement for one node of the tree: the class the platform would build, and the
  * instance to boot in its place. Tests publish these (bootAppDeps) for the platform to
  * claim; production publishes none. A replacement is checked exactly like the node it
@@ -622,6 +637,14 @@ export class ConsoleLog implements Log {
 export class SystemClock implements Clock {
   now(): Date {
     return new Date();
+  }
+}
+
+/** Node's own `fs.watch`. */
+@Component()
+export class NodeFileWatch implements FileWatch {
+  watch(dir: string, recursive: boolean, onChange: (filename: string | null) => void) {
+    return fs.watch(dir, { recursive }, (_event, filename) => onChange(filename));
   }
 }
 

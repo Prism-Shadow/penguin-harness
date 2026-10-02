@@ -17,12 +17,14 @@ import {
   RuntimeProxy,
   RuntimeResourceGroups,
   SystemClock,
+  NodeFileWatch,
   AuthState,
   Channels,
   Clock,
   Config,
   Db,
   Desktop,
+  FileWatch,
   Lifecycle,
   Hmr,
   Reassembly,
@@ -239,6 +241,7 @@ export class Startup {
     ConsoleLog,
     SystemClock,
     ConfigPaths,
+    NodeFileWatch,
   ],
   exports: [
     Config,
@@ -255,6 +258,7 @@ export class Startup {
     Log,
     Clock,
     Paths,
+    FileWatch,
   ],
 })
 export class RuntimeModule {}

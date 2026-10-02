@@ -57,8 +57,8 @@ import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { PluginHost } from "../src/plugin/host.js";
-import type { Replacements } from "../src/hmr/capabilities.js";
-import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
+import type { FileWatch, Replacements } from "../src/hmr/capabilities.js";
+import { ConsoleLog, NodeFileWatch, SystemClock } from "../src/hmr/capabilities.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
 import type { TitleNotifier } from "../src/runtime/title-generator.js";
@@ -305,6 +305,8 @@ export interface TestAppOptions {
   browserShellPort?: BrowserShellPort;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
+  /** Test double: directory watching (one whose events reach nobody is a watcher still starting up). */
+  fileWatch?: FileWatch;
   log?: (line: string) => void;
   now?: () => Date;
   /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
@@ -328,6 +330,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
   if (o.now) out.push([SystemClock, { now: o.now }]);
+  if (o.fileWatch) out.push([NodeFileWatch, o.fileWatch]);
   if (o.passwordHashCost !== undefined) {
     const cost = o.passwordHashCost;
     out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);

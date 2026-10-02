@@ -15,6 +15,11 @@
  * - An Agent's first workflow, made with nothing but file tools, is noticed without a list.
  * - A workflow written in JavaScript is refused with the rename it needs.
  *
+ * A watcher still starting up (its events reach nobody, as every watcher's do in the moments
+ * after it is created on macOS):
+ * - An Agent's first workflow, written as the watcher on its directory starts, is loaded.
+ * - A workflow written into `workflows/` as the watcher on that folder starts is loaded.
+ *
  * An edited workflow:
  * - A file that disappears mid-read is a change, not a failed request.
  * - An edited folder is re-imported, every version recorded and any restorable.
@@ -31,6 +36,8 @@
  * its own within the editing group's one app.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { watch as fsWatch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
@@ -167,6 +174,29 @@ async function listOf(owner: ReturnType<typeof apiClient>, base = BASE): Promise
   expect(res.status).toBe(200);
   return ((await res.json()) as { workflows: WorkflowInfo[] }).workflows;
 }
+
+/**
+ * What the Agent that wrote the folder gets to read: `.build/status.json`, once a load has
+ * written it — waited for up to ten seconds, which a compile on a CI runner fits in.
+ */
+async function loadStatus(dir: string): Promise<{ ok?: boolean }> {
+  const file = path.join(dir, ".build", "status.json");
+  let status: { ok?: boolean } = {};
+  for (let i = 0; i < 100 && status.ok === undefined; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    status = await fs.readFile(file, "utf8").then(
+      (text) => JSON.parse(text) as { ok: boolean },
+      () => ({}),
+    );
+  }
+  return status;
+}
+
+/**
+ * An Agent id no other attempt of the case has used: the file is retried once on macOS
+ * (vitest.config.ts), and the Agent the first attempt created is still there.
+ */
+const freshAgentId = (name: string) => `${name}_${randomUUID().slice(0, 8)}`;
 
 // Most of these run the TypeScript compiler, several times each: on a CI runner a single test
 // can pass 5s, the default POSIX limit, without anything being wrong.
@@ -354,30 +384,16 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
 
   it("notices an Agent's FIRST workflow, made with nothing but its file tools", async () => {
     // Another Agent of the Project, with no workflows/ folder when its list is first read.
-    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "builder" });
+    const agentId = freshAgentId("builder");
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
     expect(made.status, await made.text()).toBe(201);
-    const base = `/api/projects/${PROJECT}/agents/builder/workflows`;
-    expect(((await (await owner.get(base)).json()) as { workflows: unknown[] }).workflows).toEqual(
-      [],
-    );
+    expect(await listOf(owner, `/api/projects/${PROJECT}/agents/${agentId}/workflows`)).toEqual([]);
 
-    const first = path.join(agentDir(t.root, PROJECT, "builder"), "workflows", "first");
-    await fs.mkdir(path.join(first, "ui"), { recursive: true });
-    await fs.writeFile(path.join(first, "package.json"), packageJson());
-    await fs.writeFile(path.join(first, "index.ts"), indexSource("first"));
-    await fs.writeFile(path.join(first, "ui", "index.html"), "<h1>first</h1>");
+    const first = path.join(agentDir(t.root, PROJECT, agentId), "workflows", "first");
+    await writeDemo(first);
 
     // Nobody lists again: the server has to see the folder appear and load it on its own.
-    const statusFile = path.join(first, ".build", "status.json");
-    let status: { ok?: boolean } = {};
-    for (let i = 0; i < 100 && status.ok === undefined; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      status = await fs.readFile(statusFile, "utf8").then(
-        (text) => JSON.parse(text) as { ok: boolean },
-        () => ({}),
-      );
-    }
-    expect(status).toMatchObject({ ok: true, error: null, tabs: ["board"] });
+    expect(await loadStatus(first)).toMatchObject({ ok: true, error: null, tabs: ["board"] });
   });
 
   it("refuses a workflow written in JavaScript, naming the rename it needs", async () => {
@@ -391,6 +407,55 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
     expect(refused!.error).toContain(
       "a workflow is written in TypeScript: rename index.mjs to index.ts",
     );
+  });
+});
+
+// On macOS a watcher misses whatever happens in the first moments after it is created (the
+// FSEvents stream behind every watcher of the process is recreated on another thread each
+// time one is added), and an Agent writing its first workflow in one burst used to land there:
+// the folder appeared, nothing ever reported it, and no load happened. Real watchers whose
+// events reach nobody are that start-up window held open, on every platform.
+describe("a watcher still starting up", { timeout: 30_000 }, () => {
+  let t: TestApp;
+  let owner: ReturnType<typeof apiClient>;
+
+  beforeAll(async () => {
+    t = await createTestApp({
+      fileWatch: { watch: (dir, recursive) => fsWatch(dir, { recursive }, () => {}) },
+    });
+    owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+    const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
+    expect(created.status, await created.text()).toBe(201);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  /** An Agent of the case's own, its workflows listed once (which is what arms a watcher). */
+  async function agentListedOnce(name: string, before?: (dir: string) => Promise<void>) {
+    const agentId = freshAgentId(name);
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
+    expect(made.status, await made.text()).toBe(201);
+    const workflows = path.join(agentDir(t.root, PROJECT, agentId), "workflows");
+    await before?.(workflows);
+    expect(await listOf(owner, `/api/projects/${PROJECT}/agents/${agentId}/workflows`)).toEqual([]);
+    return workflows;
+  }
+
+  it("loads an Agent's first workflow, written as the watcher on its directory starts", async () => {
+    const workflows = await agentListedOnce("builder");
+    const first = path.join(workflows, "first");
+    await writeDemo(first);
+    expect(await loadStatus(first)).toMatchObject({ ok: true, error: null, tabs: ["board"] });
+  });
+
+  it("loads a workflow written into workflows/ as the watcher on that folder starts", async () => {
+    // The folder is there and empty when listed, so the list arms the watcher on it and
+    // loads nothing; the workflow is written right after.
+    const workflows = await agentListedOnce("filler", (dir) => fs.mkdir(dir));
+    const first = path.join(workflows, "first");
+    await writeDemo(first);
+    expect(await loadStatus(first)).toMatchObject({ ok: true, error: null, tabs: ["board"] });
   });
 });
 

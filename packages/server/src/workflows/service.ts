@@ -18,8 +18,9 @@
  * Loading is by content: the folder's revision (store.ts) names the directory the source
  * is emitted into, so an edited workflow is a new import URL rather than a hit in the ESM
  * cache, and every successful load records the folder as a version the Agent (or the
- * user) can roll back to. A watcher on the `workflows/` folder reloads on change, debounced, and the users of
- * the Project hear `workflow_updated` on their event stream.
+ * user) can roll back to. A watcher on the `workflows/` folder reloads on change, debounced
+ * (and once more after its own start, which it may have been blind through — see
+ * rescanSoon), and the users of the Project hear `workflow_updated` on their event stream.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -36,7 +37,7 @@ import type {
 import { userText } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
-import type { Channels, Clock, Hmr, Log, Paths } from "../hmr/capabilities.js";
+import type { Channels, Clock, FileWatch, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
@@ -238,6 +239,7 @@ export class WorkflowService implements Workflows {
   @Use() private readonly members!: Members;
   @Use() private readonly projects!: Projects;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly fileWatch!: FileWatch;
   @Use() private readonly agents!: AgentIndex;
   @Use() private readonly sessionIndex!: SessionIndex;
   @Use() private readonly runner!: ScheduleTaskRunner;
@@ -246,6 +248,8 @@ export class WorkflowService implements Workflows {
   private readonly loaded = new Map<string, Loaded>();
   private readonly watchers = new Map<string, fs.FSWatcher>();
   private readonly pending = new Map<string, NodeJS.Timeout>();
+  /** The one re-read armed per Agent when a watcher of its is created (see rescanSoon). */
+  private readonly rescans = new Map<string, NodeJS.Timeout>();
   /** The load in flight per workflow: a load takes a compiler run, so two can overlap. */
   private readonly loading = new Map<string, Promise<Loaded>>();
   /** The revision the newest queued load will load, while one is queued (see reloadIfChanged). */
@@ -260,6 +264,7 @@ export class WorkflowService implements Workflows {
     ctx.effect(() => {
       this.disposed = true;
       for (const t of this.pending.values()) clearTimeout(t);
+      for (const t of this.rescans.values()) clearTimeout(t);
       for (const w of this.watchers.values()) w.close();
       for (const l of this.loaded.values()) l.tree?.dispose();
       this.loaded.clear();
@@ -306,8 +311,15 @@ export class WorkflowService implements Workflows {
     agentId: string,
     workflowId: string,
   ): Promise<void> {
-    const folder = await this.folder(projectId, agentId, workflowId);
-    const k = key(projectId, agentId, workflowId);
+    await this.loadIfChanged(projectId, agentId, await this.folder(projectId, agentId, workflowId));
+  }
+
+  private async loadIfChanged(
+    projectId: string,
+    agentId: string,
+    folder: WorkflowFolder,
+  ): Promise<void> {
+    const k = key(projectId, agentId, folder.id);
     const current = this.loading.has(k)
       ? this.loadingRevision.get(k)
       : this.loaded.get(k)?.folder.revision;
@@ -664,7 +676,7 @@ export class WorkflowService implements Workflows {
     }
     let watcher: fs.FSWatcher;
     try {
-      watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
+      watcher = this.fileWatch.watch(dir, true, (filename) => {
         const segments = typeof filename === "string" ? filename.split(/[\\/]/) : [];
         const id = segments[0];
         // The workflow's own document is not code, and neither is the staging file a write
@@ -684,6 +696,7 @@ export class WorkflowService implements Workflows {
       this.watchers.delete(k);
     });
     this.watchers.set(k, watcher);
+    this.rescanSoon(projectId, agentId, () => this.rescan(projectId, agentId));
   }
 
   /**
@@ -696,15 +709,18 @@ export class WorkflowService implements Workflows {
     const k = `${projectId}/${agentId}`;
     const parent = path.dirname(declared);
     let watcher: fs.FSWatcher;
+    // The folder exists now: watch it properly, and load whatever is already inside.
+    const arrived = () => {
+      watcher.close();
+      this.watchers.delete(k);
+      void this.list(projectId, agentId).catch((err) =>
+        this.log.line(`[workflows] ${k}: ${messageOf(err)}`),
+      );
+    };
     try {
-      watcher = fs.watch(fs.realpathSync.native(parent), (_event, filename) => {
+      watcher = this.fileWatch.watch(fs.realpathSync.native(parent), false, (filename) => {
         if (filename !== path.basename(declared) || !fs.existsSync(declared)) return;
-        watcher.close();
-        this.watchers.delete(k);
-        // The folder exists now: watch it properly, and load whatever is already inside.
-        void this.list(projectId, agentId).catch((err) =>
-          this.log.line(`[workflows] ${k}: ${messageOf(err)}`),
-        );
+        arrived();
       });
     } catch {
       return;
@@ -714,6 +730,43 @@ export class WorkflowService implements Workflows {
       this.watchers.delete(k);
     });
     this.watchers.set(k, watcher);
+    this.rescanSoon(projectId, agentId, () => {
+      if (this.watchers.get(k) === watcher && fs.existsSync(declared)) arrived();
+    });
+  }
+
+  /**
+   * A watcher is not live the moment it is created. On macOS every watcher of the process
+   * shares one FSEvents stream, which libuv recreates on a thread of its own each time a
+   * watcher is added, from "now" — whatever happens to the files in those milliseconds is
+   * reported to nobody. An Agent writing its first workflow in one burst lands there twice:
+   * `workflows/` appears while the watcher on the Agent's directory is still starting, and
+   * the files follow while the watcher on `workflows/` is. So a watcher's creation is one
+   * more hint: after the settle window, what it watches is read once, as if an event had
+   * come for all of it. One per Agent — the `workflows/` watcher's replaces the Agent
+   * directory's, which has done its job by then.
+   */
+  private rescanSoon(projectId: string, agentId: string, check: () => void | Promise<void>): void {
+    const k = `${projectId}/${agentId}`;
+    const t = this.rescans.get(k);
+    if (t) clearTimeout(t);
+    this.rescans.set(
+      k,
+      setTimeout(() => {
+        this.rescans.delete(k);
+        void Promise.resolve()
+          .then(check)
+          .catch((err) => this.log.line(`[workflows] ${k}: ${messageOf(err)}`));
+      }, WATCH_SETTLE_MS),
+    );
+  }
+
+  /** Every folder of the Agent, loaded where its content is not what is loaded or loading. */
+  private async rescan(projectId: string, agentId: string): Promise<void> {
+    for (const folder of await listFolders(workflowsDir(this.paths.root, projectId, agentId))) {
+      if (this.removing.has(key(projectId, agentId, folder.id))) continue;
+      await this.loadIfChanged(projectId, agentId, folder);
+    }
   }
 
   private schedule(projectId: string, agentId: string, workflowId: string): void {
