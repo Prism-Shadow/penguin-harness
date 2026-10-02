@@ -27,12 +27,6 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     ],
   },
   {
-    version: "0.2.12",
-    date: "2026-09-16",
-    zh: ["发布流程中途失败，未产出任何安装包；这批改动随 0.2.13 发布。"],
-    en: ["The release run failed before anything was published; this set shipped as 0.2.13."],
-  },
-  {
     version: "0.2.11",
     date: "2026-09-10",
     zh: ["重新构建 0.2.10，恢复签名的 macOS 安装包。", "功能内容与 0.2.10 相同。"],

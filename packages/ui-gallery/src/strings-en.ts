@@ -627,7 +627,7 @@ export const en: GalleryStrings = {
       menuRowsHint:
         "Two densities: the account and project menus on the body size, a row's more and context menus on the small size.",
       menuSettings: "Settings",
-      menuUpdate: "Check for updates",
+      menuAppInfo: "About",
       menuVersion: "v0.2.13",
       menuSignOut: "Sign out",
       menuGroupBy: "Group by",

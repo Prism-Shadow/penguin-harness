@@ -79,10 +79,7 @@ export function AppInfoDialog() {
         <Identity currentVersion={currentVersion} />
         {mode !== "none" && (
           <RuledSection level={3} title={S.update.title}>
-            <div className="space-y-3">
-              <Body mode={mode} flow={flow} />
-            </div>
-            <UpdateActions mode={mode} flow={flow} />
+            <UpdateStatus mode={mode} flow={flow} />
           </RuledSection>
         )}
         <ReleaseNotes currentVersion={currentVersion} />
@@ -255,14 +252,40 @@ function Body({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNode
 }
 
 /**
- * The section's one next step, under its body: check again, download, restart, or retry — or
- * nothing while something runs, the body's spinner or progress bar saying what. The dialog has
- * no footer; closing is its header's cross, which never cancels anything.
+ * The section as one row: where the flow stands on the left, its one next step on the right —
+ * check again, download, restart, or retry — or no button while something runs, the spinner or
+ * progress bar saying what. A one-line state centres the button on its line; a taller one keeps
+ * it beside the state's first line, so the rest of the body reads below. The button drops under
+ * the text only when the row is too narrow to hold both. The dialog has no footer; closing is
+ * its header's cross, which never cancels anything.
  */
-function UpdateActions({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNode {
+function UpdateStatus({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }) {
   const step = nextStep(mode, flow);
-  if (step === null) return null;
-  return <div className="mt-3 flex flex-wrap justify-end gap-2">{step}</div>;
+  return (
+    <div
+      className={`flex flex-wrap justify-between gap-x-4 gap-y-3 ${isOneLine(flow) ? "items-center" : "items-baseline"}`}
+    >
+      <div className="min-w-0 grow basis-64 space-y-3">
+        <Body mode={mode} flow={flow} />
+      </div>
+      {step !== null && <div className="ml-auto flex shrink-0">{step}</div>}
+    </div>
+  );
+}
+
+/** Whether a state's body is a single line of text, which its button sits level with. */
+function isOneLine(flow: UpdateFlow): boolean {
+  switch (flow.kind) {
+    case "unknown":
+    case "checking":
+    case "up-to-date":
+    case "restarting":
+      return true;
+    case "error":
+      return flow.message === null && flow.detail === null;
+    default:
+      return false;
+  }
 }
 
 function nextStep(mode: UpdateMode, flow: UpdateFlow): ReactNode {

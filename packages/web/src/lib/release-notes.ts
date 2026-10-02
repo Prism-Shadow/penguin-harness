@@ -14,9 +14,11 @@
  *
  * The rules for an entry:
  *
- * - 1–5 lines per language — two to five for a release; a version that shipped nothing of its own
- *   (a failed or npm-only tag) says in one line where its content went — with zh and en mirroring
+ * - 1–5 lines per language — two to five for a release; a version that shipped no installers of
+ *   its own (an npm-only tag) says in one line where its content went — with zh and en mirroring
  *   each other line for line.
+ * - A tag that published nothing at all (a release run that failed before any upload) has no
+ *   entry: no one can be running it.
  * - The App Store "What's New" register: what a user gets, no internal names, no backticks (the
  *   lines render as plain text, not Markdown).
  * - The docs' typography: a space between CJK and Latin letters or digits, full-width punctuation
