@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "PenguinHarness Browser",
+  "description": "Lets PenguinHarness agents drive the Chrome tabs you hand them: the Penguin tab group and tabs you add with this icon.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA20B+9k9edNt7kznHTgMsQjMHzWFCFA+h7qAjXIl252qrlLeyuxzmq52giHSdGm5b5mhyARRTDqFinA4w2K4Wmc/xi7iOLHrrXsvKhJsq+OoADP9AUJ55P9yqm5Y/IT+tJYPKcTaqmzt1SjbK2qRr0O9JRG++uI40vbfJ606efLGUG6UsBh8Lqg0HKQsQUsCHxn0RwNv/TORE1sbQIqRuOJsPLalxLB3x6hkyIsKJFoYlHdG5wFSRs3+qQItkXCFNzh0OTNPVg7yBt3/sMqKSbuzcaSjOQc8F2QiHgnlqVYpzRJea7OsdTgJe5RN98DR0cxKGLCTJ9uYAzNStxhNRRQIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": ["debugger", "tabs", "tabGroups", "storage", "webNavigation", "alarms"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "PenguinHarness Browser",
+    "default_icon": {
+      "16": "icons/icon-grey-16.png",
+      "32": "icons/icon-grey-32.png",
+      "48": "icons/icon-grey-48.png",
+      "128": "icons/icon-grey-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "options_ui": {
+    "page": "pages/pair.html",
+    "open_in_tab": true
+  }
+}

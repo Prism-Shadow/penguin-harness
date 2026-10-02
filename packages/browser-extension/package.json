@@ -1,0 +1,27 @@
+{
+  "name": "@prismshadow/penguin-browser-extension",
+  "version": "0.2.13",
+  "private": true,
+  "type": "module",
+  "description": "PenguinHarness Browser: the Chrome extension that lets a PenguinHarness server drive the user's own Chrome tabs over chrome.debugger.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/browser-extension"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "e2e": "bash e2e/run.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/chrome": "^0.3.4",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6",
+    "ws": "^8.18.3"
+  }
+}

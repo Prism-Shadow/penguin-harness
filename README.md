@@ -126,6 +126,7 @@ Start with the desktop app, or install the command line on a workstation or serv
 
 - **🖥️ Desktop app** — a double-click install: it embeds the server and opens already signed in, no terminal involved.
 - **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
+- **🧩 Chrome extension** (optional) — `penguin-browser-extension.zip` on each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases) lets agents drive the tabs you hand them in your own Chrome: load it unpacked at `chrome://extensions`, then pair it from the Browser panel.
 
 > [!NOTE]
 > On a CLI install, the server prints a first-login link as a framed notice on every start until a password is set — open it to claim the built-in `admin` account and choose one. Models are configured on the in-app **Models** page.

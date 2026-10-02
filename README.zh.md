@@ -126,6 +126,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 - **🖥️ 桌面端应用**——双击安装：内嵌服务端，打开即已登录，全程无需终端。
 - **⌨️ 命令行**——一行命令（或 npm / 离线包）装出 `penguin` 命令，`penguin web` 即在浏览器打开完整 Web 体验 `http://127.0.0.1:7364`（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）。在线安装器自带 Node 运行时，解压即用；升级与重装不触碰数据。
+- **🧩 Chrome 扩展**（可选）——每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases) 附带的 `penguin-browser-extension.zip` 让 Agent 驱动你在自己的 Chrome 中交给它的标签页：在 `chrome://extensions` 以「加载已解压的扩展程序」载入，再在浏览器面板中配对。
 
 > [!NOTE]
 > 命令行安装后，服务端会以边框提示打印一条首次登录链接（在密码被设置之前每次启动都会重新打印）——打开即可认领内置管理员 `admin` 并设置密码；模型在应用内「模型」页配置。
