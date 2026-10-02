@@ -37,7 +37,9 @@ named file mode, network level and approval mode, and one pick saves all three o
   row's file mode, network and approval mode; a default that confines nothing (Full Access)
   starts Sessions unconfined. Changing the default reaches new Sessions only. The card no longer
   has its own confinement mode and network fields; settings stored before the default preset
-  keep their mode and network until the card is saved once (see backward compatibility).
+  keep their mode and network until an administrator stars a row. The card stars the row that
+  starts Sessions exactly where they do, or none, with a notice saying what is in effect (see
+  [backward compatibility](2026-10-02-backward-compatibility-sandbox-switch.md)).
 - **The Sandbox card has an Enable switch at the top.** It decides whether new Sessions start
   confined; a Session that exists keeps its own policy. Off, a new Session has full file and
   network access and is held only by its approval mode, and the composer's permission menu
@@ -64,7 +66,7 @@ named file mode, network level and approval mode, and one pick saves all three o
   a `pin`: a boolean column drawn as a pin toggle with a tooltip per state; a `columnGroup`, a
   header over adjacent columns; and `extensible`: rows may be added (only those deleted) and all
   reordered, stored additively under `"$added"` and `"$order"`. A row choice may name an added
-  row; a save that leaves it naming no row is refused. Columns and the row
+  row, or no row at all; a save that leaves it naming a row the table no longer has is refused. Columns and the row
   choice take a `description`, and fields a `hint` (`hintZh`) for their format, shown under the
   field while the `description` goes behind the "?".
 - Settings fields can be marked `advanced: true`; the Plugins page folds such fields on every
@@ -72,9 +74,19 @@ named file mode, network level and approval mode, and one pick saves all three o
 - The sandbox's settings entry gains `backend` (`installed`, `recommended`); its group gains
   `enabled` and `defaultPreset` and loses `mode` and `network`. A notice may name a switch in
   `onlyWhen`, and the page shows it only while that switch is on.
+- **A non-admin sees which presets only an administrator can pick.** A preset wider than the
+  server's sandbox settings (with the default Workspace Write: Full Access and Always Ask, whose
+  file mode is Off) is greyed out for a non-admin and marked "Admin only", and its tooltip says it
+  exceeds this server's sandbox ceiling; administrators, and the preset the Session is on, are
+  unaffected. A refused pick leaves the Session as it was, and a toast says why.
 - `ConfirmModal` (UI package) takes a `glyph` for its leading mark.
 - The Session's `sandbox` object in the API gains three response-only fields: `presets` (the
   table, disabled rows included), `advanced`, and `switchOn` (the Sandbox switch). The chat
   defaults carry them too, plus `defaultApprovalMode`: the default preset's approval mode
   while the switch is on. A Session created without an approval mode takes it; an
-  organization's Session keeps `allow-all`.
+  organization's Session keeps `allow-all`. Each preset row carries `aboveCeiling: true` when
+  it is wider than the server's settings, by the same comparison that refuses a non-admin's
+  pick with `403 sandbox_forbidden`.
+- `PATCH /api/sessions/:sessionId` checks every field, the sandbox's ceiling and
+  enforceability included, before it writes any: a refused request stores nothing. Before, it
+  stored the approval mode first, so a refused preset pick left its approval-mode half saved.
