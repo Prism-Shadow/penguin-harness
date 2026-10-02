@@ -56,7 +56,11 @@ export function ConfigField({
   const localized = (en: string | undefined, zh: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zh);
   const label = localized(field.title, field.titleZh) ?? name;
-  const hint = localized(field.description, field.descriptionZh);
+  // What the field means sits behind a "?" beside its title; the shape a value must take (the
+  // hint) stays on screen, since it is read while typing.
+  const info = localized(field.description, field.descriptionZh);
+  const hint = localized(field.hint, field.hintZh);
+  const disclosed = info !== undefined ? { info, infoLabel: label } : {};
   switch (field.type) {
     case "table": {
       const table = (value ?? {}) as TableDraft;
@@ -85,6 +89,7 @@ export function ConfigField({
           size="sm"
           label={label}
           {...(hint !== undefined ? { hint } : {})}
+          {...disclosed}
           {...(error !== undefined ? { error } : {})}
           value={typeof value === "string" ? (value as string) : ""}
           disabled={disabled}
@@ -116,6 +121,7 @@ export function ConfigField({
           label={label}
           rows={3}
           {...(hint !== undefined ? { hint } : {})}
+          {...disclosed}
           {...(error !== undefined ? { error } : {})}
           value={typeof value === "string" ? (value as string) : ""}
           placeholder={field.placeholder ?? ""}
@@ -129,7 +135,8 @@ export function ConfigField({
           key={name}
           variant="plain"
           label={label}
-          hint={hint}
+          {...(hint !== undefined ? { hint } : {})}
+          {...(info !== undefined ? { info } : {})}
           checked={value === true}
           onChange={onChange}
           disabled={disabled}
@@ -144,6 +151,8 @@ export function ConfigField({
             size="sm"
             label={label}
             {...(hint !== undefined ? { hint } : {})}
+            {...disclosed}
+          {...disclosed}
             {...(error !== undefined ? { error } : {})}
             value={typed}
             placeholder={
@@ -175,6 +184,7 @@ export function ConfigField({
           type="number"
           label={label}
           {...(hint !== undefined ? { hint } : {})}
+          {...disclosed}
           {...(error !== undefined ? { error } : {})}
           value={typeof value === "string" ? (value as string) : ""}
           placeholder={field.placeholder ?? ""}
@@ -189,6 +199,7 @@ export function ConfigField({
           size="sm"
           label={label}
           {...(hint !== undefined ? { hint } : {})}
+          {...disclosed}
           {...(error !== undefined ? { error } : {})}
           value={typeof value === "string" ? (value as string) : ""}
           placeholder={field.placeholder ?? ""}

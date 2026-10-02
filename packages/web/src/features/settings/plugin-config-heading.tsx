@@ -1,11 +1,12 @@
 /**
- * A settings entry's head: its title, its store name, its description, the actions it offers
+ * A settings entry's head: its title with its description behind a "?", its store name, the
+ * actions it offers
  * (what the deployment must do once on the machine, as buttons beside what each will do) and
  * its live notices — a spinner for work in progress, a strip for what needs attention, quiet
  * text for the rest.
  */
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
-import { Button, NoticeStrip, Spinner } from "@prismshadow/penguin-ui";
+import { Button, InfoPopover, NoticeStrip, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Locale } from "../../state/locale";
@@ -30,15 +31,20 @@ export function ConfigHeading({
 }) {
   const localized = (en: string | undefined, zh: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zh);
+  const title =
+    localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name;
+  // What the group is for sits behind a "?" beside its title.
   const description = localized(entry.configuration.description, entry.configuration.descriptionZh);
   return (
     <div className="space-y-1.5">
       <div>
-        <p className={nested ? "text-xs font-semibold" : "text-sm font-semibold"}>
-          {localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name}
+        <p
+          className={`inline-flex items-center gap-1 ${nested ? "text-xs font-semibold" : "text-sm font-semibold"}`}
+        >
+          {title}
+          {description !== undefined && <InfoPopover label={title}>{description}</InfoPopover>}
         </p>
         <p className="font-mono text-xs text-fg-muted">{entry.name}</p>
-        {description !== undefined && <p className="mt-1 text-xs text-fg-muted">{description}</p>}
       </div>
       {(entry.actions ?? []).length > 0 && (
         <div className="space-y-2">

@@ -5,8 +5,13 @@
  *   draft is on; a notice tied to nothing always shows.
  * - Given a table row whose name was never changed, the name box holds the declared name as
  *   its value (normal ink, not a placeholder); a renamed row holds the new name.
+ * - Given described columns and a described group, every header and the card title carry a "?"
+ *   and no description is a paragraph on screen.
+ * - Given a pin column, each cell is a toggle button whose pressed state is the row's value, and
+ *   pressing it reports the flip; a locked cell is the value's text, with no control and no mark.
  */
 import { describe, expect, it } from "vitest";
+import type { ReactElement } from "react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
@@ -73,4 +78,133 @@ describe("the settings card", () => {
     expect(box("Read Only")).toContain('rows="1"');
     expect(html).not.toContain("placeholder=");
   });
+
+  it("puts every description behind a \"?\" beside its title, never on screen", () => {
+    const html = renderToStaticMarkup(
+      createElement(ConfigHeading, {
+        entry: { ...ENTRY, configuration: { ...ENTRY.configuration, description: "Card meaning" } },
+        draft: {},
+        nested: false,
+        disabled: false,
+        onAction: () => {},
+        locale: "en",
+      }),
+    );
+    expect(html).toContain('aria-label="More info: Sandbox"');
+    expect(html).not.toContain("Card meaning");
+    const table = renderTable(PRESETS);
+    for (const title of ["Presets", "Name", "Files", "Default", "Pin"]) {
+      expect(table).toContain(`aria-label="More info: ${title}"`);
+    }
+    for (const text of ["Table meaning", "Name meaning", "Files meaning", "Default meaning", "Pin meaning"]) {
+      expect(table).not.toContain(text);
+    }
+  });
+
+  it("draws a pin column as a pressed or unpressed toggle, and reports the flip", () => {
+    const flips: Array<[string, string, unknown]> = [];
+    const html = renderTable(PRESETS, (row, column, value) => flips.push([row, column, value]));
+    const pin = (row: string) =>
+      (html.match(/<button[^>]*aria-label="[^"]* · Pin"[^>]*>/g) ?? []).find((b) =>
+        b.includes(`aria-label="${row} · Pin"`),
+      );
+    expect(pin("Full Access")).toContain('aria-pressed="true"');
+    expect(pin("Read Only")).toContain('aria-pressed="false"');
+    // Pressing it: the element's own handler, found on the rendered tree.
+    const button = findByLabel(tableElement(PRESETS, (r, c, v) => flips.push([r, c, v])), "Read Only · Pin");
+    (button.props as { onClick: () => void }).onClick();
+    expect(flips).toEqual([["b", "enabled", true]]);
+  });
+
+  it("draws a locked cell as its value alone, with no control and no mark", () => {
+    const html = renderTable(PRESETS);
+    const locked = /<span aria-label="Full Access · Files: Off \(Locked[^"]*\)"[^>]*>(.*?)<\/span><\/td>/.exec(html);
+    expect(locked).not.toBeNull();
+    expect(locked![1]).not.toContain("<svg");
+    expect(locked![1]).not.toContain("<button");
+  });
 });
+
+/** A presets-like table: a name, a locked enum, a row choice before a pin column. */
+const PRESETS: PluginConfigField = {
+  type: "table",
+  title: "Presets",
+  description: "Table meaning",
+  rowChoice: { field: "pick", title: "Default", description: "Default meaning", before: "enabled" },
+  columns: [
+    { name: "name", type: "string", title: "Name", description: "Name meaning" },
+    {
+      name: "mode",
+      type: "enum",
+      title: "Files",
+      description: "Files meaning",
+      options: [
+        { value: "off", title: "Off" },
+        { value: "ro", title: "Read-only" },
+      ],
+    },
+    {
+      name: "enabled",
+      type: "boolean",
+      title: "Pin",
+      description: "Pin meaning",
+      pin: { on: "Pinned to the menu", off: "Not in the menu" },
+    },
+  ],
+  rows: [
+    { id: "a", values: { name: "Full Access", mode: "off", enabled: true }, locked: ["mode"] },
+    { id: "b", values: { name: "Read Only", mode: "ro", enabled: false } },
+  ],
+};
+
+const tableElement = (
+  field: PluginConfigField,
+  onCell: (row: string, column: string, value: string | boolean) => void = () => {},
+) =>
+  createElement(ConfigTable, {
+    entry: ENTRY,
+    name: "presets",
+    field,
+    table: {
+      a: { name: "", mode: "off", enabled: true },
+      b: { name: "", mode: "ro", enabled: false },
+    },
+    onCell,
+    choice: "a",
+    errors: [],
+    disabled: false,
+    locale: "en",
+  });
+
+const renderTable = (
+  field: PluginConfigField,
+  onCell?: (row: string, column: string, value: string | boolean) => void,
+) => renderToStaticMarkup(tableElement(field, onCell));
+
+/**
+ * The element named `label` in a component's rendered tree, rendering function components on
+ * the way down where they hold no hooks.
+ */
+function findByLabel(node: unknown, label: string): ReactElement {
+  const walk = (n: unknown): ReactElement | null => {
+    if (Array.isArray(n)) {
+      for (const child of n) {
+        const hit = walk(child);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    if (n === null || typeof n !== "object" || !("props" in n)) return null;
+    const el = n as ReactElement<Record<string, unknown>>;
+    if (el.props["aria-label"] === label && typeof el.type === "string") return el;
+    // Rendered on the way down: the table and its pin toggle, which use no hooks. Any other
+    // component (a select, a "?") is looked into by its children only.
+    if (typeof el.type === "function" && ["ConfigTable", "PinToggle"].includes(el.type.name)) {
+      return walk((el.type as (p: unknown) => unknown)(el.props));
+    }
+    return walk(el.props.children);
+  };
+  const hit = walk(node);
+  if (hit === null) throw new Error(`no element named ${label}`);
+  return hit;
+}

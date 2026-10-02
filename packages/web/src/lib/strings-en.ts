@@ -553,7 +553,7 @@ export const en: Strings = {
     /** The fold holding the fields a settings group marks advanced. */
     pluginAdvanced: "Advanced",
     /** A table cell its row does not let change, beside the lock mark. */
-    pluginCellLocked: "Fixed for this row",
+    pluginCellLocked: "Locked: this row keeps this value",
     pluginCellOn: "On",
     pluginCellOff: "Off",
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */

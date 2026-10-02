@@ -5442,8 +5442,15 @@ export interface PluginConfigField {
   type: "string" | "secret" | "boolean" | "number" | "enum" | "list" | "table";
   title: string;
   titleZh?: string;
+  /** What the field means: disclosed behind a "?" beside its title. */
   description?: string;
   descriptionZh?: string;
+  /**
+   * The shape a value must take ("one absolute path per line"): shown under the field at all
+   * times, since it is read while typing.
+   */
+  hint?: string;
+  hintZh?: string;
   placeholder?: string;
   /** The value a package with nothing stored reads; also what an empty field falls back to. */
   default?: string | number | boolean | string[];
@@ -5485,6 +5492,11 @@ export interface PluginConfigRowChoice {
   field: string;
   title: string;
   titleZh?: string;
+  /** What the column means: disclosed behind a "?" beside its header. */
+  description?: string;
+  descriptionZh?: string;
+  /** The column it is drawn before (a column name); absent, it is drawn last. */
+  before?: string;
 }
 
 /** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
@@ -5493,7 +5505,15 @@ export interface PluginConfigTableColumn {
   type: "string" | "boolean" | "enum";
   title: string;
   titleZh?: string;
+  /** What the column means: disclosed behind a "?" beside its header. */
+  description?: string;
+  descriptionZh?: string;
   options?: PluginConfigOption[];
+  /**
+   * `boolean` only: drawn as a pin toggle rather than a switch — a row pinned to a list (the
+   * sandbox presets in the composer's menu). The texts are its tooltip in each state.
+   */
+  pin?: { on: string; onZh?: string; off: string; offZh?: string };
 }
 
 /** One row of a `table` field: its id and its declared cells. */

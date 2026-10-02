@@ -625,7 +625,7 @@ export const zh = {
     /** The fold holding the fields a settings group marks advanced. */
     pluginAdvanced: "高级选项",
     /** A table cell its row does not let change, beside the lock mark. */
-    pluginCellLocked: "此行固定，不可修改",
+    pluginCellLocked: "已锁定：此行保持这个取值",
     pluginCellOn: "开",
     pluginCellOff: "关",
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */

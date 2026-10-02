@@ -86,6 +86,28 @@ function parseOptions(options: unknown, where: string): PluginConfigOption[] {
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
+/** A column's (or row choice's) description, in both languages, where declared as text. */
+function describedBy(c: Record<string, unknown>): { description?: string; descriptionZh?: string } {
+  return {
+    ...(typeof c.description === "string" ? { description: c.description } : {}),
+    ...(typeof c.descriptionZh === "string" ? { descriptionZh: c.descriptionZh } : {}),
+  };
+}
+
+/** A boolean column's pin texts: its tooltip pinned and not. */
+function parsePin(raw: unknown, where: string): NonNullable<PluginConfigTableColumn["pin"]> {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  if (typeof p.on !== "string" || typeof p.off !== "string") {
+    throw new Error(`${where}.pin needs an on and an off text`);
+  }
+  return {
+    on: p.on,
+    off: p.off,
+    ...(typeof p.onZh === "string" ? { onZh: p.onZh } : {}),
+    ...(typeof p.offZh === "string" ? { offZh: p.offZh } : {}),
+  };
+}
+
 /** Whether a value is of a table column's type. */
 function cellFits(column: PluginConfigTableColumn, value: unknown): boolean {
   if (column.type === "boolean") return typeof value === "boolean";
@@ -121,7 +143,9 @@ function parseTable(
       type: c.type as PluginConfigTableColumn["type"],
       title: c.title,
       ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
+      ...describedBy(c),
       ...(c.type === "enum" ? { options: parseOptions(c.options, at) } : {}),
+      ...(c.type === "boolean" && c.pin !== undefined ? { pin: parsePin(c.pin, at) } : {}),
     };
   });
   if (!Array.isArray(f.rows) || f.rows.length === 0) {
@@ -288,7 +312,14 @@ export function parsePluginConfiguration(
       throw new Error(`${where}: configuration.properties.${name}.title is required`);
     }
     const field: PluginConfigField = { type: type as PluginConfigField["type"], title: f.title };
-    for (const key of ["titleZh", "description", "descriptionZh", "placeholder"] as const) {
+    for (const key of [
+      "titleZh",
+      "description",
+      "descriptionZh",
+      "hint",
+      "hintZh",
+      "placeholder",
+    ] as const) {
       const v = f[key];
       if (v === undefined) continue;
       if (typeof v !== "string") {
@@ -312,6 +343,8 @@ export function parsePluginConfiguration(
           field: c.field,
           title: c.title,
           ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
+          ...describedBy(c),
+          ...(typeof c.before === "string" ? { before: c.before } : {}),
         };
       }
       if (f.default !== undefined) {
@@ -381,9 +414,16 @@ export function parsePluginConfiguration(
     }
     properties[name] = field;
   }
-  // A row choice stores into an enum of the same group whose options are exactly the row ids.
+  // A row choice stores into an enum of the same group whose options are exactly the row ids,
+  // and is drawn before a column the table has.
   for (const [name, field] of Object.entries(properties)) {
     if (field.rowChoice === undefined) continue;
+    const before = field.rowChoice.before;
+    if (before !== undefined && !(field.columns ?? []).some((c) => c.name === before)) {
+      throw new Error(
+        `${where}: configuration.properties.${name}.rowChoice.before must name a column`,
+      );
+    }
     const target = properties[field.rowChoice.field];
     const ids = (field.rows ?? []).map((r) => r.id);
     const values = (target?.options ?? []).map((o) => o.value);

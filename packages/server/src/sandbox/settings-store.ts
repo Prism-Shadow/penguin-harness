@@ -69,18 +69,38 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Presets",
             titleZh: "预设",
             description:
-              "What the composer's permission menu offers, and the default a new session starts from while the sandbox is on. A rename keeps the mapping; a Session keeps its own mode, network and approval mode, and the menu names it by the first row that matches.",
+              "Named combinations of file access, network and approval mode. The pinned ones are what the composer's permission menu offers, and the default is what a new session starts from while the sandbox is on. A session keeps its own three values, and the menu names it by the first row that matches.",
             descriptionZh:
-              "输入框权限菜单提供的选项，以及沙盒打开时新会话的默认预设。改名不改映射；会话只保存自己的封禁模式、网络与审批方式，菜单按第一个匹配的行为它命名。",
-            rowChoice: { field: "defaultPreset", title: "Default", titleZh: "默认" },
+              "文件访问、网络与审批方式的命名组合。固定的行出现在输入框的权限菜单里；沙盒打开时，新会话从默认行开始。会话只保存自己的三项取值，菜单按第一个匹配的行为它命名。",
+            rowChoice: {
+              field: "defaultPreset",
+              title: "Default",
+              titleZh: "默认",
+              description:
+                "The row a new session starts from while the sandbox is on: its file access, network and approval mode. Changing it reaches new sessions only.",
+              descriptionZh:
+                "沙盒打开时新会话的起点：取该行的文件访问、网络与审批方式。改动只影响此后新建的会话。",
+              before: "enabled",
+            },
             columns: [
-              { name: "name", type: "string", title: "Name", titleZh: "名称" },
-              { name: "enabled", type: "boolean", title: "In menu", titleZh: "进菜单" },
+              {
+                name: "name",
+                type: "string",
+                title: "Name",
+                titleZh: "名称",
+                description:
+                  "What the menu and the permission button call this row. A rename keeps what the row does; clear the box to restore the original name.",
+                descriptionZh: "菜单与权限按钮显示的名称。改名不改变该行的作用；清空输入框即恢复原名。",
+              },
               {
                 name: "mode",
                 type: "enum",
                 title: "Files",
                 titleZh: "文件",
+                description:
+                  "What a confined command may write. Off: anywhere. Workspace: the session's workspace, its scratchpad and the temp directory. Read-only: the temp directory only. Needs a sandbox backend unless Off.",
+                descriptionZh:
+                  "被封禁的命令能写哪里。关闭：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「关闭」外都需要沙盒后端。",
                 options: [
                   { value: "danger-full-access", title: "Off", titleZh: "关闭" },
                   { value: "workspace-write", title: "Workspace", titleZh: "仅工作区" },
@@ -92,6 +112,10 @@ export const SANDBOX_GROUP = "sandbox";
                 type: "enum",
                 title: "Network",
                 titleZh: "网络",
+                description:
+                  "What a confined command, hook script or read_file URL may reach. Localhost allows only this machine, and needs a backend that can enforce it.",
+                descriptionZh:
+                  "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。仅本机只允许访问本机，需要能实施它的后端。",
                 options: [
                   { value: "open", title: "Full", titleZh: "完全" },
                   { value: "local", title: "Localhost", titleZh: "仅本机" },
@@ -103,12 +127,31 @@ export const SANDBOX_GROUP = "sandbox";
                 type: "enum",
                 title: "Ask mode",
                 titleZh: "询问模式",
+                description:
+                  "Which tool calls run without asking: all of them, only the ones that read, none (each asks first), or none at all (every call is denied).",
+                descriptionZh:
+                  "哪些工具调用无需询问即可执行：全部、仅读取类、都要先询问，或全部拒绝。",
                 options: [
                   { value: "allow-all", title: "Approve all", titleZh: "全部批准" },
                   { value: "read-only", title: "Approve reads", titleZh: "批准只读" },
                   { value: "always-ask", title: "Ask every time", titleZh: "每次询问" },
                   { value: "deny-all", title: "Deny all", titleZh: "全部拒绝" },
                 ],
+              },
+              {
+                name: "enabled",
+                type: "boolean",
+                title: "Pin",
+                titleZh: "固定",
+                description:
+                  "Whether the composer's permission menu lists this row. An unpinned row can still be the default.",
+                descriptionZh: "权限菜单是否列出这一行。未固定的行仍可作为默认。",
+                pin: {
+                  on: "Pinned to the menu",
+                  onZh: "已固定到菜单",
+                  off: "Not in the menu",
+                  offZh: "不在菜单中",
+                },
               },
             ],
             rows: [
@@ -218,8 +261,10 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Masked paths",
             titleZh: "屏蔽路径",
             description:
-              "One absolute path per line, hidden from confined commands, hook scripts and file tools (reads included).",
-            descriptionZh: "每行一个绝对路径，对被封禁的命令、钩子脚本与文件工具隐藏（包括读取）。",
+              "Paths hidden from confined commands, hook scripts and file tools, reads included.",
+            descriptionZh: "对被封禁的命令、钩子脚本与文件工具隐藏的路径，读取也不例外。",
+            hint: "One absolute path per line, at most 64.",
+            hintZh: "每行一个绝对路径，最多 64 条。",
             maxItems: 64,
             // POSIX `/…`, Windows `C:\…` or `C:/…`, or a UNC `\\server\…`.
             pattern: "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)",
