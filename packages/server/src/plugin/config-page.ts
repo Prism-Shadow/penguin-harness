@@ -10,7 +10,13 @@
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
 import type { PluginConfigBackend, PluginConfigEntry, PluginConfigNotice } from "../api/types.js";
-import { PluginConfigEntries, PluginConfigError, isRecord, resolveTable } from "./config.js";
+import {
+  PluginConfig,
+  PluginConfigEntries,
+  PluginConfigError,
+  isRecord,
+  resolveTable,
+} from "./config.js";
 
 /**
  * The code half of a `status` contribution: a group's live notices, asked per read, and the
@@ -42,9 +48,13 @@ export interface SettingsGroupStatus {
    * The values the page reads, with what the group derives for a document saved before one of
    * its fields existed (the sandbox's `enabled`, read off its old mode). Read-side only: the
    * document on disk is never rewritten, and the module applying the group derives the same way
-   * from the document it reads.
+   * from the document it reads. `stored` is that document whole — the stored keys merged onto
+   * the defaults, including keys the schema no longer declares, which `values` leaves out.
    */
-  derive?(values: Record<string, unknown>): Record<string, unknown>;
+  derive?(
+    values: Record<string, unknown>,
+    stored: Record<string, unknown>,
+  ): Record<string, unknown>;
   /** For a group a backend plugin enforces: whether one for this OS is installed, and the default. */
   backend?(): PluginConfigBackend;
   /**
@@ -109,9 +119,12 @@ export interface PluginConfigAdminSlots {
 @Module()
 export class PluginConfigPage {
   @Use() private readonly entries!: PluginConfigEntries;
+  /** The stored documents whole, which a group's `derive` reads. */
+  @Use() private readonly pluginConfig!: PluginConfig;
   @Provide() pluginConfigAdmin!: PluginConfigAdmin;
   setup({ contributions }: ClassCtx) {
     const entries = this.entries;
+    const pluginConfig = this.pluginConfig;
     const status = new Map<string, SettingsGroupStatus>();
     for (const c of contributions.status ?? []) {
       status.set(c.data.group as string, c.code as SettingsGroupStatus);
@@ -124,7 +137,7 @@ export class PluginConfigPage {
       const backend = group?.backend?.();
       return {
         ...entry,
-        ...(group?.derive !== undefined ? { values: group.derive(entry.values) } : {}),
+        ...(group?.derive !== undefined ? { values: group.derive(entry.values, pluginConfig.get(entry.name)) } : {}),
         ...(notices.length > 0 ? { notices } : {}),
         ...(actions.length > 0 ? { actions } : {}),
         ...(unavailable.length > 0 ? { unavailable } : {}),
@@ -134,7 +147,7 @@ export class PluginConfigPage {
     /** A group's values as the page reads them: stored onto defaults, then derived. */
     const readValues = (name: string, group: SettingsGroupStatus) => {
       const values = entries.describe().find((e) => e.name === name)?.values ?? {};
-      return group.derive?.(values) ?? values;
+      return group.derive?.(values, pluginConfig.get(name)) ?? values;
     };
     this.pluginConfigAdmin = {
       describe: () => entries.describe().map(withStatus),

@@ -266,9 +266,10 @@ export class SandboxSettingsStatus {
     const sandbox = this.sandbox;
     this.status = {
       // The switch as the card shows it: derived for a document saved before it existed.
-      derive: (values) => ({
+      derive: (values, stored) => ({
         ...values,
-        enabled: sandboxEnabledOf(values),
+        // Read off the whole document: a pre-switch one's mode and network are not fields.
+        enabled: sandboxEnabledOf(stored),
         defaultPreset: values.defaultPreset ?? DEFAULT_PRESET,
       }),
       // Every save pins the default preset: a document stored before it existed is read by
