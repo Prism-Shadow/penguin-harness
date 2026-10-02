@@ -72,17 +72,94 @@ export function AppInfoDialog() {
       onClose={closeAppInfo}
       widthClass="sm:max-w-2xl"
     >
-      <div className="space-y-6">
-        <Identity currentVersion={currentVersion} />
-        {mode !== "none" && (
-          <RuledSection level={3} title={S.update.title}>
-            <UpdateStatus mode={mode} flow={flow} />
-          </RuledSection>
-        )}
-        <ReleaseNotes currentVersion={currentVersion} />
-        <Credits />
-      </div>
+      <AppInfoContent mode={mode} flow={flow} currentVersion={currentVersion} />
     </Modal>
+  );
+}
+
+/**
+ * The dialog's body while it is open: it reads the locale and the build date, and owns both folds.
+ * The Modal mounts it on every opening, so both folds start closed each time.
+ */
+function AppInfoContent({
+  mode,
+  flow,
+  currentVersion,
+}: {
+  mode: UpdateMode;
+  flow: UpdateFlow;
+  currentVersion: string | null;
+}) {
+  const { locale } = useLocale();
+  const { version } = useVersionInfo(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [licensesExpanded, setLicensesExpanded] = useState(false);
+  const notesPanelId = useId();
+  const licensesPanelId = useId();
+  // The stamped date is the server's build's: shown only beside that same version (the shell's
+  // window names its own, which is the same build in every install).
+  const buildDate =
+    version !== null && version.version === currentVersion ? version.buildDate : null;
+  return (
+    <AppInfoBody
+      mode={mode}
+      flow={flow}
+      currentVersion={currentVersion}
+      buildDate={buildDate}
+      locale={locale}
+      notesExpanded={notesExpanded}
+      onToggleNotes={() => setNotesExpanded((v) => !v)}
+      notesPanelId={notesPanelId}
+      licensesExpanded={licensesExpanded}
+      onToggleLicenses={() => setLicensesExpanded((v) => !v)}
+      licensesPanelId={licensesPanelId}
+    />
+  );
+}
+
+export interface AppInfoBodyProps {
+  mode: UpdateMode;
+  flow: UpdateFlow;
+  currentVersion: string | null;
+  /** The running build's stamped date, or null when there is none to show. */
+  buildDate: string | null;
+  locale: "zh" | "en";
+  notesExpanded: boolean;
+  onToggleNotes: () => void;
+  notesPanelId: string;
+  licensesExpanded: boolean;
+  onToggleLicenses: () => void;
+  licensesPanelId: string;
+}
+
+/**
+ * The sections, top to bottom. Stateless, so a test can read the dialog from static markup. The
+ * sections include the Tab ring the dialog's focus trap builds, which takes in every focusable
+ * element in the panel, hidden or not.
+ */
+export function AppInfoBody(props: AppInfoBodyProps) {
+  const { mode, flow, currentVersion } = props;
+  return (
+    <div className="space-y-6">
+      <Identity currentVersion={currentVersion} buildDate={props.buildDate} locale={props.locale} />
+      {mode !== "none" && (
+        <RuledSection level={3} title={S.update.title}>
+          <UpdateStatus mode={mode} flow={flow} />
+        </RuledSection>
+      )}
+      <ReleaseNotesList
+        currentVersion={currentVersion}
+        locale={props.locale}
+        expanded={props.notesExpanded}
+        onToggle={props.onToggleNotes}
+        panelId={props.notesPanelId}
+      />
+      <Credits
+        expanded={props.licensesExpanded}
+        onToggle={props.onToggleLicenses}
+        panelId={props.licensesPanelId}
+      />
+    </div>
   );
 }
 
@@ -92,13 +169,15 @@ export function AppInfoDialog() {
  * two aligned columns. On a phone they move under it, across the full width, each label above its
  * address: the repository's address fits on that line whole, and beside its label it would break.
  */
-function Identity({ currentVersion }: { currentVersion: string | null }) {
-  const { locale } = useLocale();
-  const { version } = useVersionInfo(false);
-  // The stamped date is the server's build's: shown only beside that same version (the shell's
-  // window names its own, which is the same build in every install).
-  const buildDate =
-    version !== null && version.version === currentVersion ? version.buildDate : null;
+function Identity({
+  currentVersion,
+  buildDate,
+  locale,
+}: {
+  currentVersion: string | null;
+  buildDate: string | null;
+  locale: "zh" | "en";
+}) {
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
       <PenguinLogo
@@ -340,45 +419,38 @@ function nextStep(mode: UpdateMode, flow: UpdateFlow): ReactNode {
   }
 }
 
-/** The release notes, folded to the newest every time the dialog opens (release-notes-list.tsx). */
-function ReleaseNotes({ currentVersion }: { currentVersion: string | null }) {
-  const { locale } = useLocale();
-  const [expanded, setExpanded] = useState(false);
-  const panelId = useId();
-  return (
-    <ReleaseNotesList
-      currentVersion={currentVersion}
-      locale={locale}
-      expanded={expanded}
-      onToggle={() => setExpanded((v) => !v)}
-      panelId={panelId}
-    />
-  );
-}
-
 /**
- * The copyright line, then the font and icon licences behind a fold (the WAI-ARIA disclosure: a
- * real button with `aria-expanded` and `aria-controls`, the panel kept in the DOM and `hidden`
- * while folded), so the dialog stays short until someone wants pages of licence text.
+ * The copyright line, then the font and icon licences behind a fold, so the dialog stays short
+ * until someone wants pages of licence text. The fold is the WAI-ARIA disclosure: a real button
+ * with `aria-expanded` and `aria-controls`, and its panel stays mounted (and `hidden`) while
+ * folded, so `aria-controls` always resolves. The lists inside it render only while it is open.
+ * The dialog's focus trap takes in every focusable element in the panel, hidden or not, so a
+ * link folded away would be a Tab stop that cannot take focus, and Tab would stall on it.
  */
-function Credits() {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
+function Credits({
+  expanded,
+  onToggle,
+  panelId,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  panelId: string;
+}) {
   return (
     <RuledSection level={3} title={S.appInfo.credits}>
       <p className="text-sm text-fg-muted">{S.appInfo.copyright}</p>
       <button
         type="button"
-        aria-expanded={open}
+        aria-expanded={expanded}
         aria-controls={panelId}
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
         className={`mt-3 flex items-center ${ICON_GAP.row} text-sm text-fg-muted transition-colors duration-150 hover:text-fg`}
       >
-        <Chevron open={open} size={ICON_SIZE.chevron} />
+        <Chevron open={expanded} size={ICON_SIZE.chevron} />
         {S.appInfo.licenses}
       </button>
-      <div id={panelId} hidden={!open} className="mt-4">
-        <CreditsList />
+      <div id={panelId} hidden={!expanded} className="mt-4">
+        {expanded && <CreditsList />}
       </div>
     </RuledSection>
   );

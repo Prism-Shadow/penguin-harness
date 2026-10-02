@@ -2,11 +2,12 @@
  * The App info dialog's release notes (components/account/release-notes-list.tsx), rendered to
  * static markup.
  *
- * - On open, only the newest note's lines show; the earlier versions wait in the folded panel,
- *   and the fold says how many there are.
+ * - On open, only the newest note's lines show. The fold says how many earlier versions wait
+ *   behind it, and its panel is mounted for `aria-controls` but holds nothing.
  * - Activating the fold asks for it to open, and the open list shows the earlier versions.
  * - A running version older than the newest note (a dev build) is folded with the rest: the
- *   newest is still the one shown, and the current-version mark goes into the fold with its entry.
+ *   newest is still the one shown, and the current-version mark appears with its entry once the
+ *   fold opens.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, isValidElement } from "react";
@@ -39,11 +40,13 @@ const props = (over: Partial<Props> = {}): Props => ({
   ...over,
 });
 
-/** The markup split at the folded panel: what shows, and what the fold holds (empty when open). */
-function render(over: Partial<Props> = {}): { shown: string; folded: string } {
-  const html = renderToStaticMarkup(createElement(ReleaseNotesList, props(over)));
-  const [shown = "", folded = ""] = html.split(/<ol[^>]*\bhidden=""[^>]*>/);
-  return { shown, folded };
+const render = (over: Partial<Props> = {}): string =>
+  renderToStaticMarkup(createElement(ReleaseNotesList, props(over)));
+
+/** What the fold's panel holds, or null when no element carries its id. */
+function panel(html: string): string | null {
+  const m = /<ol[^>]*\sid="earlier-versions"[^>]*>([\s\S]*?)<\/ol>/.exec(html);
+  return m === null ? null : (m[1] ?? "");
 }
 
 /** Every element of the tree the component returns, without rendering the components in it. */
@@ -62,15 +65,14 @@ afterEach(() => {
 });
 
 describe("release notes in the App info dialog", () => {
-  it("on open, only the newest note's lines show, and the fold holds the rest", () => {
-    const { shown, folded } = render();
+  it("on open, only the newest note's lines show, and the fold names how many wait behind it", () => {
+    const html = render();
 
-    expect(shown).toContain("en line of 0.2.13");
-    expect(shown).not.toContain("en line of 0.2.11");
-    expect(shown).not.toContain("en line of 0.2.10");
-    expect(folded).toContain("en line of 0.2.11");
-    expect(folded).toContain("en line of 0.2.10");
-    expect(shown).toContain(S.appInfo.earlierVersions(2));
+    expect(html).toContain("en line of 0.2.13");
+    expect(html).not.toContain("en line of 0.2.11");
+    expect(html).not.toContain("en line of 0.2.10");
+    expect(html).toContain(S.appInfo.earlierVersions(2));
+    expect(panel(html)).toBe("");
   });
 
   it("activating the fold opens it, and the open list shows the earlier versions", () => {
@@ -84,19 +86,20 @@ describe("release notes in the App info dialog", () => {
     fold.props.onClick();
     expect(onToggle).toHaveBeenCalledTimes(1);
 
-    const { shown, folded } = render({ expanded: true });
-    expect(folded).toBe("");
-    expect(shown).toContain("en line of 0.2.13");
-    expect(shown).toContain("en line of 0.2.11");
-    expect(shown).toContain("en line of 0.2.10");
+    const open = panel(render({ expanded: true }));
+    expect(open).toContain("en line of 0.2.11");
+    expect(open).toContain("en line of 0.2.10");
+    expect(open).not.toContain("en line of 0.2.13");
   });
 
   it("a running version older than the newest note is folded with the rest, its mark with it", () => {
-    const { shown, folded } = render({ currentVersion: "0.2.11" });
+    const folded = render({ currentVersion: "0.2.11" });
 
-    expect(shown).toContain("en line of 0.2.13");
-    expect(shown).not.toContain(S.appInfo.current);
-    expect(folded).toContain("en line of 0.2.11");
-    expect(folded).toContain(S.appInfo.current);
+    expect(folded).toContain("en line of 0.2.13");
+    expect(folded).not.toContain(S.appInfo.current);
+    expect(panel(folded)).toBe("");
+
+    const open = panel(render({ currentVersion: "0.2.11", expanded: true })) ?? "";
+    expect(open).toMatch(new RegExp(`v0\\.2\\.11<span[^>]*>${S.appInfo.current}</span>`));
   });
 });

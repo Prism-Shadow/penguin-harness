@@ -1,10 +1,12 @@
 /**
  * The App info dialog's release notes: every released version's lines, newest first, with only
  * the newest shown — the dialog is opened to see what this release brought, and the rest of the
- * history is one click away. The earlier versions sit behind a fold (the WAI-ARIA disclosure: a
- * real button with `aria-expanded` and `aria-controls`, the panel kept in the DOM and `hidden`
- * while folded). A running version older than the newest note (a dev build) is folded with the
- * rest, still carrying the current-version pill. The section's count is every version's.
+ * history is one click away. The earlier versions sit behind a fold: the WAI-ARIA disclosure, a
+ * real button with `aria-expanded` and `aria-controls`. Its panel stays mounted (and `hidden`)
+ * while folded, so `aria-controls` always resolves, and its notes render only while it is open,
+ * because the dialog's focus trap counts every focusable element in the panel, hidden or not. A
+ * running version older than the newest note (a dev build) is folded with the rest, still
+ * carrying the current-version pill. The section's count is every version's.
  *
  * Stateless: the dialog owns the fold and starts it closed on every opening, and a test reads
  * both states from static markup.
@@ -60,7 +62,7 @@ export function ReleaseNotesList({
             {S.appInfo.earlierVersions(earlier.length)}
           </button>
           <ol id={panelId} hidden={!expanded} className="mt-3 divide-y divide-line-muted">
-            {earlier.map(item)}
+            {expanded && earlier.map(item)}
           </ol>
         </>
       )}
