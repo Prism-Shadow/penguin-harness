@@ -146,9 +146,12 @@ export function ConfigTable({
   }
   if (extensible !== undefined) slots.push({ kind: "move" }, { kind: "remove" });
   const slotKey = (slot: Slot) =>
-    slot.kind === "choice" ? rowChoice!.field : slot.kind === "column" ? slot.column.name : slot.kind;
-  const isIcon = (slot: Slot) =>
-    slot.kind !== "column" || pin?.column === slot.column.name;
+    slot.kind === "choice"
+      ? rowChoice!.field
+      : slot.kind === "column"
+        ? slot.column.name
+        : slot.kind;
+  const isIcon = (slot: Slot) => slot.kind !== "column" || pin?.column === slot.column.name;
   let lastField = -1;
   slots.forEach((s, i) => {
     if (s.kind === "column" || s.kind === "choice") lastField = i;
@@ -373,7 +376,9 @@ export function ConfigTable({
                             label={`${rowLabel} · ${slotTitle(slot)}`}
                             pressed={chosen}
                             glyph={ICONS.star}
-                            tooltip={chosen ? S.settings.pluginTableChosen : S.settings.pluginTableChoose}
+                            tooltip={
+                              chosen ? S.settings.pluginTableChosen : S.settings.pluginTableChoose
+                            }
                             disabled={disabled}
                             onPress={() => {
                               if (!chosen) onChoice?.(row.id);
