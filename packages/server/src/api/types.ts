@@ -5482,9 +5482,24 @@ export interface PluginConfigField {
   /**
    * `table` only: a single-choice column picking one row — the sandbox's default preset. The
    * choice is stored in `field`, an `enum` field of the same group whose options are the row
-   * ids; the page draws that field only as this column, one radio per row.
+   * ids (plus, in an `extensible` table, the ids of the rows added to it); the page draws that
+   * field only as this column, one marker per row.
    */
   rowChoice?: PluginConfigRowChoice;
+  /**
+   * `table` only: rows may be added (and only those deleted) and every row reordered. A new row
+   * starts from these values. What is stored, beside the declared rows' changed cells, is the
+   * added rows under `"$added"` (`{ [row id]: { [column]: value } }`, every column present) and
+   * the row order under `"$order"` (row ids); neither key can be a row id. A save sends either
+   * key whole; a document without them reads as the declared rows in declared order.
+   */
+  extensible?: PluginConfigNewRow;
+  /**
+   * `table` only: a header drawn over adjacent columns that belong together (the sandbox's
+   * Default and Pin, under "Menu"). `columns` names them: column names, or the row choice's
+   * `field` for its column.
+   */
+  columnGroup?: PluginConfigColumnGroup;
   /**
    * `table` only: a `boolean` column drawn as a pin toggle rather than a switch — a row pinned
    * to a list (the sandbox presets in the composer's menu). The texts are its tooltip in each
@@ -5535,6 +5550,24 @@ export interface PluginConfigTableRow {
   valuesZh?: Record<string, string>;
   /** Columns whose cell in this row a save may not change. */
   locked?: string[];
+  /** A row added to an `extensible` table (not declared): the only kind that may be deleted. */
+  added?: boolean;
+}
+
+/** A header over adjacent table columns, with its own "?". */
+export interface PluginConfigColumnGroup {
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  columns: string[];
+}
+
+/** The values a row added to an `extensible` table starts from. */
+export interface PluginConfigNewRow {
+  values: Record<string, string | boolean>;
+  /** A string column's starting text in Chinese. */
+  valuesZh?: Record<string, string>;
 }
 
 /** One choice of an `enum` field. */

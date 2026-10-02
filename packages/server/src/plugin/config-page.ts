@@ -14,6 +14,7 @@ import {
   PluginConfig,
   PluginConfigEntries,
   PluginConfigError,
+  TABLE_ADDED,
   isRecord,
   resolveTable,
 } from "./config.js";
@@ -172,7 +173,12 @@ export class PluginConfigPage {
               field?.type === "table" ? resolveTable(field, entry!.values[u.field]) : [];
             const before = (id: string): Record<string, unknown> =>
               current.find((r) => r.id === id)?.values ?? {};
-            const row = Object.entries(isRecord(rows) ? rows : {}).find(
+            // The declared rows' cells, and the added rows (stored whole, so every cell of
+            // theirs is "sent").
+            const sentRows = isRecord(rows)
+              ? { ...rows, ...(isRecord(rows[TABLE_ADDED]) ? rows[TABLE_ADDED] : {}) }
+              : {};
+            const row = Object.entries(sentRows).find(
               ([id, cells]) =>
                 isRecord(cells) &&
                 cells[u.column!] === u.value &&

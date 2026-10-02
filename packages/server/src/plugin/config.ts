@@ -197,13 +197,56 @@ function parseTable(
   return { columns, rows };
 }
 
+/** Where an `extensible` table stores its added rows and its row order: never a row id. */
+export const TABLE_ADDED = "$added";
+export const TABLE_ORDER = "$order";
+
+/** The rows added to an `extensible` table, as stored: each well-formed one, in stored order. */
+function addedRowsOf(field: PluginConfigField, raw: unknown): PluginConfigTableRow[] {
+  if (field.extensible === undefined || !isRecord(raw)) return [];
+  const declared = new Set((field.rows ?? []).map((r) => r.id));
+  const rows: PluginConfigTableRow[] = [];
+  for (const [id, cells] of Object.entries(raw)) {
+    if (!ROW_ID.test(id) || declared.has(id) || !isRecord(cells)) continue;
+    const columns = field.columns ?? [];
+    if (!columns.every((c) => cellFits(c, cells[c.name]))) continue;
+    rows.push({
+      id,
+      values: Object.fromEntries(columns.map((c) => [c.name, cells[c.name] as string | boolean])),
+      added: true,
+    });
+  }
+  return rows;
+}
+
+/** Rows in the stored order: ids it names first, in that order, then the rest as they come. */
+function inStoredOrder(rows: PluginConfigTableRow[], raw: unknown): PluginConfigTableRow[] {
+  if (!Array.isArray(raw)) return rows;
+  const rank = new Map<string, number>();
+  for (const id of raw) if (typeof id === "string" && !rank.has(id)) rank.set(id, rank.size);
+  return rows
+    .map((row, i) => ({ row, at: rank.get(row.id) ?? rank.size + i }))
+    .sort((a, b) => a.at - b.at)
+    .map(({ row }) => row);
+}
+
 /**
- * A `table` field as read: every declared row, in order, with the stored cells laid over the
- * declared ones. A cell a save changed drops its Chinese text — the name an administrator gave
- * is the name in every language. Stored rows the table does not declare are left out.
+ * A `table` field as read: every declared row with the stored cells laid over the declared
+ * ones, then — in an `extensible` table — the rows added to it, all in the stored order. A cell
+ * a save changed drops its Chinese text — the name an administrator gave is the name in every
+ * language. Stored rows the table neither declares nor added are left out.
  */
 export function resolveTable(field: PluginConfigField, stored: unknown): PluginConfigTableRow[] {
   const cells = isRecord(stored) ? stored : {};
+  const declared = declaredRowsOf(field, cells);
+  if (field.extensible === undefined) return declared;
+  return inStoredOrder([...declared, ...addedRowsOf(field, cells[TABLE_ADDED])], cells[TABLE_ORDER]);
+}
+
+function declaredRowsOf(
+  field: PluginConfigField,
+  cells: Record<string, unknown>,
+): PluginConfigTableRow[] {
   return (field.rows ?? []).map((row) => {
     const own = isRecord(cells[row.id]) ? (cells[row.id] as Record<string, unknown>) : {};
     const values = { ...row.values };
@@ -230,12 +273,12 @@ function applyTableUpdate(
   field: PluginConfigField,
   stored: unknown,
   update: unknown,
-): Record<string, Record<string, string | boolean>> {
+): Record<string, unknown> {
   if (!isRecord(update)) {
     throw new PluginConfigError(name, `"${name}" must be an object of rows`);
   }
   const before = isRecord(stored) ? stored : {};
-  const next: Record<string, Record<string, string | boolean>> = {};
+  const next: Record<string, unknown> = {};
   for (const row of field.rows ?? []) {
     const cells: Record<string, string | boolean> = {};
     const kept = isRecord(before[row.id]) ? (before[row.id] as Record<string, unknown>) : {};
@@ -275,7 +318,78 @@ function applyTableUpdate(
     }
     if (Object.keys(cells).length > 0) next[row.id] = cells;
   }
+  if (field.extensible !== undefined) {
+    const added =
+      update[TABLE_ADDED] !== undefined
+        ? checkAddedRows(name, field, update[TABLE_ADDED])
+        : Object.fromEntries(
+            addedRowsOf(field, before[TABLE_ADDED]).map((row) => [row.id, row.values]),
+          );
+    if (Object.keys(added).length > 0) next[TABLE_ADDED] = added;
+    const sentOrder = update[TABLE_ORDER];
+    if (
+      sentOrder !== undefined &&
+      (!Array.isArray(sentOrder) || !sentOrder.every((id) => typeof id === "string"))
+    ) {
+      throw new PluginConfigError(name, `"${name}.${TABLE_ORDER}" must be a list of row ids`);
+    }
+    // Only ids of rows that exist, each once; a deleted row leaves the order with it.
+    const ids = new Set([...(field.rows ?? []).map((r) => r.id), ...Object.keys(added)]);
+    const listed: unknown = sentOrder ?? before[TABLE_ORDER];
+    const order = [
+      ...new Set(
+        (Array.isArray(listed) ? listed : []).filter(
+          (id): id is string => typeof id === "string" && ids.has(id),
+        ),
+      ),
+    ];
+    if (order.length > 0) next[TABLE_ORDER] = order;
+  }
   return next;
+}
+
+/**
+ * The added rows a save sends, checked: each id a lower-case row id the table does not declare,
+ * each row every column's value; a text cell may not be empty. A refused cell is named
+ * `<field>.<row>.<column>`.
+ */
+function checkAddedRows(
+  name: string,
+  field: PluginConfigField,
+  sent: unknown,
+): Record<string, Record<string, string | boolean>> {
+  if (!isRecord(sent)) {
+    throw new PluginConfigError(name, `"${name}.${TABLE_ADDED}" must be an object of rows`);
+  }
+  const declared = new Set((field.rows ?? []).map((r) => r.id));
+  const out: Record<string, Record<string, string | boolean>> = {};
+  for (const [id, raw] of Object.entries(sent)) {
+    if (!ROW_ID.test(id) || declared.has(id)) {
+      throw new PluginConfigError(name, `"${name}.${id}" is not an id a new row may take`);
+    }
+    if (!isRecord(raw)) {
+      throw new PluginConfigError(name, `"${name}.${id}" must be an object of cells`);
+    }
+    const cells: Record<string, string | boolean> = {};
+    for (const column of field.columns ?? []) {
+      const at = `${name}.${id}.${column.name}`;
+      const v = raw[column.name];
+      const value = typeof v === "string" ? v.trim() : v;
+      if (!cellFits(column, value) || value === "") {
+        throw new PluginConfigError(
+          name,
+          column.type === "enum"
+            ? `"${at}" must be one of ${(column.options ?? []).map((o) => o.value).join(", ")}`
+            : value === ""
+              ? `"${at}" may not be empty`
+              : `"${at}" must be a ${column.type}`,
+        );
+      }
+      cells[column.name] = value as string | boolean;
+    }
+    out[id] = cells;
+  }
+  return out;
 }
 
 /**
@@ -340,6 +454,46 @@ export function parsePluginConfiguration(
     }
     if (field.type === "table") {
       Object.assign(field, parseTable(f, `${where}: configuration.properties.${name}`));
+      if (f.extensible !== undefined) {
+        const e = (f.extensible ?? {}) as Record<string, unknown>;
+        const at = `${where}: configuration.properties.${name}.extensible`;
+        const values = isRecord(e.values) ? e.values : {};
+        for (const column of field.columns ?? []) {
+          if (!cellFits(column, values[column.name])) {
+            throw new Error(`${at}.values.${column.name} does not fit its column`);
+          }
+        }
+        field.extensible = {
+          values: Object.fromEntries(
+            (field.columns ?? []).map((c) => [c.name, values[c.name] as string | boolean]),
+          ),
+          ...(isRecord(e.valuesZh) ? { valuesZh: e.valuesZh as Record<string, string> } : {}),
+        };
+      }
+      if (f.columnGroup !== undefined) {
+        const g = (f.columnGroup ?? {}) as Record<string, unknown>;
+        const at = `${where}: configuration.properties.${name}.columnGroup`;
+        const known = new Set([
+          ...(field.columns ?? []).map((c) => c.name),
+          ...(isRecord(f.rowChoice) && typeof f.rowChoice.field === "string"
+            ? [f.rowChoice.field]
+            : []),
+        ]);
+        if (
+          typeof g.title !== "string" ||
+          !Array.isArray(g.columns) ||
+          g.columns.length === 0 ||
+          !g.columns.every((c) => typeof c === "string" && known.has(c))
+        ) {
+          throw new Error(`${at} needs a title and columns of the table`);
+        }
+        field.columnGroup = {
+          title: g.title,
+          ...(typeof g.titleZh === "string" ? { titleZh: g.titleZh } : {}),
+          ...describedBy(g),
+          columns: g.columns as string[],
+        };
+      }
       if (f.pin !== undefined) {
         field.pin = parsePin(
           f.pin,
@@ -556,6 +710,11 @@ export function applyUpdate(
   update: Record<string, unknown>,
 ): Record<string, unknown> {
   const next = { ...stored };
+  const rowChoiceTargets = new Map(
+    Object.entries(schema.properties).flatMap(([table, f]) =>
+      f.rowChoice !== undefined ? [[f.rowChoice.field, table] as const] : [],
+    ),
+  );
   for (const [name, value] of Object.entries(update)) {
     const field = schema.properties[name];
     if (field === undefined)
@@ -572,6 +731,12 @@ export function applyUpdate(
       const cells = applyTableUpdate(name, field, stored[name], value);
       if (Object.keys(cells).length === 0) delete next[name];
       else next[name] = cells;
+      continue;
+    }
+    // A row choice's field names a row, which may be one added to the table: checked below,
+    // against the table as this save leaves it.
+    if (rowChoiceTargets.has(name) && typeof value === "string") {
+      next[name] = value;
       continue;
     }
     if (!valueFits(field, value)) {
@@ -602,6 +767,16 @@ export function applyUpdate(
     }
     const violation = valueViolation(name, field, next[name]);
     if (violation !== undefined) throw new PluginConfigError(name, violation);
+  }
+  for (const [target, table] of rowChoiceTargets) {
+    const chosen = next[target];
+    const field = schema.properties[table]!;
+    if (chosen !== undefined && !resolveTable(field, next[table]).some((r) => r.id === chosen)) {
+      throw new PluginConfigError(
+        target,
+        `"${target}" must name a row of "${table}": "${String(chosen)}" is not one (choose another row before deleting it)`,
+      );
+    }
   }
   for (const [name, field] of Object.entries(schema.properties)) {
     if (field.required === true && next[name] === undefined && field.default === undefined) {

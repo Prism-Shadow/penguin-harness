@@ -53,12 +53,12 @@ export const SANDBOX_GROUP = "sandbox";
           // with nothing saved that reads as off, the default mode being Off.
           enabled: {
             type: "boolean",
-            title: "Confine new sessions",
-            titleZh: "新会话进入沙盒",
+            title: "Enable",
+            titleZh: "启用",
             description:
-              "Off: a new session starts with full file and network access, held only by its approval mode. Sessions that already exist keep their own policy.",
+              "Whether new sessions start in the sandbox. On: from the default preset. Off: with full file and network access, held only by their approval mode. Sessions that already exist keep their own policy.",
             descriptionZh:
-              "关闭时，新会话拥有完全的文件与网络访问，只受审批模式约束。已有会话保留各自的策略。",
+              "新会话是否进入沙盒。打开：从默认预设开始。关闭：拥有完全的文件与网络访问，只受审批模式约束。已有会话保留各自的策略。",
           },
           // The composer's menu: each preset a named mode, network level and approval mode,
           // and the Default column: the row a new Session starts from while the switch is on.
@@ -81,6 +81,27 @@ export const SANDBOX_GROUP = "sandbox";
               descriptionZh:
                 "沙盒打开时新会话的起点：取该行的文件访问、网络与审批方式。改动只影响此后新建的会话。",
               before: "enabled",
+            },
+            columnGroup: {
+              title: "Menu",
+              titleZh: "菜单",
+              description:
+                "How the composer's permission menu uses each row: the default is what a new session starts from while the sandbox is on, and a pinned row is listed in the menu.",
+              descriptionZh:
+                "输入框权限菜单如何使用每一行：默认行是沙盒打开时新会话的起点，固定的行会列在菜单里。",
+              columns: ["defaultPreset", "enabled"],
+            },
+            // Presets an administrator adds: only those can be deleted; every row can be moved,
+            // and the order is the composer's menu order.
+            extensible: {
+              values: {
+                name: "New preset",
+                enabled: false,
+                mode: "workspace-write",
+                network: "open",
+                approvalMode: "always-ask",
+              },
+              valuesZh: { name: "新预设" },
             },
             pin: {
               column: "enabled",
@@ -110,8 +131,12 @@ export const SANDBOX_GROUP = "sandbox";
                 descriptionZh:
                   "被封禁的命令能写哪里。关闭：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「关闭」外都需要沙盒后端。",
                 options: [
-                  { value: "danger-full-access", title: "Off", titleZh: "关闭" },
-                  { value: "workspace-write", title: "Workspace", titleZh: "仅工作区" },
+                  {
+                    value: "danger-full-access",
+                    title: "Off (full access)",
+                    titleZh: "关闭（完全访问）",
+                  },
+                  { value: "workspace-write", title: "Workspace write only", titleZh: "仅工作区可写" },
                   { value: "read-only", title: "Read-only", titleZh: "只读" },
                 ],
               },
@@ -125,9 +150,9 @@ export const SANDBOX_GROUP = "sandbox";
                 descriptionZh:
                   "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。仅本机只允许访问本机，需要能实施它的后端。",
                 options: [
-                  { value: "open", title: "Full", titleZh: "完全" },
-                  { value: "local", title: "Localhost", titleZh: "仅本机" },
-                  { value: "none", title: "None", titleZh: "无" },
+                  { value: "open", title: "Full access", titleZh: "完全访问" },
+                  { value: "local", title: "Localhost only", titleZh: "仅本机" },
+                  { value: "none", title: "No network", titleZh: "无网络" },
                 ],
               },
               {
@@ -140,10 +165,10 @@ export const SANDBOX_GROUP = "sandbox";
                 descriptionZh:
                   "哪些工具调用无需询问即可执行：全部、仅读取类、都要先询问，或全部拒绝。",
                 options: [
-                  { value: "allow-all", title: "Approve all", titleZh: "全部批准" },
-                  { value: "read-only", title: "Approve reads", titleZh: "批准只读" },
-                  { value: "always-ask", title: "Always ask", titleZh: "每次询问" },
-                  { value: "deny-all", title: "Deny all", titleZh: "全部拒绝" },
+                  { value: "allow-all", title: "Approve everything", titleZh: "全部批准" },
+                  { value: "read-only", title: "Approve read-only", titleZh: "批准只读" },
+                  { value: "always-ask", title: "Ask every time", titleZh: "每次询问" },
+                  { value: "deny-all", title: "Deny everything", titleZh: "全部拒绝" },
                 ],
               },
               {
