@@ -63,7 +63,7 @@ export function ConfigField({
   const disclosed = info !== undefined ? { info, infoLabel: label } : {};
   switch (field.type) {
     case "table": {
-      const table = (value ?? {}) as TableDraft;
+      const table = (value as TableDraft | undefined) ?? { rows: {}, added: {}, order: [] };
       return (
         <ConfigTable
           key={name}
@@ -71,9 +71,7 @@ export function ConfigField({
           name={name}
           field={field}
           table={table}
-          onCell={(row, column, value) =>
-            onChange({ ...table, [row]: { ...table[row], [column]: value } })
-          }
+          onChange={onChange}
           errors={tableErrors}
           choice={choice}
           {...(onChoice !== undefined ? { onChoice } : {})}

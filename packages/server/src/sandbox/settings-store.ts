@@ -94,6 +94,8 @@ export const SANDBOX_GROUP = "sandbox";
             // Presets an administrator adds: only those can be deleted; every row can be moved,
             // and the order is the composer's menu order.
             extensible: {
+              add: "Add preset",
+              addZh: "添加预设",
               values: {
                 name: "New preset",
                 enabled: false,

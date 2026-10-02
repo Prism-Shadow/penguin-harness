@@ -5565,6 +5565,9 @@ export interface PluginConfigColumnGroup {
 
 /** The values a row added to an `extensible` table starts from. */
 export interface PluginConfigNewRow {
+  /** The add button's text ("Add preset"). */
+  add?: string;
+  addZh?: string;
   values: Record<string, string | boolean>;
   /** A string column's starting text in Chinese. */
   valuesZh?: Record<string, string>;

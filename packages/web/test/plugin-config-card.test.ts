@@ -17,6 +17,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { ConfigHeading } from "../src/features/settings/plugin-config-heading";
 import { ConfigTable } from "../src/features/settings/plugin-config-table";
+import { PinToggle } from "../src/features/settings/plugin-config-table-cells";
 
 const TABLE: PluginConfigField = {
   type: "table",
@@ -63,8 +64,12 @@ describe("the settings card", () => {
         entry: ENTRY,
         name: "presets",
         field: TABLE,
-        table: { a: { name: "" }, b: { name: "Look only" } },
-        onCell: () => {},
+        table: {
+          rows: { a: { name: "" }, b: { name: "Look only" } },
+          added: {},
+          order: ["a", "b"],
+        },
+        onChange: () => {},
         errors: [],
         disabled: false,
         locale: "en",
@@ -109,19 +114,22 @@ describe("the settings card", () => {
 
   it("draws a pin column as a pressed or unpressed toggle, and reports the flip", () => {
     const flips: Array<[string, string, unknown]> = [];
-    const html = renderTable(PRESETS, (row, column, value) => flips.push([row, column, value]));
+    const html = renderTable(PRESETS);
     const pin = (row: string) =>
       (html.match(/<button[^>]*aria-label="[^"]* · Pin"[^>]*>/g) ?? []).find((b) =>
         b.includes(`aria-label="${row} · Pin"`),
       );
     expect(pin("Full Access")).toContain('aria-pressed="true"');
     expect(pin("Read Only")).toContain('aria-pressed="false"');
-    // Pressing it: the element's own handler, found on the rendered tree.
-    const button = findByLabel(
-      tableElement(PRESETS, (r, c, v) => flips.push([r, c, v])),
-      "Read Only · Pin",
-    );
-    (button.props as { onClick: () => void }).onClick();
+    // Pressing it: the toggle's own handler reports the flip.
+    const toggle = PinToggle({
+      label: "Read Only · Pin",
+      pinned: false,
+      tooltip: "Not in the menu",
+      disabled: false,
+      onChange: (on) => flips.push(["b", "enabled", on]),
+    }) as ReactElement<{ onClick: () => void }>;
+    toggle.props.onClick();
     expect(flips).toEqual([["b", "enabled", true]]);
   });
 
@@ -169,54 +177,24 @@ const PRESETS: PluginConfigField = {
   ],
 };
 
-const tableElement = (
-  field: PluginConfigField,
-  onCell: (row: string, column: string, value: string | boolean) => void = () => {},
-) =>
+const tableElement = (field: PluginConfigField) =>
   createElement(ConfigTable, {
     entry: ENTRY,
     name: "presets",
     field,
     table: {
-      a: { name: "", mode: "off", enabled: true },
-      b: { name: "", mode: "ro", enabled: false },
+      rows: {
+        a: { name: "", mode: "off", enabled: true },
+        b: { name: "", mode: "ro", enabled: false },
+      },
+      added: {},
+      order: ["a", "b"],
     },
-    onCell,
+    onChange: () => {},
     choice: "a",
     errors: [],
     disabled: false,
     locale: "en",
   });
 
-const renderTable = (
-  field: PluginConfigField,
-  onCell?: (row: string, column: string, value: string | boolean) => void,
-) => renderToStaticMarkup(tableElement(field, onCell));
-
-/**
- * The element named `label` in a component's rendered tree, rendering function components on
- * the way down where they hold no hooks.
- */
-function findByLabel(node: unknown, label: string): ReactElement {
-  const walk = (n: unknown): ReactElement | null => {
-    if (Array.isArray(n)) {
-      for (const child of n) {
-        const hit = walk(child);
-        if (hit) return hit;
-      }
-      return null;
-    }
-    if (n === null || typeof n !== "object" || !("props" in n)) return null;
-    const el = n as ReactElement<Record<string, unknown>>;
-    if (el.props["aria-label"] === label && typeof el.type === "string") return el;
-    // Rendered on the way down: the table and its pin toggle, which use no hooks. Any other
-    // component (a select, a "?") is looked into by its children only.
-    if (typeof el.type === "function" && ["ConfigTable", "PinToggle"].includes(el.type.name)) {
-      return walk((el.type as (p: unknown) => unknown)(el.props));
-    }
-    return walk(el.props.children);
-  };
-  const hit = walk(node);
-  if (hit === null) throw new Error(`no element named ${label}`);
-  return hit;
-}
+const renderTable = (field: PluginConfigField) => renderToStaticMarkup(tableElement(field));

@@ -628,6 +628,15 @@ export const zh = {
     pluginCellLocked: "已锁定：此行保持这个取值",
     pluginCellOn: "开",
     pluginCellOff: "关",
+    /** A table row's drag handle: what it moves, and how. */
+    pluginTableMove: (row: string) => `移动 ${row}`,
+    pluginTableMoveHint: "拖动，或按上下方向键",
+    /** The delete button on a row an administrator added. */
+    pluginTableDelete: (row: string) => `删除 ${row}`,
+    /** The add button under an extensible table that names none of its own. */
+    pluginTableAdd: "添加一行",
+    /** The button that makes a row the table's choice ("Set as default"). */
+    pluginTableChoose: (choice: string) => `设为${choice}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "安装沙盒后端",

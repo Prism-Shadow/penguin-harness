@@ -556,6 +556,15 @@ export const en: Strings = {
     pluginCellLocked: "Locked: this row keeps this value",
     pluginCellOn: "On",
     pluginCellOff: "Off",
+    /** A table row's drag handle: what it moves, and how. */
+    pluginTableMove: (row: string) => `Move ${row}`,
+    pluginTableMoveHint: "Drag, or press the up and down arrow keys",
+    /** The delete button on a row an administrator added. */
+    pluginTableDelete: (row: string) => `Delete ${row}`,
+    /** The add button under an extensible table that names none of its own. */
+    pluginTableAdd: "Add a row",
+    /** The button that makes a row the table's choice ("Set as default"). */
+    pluginTableChoose: (choice: string) => `Set as ${choice.toLowerCase()}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "Install a sandbox backend",

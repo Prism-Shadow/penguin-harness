@@ -6,29 +6,68 @@
  */
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 
-/** A `table` field's draft: every row's cells. */
-export type TableDraft = Record<string, Record<string, string | boolean>>;
+type Cells = Record<string, string | boolean>;
 
 /**
- * A table's draft from its stored cells (only those that differ are stored): a text cell is
- * what was saved into it, empty for the declared text (shown as the placeholder, in the page's
- * language); every other cell is its value. Sent whole: an emptied text cell goes back to the
- * declared text.
+ * A `table` field's draft: the declared rows' cells, the rows added to an `extensible` table
+ * (whole), and every row's id in drawing order.
+ */
+export interface TableDraft {
+  rows: Record<string, Cells>;
+  added: Record<string, Cells>;
+  order: string[];
+}
+
+/** Where an `extensible` table's added rows and order are stored (server `plugin/config.ts`). */
+const ADDED = "$added";
+const ORDER = "$order";
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * A table's draft from its stored value. A declared row's text cell is what was saved into it,
+ * empty for the declared text; every other cell is its value. Added rows are taken whole, and
+ * the order is the stored one with any row it does not name after it — the server's reading
+ * (`resolveTable`), repeated here because the page draws the draft, not the server's rows.
  */
 export function tableDraftOf(field: PluginConfigField, stored: unknown): TableDraft {
-  const saved = (stored ?? {}) as Record<string, Record<string, unknown> | undefined>;
-  return Object.fromEntries(
-    (field.rows ?? []).map((row) => [
-      row.id,
-      Object.fromEntries(
-        (field.columns ?? []).map((c) => {
-          const v = saved[row.id]?.[c.name];
-          if (c.type === "string") return [c.name, typeof v === "string" ? v : ""];
-          return [c.name, v !== undefined ? (v as string | boolean) : row.values[c.name]!];
-        }),
-      ),
-    ]),
+  const saved = isRecord(stored) ? stored : {};
+  const columns = field.columns ?? [];
+  const rows = Object.fromEntries(
+    (field.rows ?? []).map((row) => {
+      const own = isRecord(saved[row.id]) ? (saved[row.id] as Record<string, unknown>) : {};
+      return [
+        row.id,
+        Object.fromEntries(
+          columns.map((c) => {
+            const v = own[c.name];
+            if (c.type === "string") return [c.name, typeof v === "string" ? v : ""];
+            return [c.name, v !== undefined ? (v as string | boolean) : row.values[c.name]!];
+          }),
+        ),
+      ];
+    }),
   );
+  const added: Record<string, Cells> = {};
+  if (field.extensible !== undefined && isRecord(saved[ADDED])) {
+    for (const [id, cells] of Object.entries(saved[ADDED] as Record<string, unknown>)) {
+      if (isRecord(cells)) added[id] = { ...(cells as Cells) };
+    }
+  }
+  const ids = [...Object.keys(rows), ...Object.keys(added)];
+  const listed = field.extensible !== undefined && Array.isArray(saved[ORDER]) ? saved[ORDER] : [];
+  const first = [
+    ...new Set((listed as unknown[]).filter((id): id is string => ids.includes(id as string))),
+  ];
+  return { rows, added, order: [...first, ...ids.filter((id) => !first.includes(id))] };
+}
+
+/** What a table's draft sends: the declared rows' cells, and an extensible table's rows and order. */
+function tableValueOf(field: PluginConfigField, draft: TableDraft): Record<string, unknown> {
+  return field.extensible === undefined
+    ? { ...draft.rows }
+    : { ...draft.rows, [ADDED]: draft.added, [ORDER]: draft.order };
 }
 
 /**
@@ -59,13 +98,16 @@ export function draftOf(entry: PluginConfigEntry): Draft {
   return out;
 }
 
-/** What a field's saved value is compared with, in the draft's terms (a table as its draft). */
+/** What a field's saved value is compared with, in the terms a save sends. */
 export function baselineOf(field: PluginConfigField, stored: unknown): unknown {
-  return field.type === "table" ? tableDraftOf(field, stored) : stored;
+  return field.type === "table" ? tableValueOf(field, tableDraftOf(field, stored)) : stored;
 }
 
 /** The value a draft sends for a field: a number parsed from its box, a list split into lines, everything else as is. */
 export function valueOf(field: PluginConfigField, draft: unknown): unknown {
+  if (field.type === "table") {
+    return draft === undefined ? null : tableValueOf(field, draft as TableDraft);
+  }
   if (field.type === "list") {
     const lines = (typeof draft === "string" ? draft : "")
       .split("\n")

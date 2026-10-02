@@ -464,6 +464,8 @@ export function parsePluginConfiguration(
           }
         }
         field.extensible = {
+          ...(typeof e.add === "string" ? { add: e.add } : {}),
+          ...(typeof e.addZh === "string" ? { addZh: e.addZh } : {}),
           values: Object.fromEntries(
             (field.columns ?? []).map((c) => [c.name, values[c.name] as string | boolean]),
           ),
