@@ -252,7 +252,7 @@ export function ConfigTable({
                           size="sm"
                           aria-label={cellLabel}
                           // Fills its column: every choice column is the same width.
-                          className="!gap-0.5 !px-1"
+                          className="!gap-1 !px-1"
                           value={typeof cell === "string" ? cell : ""}
                           disabled={disabled}
                           onChange={(e) => onCell(row.id, c.name, e.target.value)}
