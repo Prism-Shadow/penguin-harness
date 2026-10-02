@@ -8,7 +8,7 @@
  * as a bottom sheet on a phone), so no scroller sits inside another:
  *
  * - Identity: the logo, the product name, the running version with its build date, and the two
- *   ways out — the homepage and the GitHub repository.
+ *   ways out — the homepage and the GitHub repository, each shown as the address it opens.
  * - Software Update, only where this session can update (see `updateModeFor`), for both backends
  *   (the server release, and the desktop shell's own updater in its window). It walks the flow
  *   the way an app updater does: a release offered with its notes and a confirmation before
@@ -18,7 +18,8 @@
  *   for updates" asks again. Failures show the backend's own text — the update command's output
  *   tail, the shell's updater message — and offer a retry; an install form that cannot update
  *   itself says why.
- * - What's new: the bundled release notes, newest first, the running version marked.
+ * - What's new: the bundled release notes, newest first, the running version marked; only the
+ *   newest shows, the earlier versions behind a fold that starts closed on every opening.
  * - Credits: the copyright line, then a fold holding the font and icon licences. The row that
  *   opens this dialog is in every session's menu, which is what keeps MiSans credited wherever
  *   the app runs.
@@ -28,23 +29,18 @@
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  Badge,
   Button,
   Chevron,
-  GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
-  ICONS,
   Link,
   Modal,
   PenguinLogo,
   ProgressBar,
   RuledSection,
   Spinner,
-  buttonClass,
 } from "@prismshadow/penguin-ui";
-import { formatMonthDay, formatYearMonthDay } from "../../lib/format";
-import { noteLines, releaseNotesNewestFirst } from "../../lib/release-notes";
+import { formatMonthDay } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { toneInk } from "../../lib/tone";
@@ -60,6 +56,7 @@ import {
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
 import { CreditsList } from "./credits-list";
+import { ReleaseNotesList } from "./release-notes-list";
 
 const HOMEPAGE_URL = "https://penguin.ooo/";
 const REPOSITORY_URL = "https://github.com/Prism-Shadow/penguin-harness";
@@ -89,7 +86,12 @@ export function AppInfoDialog() {
   );
 }
 
-/** The logo, the name, the running version with its build date, and the two links out. */
+/**
+ * The logo, the name, the running version with its build date, and the two ways out: a muted
+ * label, then the address it opens. Above the phone breakpoint the pairs sit beside the logo, in
+ * two aligned columns. On a phone they move under it, across the full width, each label above its
+ * address: the repository's address fits on that line whole, and beside its label it would break.
+ */
 function Identity({ currentVersion }: { currentVersion: string | null }) {
   const { locale } = useLocale();
   const { version } = useVersionInfo(false);
@@ -98,8 +100,11 @@ function Identity({ currentVersion }: { currentVersion: string | null }) {
   const buildDate =
     version !== null && version.version === currentVersion ? version.buildDate : null;
   return (
-    <div className="flex items-center gap-4">
-      <PenguinLogo src="/penguin-logo.svg" className="h-14 w-14 shrink-0 rounded-2xl" />
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
+      <PenguinLogo
+        src="/penguin-logo.svg"
+        className="h-14 w-14 shrink-0 rounded-2xl sm:row-span-2"
+      />
       <div className="min-w-0">
         <p className="text-lg font-semibold">{S.appName}</p>
         {currentVersion !== null && (
@@ -111,47 +116,37 @@ function Identity({ currentVersion }: { currentVersion: string | null }) {
             }`}
           </p>
         )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <ExternalButton href={HOMEPAGE_URL} glyph={ICONS.house}>
-            {S.appInfo.homepage}
-          </ExternalButton>
-          {/* The registry has no GitHub mark, so the external-link glyph after the name is the
-              button's only one. */}
-          <ExternalButton href={REPOSITORY_URL}>{S.appInfo.repository}</ExternalButton>
-        </div>
       </div>
+      {/* Each pair's wrapper dissolves into the two-column grid above the phone breakpoint. */}
+      <dl className="col-span-2 space-y-2 text-sm sm:col-span-1 sm:col-start-2 sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-x-3 sm:gap-y-1 sm:space-y-0">
+        <div className="sm:contents">
+          <dt className="text-fg-muted">{S.appInfo.homepage}</dt>
+          <dd className="min-w-0">
+            <AddressLink href={HOMEPAGE_URL} />
+          </dd>
+        </div>
+        <div className="sm:contents">
+          <dt className="text-fg-muted">{S.appInfo.repository}</dt>
+          <dd className="min-w-0">
+            <AddressLink href={REPOSITORY_URL} />
+          </dd>
+        </div>
+      </dl>
     </div>
   );
 }
 
 /**
- * A link out of the app in the small bordered button's look, treated as the shared `Link external`
- * treats one: a new tab isolated from this one (`noopener noreferrer`), the external-link glyph
- * after the text as the visible sign that a click leaves the app, and that same fact in the
- * accessible name, since the glyph itself is decorative.
+ * A link out of the app that shows the address it opens, without the scheme. The shared `Link
+ * external` draws it: a new tab isolated from this one, and the external-link glyph after the
+ * text. Because that glyph is decorative, the accessible name also says the link opens in a new tab.
  */
-function ExternalButton({
-  href,
-  glyph,
-  children,
-}: {
-  href: string;
-  /** A leading mark naming the destination. */
-  glyph?: string;
-  children: ReactNode;
-}) {
+function AddressLink({ href }: { href: string }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={buttonClass("secondary", "sm")}
-    >
-      {glyph !== undefined && <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />}
-      {children}
-      <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.inlineGlyph} />
+    <Link href={href} external variant="standalone">
+      {href.replace(/^https:\/\//, "").replace(/\/$/, "")}
       <span className="sr-only"> · {S.appInfo.opensInNewTab}</span>
-    </a>
+    </Link>
   );
 }
 
@@ -345,37 +340,19 @@ function nextStep(mode: UpdateMode, flow: UpdateFlow): ReactNode {
   }
 }
 
-/** Every released version's notes, newest first; the running version's entry is marked. */
+/** The release notes, folded to the newest every time the dialog opens (release-notes-list.tsx). */
 function ReleaseNotes({ currentVersion }: { currentVersion: string | null }) {
   const { locale } = useLocale();
-  const notes = releaseNotesNewestFirst();
+  const [expanded, setExpanded] = useState(false);
+  const panelId = useId();
   return (
-    <RuledSection level={3} title={S.appInfo.releaseNotes} count={notes.length}>
-      <ol className="divide-y divide-line-muted">
-        {notes.map((note) => (
-          <li key={note.version} className="py-3 first:pt-0 last:pb-0">
-            <div className="flex items-baseline justify-between gap-3">
-              <h4 className={`flex items-center ${ICON_GAP.row} text-sm font-medium`}>
-                {`v${note.version}`}
-                {note.version === currentVersion && (
-                  <Badge tone="neutral" variant="soft" size="sm">
-                    {S.appInfo.current}
-                  </Badge>
-                )}
-              </h4>
-              <span className="shrink-0 text-xs text-fg-subtle">
-                {formatYearMonthDay(note.date, locale)}
-              </span>
-            </div>
-            <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-fg-muted">
-              {noteLines(note, locale).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ol>
-    </RuledSection>
+    <ReleaseNotesList
+      currentVersion={currentVersion}
+      locale={locale}
+      expanded={expanded}
+      onToggle={() => setExpanded((v) => !v)}
+      panelId={panelId}
+    />
   );
 }
 

@@ -649,11 +649,14 @@ export const en: Strings = {
     title: "About PenguinHarness",
     /** The avatar-menu row. */
     menuEntry: "About",
+    /** The muted labels before the two addresses the identity block links to. */
     homepage: "Homepage",
     repository: "GitHub",
-    /** Read after a link-out button's name: the glyph that says it is decorative. */
+    /** Read after a link out of the app: the glyph that shows it is decorative. */
     opensInNewTab: "opens in a new tab",
     releaseNotes: "What's new",
+    /** The fold under the newest release note, holding the rest; `n` = how many. */
+    earlierVersions: (n: number) => `Earlier versions (${n})`,
     /** Pill on the release-notes entry of the running version. */
     current: "Current",
     credits: "Credits",

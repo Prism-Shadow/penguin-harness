@@ -710,11 +710,14 @@ export const zh = {
     title: "应用信息",
     /** The avatar-menu row. */
     menuEntry: "应用信息",
+    /** The muted labels before the two addresses the identity block links to. */
     homepage: "主页",
     repository: "GitHub",
-    /** Read after a link-out button's name: the glyph that says it is decorative. */
+    /** Read after a link out of the app: the glyph that shows it is decorative. */
     opensInNewTab: "在新标签页中打开",
     releaseNotes: "更新日志",
+    /** The fold under the newest release note, holding the rest; `n` = how many. */
+    earlierVersions: (n: number) => `更早的版本（${n}）`,
     /** Pill on the release-notes entry of the running version. */
     current: "当前版本",
     credits: "版权信息",
