@@ -651,6 +651,8 @@ export const en: Strings = {
     menuEntry: "About",
     homepage: "Homepage",
     repository: "GitHub",
+    /** Read after a link-out button's name: the glyph that says it is decorative. */
+    opensInNewTab: "opens in a new tab",
     releaseNotes: "What's new",
     /** Pill on the release-notes entry of the running version. */
     current: "Current",
@@ -743,11 +745,11 @@ export const en: Strings = {
       "This service was not started through penguin web or penguin server, so it cannot be updated from here",
     unsupportedCli: "This install cannot be updated from the web UI",
     // —— toasts: outcomes that land while the dialog is closed ——
-    foundNew: (v: string) => `New version v${v} found — open the update entry to download it`,
-    foundNewUnnamed: "New version found — open the update entry to download it",
+    foundNew: (v: string) => `New version v${v} found — open About to download it`,
+    foundNewUnnamed: "New version found — open About to download it",
     readyToast: (v: string | null) =>
       v !== null ? `v${v} is ready — restart to update` : "The update is ready — restart to update",
-    failedToast: "Update failed — open the update entry for details",
+    failedToast: "Update failed — open About for details",
     unsupportedToast: "This install cannot be updated from the web UI",
     /** The shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
     clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,

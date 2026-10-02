@@ -712,6 +712,8 @@ export const zh = {
     menuEntry: "应用信息",
     homepage: "主页",
     repository: "GitHub",
+    /** Read after a link-out button's name: the glyph that says it is decorative. */
+    opensInNewTab: "在新标签页中打开",
     releaseNotes: "更新日志",
     /** Pill on the release-notes entry of the running version. */
     current: "当前版本",
@@ -798,11 +800,11 @@ export const zh = {
     unsupportedNotViaCli: "当前服务不是通过 penguin web 或 penguin server 启动的，无法从这里更新",
     unsupportedCli: "当前安装方式不支持在线更新",
     // —— toasts: outcomes that land while the dialog is closed ——
-    foundNew: (v: string) => `发现新版本 v${v}，打开更新入口即可下载`,
-    foundNewUnnamed: "发现新版本，打开更新入口即可下载",
+    foundNew: (v: string) => `发现新版本 v${v}，打开应用信息即可下载`,
+    foundNewUnnamed: "发现新版本，打开应用信息即可下载",
     readyToast: (v: string | null) =>
       v !== null ? `v${v} 已就绪，可重启更新` : "更新已就绪，可重启更新",
-    failedToast: "更新失败，打开更新入口查看详情",
+    failedToast: "更新失败，打开应用信息查看详情",
     unsupportedToast: "当前安装方式不支持在线更新",
     /** The shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
     clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,

@@ -115,23 +115,29 @@ function Identity({ currentVersion }: { currentVersion: string | null }) {
           <ExternalButton href={HOMEPAGE_URL} glyph={ICONS.house}>
             {S.appInfo.homepage}
           </ExternalButton>
-          <ExternalButton href={REPOSITORY_URL} glyph={ICONS.externalLink}>
-            {S.appInfo.repository}
-          </ExternalButton>
+          {/* The registry has no GitHub mark, so the external-link glyph after the name is the
+              button's only one. */}
+          <ExternalButton href={REPOSITORY_URL}>{S.appInfo.repository}</ExternalButton>
         </div>
       </div>
     </div>
   );
 }
 
-/** A link out of the app in the small bordered button's look: a new tab, isolated from this one. */
+/**
+ * A link out of the app in the small bordered button's look, treated as the shared `Link external`
+ * treats one: a new tab isolated from this one (`noopener noreferrer`), the external-link glyph
+ * after the text as the visible sign that a click leaves the app, and that same fact in the
+ * accessible name, since the glyph itself is decorative.
+ */
 function ExternalButton({
   href,
   glyph,
   children,
 }: {
   href: string;
-  glyph: string;
+  /** A leading mark naming the destination. */
+  glyph?: string;
   children: ReactNode;
 }) {
   return (
@@ -141,8 +147,10 @@ function ExternalButton({
       rel="noopener noreferrer"
       className={buttonClass("secondary", "sm")}
     >
-      <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+      {glyph !== undefined && <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />}
       {children}
+      <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.inlineGlyph} />
+      <span className="sr-only"> · {S.appInfo.opensInNewTab}</span>
     </a>
   );
 }
@@ -297,8 +305,11 @@ function nextStep(mode: UpdateMode, flow: UpdateFlow): ReactNode {
   switch (flow.kind) {
     case "unknown":
     case "up-to-date":
-    case "disabled":
       return check;
+    case "disabled":
+      // Checks are off on the server, and a forced check answers the same: the body's Releases
+      // link is the way to look.
+      return null;
     case "available":
       // A non-admin on a server reads the offer; the body says the update is an admin's.
       return flow.canInstall ? (

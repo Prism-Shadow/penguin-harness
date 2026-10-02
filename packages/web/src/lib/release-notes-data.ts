@@ -29,9 +29,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
     version: "0.2.11",
     date: "2026-09-10",
-    zh: ["重新构建 0.2.10，恢复签名的 macOS 安装包。", "功能内容与 0.2.10 相同。"],
+    zh: [
+      "重新构建 0.2.10，补发它未能产出的安装包，含签名的 macOS 版本。",
+      "功能内容与 0.2.10 相同。",
+    ],
     en: [
-      "Rebuilds 0.2.10 so signed macOS installers are available again.",
+      "Rebuilds 0.2.10 and ships the installers it never got, with signed macOS builds.",
       "The same feature set as 0.2.10.",
     ],
   },
