@@ -19,9 +19,10 @@ export interface PairedServer {
   token: string;
   /** The server's id for this pairing (what the Web App lists and revokes). */
   extensionId: string;
-  installId: string;
-  /** Who paired it. */
-  user: { userId: string; displayName: string };
+  /** The server's install id; null when the server could not name its data root. */
+  installId: string | null;
+  /** Who paired it; `displayName` is null for an account that has none set. */
+  user: { userId: string; displayName: string | null };
   serverVersion: string;
   pairedAt: string;
 }
@@ -65,19 +66,20 @@ function parseServer(value: unknown): PairedServer | null {
   if (!isRecord(value) || !isRecord(value.user)) return null;
   const { origin, label, token, extensionId, installId, serverVersion, pairedAt } = value;
   const { userId, displayName } = value.user;
-  for (const field of [origin, label, token, extensionId, installId, serverVersion, pairedAt]) {
+  for (const field of [origin, label, token, extensionId, serverVersion, pairedAt, userId]) {
     if (typeof field !== "string") return null;
   }
-  if (typeof userId !== "string" || typeof displayName !== "string") return null;
+  if (installId !== null && typeof installId !== "string") return null;
+  if (displayName !== null && typeof displayName !== "string") return null;
   return {
     origin: origin as string,
     label: label as string,
     token: token as string,
     extensionId: extensionId as string,
-    installId: installId as string,
+    installId,
     serverVersion: serverVersion as string,
     pairedAt: pairedAt as string,
-    user: { userId, displayName },
+    user: { userId: userId as string, displayName },
   };
 }
 

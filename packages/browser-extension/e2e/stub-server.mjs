@@ -2,7 +2,7 @@
 // wire module (src/wire.ts, loaded through Node's type stripping): the pairing route with CORS
 // for extension origins only, and the WebSocket link with the token in Sec-WebSocket-Protocol.
 // It speaks the server's side of design § 3.1/3.5: hello on connect, then `tabs`, pings, close
-// codes. Once the real server lands, the e2e runs against it instead.
+// codes. run-stub.mjs drives it; run.mjs runs the same extension against the real server.
 import { randomBytes } from "node:crypto";
 import http from "node:http";
 import { WebSocketServer } from "ws";

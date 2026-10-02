@@ -33,7 +33,7 @@ Agent 浏览器新增了第二种后端：用户自己的 Chrome，经由新的 
 
 ## 选择后端
 
-- 后端由每个用户自己选择，存为 `ui_prefs.browserBackend`，只能经由 `GET` / `PUT /api/builtin-browser/backend` 读写。桌面上的管理员缺省使用内置浏览器；其他服务器只提供 Chrome。`PUT /api/me/prefs` 拒绝这个键，`PUT /backend` 和配对码拒绝 API token（`403` `human_required`）。
+- 后端由每个用户自己选择，存为 `ui_prefs.browserBackend`，只能经由 `GET` / `PUT /api/builtin-browser/backend` 读写。桌面上的管理员可以二选一，缺省使用内置浏览器；桌面上的普通成员以及其他服务器上的所有人只有 Chrome。`PUT /api/me/prefs` 拒绝这个键，`PUT /backend` 和配对码拒绝 API token（`403` `human_required`）。
 - Agent 正在操作时切换返回 `409` `action_in_flight`。切换不会关闭任何标签页，调用也从不从一种后端回退到另一种。
 - `GET /api/builtin-browser/status` 带上生效的 `backend`，以及向调用者提供的每一种后端（`backends`），其中包括用户的 Chrome。`builtin_browser_backend` 和 `builtin_browser_extension` 事件告诉用户的各个窗口：后端已切换，或 Chrome 已连接、已断开、被替代或被撤销；`builtin_browser_tabs` 也会注明它属于哪种后端。
 - Agent 用管理员 API token 并带 `sessionId` 发起的调用，按正在驱动该会话的人行事：最近一次在该会话中发起运行的人、定时任务的创建者，再不然是 Project 的所有者。
@@ -41,7 +41,7 @@ Agent 浏览器新增了第二种后端：用户自己的 Chrome，经由新的 
 ## Web App
 
 - 只要服务器提供 Chrome，侧边栏就提供浏览器面板，不论窗口是否支持 `<webview>`。Chrome 模式下，面板列出 Agent 在 Chrome 里的标签页（**+** 新开，**×** 关闭），保留地址栏，并在页面区显示**此标签页在你的 Chrome 中打开**和**在 Chrome 中显示**。还没有配对 Chrome 时，面板显示配对步骤；已配对但不在线时显示 **Chrome 未连接**和**重新连接帮助**；管理员关闭了连接时显示 **Chrome 连接已关闭**。
-- 在桌面上，面板菜单的顶部是**浏览器**选项（**内置**或**系统 Chrome**）和一行连接状态，旁边是**连接你的 Chrome…**或**管理…**。切换后有提示；Agent 正在操作时切换被拒绝，提示会说明原因。
+- 在桌面上，管理员的面板菜单顶部是**浏览器**选项（**内置**或**系统 Chrome**）；其下是一行连接状态，带**连接你的 Chrome…**或**管理…**。切换后有提示；Agent 正在操作时切换被拒绝，提示会说明原因。
 - **连接你的 Chrome**对话框给出安装步骤和 zip 下载链接，再给出服务器地址和配对码，各带复制按钮。扩展连上后，底部的**正在等待 Chrome…**变为**已连接**，对话框随即关闭。
 - **设置 › 浏览器**包含后端选择（桌面）、已配对的 Chrome 列表（名称、版本、最近连接、连接状态点）、需经危险确认的**撤销**，以及**连接另一个 Chrome**。**设置 › Chrome 扩展**包含管理员的**允许 Chrome 扩展连接**开关，关闭前会先确认。
 - Chrome 模式下，链接菜单的那一项写作**在 Agent 的 Chrome 标签页中打开**。
@@ -51,7 +51,7 @@ Agent 浏览器新增了第二种后端：用户自己的 Chrome，经由新的 
 - `penguin browser status` 在状态行中注明后端（`status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)`），并在 `note:` 中说明三种 Chrome 原因。`not_supported` 会说明该改做什么；不带原因的 `browser_unavailable` 打印服务器自己的说明。
 - 每条命令都发送 `PENGUIN_SESSION_ID`，放在请求体里，`GET` 和 `DELETE` 则放在查询参数里，供服务器认定调用者。
 - `browser-automation` 插件升级到 2026.10.03.1。它的 Skill 说明浏览器由用户选择；Chrome 未配对、未连接或已关闭时该告诉用户什么；`tab_released` 一律不重试；完成后关闭自己打开的标签页；`import` 只属于内置浏览器。
-- 「内置浏览器」「CLI 参考」和「服务器 API」文档补充了 Chrome 后端：安装扩展、配对、切换、Agent 能触及的范围、管理员开关以及各路由。
+- 「内置浏览器」「CLI 参考」「Server API」和「技能与插件」文档补充了 Chrome 后端：安装扩展、配对、切换、Agent 能触及的范围、管理员开关以及各路由。
 
 ## 兼容性
 

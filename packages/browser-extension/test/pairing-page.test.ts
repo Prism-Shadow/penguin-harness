@@ -8,6 +8,8 @@
  *   before anything is sent.
  * - Given a good code, the extension posts `{ code, name, version }` to the pair route without
  *   cookies, and stores the server with its token, ids, user and version.
+ * - Given a server that cannot name its install, for an account with no display name (both
+ *   null in the answer), the pairing is stored all the same and read back as it was.
  * - Given the same server paired again, the new pairing replaces the old one (one entry, the new
  *   token) and lifts any hold on it.
  * - Given the server refuses the code, its message is shown and nothing is stored.
@@ -115,6 +117,22 @@ describe("pairing with the server", () => {
         pairedAt: "2026-10-02T08:00:00.000Z",
       },
     ]);
+  });
+
+  it("pairs with a server that has no install id, for an account with no display name", async () => {
+    installFetch({
+      status: 200,
+      body: { ...PAIRED, installId: null, user: { userId: "admin", displayName: null } },
+    });
+    const outcome = await pairWith("http://localhost:7364");
+
+    expect(outcome.ok).toBe(true);
+    const [server] = await readServers();
+    expect(server).toMatchObject({
+      origin: "http://localhost:7364",
+      installId: null,
+      user: { userId: "admin", displayName: null },
+    });
   });
 
   it("pairing the same server again replaces the old pairing and lifts its hold", async () => {

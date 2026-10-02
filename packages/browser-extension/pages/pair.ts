@@ -50,7 +50,10 @@ function serverRow(
   server: PairedServer,
   state: Awaited<ReturnType<typeof readStatus>>[string] | undefined,
 ): HTMLLIElement {
-  const details = [server.origin, strings.pairedBy(server.user.displayName)].join(" · ");
+  const details = [
+    server.origin,
+    strings.pairedBy(server.user.displayName ?? server.user.userId),
+  ].join(" · ");
   const update = isUpdateAvailable(extensionVersion, server.serverVersion)
     ? element("div", {
         className: "small muted",

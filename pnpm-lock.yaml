@@ -51,6 +51,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@prismshadow/penguin-server':
+        specifier: workspace:*
+        version: link:../server
       '@types/chrome':
         specifier: ^0.3.4
         version: 0.3.4

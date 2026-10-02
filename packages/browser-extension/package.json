@@ -14,10 +14,12 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "e2e": "bash e2e/run.sh"
+    "e2e": "bash e2e/run.sh",
+    "e2e:stub": "bash e2e/run.sh --stub"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@prismshadow/penguin-server": "workspace:*",
     "@types/chrome": "^0.3.4",
     "esbuild": "^0.28.1",
     "typescript": "^5.6.0",

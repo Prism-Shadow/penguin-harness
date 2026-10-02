@@ -8,118 +8,45 @@
  * worker) alive. The token rides in `Sec-WebSocket-Protocol` (`penguin-browser.1`,
  * `token.<token>`), never in a URL.
  *
- * TODO(system-chrome integration): the types below mirror the server's `api/types.ts` (design
- * § 3.1). Once the server side lands, replace the mirrors with type-only imports from
- * `@prismshadow/penguin-server/api` and keep only the guards and constants here.
+ * The types are the server's own (`@prismshadow/penguin-server/api`, type-only); this module adds
+ * the guards that validate a frame before anything reads it, and the wire's constants.
  *
  * This file must stay erasable TypeScript (no enums, namespaces or parameter properties): the
  * e2e's stub server imports it directly under Node's type stripping.
  */
+import type {
+  BrowserBackend,
+  BrowserExtensionCloseCode,
+  BrowserExtensionPairRequest,
+  BrowserExtensionPairResponse,
+  BrowserHello,
+  BuiltinBrowserTab,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserEvent,
+  DesktopBrowserEventMessage,
+  DesktopBrowserReplyMessage,
+} from "@prismshadow/penguin-server/api";
 
-export type BrowserBackend = "builtin" | "chrome";
+export type {
+  BrowserBackend,
+  BrowserHello,
+  BuiltinBrowserTab,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserEvent,
+  DesktopBrowserEventMessage,
+  DesktopBrowserReplyMessage,
+};
 
-/** One drivable tab; `id` is Chrome's tab id. */
-export interface BuiltinBrowserTab {
-  id: number;
-  url: string;
-  title: string;
-  loading: boolean;
-  /** The tabs API cannot read a tab's history, so the extension always sends false. */
-  canGoBack: boolean;
-  canGoForward: boolean;
-  favicon?: string;
-  crashed?: string;
-}
-
-export interface DesktopBrowserCookie {
-  url: string;
-  name: string;
-  value: string;
-  domain?: string;
-  path?: string;
-  secure?: boolean;
-  httpOnly?: boolean;
-  expirationDate?: number;
-  sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
-}
-
-/** Server → link. The extension answers `set-cookies`, `clear-data` and `throttle` with `unknown_op`. */
-export type DesktopBrowserCommand =
-  | { op: "hello" }
-  | { op: "tabs" }
-  | {
-      op: "cdp";
-      tabId: number;
-      method: string;
-      params?: Record<string, unknown>;
-      events?: string[];
-    }
-  | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
-  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[] }
-  | { op: "throttle"; tabIds: number[] }
-  | { op: "open-tab"; url: string; activate: boolean }
-  | { op: "close-tab"; tabId: number }
-  | { op: "activate-tab"; tabId: number }
-  | { op: "ping" };
-
-/** The answer to `hello`. */
-export interface BrowserHello {
-  version: 1;
-  backend: BrowserBackend;
-  partition?: string;
-  extension?: { version: string; chrome: string; name: string };
-}
-
-export type TabReleaseReason = "user" | "detached" | "restricted";
-
-export type DesktopBrowserEvent =
-  | { kind: "tab"; tab: BuiltinBrowserTab }
-  | { kind: "tab-closed"; tabId: number }
-  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean }
-  | { kind: "cdp-event"; tabId: number; method: string; params: Record<string, unknown> }
-  | { kind: "tab-crashed"; tabId: number; reason: string; exitCode: number }
-  | {
-      kind: "metrics";
-      tabs: { tabId: number; memoryKB: number; cpuPercent: number }[];
-      totalKB: number;
-    }
-  | { kind: "tab-released"; tabId: number; reason: TabReleaseReason };
-
-export interface DesktopBrowserCommandMessage {
-  type: "desktop-browser-command";
-  id: string;
-  command: DesktopBrowserCommand;
-}
-
-export interface DesktopBrowserReplyMessage {
-  type: "desktop-browser-reply";
-  id: string;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
-}
-
-export interface DesktopBrowserEventMessage {
-  type: "desktop-browser-event";
-  event: DesktopBrowserEvent;
-}
+/** Why a tab stopped being drivable while it stays open in Chrome (the `tab-released` event). */
+export type TabReleaseReason = Extract<DesktopBrowserEvent, { kind: "tab-released" }>["reason"];
 
 /** POST /api/builtin-browser/extension/pair, sent without a cookie. */
-export interface ExtensionPairRequest {
-  code: string;
-  /** How this Chrome names itself in the Web App: "Chrome 130 on macOS". */
-  name: string;
-  /** The extension's version. */
-  version: string;
-}
+export type ExtensionPairRequest = BrowserExtensionPairRequest;
 
-export interface ExtensionPairResponse {
-  extensionId: string;
-  token: string;
-  installId: string;
-  user: { userId: string; displayName: string };
-  serverVersion: string;
-}
+/** What the pairing route answers: the token, and who and what this Chrome paired with. */
+export type ExtensionPairResponse = BrowserExtensionPairResponse;
 
 // --- constants -------------------------------------------------------------------------------
 
@@ -130,12 +57,12 @@ export const TOKEN_PROTOCOL_PREFIX = "token.";
 export const EXTENSION_WS_PATH = "/api/builtin-browser/extension/ws";
 export const EXTENSION_PAIR_PATH = "/api/builtin-browser/extension/pair";
 
-/** The server's close codes (design § 3.5). */
-export const CLOSE_REPLACED = 4001;
-export const CLOSE_REVOKED = 4003;
-export const CLOSE_PROTOCOL_MISMATCH = 4005;
-export const CLOSE_PING_TIMEOUT = 4008;
-export const CLOSE_DISABLED = 4009;
+/** The server's close codes (`BrowserExtensionCloseCode`). */
+export const CLOSE_REPLACED = 4001 satisfies BrowserExtensionCloseCode;
+export const CLOSE_REVOKED = 4003 satisfies BrowserExtensionCloseCode;
+export const CLOSE_PROTOCOL_MISMATCH = 4005 satisfies BrowserExtensionCloseCode;
+export const CLOSE_PING_TIMEOUT = 4008 satisfies BrowserExtensionCloseCode;
+export const CLOSE_DISABLED = 4009 satisfies BrowserExtensionCloseCode;
 
 /**
  * The words a refused command answers with, in `reply.error`. `no_such_tab` and `tab_released`
@@ -293,8 +220,11 @@ export function parsePairResponse(data: unknown): ExtensionPairResponse | null {
   const { userId, displayName } = data.user;
   if (typeof extensionId !== "string" || extensionId === "") return null;
   if (typeof token !== "string" || !/^[A-Za-z0-9_-]{16,256}$/.test(token)) return null;
-  if (typeof installId !== "string" || typeof serverVersion !== "string") return null;
-  if (typeof userId !== "string" || typeof displayName !== "string") return null;
+  // installId is null when the server cannot name its data root; displayName when the account
+  // has none set.
+  if (installId !== null && typeof installId !== "string") return null;
+  if (typeof serverVersion !== "string" || typeof userId !== "string") return null;
+  if (displayName !== null && typeof displayName !== "string") return null;
   return { extensionId, token, installId, serverVersion, user: { userId, displayName } };
 }
 

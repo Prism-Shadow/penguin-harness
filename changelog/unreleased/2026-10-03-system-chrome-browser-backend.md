@@ -33,7 +33,7 @@ The agent browser gained a second backend: the user's own Chrome, driven through
 
 ## Choosing a backend
 
-- The backend is a per-user choice, `ui_prefs.browserBackend`, read and written only through `GET` / `PUT /api/builtin-browser/backend`. Built-in is the default for an admin on the desktop; every other server offers only Chrome. `PUT /api/me/prefs` refuses the key, and `PUT /backend` and pairing codes refuse the API token (`403` `human_required`).
+- The backend is a per-user choice, `ui_prefs.browserBackend`, read and written only through `GET` / `PUT /api/builtin-browser/backend`. On the desktop an admin may choose either and starts on the built-in browser; members there, and everyone on any other server, have only Chrome. `PUT /api/me/prefs` refuses the key, and `PUT /backend` and pairing codes refuse the API token (`403` `human_required`).
 - A switch while an agent acts answers `409` `action_in_flight`. Switching closes no tabs, and no call falls back from one backend to the other.
 - `GET /api/builtin-browser/status` carries the effective `backend` and every backend offered to the caller (`backends`), with the user's Chrome. The `builtin_browser_backend` and `builtin_browser_extension` events tell the user's windows about a switch and a Chrome that connected, disconnected, was replaced or was revoked, and `builtin_browser_tabs` names its backend.
 - An agent's call with the admin API token and a `sessionId` acts for the person driving that session: whoever last started a run in it, the scheduler's creator, else the Project owner.
@@ -41,7 +41,7 @@ The agent browser gained a second backend: the user's own Chrome, driven through
 ## The Web App
 
 - The dock offers the Browser panel wherever the server offers Chrome, with or without `<webview>`. In Chrome mode the panel lists the agent's tabs in Chrome (**+** opens one, **×** closes one), keeps the address bar, and in place of the page shows **This tab is open in your Chrome** with **Show in Chrome**. It shows the pairing steps when no Chrome is paired, **Chrome is not connected** with **Reconnect help** when it is paired but away, and **Chrome connections are off** when the admin turned them off.
-- On the desktop, the panel's menu opens with a **Browser** choice, **Built-in** or **System Chrome**, and a status row with **Connect your Chrome…** or **Manage…**. A switch says so in a notice; one refused while an agent acts says why.
+- On the desktop, the panel's menu opens with a **Browser** choice for an admin, **Built-in** or **System Chrome**; below it, a status row with **Connect your Chrome…** or **Manage…**. A switch says so in a notice; one refused while an agent acts says why.
 - The **Connect your Chrome** dialog gives the install steps with the zip download, then the server address and the pairing code, each with a copy button. Its **Waiting for Chrome…** becomes **Connected** when the extension connects, and the dialog closes.
 - **Settings › Browser** holds the backend choice (desktop), the paired Chromes with name, version, last connection and a connected dot, **Revoke** behind a danger confirmation, and **Connect another Chrome**. **Settings › Chrome extension** holds the admin's **Allow Chrome extension connections** switch, whose turning off asks first.
 - A link's menu reads **Open in agent's Chrome tab** in Chrome mode.
@@ -51,7 +51,7 @@ The agent browser gained a second backend: the user's own Chrome, driven through
 - `penguin browser status` names the backend on its status line (`status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)`) and words the three Chrome reasons in its `note:`. `not_supported` prints what to do instead, and an unavailable browser without a reason prints the server's words.
 - Every call sends `PENGUIN_SESSION_ID`, in the body or in the query of a `GET` or `DELETE`, so the server can attribute it.
 - The `browser-automation` plugin went to version 2026.10.03.1. Its skill says the browser is the user's choice, what to tell the user when Chrome is not paired, not connected or turned off, that `tab_released` is never retried, and to close the tabs it opened when done; `import` is built-in only.
-- The Built-in Browser, CLI Reference and Server API docs gained the Chrome backend: installing the extension, pairing, switching, what the agent can reach, the admin switch and the routes.
+- The Built-in Browser, CLI Reference, Server API and Skills & Plugins docs gained the Chrome backend: installing the extension, pairing, switching, what the agent can reach, the admin switch and the routes.
 
 ## Compatibility
 
