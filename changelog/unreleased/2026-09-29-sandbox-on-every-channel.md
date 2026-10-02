@@ -17,7 +17,6 @@ Before this change, the builtin plugins reached a server through three channels:
 
 ## Registry fetch
 
-- The server runs the npm next to the Node runtime it runs on, through `node npm-cli.js`, with that Node's directory first on `PATH`. It falls back to the `npm` on `PATH` only when there is no npm next to the runtime. The CLI package's bundled runtime and the Docker image have one next to it; the desktop app's Electron does not.
-- On Windows, the `PATH` fallback starts `npm.cmd` through a shell, with every argument quoted for cmd.exe. An argument that cmd.exe would expand or split is refused.
+- On Windows the fetch starts `npm.cmd` through a shell, which Node requires for a `.cmd` file, with every argument quoted for cmd.exe. An argument that cmd.exe would expand or split is refused.
 - A failed fetch reports npm's first `npm error` line. Warnings printed before it and the log pointer printed after it are skipped, and Windows line endings are handled.
 - The Plugins, Skills and Server API pages no longer say that nothing is downloaded. A package the build does not ship is fetched from the registry, and a `PUT` of a name that is not on the machine answers `plugin_not_installed`.

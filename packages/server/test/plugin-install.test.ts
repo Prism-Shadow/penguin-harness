@@ -1,9 +1,9 @@
 /**
- * Driving npm for a registry fetch (src/plugin/install.ts): which npm runs, how it is started
- * on each platform, and which line of its stderr a failure shows.
+ * Driving npm for a registry fetch (src/plugin/install.ts): how the npm on PATH is started on
+ * each platform, and which line of its stderr a failure shows.
  */
 import { describe, expect, it } from "vitest";
-import { npmInvocation, npmReason, PluginInstallError } from "../src/plugin/install.js";
+import { npmCommand, npmReason, PluginInstallError } from "../src/plugin/install.js";
 
 describe("npmReason", () => {
   const err = new Error("Command failed: npm install");
@@ -37,69 +37,24 @@ describe("npmReason", () => {
   });
 });
 
-describe("npmInvocation", () => {
+describe("npmCommand", () => {
   const args = ["install", "--", "@acme/x@>=1 <2"];
 
-  it("runs the npm beside the node that runs the server, with that node leading PATH", () => {
-    const cli = "/opt/penguin/node/lib/node_modules/npm/bin/npm-cli.js";
-    const npm = npmInvocation(args, {
-      execPath: "/opt/penguin/node/bin/node",
-      platform: "linux",
-      env: { PATH: "/usr/bin" },
-      electron: false,
-      exists: (f) => f === cli,
-    });
-    expect(npm).toEqual({
-      command: "/opt/penguin/node/bin/node",
-      args: [cli, ...args],
-      shell: false,
-      env: { PATH: "/opt/penguin/node/bin:/usr/bin" },
-    });
+  it("runs the npm on PATH as it is, without a shell, off Windows", () => {
+    expect(npmCommand(args, "linux")).toEqual({ command: "npm", args, shell: false });
   });
 
-  it("finds the Windows runtime's npm next to node.exe, and keeps the environment's own `Path` key", () => {
-    const cli = "C:\\penguin\\node\\node_modules\\npm\\bin\\npm-cli.js";
-    const npm = npmInvocation(args, {
-      execPath: "C:\\penguin\\node\\node.exe",
-      platform: "win32",
-      env: { Path: "C:\\Windows" },
-      electron: false,
-      exists: (f) => f === cli,
-    });
-    expect(npm.command).toBe("C:\\penguin\\node\\node.exe");
-    expect(npm.args).toEqual([cli, ...args]);
-    expect(npm.shell).toBe(false);
-    expect(npm.env).toEqual({ Path: "C:\\penguin\\node;C:\\Windows" });
-  });
-
-  it("falls back to the npm on PATH: npm.cmd through a shell on Windows, every argument quoted", () => {
-    const npm = npmInvocation(args, {
-      execPath: "C:\\Program Files\\App\\app.exe",
-      platform: "win32",
-      env: {},
-      electron: true,
-      exists: () => true, // Electron runs no npm-cli.js, whatever sits beside it
-    });
-    expect(npm).toEqual({
+  it("runs npm.cmd through a shell on Windows, every argument quoted", () => {
+    expect(npmCommand(args, "win32")).toEqual({
       command: "npm.cmd",
       args: ['"install"', '"--"', '"@acme/x@>=1 <2"'],
       shell: true,
-      env: {},
     });
-    const posix = npmInvocation(args, {
-      execPath: "/usr/bin/node",
-      platform: "linux",
-      env: {},
-      electron: false,
-      exists: () => false,
-    });
-    expect(posix).toEqual({ command: "npm", args, shell: false, env: {} });
   });
 
   it("refuses what cmd.exe would expand or split rather than hand it to a shell", () => {
-    const host = { platform: "win32" as const, exists: () => false, electron: false, env: {} };
     for (const bad of ['a"b', "%PATH%", "a\r\nb"]) {
-      expect(() => npmInvocation(["install", bad], host)).toThrow(PluginInstallError);
+      expect(() => npmCommand(["install", bad], "win32")).toThrow(PluginInstallError);
     }
   });
 });

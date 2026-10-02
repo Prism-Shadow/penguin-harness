@@ -19,7 +19,6 @@
  * dependency and reconciles the prefix against it on every later install. Installing runs the
  * package's install scripts exactly as installing it from the registry does — the same trust.
  */
-import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
@@ -87,13 +86,13 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
 
 async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
   try {
-    const invocation = npmInvocation(args);
+    const invocation = npmCommand(args);
     const { stdout } = await execFileAsync(invocation.command, invocation.args, {
       cwd,
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
       shell: invocation.shell,
-      env: invocation.env,
+      env: process.env,
     });
     return stdout;
   } catch (err) {
@@ -317,22 +316,11 @@ export function npmReason(stderr: string | undefined, err: Error): string {
   return reason ?? err.message;
 }
 
-/** How to start npm: the file, its arguments, whether through a shell, and its environment. */
-export interface NpmInvocation {
+/** How to start npm: the file, its arguments, and whether through a shell. */
+export interface NpmCommand {
   command: string;
   args: string[];
   shell: boolean;
-  env: NodeJS.ProcessEnv;
-}
-
-/** What `npmInvocation` reads of the running process; injectable for tests. */
-export interface NpmHost {
-  execPath?: string;
-  platform?: NodeJS.Platform;
-  env?: NodeJS.ProcessEnv;
-  /** Is the running binary Electron (the desktop app's server), not Node? */
-  electron?: boolean;
-  exists?: (file: string) => boolean;
 }
 
 /**
@@ -349,40 +337,17 @@ function cmdQuote(arg: string): string {
 }
 
 /**
- * npm, as this installation can run it. First the npm beside the node running the server —
- * the CLI package's bundled runtime and the Docker image carry one, and neither puts it on
- * PATH — started as `node npm-cli.js`, so it needs neither PATH nor a shell; that node's
- * directory leads PATH for the scripts npm runs. Otherwise the `npm` on PATH: on Windows that
- * is `npm.cmd`, which Node spawns only through a shell (EINVAL without one), its arguments
- * quoted for cmd.exe. Electron (the desktop app) carries no npm, so it always takes PATH.
+ * The npm on PATH, the way every other npm consumer on the machine runs it. On Windows that is
+ * `npm.cmd`, which Node starts only through a shell (EINVAL without one), so there it runs
+ * through cmd.exe with every argument quoted.
  */
-export function npmInvocation(args: readonly string[], host: NpmHost = {}): NpmInvocation {
-  const execPath = host.execPath ?? process.execPath;
-  const platform = host.platform ?? process.platform;
-  const env = host.env ?? process.env;
-  const electron = host.electron ?? process.versions.electron !== undefined;
-  const exists = host.exists ?? existsSync;
-  const p = platform === "win32" ? path.win32 : path.posix;
-  const nodeDir = p.dirname(execPath);
-  const cli =
-    platform === "win32"
-      ? p.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js")
-      : p.join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js");
-  if (!electron && exists(cli)) {
-    // Windows spells the variable `Path`; whichever key the environment has is the one kept.
-    const key = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
-    const rest = env[key];
-    return {
-      command: execPath,
-      args: [cli, ...args],
-      shell: false,
-      env: { ...env, [key]: rest ? `${nodeDir}${p.delimiter}${rest}` : nodeDir },
-    };
-  }
-  if (platform === "win32") {
-    return { command: "npm.cmd", args: args.map(cmdQuote), shell: true, env };
-  }
-  return { command: "npm", args: [...args], shell: false, env };
+export function npmCommand(
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): NpmCommand {
+  return platform === "win32"
+    ? { command: "npm.cmd", args: args.map(cmdQuote), shell: true }
+    : { command: "npm", args: [...args], shell: false };
 }
 
 /**

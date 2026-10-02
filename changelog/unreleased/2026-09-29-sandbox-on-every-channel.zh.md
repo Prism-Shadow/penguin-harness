@@ -17,7 +17,6 @@
 
 ## 从 registry 现取
 
-- 服务器以 `node npm-cli.js` 的方式运行自身 Node 运行时旁边的 npm，并把该 Node 所在目录放在 `PATH` 最前；运行时旁边没有 npm 时，才退回 `PATH` 上的 `npm`。CLI 安装包自带的运行时与 Docker 镜像旁边都有 npm，桌面端的 Electron 没有。
-- 在 Windows 上，退回 `PATH` 时经 shell 启动 `npm.cmd`，每个参数都按 cmd.exe 的规则加引号；会被 cmd.exe 展开或拆开的参数直接拒绝。
+- 在 Windows 上，现取经 shell 启动 `npm.cmd`（Node 启动 `.cmd` 文件必须经 shell），每个参数都按 cmd.exe 的规则加引号；会被 cmd.exe 展开或拆开的参数直接拒绝。
 - 现取失败时报告 npm 的首条 `npm error` 行，跳过它之前的警告与之后的日志路径提示，并能处理 Windows 换行。
 - 插件、Skill 与 Server API 三页不再说「不会下载任何东西」：构建未发布的包会从 registry 现取；`PUT` 加入本机没有的名称时返回 `plugin_not_installed`。

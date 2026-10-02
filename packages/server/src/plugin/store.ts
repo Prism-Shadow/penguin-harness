@@ -46,7 +46,7 @@ import { promisify } from "node:util";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { PACKAGE_NAME } from "./loader.js";
-import { npmInvocation, npmReason, PluginInstallError } from "./install.js";
+import { npmCommand, npmReason, PluginInstallError } from "./install.js";
 import {
   entryDir,
   entryKey,
@@ -186,7 +186,7 @@ const FETCH_TIMEOUT_MS = 180_000;
  */
 const npmInstall: RegistryInstall = async (specifier, cwd) => {
   try {
-    const npm = npmInvocation([
+    const npm = npmCommand([
       "install",
       "--install-strategy=nested",
       "--omit=dev",
@@ -199,7 +199,7 @@ const npmInstall: RegistryInstall = async (specifier, cwd) => {
       cwd,
       timeout: FETCH_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
-      env: npm.env,
+      env: process.env,
       shell: npm.shell,
     });
   } catch (err) {
