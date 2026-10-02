@@ -187,7 +187,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每个分片之后都紧跟它的完整消息，使用方无需自己拼接分片。
+因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每组分片在 `stop` 之后都紧跟一条完整消息，使用方无需自己拼接分片。
 
 ## event_msg
 

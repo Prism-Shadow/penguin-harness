@@ -187,7 +187,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. Every fragment is followed by its complete message, so a consumer never has to reassemble fragments itself.
+Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. Each run of fragments ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself.
 
 ## event_msg
 
