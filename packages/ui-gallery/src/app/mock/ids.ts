@@ -32,7 +32,8 @@ export const IDS = {
     /** The release-notes Agent's desk, opened by an organization's scheduler; never listed. */
     orgDesk: "s-org-digest",
   },
-  benchmarks: { docs: "docs-qa-v1", draft: "release-notes-draft" },
+  /** A Benchmark the docs agent wrote, one still being built, and a built-in Harbor one. */
+  benchmarks: { docs: "docs-qa-v1", draft: "release-notes-draft", harbor: "terminal-bench" },
   plugins: {
     /** A library plugin the detail page opens on. */
     registry: "claude-code-expert",

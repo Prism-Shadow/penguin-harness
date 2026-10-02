@@ -1,7 +1,7 @@
 /**
  * The demo world the mocked API answers from, built for one language at a time: a signed-in
  * admin, one Project with two Agents, their conversations, the model table, the plugin
- * library and what is installed, thirty days of usage, two Benchmarks, schedules, the
+ * library and what is installed, thirty days of usage, three Benchmarks, schedules, the
  * machines, the memory and vault of the docs Agent, a small Workspace and the server's
  * settings. Every row is typed by the server's own DTOs, so the compiler is what keeps this
  * data in step with the app that reads it.
@@ -886,6 +886,54 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       cases,
     };
   };
+  /** The built-in Harbor Benchmark's cases: one task each, and the trial its one run recorded. */
+  const harborCases = [
+    {
+      id: "CASE-001-music-harmony",
+      task: "music-harmony",
+      title: "Harmonize a chorale excerpt in four parts",
+      summary:
+        "Complete a four-voice (SATB) harmonization of the excerpt in a score PDF, in the style of a Bach chorale, and label every chord with a Roman numeral.",
+      trial: "music-harmony__3xQpL7a",
+    },
+    {
+      id: "CASE-002-html-js-filter",
+      task: "html-js-filter",
+      title: "Strip JavaScript from HTML without breaking it",
+      summary:
+        "Write a Python script that removes every way to run JavaScript from an HTML file in place, while keeping legitimate markup intact.",
+      trial: "html-js-filter__Vb81mKd",
+    },
+    {
+      id: "CASE-003-foodstuff-beta-activity",
+      task: "foodstuff-beta-activity",
+      title: "Determine the beta activity of a foodstuff",
+      summary:
+        "From liquid-scintillation measurements and Sr-90 reference tables, derive the counting efficiency, the detection limit and the sample's activity concentration.",
+      trial: "foodstuff-beta-activit__Qe2Rt9s",
+    },
+  ];
+  const harborStatement = (c: (typeof harborCases)[number]): string =>
+    [
+      `# ${c.title}`,
+      "",
+      c.summary,
+      "",
+      "- Benchmark: Terminal-Bench 4.0 (Harbor Hub `terminal-bench/terminal-bench`, revision 4)",
+      `- Task folder: https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/benchmarks/terminal-bench/tasks/${c.task}`,
+      "- Container: 2 CPU, 4 GB RAM, CPU only · Agent network: public · Verifier: separate container",
+      "",
+      "## How this case is evaluated",
+      "",
+      "```bash",
+      'export PYTHONPATH="$PWD/agents"',
+      `uvx --from harbor==0.23.0 harbor run -p benchmarks/terminal-bench/tasks -i ${c.task} \\`,
+      "  -a penguin_agent:PenguinAgent -m <provider>/<model_id> --ak thinking=<level> \\",
+      "  -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
+      "```",
+      "",
+    ].join("\n");
+
   const benchmarks: BenchmarkSummary[] = [
     {
       id: IDS.benchmarks.docs,
@@ -913,6 +961,54 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       evaluations: [],
       agentIds: [],
     },
+    // Built in, English in either locale like the product's own; one evaluation, whose runs
+    // are Harbor trials rather than Sessions.
+    {
+      id: IDS.benchmarks.harbor,
+      title: "Terminal-Bench 4.0 (CPU subset)",
+      description:
+        "Hard, realistic tasks done in a terminal, across software, security, science, machine learning, operations, hardware and media, chosen to run on CPU-only Docker.",
+      runs: 1,
+      status: "published",
+      kind: "harbor",
+      harbor: {
+        repo: "https://github.com/Prism-Shadow/penguin-harness-benchmark",
+        ref: "main",
+        path: "benchmarks/terminal-bench/tasks",
+      },
+      caseCount: harborCases.length,
+      evaluations: [
+        {
+          time: iso(ago(1)),
+          agentId: IDS.agents.docs,
+          summaryTitle: L("首个 Harbor 基线", "First Harbor baseline"),
+          summary: L(
+            "每题一次 Harbor trial；分数即验证器的 reward × 100。",
+            "One Harbor trial per case; each score is the verifier's reward × 100.",
+          ),
+          modelId: "deepseek-flash",
+          provider: "deepseek",
+          thinkingLevel: "max",
+          version: 14,
+          score: 33.33,
+          cost: 0.0712,
+          durationMs: 694_000,
+          cases: harborCases.map((c, i) => {
+            const score = i === 0 ? 100 : 0;
+            const cost = [0.0521, 0.0934, 0.0681][i]!;
+            const durationMs = [512_000, 903_000, 667_000][i]!;
+            return {
+              case: c.id,
+              score,
+              cost,
+              durationMs,
+              runs: [{ score, cost, durationMs, sessionId: `harbor:${c.trial}` }],
+            };
+          }),
+        },
+      ],
+      agentIds: [IDS.agents.docs],
+    },
   ];
   const benchmarkCases: Record<string, BenchmarkCaseSummary[]> = {
     [IDS.benchmarks.docs]: [
@@ -928,6 +1024,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       { id: "CASE-001-lead", title: L("写一段导语", "Write a lead paragraph") },
       { id: "CASE-002-breaking", title: L("列出破坏性变更", "List the breaking changes") },
     ],
+    [IDS.benchmarks.harbor]: harborCases.map((c) => ({ id: c.id, title: c.title })),
   };
   const caseFiles: DemoFixtures["caseFiles"] = {};
   for (const [benchmarkId, cases] of Object.entries(benchmarkCases)) {
@@ -942,6 +1039,16 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         },
       };
     }
+  }
+  // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
+  for (const c of harborCases) {
+    caseFiles[`${IDS.benchmarks.harbor}/${c.id}`] = {
+      statement: { "README.md": harborStatement(c) },
+      rubric: {
+        "README.md":
+          "# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial multiplied by 100.\n",
+      },
+    };
   }
 
   const machines: MachinesResponse = {

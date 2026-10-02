@@ -53,6 +53,12 @@ Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/st
 
 Before launch, snapshot every file under the Case's `statement/` and `rubric/` directories. Require a usable Rubric whose scoring items total exactly 100 points. Create a unique Workspace under `<test_agent_dir>/workspaces/`, resolve it to an absolute canonical path, and verify that the resolved path remains under that directory. Copy only `statement/` into it. The Test Agent may see the Statement and its own State, but never the Rubric, Gold answers, scoring rules, or Evaluator reasoning.
 
+## Harbor-backed Cases
+
+If `benchmark_config.toml` contains `kind = "harbor"`, the Case is a Harbor task kept in a repository: follow `reference/harbor.md` for the Prepare, Run and Score steps. One Harbor trial in Docker replaces the Workspace launch, and the task verifier's reward replaces the Rubric judgement. The Contract, the visibility rules, the failure codes and the Return format are unchanged. `thinking_level` is still the Test Agent's configured value, and `provider` / `model_id` are still the request's. The Harbor adapter, not you, copies the requested model's saved entry into the task container; the one thing you look up yourself is that model's endpoint host, as the reference says.
+
+A caller that fans out cells of a Harbor-backed Benchmark performs the shared setup in `reference/harbor.md` §A once, before its first `run_subagent`.
+
 ## Run and verify
 
 Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Snapshot the isolated Workspace and record the existing Trace files.

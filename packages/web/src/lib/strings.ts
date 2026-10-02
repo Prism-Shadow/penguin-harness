@@ -3855,6 +3855,10 @@ Benchmark：
     optimize: "优化",
     view: "查看",
     copyPath: "复制目录路径",
+    /** A Harbor Benchmark's tag beside its title. */
+    harborTag: "Harbor",
+    /** Label before the link to a Harbor Benchmark's task repository, on its page. */
+    harborRepo: "题目文件",
     deleteBenchmark: "删除 Benchmark",
     deleteConfirm: (title: string): string =>
       `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
@@ -3887,6 +3891,8 @@ Benchmark：
     colCase: "题目",
     colRun: "运行",
     colSession: "Session",
+    /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
+    copyTrialName: "复制 Harbor trial 名称",
     // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.
     askAi: "问 AI",
     evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
@@ -4081,6 +4087,9 @@ Benchmark：
     // Evaluate tab.
     evaluateDescription:
       "AI 会把被测智能体放到这套 Benchmark 上跑完整的 Case × runs 矩阵，并把结果作为一条带标签的评估追加进记分。",
+    /** The Evaluate tab's line for a Harbor Benchmark: what the machine and the model need. */
+    harborEvaluateHint:
+      "这套 Benchmark 在 Docker 中经 Harbor 框架运行：执行评估的智能体所在机器需装有 Docker 与 uv，被测智能体的模型需在模型页保存了 API key。",
     evaluateTestedAgentHint:
       "评估的是它当下的 Agent State；分数记在它名下，标签含其版本号、模型与思考等级",
     evaluatorAgent: "执行评估的智能体",

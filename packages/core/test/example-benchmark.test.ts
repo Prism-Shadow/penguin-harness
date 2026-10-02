@@ -179,7 +179,9 @@ describe("example benchmark provisioning", () => {
     await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
     await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
     await loadAgentState({ init: {} });
-    expect((await fs.readdir(dir)).sort()).toEqual([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]);
+    expect(await fs.readdir(dir)).toEqual(
+      expect.arrayContaining([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]),
+    );
     expect(await fs.readFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), "utf8")).toBe(
       'title = "mine"\n',
     );
@@ -221,6 +223,6 @@ describe("example benchmark provisioning", () => {
     await fs.rm(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true, force: true });
     await loadAgentState();
     // The example's own directory is the check, so a deletion lasts until the next load.
-    expect(await fs.readdir(dir)).toEqual([EXAMPLE_BENCHMARK_ID]);
+    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
   });
 });

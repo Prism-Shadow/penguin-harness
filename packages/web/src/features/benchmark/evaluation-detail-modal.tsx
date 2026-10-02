@@ -27,12 +27,7 @@ import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
 import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
 import type { AskEvaluationParams } from "./benchmark-prompts";
-
-/** Session id, for correlating a Run with what the side panel shows: identification only, reading a Trace is the side panel's job. */
-function SessionCell({ sessionId }: { sessionId?: string }) {
-  if (!sessionId) return <span className="text-gray-400">—</span>;
-  return <span className="font-mono text-gray-600 dark:text-gray-300">{sessionId}</span>;
-}
+import { RunSessionId } from "./harbor";
 
 /**
  * Score row for one Case: stored Case averages are authoritative. Expanding shows raw Run
@@ -107,7 +102,8 @@ function CaseRow({
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
             </td>
             <td className="px-2 py-1">
-              <SessionCell {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
+              {/* Identification only: reading a Trace is the side panel's job. */}
+              <RunSessionId {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
             </td>
           </tr>
         ))}

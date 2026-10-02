@@ -66,6 +66,7 @@ import {
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
+import { provisionBuiltinBenchmarks } from "./builtin-benchmarks.js";
 import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
   agentsMdPath,
@@ -196,6 +197,13 @@ export async function loadAgentState(opts?: {
       } catch {
         // Nothing to do: the evaluation center simply starts out empty.
       }
+      // The built-in Harbor Benchmarks follow the example's rule, each on its own directory;
+      // one that cannot be written is simply not listed.
+      try {
+        await provisionBuiltinBenchmarks(root, projectId);
+      } catch {
+        // Nothing to do, as above.
+      }
     }
     return {
       root,
@@ -243,12 +251,15 @@ export async function loadAgentState(opts?: {
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
     ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
-    // The example Benchmark is only provisioned alongside default_agent (so the evaluation
-    // center has data out of the box). It lands in the Project's benchmarks/, a sibling of
-    // agents/: skipped when the example is already there, and never written for a plain
-    // Agent, whose creation is not a Project's first day. Awaited here, unlike on the load
-    // path — a Project's first day is the one moment a failure is worth reporting.
-    ...(agentId === DEFAULT_AGENT_ID ? [provisionExampleBenchmark(root, projectId)] : []),
+    // The example Benchmark and the built-in Harbor Benchmarks are only provisioned alongside
+    // default_agent (so the evaluation center has data out of the box). They land in the
+    // Project's benchmarks/, a sibling of agents/: each skipped when its directory is already
+    // there, and never written for a plain Agent, whose creation is not a Project's first day.
+    // Awaited here, unlike on the load path — a Project's first day is the one moment a
+    // failure is worth reporting.
+    ...(agentId === DEFAULT_AGENT_ID
+      ? [provisionExampleBenchmark(root, projectId), provisionBuiltinBenchmarks(root, projectId)]
+      : []),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run

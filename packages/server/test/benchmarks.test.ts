@@ -5,15 +5,21 @@
  *   draft locks a Benchmark; draft and failed are themselves, anything else is published),
  *   lists a Benchmark that never ran but not a directory without a config, and is empty when
  *   nothing is configured.
+ * - A Harbor Benchmark (`kind = "harbor"` with a usable [harbor] table) reports its kind and
+ *   repository; the table without the kind, another kind, the kind without a usable table (a
+ *   repository that is not an http(s) URL, a task folder outside the repository) all list as a
+ *   plain Benchmark.
  * - scoreboard.yaml v2's evaluations pass through: the summary, the Agent each tested, the
  *   model-written Case and Evaluation averages and the per-case runs; legacy Scoreboard entries
  *   are neither migrated nor backfilled; the case count is reported.
  * - Members read and outsiders get 404; only the owner creates (the server writes the layout
- *   the Skills read, refusing malformed requests without writing) and deletes a Benchmark whole.
+ *   the Skills read, always a plain Benchmark, refusing malformed requests without writing) and
+ *   deletes a Benchmark whole.
  *
- * Benchmarks are Project-level, so a new Project arrives with default_agent's sample Benchmark;
- * setup deletes that directory (keeping `benchmarks/`), and builtin-agents.test.ts owns its
- * assertions. One app for the file; every case works in a Project of its own.
+ * Benchmarks are Project-level, so a new Project arrives with default_agent's Benchmarks (the
+ * example and the built-in Harbor ones); setup empties `benchmarks/` (keeping the directory),
+ * and builtin-agents.test.ts owns their assertions. One app for the file; every case works in a
+ * Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -67,13 +73,13 @@ describe("benchmarks api", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-    // Creating the Project seeded default_agent's sample Benchmark at the Project level; these
-    // cases start from an empty benchmarks directory. Only the example goes — the directory
-    // itself stays, because its absence is what asks for the example to be provisioned again.
-    await fs.rm(path.join(benchmarksDir(t.root, projectId), "example-benchmark"), {
-      recursive: true,
-      force: true,
-    });
+    // Creating the Project seeded default_agent's Benchmarks (the example and the built-in
+    // Harbor ones) at the Project level; these cases start from an empty benchmarks directory.
+    // Only its entries go — the directory itself stays.
+    const seeded = benchmarksDir(t.root, projectId);
+    for (const name of await fs.readdir(seeded)) {
+      await fs.rm(path.join(seeded, name), { recursive: true, force: true });
+    }
     base = `/api/projects/${projectId}/benchmarks`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
@@ -488,6 +494,41 @@ describe("benchmarks api", () => {
     ]);
   });
 
+  it("reads a Harbor Benchmark's kind and repository; anything less lists as a plain Benchmark", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    const write = async (id: string, toml: string) => {
+      await fs.mkdir(path.join(dir, id), { recursive: true });
+      await fs.writeFile(path.join(dir, id, "benchmark_config.toml"), toml, "utf8");
+    };
+    const table = (repo: string, tasks: string) =>
+      `[harbor]\nrepo = "${repo}"\nref = "0123abc"\npath = "${tasks}"\n`;
+    const repo = "https://github.com/example/harbor-tasks";
+    // The cases run as Harbor tasks from this repository.
+    await write(
+      "a-harbor",
+      `title = "Harbor"\nkind = "harbor"\n${table(repo, "benchmarks/a/tasks")}`,
+    );
+    // The table without the kind says nothing about how the cases run.
+    await write("b-no-kind", `title = "No kind"\n${table(repo, "benchmarks/b/tasks")}`);
+    // A kind nobody defined.
+    await write("c-other-kind", `title = "Other"\nkind = "swe"\n${table(repo, "tasks")}`);
+    // The kind with no table to run from.
+    await write("d-no-table", `title = "No table"\nkind = "harbor"\n`);
+    // A repository the page could not safely link, and a task folder outside the repository.
+    await write("e-bad-repo", `title = "Bad repo"\nkind = "harbor"\n${table("javascript:x", "t")}`);
+    await write("f-bad-path", `title = "Bad path"\nkind = "harbor"\n${table(repo, "../up")}`);
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(res.benchmarks.map((b) => [b.id, b.kind ?? null, b.harbor ?? null])).toEqual([
+      ["a-harbor", "harbor", { repo, ref: "0123abc", path: "benchmarks/a/tasks" }],
+      ["b-no-kind", null, null],
+      ["c-other-kind", null, null],
+      ["d-no-table", null, null],
+      ["e-bad-repo", null, null],
+      ["f-bad-path", null, null],
+    ]);
+  });
+
   /** A well-formed create request; the tests below vary one field at a time. */
   const createBody: BenchmarkCreateRequest = {
     id: "report-writing-v1",
@@ -565,6 +606,21 @@ describe("benchmarks api", () => {
     expect(
       parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8")),
     ).toMatchObject({ title: "Report writing" });
+  });
+
+  it("a Benchmark created by hand is a plain one, whatever kind the request names", async () => {
+    const res = await owner.post(base, {
+      ...createBody,
+      kind: "harbor",
+      harbor: { repo: "https://github.com/example/harbor-tasks", ref: "main", path: "tasks" },
+    });
+    expect(res.status).toBe(201);
+    const { benchmark } = (await res.json()) as BenchmarkCreateResponse;
+    expect(benchmark.kind).toBeUndefined();
+    const dir = path.join(benchmarksDir(t.root, projectId), createBody.id);
+    const config = parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"));
+    expect(config).not.toHaveProperty("kind");
+    expect(config).not.toHaveProperty("harbor");
   });
 
   it("rejects malformed create requests and non-owners without writing anything", async () => {

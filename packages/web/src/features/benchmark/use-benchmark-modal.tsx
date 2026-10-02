@@ -15,7 +15,10 @@
  * left to its own devices sometimes scored the runs itself instead of delegating to
  * agent-evaluation. The evaluation runtime is never picked in this dialog —
  * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
- * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ * what that agent's baseline recorded, so scores stay comparable. A Harbor Benchmark's Evaluate
+ * tab adds one line on what its runs need (Docker and uv where the evaluator runs, a saved key
+ * for the tested agent's model); the prompt is the same, since the Skill reads the Benchmark's
+ * kind itself. Mounted fresh per Benchmark.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -46,6 +49,7 @@ import { ModelCatalogSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams } from "./benchmark-prompts";
+import { HarborEvaluateNote } from "./harbor";
 
 /** The Skill the evaluator agent must carry; the dialog warns when the chosen agent lacks it. */
 const EVALUATION_SKILL = "agent-evaluation";
@@ -283,6 +287,7 @@ export function UseBenchmarkModal({
             <p className="text-sm text-gray-600 dark:text-gray-300">
               {S.benchmark.evaluateDescription}
             </p>
+            <HarborEvaluateNote benchmark={benchmark} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {testedAgentSelect(S.benchmark.evaluateTestedAgentHint)}
               <Select
