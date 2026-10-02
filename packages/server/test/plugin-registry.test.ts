@@ -110,17 +110,14 @@ describe("httpPluginRegistry", () => {
     expect(dead.calls).toHaveLength(2);
   });
 
-  it("does not retry what the server answered", async () => {
+  it("fails, without retrying, on an HTTP error status, on non-JSON, and on a malformed document", async () => {
+    const respond = (body: string, status = 200) =>
+      fakeFetch(() => new Response(body, { status })).fetch;
     const gone = fakeFetch(() => new Response("[]", { status: 404 }));
     await expect(httpPluginRegistry(url, { fetchImpl: gone.fetch }).index()).rejects.toThrow(
       /HTTP 404/,
     );
     expect(gone.calls).toHaveLength(1);
-  });
-
-  it("fails on an HTTP error status, on non-JSON, and on a malformed document", async () => {
-    const respond = (body: string, status = 200) =>
-      fakeFetch(() => new Response(body, { status })).fetch;
     await expect(httpPluginRegistry(url, respond("[]", 503)).index()).rejects.toThrow(/HTTP 503/);
     await expect(httpPluginRegistry(url, respond("not json")).index()).rejects.toThrow(
       /not valid JSON/,
@@ -344,38 +341,29 @@ function stubRegistry(source: string, entries: PluginIndexEntry[]) {
 }
 
 describe("cachedRegistry", () => {
-  it("fetches once per TTL and again after it lapses", async () => {
+  it("fetches once per TTL, one fetch for concurrent callers, and again after it lapses", async () => {
     const { registry, state } = stubRegistry("remote", [VALID_ENTRY]);
     let clock = 1_000;
     const cached = cachedRegistry(registry, { ttlMs: 60_000, now: () => clock });
-
-    await cached.index();
-    await cached.index();
-    expect(state.calls).toBe(1);
-
+    // Four tabs opening the page at once must be one request, not four.
+    await Promise.all([cached.index(), cached.index(), cached.index(), cached.index()]);
     clock += 59_999;
     await cached.index();
     expect(state.calls).toBe(1);
-
     clock += 2;
     await cached.index();
     expect(state.calls).toBe(2);
   });
 
-  it("shares one in-flight fetch between concurrent callers", async () => {
+  it("serves the last good document when a refresh fails, and fails when it never had one", async () => {
     const { registry, state } = stubRegistry("remote", [VALID_ENTRY]);
-    const cached = cachedRegistry(registry, { ttlMs: 60_000, now: () => 0 });
-    // Four tabs opening the page at once must be one request, not four.
-    await Promise.all([cached.index(), cached.index(), cached.index(), cached.index()]);
-    expect(state.calls).toBe(1);
-  });
-
-  it("keeps serving the last good document when a refresh fails", async () => {
-    const { registry, state } = stubRegistry("remote", [VALID_ENTRY]);
+    state.fail = "network down";
     let clock = 0;
     const cached = cachedRegistry(registry, { ttlMs: 10, now: () => clock });
+    await expect(cached.index()).rejects.toThrow(/network down/);
+    // The failed attempt is not cached as a good one.
+    state.fail = null;
     expect(await cached.index()).toHaveLength(1);
-
     clock += 100;
     state.fail = "network down";
     // Stale beats empty: the page's job is to show what exists.
@@ -396,16 +384,6 @@ describe("cachedRegistry", () => {
     expect(state.calls).toBe(1);
     expect(cached.snapshot()).toEqual(seed);
   });
-
-  it("propagates a failure when it has never had a good document", async () => {
-    const { registry, state } = stubRegistry("remote", []);
-    state.fail = "network down";
-    const cached = cachedRegistry(registry, { ttlMs: 10, now: () => 0 });
-    await expect(cached.index()).rejects.toThrow(/network down/);
-    // And the failed attempt is not cached as a good one.
-    state.fail = null;
-    await expect(cached.index()).resolves.toEqual([]);
-  });
 });
 
 describe("mergeIndexes", () => {
@@ -414,25 +392,20 @@ describe("mergeIndexes", () => {
     name: "@example/penguin-plugin-remote",
   };
 
-  it("concatenates sources in order and reports no failures", async () => {
-    const a = stubRegistry("builtin", [VALID_ENTRY]);
-    const b = stubRegistry("remote", [remoteEntry]);
-    const { entries, failures } = await mergeIndexes([a.registry, b.registry]);
-    expect(entries.map((e) => e.name)).toEqual([VALID_ENTRY.name, remoteEntry.name]);
-    expect(failures).toEqual([]);
-  });
-
-  it("lets the first source win a name@version collision", async () => {
+  it("concatenates sources in order, the first source winning a name@version collision", async () => {
     // What this deployment ships is the truth about it; a published index claiming the same
     // specifier does not get to describe a package the operator already has.
     const mine = { ...VALID_ENTRY, description: "the shipped one" };
     const theirs = { ...VALID_ENTRY, description: "the published one" };
-    const { entries } = await mergeIndexes([
+    const { entries, failures } = await mergeIndexes([
       stubRegistry("builtin", [mine]).registry,
-      stubRegistry("remote", [theirs]).registry,
+      stubRegistry("remote", [theirs, remoteEntry]).registry,
     ]);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]!.description).toBe("the shipped one");
+    expect(entries.map((e) => [e.name, e.description])).toEqual([
+      [VALID_ENTRY.name, "the shipped one"],
+      [remoteEntry.name, remoteEntry.description],
+    ]);
+    expect(failures).toEqual([]);
   });
 
   it("keeps the other sources when one fails, and names the one that did", async () => {
@@ -447,15 +420,12 @@ describe("mergeIndexes", () => {
 });
 
 describe("the published index source", () => {
-  it("is a release asset on a fixed tag, not an API query", () => {
+  it("is a release asset on a fixed tag; PENGUIN_PLUGIN_INDEX unset reads it, off reads none, a URL replaces it", () => {
     // The tag is never re-pointed — a six-hourly workflow replaces the ASSET — so "latest
     // nightly" is resolved by name and costs no unauthenticated API budget.
     expect(NIGHTLY_INDEX_URL).toBe(
       "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json",
     );
-  });
-
-  it("PENGUIN_PLUGIN_INDEX: unset reads the published one, off reads none, a URL replaces it", () => {
     const at = (value: string | undefined) =>
       resolveServerConfig({ ...(value === undefined ? {} : { PENGUIN_PLUGIN_INDEX: value }) })
         .pluginIndexUrl;
@@ -475,29 +445,20 @@ describe("the route's own merge", () => {
     name: "@example/penguin-plugin-published",
   };
 
-  it("merges the published entries in behind the builtin ones", async () => {
-    const routes = pluginRegistryRoutes({
-      registries: [builtinPluginRegistry(), stubRegistry("published", [published]).registry],
-    });
-    const res = await routes.request("/");
-    const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins.at(-1)!.name).toBe(published.name);
-    expect(body.failures).toEqual([]);
-  });
-
-  it("reports a dead published source instead of hiding it", async () => {
-    const dead = stubRegistry("published", []);
+  it("merges the published entries in behind the builtin ones, and reports a dead source", async () => {
+    const dead = stubRegistry("dead", []);
     dead.state.fail = "published index answered HTTP 404";
     const routes = pluginRegistryRoutes({
-      registries: [builtinPluginRegistry(), dead.registry],
+      registries: [
+        builtinPluginRegistry(),
+        stubRegistry("published", [published]).registry,
+        dead.registry,
+      ],
     });
-    const res = await routes.request("/");
-    const body = (await res.json()) as PluginIndexResponse;
-    // A dead published source shortens the listing; it does not empty it.
-    expect(body.plugins.length).toBeGreaterThan(0);
-    expect(body.failures).toEqual([
-      { source: "published", error: "published index answered HTTP 404" },
-    ]);
+    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    expect(body.plugins.at(-1)!.name).toBe(published.name);
+    // A dead source shortens the listing; it does not empty it.
+    expect(body.failures).toEqual([{ source: "dead", error: "published index answered HTTP 404" }]);
   });
 
   it("with no published source configured, lists the builtin entries alone", async () => {
