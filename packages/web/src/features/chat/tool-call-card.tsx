@@ -18,6 +18,7 @@ import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
+import { routedUrl } from "../../lib/session-machines";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
 import { useTheme } from "../../state/theme";
@@ -424,8 +425,10 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
       output={output}
       outputStreaming={item.outputStreaming}
       images={
+        // Inline bytes live, or a windowed history page's Trace references, which the browser
+        // must fetch from the machine the Session lives on.
         item.images && item.images.length > 0
-          ? { srcs: item.images, alt: S.chat.toolImageAlt }
+          ? { srcs: item.images.map(routedUrl), alt: S.chat.toolImageAlt }
           : undefined
       }
       // A bound subagent: a shortcut row into the subagents panel, shown whatever the card's
