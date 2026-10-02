@@ -38,6 +38,7 @@ import type {
   PluginConfigEntry,
   PluginConfigField,
   PluginConfigOption,
+  PluginConfigPinColumn,
   PluginConfigTableColumn,
   PluginConfigTableRow,
   PluginConfiguration,
@@ -94,13 +95,21 @@ function describedBy(c: Record<string, unknown>): { description?: string; descri
   };
 }
 
-/** A boolean column's pin texts: its tooltip pinned and not. */
-function parsePin(raw: unknown, where: string): NonNullable<PluginConfigTableColumn["pin"]> {
+/** A table's pin column: a boolean column of it, and its tooltip pinned and not. */
+function parsePin(
+  raw: unknown,
+  columns: readonly PluginConfigTableColumn[],
+  where: string,
+): PluginConfigPinColumn {
   const p = (raw ?? {}) as Record<string, unknown>;
   if (typeof p.on !== "string" || typeof p.off !== "string") {
     throw new Error(`${where}.pin needs an on and an off text`);
   }
+  if (columns.find((c) => c.name === p.column)?.type !== "boolean") {
+    throw new Error(`${where}.pin.column must name a boolean column`);
+  }
   return {
+    column: p.column as string,
     on: p.on,
     off: p.off,
     ...(typeof p.onZh === "string" ? { onZh: p.onZh } : {}),
@@ -145,7 +154,6 @@ function parseTable(
       ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
       ...describedBy(c),
       ...(c.type === "enum" ? { options: parseOptions(c.options, at) } : {}),
-      ...(c.type === "boolean" && c.pin !== undefined ? { pin: parsePin(c.pin, at) } : {}),
     };
   });
   if (!Array.isArray(f.rows) || f.rows.length === 0) {
@@ -332,6 +340,9 @@ export function parsePluginConfiguration(
     }
     if (field.type === "table") {
       Object.assign(field, parseTable(f, `${where}: configuration.properties.${name}`));
+      if (f.pin !== undefined) {
+        field.pin = parsePin(f.pin, field.columns ?? [], `${where}: configuration.properties.${name}`);
+      }
       if (f.rowChoice !== undefined) {
         const c = (f.rowChoice ?? {}) as Record<string, unknown>;
         if (typeof c.field !== "string" || typeof c.title !== "string" || c.title === "") {

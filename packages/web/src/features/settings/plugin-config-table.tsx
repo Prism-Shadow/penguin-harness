@@ -11,7 +11,7 @@
  * Each cell is drawn by its column's type: a `string` cell is a borderless box holding the
  * effective text (an empty override shows the declared text, in the page's language; clearing
  * the box or typing the declared text back restores it), which wraps; a `boolean` cell is a
- * switch, or a pin toggle where the column declares `pin`; an `enum` cell is a select, its
+ * switch, or a pin toggle for the column the table's `pin` names; an `enum` cell is a select, its
  * options this machine cannot honour greyed out with the reason. A cell the row locks is not a
  * control at all: it is the value's text alone — a disabled select would read as broken — with
  * "locked" in its accessible name and tooltip. A table with a `rowChoice` gets one more column
@@ -87,6 +87,7 @@ export function ConfigTable({
   const label = localized(field.title, field.titleZh);
   const info = described(field);
   const rowChoice = field.rowChoice;
+  const pin = field.pin;
   // The columns in drawing order: the row choice slots in before the column it names.
   type Slot = { kind: "column"; column: PluginConfigTableColumn } | { kind: "choice" };
   const slots: Slot[] = [];
@@ -103,7 +104,7 @@ export function ConfigTable({
       : slot.column.type === "enum"
         ? WIDTH.enum
         : slot.column.type === "boolean"
-          ? slot.column.pin !== undefined
+          ? field.pin?.column === slot.column.name
             ? WIDTH.pin
             : WIDTH.boolean
           : "";
@@ -215,14 +216,14 @@ export function ConfigTable({
                           <span aria-hidden>{shown}</span>
                         </span>
                       ) : c.type === "boolean" ? (
-                        c.pin !== undefined ? (
+                        pin !== undefined && pin.column === c.name ? (
                           <PinToggle
                             label={cellLabel}
                             pinned={cell === true}
                             tooltip={
                               cell === true
-                                ? localized(c.pin.on, c.pin.onZh)
-                                : localized(c.pin.off, c.pin.offZh)
+                                ? localized(pin.on, pin.onZh)
+                                : localized(pin.off, pin.offZh)
                             }
                             disabled={disabled}
                             onChange={(on) => onCell(row.id, c.name, on)}

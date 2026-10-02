@@ -148,9 +148,9 @@ const PRESETS: PluginConfigField = {
       type: "boolean",
       title: "Pin",
       description: "Pin meaning",
-      pin: { on: "Pinned to the menu", off: "Not in the menu" },
     },
   ],
+  pin: { column: "enabled", on: "Pinned to the menu", off: "Not in the menu" },
   rows: [
     { id: "a", values: { name: "Full Access", mode: "off", enabled: true }, locked: ["mode"] },
     { id: "b", values: { name: "Read Only", mode: "ro", enabled: false } },

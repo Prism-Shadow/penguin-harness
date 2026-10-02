@@ -82,6 +82,13 @@ export const SANDBOX_GROUP = "sandbox";
                 "沙盒打开时新会话的起点：取该行的文件访问、网络与审批方式。改动只影响此后新建的会话。",
               before: "enabled",
             },
+            pin: {
+              column: "enabled",
+              on: "Pinned to the menu",
+              onZh: "已固定到菜单",
+              off: "Not in the menu",
+              offZh: "不在菜单中",
+            },
             columns: [
               {
                 name: "name",
@@ -146,12 +153,6 @@ export const SANDBOX_GROUP = "sandbox";
                 description:
                   "Whether the composer's permission menu lists this row. An unpinned row can still be the default.",
                 descriptionZh: "权限菜单是否列出这一行。未固定的行仍可作为默认。",
-                pin: {
-                  on: "Pinned to the menu",
-                  onZh: "已固定到菜单",
-                  off: "Not in the menu",
-                  offZh: "不在菜单中",
-                },
               },
             ],
             rows: [

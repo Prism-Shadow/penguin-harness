@@ -5485,6 +5485,21 @@ export interface PluginConfigField {
    * ids; the page draws that field only as this column, one radio per row.
    */
   rowChoice?: PluginConfigRowChoice;
+  /**
+   * `table` only: a `boolean` column drawn as a pin toggle rather than a switch — a row pinned
+   * to a list (the sandbox presets in the composer's menu). The texts are its tooltip in each
+   * state. Declared on the table, not the column, so every column keeps one shape.
+   */
+  pin?: PluginConfigPinColumn;
+}
+
+/** A table's pin column: which boolean column, and its tooltip pinned and not. */
+export interface PluginConfigPinColumn {
+  column: string;
+  on: string;
+  onZh?: string;
+  off: string;
+  offZh?: string;
 }
 
 /** A table's single-choice column: the `enum` field it stores into, and its header. */
@@ -5509,11 +5524,6 @@ export interface PluginConfigTableColumn {
   description?: string;
   descriptionZh?: string;
   options?: PluginConfigOption[];
-  /**
-   * `boolean` only: drawn as a pin toggle rather than a switch — a row pinned to a list (the
-   * sandbox presets in the composer's menu). The texts are its tooltip in each state.
-   */
-  pin?: { on: string; onZh?: string; off: string; offZh?: string };
 }
 
 /** One row of a `table` field: its id and its declared cells. */

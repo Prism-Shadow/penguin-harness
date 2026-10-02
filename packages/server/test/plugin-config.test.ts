@@ -548,5 +548,36 @@ describe("a table's row choice", () => {
       /rowChoice\.field must name an enum/,
     );
     expect(() => table({ field: "pick" }, ["a", "b"])).toThrow(/needs a field and a title/);
+    expect(() => table({ field: "pick", title: "Default", before: "nope" }, ["a", "b"])).toThrow(
+      /rowChoice\.before must name a column/,
+    );
+  });
+
+  it("draws a pin only over a boolean column of the table", () => {
+    const pinned = (pin: unknown) =>
+      parsePluginConfiguration(
+        {
+          properties: {
+            rows: {
+              type: "table",
+              title: "Rows",
+              columns: [
+                { name: "name", type: "string", title: "Name" },
+                { name: "on", type: "boolean", title: "Pin" },
+              ],
+              rows: [{ id: "a", values: { name: "A", on: true } }],
+              pin,
+            },
+          },
+        },
+        "acme/package.json",
+      );
+    expect(pinned({ column: "on", on: "Pinned", off: "Not pinned" })!.properties.rows!.pin).toEqual(
+      { column: "on", on: "Pinned", off: "Not pinned" },
+    );
+    expect(() => pinned({ column: "name", on: "Pinned", off: "Not pinned" })).toThrow(
+      /pin\.column must name a boolean column/,
+    );
+    expect(() => pinned({ column: "on", on: "Pinned" })).toThrow(/needs an on and an off text/);
   });
 });
