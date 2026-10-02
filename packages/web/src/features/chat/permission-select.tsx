@@ -13,6 +13,9 @@
  * out rather than hidden, marked with why — with no sandbox backend installed, every preset
  * that confines.
  *
+ * With the server's Sandbox switch off, new Sessions start unconfined and the menu lists the
+ * approval modes alone (permissionMenu); a pick changes only the approval mode.
+ *
  * The menu offers only presets whose approval mode is among the modes the composer passes in
  * (see approval-mode.ts): an organization's Session is not offered an `always-ask` preset unless
  * it is the current one.
@@ -41,11 +44,12 @@ import {
   PERMISSION_LEVEL_TONE,
   firstUnavailableBackend,
   matchPreset,
-  menuPresets,
   permissionLevel,
+  permissionMenu,
   presetBlock,
   presetEffects,
   presetsOf,
+  sandboxSwitchOff,
 } from "../../lib/permission-level";
 import type { LevelBlock, PermissionPick } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
@@ -151,19 +155,35 @@ export function PermissionSelect({
     setShownLevel(level);
     setAnimate(true);
   }
-  const levelName = current !== null ? nameOf(current) : P.custom;
+  // With the Sandbox switch off the menu is the approval modes, so the button names the mode.
+  const switchOff = sandboxSwitchOff(sandbox);
+  const levelName = switchOff
+    ? (S.chat.approvalModeNames[approvalMode] ?? approvalMode)
+    : current !== null
+      ? nameOf(current)
+      : P.custom;
   const summary = [
     `${P.fs}: ${P.fsModes[sandbox.mode] ?? sandbox.mode}`,
     `${P.network}: ${P.networkModes[sandbox.network] ?? sandbox.network}`,
     `${P.approval}: ${S.chat.approvalModeNames[approvalMode] ?? approvalMode}`,
   ].join(" · ");
   const pick = (p: SessionSandboxPreset) => {
+    if (current?.id === p.id) {
+      setOpen(false);
+      return;
+    }
+    save({ approvalMode: p.approvalMode, sandbox: { mode: p.mode, network: p.network } });
+  };
+  // Switch off: only the approval mode changes; the Session keeps its own policy.
+  const pickMode = (mode: ApprovalMode) => {
+    if (mode === approvalMode) {
+      setOpen(false);
+      return;
+    }
+    save({ approvalMode: mode, sandbox: { mode: sandbox.mode, network: sandbox.network } });
+  };
+  const save = (next: PermissionPick) => {
     setOpen(false);
-    if (current?.id === p.id) return;
-    const next: PermissionPick = {
-      approvalMode: p.approvalMode,
-      sandbox: { mode: p.mode, network: p.network },
-    };
     setPending(next);
     const saved = onChange(next);
     if (saved instanceof Promise) void saved.finally(() => setPending(null));
@@ -202,7 +222,7 @@ export function PermissionSelect({
       >
         <Menu label={P.label} density="sm" className="py-1">
           {/* The two views say the same policy: what the presets cannot show is flagged here. */}
-          {sandbox.advanced === true && (
+          {sandbox.advanced === true && !switchOff && (
             <div
               role="presentation"
               data-tooltip={P.advancedHint}
@@ -211,7 +231,18 @@ export function PermissionSelect({
               {P.advancedActive}
             </div>
           )}
-          {menuPresets(presets, approvalModes, current).map((p) => {
+          {permissionMenu(sandbox, approvalModes, current).map((row) => {
+            if (row.kind === "approval") {
+              return (
+                <MenuRadioItem
+                  key={row.mode}
+                  label={S.chat.approvalModeNames[row.mode] ?? row.mode}
+                  checked={row.mode === approvalMode}
+                  onSelect={() => pickMode(row.mode)}
+                />
+              );
+            }
+            const p = row.preset;
             const block = presetBlock(sandbox, p);
             return (
               <Choice

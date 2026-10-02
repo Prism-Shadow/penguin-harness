@@ -550,6 +550,24 @@ export const en: Strings = {
       `conversation keep a separate ${imageMb}MB limit that this setting does not raise — an ` +
       `inline image enters the conversation and the Trace, where its size is paid again on ` +
       `every history page and resume.`,
+    /** The fold holding the fields a settings group marks advanced. */
+    pluginAdvanced: "Advanced",
+    /** A table cell its row does not let change, beside the lock mark. */
+    pluginCellLocked: "Fixed for this row",
+    pluginCellOn: "On",
+    pluginCellOff: "Off",
+    /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
+    sandboxBackendPrompt: {
+      title: "Install a sandbox backend",
+      body: (machine: string, pkg: string) =>
+        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkg}?`,
+      cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
+      install: "Install",
+      installing: "Installing…",
+      later: "Not now",
+      dontAsk: "Don't ask again for this machine",
+      noProject: "Open a Project first: the backend is installed into the current Project.",
+    },
     theme: "Theme",
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",

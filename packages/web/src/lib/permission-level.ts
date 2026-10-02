@@ -210,6 +210,40 @@ export function menuPresets(
   );
 }
 
+/**
+ * Whether the server's Sandbox switch is off: new Sessions start unconfined, and the menu
+ * offers the approval modes alone. Only an explicit false counts — a server that does not
+ * report the switch keeps the presets menu it always had.
+ */
+export function sandboxSwitchOff(sandbox: Pick<SessionSandbox, "switchOn">): boolean {
+  return sandbox.switchOn === false;
+}
+
+/** One row of the composer's permission menu. */
+export type PermissionMenuRow =
+  | { kind: "preset"; preset: SessionSandboxPreset }
+  | { kind: "approval"; mode: ApprovalMode };
+
+/**
+ * What the composer's permission menu lists. With the Sandbox switch on, the presets
+ * (`menuPresets`); with it off, the approval modes the Session may be given, in the picker's
+ * order — a pick then changes only the approval mode and keeps the Session's own policy, which
+ * a Session created while the switch was on still holds.
+ */
+export function permissionMenu(
+  sandbox: SessionSandbox,
+  approvalModes: readonly ApprovalMode[],
+  current: SessionSandboxPreset | null,
+): PermissionMenuRow[] {
+  if (sandboxSwitchOff(sandbox)) {
+    return approvalModes.map((mode) => ({ kind: "approval", mode }));
+  }
+  return menuPresets(presetsOf(sandbox), approvalModes, current).map((preset) => ({
+    kind: "preset",
+    preset,
+  }));
+}
+
 /** Why this server cannot enforce a preset, or null when it can: its mode's block, else its network's. */
 export function presetBlock(
   sandbox: SessionSandbox,
