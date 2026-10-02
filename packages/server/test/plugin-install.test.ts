@@ -3,7 +3,7 @@
  * each platform, and which line of its stderr a failure shows.
  */
 import { describe, expect, it } from "vitest";
-import { npmCommand, npmReason, PluginInstallError } from "../src/plugin/install.js";
+import { npmCommand, npmEnv, npmReason, PluginInstallError } from "../src/plugin/install.js";
 
 describe("npmReason", () => {
   const err = new Error("Command failed: npm install");
@@ -56,5 +56,24 @@ describe("npmCommand", () => {
     for (const bad of ['a"b', "%PATH%", "a\r\nb"]) {
       expect(() => npmCommand(["install", bad], "win32")).toThrow(PluginInstallError);
     }
+  });
+});
+
+describe("npmEnv", () => {
+  it("appends the running runtime's directory to PATH, after the user's own", () => {
+    const env = { PATH: "/usr/local/bin:/usr/bin", HOME: "/home/u" };
+    expect(npmEnv(env, "/opt/penguin/node/bin", ":")).toEqual({
+      PATH: "/usr/local/bin:/usr/bin:/opt/penguin/node/bin",
+      HOME: "/home/u",
+    });
+    expect(env.PATH).toBe("/usr/local/bin:/usr/bin");
+  });
+
+  it("extends the key Windows spells, and adds nothing already there", () => {
+    expect(npmEnv({ Path: "C:\\Windows" }, "C:\\penguin\\node", ";")).toEqual({
+      Path: "C:\\Windows;C:\\penguin\\node",
+    });
+    expect(npmEnv({ PATH: "/a:/rt" }, "/rt", ":")).toEqual({ PATH: "/a:/rt" });
+    expect(npmEnv({}, "/rt", ":")).toEqual({ PATH: "/rt" });
   });
 });

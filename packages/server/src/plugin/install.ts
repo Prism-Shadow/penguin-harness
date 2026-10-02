@@ -92,7 +92,7 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
       shell: invocation.shell,
-      env: process.env,
+      env: npmEnv(process.env),
     });
     return stdout;
   } catch (err) {
@@ -337,8 +337,7 @@ function cmdQuote(arg: string): string {
 }
 
 /**
- * The npm on PATH, the way every other npm consumer on the machine runs it (the CLI bundle's
- * launcher appends its own runtime to PATH, so a machine without npm still has one). On Windows that is
+ * The npm on PATH, the way every other npm consumer on the machine runs it. On Windows that is
  * `npm.cmd`, which Node starts only through a shell (EINVAL without one), so there it runs
  * through cmd.exe with every argument quoted.
  */
@@ -393,6 +392,25 @@ export class NpmPluginPackages implements PluginPackages {
   remove(root: string, name: string): Promise<void> {
     return removePluginPackage(root, name);
   }
+}
+
+/**
+ * The environment of the fetch's npm, and of nothing else: `env` with the directory of the Node
+ * runtime running this server appended to PATH. A CLI bundle carries its own runtime, npm
+ * beside node, so a machine without npm still fetches; appended rather than prepended, a user's
+ * own npm keeps coming first. Only this child sees it: the server's PATH, and every agent
+ * command inheriting it, stay as they were. Windows spells the variable `Path`, so the key
+ * already present is the one extended.
+ */
+export function npmEnv(
+  env: NodeJS.ProcessEnv,
+  runtimeDir: string = path.dirname(process.execPath),
+  delimiter: string = path.delimiter,
+): NodeJS.ProcessEnv {
+  const key = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  const dirs = (env[key] ?? "").split(delimiter).filter((d) => d !== "");
+  if (dirs.includes(runtimeDir)) return { ...env };
+  return { ...env, [key]: [...dirs, runtimeDir].join(delimiter) };
 }
 
 /** Library content stays in its prefix; server modules load only from an activated store entry. */

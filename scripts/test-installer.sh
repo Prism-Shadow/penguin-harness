@@ -47,18 +47,7 @@ for marker in 'PENGUIN_WEB_DIST:-$DIR/web' '$DIR/node/bin/node' '$DIR/lib/dist/p
   grep -qF "$marker" "$LAUNCHER_SH" || fail_test "the POSIX launcher does not carry $marker"
 done
 sh -n "$LAUNCHER_SH" || fail_test "the POSIX launcher is not valid sh"
-# The bundled runtime's bin/ goes to the END of PATH: a plugin fetch finds its npm on a
-# machine without one, and the user's own node/npm keep winning for the fetch and the agent.
-LAUNCH_DIR="$(mktemp -d)"
-mkdir -p "$LAUNCH_DIR/bin" "$LAUNCH_DIR/node/bin"
-cp "$LAUNCHER_SH" "$LAUNCH_DIR/bin/penguin"
-printf '#!/bin/sh\necho "$PATH"\n' > "$LAUNCH_DIR/node/bin/node"
-chmod +x "$LAUNCH_DIR/bin/penguin" "$LAUNCH_DIR/node/bin/node"
-launched_path="$(PATH=/usr/bin:/bin "$LAUNCH_DIR/bin/penguin")"
-[ "$launched_path" = "/usr/bin:/bin:$(cd -P "$LAUNCH_DIR" && pwd)/node/bin" ] \
-  || fail_test "the POSIX launcher must append node/bin to PATH, got: $launched_path"
-rm -rf "$LAUNCH_DIR"
-for marker in '%DIR%\web' '%DIR%\node\node.exe' '%DIR%\lib\dist\penguin.js' 'set "PATH=%PATH%;%DIR%\node"'; do
+for marker in '%DIR%\web' '%DIR%\node\node.exe' '%DIR%\lib\dist\penguin.js'; do
   grep -qF "$marker" "$LAUNCHER_CMD" || fail_test "the Windows launcher does not carry $marker"
 done
 # .gitattributes keeps this one CRLF, the only form cmd.exe is fully reliable with.

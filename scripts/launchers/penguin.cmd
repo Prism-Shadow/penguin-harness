@@ -3,10 +3,6 @@ rem penguin CLI launcher, installed as bin\penguin.cmd inside the program direct
 rem Runs the CLI on the Node runtime bundled at node\ when this package carries one,
 rem otherwise on system Node (>= 24). The web assets sit beside it at web\.
 rem
-rem The bundled runtime's directory (its npm.cmd included) is appended to PATH, never
-rem prepended: a plugin fetch runs the npm on PATH, and a machine without npm then still has
-rem one, while a user's own node and npm keep coming first for the fetch and every agent command.
-rem
 rem There is deliberately no penguin.ps1 sibling: PowerShell prefers .ps1 over .cmd on
 rem PATH, and client Windows defaults to the Restricted execution policy, which would
 rem then break the plain `penguin` command. Batch files are exempt from that policy.
@@ -15,7 +11,6 @@ set "DIR=%~dp0.."
 if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"
 if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"
 if exist "%DIR%\node\node.exe" (
-  set "PATH=%PATH%;%DIR%\node"
   "%DIR%\node\node.exe" "%DIR%\lib\dist\penguin.js" %*
 ) else (
   node "%DIR%\lib\dist\penguin.js" %*
