@@ -71,13 +71,14 @@ dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
 
 A hover hint shows only where its words are not on screen (`hintAllowedFor` in the UI package's
 tooltip.tsx): an icon-only control, a wordless mark, an input, or text that is cut off. Three
-glyphs are read without one and must not carry `data-tooltip` — the circled "?" beside a title
-(`InfoPopover`), a close or clear × beside the thing it dismisses, and a fold chevron under the
-rows it folds. They keep their `aria-label`; that name is for assistive technology, not a panel.
-Add a hint to such a mark only when it says something the glyph cannot: a shortcut ("Close (Esc)"),
-a consequence ("Kill this terminal"), the subject when it is not beside it. A hint on text that may
-truncate shows that text whole (plus an id when one helps), never the verb of the click — the
-underline already says it opens.
+glyphs are read without one — the circled "?" beside a title (`InfoPopover`), a close or clear ×
+beside the thing it dismisses, and a fold chevron under the rows it folds — so they carry no
+`data-tooltip` unless the hint says something the glyph cannot: a shortcut ("Close (Esc)"), a
+consequence ("Kill this terminal"), the subject when it is not beside it. That is why `DockTabs`'
+close × keeps its hint (the shortcut; on a terminal tab, the consequence) while the password
+banner's × and a browser tab's × have none. Either way the mark keeps its `aria-label`; that name
+is for assistive technology, not a panel. A hint on text that may truncate shows that text whole
+(plus an id when one helps), never the verb of the click — the underline already says it opens.
 
 ### Which disclosure — the "?" or the fold
 

@@ -81,7 +81,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await page.waitForTimeout(200);
   // The header's running status: the turning glyph (a live status named 运行中) and its word.
   const runningStatus = page
-    .locator("span", { has: page.getByRole("status", { name: "运行中" }) })
+    .locator("span", { has: page.getByRole("status", { name: "运行中", exact: true }) })
     .filter({ hasText: "运行中" })
     .first();
   const tokenTotal = page.locator('span[data-tooltip="Token 累计（Token）"]');

@@ -118,10 +118,10 @@ export function TitleButton({
 
 /**
  * A cut-off line's whole text for its hint: the title with the id after it, or the id alone when
- * no title is known (a stand-in title that is the id itself counts as none).
+ * no title is known (a blank title, or a stand-in that is the id itself, counts as none).
  */
 export function titledHint(title: string | undefined, id: string): string {
-  return title === undefined || title === id ? id : `${title} · ${id}`;
+  return title === undefined || title.trim() === "" || title === id ? id : `${title} · ${id}`;
 }
 
 /** The label of an organization's headline state. */
