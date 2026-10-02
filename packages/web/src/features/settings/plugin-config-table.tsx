@@ -14,15 +14,16 @@
  * Every control is named "<row> · <column>" for a screen reader, the row's name in the page's
  * language.
  */
+import { useLayoutEffect, useRef } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import {
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
-  Input,
   Select,
   Switch,
+  Textarea,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -109,7 +110,11 @@ export function ConfigTable({
                       : String(value);
                   };
                   return (
-                    <td key={c.name} className="whitespace-nowrap px-1 py-1 align-middle">
+                    <td
+                      key={c.name}
+                      // A text cell (the preset's name) wraps; the controls keep to one line.
+                      className={`px-1 py-1 align-middle ${c.type === "string" && !locked ? "" : "whitespace-nowrap"}`}
+                    >
                       {locked ? (
                         <span
                           aria-label={`${cellLabel}: ${c.type === "boolean" ? String(cell) : optionTitle(cell)} (${S.settings.pluginCellLocked})`}
@@ -177,23 +182,14 @@ export function ConfigTable({
                           })}
                         </Select>
                       ) : (
-                        <Input
-                          size="sm"
-                          aria-label={cellLabel}
+                        <WrappingNameBox
+                          label={cellLabel}
                           // The effective text: an empty override is the declared text, in the
                           // page's language. Typing it back, or clearing the box, restores it.
                           value={typeof cell === "string" && cell !== "" ? cell : declared}
                           disabled={disabled}
-                          autoComplete="off"
-                          // Borderless until pointed at or focused: the row reads as a table
-                          // of names, and the box shows itself when it is about to be edited.
-                          className="!w-[7rem] !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
-                          onChange={(e) =>
-                            onCell(
-                              row.id,
-                              c.name,
-                              e.target.value === declared ? "" : e.target.value,
-                            )
+                          onChange={(value) =>
+                            onCell(row.id, c.name, value === declared ? "" : value)
                           }
                         />
                       )}
@@ -227,3 +223,48 @@ export function ConfigTable({
     </div>
   );
 }
+
+/**
+ * A one-line text value that wraps instead of clipping: a name longer than the column (a
+ * "Workspace Write with Ask") reads whole on two lines, where an <input> could only cut it off.
+ * The box grows to its content; Enter and pasted line breaks never put a newline in the value.
+ * Borderless until pointed at or focused: the row reads as a table of names, and the box shows
+ * itself when it is about to be edited.
+ */
+function WrappingNameBox({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (box === null) return;
+    box.style.height = "auto";
+    box.style.height = `${box.scrollHeight}px`;
+  }, [value]);
+  return (
+    <Textarea
+      ref={ref}
+      size="sm"
+      rows={1}
+      aria-label={label}
+      value={value}
+      disabled={disabled}
+      autoComplete="off"
+      spellCheck={false}
+      className="!w-[7rem] resize-none overflow-hidden !px-2 !py-1 !leading-snug !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.preventDefault();
+      }}
+      onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/g, " "))}
+    />
+  );
+}
+

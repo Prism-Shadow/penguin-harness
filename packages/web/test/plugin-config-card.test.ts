@@ -65,10 +65,12 @@ describe("the settings card", () => {
         locale: "en",
       }),
     );
-    const inputs = html.match(/<input[^>]*>/g) ?? [];
-    const box = (row: string) => inputs.find((i) => i.includes(`aria-label="${row} · Name"`));
-    expect(box("Full Access")).toContain('value="Full Access"');
-    expect(box("Read Only")).toContain('value="Look only"');
+    // A wrapping box: a <textarea>, whose value renders as its content.
+    const boxes = html.match(/<textarea[^>]*>[^<]*<\/textarea>/g) ?? [];
+    const box = (row: string) => boxes.find((b) => b.includes(`aria-label="${row} · Name"`));
+    expect(box("Full Access")).toMatch(/>Full Access<\/textarea>$/);
+    expect(box("Read Only")).toMatch(/>Look only<\/textarea>$/);
+    expect(box("Read Only")).toContain('rows="1"');
     expect(html).not.toContain("placeholder=");
   });
 });
