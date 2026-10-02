@@ -12,6 +12,7 @@ import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
 import {
   baseStacks,
   focusedProposal,
+  graphGeometry,
   graphTops,
   layoutGraph,
   rowOfProposal,
@@ -233,5 +234,17 @@ describe("topDown", () => {
     const widths = rowWidths(layout.rows);
     expect(widths[0]).toBe(1); // the base
     expect(Math.max(...widths)).toBe(layout.lanes);
+  });
+});
+
+describe("graphGeometry", () => {
+  it("scales every measure with the root font-size the theme's text size sets", () => {
+    const base = graphGeometry(16);
+    const large = graphGeometry(20);
+    expect(base.row).toBe(60);
+    expect(base.lane).toBe(16);
+    expect(large.row / base.row).toBe(20 / 16);
+    expect(large.lane / base.lane).toBe(20 / 16);
+    expect(large.rowY(2)).toBeCloseTo(2.5 * large.row);
   });
 });

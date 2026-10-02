@@ -201,3 +201,54 @@ export function topDown(layout: GraphLayout): GraphLayout {
       .reverse(),
   };
 }
+
+/**
+ * The drawn graph's measures, in rem: the theme's text size sets the root font-size, so the
+ * rows, lanes and dots grow and shrink with the text they sit beside. `graphGeometry` turns
+ * them into the px the SVG needs for one root font-size.
+ */
+const ROW_REM = 3.75;
+const LANE_REM = 1;
+const DOT_REM = 0.28;
+const TEXT_GAP_REM = 0.625;
+
+export interface GraphGeometry {
+  row: number;
+  lane: number;
+  dot: number;
+  textGap: number;
+  laneX: (lane: number) => number;
+  rowY: (row: number) => number;
+  /**
+   * One edge, drawn from the child's dot to its parent's: straight when they share a lane,
+   * otherwise along the child's lane and bending into the parent's lane right beside the parent.
+   */
+  edgePath: (child: number, childLane: number, parent: number, parentLane: number) => string;
+}
+
+export function graphGeometry(remPx: number): GraphGeometry {
+  const row = ROW_REM * remPx;
+  const lane = LANE_REM * remPx;
+  const laneX = (l: number): number => l * lane + lane / 2 + 2;
+  const rowY = (r: number): number => r * row + row / 2;
+  return {
+    row,
+    lane,
+    dot: DOT_REM * remPx,
+    textGap: TEXT_GAP_REM * remPx,
+    laneX,
+    rowY,
+    edgePath: (child, childLane, parent, parentLane) => {
+      const x1 = laneX(childLane);
+      const y1 = rowY(child);
+      const x2 = laneX(parentLane);
+      const y2 = rowY(parent);
+      if (x1 === x2) return `M${x1} ${y1}V${y2}`;
+      // The bend sits beside the parent, on the child's side: above it when the child is drawn
+      // above (bottom-up), below it when the child is drawn below (top-down).
+      const dir = child < parent ? -1 : 1;
+      const bend = y2 + (dir * row) / 2;
+      return `M${x1} ${y1}V${bend}C${x1} ${y2 + (dir * row) / 6} ${x2} ${bend - (dir * row) / 6} ${x2} ${y2}`;
+    },
+  };
+}
