@@ -1,8 +1,8 @@
-# ubuntu CI 分片运行插件套件
+# ubuntu CI 分片运行插件套件，CI 要求的沙盒实时套件不再能跳过
 
 - **Date:** 2026-09-28
 - **Type:** process
-- **Scope:** `ci`
+- **Scope:** `ci`, `plugins/sandbox-bwrap`, `plugins/sandbox-dsh`, `plugins/sandbox-seatbelt`
 - **PR:** [#872](https://github.com/Prism-Shadow/penguin-harness/pull/872)
 
 [English](2026-09-28-ci-ubuntu-runs-plugin-suites.md)
@@ -11,6 +11,7 @@ ubuntu 的 `rest` 测试分片逐个点名所跑的包，因此 `plugins/` 下�
 
 ## 详情
 
-- ubuntu 的 `rest` 分片改为与 macOS、Windows 相同的「递归＋排除」写法：除 core、server、web、ui、cli（它们各有自己的分片）外全部运行。新增的包默认就会被调度，不再依赖有人记得把它列进去。
-- 该分片构建 `sandbox-bwrap`，使其实时套件用插件自带（vendored）的 bwrap 做围堵，而不是 runner 的 PATH 上的那一个。
-- 测试之前新增一步：为该分片解除 Ubuntu 24.04 的 AppArmor 对非特权 user namespace 的限制，并打印主机的 user namespace 设置与 `bwrap` 路径，以便区分「实时套件被跳过」与「产品侧拒绝」。
+- ubuntu 的 `rest` 分片改为与 macOS、Windows 相同的「递归＋排除」写法：除 core、server、web、ui、cli（它们各有自己的分片）外全部运行。新增的包默认就会被调度，不再依赖有人记得把它列进去。构建清单与 macOS、Windows 的相同。
+- `PENGUIN_SANDBOX_LIVE`（逗号分隔的后端名：`bwrap`、`dsh`、`seatbelt`）声明一次运行必须真跑的沙盒实时套件。被点名的后端探测失败时，其实时套件判红并带出探测失败的原因（bwrap 在 Ubuntu 上即点名 user namespace 开关），不再跳过；未点名的后端打不开时照旧跳过。CI 在 `rest` 分片上设置它：ubuntu 为 `bwrap,dsh`，macOS 为 `seatbelt,dsh`。
+- `sandbox-bwrap` 的测试在插件自带的 bubblewrap 不在位时自行取到位：vitest 的 global setup 在 Linux 上调用 `scripts/vendor-bwrap.mjs`（按 sha256 固定，缓存于 `node_modules/.cache`）；已在位时什么都不做，非 Linux 上也什么都不做。只跑测试也能测到用户拿到的那一个程序，CI 也不再为此构建该插件。
+- 该分片在测试前新增「Allow unprivileged user namespaces」一步，把 `kernel.apparmor_restrict_unprivileged_userns` 设为 0：Ubuntu 23.10 起只允许带 AppArmor 配置的程序创建非特权 user namespace，而自带的 bwrap 没有配置。

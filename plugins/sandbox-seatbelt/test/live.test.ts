@@ -3,9 +3,10 @@
  * core's command sessions, real kernel denials.
  *
  * Host-gated — this suite can only run where Seatbelt exists, so it skips everywhere
- * else and profile.test.ts carries the deterministic coverage. Written to be the exact
- * counterpart of the bwrap package's live suite, so the two backends are held to the
- * same behavioral bar.
+ * else and profile.test.ts carries the deterministic coverage — unless the run names
+ * `seatbelt` in PENGUIN_SANDBOX_LIVE, and then a host that cannot open it fails with the
+ * reason (see liveSuite below). Written to be the exact counterpart of the bwrap
+ * package's live suite, so the two backends are held to the same behavioral bar.
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -22,14 +23,42 @@ const provider = createSeatbeltProvider();
 /** null = spawn unconfined; otherwise confine under this policy (workspaceRoot filled per spawn). */
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
-const usable = (() => {
+/**
+ * Whether a live suite runs, skips, or fails, given why this host cannot open its backend
+ * (null: it can). PENGUIN_SANDBOX_LIVE is a comma-separated list of the backends whose live
+ * suites a run REQUIRES: CI sets it per platform, so a host that stops opening a backend turns
+ * the run red with the probe's reason instead of skipping — a skip reads like a pass. A backend
+ * the run does not name skips where it cannot open, as on a developer's machine.
+ *
+ * A copy of the one in sandbox-bwrap's live suite, where its unit test lives: three test files
+ * read one environment variable, and the three plugins share no test-only package to hold it
+ * (each depends on core alone, which is no place for a test knob). Keep the copies identical.
+ */
+function liveSuite(
+  backend: string,
+  cannotOpen: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): "run" | "skip" | { fail: string } {
+  if (cannotOpen === null) return "run";
+  const required = (env.PENGUIN_SANDBOX_LIVE ?? "").split(",");
+  if (!required.some((name) => name.trim() === backend)) return "skip";
+  return {
+    fail: `PENGUIN_SANDBOX_LIVE requires the ${backend} live suite, and this host cannot open it: ${cannotOpen}`,
+  };
+}
+
+/** Why this host cannot open the suite (null: it can) — the reason the backend refused with. */
+const cannotOpen = (() => {
   try {
     provider.confine(["true"], { mode: "read-only", workspaceRoot: ws });
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
   }
 })();
+
+const verdict = liveSuite("seatbelt", cannotOpen);
+const usable = verdict === "run";
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
@@ -54,6 +83,12 @@ afterAll(() => {
   rmSync(ws, { recursive: true, force: true });
   rmSync(outsideProbe, { force: true });
 });
+
+if (typeof verdict === "object") {
+  it("penguin-seatbelt live enforcement opens on this host", () => {
+    throw new Error(verdict.fail);
+  });
+}
 
 describe.skipIf(!usable)("penguin-seatbelt live enforcement (host-gated)", () => {
   it("fs-write: the workspace is writable, the world outside it is not", async () => {

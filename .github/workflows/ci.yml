@@ -132,7 +132,13 @@ jobs:
   # roughly balance: core and server are the two long suites and get one each, the rest
   # pair up behind them. `rest` is recursive with exclusions, like macOS and Windows: an
   # explicit list silently drops every package nobody remembered to add (all of plugins/
-  # once was), whereas a new package lands here by default.
+  # once was), whereas a new package lands here by default. Its build list is theirs too,
+  # and prepares no sandbox backend: sandbox-bwrap's tests fetch the bubblewrap the plugin
+  # ships themselves (its vitest global setup), so CI need not know what that takes.
+  #
+  # `live` is PENGUIN_SANDBOX_LIVE: the sandbox backends whose live suites this platform
+  # must run. A named backend whose host probe fails turns the shard red with the probe's
+  # reason instead of skipping; an unnamed one skips where it cannot open, as locally.
   test:
     name: test (${{ matrix.shard }})
     runs-on: ubuntu-latest
@@ -151,39 +157,28 @@ jobs:
             tests: >-
               pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-ui
               --filter @prismshadow/penguin-cli test
-          # sandbox-bwrap is built so its live suite confines with the bwrap the plugin ships
-          # (the build vendors it), not whatever the runner has on PATH.
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-sandbox-bwrap..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code...,@prismshadow/penguin-plugin-discord-bot..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server'
               --filter '!@prismshadow/penguin-web' --filter '!@prismshadow/penguin-ui'
               --filter '!@prismshadow/penguin-cli' test
+            live: bwrap,dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
-      # The Linux sandbox plugins' live suites (sandbox-bwrap, sandbox-dsh) are host-gated:
-      # they skip unless bwrap can build a user namespace, and this is the only runner where
-      # they can open. Ubuntu 24.04 lets only AppArmor-profiled programs do that, and the
-      # vendored bwrap has no profile, so lift the restriction for this shard -- it is a
-      # host prerequisite, the same one the plugin's own error message names. Printed so a
-      # skip in the log can be told apart from a refusal by the product.
-      - name: Let the sandbox live suites open (unprivileged user namespaces)
+      # Ubuntu 23.10 and later let only AppArmor-profiled programs create an unprivileged
+      # user namespace, and some tests here need one. Changing it takes root and changes the
+      # whole machine, so it is a host prerequisite the job sets, not something a test can.
+      - name: Allow unprivileged user namespaces
         if: matrix.shard == 'rest'
-        run: |
-          knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
-          if [ -e "$knob" ]; then
-            echo "apparmor_restrict_unprivileged_userns was $(cat "$knob")"
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          else
-            echo "apparmor_restrict_unprivileged_userns: not present on this kernel"
-          fi
-          echo "unprivileged_userns_clone: $(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo n/a)"
-          echo "bwrap on PATH: $(command -v bwrap || echo none)"
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
+        env:
+          PENGUIN_SANDBOX_LIVE: ${{ matrix.live }}
 
   # The installer bundle and the live-LLM e2e, together because both want a full build and
   # neither is long. The secret is exposed only in its own step (step-level env), so earlier
@@ -236,6 +231,8 @@ jobs:
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             smoke: true
+            # PENGUIN_SANDBOX_LIVE, as on ubuntu: these live suites must run here.
+            live: seatbelt,dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -243,6 +240,8 @@ jobs:
           build: ${{ matrix.build }}
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
+        env:
+          PENGUIN_SANDBOX_LIVE: ${{ matrix.live }}
       - name: Terminal smoke (node-pty under Electron's Node)
         if: matrix.smoke
         run: node packages/desktop/scripts/terminal-smoke.mjs

@@ -4,9 +4,11 @@
  * spawns through core's command sessions, real kernel denials.
  *
  * Host-gated the way DSH gates its own backend e2e: one real confine decides
- * usability, and a host with no usable backend skips. The adaptor is driven DIRECTLY
- * (no SandboxService): what this package owes is that DSH's confinement works behind
- * our interface; routing and settings are the harness's behavior, tested there.
+ * usability, and a host with no usable backend skips — unless the run names `dsh` in
+ * PENGUIN_SANDBOX_LIVE, and then it fails with the reason (see liveSuite below). The
+ * adaptor is driven DIRECTLY (no SandboxService): what this package owes is that DSH's
+ * confinement works behind our interface; routing and settings are the harness's
+ * behavior, tested there.
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -19,21 +21,51 @@ import { loadDshAdaptor } from "../src/index.js";
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-dsh-live-"));
 const outsideProbe = path.join(homedir(), `penguin-dsh-live-${process.pid}.txt`);
 
-const provider: SandboxProvider | null = await loadDshAdaptor().catch(() => null);
+/**
+ * Whether a live suite runs, skips, or fails, given why this host cannot open its backend
+ * (null: it can). PENGUIN_SANDBOX_LIVE is a comma-separated list of the backends whose live
+ * suites a run REQUIRES: CI sets it per platform, so a host that stops opening a backend turns
+ * the run red with the probe's reason instead of skipping — a skip reads like a pass. A backend
+ * the run does not name skips where it cannot open, as on a developer's machine.
+ *
+ * A copy of the one in sandbox-bwrap's live suite, where its unit test lives: three test files
+ * read one environment variable, and the three plugins share no test-only package to hold it
+ * (each depends on core alone, which is no place for a test knob). Keep the copies identical.
+ */
+function liveSuite(
+  backend: string,
+  cannotOpen: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): "run" | "skip" | { fail: string } {
+  if (cannotOpen === null) return "run";
+  const required = (env.PENGUIN_SANDBOX_LIVE ?? "").split(",");
+  if (!required.some((name) => name.trim() === backend)) return "skip";
+  return {
+    fail: `PENGUIN_SANDBOX_LIVE requires the ${backend} live suite, and this host cannot open it: ${cannotOpen}`,
+  };
+}
+
+/** The adaptor, and why this host cannot open the suite (null: it can) — the reason DSH gave. */
+const { provider, cannotOpen } = await (async (): Promise<{
+  provider: SandboxProvider | null;
+  cannotOpen: string | null;
+}> => {
+  let loaded: SandboxProvider | null = null;
+  try {
+    loaded = await loadDshAdaptor();
+    if (loaded === null) return { provider: null, cannotOpen: "the DSH adaptor did not load" };
+    loaded.confine(["true"], { mode: "workspace-write", workspaceRoot: ws });
+    return { provider: loaded, cannotOpen: null };
+  } catch (err) {
+    return { provider: loaded, cannotOpen: err instanceof Error ? err.message : String(err) };
+  }
+})();
 
 /** null = spawn unconfined; otherwise confine under this mode. */
 let mode: "read-only" | "workspace-write" | null = null;
 
-const usable =
-  provider !== null &&
-  (() => {
-    try {
-      provider.confine(["true"], { mode: "workspace-write", workspaceRoot: ws });
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+const verdict = liveSuite("dsh", cannotOpen);
+const usable = verdict === "run";
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
@@ -70,6 +102,12 @@ afterAll(() => {
 // from the runner). What is missing is a cmd-dialect probe set: these probes are POSIX
 // shell (head, /etc/hosts, `(…) & wait`) and the assertions decode UTF-8. TODO(win32):
 // a Windows probe set with UTF-16-tolerant denial matching, as its own change.
+if (typeof verdict === "object") {
+  it("DSH adaptor live enforcement opens on this host", () => {
+    throw new Error(verdict.fail);
+  });
+}
+
 describe.skipIf(!usable || process.platform === "win32")(
   "DSH adaptor live enforcement (host-gated)",
   () => {
