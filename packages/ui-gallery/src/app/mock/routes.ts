@@ -53,6 +53,7 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MeResponse,
+  LanguageIndexResponse,
   MessagesResponse,
   MessagingBindingsResponse,
   ModelBalanceResponse,
@@ -1655,6 +1656,8 @@ const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) 
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
+  // The demo installs no languages plugin: every fence is one the bundle carries or plain.
+  .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
     const name = query.get("name") ?? "";
     return { name, readme: store.f.readmes[name] ?? null };
