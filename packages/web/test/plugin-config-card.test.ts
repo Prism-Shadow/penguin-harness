@@ -79,8 +79,10 @@ describe("the settings card", () => {
     const boxes = html.match(/<textarea[^>]*>[^<]*<\/textarea>/g) ?? [];
     const box = (row: string) => boxes.find((b) => b.includes(`aria-label="${row} · Name"`));
     expect(box("Full Access")).toMatch(/>Full Access<\/textarea>$/);
-    expect(box("Read Only")).toMatch(/>Look only<\/textarea>$/);
-    expect(box("Read Only")).toContain('rows="1"');
+    // A row is named by its effective name, a renamed one by its new name: so is its name box.
+    expect(box("Look only")).toMatch(/>Look only<\/textarea>$/);
+    expect(box("Look only")).toContain('rows="1"');
+    expect(box("Read Only")).toBeUndefined();
     expect(html).not.toContain("placeholder=");
   });
 
