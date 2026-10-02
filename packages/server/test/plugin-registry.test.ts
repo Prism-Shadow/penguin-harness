@@ -231,7 +231,7 @@ describe("plugin readmes", () => {
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
-  it("lists the sandbox backends and language packs in plugins/, each named as that package names itself", async () => {
+  it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {
     const index = await builtinPluginRegistry().index();
     // Valid under the format every registry is held to.
     expect(parsePluginIndex(index, "builtin")).toEqual(index);
@@ -240,7 +240,7 @@ describe("the builtin catalogue and the packages it lists", () => {
       const pkg = packages.get(entry.name);
       expect(pkg, `${entry.name} is listed but is no package in plugins/`).toBeDefined();
       expect(entry.categories, entry.name).toHaveLength(1);
-      expect(["sandbox", "languages"], entry.name).toContain(entry.categories![0]);
+      expect(entry.categories![0], entry.name).toBe("sandbox");
       expect(pkg!.manifest.version, entry.name).toBe(entry.version);
       expect(pkg!.manifest.description, entry.name).toBe(entry.description);
       expect(pkg!.manifest.license, entry.name).toBe(entry.license);
