@@ -35,6 +35,7 @@ import {
   HiddenFileInput,
   Input,
   PrefRow,
+  SettingsGroup,
   USER_AVATAR_SIZE,
   UserAvatar,
   buttonClass,
@@ -131,7 +132,7 @@ export function ProfileSection() {
 
   return (
     <section>
-      <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+      <SettingsGroup>
         <PrefRow label={S.profile.avatar} info={S.profile.avatarInfo}>
           <div className="flex items-center gap-3">
             <UserAvatar
@@ -207,7 +208,7 @@ export function ProfileSection() {
             </Button>
           </div>
         </PrefRow>
-      </div>
+      </SettingsGroup>
       {/* Busy and failed, in the one place both rows can say it: a write here changes the
           sidebar as well as this page, so "it did not happen" has to be stated rather than
           left to the preview looking unchanged. */}

@@ -719,9 +719,9 @@
   }
 
   /* A labelled control row is a table row: a fixed label column, the control left-aligned in the
-     next column and stretched to it (a text control fills it, a switch or a segmented control
-     keeps its own width), the hint under the control. The label takes the md control's block
-     padding so its line sits on the control's first line, and rows separate by the host's own
+     next column at its own width (a switch, a segmented control, a group of selects), the hint
+     under the control. The label keeps the host's offset onto the row's first line and may wrap
+     in its fixed column, its first line still on the control's; rows separate by the host's own
      rules, so a page of them reads like a table. */
   :root[data-theme="geek"] .ui-field {
     display: grid;
@@ -734,11 +734,12 @@
     grid-row: 1;
     grid-column: 1;
     min-width: 0;
-    padding-block: calc(var(--ui-control-py-md) + var(--ui-border-w));
+    white-space: normal;
   }
   :root[data-theme="geek"] .ui-field > [data-slot="control"] {
     grid-row: 1;
     grid-column: 2;
+    justify-content: flex-start;
     min-width: 0;
     max-width: 100%;
   }

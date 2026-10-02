@@ -1,14 +1,18 @@
 /**
  * The collapsible one-liner: a full-width row — status icon, label, optional trailing detail,
  * chevron — that expands to a caller-styled body, or, with no body, the same line held still.
- * Every disclosure row in the transcript (thinking, a compaction's sections, an MCP connection's
- * servers) shares it, so their width, padding, both colour states and the chevron interaction
- * cannot drift apart. The tool cards, the work group and the harness cards (`StepBanner`) keep
- * their own richer rows but read the same class constants below.
+ * It is the one row of the transcript's activity family: a thinking step, a tool call, a
+ * compaction's sections and an MCP connection's servers are each one, and an `ActivityGroup` (the
+ * card) holds them under its head. So their width, padding, both colour states, the chevron
+ * interaction and the anatomy a theme's recipe reads cannot drift apart. The card's head reads
+ * the header constants below, and the pieces both draw (the mark, the progress slot, the
+ * chevron) are the small components at the end of this module.
  */
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
 
 /**
@@ -19,22 +23,33 @@ export const DISCLOSURE_ROW_CLASS =
   "flex w-full items-center gap-2 bg-surface px-3 py-1.5 text-left transition-colors duration-150 hover:bg-surface-muted";
 
 /**
- * Stacked-sticky positioning for rows inside the work group: while a row's expanded body scrolls,
- * the row pins right below the stuck group header (top-4 = the header's -top-4 offset plus its
- * 2rem height). A standalone row (a single-row card) omits it.
+ * Stacked-sticky positioning for rows inside an activity group: while a row's expanded body
+ * scrolls, the row pins right below the stuck group head (top-4 = the head's -top-4 offset plus
+ * its 2rem height).
  */
 export const DISCLOSURE_ROW_STICKY_CLASS = "sticky top-4 z-[4]";
 
-/** The row's text label. */
-export const DISCLOSURE_LABEL_CLASS = "shrink-0 text-xs text-fg-muted";
+/**
+ * The row's text label, minus the state's ink the row appends: the muted ink, the danger ink
+ * when the step failed, so a failure is said by the words as well as by the icon.
+ */
+export const DISCLOSURE_LABEL_CLASS = "shrink-0 text-xs";
 
 /**
- * The header-family row — the work group's "Running / Done" summary bar: a muted ground, taller
- * padding, a stronger hover. A harness card's head (`StepBanner`) uses it, so a compaction or a
- * background task's notice reads like a settled work group.
+ * The layout every activity head shares — an activity group's head, a one-line note: one line of
+ * parts on the head's padding. The fill and the width are the host's.
  */
-export const DISCLOSURE_HEADER_ROW_CLASS =
-  "flex w-full items-center gap-2 bg-surface-muted px-3 py-2 text-left transition-colors duration-150 hover:bg-line-muted";
+export const ACTIVITY_HEAD_CLASS = "flex items-center gap-2 px-3 py-2 text-left";
+
+/** A head that does something answers the pointer with the stronger fill of the muted ground. */
+export const ACTIVITY_HEAD_HOVER_CLASS = "transition-colors duration-150 hover:bg-line-muted";
+
+/**
+ * The header-family row — an activity group's head, the "Running / Done" summary bar of the
+ * agent's work and the title bar of a harness event: a muted ground, taller padding, a stronger
+ * hover.
+ */
+export const DISCLOSURE_HEADER_ROW_CLASS = `w-full bg-surface-muted ${ACTIVITY_HEAD_CLASS} ${ACTIVITY_HEAD_HOVER_CLASS}`;
 
 /** Header-level sticky positioning: pins against the message list's scrollport, one z level above the nested rows. */
 export const DISCLOSURE_HEADER_STICKY_CLASS = "sticky -top-4 z-[5]";
@@ -74,15 +89,17 @@ export const DISCLOSURE_BODY_MD_CLASS =
   "md-body md-body-flush border-t border-line-muted px-3 py-2 text-sm leading-relaxed text-fg-muted";
 
 /**
- * The card a row (or a group of rows) sits in — the work group's chrome. A standalone disclosure
- * row wraps itself in one so its width and framing match the neighbouring groups.
+ * The card a group of rows sits in — an activity group's chrome. It clips rather than hides its
+ * overflow: an overflow-hidden ancestor would become the sticky head's scroll container, and the
+ * head would stick to the card instead of the transcript. Clipping keeps the rounded corners
+ * without that.
  */
 export const DISCLOSURE_CARD_CLASS =
   "anim-msg my-2 overflow-clip rounded-md border border-line bg-surface";
 
 /**
  * What a transcript row is and where it stands, for the `ui-activity` hook: a step of the agent's
- * work (the thinking and tool rows, the work group's header) or an `event`, something the harness
+ * work (the thinking and tool rows, the work group's head) or an `event`, something the harness
  * did or injected (a compaction and its sections, an MCP connection and its servers, a background
  * task settling, an injected message, a trigger, a handoff), so a theme can render every one of
  * them its own way (a sweep while running, a transcript line).
@@ -104,6 +121,18 @@ export function activityState(state: RunState): ActivityMark["state"] {
 }
 
 /**
+ * The activity hook's mark slot, the row's leading mark: a status icon, or a mark naming an event
+ * — a registry glyph's path, drawn in the subtle ink, or a node of the caller's.
+ */
+export function ActivityMarkSlot({ mark }: { mark: ReactNode }) {
+  return (
+    <span data-slot="mark" className="flex shrink-0">
+      {typeof mark === "string" ? <GlyphIcon d={mark} className="text-fg-subtle" /> : mark}
+    </span>
+  );
+}
+
+/**
  * The activity hook's progress slot, rendered only while the step is actually executing (not
  * while it waits on an approval), empty and `hidden`: the default theme draws no bar, and a
  * hidden node leaves no gap in the row's flex spacing, so a theme that draws one sets its own
@@ -113,16 +142,35 @@ export function ActivityProgress({ running }: { running: boolean }) {
   return running ? <span data-slot="progress" aria-hidden className="hidden" /> : null;
 }
 
-export function DisclosureRow({
-  icon,
-  label,
-  trailing,
-  variant = "row",
-  sticky = false,
-  defaultOpen = false,
-  activity,
-  children,
-}: {
+/**
+ * The activity hook's toggle slot, the fold's chevron after the words. `order-last` carries it
+ * past the row's spacer to the far edge unless a theme's recipe keeps it beside them; `hidden`,
+ * it stands in for a chevron button at the row's end (`toggle-end`), and only a theme that keeps
+ * the chevron beside the words shows it.
+ */
+export function ActivityToggle({ open, hidden = false }: { open: boolean; hidden?: boolean }) {
+  return (
+    <span
+      data-slot="toggle"
+      {...(hidden ? { "aria-hidden": true } : {})}
+      className={hidden ? "hidden shrink-0" : "order-last flex shrink-0"}
+    >
+      <Chevron open={open} className="text-fg-subtle" />
+    </span>
+  );
+}
+
+/** The far end of a row that holds more than its own button. */
+export interface DisclosureRowEnd {
+  /** Parts outside the row's button (a marker, an action): a button cannot hold another. */
+  parts?: ReactNode;
+  /** The end chevron's name while collapsed; the interface's word for "expand" by default. */
+  expandLabel?: string;
+  /** The end chevron's name while expanded; the interface's word for "collapse" by default. */
+  collapseLabel?: string;
+}
+
+export interface DisclosureRowProps {
   /** The leading status icon slot (a StatusIcon, matching the thinking and tool rows). */
   icon: ReactNode;
   /**
@@ -130,55 +178,70 @@ export function DisclosureRow({
    * names something (an MCP server) leaves it out and sets the name in `trailing` as a detail.
    */
   label?: string;
-  /** Optional detail between the label and the spacer (a duration, a failure tag). */
+  /** The row's words after the mark and the label (a duration, a failure tag, a tool's name). */
   trailing?: ReactNode;
-  /**
-   * "row" = a line inside the work group (the thinking block's form); "header" = the work
-   * group's own summary-bar form.
-   */
-  variant?: "row" | "header";
-  /** Pins the row while its body scrolls: nested rows under the stuck group header, a header against the scrollport. */
+  /** Pins the row below the stuck group head while its body scrolls. */
   sticky?: boolean;
   defaultOpen?: boolean;
   /** A row of the transcript's work or a harness event: the row carries the `ui-activity` hook with this mark. */
   activity?: ActivityMark;
   /**
-   * The expanded body; the caller styles it (a Markdown body, an output `<pre>`, …). Without one
-   * the row is a static line — no button, no chevron, no hover — so a list mixing rows that open
+   * The step is executing right now, so the progress slot shows; by default whenever the
+   * activity runs. A step waiting on an approval runs but is not in flight.
+   */
+  inFlight?: boolean;
+  /**
+   * The row holds parts after its own button: the row becomes a line holding that button, the
+   * parts, and the chevron as a second button after them, named for what pressing it does. A
+   * row that opens only.
+   */
+  end?: DisclosureRowEnd;
+  /** Shown under the row whatever its collapsed state, before the body (a call's approval). A row that opens only. */
+  under?: ReactNode;
+  /**
+   * The expanded body; the caller styles it (a Markdown body, an output `<pre>`, …), and the row
+   * wraps it in the `body` slot so a theme can treat every row's body alike. Without one the
+   * row is a static line — no button, no chevron, no hover — so a list mixing rows that open
    * with rows that have nothing to show keeps one column.
    */
   children?: ReactNode;
-}) {
+}
+
+export function DisclosureRow({
+  icon,
+  label,
+  trailing,
+  sticky = false,
+  defaultOpen = false,
+  activity,
+  inFlight,
+  end,
+  under,
+  children,
+}: DisclosureRowProps) {
+  const strings = useUiStrings();
   const [open, setOpen] = useState(defaultOpen);
   const rootRef = useRef<HTMLDivElement>(null);
-  const header = variant === "header";
-  const rowClass = header ? DISCLOSURE_HEADER_ROW_CLASS : DISCLOSURE_ROW_CLASS;
-  const stickyClass = header ? DISCLOSURE_HEADER_STICKY_CLASS : DISCLOSURE_ROW_STICKY_CLASS;
-  const labelClass = header
-    ? `${DISCLOSURE_HEADER_TITLE_CLASS} text-fg-muted`
-    : DISCLOSURE_LABEL_CLASS;
+  const ink = activity?.state === "error" ? "text-tone-danger-fg" : "text-fg-muted";
   const parts = (
     <>
-      {icon !== undefined && (
-        <span data-slot="mark" className="flex shrink-0">
-          {icon}
-        </span>
-      )}
+      {icon !== undefined && <ActivityMarkSlot mark={icon} />}
       {label !== undefined && (
-        <span className={labelClass} {...(activity ? { "data-slot": "label" } : {})}>
+        <span
+          className={`${DISCLOSURE_LABEL_CLASS} ${ink}`}
+          {...(activity ? { "data-slot": "label" } : {})}
+        >
           {label}
         </span>
       )}
       {trailing}
-      {activity && <ActivityProgress running={activity.state === "running"} />}
+      {activity && <ActivityProgress running={inFlight ?? activity.state === "running"} />}
     </>
   );
   if (children === undefined || children === null) {
     return (
       <div
-        className={`${activity ? "ui-activity " : ""}flex w-full items-center gap-2 text-left ${
-          header ? "bg-surface-muted px-3 py-2" : "bg-surface px-3 py-1.5"
-        }`}
+        className={`${activity ? "ui-activity " : ""}flex w-full items-center gap-2 bg-surface px-3 py-1.5 text-left`}
         data-kind={activity?.kind}
         data-state={activity?.state}
       >
@@ -187,33 +250,64 @@ export function DisclosureRow({
       </div>
     );
   }
+  const rowClass = `${activity ? "ui-activity " : ""}${sticky ? `${DISCLOSURE_ROW_STICKY_CLASS} ` : ""}${DISCLOSURE_ROW_CLASS}`;
+  const toggle = (): void => {
+    // Collapsing while the row is stuck: its real top sits above the fold, so land the view back
+    // on the row (`nearest` does not move for an expand or an in-view collapse).
+    const willClose = open;
+    setOpen((v) => !v);
+    if (willClose) {
+      requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
+    }
+  };
   return (
     <div ref={rootRef}>
-      <button
-        type="button"
-        onClick={() => {
-          // Collapsing while the row is stuck: its real top sits above the fold, so land the
-          // view back on the row (`nearest` does not move for an expand or an in-view collapse).
-          const willClose = open;
-          setOpen((v) => !v);
-          if (willClose) {
-            requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
-          }
-        }}
-        aria-expanded={open}
-        className={`${activity ? "ui-activity " : ""}${sticky ? `${stickyClass} ` : ""}${rowClass}`}
-        data-kind={activity?.kind}
-        data-state={activity?.state}
-      >
-        {parts}
-        {/* The chevron follows the words; `order-last` carries it past the spacer to the row's far
-            edge unless a theme's recipe keeps it beside them. */}
-        <span data-slot="toggle" className="order-last flex shrink-0">
-          <Chevron open={open} className="text-fg-subtle" />
-        </span>
-        <span className="min-w-0 flex-1" />
-      </button>
-      {open && children}
+      {end === undefined ? (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          className={rowClass}
+          data-kind={activity?.kind}
+          data-state={activity?.state}
+        >
+          {parts}
+          <ActivityToggle open={open} />
+          <span className="min-w-0 flex-1" />
+        </button>
+      ) : (
+        // Two buttons, one disclosure: the row's words, and the chevron at its far end past the
+        // parts that cannot sit inside a button.
+        <div className={rowClass} data-kind={activity?.kind} data-state={activity?.state}>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={toggle}
+            className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
+          >
+            {parts}
+            <ActivityToggle open={open} hidden />
+            <span className="min-w-0 flex-1" />
+          </button>
+          {end.parts}
+          {/* Named for what it does, like every chevron toggle: naming it after the row would
+              give the row two buttons under one name. */}
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={
+              open ? (end.collapseLabel ?? strings.collapse) : (end.expandLabel ?? strings.expand)
+            }
+            onClick={toggle}
+            data-slot="toggle-end"
+            className="flex shrink-0 items-center self-stretch"
+          >
+            <Chevron open={open} className="text-fg-subtle" />
+          </button>
+        </div>
+      )}
+      {under !== undefined && <div data-slot="under">{under}</div>}
+      {open && <div data-slot="body">{children}</div>}
     </div>
   );
 }

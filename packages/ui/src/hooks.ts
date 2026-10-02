@@ -14,7 +14,7 @@
  *
  * | hook               | the job                                                  | anatomy the recipes rely on                           |
  * | ------------------ | -------------------------------------------------------- | ----------------------------------------------------- |
- * | `ui-glass`         | a transient layer over content: menus, popovers, the     | a dialog is `[role="dialog"]`, its head and foot direct children `data-slot="head" \| "foot"`; a menu's rows are `[role="menu"] > [role^="menuitem"]`, a listbox panel's `[role="option"]` children; a tile carries `data-glass="tile"` and its hue as its ink |
+ * | `ui-glass`         | a transient layer over content: menus, popovers, the     | a dialog is `[role="dialog"]`, its head, padded body and foot direct children `data-slot="head" \| "body" \| "foot"` (a caller-owned body carries no slot); a menu's rows are `[role="menu"] > [role^="menuitem"]`, a listbox panel's `[role="option"]` children; a tile carries `data-glass="tile"` and its hue as its ink |
  * |                    | modal card, the floating composer and launcher, a sticky |                                                       |
  * |                    | page header — and a plugin or skill tile, the one glass  |                                                       |
  * |                    | that is not transient                                    |                                                       |
@@ -39,9 +39,10 @@
  * |                    | hosts: the icon renderers' call sites, `NavRow`'s glyph  |                                                       |
  * | `ui-tree`          | a container whose rows nest                              | rows carry `data-depth="0"…"8"`, the last row of a level `data-last="true"`; a row's children may follow it in a `data-branch` element carrying the children's `data-depth` |
  * | `ui-field`         | a labelled control row                                   | children carry `data-slot="label" \| "control"` and optionally `"hint"` |
- * | `ui-activity`      | a row of the transcript's work: a step of the agent's    | `data-kind="thinking" \| "tool" \| "event"`, `data-state="running" \| "done" \| "error"`; descendants may carry `data-slot="label" \| "detail" \| "progress" \| "mark" \| "toggle" \| "toggle-end"` (the progress slot exists only while running, hidden by the host — a recipe that draws it sets `display` itself; `mark` wraps the leading status icon; `toggle` is the fold's chevron after the words, carried to the far edge by `order-last`; `toggle-end` is a chevron button at a row's end that a theme showing `toggle` hides) |
- * |                    | (a thinking row, a tool-call row, a work group's         |                                                       |
- * |                    | header) or an event of the harness's (`StepBanner`,      |                                                       |
+ * | `ui-activity`      | a row of the transcript's work: a step of the agent's    | `data-kind="thinking" \| "tool" \| "event"`, `data-state="running" \| "done" \| "error"`; descendants may carry `data-slot="label" \| "detail" \| "progress" \| "mark" \| "toggle" \| "toggle-end"` (the progress slot exists only while running, hidden by the host — a recipe that draws it sets `display` itself; `mark` wraps the leading status icon; `toggle` is the fold's chevron after the words, carried to the far edge by `order-last`; `toggle-end` is a chevron button at a row's end that a theme showing `toggle` hides); a row that opens holds its expanded body in a `data-slot="body"` element after the row (an `ActivityGroup`'s body is its frame's `body`), and what shows under a row whatever its fold (a call's approval) in a `data-slot="under"` element before the body |
+ * |                    | (a thinking row, a tool-call row — `DisclosureRow` —     |                                                       |
+ * |                    | and the head of the `ActivityGroup` holding them) or an  |                                                       |
+ * |                    | event of the harness's (an `event` `ActivityGroup`,      |                                                       |
  * |                    | `TranscriptNote`)                                        |                                                       |
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
@@ -63,7 +64,8 @@
  * not float: a plugin or skill tile (`SkillTile`, `data-glass="tile"`), a translucent square in
  * the tile's own hue with a hairline edge, a lit top and a deeper foot. Primer and Console have
  * no glass recipe, so a tile keeps its host's tinted square there. Frost's dialog is opaque, its
- * head and foot draw no rule, and a menu's rows are inset bands concentric with the panel.
+ * head and foot draw no rule, the title sits a section title's distance above the body, and a
+ * menu's rows are inset bands concentric with the panel.
  *
  * The three structure hooks (2026-09-19) are how the themes differ in organisation, not only in
  * colour and radius:
@@ -82,12 +84,12 @@
  *   it; the hook guard reads the prop on the call site and holds the enclosing row or header to
  *   the host list. A wrapper that holds only the icon may carry the class itself instead, so a
  *   hidden icon leaves no empty box behind in a flex row.
- * - `ui-tree` marks a list whose rows nest: a file tree, a work group's tool rows under its head,
- *   a harness card's rows under its own (a compaction's sections, an MCP connection's servers),
- *   a plan's sub-steps, the subagent call graph. A host indents its rows itself, by
+ * - `ui-tree` marks a list whose rows nest: a file tree, an activity group's rows under its head
+ *   (a work group's steps, a compaction's sections, an MCP connection's servers), a plan's
+ *   sub-steps, the subagent call graph. A host indents its rows itself, by
  *   `calc(var(--ui-tree-inset) + var(--ui-tree-indent) * depth)`, so every theme's connector
- *   rules land on the same columns; rows directly under the container's own head (a work group's
- *   tool rows, a harness card's) are depth 1, a tree's roots depth 0, and depths past 8 draw
+ *   rules land on the same columns; rows directly under the container's own head (an activity
+ *   group's rows) are depth 1, a tree's roots depth 0, and depths past 8 draw
  *   as 8. Console draws `├─` / `└─` connector rules in CSS (no box, no glyphs in the markup) and
  *   takes the box away from a frame whose body is a tree; Frost indents against a soft guide
  *   rule and keeps its card; Primer keeps today's bordered box. A branch is a plain block
@@ -98,34 +100,49 @@
  *   lay its parts out its own way: Primer keeps the host's layout (label above in a form, label
  *   left and control right in settings); Frost keeps the host's row and sets it as a band in a
  *   soft-filled group, the block's first and last rows rounded; Console sets a tabular row with
- *   a fixed label column (`--ui-field-label-w`) and the control left-aligned in the next, so a
- *   settings page reads
- *   like a table. The hint (or error) may be its own slot or sit inside the label slot.
+ *   a fixed label column (`--ui-field-label-w`) and the control left-aligned in the next, the
+ *   hint under the control, so a settings page reads like a table. The hint (or error) may be its
+ *   own slot or sit inside the label slot. A settings row (`PrefRow`) is a grid whose first line
+ *   is one height in every row — the label slot offset to centre the title's line on it, the
+ *   control slot at least that tall with its content centred — and whose hint is its own slot,
+ *   in the row's second grid row; a recipe that moves the slots keeps that first line.
  *
  * `ui-activity` (2026-09-29) is how a theme renders work in progress without the component
  * knowing which theme runs. The host writes what it knows — the kind of step, its state, and
- * which descendant is the label, the detail (a path, an argument preview, a duration) and the
- * progress slot — and stays a plain row under Primer. Frost adds nothing around the row — no
- * fill, border, ring or halo, the way Codex and macOS show work in progress — and lets a soft
- * highlight in the accent's hue sweep across the label; at rest nothing is added. Console
- * renders a transcript: the label in the mono face at the small rung, uppercase and tracked,
- * muted once done and full ink while running, the detail muted, no box around the row and no
- * fill that moves between rest, hover, open and stuck (a hover changes the ink alone), and a
- * hatched block bar in the progress slot while the step runs; a step in a work group hangs off
- * the `└` its `ui-tree` row draws. Both recipes go still under reduced motion (a plain label,
- * the bar holding one fill) and read as finished at rest. The host's own status icon stays: the
- * recipes add to it, never replace it.
+ * which descendant is the mark, the label, the detail (a path, an argument preview, a duration)
+ * and the progress slot — and stays a plain row under Primer. The hosts are the activity
+ * family's two components, `ActivityGroup` (the card: the agent's work group, and every harness
+ * event that opens) and `DisclosureRow` (a row in it: a thinking step, a tool call, a
+ * compaction's section, an MCP server), and `TranscriptNote`, the family's one-line note, built
+ * from the same head pieces. A failed step's label takes the danger ink from its host in every
+ * theme, so a failure never rests on its mark alone.
+ *
+ * Frost draws the family as words, the way Codex and macOS show work in progress: no status mark
+ * (the mark slot is hidden in the running and done states, so a row reads as its label, its
+ * details and the small chevron after them; an error keeps its cross beside the danger-ink
+ * label), no fill on hover (a hover lifts the label and the details to the body ink, and a
+ * keyboard focus ring is drawn inside the row) and no rules (the card's box, the rule under its
+ * head, the dividers between rows and the top rule of a row's expanded body are transparent) —
+ * nothing around the row, no ring and no halo. While a step runs a soft highlight in the
+ * accent's hue sweeps across its label; at rest nothing is added. Console renders a transcript:
+ * the label in the mono face at the small rung, uppercase and tracked, muted once done and full
+ * ink while running, the detail muted, no box around the row and no fill that moves between
+ * rest, hover, open and stuck (a hover changes the ink alone), and a hatched block bar in the
+ * progress slot while the step runs; a step in a work group hangs off the `└` its `ui-tree` row
+ * draws. Both recipes go still under reduced motion (a plain label, the bar holding one fill)
+ * and read as finished at rest. Primer and Console keep the host's status icon (Console turns a
+ * settled fold's into its ▸ / ▾ mark); only Frost drops it.
  *
  * The kind is `thinking`, `tool` or `event`. An event is something the harness did or injected
  * rather than a step the agent took — a compaction and its sections, an MCP connection and its
  * servers, a background task settling, an injected message, a trigger, attached files, a
- * handoff — written on the work group's anatomy: `StepBanner` for a card that opens,
- * `TranscriptNote` for one line. No recipe branches on the kind, so an event renders as a step
- * in the same state does (settled, or running while a compaction or a connection is in flight),
- * and a harness row reads as a work group in every theme: Primer's card or grey pill, Frost's
- * lineless row with its soft hover, Console's transcript line with the fold mark leading. A
- * hover answers only a row that does something (one that is or holds a button); a note with
- * nothing to open is held still in every theme. A harness row's label is a fixed phrase and
+ * handoff — written on the agent's own anatomy: an `ActivityGroup` of the `event` kind for a
+ * card, `TranscriptNote` for one line. No recipe branches on the kind, so an event renders as a
+ * step in the same state does (settled, or running while a compaction or a connection is in
+ * flight), and a harness row reads as a work group in every theme: Primer's card or grey pill,
+ * Frost's line of words, Console's transcript line with the fold mark leading. A hover answers
+ * only a row that does something (one that is or holds a button); a note with nothing to open is
+ * held still in every theme. A harness row's label is a fixed phrase and
  * never holds a name, since a recipe may recase the label (Console uppercases it): the task,
  * the organization, the skills, the files, the agent, the server or the objective it names sits
  * in a detail, which no recipe recases.

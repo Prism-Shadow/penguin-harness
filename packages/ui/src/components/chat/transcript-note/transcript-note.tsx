@@ -2,11 +2,12 @@
  * A one-line harness note: something the harness did or attached, said in one line with nothing
  * to open — the schedule or the company trigger that started a run, the skills a message
  * invoked, the files it carried, the conversation it was handed off from — and the goal
- * plugin's status line over the composer. It is the one-line sibling of `StepBanner`, on the
- * same anatomy: a frame whose only child is its head, an activity row of the `event` kind,
- * settled. So each theme draws a note the way it draws a settled work group's header: Primer a
- * grey pill at its content's width, Frost a lineless line with the soft rounded hover, Console a
- * transcript line with no box, its label on the small mono rung, uppercased, tracked and muted.
+ * plugin's status line over the composer. It is the one-line sibling of `ActivityGroup`, on the
+ * same anatomy and built from the same head pieces (the mark slot, the head's layout and its
+ * hover): a frame whose only child is its head, an activity row of the `event` kind, settled. So
+ * each theme draws a note the way it draws a settled activity card's head: Primer a grey pill at
+ * its content's width, Frost a lineless line of words, Console a transcript line with no box, its
+ * label on the small mono rung, uppercased, tracked and muted.
  *
  * The label is a fixed phrase and never holds a name: a theme may recase the label, and a file,
  * an agent, a task or a person's objective must read as written. The names go in the subject.
@@ -17,7 +18,7 @@
  * past the label that is text is a detail to the activity hook; the tags keep their own ink.
  *
  * A note that leads somewhere (`action`) is a button, the whole line, with an arrow after its
- * words and the work group header's hover; it is named by the note as one sentence when the
+ * words and the activity head's hover; it is named by the note as one sentence when the
  * caller gives one, since a phrase and a name read side by side are not always one, and the
  * hint is a tooltip only. A subject that may run long (`truncate`) is cut to the line, its whole
  * text kept as the tooltip, and the line never wraps; otherwise the parts wrap onto a second
@@ -27,7 +28,11 @@
  * a user row's column, a steer's chip) decides both, through `className`.
  */
 import type { ReactNode } from "react";
-import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import {
+  ACTIVITY_HEAD_CLASS,
+  ACTIVITY_HEAD_HOVER_CLASS,
+  ActivityMarkSlot,
+} from "../../layout/disclosure-row/disclosure-row";
 
 export interface TranscriptNoteProps {
   /** The leading mark: a registry glyph's path, drawn in the subtle ink, or a node of the caller's. */
@@ -73,11 +78,7 @@ export function TranscriptNote({
   const fill = width === "fill";
   const parts = (
     <>
-      {mark !== undefined && mark !== null && (
-        <span data-slot="mark" className="flex shrink-0">
-          {typeof mark === "string" ? <GlyphIcon d={mark} className="text-fg-subtle" /> : mark}
-        </span>
-      )}
+      {mark !== undefined && mark !== null && <ActivityMarkSlot mark={mark} />}
       <span data-slot="label" className="shrink-0">
         {label}
       </span>
@@ -114,7 +115,7 @@ export function TranscriptNote({
   // The fill is the box's and the head's corners follow it, so a hover tints the whole pill; a
   // theme that takes the box away paints the head itself. The box does not clip, so the focus
   // ring drawn round a head that is a button stays whole.
-  const head = `ui-activity flex min-w-0 flex-1 items-center gap-2 rounded-[inherit] px-3 py-2 text-left text-xs text-fg-muted ${
+  const head = `ui-activity ${ACTIVITY_HEAD_CLASS} min-w-0 flex-1 rounded-[inherit] text-xs text-fg-muted ${
     truncate ? "" : "flex-wrap"
   }`;
   return (
@@ -127,7 +128,7 @@ export function TranscriptNote({
           aria-label={action.name}
           data-tooltip={action.hint}
           onClick={action.onClick}
-          className={`${head} transition-colors duration-150 hover:bg-line-muted hover:text-fg`}
+          className={`${head} ${ACTIVITY_HEAD_HOVER_CLASS} hover:text-fg`}
           data-slot="head"
           data-kind="event"
           data-state="done"

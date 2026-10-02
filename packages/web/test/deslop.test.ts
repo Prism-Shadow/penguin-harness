@@ -93,6 +93,7 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/workspace-select.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
+  "features/settings/trace-import-row.tsx",
   "features/terminal/terminal-keybar.tsx",
 ];
 

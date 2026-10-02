@@ -10,7 +10,7 @@
  * request answered rather than on what was clicked.
  */
 import { useState, useSyncExternalStore } from "react";
-import { PrefRow, Segmented, ToggleRow } from "@prismshadow/penguin-ui";
+import { PrefRow, Segmented, SettingsGroup, ToggleRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   enableNotifications,
@@ -63,7 +63,7 @@ export function GeneralSection() {
           : undefined;
 
   return (
-    <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+    <SettingsGroup>
       <PrefRow label={S.settings.language} info={S.settings.languageInfo}>
         <Segmented options={langOptions} value={lang} onChange={setLang} />
       </PrefRow>
@@ -101,6 +101,6 @@ export function GeneralSection() {
         />
       )}
       <TraceImportRow />
-    </div>
+    </SettingsGroup>
   );
 }

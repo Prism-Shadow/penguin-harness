@@ -3,11 +3,11 @@
  * recorder showing the current chord. Everything applies on the spot — the store writes the
  * browser mirror and the account's prefs — so there is no Save button; the trailing action row
  * only holds "Reset all", which asks first however many shortcuts it would put back: what it
- * undoes is the user's own setup, and nothing brings it back. The rows form a dense list: small
- * type, no rule between rows, the group heading the only divider. A row's hint is a fact about
- * its current state, kept on screen: a conflict with another command first, then a claim on the
- * chord from outside the page (a browser tab never receives ⌘W; ⌘P takes over the browser's
- * Print; the desktop menu also carries ⌘R).
+ * undoes is the user's own setup, and nothing brings it back. Each group is a titled run of the
+ * settings rows every other page uses (`SettingsGroup`, `PrefRow`), so the page keeps their
+ * pitch. A row's hint is a fact about its current state, kept on screen: a conflict with another
+ * command first, then a claim on the chord from outside the page (a browser tab never receives
+ * ⌘W; ⌘P takes over the browser's Print; the desktop menu also carries ⌘R).
  */
 import { useState } from "react";
 import {
@@ -17,6 +17,8 @@ import {
   ICONS,
   ICON_SIZE,
   IconButton,
+  PrefRow,
+  SettingsGroup,
   SettingsSection,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -85,21 +87,17 @@ function ShortcutRow({
 }) {
   const hint = rowHint(cmd, chord, conflicts);
   const overridden = isOverridden(cmd.id);
+  // The row draws a hint in the muted ink; a conflict or a chord the browser keeps says so in
+  // the attention tone instead.
+  const hintNode =
+    hint === null ? undefined : hint.tone === "attention" ? (
+      <span className="text-tone-attention-fg">{hint.text}</span>
+    ) : (
+      hint.text
+    );
   return (
-    <div className="flex items-center justify-between gap-4 py-1.5">
-      <div className="min-w-0">
-        <p className="text-xs font-medium">{S.shortcuts.commands[cmd.id]}</p>
-        {hint !== null && (
-          <p
-            className={`mt-0.5 text-xs ${
-              hint.tone === "attention" ? "text-tone-attention-fg" : "text-fg-muted"
-            }`}
-          >
-            {hint.text}
-          </p>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+    <PrefRow label={S.shortcuts.commands[cmd.id]} hint={hintNode}>
+      <div className="flex items-center gap-1.5">
         {overridden && (
           <IconButton
             variant="ghost"
@@ -113,7 +111,7 @@ function ShortcutRow({
         )}
         <ShortcutRecorder chord={chord} onCommit={(next) => setBinding(cmd.id, next)} />
       </div>
-    </div>
+    </PrefRow>
   );
 }
 
@@ -135,19 +133,20 @@ export function ShortcutsSection() {
         </Button>
       }
     >
-      {groups.map(({ group, commands }) => (
-        <div key={group}>
-          <h3 className="mb-1 text-xs font-medium text-fg-muted">{S.shortcuts.groups[group]}</h3>
-          {commands.map((cmd) => (
-            <ShortcutRow
-              key={cmd.id}
-              cmd={cmd}
-              chord={keymap.get(cmd.id) ?? null}
-              conflicts={conflicts}
-            />
-          ))}
-        </div>
-      ))}
+      <div className="space-y-6">
+        {groups.map(({ group, commands }) => (
+          <SettingsGroup key={group} title={S.shortcuts.groups[group]}>
+            {commands.map((cmd) => (
+              <ShortcutRow
+                key={cmd.id}
+                cmd={cmd}
+                chord={keymap.get(cmd.id) ?? null}
+                conflicts={conflicts}
+              />
+            ))}
+          </SettingsGroup>
+        ))}
+      </div>
       {confirmReset && (
         <ConfirmModal
           open

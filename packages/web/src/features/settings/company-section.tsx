@@ -14,7 +14,13 @@
  * server at once — and the knob stays on until the answer is yes; turning it on does not ask.
  */
 import { useEffect, useState } from "react";
-import { ConfirmModal, SettingsSection, ToggleRow, toastError } from "@prismshadow/penguin-ui";
+import {
+  ConfirmModal,
+  SettingsGroup,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -76,22 +82,23 @@ export function CompanySection() {
   return (
     <SettingsSection>
       <div>
-        <ToggleRow
-          variant="plain"
-          label={S.settings.companyModeServer}
-          checked={companyMode}
-          onChange={(next) => {
-            if (next) void toggle(true);
-            else setConfirmOff(true);
-          }}
-          disabled={!hydrated || busy}
-        />
-        {/* The reason the switch went back, under the switch it went back on. */}
+        <SettingsGroup>
+          {/* The mode is a beta, and this switch signs a whole server up for it: the warning
+              stands under it unconditionally, as the row's hint, rather than behind the page's
+              "?", which is a click away and is read once. */}
+          <ToggleRow
+            label={S.settings.companyModeServer}
+            hint={S.company.betaNotice}
+            checked={companyMode}
+            onChange={(next) => {
+              if (next) void toggle(true);
+              else setConfirmOff(true);
+            }}
+            disabled={!hydrated || busy}
+          />
+        </SettingsGroup>
+        {/* The reason the switch went back, under the row it went back on. */}
         {error !== undefined && <p className={`mt-2 text-xs ${toneInk.danger}`}>{error}</p>}
-        {/* The mode is a beta, and this switch signs a whole server up for it: the warning
-            stands under it unconditionally rather than behind the page's "?", which is a
-            click away and is read once. */}
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.company.betaNotice}</p>
       </div>
       <ConfirmModal
         open={confirmOff}

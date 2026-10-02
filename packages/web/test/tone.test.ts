@@ -20,7 +20,7 @@ const STATUS_FILES = [
   "packages/ui/src/components/icons/status-icon/status-icon.tsx",
   "packages/ui/src/components/icons/activity-icon/activity-icon.tsx",
   "packages/ui/src/components/feedback/badge/badge.tsx",
-  "packages/ui/src/components/chat/step-banner/step-banner.tsx",
+  "packages/ui/src/components/chat/activity-group/activity-group.tsx",
   "packages/web/src/features/chat/goal-banner.tsx",
   "packages/ui/src/components/chat/subagent-chip/subagent-chip.tsx",
   "packages/web/src/features/chat/subagent-chip.tsx",

@@ -81,9 +81,10 @@ const APPENDIX_A = [
  * for the app window; a decorative icon for the rows and headers whose label already says what the
  * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
  * tab, an empty state) — a session row is not a host, its avatar and marks carry information; a
- * tree for a file tree and the steps under a work group's or a harness card's head; a field for a
- * settings row; activity for the transcript's work in progress (the work group's header, a tool
- * call, the thinking row) and for the harness's events (its card and its one-line note).
+ * tree for a file tree and the rows under an activity card's head; a field for a settings row;
+ * activity for the transcript's work in progress and the harness's events — the activity card's
+ * head, its rows (a thinking step, a tool call, a compaction's section, an MCP server) and the
+ * one-line note.
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The composer's card and the slash list that opens over it (W6) float with the menus.
@@ -111,14 +112,13 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
   "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar", "StreamingCaret"],
-  // The transcript's cards (the tool call, the work group, the changes card at a Task's foot, the
-  // harness's card and its one-line note) and the code block, and the page-level boxes (W4): the
-  // card and a table that is its own box.
+  // The transcript's cards (the tool call, the activity card — the work group and the harness's
+  // events — the changes card at a Task's foot, and the one-line note) and the code block, and the
+  // page-level boxes (W4): the card and a table that is its own box.
   "ui-frame": [
     "ToolCallCard",
-    "WorkGroup",
+    "ActivityGroup",
     "ChangesCard",
-    "StepBanner",
     "TranscriptNote",
     "CodeBlock",
     "Card",
@@ -137,9 +137,10 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "Tabs",
     "EmptyState",
   ],
-  "ui-tree": ["FileTree", "WorkGroup", "StepBanner"],
+  "ui-tree": ["FileTree", "ActivityGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],
-  "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow", "StepBanner", "TranscriptNote"],
+  // The activity family: the card, the row (a tool call's included) and the one-line note.
+  "ui-activity": ["ActivityGroup", "DisclosureRow", "TranscriptNote"],
   // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
   // renders through. The charts: the plot frame (its children — the trend, requests, token-bar
   // and score charts — carry parts, not the hook), the token donut, the sparkline and the ring.

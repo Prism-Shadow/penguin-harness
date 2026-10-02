@@ -86,8 +86,10 @@ export function Modal({
             : "rounded-t-lg"
         } border border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0`}
       >
-        {/* The head and the foot name themselves (the glass hook's dialog anatomy), so a theme
-            may draw or drop the rules that part them from the body. */}
+        {/* The head, the body and the foot name themselves (the glass hook's dialog anatomy), so
+            a theme may draw or drop the rules that part them, and close up the space a dropped
+            rule leaves between the title and the content. A `bare` body is the caller's own and
+            carries no slot. */}
         {!headerless && (
           <div
             data-slot="head"
@@ -99,7 +101,13 @@ export function Modal({
             <CloseButton onClose={onClose} label={closeLabel} />
           </div>
         )}
-        {bare ? children : <div className="max-h-[70vh] overflow-y-auto px-4 py-4">{children}</div>}
+        {bare ? (
+          children
+        ) : (
+          <div data-slot="body" className="max-h-[70vh] overflow-y-auto px-4 py-4">
+            {children}
+          </div>
+        )}
         {footer && (
           <div data-slot="foot" className="flex justify-end gap-2 border-t border-line px-4 py-3">
             {footer}

@@ -1,6 +1,6 @@
 /**
  * The session's "Reasoning & Tools" group: binds a run of consecutive thinking and tool-call
- * items to the shared UI package's `WorkGroup`, which draws it and owns its expand policy.
+ * items to the shared UI package's `ActivityGroup`, which draws it and owns its expand policy.
  *
  * What is decided here is the group's state, from the stream model:
  *
@@ -12,8 +12,8 @@
  * - A pending approval anywhere in the group forces it open: the approval buttons live inside.
  * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
  */
-import { WorkGroup } from "@prismshadow/penguin-ui";
-import type { WorkGroupProps } from "@prismshadow/penguin-ui";
+import { ActivityGroup } from "@prismshadow/penguin-ui";
+import type { ActivityGroupProps } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
@@ -45,12 +45,12 @@ function hasPendingApproval(items: ChatItem[], ctx: StreamRenderContext): boolea
   );
 }
 
-/** The group's state as the package's `WorkGroup` takes it, minus the rows. */
+/** The group's state as the package's `ActivityGroup` takes it, minus the rows. */
 export function useWorkGroupState(
   items: ChatItem[],
   ctx: StreamRenderContext,
   isLast: boolean,
-): Omit<WorkGroupProps, "rows"> {
+): Omit<ActivityGroupProps, "rows" | "children"> {
   // Whether any item is in flight right now — also the only window in which the group's span is
   // still growing, which the duration display depends on.
   const stepRunning = items.some((it) => itemActive(it, ctx));
@@ -59,7 +59,7 @@ export function useWorkGroupState(
   const running = (isLast && ctx.taskRunning) || stepRunning;
   const { steps, durationMs, startMs } = summarizeWork(items);
   return {
-    running,
+    state: running ? "running" : "done",
     stepRunning,
     // A group of thinking only is thinking; anything with a tool call in it is tool work.
     kind: items.some((it) => it.kind === "tool_call") ? "tool" : "thinking",
@@ -85,7 +85,7 @@ export function SessionWorkGroup({
 }) {
   const state = useWorkGroupState(items, ctx, isLast);
   return (
-    <WorkGroup
+    <ActivityGroup
       {...state}
       rows={items.map((item) => ({
         key: item.id,

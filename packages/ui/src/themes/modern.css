@@ -574,6 +574,19 @@
     > :is([data-slot="head"], [data-slot="foot"]) {
     border-color: transparent;
   }
+  /* With no rule under it, the head's padding and the body's would add up to a gap that parts
+     the title from what it heads. The title sits above the body as a section title sits above
+     its rows — three space units, as the settings pane spaces its title from the first row — and
+     the body keeps two of them for the focus ring of a field at its top, which its scroller
+     would otherwise clip. A headerless dialog (a confirmation) keeps the host's padding. */
+  :root[data-theme="modern"]
+    .ui-glass[role="dialog"]
+    > [data-slot="head"]:has(+ [data-slot="body"]) {
+    padding-bottom: var(--ui-space-unit);
+  }
+  :root[data-theme="modern"] .ui-glass[role="dialog"] > [data-slot="head"] + [data-slot="body"] {
+    padding-top: calc(var(--ui-space-unit) * 2);
+  }
   /* A plugin or skill tile is a small frosted tile in its own hue, on its host's corner. The
      host sets the hue as its ink, so `currentColor` is the tile's colour: a tenth of it is the
      glass, an inner glow of it deepens the tile toward its foot, a hairline of it is the edge, a
@@ -671,17 +684,22 @@
     border-bottom-color: transparent;
   }
 
-  /* A work group — a frame headed by a step of the agent's work, open or collapsed — is lineless
-     in every state, the way Codex and macOS list work: no card border, no fill, no rule under
-     the header or between the rows. Header and rows sit on the page, painted in its colour so
-     they stay opaque while they stick, spaced by whitespace, and a hover is a soft rounded
-     highlight; a running step adds nothing but the sweep across its label. */
+  /* An activity card — a frame headed by an activity row: the agent's work group, a harness
+     event, a one-line note — is lineless in every state, the way Codex and macOS list work: no
+     card border, no fill, and no rule anywhere in it — none under the head, none between the
+     rows, none atop a row's expanded body (the `body` slot after an activity row, and the parts
+     it holds directly; a code block inside a body keeps its own box). Head and rows sit on the
+     page, painted in its colour so they stay opaque while they stick, spaced by whitespace; a
+     running step adds nothing but the sweep across its label. */
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) {
     border-color: transparent;
     background-color: transparent;
     box-shadow: none;
   }
-  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > * {
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > *,
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="body"],
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="body"] > *,
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="under"] > * {
     border-color: transparent;
   }
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > [data-slot="head"],
@@ -689,16 +707,29 @@
     border-radius: var(--ui-radius-sm);
     background-color: var(--ui-canvas);
   }
-  /* Only a row that does something lights up: a harness note or a server with nothing to open
-     is the same line held still. */
+  /* No fill on hover or open either: a row that does something answers the pointer by lifting
+     its words to the body ink, the line otherwise unchanged; a harness note or a server with
+     nothing to open is held still. The keyboard ring is drawn inside the row, since the card
+     clips at the row's own edges. */
   :root[data-theme="modern"]
     .ui-frame:has(> .ui-activity)
-    > [data-slot="head"]:is(button, :has(button)):hover,
+    > [data-slot="head"]:is(button, :has(button)):hover
+    :is([data-slot="label"], [data-slot="detail"]),
   :root[data-theme="modern"]
     .ui-frame:has(> .ui-activity)
     .ui-tree
-    .ui-activity:is(button, :has(button)):hover {
-    background-color: var(--ui-surface-muted);
+    .ui-activity:is(button, :has(button)):hover
+    :is([data-slot="label"], [data-slot="detail"]) {
+    color: var(--ui-fg);
+  }
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) button.ui-activity:focus-visible {
+    outline-offset: -3px;
+  }
+  /* No status marks: a step reads as its words, its details and the small chevron after them —
+     the sweep across the label says it runs, the label at rest that it settled. An error keeps
+     its mark, the danger cross beside the danger-ink label. */
+  :root[data-theme="modern"] .ui-activity:not([data-state="error"]) [data-slot="mark"] {
+    display: none;
   }
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-tree > [data-depth] {
     border-color: transparent;
@@ -877,10 +908,10 @@
   /* Work in progress is shown the way Codex and macOS show it: nothing around the row — no
      fill, no border, no ring, no halo (a first pass drew a luminous surface; the owner asked
      for the lineless version) — and a soft highlight in the accent's hue sweeping across the
-     label, beside the host's own status mark. At rest (done, error) the row is the host's plain
-     row, so a finished transcript adds nothing. The highlight is a gradient clipped to the
-     label's glyphs and slid across them; parked at either end it shows only the ink, which is
-     what reduced motion shows: a plain label. The slots are found anywhere inside the row (a
+     label, the one running signal once the status mark is hidden (above). At rest (done, error)
+     the row is its plain words, so a finished transcript adds nothing. The highlight is a
+     gradient clipped to the label's glyphs and slid across them; parked at either end it shows
+     only the ink, which is what reduced motion shows: a plain label. The slots are found anywhere inside the row (a
      card nests them in its own button); a work group's header shares the recipe with its rows. */
   :root[data-theme="modern"] .ui-activity[data-state="running"] [data-slot="label"] {
     color: var(--ui-fg);

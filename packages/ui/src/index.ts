@@ -167,13 +167,13 @@ export * from "./components/chat/assistant-text/use-stream-reveal";
 export * from "./components/chat/assistant-text/stream-style";
 export * from "./components/chat/changes-card/changes-card";
 
-// W6-A2 — the transcript's work: the work group and its rows (the thinking row, the tool call and
-// the approval block it holds), the harness's card and its one-line note, and the subagent row.
-export * from "./components/chat/work-group/work-group";
+// W6-A2 — the transcript's work: the activity card (the agent's work group and the harness's
+// events alike) and its rows (the thinking row, the tool call and the approval block it holds),
+// the one-line note, and the subagent row.
+export * from "./components/chat/activity-group/activity-group";
 export * from "./components/chat/thinking-block/thinking-block";
 export * from "./components/chat/tool-call-card/tool-call-card";
 export * from "./components/chat/approval-block/approval-block";
-export * from "./components/chat/step-banner/step-banner";
 export * from "./components/chat/transcript-note/transcript-note";
 export * from "./components/chat/subagent-chip/subagent-chip";
 

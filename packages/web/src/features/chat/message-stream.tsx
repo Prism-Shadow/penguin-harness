@@ -81,7 +81,7 @@ export interface StreamRenderContext {
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
 export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRenderContext }) {
   // Split into segments first — group (consecutive thinking + tool calls) or single (everything
-  // else) — then render. WorkGroup needs to know whether it's the last segment (current turn
+  // else) — then render. ActivityGroup needs to know whether it's the last segment (current turn
   // still in progress) to decide its default expanded/collapsed state.
   type Seg = { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem };
   const segs: Seg[] = [];
@@ -128,7 +128,7 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
    * The container is created as soon as the turn's **first** segment appears, keyed by that
    * segment's id, and the key never changes afterward. If we waited for the stats row to arrive
    * before moving already-rendered groups into a new container, React would treat it as a
-   * position change — unmount and remount — and the WorkGroup and tool-card expanded states
+   * position change — unmount and remount — and the ActivityGroup and tool-card expanded states
    * (each backed by its own internal useState) would reset instantly: any tool details the user
    * had manually expanded would collapse the moment the reply finishes.
    *

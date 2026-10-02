@@ -1,7 +1,8 @@
 /**
- * Compaction row: one StepBanner across running/done/failed (the harness card, shared with the
- * MCP connect row and the background and injected-message notices, on the work group's anatomy)
- * — the wall time ticks while it runs and settles once finished, failures stay on a single line.
+ * Compaction row: one ActivityGroup of the event kind across running/done/failed (the activity
+ * card, shared with the work group, the MCP connect row and the background and injected-message
+ * notices) — the wall time ticks while it runs and settles once finished, failures stay on a
+ * single line.
  *
  * **The title names the mode and doubles as the status**, the work-group header's idiom
  * (运行中 → 运行完毕): a `summarize` row reads 压缩中 / "Compacting" while it runs and
@@ -20,8 +21,8 @@
  * Both carry the thinking block's own body (`md-body` + the streaming `Md`) and stream while
  * the request writes them.
  *
- * Two layers, and the running row opens exactly one of them (StepBanner's expand policy, the
- * work group's): while the compaction runs the banner is open, so the two section rows are on
+ * Two layers, and the running row opens exactly one of them (ActivityGroup's expand policy):
+ * while the compaction runs the banner is open, so the two section rows are on
  * screen with their labels and their ticking times — the reader can see that they are there
  * and how long each is taking — while the sections themselves stay closed (DisclosureRow's
  * default), because their contents are the compaction's raw workings and not what the row is
@@ -45,14 +46,14 @@
  * compaction turns separately); see the task-stats module comments.
  */
 import {
+  ActivityGroup,
   DISCLOSURE_BODY_MD_CLASS,
   DisclosureRow,
   LiveDuration,
   Md,
   StatusIcon,
-  StepBanner,
 } from "@prismshadow/penguin-ui";
-import type { StepBannerRow } from "@prismshadow/penguin-ui";
+import type { ActivityGroupRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { CompactionItem } from "../../lib/omni/stream-model";
@@ -120,7 +121,7 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
   const expandable =
     summary !== "" || thinking !== "" || (item.running && item.mode === "summarize");
   // The sections hang off the banner's head as its rows, the work group's steps' anatomy.
-  const rows: StepBannerRow[] = [];
+  const rows: ActivityGroupRow[] = [];
   if (thinking !== "") {
     rows.push({
       key: "thinking",
@@ -157,17 +158,19 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
   // raw `summarize`/`discard` wire value never shows.
   if (item.running) {
     return (
-      <StepBanner
+      <ActivityGroup
+        kind="event"
         state="running"
         title={S.chat.compactionRunning(item.mode)}
-        {...(item.beginTsMs !== undefined ? { liveSinceMs: item.beginTsMs } : {})}
+        {...(item.beginTsMs !== undefined ? { startMs: item.beginTsMs } : {})}
         {...(expandable ? { rows } : {})}
       />
     );
   }
   const ok = item.status === "completed";
   return (
-    <StepBanner
+    <ActivityGroup
+      kind="event"
       state={ok ? "done" : "failed"}
       // Success says everything through the title (压缩完毕 / "Compacted"), the icon and the
       // wall time; a failure keeps the bare mode word and needs a line, because its reason is

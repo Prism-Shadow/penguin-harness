@@ -100,7 +100,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // opens the exec_command card to watch the arguments. Both must survive the end of the turn.
   //
   // The group deliberately auto-collapses once it is no longer the last segment — but only when the
-  // user has NOT toggled it (WorkGroup keeps that in a ref). A remount wipes both the ref and the
+  // user has NOT toggled it (ActivityGroup keeps that in a ref). A remount wipes both the ref and the
   // open state, so the group would collapse anyway and take the card down with it (the body is
   // conditionally rendered). That is what happens if the turn's `group` container is created only
   // when the stats line lands: the already-rendered work group moves into a new parent, React

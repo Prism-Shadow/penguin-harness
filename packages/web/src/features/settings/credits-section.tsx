@@ -99,7 +99,7 @@ function CreditList({ label, credits }: { label: string; credits: readonly Credi
       <Text variant="eyebrow" className="mb-2">
         {label}
       </Text>
-      <ul className="divide-y divide-gray-100 dark:divide-gray-800/60">
+      <ul className="divide-y divide-line-muted">
         {credits.map((credit) => (
           <CreditRow key={credit.name} font={credit} />
         ))}

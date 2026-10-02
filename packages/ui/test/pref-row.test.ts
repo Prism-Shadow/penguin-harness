@@ -9,7 +9,12 @@
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { PrefRow, SettingRow, SettingsSection } from "../src/components/forms/pref-row/pref-row";
+import {
+  PrefRow,
+  SettingRow,
+  SettingsGroup,
+  SettingsSection,
+} from "../src/components/forms/pref-row/pref-row";
 import { Switch } from "../src/components/forms/switch/switch";
 import { classTokens, renderStatic } from "../src/testing";
 
@@ -37,6 +42,30 @@ describe("PrefRow", () => {
     expect(row).toContain('aria-label="More info: Theme"');
     expect(row).not.toContain("Light or dark look of the app.");
     expect(row).toContain("Applies at once.");
+  });
+
+  it("holds every row to the settings line, the hint in its own slot under the one-line title", () => {
+    // The line is the Segmented well's height, so a switch row and a segmented row are one pitch.
+    const line =
+      "min-h-[calc(var(--ui-space-unit)*4_+_var(--ui-text-small-size)*var(--ui-text-small-lh))]";
+    const slot = (name: string) =>
+      (new RegExp(`data-slot="${name}" class="([^"]*)"`).exec(row)?.[1] ?? "").split(" ");
+    expect(slot("control")).toEqual(expect.arrayContaining([line, "items-center", "row-span-2"]));
+    expect(slot("label")).toContain("whitespace-nowrap");
+    expect(slot("hint")).toEqual(expect.arrayContaining(["col-start-1", "row-start-2"]));
+  });
+});
+
+describe("SettingsGroup", () => {
+  it("stacks its rows in a ruled list, under a heading on the eyebrow rung when titled", () => {
+    const rows = createElement("p", null, "Row");
+    const bare = renderStatic(createElement(SettingsGroup, { children: rows }));
+    expect(bare).toBe('<div class="divide-y divide-line-muted"><p>Row</p></div>');
+    const titled = renderStatic(
+      createElement(SettingsGroup, { title: "Terminal", children: rows }),
+    );
+    expect(titled).toMatch(/<h3[^>]*><span class="ui-eyebrow [^"]*">Terminal<\/span><\/h3>/);
+    expect(titled).toContain('<div class="divide-y divide-line-muted"><p>Row</p></div>');
   });
 });
 

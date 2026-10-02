@@ -24,6 +24,13 @@ A theme round across all three themes, plus the restyle of the components that l
   - The segmented control's selected thumb is concentric with its track. This applies in every theme.
 - **Console tags:** every badge and count is one square outlined tag. Hand-made tags on the plugins, models, machines, goal, trace and company pages became badges. Capsule-shaped controls take the theme's pill radius, which is square in Console.
 - **Sidebar:** a page entry's 常驻 (always shown) toggle is a lock, closed while the entry is pinned. An entry's update dot moves left of the toggle instead of sharing its place.
+- **One component for streamed activity:** the agent's work groups (Running / Done) and the harness cards (compaction, MCP connection, background task, injected message) are now one package component, `ActivityGroup`. Every row inside them, tool rows included, is one `DisclosureRow`.
+- **Frost activity rows:**
+  - No status icons: running and done read as words, details and the small chevron after them. A failure keeps its red cross and its label turns red, in every theme.
+  - Hover only lifts the ink.
+  - No rules under heads, between rows or above expanded output.
+- **Settings rows:** every single-line row in the settings dialog is the same height in each theme, whatever its control, so the items sit at even intervals. A hinted row grows only by its hint, and labels no longer wrap. The shortcuts, proxy and company pages moved onto the same row.
+- **Frost dialogs:** the title sits about one row gap above the content, now that the head rule is gone.
 - **Drag previews:** dragging a sidebar entry, a session row, a group header or a model group shows an opaque card in the theme's surface. Before, the browser drew a see-through copy of the row.
 - **Newer components on the UI package:** these now use the shared components and theme tokens, so Frost and Console apply to them:
   - the model picker dialog

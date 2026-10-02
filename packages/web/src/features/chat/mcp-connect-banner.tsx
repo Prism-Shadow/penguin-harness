@@ -1,16 +1,16 @@
 /**
  * MCP connect row: between mcp_connect_begin and mcp_connect_end the first run is
  * connecting the configured MCP Servers — without this row the pre-first-request wait
- * reads as a silent hang. One StepBanner across all states (the harness card, shared with the
- * compaction row, on the work group's anatomy): connecting shows the server list with a live
- * tick; once settled the header leads with the discovered-tool count (failed servers are
- * named, but only named — reasons live in the server rows).
+ * reads as a silent hang. One ActivityGroup of the event kind across all states (the activity
+ * card, shared with the work group and the compaction row): connecting shows the server list
+ * with a live tick; once settled the header leads with the discovered-tool count (failed
+ * servers are named, but only named — reasons live in the server rows).
  * Expanding shows ONE ROW PER SERVER, hung off the banner's head as a work group's steps hang
  * off its header — status icon, tool count / per-server connect time — and expanding a row
  * shows that server's tool list, or the full failure detail for a server that could not
  * connect (non-fatal either way, matching core's warn-and-skip stance).
  */
-import { DisclosureRow, StatusIcon, StepBanner } from "@prismshadow/penguin-ui";
+import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/omni/stream-model";
@@ -94,11 +94,12 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
 export function McpConnectBanner({ item }: { item: McpConnectItem }) {
   if (item.running) {
     return (
-      <StepBanner
+      <ActivityGroup
+        kind="event"
         state="running"
         title={S.chat.mcpConnectTitle}
         detail={S.chat.mcpServerList(item.servers)}
-        {...(item.beginTsMs !== undefined ? { liveSinceMs: item.beginTsMs } : {})}
+        {...(item.beginTsMs !== undefined ? { startMs: item.beginTsMs } : {})}
       />
     );
   }
@@ -110,7 +111,8 @@ export function McpConnectBanner({ item }: { item: McpConnectItem }) {
   const tools = item.tools ?? [];
   const serverNames = results.map((r) => r.server);
   return (
-    <StepBanner
+    <ActivityGroup
+      kind="event"
       state={failed ? "failed" : "done"}
       title={S.chat.mcpConnectTitle}
       detail={detail}
