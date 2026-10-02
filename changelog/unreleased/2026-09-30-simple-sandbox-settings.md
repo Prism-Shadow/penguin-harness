@@ -19,13 +19,17 @@ named file mode, network level and approval mode, and one pick saves all three o
   "Advanced settings in effect".
 - **The Sandbox card has a presets table.** More… opens the Sandbox card on the Settings
   dialog's Plugins page. At the top of the card is a table with one row per preset and columns
-  for the name, whether the menu lists it, and its file mode, network level and approval mode.
-  Renaming a preset keeps its mapping. Full Access can only be renamed or hidden. Two more
-  presets, Workspace Write with Ask and Denied All, start out of the menu. The table fits the
-  settings dialog in a bordered box with a tinted header: the name is an inline text box holding
-  the effective name, "In menu" is a switch, the selects are compact with short option names
-  ("Approve all", "Approve reads", "Ask every time", "Deny all"), and Full Access's locked cells
-  show their value with a lock mark.
+  for the name, its file mode, network level and approval mode, Default, and Pin (whether the
+  menu lists it). Renaming a preset keeps its mapping. Full Access can only be renamed, unpinned
+  or made the default. Two more presets, Workspace Write with Ask and Denied All, start
+  unpinned. The table fits the settings dialog in a bordered box with a tinted header and even
+  columns: the name wraps and holds the effective name, the three choice columns are the same
+  width with short option names ("Approve all", "Approve reads", "Ask every time", "Deny all"),
+  Pin is a pin toggle, and Full Access's locked cells show their value as plain text. Every
+  column header has a "?" saying what the column means.
+- **Explanations sit behind a "?" beside their title** on every settings card: the card's
+  description, each field's and the table's. A format rule (masked paths: one absolute path
+  per line) stays on screen under its field.
 - **New Sessions start from the default preset.** A Default column picks one row, Workspace
   Write until changed. While the switch is on, a new Session and the composer's draft take that
   row's file mode, network and approval mode; a default that confines nothing (Full Access)
@@ -54,7 +58,10 @@ named file mode, network level and approval mode, and one pick saves all three o
   and cells that can be locked. Only the cells that differ from the declaration are stored, and a
   refused cell is named `<field>.<row>.<column>`. An `unavailable` option can name a table
   column. A table can declare a `rowChoice`: a single-choice column stored in an `enum` field of
-  the same group whose options are the row ids.
+  the same group whose options are the row ids, drawn before the column its `before` names; and
+  a `pin`: a boolean column drawn as a pin toggle with a tooltip per state. Columns and the row
+  choice take a `description`, and fields a `hint` (`hintZh`) for their format, shown under the
+  field while the `description` goes behind the "?".
 - Settings fields can be marked `advanced: true`; the Plugins page folds such fields on every
   card.
 - The sandbox's settings entry gains `backend` (`installed`, `recommended`); its group gains
