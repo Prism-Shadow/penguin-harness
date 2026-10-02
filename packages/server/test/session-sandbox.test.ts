@@ -408,14 +408,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
         name: "sandbox",
         values: { enabled: true, defaultPreset: "workspace-write-ask" },
       });
-      type Read = {
-        session: {
-          sessionId: string;
-          title: string | null;
-          approvalMode: string;
-          sandbox: SessionSandbox;
-        };
-      };
+      type Read = { session: { sessionId: string; approvalMode: string; sandbox: SessionSandbox } };
       const created = (await (
         await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
       ).json()) as Read;
@@ -424,6 +417,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
         approvalMode: "always-ask",
         sandbox: { mode: "workspace-write", network: "open" },
       });
+      const before = t.deps.sessionsRepo.findById(id);
 
       // A non-admin picks Full Access, renaming the Session in the same request: the sandbox
       // half is past the server's settings, so nothing of it is stored.
@@ -436,19 +430,20 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       expect(await refused.json()).toMatchObject({ error: { code: "sandbox_forbidden" } });
       const after = ((await (await owner.get(`/api/sessions/${id}`)).json()) as Read).session;
       expect(after).toMatchObject({
-        title: created.session.title,
         approvalMode: "always-ask",
         sandbox: { mode: "workspace-write", network: "open" },
       });
-      expect(t.deps.sessionsRepo.findById(id)?.approvalMode).toBe("always-ask");
+      // The row whole: no title, no approval mode, no sandbox.
+      expect(t.deps.sessionsRepo.findById(id)).toEqual(before);
 
-      // A level this server cannot enforce is refused the same way, by an admin too.
-      const unsupported = await admin.patch(`/api/sessions/${id}`, {
+      // A level this server cannot enforce is refused the same way.
+      const unsupported = await owner.patch(`/api/sessions/${id}`, {
         approvalMode: "allow-all",
         sandbox: { network: "local" },
       });
       expect(unsupported.status).toBe(400);
-      expect(t.deps.sessionsRepo.findById(id)?.approvalMode).toBe("always-ask");
+      expect(await unsupported.json()).toMatchObject({ error: { code: "sandbox_unsupported" } });
+      expect(t.deps.sessionsRepo.findById(id)).toEqual(before);
     } finally {
       await t.cleanup();
     }
