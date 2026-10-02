@@ -11,6 +11,7 @@
  * covers fails closed — never a silent unconfined run, and never a silently dropped
  * dimension.
  */
+import fs from "node:fs";
 import type { SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   SandboxDimension,
@@ -217,6 +218,11 @@ export class SandboxService {
       // short-circuit is "no confinement dimension beyond fs-write", not "mode is full".
       if (settings.mode === "danger-full-access" && required.length === 1) return { argv };
       const provider = this.pick(required, settings.mode);
+      // The Session's scratchpad is created lazily (on the first thing written into it) and
+      // can be deleted while the Session lives, but a backend binding it needs it on disk:
+      // bubblewrap refuses to start on a missing bind source. Ensured on every spawn, here,
+      // where every confined spawn meets — see SandboxPolicy.writableRoots.
+      if (opts.scratchpadDir !== undefined) ensureScratchpad(opts.scratchpadDir);
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
       const policy: SandboxPolicy = {
@@ -265,6 +271,24 @@ export class SandboxService {
       parts.push(`${this.declinedNames.join(", ")} (not for this host)`);
     }
     return parts.length === 0 ? "" : `; backends not in use: ${parts.join("; ")}`;
+  }
+}
+
+/**
+ * Creates the Session's scratchpad if it is missing (a no-op when it exists). A failure
+ * throws, fail-closed: dropping the root and confining without it would start the command
+ * but leave it unable to write the directory it was told it may write.
+ */
+function ensureScratchpad(dir: string): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    // A filesystem error's message leads with its errno (`EACCES: permission denied, …`).
+    throw new Error(
+      `cannot prepare the Session scratchpad ${dir} for the sandbox ` +
+        `(${err instanceof Error ? err.message : String(err)}); refusing to run the command without it.`,
+      { cause: err },
+    );
   }
 }
 

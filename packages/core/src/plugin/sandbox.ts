@@ -66,6 +66,12 @@ export interface SandboxPolicy {
    * attachments live. Meaningless under `read-only`. A backend that does not implement
    * the field confines more narrowly than asked, never more widely, so no dimension
    * guards it.
+   *
+   * Each root EXISTS on the host by the time a backend is handed the policy: the service
+   * creates it first (the scratchpad is made lazily, and can be deleted mid-Session), and
+   * refuses the spawn when it cannot. A backend neither creates a root nor skips a missing
+   * one. `workspaceRoot` is not covered: a missing Workspace is a different error, and
+   * surfaces as such.
    */
   writableRoots?: readonly string[];
   /**
