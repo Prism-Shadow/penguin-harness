@@ -35,10 +35,20 @@ in the harness's environment and restart it:
 | bash / sh (Git for Windows, MinGit) | does not start | — |
 
 Measured on GitHub's `windows-latest` (Windows Server 2025, pwsh 7.6.6, Windows PowerShell
-5.1.26100): a write inside the Workspace lands and a write outside it is denied. Until the
-shell is set, a confined command is refused before it spawns, with an error naming these
-settings. `cmd` also starts under the runner; it is not measured beyond that. Nothing here
-changes on Linux or macOS, where bash runs confined as usual.
+5.1.26100): a write inside the Workspace lands and a write outside it is denied. `cmd` also
+starts under the runner; it is not measured beyond that.
+
+Until the shell is set, the backend's load fails with a reason naming these settings, so it is
+not mounted: the Session view lists `dsh-local` among the unavailable backends with that
+reason, and the composer marks the confining tier unavailable instead of offering a tier whose
+every command would be refused. A harness whose core does not report its session shell (an
+older runtime) loads the backend as before.
+
+Each confined command is still checked on its own. A bash or sh program is refused before it
+reaches the runner: when it is the session shell, the error names the same settings; when it is
+something else — a stdio MCP Server launched through bash, which `PENGUIN_SHELL` does not
+choose — the error says only that the runner cannot start bash or sh. Nothing here changes on
+Linux or macOS, where bash runs confined as usual.
 
 ## Requirements
 
