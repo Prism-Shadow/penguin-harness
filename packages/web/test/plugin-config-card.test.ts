@@ -65,8 +65,10 @@ describe("the settings card", () => {
         locale: "en",
       }),
     );
-    expect(html).toMatch(/aria-label="Full Access · Name"[^>]*value="Full Access"/);
-    expect(html).toMatch(/value="Look only"/);
+    const inputs = html.match(/<input[^>]*>/g) ?? [];
+    const box = (row: string) => inputs.find((i) => i.includes(`aria-label="${row} · Name"`));
+    expect(box("Full Access")).toContain('value="Full Access"');
+    expect(box("Read Only")).toContain('value="Look only"');
     expect(html).not.toContain("placeholder=");
   });
 });
