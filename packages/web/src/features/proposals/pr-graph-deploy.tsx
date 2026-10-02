@@ -26,14 +26,11 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
-  Input,
   Menu,
   MenuItem,
-  MenuLabel,
   Modal,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
-import { splitArgs } from "./pr-graph-model";
 
 const POLL_MS = 1000;
 
@@ -41,9 +38,11 @@ const POLL_MS = 1000;
 export function useDeployScripts(
   projectId: string,
   orgId: string,
-): { scripts: ProposalDeployScript[] | null; error: string | null } {
+): { scripts: ProposalDeployScript[] | null; error: string | null; reload: () => void } {
   const [scripts, setScripts] = useState<ProposalDeployScript[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [round, setRound] = useState(0);
+  const reload = useCallback(() => setRound((r) => r + 1), []);
   useEffect(() => {
     let alive = true;
     setScripts(null);
@@ -59,8 +58,13 @@ export function useDeployScripts(
     return () => {
       alive = false;
     };
-  }, [projectId, orgId]);
-  return { scripts, error };
+  }, [projectId, orgId, round]);
+  return { scripts, error, reload };
+}
+
+/** What the menu calls a script: its description when it has one (a person's name for the target), else its id. */
+export function scriptName(s: ProposalDeployScript): string {
+  return s.description.trim() !== "" ? s.description.trim() : s.id;
 }
 
 /** A graph row with the deploy menu: the gestures on the row, the ellipsis at its end. */
@@ -69,12 +73,15 @@ export function DeployableRow({
   scripts,
   scriptsError,
   onPick,
+  onAssociate,
   children,
 }: {
   node: ProposalGraphNode;
   scripts: ProposalDeployScript[] | null;
   scriptsError: string | null;
-  onPick: (script: ProposalDeployScript, withArgs: boolean) => void;
+  onPick: (script: ProposalDeployScript) => void;
+  /** Open the form that adds a custom action (a deploy script of the person's own). */
+  onAssociate: () => void;
   children: ReactNode;
 }) {
   const t = S.company.proposals.graph.deploy;
@@ -122,39 +129,33 @@ export function DeployableRow({
           </button>
         }
       >
+        {/* One "Deploy to …" per registered script, then "Associate …" to add an action of
+            one's own; nothing else. Arguments live in an associated action, not in the menu. */}
         <Menu label={t.menuTitle} density="sm">
-          <MenuLabel>
-            {t.menu} · <span className="font-mono">{node.head.slice(0, 9)}</span>
-          </MenuLabel>
           {scripts === null ? (
             <MenuItem label="…" disabled />
-          ) : scripts.length === 0 ? (
-            <MenuItem
-              label={scriptsError !== null ? `${t.loadFailed}: ${scriptsError}` : t.none}
-              disabled
-            />
+          ) : scriptsError !== null ? (
+            <MenuItem label={`${t.loadFailed}: ${scriptsError}`} disabled />
           ) : (
-            scripts.flatMap((s) => [
+            scripts.map((s) => (
               <MenuItem
                 key={s.id}
-                label={t.to(s.id)}
-                description={s.description !== "" ? s.description : undefined}
-                data-tooltip={s.description || s.command.join(" ")}
+                label={t.to(scriptName(s))}
+                data-tooltip={[...s.command].join(" ")}
                 onSelect={() => {
                   close();
-                  onPick(s, false);
+                  onPick(s);
                 }}
-              />,
-              <MenuItem
-                key={`${s.id}+args`}
-                label={t.toWithArgs(s.id)}
-                onSelect={() => {
-                  close();
-                  onPick(s, true);
-                }}
-              />,
-            ])
+              />
+            ))
           )}
+          <MenuItem
+            label={t.associate}
+            onSelect={() => {
+              close();
+              onAssociate();
+            }}
+          />
         </Menu>
       </Dropdown>
     </div>
@@ -167,7 +168,6 @@ export function DeployDialog({
   orgId,
   node,
   script,
-  withArgs,
   runId: knownRunId,
   onRun,
   onClose,
@@ -176,8 +176,6 @@ export function DeployDialog({
   orgId: string;
   node: ProposalGraphNode;
   script: ProposalDeployScript;
-  /** Ask for extra arguments first; otherwise the deploy starts as the dialog opens. */
-  withArgs: boolean;
   /** A run already started (reopened from the corner dock): follow it instead of starting one. */
   runId: string | null;
   /** The run this dialog started, and every status it reads, for the dock. */
@@ -185,8 +183,6 @@ export function DeployDialog({
   onClose: () => void;
 }) {
   const t = S.company.proposals.graph.deploy;
-  const [args, setArgs] = useState("");
-  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<ProposalDeployRun | null>(null);
   const [followId, setFollowId] = useState<string | null>(knownRunId);
@@ -197,14 +193,13 @@ export function DeployDialog({
   const outRef = useRef<HTMLPreElement | null>(null);
 
   const start = useCallback(async () => {
-    setStarting(true);
     setError(null);
     try {
       const res = await api.startOrgDeploy(projectId, orgId, {
         script: script.id,
         pr: node.number,
         head: node.head,
-        args: splitArgs(args),
+        args: [],
       });
       if ("run" in res) {
         setRun(res.run);
@@ -213,18 +208,16 @@ export function DeployDialog({
       }
     } catch (e) {
       setError(apiErrorText(e));
-    } finally {
-      setStarting(false);
     }
-  }, [projectId, orgId, script.id, node.number, node.head, args]);
+  }, [projectId, orgId, script.id, node.number, node.head]);
 
   // A plain deploy starts as the dialog opens — once, and never for a run reopened from the dock.
   const autoStarted = useRef(false);
   useEffect(() => {
-    if (withArgs || knownRunId !== null || autoStarted.current) return;
+    if (knownRunId !== null || autoStarted.current) return;
     autoStarted.current = true;
     void start();
-  }, [withArgs, knownRunId, start]);
+  }, [knownRunId, start]);
 
   // Follow the run while it is running; a closed dialog stops asking (the dock takes over).
   const runId = followId;
@@ -274,57 +267,32 @@ export function DeployDialog({
   return (
     <Modal
       open
-      title={t.title(script.id)}
+      title={t.title(scriptName(script))}
       onClose={onClose}
       widthClass="sm:max-w-2xl"
       footer={
-        run === null && withArgs && knownRunId === null ? (
-          <>
-            <Button size="sm" variant="secondary" onClick={onClose}>
-              {t.cancel}
-            </Button>
-            <Button size="sm" variant="primary" disabled={starting} onClick={() => void start()}>
-              {t.start}
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" variant="secondary" onClick={onClose}>
-            {t.close}
-          </Button>
-        )
+        <Button size="sm" variant="secondary" onClick={onClose}>
+          {t.close}
+        </Button>
       }
     >
       <div className="space-y-3 text-sm">
         <p>{t.what(ref, head)}</p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          {t.command}:{" "}
-          <code className="font-mono break-all">
-            {[...script.command, ...splitArgs(args)].join(" ")}
-          </code>
+          {t.command}: <code className="font-mono break-all">{script.command.join(" ")}</code>
         </p>
-        {run === null && withArgs && knownRunId === null ? (
-          <Input
-            size="sm"
-            label={t.args}
-            hint={t.argsHint}
-            value={args}
-            onChange={(e) => setArgs(e.target.value)}
-            className="font-mono"
-          />
-        ) : (
-          <>
-            <p className="text-xs font-medium">{status}</p>
-            <pre
-              ref={outRef}
-              className="max-h-80 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-xs whitespace-pre-wrap text-gray-700 dark:bg-gray-900 dark:text-gray-300"
-            >
-              {output === "" ? t.noOutput : output}
-            </pre>
-            {(run === null || run.status === "running") && (
-              <p className="text-xs text-gray-500 dark:text-gray-400">{t.keepsRunning}</p>
-            )}
-          </>
-        )}
+        <>
+          <p className="text-xs font-medium">{status}</p>
+          <pre
+            ref={outRef}
+            className="max-h-80 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-xs whitespace-pre-wrap text-gray-700 dark:bg-gray-900 dark:text-gray-300"
+          >
+            {output === "" ? t.noOutput : output}
+          </pre>
+          {(run === null || run.status === "running") && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">{t.keepsRunning}</p>
+          )}
+        </>
         {error !== null && <p className={`text-xs ${toneInk.danger}`}>{error}</p>}
       </div>
     </Modal>

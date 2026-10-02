@@ -71,6 +71,7 @@ describe("NodeListSection", () => {
         scripts: [],
         scriptsError: null,
         onPick: () => {},
+        onAssociate: () => {},
         children: row,
       }),
     );

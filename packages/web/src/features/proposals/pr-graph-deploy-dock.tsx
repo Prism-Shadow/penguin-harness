@@ -21,7 +21,6 @@ export interface DeployJob {
   key: string;
   node: ProposalGraphNode;
   script: ProposalDeployScript;
-  withArgs: boolean;
   runId: string | null;
   status: ProposalDeployRun["status"] | null;
 }
@@ -55,21 +54,17 @@ export function useDeployJobs(projectId: string, orgId: string) {
     }
   }, [key, jobs]);
 
-  const start = useCallback(
-    (node: ProposalGraphNode, script: ProposalDeployScript, withArgs: boolean) => {
-      const job: DeployJob = {
-        key: `${node.number}:${script.id}:${Date.now()}`,
-        node,
-        script,
-        withArgs,
-        runId: null,
-        status: null,
-      };
-      setJobs((js) => [...js, job]);
-      setOpen(job.key);
-    },
-    [],
-  );
+  const start = useCallback((node: ProposalGraphNode, script: ProposalDeployScript) => {
+    const job: DeployJob = {
+      key: `${node.number}:${script.id}:${Date.now()}`,
+      node,
+      script,
+      runId: null,
+      status: null,
+    };
+    setJobs((js) => [...js, job]);
+    setOpen(job.key);
+  }, []);
   const update = useCallback((jobKey: string, run: ProposalDeployRun) => {
     setJobs((js) =>
       js.map((j) => (j.key === jobKey ? { ...j, runId: run.id, status: run.status } : j)),

@@ -44,8 +44,7 @@ import {
   rowWidths,
   topDown,
 } from "./pr-graph-model";
-import type { GraphGeometry } from "./pr-graph-model";
-import type { GraphRow } from "./pr-graph-model";
+import type { GraphGeometry, GraphRow } from "./pr-graph-model";
 import {
   FOCUS_WASH,
   Mark,
@@ -56,6 +55,7 @@ import {
 } from "./pr-graph-rows";
 import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy";
 import { DeployDock, useDeployJobs } from "./pr-graph-deploy-dock";
+import { AssociateDialog } from "./pr-graph-associate";
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
 
 /** Reads of a graph the organization's machine is still building, and the pause between them. */
@@ -144,13 +144,15 @@ export function GraphPage() {
   const openProposal = (n: number) => navigate(orgProposalPath(projectId, orgId, n));
   const deployScripts = useDeployScripts(projectId, orgId);
   const deploys = useDeployJobs(projectId, orgId);
+  const [associating, setAssociating] = useState(false);
   const openJob = deploys.jobs.find((j) => j.key === deploys.open) ?? null;
   const deployable = (node: ProposalGraphNode, row: ReactNode) => (
     <DeployableRow
       node={node}
       scripts={deployScripts.scripts}
       scriptsError={deployScripts.error}
-      onPick={(script, withArgs) => deploys.start(node, script, withArgs)}
+      onPick={(script) => deploys.start(node, script)}
+      onAssociate={() => setAssociating(true)}
     >
       {row}
     </DeployableRow>
@@ -292,10 +294,21 @@ export function GraphPage() {
           orgId={orgId}
           node={openJob.node}
           script={openJob.script}
-          withArgs={openJob.withArgs}
           runId={openJob.runId}
           onRun={(run) => deploys.update(openJob.key, run)}
           onClose={deploys.close}
+        />
+      )}
+      {associating && (
+        <AssociateDialog
+          projectId={projectId}
+          orgId={orgId}
+          scripts={deployScripts.scripts ?? []}
+          onClose={() => setAssociating(false)}
+          onSaved={() => {
+            setAssociating(false);
+            deployScripts.reload();
+          }}
         />
       )}
       <DeployDock
