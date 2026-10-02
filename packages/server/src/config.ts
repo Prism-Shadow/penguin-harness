@@ -223,7 +223,6 @@ export function normalizeModelScopeBridgeUrl(raw: string | undefined): string {
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
 /** PENGUIN_PLUGIN_INDEX -> the URL to read, or null when the lookup is off. */
 function resolvePluginIndexUrl(raw: string | undefined): string | null {
   const value = raw?.trim();
@@ -231,7 +230,7 @@ function resolvePluginIndexUrl(raw: string | undefined): string | null {
   return value.toLowerCase() === "off" ? null : value;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY / PENGUIN_PLUGIN_INDEX). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty

@@ -1,5 +1,5 @@
 /**
- * Adopts the languages this deployment's extensions contribute, once per signed-in session.
+ * Adopts the languages this deployment's plugins contribute, once per signed-in session.
  *
  * Behind the auth guard rather than at app start: the endpoint needs a session, and an
  * unauthenticated tab has no code blocks to highlight anyway. One fetch per mount of the
@@ -13,8 +13,10 @@ import { useEffect } from "react";
 import * as api from "../../api/endpoints";
 import { registerRuntimeLanguages } from "@prismshadow/penguin-ui";
 
-export function useRuntimeLanguages(): void {
+export function useRuntimeLanguages(signedIn: boolean): void {
   useEffect(() => {
+    // Signed out, the endpoint answers 401, which would run the global sign-out handler.
+    if (!signedIn) return;
     let cancelled = false;
     void api
       .getLanguages()
@@ -25,5 +27,5 @@ export function useRuntimeLanguages(): void {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [signedIn]);
 }

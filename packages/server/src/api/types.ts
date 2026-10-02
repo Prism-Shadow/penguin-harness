@@ -4103,8 +4103,8 @@ export interface LanguageSummary {
   displayName: string;
   /** Alternative fence info strings, needed BEFORE the grammar loads (it is what decides to load it). */
   aliases?: string[];
-  /** File plugins without the dot, for the Workspace file viewer. */
-  plugins?: string[];
+  /** File extensions without the dot, for the Workspace file viewer. */
+  extensions?: string[];
 }
 
 /** GET /api/languages: every language this App's plugins contributed, by id. */
