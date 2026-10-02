@@ -3738,8 +3738,10 @@ Scenarios:
     globalSummary: "Overall",
     tasksLabel: "Turns",
     messages: "Messages",
-    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
-    loadingNote: (shown: number, total: number) => `Loaded ${shown} / ${total} messages…`,
+    /** The control above the drawn round cards: how many earlier rounds are not drawn yet; a click draws the next page of them. */
+    earlierRounds: (n: number) => (n === 1 ? "1 earlier turn" : `${n} earlier turns`),
+    /** Spoken by an open round's placeholder while its messages are being read. */
+    roundLoading: "Reading this turn's messages",
     zoom: "Zoom",
     zoomReset: "Double-click to reset zoom",
     zoomOut: "Zoom out",

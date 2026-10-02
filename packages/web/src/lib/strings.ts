@@ -3776,8 +3776,10 @@ Benchmark：
     globalSummary: "全局统计",
     tasksLabel: "轮次",
     messages: "消息",
-    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
-    loadingNote: (shown: number, total: number) => `已载入 ${shown} / ${total} 条消息…`,
+    /** The control above the drawn round cards: how many earlier rounds are not drawn yet; a click draws the next page of them. */
+    earlierRounds: (n: number) => `更早的 ${n} 轮`,
+    /** Spoken by an open round's placeholder while its messages are being read. */
+    roundLoading: "正在读取本轮消息",
     zoom: "缩放",
     zoomReset: "双击复位缩放",
     zoomOut: "缩小",

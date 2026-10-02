@@ -1114,8 +1114,13 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
     (sum, t) => sum + (t.startTs ? Math.max(0, Date.parse(t.endTs) - Date.parse(t.startTs)) : 0),
     0,
   );
+  // The context ring's bound, read off the file's head session_meta as the server does.
+  const head = history.find((m) => m.type === "session_meta")?.payload;
+  const contextWindow =
+    head !== undefined && "model_context_window" in head ? head.model_context_window : undefined;
   return {
     elapsedMs,
+    ...(contextWindow !== undefined ? { modelContextWindow: contextWindow } : {}),
     apiMs: tasks.reduce((sum, t) => sum + t.llmMs, 0),
     toolMs: tasks.reduce((sum, t) => sum + t.toolMs, 0),
     cost: tasks.reduce((sum, t) => sum + (t.cost ?? 0), 0),
