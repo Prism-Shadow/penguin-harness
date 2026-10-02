@@ -46,9 +46,9 @@ import type { TableDraft } from "./plugin-config-draft";
  * default width with the name column taking what is left.
  */
 const WIDTH = {
-  enum: "w-[5.75rem]",
+  enum: "w-[6.5rem]",
   pin: "w-[3rem]",
-  choice: "w-[4.75rem]",
+  choice: "w-[4.5rem]",
   boolean: "w-[3.25rem]",
 } as const;
 
@@ -252,7 +252,7 @@ export function ConfigTable({
                           size="sm"
                           aria-label={cellLabel}
                           // Fills its column: every choice column is the same width.
-                          className="!gap-1 !px-1.5"
+                          className="!gap-1 !px-1"
                           value={typeof cell === "string" ? cell : ""}
                           disabled={disabled}
                           onChange={(e) => onCell(row.id, c.name, e.target.value)}
