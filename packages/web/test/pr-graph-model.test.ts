@@ -17,6 +17,7 @@ import {
   rowOfProposal,
   rowWidths,
   splitArgs,
+  topDown,
 } from "../src/features/proposals/pr-graph-model";
 import type { GraphRow } from "../src/features/proposals/pr-graph-model";
 
@@ -214,5 +215,22 @@ describe("rowWidths", () => {
     // 0: lane 1, hanging from row 3; rows 1 and 2 sit on lane 0 but the edge passes them.
     const rows = [row(1, 3), row(0, 2), row(0, 3), row(0, null)];
     expect(rowWidths(rows)).toEqual([2, 2, 2, 1]);
+  });
+});
+
+describe("topDown", () => {
+  it("puts the base first and the top last, and renumbers every parent row", () => {
+    const layout = layoutGraph([node(1, 0), node(2, 1), node(3, 2)], 3);
+    const down = topDown(layout);
+    expect(down.rows.map((r) => r.node?.number ?? 0)).toEqual([0, 1, 2, 3]);
+    expect(down.rows.map((r) => r.parentRow)).toEqual([null, 0, 1, 2]);
+    expect(down.lanes).toBe(layout.lanes);
+  });
+
+  it("keeps the widths a row crosses when the edges run downward", () => {
+    const layout = topDown(layoutGraph([node(1, 0), node(2, 1), node(5, 1), node(3, 2)], 3));
+    const widths = rowWidths(layout.rows);
+    expect(widths[0]).toBe(1); // the base
+    expect(Math.max(...widths)).toBe(layout.lanes);
   });
 });

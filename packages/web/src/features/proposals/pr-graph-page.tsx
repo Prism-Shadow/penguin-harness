@@ -45,6 +45,7 @@ import {
   layoutGraph,
   rowOfProposal,
   rowWidths,
+  topDown,
 } from "./pr-graph-model";
 import type { GraphRow } from "./pr-graph-model";
 import {
@@ -71,8 +72,8 @@ const laneX = (lane: number): number => lane * LANE + LANE / 2 + 2;
 const rowY = (row: number): number => row * ROW + ROW / 2;
 
 /**
- * One edge, drawn from the child's dot down to its parent's: straight when they share a lane,
- * otherwise down the child's lane and bending into the parent's lane just above the parent.
+ * One edge, drawn from the child's dot to its parent's: straight when they share a lane,
+ * otherwise along the child's lane and bending into the parent's lane right beside the parent.
  */
 function edgePath(child: number, childLane: number, parent: number, parentLane: number): string {
   const x1 = laneX(childLane);
@@ -80,8 +81,11 @@ function edgePath(child: number, childLane: number, parent: number, parentLane: 
   const x2 = laneX(parentLane);
   const y2 = rowY(parent);
   if (x1 === x2) return `M${x1} ${y1}V${y2}`;
-  const bend = y2 - ROW / 2;
-  return `M${x1} ${y1}V${bend}C${x1} ${y2 - ROW / 6} ${x2} ${bend + ROW / 6} ${x2} ${y2}`;
+  // The bend sits beside the parent, on the child's side: above it when the child is drawn
+  // above (bottom-up), below it when the child is drawn below (top-down).
+  const dir = child < parent ? -1 : 1;
+  const bend = y2 + (dir * ROW) / 2;
+  return `M${x1} ${y1}V${bend}C${x1} ${y2 + (dir * ROW) / 6} ${x2} ${bend - (dir * ROW) / 6} ${x2} ${y2}`;
 }
 
 export function GraphPage() {
@@ -125,10 +129,12 @@ export function GraphPage() {
   }, [load]);
 
   const layout = useMemo(
-    () => (graph === null ? null : layoutGraph(graph.nodes, graph.top)),
+    () => (graph === null ? null : topDown(layoutGraph(graph.nodes, graph.top))),
     [graph],
   );
   const widths = useMemo(() => (layout === null ? [] : rowWidths(layout.rows)), [layout]);
+  // The row under the pointer; its lanes' dot and edge light up with it.
+  const [hovered, setHovered] = useState<number | null>(null);
   const focusRow = layout === null || focus === null ? -1 : rowOfProposal(layout.rows, focus);
   const focusUnplaced =
     graph !== null && focus !== null && graph.unplaced.some((u) => u.number === focus);
@@ -239,10 +245,7 @@ export function GraphPage() {
 
           {graph.nodes.length === 0 && <OrgEmptyLine>{t.empty}</OrgEmptyLine>}
 
-          <div
-            ref={listRef}
-            className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800"
-          >
+          <div ref={listRef} className="overflow-x-auto">
             <div className="relative" style={{ height: layout.rows.length * ROW }}>
               <ol className="absolute inset-0">
                 {layout.rows.map((row, i) => (
@@ -250,7 +253,13 @@ export function GraphPage() {
                     key={row.node === null ? "base" : row.node.number}
                     data-focus={i === focusRow ? "true" : undefined}
                     style={{ height: ROW, paddingLeft: widths[i]! * LANE + 10 }}
-                    className={`flex items-center pr-3 ${i === focusRow ? FOCUS_WASH : ""}`}
+                    onMouseEnter={() => setHovered(i)}
+                    onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
+                    // A hairline between rows: a node's two lines read as one block, apart from
+                    // the next node's. Hover washes the whole row, lanes included.
+                    className={`flex items-center border-b border-line-muted pr-3 transition-colors duration-150 last:border-b-0 ${
+                      i === focusRow ? FOCUS_WASH : i === hovered ? "bg-surface-muted" : ""
+                    }`}
                   >
                     {row.node === null ? (
                       <BaseRow graph={graph} />
@@ -264,7 +273,7 @@ export function GraphPage() {
                 ))}
               </ol>
               {/* Over the rows (a focused row's wash stays under the dots), never taking a click. */}
-              <Lanes rows={layout.rows} lanes={layout.lanes} />
+              <Lanes rows={layout.rows} lanes={layout.lanes} hovered={hovered} />
             </div>
           </div>
 
@@ -302,7 +311,16 @@ export function GraphPage() {
 }
 
 /** The lanes: every edge, then every dot over them. Stacked edges are solid, the rest dashed in their relation's tone. */
-function Lanes({ rows, lanes }: { rows: readonly GraphRow[]; lanes: number }) {
+function Lanes({
+  rows,
+  lanes,
+  hovered,
+}: {
+  rows: readonly GraphRow[];
+  lanes: number;
+  /** The row under the pointer: its dot and its edge to its parent are drawn heavier. */
+  hovered: number | null;
+}) {
   return (
     <svg
       aria-hidden="true"
@@ -317,7 +335,7 @@ function Lanes({ rows, lanes }: { rows: readonly GraphRow[]; lanes: number }) {
             d={edgePath(i, row.lane, row.parentRow, rows[row.parentRow]!.lane)}
             fill="none"
             stroke="currentColor"
-            strokeWidth={1.7}
+            strokeWidth={i === hovered ? 2.6 : 1.7}
             strokeDasharray={row.stacked ? undefined : "3 3"}
             className={
               row.stacked
@@ -334,9 +352,9 @@ function Lanes({ rows, lanes }: { rows: readonly GraphRow[]; lanes: number }) {
             key={`d${i}`}
             cx={laneX(row.lane)}
             cy={rowY(i)}
-            r={row.node === null ? DOT + 1 : DOT}
+            r={(row.node === null ? DOT + 1 : DOT) + (i === hovered ? 1.5 : 0)}
             stroke="currentColor"
-            strokeWidth={1.7}
+            strokeWidth={i === hovered ? 2.6 : 1.7}
             className={`${
               proposal !== null || row.node === null
                 ? "fill-current"

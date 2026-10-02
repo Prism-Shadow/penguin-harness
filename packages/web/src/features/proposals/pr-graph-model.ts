@@ -3,10 +3,11 @@
  *
  * The server answers with a flat list of nodes, each naming the open PR its declared base leads to
  * (`parent`: a PR number, 0 for the base branch, null for neither — the server walks through
- * merged and closed PRs on the way) and whether that edge holds (`stacked`). The page draws it the way
- * `git log --graph` draws history — newest at the top, the base branch at the bottom, one lane
+ * merged and closed PRs on the way) and whether that edge holds (`stacked`). `layoutGraph` lays it out
+ * the way `git log --graph` draws history — newest at the top, the base branch at the bottom, one lane
  * per branch that is still open at that height — so a straight chain is one vertical line and a
- * fork is a second lane leaving the line where it forks.
+ * fork is a second lane leaving the line where it forks. The page shows it turned over
+ * (`topDown`): the base first and each stack's top last, the order a stack is built in.
  *
  * Which child continues its parent's lane: the one that leads to the chain's top when the server
  * named one, else a child on the chain, else a stacked one, else the taller subtree, else the
@@ -174,9 +175,26 @@ export function rowWidths(rows: readonly GraphRow[]): number[] {
   const widest = rows.map((r) => r.lane);
   rows.forEach((row, child) => {
     if (row.parentRow === null) return;
-    for (let i = child + 1; i < row.parentRow; i++) {
+    // Either direction: the edge runs the child's lane on every row between the two.
+    const lo = Math.min(child, row.parentRow);
+    const hi = Math.max(child, row.parentRow);
+    for (let i = lo + 1; i < hi; i++) {
       widest[i] = Math.max(widest[i]!, row.lane);
     }
   });
   return widest.map((w) => w + 1);
+}
+
+/**
+ * The layout turned over for reading top-down: the base branch first, each stack below it, its
+ * top last — the order a stack is built in. Parent rows are renumbered to match; lanes stay.
+ */
+export function topDown(layout: GraphLayout): GraphLayout {
+  const last = layout.rows.length - 1;
+  return {
+    ...layout,
+    rows: layout.rows
+      .map((r) => ({ ...r, parentRow: r.parentRow === null ? null : last - r.parentRow }))
+      .reverse(),
+  };
 }
