@@ -3,6 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `browser-extension`, `docs`
+- **PR:** [#955](https://github.com/Prism-Shadow/penguin-harness/pull/955)
 
 [English](2026-10-03-system-chrome-browser-backend.md)
 
