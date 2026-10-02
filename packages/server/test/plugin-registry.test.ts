@@ -465,7 +465,7 @@ describe("the route's own merge", () => {
     const routes = pluginRegistryRoutes({ indexUrl: null });
     const res = await routes.request("/");
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins.every((e) => e.name.startsWith("@prismshadow/"))).toBe(true);
+    expect(body.plugins).toEqual(await builtinPluginRegistry().index());
     expect(body.failures).toEqual([]);
   });
 });
