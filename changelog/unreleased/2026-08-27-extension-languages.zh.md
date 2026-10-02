@@ -7,7 +7,7 @@
 
 [English](2026-08-27-extension-languages.md)
 
-插件现在可以贡献语法高亮的语法，插件页列出的也不再只是 server 包自带的内容。本仓库只提供贡献点；第一个语言插件（Typst、Swift、Kotlin、C#、Dart）作为外部插件放在自己的仓库 [Myriad-Dreamin/penguin-plugin-languages](https://github.com/Myriad-Dreamin/penguin-plugin-languages)。
+插件现在可以贡献语法高亮的语法，插件页列出的也不再只是 server 包自带的内容。本仓库只提供贡献点；第一批语言插件（Typst、Swift、Kotlin、C#、Dart，每种语言一个插件）作为外部插件放在自己的仓库 [Myriad-Dreamin/penguin-languages](https://github.com/Myriad-Dreamin/penguin-languages)。
 
 ## 细节
 

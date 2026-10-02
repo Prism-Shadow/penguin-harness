@@ -7,7 +7,7 @@
 
 [中文版](2026-08-27-extension-languages.zh.md)
 
-A plugin can contribute a syntax-highlighting grammar, and the Plugins page lists more than what the server package ships with. This repository carries only the contribution point. The first language plugin, for Typst, Swift, Kotlin, C# and Dart, lives in its own repository, [Myriad-Dreamin/penguin-plugin-languages](https://github.com/Myriad-Dreamin/penguin-plugin-languages), as an external plugin.
+A plugin can contribute a syntax-highlighting grammar, and the Plugins page lists more than what the server package ships with. This repository carries only the contribution point. The first language plugins — Typst, Swift, Kotlin, C# and Dart, one plugin each — are external plugins in their own repository, [Myriad-Dreamin/penguin-languages](https://github.com/Myriad-Dreamin/penguin-languages).
 
 ## Details
 
