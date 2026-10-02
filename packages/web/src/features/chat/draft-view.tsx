@@ -397,12 +397,10 @@ export function DraftView({
     ) {
       setWorkspace(chatDefaults.workspace);
     }
-    if (
-      chatDefaults.approvalMode !== undefined &&
-      cached.approvalMode === undefined &&
-      !touchedRef.current.approval
-    ) {
-      setApprovalMode(chatDefaults.approvalMode);
+    // The Project's own default wins; else the Sandbox card's default preset, while it is on.
+    const seeded = chatDefaults.approvalMode ?? chatDefaults.sandbox?.defaultApprovalMode;
+    if (seeded !== undefined && cached.approvalMode === undefined && !touchedRef.current.approval) {
+      setApprovalMode(seeded);
     }
   }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
 
@@ -439,7 +437,7 @@ export function DraftView({
         setChatDefaults(d);
         touchedRef.current = { workspace: false, approval: false };
         setWorkspace(d.workspace ?? "");
-        setApprovalMode(d.approvalMode ?? "allow-all");
+        setApprovalMode(d.approvalMode ?? d.sandbox?.defaultApprovalMode ?? "allow-all");
         // The Agent a fresh mount would now start on (the new block's default while it names
         // an Agent, then default_agent, then the first).
         setAgentId(newChatAgentId(agents, d));

@@ -27,6 +27,8 @@ export function ConfigField({
   value,
   error,
   tableErrors,
+  choice,
+  onChoice,
   clearing,
   onChange,
   onClearingChange,
@@ -41,6 +43,9 @@ export function ConfigField({
   error: string | undefined;
   /** A table's refused cells, each named `<field>.<row>.<column>` by the server. */
   tableErrors: string[];
+  /** A table's single-choice column: the chosen row as drafted, and its setter. */
+  choice?: unknown;
+  onChoice?: (row: string) => void;
   /** A secret field: whether the next save drops the stored value. */
   clearing: boolean;
   onChange: (value: unknown) => void;
@@ -66,6 +71,8 @@ export function ConfigField({
             onChange({ ...table, [row]: { ...table[row], [column]: value } })
           }
           errors={tableErrors}
+          choice={choice}
+          {...(onChoice !== undefined ? { onChoice } : {})}
           disabled={disabled}
           locale={locale}
         />

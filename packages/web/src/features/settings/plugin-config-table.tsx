@@ -9,6 +9,8 @@
  * a `boolean` cell is a switch; an `enum` cell is a compact select, its options this machine
  * cannot honour greyed out with the reason. A cell the row locks is not a control at all: it is
  * the value's text with a lock mark beside it, since a disabled select would read as broken.
+ * A table with a `rowChoice` gets one more column of radios, one row chosen — the sandbox's
+ * Default preset — stored in the group's own enum field.
  * Every control is named "<row> · <column>" for a screen reader, the row's name in the page's
  * language.
  */
@@ -34,6 +36,8 @@ export function ConfigTable({
   field,
   table,
   onCell,
+  choice,
+  onChoice,
   errors,
   disabled,
   locale,
@@ -43,6 +47,9 @@ export function ConfigTable({
   field: PluginConfigField;
   table: TableDraft;
   onCell: (row: string, column: string, value: string | boolean) => void;
+  /** The row the table's single-choice column (`rowChoice`) holds, as drafted. */
+  choice?: unknown;
+  onChoice?: (row: string) => void;
   /** The refused cells' messages, listed under the table. */
   errors: string[];
   disabled: boolean;
@@ -53,6 +60,7 @@ export function ConfigTable({
   const hint =
     field.description !== undefined ? localized(field.description, field.descriptionZh) : undefined;
   const columns = field.columns ?? [];
+  const rowChoice = field.rowChoice;
   return (
     <div className="space-y-1.5">
       <p className="text-sm font-medium">{label}</p>
@@ -70,6 +78,14 @@ export function ConfigTable({
                   {localized(c.title, c.titleZh)}
                 </th>
               ))}
+              {rowChoice !== undefined && (
+                <th
+                  scope="col"
+                  className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-fg-muted"
+                >
+                  {localized(rowChoice.title, rowChoice.titleZh)}
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -178,6 +194,20 @@ export function ConfigTable({
                     </td>
                   );
                 })}
+                {rowChoice !== undefined && (
+                  <td className="px-2 py-1 align-middle">
+                    {/* One radio group per table: exactly one row is the choice. */}
+                    <input
+                      type="radio"
+                      name={`${entry.name}.${name}.${rowChoice.field}`}
+                      aria-label={`${localized(String(row.values.name ?? row.id), row.valuesZh?.name)} · ${localized(rowChoice.title, rowChoice.titleZh)}`}
+                      checked={choice === row.id}
+                      disabled={disabled}
+                      onChange={() => onChoice?.(row.id)}
+                      className="size-4 accent-accent disabled:cursor-not-allowed"
+                    />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

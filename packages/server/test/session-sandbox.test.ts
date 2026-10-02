@@ -307,30 +307,42 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       const create = async (body: Record<string, unknown> = {}) =>
         owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, body);
       type Created = { session: { sessionId: string; sandbox: unknown } };
+      /** What is served beside a policy here: the remapped presets, and the switch on. */
+      const REMAPPED = { ...SERVED, presets: expect.any(Array) };
 
-      expect((await settings({ mode: "workspace-write", network: "none" })).status).toBe(200);
+      // The default preset is what a new Session starts from: its row remapped to cut the
+      // network, so the snapshot below is not the shipped table's.
+      expect(
+        (
+          await settings({
+            enabled: true,
+            defaultPreset: "workspace-write",
+            presets: { "workspace-write": { network: "none" } },
+          })
+        ).status,
+      ).toBe(200);
       const first = (await (await create()).json()) as Created;
       expect(first.session.sandbox).toEqual({
         mode: "workspace-write",
         network: "none",
-        ...SERVED,
+        ...REMAPPED,
       });
 
       // The settings change: a new Session starts from it, the existing one does not move.
-      expect((await settings({ mode: "read-only", network: "open" })).status).toBe(200);
+      expect((await settings({ defaultPreset: "read-only" })).status).toBe(200);
       const again = (await (
         await owner.get(`/api/sessions/${first.session.sessionId}`)
       ).json()) as Created;
       expect(again.session.sandbox).toEqual({
         mode: "workspace-write",
         network: "none",
-        ...SERVED,
+        ...REMAPPED,
       });
       const second = (await (await create()).json()) as Created;
       expect(second.session.sandbox).toEqual({
         mode: "read-only",
         network: "open",
-        ...SERVED,
+        ...REMAPPED,
       });
 
       // A non-admin tightens freely, and may not loosen past the settings.
@@ -341,7 +353,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       expect(((await tightened.json()) as Created).session.sandbox).toEqual({
         mode: "read-only",
         network: "none",
-        ...SERVED,
+        ...REMAPPED,
       });
       const loosened = await owner.patch(`/api/sessions/${second.session.sessionId}`, {
         sandbox: { mode: "danger-full-access" },

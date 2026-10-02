@@ -391,6 +391,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
 
   const control = (entry: PluginConfigEntry, name: string, field: PluginConfigField) => {
     const key = `${entry.name}\0${name}`;
+    const choiceField = field.rowChoice?.field;
     return (
       <ConfigField
         key={name}
@@ -403,6 +404,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         tableErrors={Object.entries(fieldErrors)
           .filter(([k]) => k === key || k.startsWith(`${key}.`))
           .map(([, text]) => text)}
+        {...(choiceField !== undefined
+          ? {
+              choice: drafts[entry.name]?.[choiceField],
+              onChoice: (row: string) => patch(entry.name, choiceField, row),
+            }
+          : {})}
         clearing={clearing.has(key)}
         onChange={(value) => {
           patch(entry.name, name, value);
@@ -428,7 +435,15 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
 
   /** An entry's fields in declaration order: the basic ones, then the Advanced fold, if any. */
   const fields = (entry: PluginConfigEntry) => {
-    const all = Object.entries(entry.configuration.properties);
+    // A field a table's single-choice column stores into is drawn only as that column.
+    const drawnByTable = new Set(
+      Object.values(entry.configuration.properties).flatMap((f) =>
+        f.rowChoice !== undefined ? [f.rowChoice.field] : [],
+      ),
+    );
+    const all = Object.entries(entry.configuration.properties).filter(
+      ([n]) => !drawnByTable.has(n),
+    );
     const advanced = all.filter(([, field]) => field.advanced === true);
     return (
       <>

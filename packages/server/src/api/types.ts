@@ -1613,6 +1613,12 @@ export interface SessionSandbox {
    */
   advanced?: boolean;
   /**
+   * Response only, chat defaults only: the approval mode a new Session starts with when its
+   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
+   * the server's own fallback (`allow-all`).
+   */
+  defaultApprovalMode?: ApprovalMode;
+  /**
    * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
    * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
    * its own policy either way). A server that does not report it is read as on.
@@ -5466,6 +5472,19 @@ export interface PluginConfigField {
    */
   columns?: PluginConfigTableColumn[];
   rows?: PluginConfigTableRow[];
+  /**
+   * `table` only: a single-choice column picking one row — the sandbox's default preset. The
+   * choice is stored in `field`, an `enum` field of the same group whose options are the row
+   * ids; the page draws that field only as this column, one radio per row.
+   */
+  rowChoice?: PluginConfigRowChoice;
+}
+
+/** A table's single-choice column: the `enum` field it stores into, and its header. */
+export interface PluginConfigRowChoice {
+  field: string;
+  title: string;
+  titleZh?: string;
 }
 
 /** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */

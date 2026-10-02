@@ -301,6 +301,19 @@ export function parsePluginConfiguration(
     }
     if (field.type === "table") {
       Object.assign(field, parseTable(f, `${where}: configuration.properties.${name}`));
+      if (f.rowChoice !== undefined) {
+        const c = (f.rowChoice ?? {}) as Record<string, unknown>;
+        if (typeof c.field !== "string" || typeof c.title !== "string" || c.title === "") {
+          throw new Error(
+            `${where}: configuration.properties.${name}.rowChoice needs a field and a title`,
+          );
+        }
+        field.rowChoice = {
+          field: c.field,
+          title: c.title,
+          ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
+        };
+      }
       if (f.default !== undefined) {
         throw new Error(
           `${where}: configuration.properties.${name}.default: a table's rows are its defaults`,
@@ -367,6 +380,22 @@ export function parsePluginConfiguration(
       field.default = f.default as PluginConfigField["default"];
     }
     properties[name] = field;
+  }
+  // A row choice stores into an enum of the same group whose options are exactly the row ids.
+  for (const [name, field] of Object.entries(properties)) {
+    if (field.rowChoice === undefined) continue;
+    const target = properties[field.rowChoice.field];
+    const ids = (field.rows ?? []).map((r) => r.id);
+    const values = (target?.options ?? []).map((o) => o.value);
+    if (
+      target?.type !== "enum" ||
+      values.length !== ids.length ||
+      !ids.every((id) => values.includes(id))
+    ) {
+      throw new Error(
+        `${where}: configuration.properties.${name}.rowChoice.field must name an enum of this group whose options are the row ids`,
+      );
+    }
   }
   return {
     ...(str("title") !== undefined ? { title: str("title")! } : {}),

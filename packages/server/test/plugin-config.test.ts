@@ -508,3 +508,45 @@ describe("a table field", () => {
     expect(applyUpdate(TABLE, {}, { presets: { ghost: { name: "B" } } })).toEqual({});
   });
 });
+
+describe("a table's row choice", () => {
+  const table = (rowChoice: unknown, options: string[]) =>
+    parsePluginConfiguration(
+      {
+        properties: {
+          rows: {
+            type: "table",
+            title: "Rows",
+            columns: [{ name: "name", type: "string", title: "Name" }],
+            rows: [
+              { id: "a", values: { name: "A" } },
+              { id: "b", values: { name: "B" } },
+            ],
+            rowChoice,
+          },
+          pick: {
+            type: "enum",
+            title: "Pick",
+            options: options.map((value) => ({ value, title: value })),
+          },
+        },
+      },
+      "acme/package.json",
+    );
+
+  it("stores into an enum of the same group whose options are the row ids", () => {
+    expect(table({ field: "pick", title: "Default" }, ["b", "a"])!.properties.rows!.rowChoice).toEqual(
+      { field: "pick", title: "Default" },
+    );
+  });
+
+  it("refuses a choice naming no such enum, or one whose options are not the rows", () => {
+    expect(() => table({ field: "nope", title: "Default" }, ["a", "b"])).toThrow(
+      /rowChoice\.field must name an enum/,
+    );
+    expect(() => table({ field: "pick", title: "Default" }, ["a"])).toThrow(
+      /rowChoice\.field must name an enum/,
+    );
+    expect(() => table({ field: "pick" }, ["a", "b"])).toThrow(/needs a field and a title/);
+  });
+});

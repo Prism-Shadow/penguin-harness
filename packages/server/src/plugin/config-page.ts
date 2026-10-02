@@ -47,6 +47,13 @@ export interface SettingsGroupStatus {
   derive?(values: Record<string, unknown>): Record<string, unknown>;
   /** For a group a backend plugin enforces: whether one for this OS is installed, and the default. */
   backend?(): PluginConfigBackend;
+  /**
+   * Completes a save of this group before it is validated and stored: what every save must
+   * write besides the fields the page changed. `current` is the group's values as the page
+   * reads them (`derive` applied) (the sandbox pins its default preset, so the
+   * first save ends a document's pre-preset reading).
+   */
+  saving?(update: Record<string, unknown>, current: Record<string, unknown>): Record<string, unknown>;
 }
 
 /** One enum option a settings group cannot honour on this machine, and why. */
@@ -124,9 +131,19 @@ export class PluginConfigPage {
         ...(backend !== undefined ? { backend } : {}),
       };
     };
+    /** A group's values as the page reads them: stored onto defaults, then derived. */
+    const readValues = (name: string, group: SettingsGroupStatus) => {
+      const values = entries.describe().find((e) => e.name === name)?.values ?? {};
+      return group.derive?.(values) ?? values;
+    };
     this.pluginConfigAdmin = {
       describe: () => entries.describe().map(withStatus),
-      set: async (name, update) => {
+      set: async (name, sent) => {
+        const group = status.get(name);
+        const update =
+          group?.saving === undefined
+            ? sent
+            : group.saving(sent, readValues(name, group));
         // An option this machine cannot honour is refused like an invalid value, naming it.
         for (const u of status.get(name)?.unavailable?.() ?? []) {
           if (u.column !== undefined) {

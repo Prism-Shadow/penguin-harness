@@ -15,16 +15,12 @@
  * a code contribution, so it must not require plugin configuration itself.
  */
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { SandboxMode, SandboxSettings as Policy } from "@prismshadow/penguin-core/plugin";
-import type {
-  PluginConfigNotice,
-  PluginConfiguration,
-  SessionSandboxPreset,
-} from "../api/types.js";
-import { PluginConfig, resolveTable } from "../plugin/config.js";
+import type { PluginConfigNotice } from "../api/types.js";
+import { PluginConfig } from "../plugin/config.js";
 import type { SettingsGroupStatus } from "../plugin/config-page.js";
 import { Sandbox, SandboxModule } from "./service.js";
 import { requestedDimensions } from "./dimensions.js";
+import { DEFAULT_PRESET, sandboxEnabledOf, sandboxStartOf } from "./settings-policy.js";
 
 /**
  * The backend package each OS defaults to: what the card offers to install when the switch is
@@ -39,71 +35,6 @@ const DEFAULT_BACKEND: Partial<Record<NodeJS.Platform, string>> = {
 
 /** The sandbox's group name (its contribution id), and the parent a backend's group names. */
 export const SANDBOX_GROUP = "sandbox";
-
-const MODES: readonly SandboxMode[] = ["read-only", "workspace-write", "danger-full-access"];
-
-/**
- * Whether the switch is on in a stored document (defaults merged). A document saved before the
- * switch existed has no `enabled`: it reads as on exactly when its policy confined anything — a
- * mode other than Off, or (under Off) a network cut or masked paths, which also need a backend —
- * so a deployment that was confined stays confined. The document is never rewritten for it.
- * TODO(sandbox-switch-compat): a save writes only the fields it changes, so a pre-switch
- * document keeps lacking `enabled` until its switch is toggled; the fallback can go only when
- * the maintainers choose a one-time migration or an announced break for such documents (see
- * the 2026-10-02 backward-compatibility changelog entry).
- */
-export function sandboxEnabledOf(doc: Record<string, unknown>): boolean {
-  if (typeof doc.enabled === "boolean") return doc.enabled;
-  const policy = configuredPolicyOf(doc);
-  return policy.mode !== "danger-full-access" || requestedDimensions(policy).length > 1;
-}
-
-/**
- * A stored document (defaults merged) as the service's policy: the configured one while the
- * switch is on, nothing confined while it is off. The mode, network and the rest stay stored
- * while off, and apply again when the switch is turned back on.
- */
-export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
-  return sandboxEnabledOf(doc) ? configuredPolicyOf(doc) : { mode: "danger-full-access" };
-}
-
-/** The policy the document's fields describe, whatever the switch says. */
-function configuredPolicyOf(doc: Record<string, unknown>): Policy {
-  const mode = MODES.includes(doc.mode as SandboxMode)
-    ? (doc.mode as SandboxMode)
-    : "danger-full-access";
-  const maskPaths = Array.isArray(doc.maskPaths)
-    ? doc.maskPaths.filter((p): p is string => typeof p === "string" && p !== "")
-    : [];
-  return {
-    mode,
-    ...(doc.network === "none" || doc.network === "local" ? { network: doc.network } : {}),
-    ...(maskPaths.length > 0 ? { maskPaths } : {}),
-    ...(doc.writableTemp === false ? { writableTemp: false } : {}),
-  };
-}
-
-/**
- * The group's presets table as the composer reads it: every row in table order, disabled ones
- * included. `schema` is the group's declared configuration, `doc` its stored document — the
- * table's cells are stored only where they differ from the declaration.
- */
-export function sandboxPresetsOf(
-  schema: PluginConfiguration | undefined,
-  doc: Record<string, unknown>,
-): SessionSandboxPreset[] {
-  const field = schema?.properties.presets;
-  if (field?.type !== "table") return [];
-  return resolveTable(field, doc.presets).map(({ id, values, valuesZh }) => ({
-    id,
-    name: values.name as string,
-    ...(valuesZh?.name !== undefined ? { nameZh: valuesZh.name } : {}),
-    enabled: values.enabled === true,
-    mode: values.mode as SessionSandboxPreset["mode"],
-    network: values.network as SessionSandboxPreset["network"],
-    approvalMode: values.approvalMode as SessionSandboxPreset["approvalMode"],
-  }));
-}
 
 @Component({
   contributes: {
@@ -129,19 +60,19 @@ export function sandboxPresetsOf(
             descriptionZh:
               "关闭时，新会话拥有完全的文件与网络访问，只受审批模式约束。已有会话保留各自的策略。",
           },
-          // The composer's menu: each preset a named mode, network level and approval mode.
-          // Names and mappings only — the fields below are the policy, and sandboxPolicyOf never
-          // reads this. Declared first so the card draws the table on top. Full Access keeps
-          // its promise (nothing confined, everything approved): only its name and whether the
-          // menu lists it can change.
+          // The composer's menu: each preset a named mode, network level and approval mode,
+          // and the Default column: the row a new Session starts from while the switch is on.
+          // Full Access keeps its promise (nothing confined, everything approved): only its
+          // name, whether the menu lists it and whether it is the default can change.
           presets: {
             type: "table",
             title: "Presets",
             titleZh: "预设",
             description:
-              "What the composer's permission menu offers. A rename keeps the mapping; a Session keeps its own mode, network and approval mode, and the menu names it by the first row that matches.",
+              "What the composer's permission menu offers, and the default a new session starts from while the sandbox is on. A rename keeps the mapping; a Session keeps its own mode, network and approval mode, and the menu names it by the first row that matches.",
             descriptionZh:
-              "输入框权限菜单提供的选项。改名不改映射；会话只保存自己的封禁模式、网络与审批方式，菜单按第一个匹配的行为它命名。",
+              "输入框权限菜单提供的选项，以及沙盒打开时新会话的默认预设。改名不改映射；会话只保存自己的封禁模式、网络与审批方式，菜单按第一个匹配的行为它命名。",
+            rowChoice: { field: "defaultPreset", title: "Default", titleZh: "默认" },
             columns: [
               { name: "name", type: "string", title: "Name", titleZh: "名称" },
               { name: "enabled", type: "boolean", title: "In menu", titleZh: "进菜单" },
@@ -250,40 +181,24 @@ export function sandboxPresetsOf(
               },
             ],
           },
-          mode: {
+          // The row a new Session starts from while the switch is on, drawn only as the table's
+          // Default column. No declared default: the derive hook shows DEFAULT_PRESET, and a
+          // document stored without it is read by its own mode and network (settings-policy.ts).
+          defaultPreset: {
             type: "enum",
-            title: "Confinement mode",
-            advanced: true,
-            titleZh: "封禁模式",
-            default: "danger-full-access",
+            title: "Default preset",
+            titleZh: "默认预设",
             options: [
+              { value: "full-access", title: "Full Access", titleZh: "完全访问" },
+              { value: "always-ask", title: "Always Ask", titleZh: "每次询问" },
+              { value: "workspace-write", title: "Workspace Write", titleZh: "仅工作区可写" },
+              { value: "read-only", title: "Read Only", titleZh: "只读" },
               {
-                value: "danger-full-access",
-                title: "Off (full access)",
-                titleZh: "关闭（完全访问）",
+                value: "workspace-write-ask",
+                title: "Workspace Write with Ask",
+                titleZh: "仅工作区可写并询问",
               },
-              { value: "workspace-write", title: "Workspace write only", titleZh: "仅工作区可写" },
-              { value: "read-only", title: "Read-only", titleZh: "只读" },
-            ],
-          },
-          network: {
-            type: "enum",
-            title: "Network",
-            advanced: true,
-            titleZh: "网络",
-            description:
-              "What a confined command, hook script or read_file URL may reach. Local network allows only this machine's localhost, and needs a backend that can enforce it.",
-            descriptionZh:
-              "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。本地网络只允许访问本机 localhost，需要能实施它的后端。",
-            default: "open",
-            options: [
-              { value: "open", title: "Full access", titleZh: "完全访问" },
-              {
-                value: "local",
-                title: "Local network (localhost only)",
-                titleZh: "本地网络（仅本机 localhost）",
-              },
-              { value: "none", title: "No network", titleZh: "无网络" },
+              { value: "denied-all", title: "Denied All", titleZh: "全部拒绝" },
             ],
           },
           writableTemp: {
@@ -322,10 +237,13 @@ export class SandboxSettings {
     const { pluginConfig, sandbox } = this;
     // A saved document wins; with none saved the service keeps what the swap carried —
     // applying the defaults here would un-confine a deployment on every hot update.
+    const schema = () => pluginConfig.schema(SANDBOX_GROUP);
     if (pluginConfig.saved(SANDBOX_GROUP)) {
-      sandbox.configure(sandboxPolicyOf(pluginConfig.get(SANDBOX_GROUP)));
+      sandbox.configure(sandboxStartOf(schema(), pluginConfig.get(SANDBOX_GROUP), true).policy);
     }
-    pluginConfig.watch(SANDBOX_GROUP, (doc) => sandbox.configure(sandboxPolicyOf(doc)));
+    pluginConfig.watch(SANDBOX_GROUP, (doc) =>
+      sandbox.configure(sandboxStartOf(schema(), doc, true).policy),
+    );
   }
 }
 
@@ -348,7 +266,17 @@ export class SandboxSettingsStatus {
     const sandbox = this.sandbox;
     this.status = {
       // The switch as the card shows it: derived for a document saved before it existed.
-      derive: (values) => ({ ...values, enabled: sandboxEnabledOf(values) }),
+      derive: (values) => ({
+        ...values,
+        enabled: sandboxEnabledOf(values),
+        defaultPreset: values.defaultPreset ?? DEFAULT_PRESET,
+      }),
+      // Every save pins the default preset: a document stored before it existed is read by
+      // its own mode and network until then (settings-policy.ts).
+      saving: (update, current) =>
+        update.defaultPreset !== undefined
+          ? update
+          : { ...update, defaultPreset: current.defaultPreset ?? DEFAULT_PRESET },
       // A backend for this OS is installed when it is in use or failed (to load, or its check):
       // one that declined is for another OS. Installing the default would not fix a failure.
       backend: () => {
@@ -370,11 +298,7 @@ export class SandboxSettingsStatus {
           reason: "no sandbox backend on this host supports it",
           reasonZh: "本机的沙盒后端不支持",
         };
-        // The presets' network column follows the same rule as the field.
-        return [
-          { field: "network", ...why },
-          { field: "presets", column: "network", ...why },
-        ];
+        return [{ field: "presets", column: "network", ...why }];
       },
       notices: (): PluginConfigNotice[] => {
         const notices: PluginConfigNotice[] = [];

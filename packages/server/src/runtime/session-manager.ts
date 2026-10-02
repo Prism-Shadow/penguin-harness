@@ -92,7 +92,12 @@ import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
-import { SANDBOX_GROUP, sandboxEnabledOf, sandboxPresetsOf } from "../sandbox/settings-store.js";
+import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
+import {
+  sandboxEnabledOf,
+  sandboxPresetsOf,
+  sandboxStartOf,
+} from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
 import { SessionService } from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
@@ -2722,6 +2727,13 @@ export class SessionsModule {
       sandboxPresets: () =>
         sandboxPresetsOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP)),
       sandboxSwitchOn: () => sandboxEnabledOf(pluginConfig.get(SANDBOX_GROUP)),
+      // The default preset's approval mode, while the switch is on.
+      sandboxDefaultApproval: () =>
+        sandboxStartOf(
+          pluginConfig.schema(SANDBOX_GROUP),
+          pluginConfig.get(SANDBOX_GROUP),
+          pluginConfig.saved(SANDBOX_GROUP),
+        ).approvalMode,
     });
     this.manager = manager;
     this.sessionService = sessionService;

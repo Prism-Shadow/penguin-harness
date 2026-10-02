@@ -2,11 +2,13 @@
  * The Sandbox card's switch: whether new Sessions start confined.
  *
  * - Given settings saved before the switch existed (no `enabled` on disk), when the server
- *   boots, the card shows the switch on exactly when the old policy confined anything, the
- *   service applies that policy, and the stored document is not rewritten.
- * - Given the switch turned off, when a Session is created, it starts unconfined and its view
- *   says the switch is off; a Session created while it was on keeps its own policy. Turned back
- *   on, the stored mode and network apply again.
+ *   boots, the card shows the switch on exactly when the old policy confined anything — a mode
+ *   other than Off, a network that is not open, or masked paths — the service applies that
+ *   policy, and the stored document is not rewritten. Saved once, the default preset rules.
+ * - Given the switch on, a new Session (and the composer's draft) starts from the default
+ *   preset's mode, network and approval mode; changing the default reaches only new Sessions.
+ * - Given the switch off, a new Session starts unconfined with no approval mode from the
+ *   presets; a Session created while it was on keeps its own policy.
  * - The card reports whether a sandbox backend for this OS is installed — in use, or installed
  *   and failing — and which package this OS defaults to; a backend that declined (another
  *   OS's) does not count.
@@ -100,19 +102,23 @@ describe("the sandbox switch", () => {
       return next;
     };
     try {
-      const confined = await restartWith({ mode: "workspace-write", network: "none" });
+      const confined = await restartWith({ mode: "read-only", network: "none" });
+      // The card shows the switch on, and its shipped default preset; the document's own
+      // mode and network still decide new Sessions, unshown, until the card is saved.
       expect((await confined.card()).values).toMatchObject({
         enabled: true,
-        mode: "workspace-write",
-        network: "none",
+        defaultPreset: "workspace-write",
       });
-      expect(confined.sandbox.currentSettings()).toEqual({
-        mode: "workspace-write",
-        network: "none",
-      });
+      expect(confined.sandbox.currentSettings()).toEqual({ mode: "read-only", network: "none" });
       expect(confined.t.deps.serverSettingsRepo.get("plugin-config:sandbox")).toBe(
-        JSON.stringify({ mode: "workspace-write", network: "none" }),
+        JSON.stringify({ mode: "read-only", network: "none" }),
       );
+      // One save of the card, of anything, pins the default preset: from then on it rules.
+      expect((await confined.save({ writableTemp: true })).status).toBe(200);
+      expect(confined.sandbox.currentSettings()).toEqual({ mode: "workspace-write" });
+      expect(
+        JSON.parse(confined.t.deps.serverSettingsRepo.get("plugin-config:sandbox")!),
+      ).toMatchObject({ defaultPreset: "workspace-write" });
       await apps.pop()!.cleanup();
 
       // Off with the network cut still confined: it reads as on, and stays confined.
@@ -133,7 +139,7 @@ describe("the sandbox switch", () => {
     }
   });
 
-  it("off, a new Session starts unconfined while an existing one keeps its policy; on again, the stored mode returns", async () => {
+  it("on, a new Session starts from the default preset (mode, network, approval); off, unconfined; existing Sessions keep theirs", async () => {
     const { t, card, save, sandbox } = await boot({
       plugins: backendPlugin({ "fake.provider": PROVIDER }),
     });
@@ -150,7 +156,9 @@ describe("the sandbox switch", () => {
       defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
       models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
     });
-    type Created = { session: { sessionId: string; sandbox: SessionSandbox } };
+    type Created = {
+      session: { sessionId: string; approvalMode: string; sandbox: SessionSandbox };
+    };
     const create = async () =>
       (await (
         await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
@@ -164,42 +172,66 @@ describe("the sandbox switch", () => {
         }
       ).sandbox;
 
-    expect((await save({ enabled: true, mode: "read-only", network: "none" })).status).toBe(200);
+    // On, with the Read Only row as the default, remapped to cut the network and ask.
+    expect(
+      (
+        await save({
+          enabled: true,
+          defaultPreset: "read-only",
+          presets: { "read-only": { network: "none", approvalMode: "always-ask" } },
+        })
+      ).status,
+    ).toBe(200);
     const confined = await create();
+    expect(confined.session.approvalMode).toBe("always-ask");
     expect(confined.session.sandbox).toMatchObject({
       mode: "read-only",
       network: "none",
       switchOn: true,
     });
+    expect(await draft()).toMatchObject({
+      mode: "read-only",
+      network: "none",
+      defaultApprovalMode: "always-ask",
+    });
 
+    // Another default reaches new Sessions only.
+    expect((await save({ defaultPreset: "workspace-write" })).status).toBe(200);
+    const next = await create();
+    expect(next.session.approvalMode).toBe("allow-all");
+    expect(next.session.sandbox).toMatchObject({ mode: "workspace-write", network: "open" });
+    expect(await read(confined.session.sessionId)).toMatchObject({
+      mode: "read-only",
+      network: "none",
+    });
+
+    // Off: new Sessions start unconfined and take no approval mode from the presets.
     const off = await save({ enabled: false });
     expect(off.status).toBe(200);
-    // The card keeps the mode and network it will apply again.
     const offCard = ((await off.json()) as PluginConfigResponse).plugins.find(
       (e) => e.name === "sandbox",
     )!;
-    expect(offCard.values).toMatchObject({ enabled: false, mode: "read-only", network: "none" });
+    expect(offCard.values).toMatchObject({ enabled: false, defaultPreset: "workspace-write" });
     expect(sandbox.currentSettings()).toEqual({ mode: "danger-full-access" });
     const unconfined = await create();
+    expect(unconfined.session.approvalMode).toBe("allow-all");
     expect(unconfined.session.sandbox).toMatchObject({
       mode: "danger-full-access",
       network: "open",
       switchOn: false,
     });
-    expect(await draft()).toMatchObject({ mode: "danger-full-access", switchOn: false });
+    const offDraft = await draft();
+    expect(offDraft).toMatchObject({ mode: "danger-full-access", switchOn: false });
+    expect(offDraft.defaultApprovalMode).toBeUndefined();
     expect(await read(confined.session.sessionId)).toMatchObject({
       mode: "read-only",
       network: "none",
       switchOn: false,
     });
 
+    // On again: the default preset applies again.
     expect((await save({ enabled: true })).status).toBe(200);
-    expect(sandbox.currentSettings()).toEqual({ mode: "read-only", network: "none" });
-    expect((await create()).session.sandbox).toMatchObject({
-      mode: "read-only",
-      network: "none",
-      switchOn: true,
-    });
+    expect(sandbox.currentSettings()).toEqual({ mode: "workspace-write" });
     expect(await read(unconfined.session.sessionId)).toMatchObject({
       mode: "danger-full-access",
     });

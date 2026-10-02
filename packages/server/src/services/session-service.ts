@@ -256,6 +256,8 @@ export interface SessionServiceDeps {
   sandboxPresets?: () => readonly SessionSandboxPreset[];
   /** The Sandbox card's switch: whether new Sessions start confined (absent: not reported). */
   sandboxSwitchOn?: () => boolean;
+  /** The approval mode a new Session starts with when its request names none (the default preset's). */
+  sandboxDefaultApproval?: () => ApprovalMode | undefined;
 }
 
 export class SessionService {
@@ -284,6 +286,29 @@ export class SessionService {
       this.deps.sandboxPresets?.(),
       this.deps.sandboxSwitchOn?.(),
     );
+  }
+
+  /**
+   * What a new Session starts from, as the composer's draft reads it (the chat defaults): the
+   * settings' policy, plus the approval mode the default preset gives a request naming none.
+   */
+  defaultsView(): SessionSandbox {
+    const approval = this.deps.sandboxDefaultApproval?.();
+    return {
+      ...this.sandboxView(this.defaultSandbox()),
+      ...(approval !== undefined ? { defaultApprovalMode: approval } : {}),
+    };
+  }
+
+  /**
+   * The approval mode a Session created without one starts with. An organization's Session
+   * keeps `allow-all`: its runtime names the mode it wants, and nobody is there to answer an
+   * ask a preset might bring.
+   */
+  private startApproval(requested: ApprovalMode | undefined, client?: string): ApprovalMode {
+    if (requested !== undefined) return requested;
+    if (client === "org") return "allow-all";
+    return this.deps.sandboxDefaultApproval?.() ?? "allow-all";
   }
 
   /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */
@@ -695,7 +720,7 @@ export class SessionService {
       provider: session.provider,
       modelId: session.modelId,
       workspace: session.workspaceDir,
-      approvalMode: args.approvalMode ?? "allow-all",
+      approvalMode: this.startApproval(args.approvalMode, args.client),
       sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
