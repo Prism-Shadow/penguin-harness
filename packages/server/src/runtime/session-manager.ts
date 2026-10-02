@@ -93,11 +93,7 @@ import type { SessionService as SessionServiceImpl } from "../services/session-s
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
-import {
-  sandboxEnabledOf,
-  sandboxPresetsOf,
-  sandboxStartOf,
-} from "../sandbox/settings-policy.js";
+import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
 import { SessionService } from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";

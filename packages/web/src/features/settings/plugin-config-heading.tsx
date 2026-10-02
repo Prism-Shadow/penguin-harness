@@ -65,21 +65,21 @@ export function ConfigHeading({
       {(entry.notices ?? [])
         .filter((n) => n.onlyWhen === undefined || draft?.[n.onlyWhen] === true)
         .map((notice, i) =>
-        notice.tone === "progress" ? (
-          <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
-            <Spinner size="sm" label={S.common.loading} />
-            <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
-          </p>
-        ) : notice.tone === "attention" ? (
-          <NoticeStrip tone="attention" as="p" key={i} className="rounded-md px-3 py-2 text-xs">
-            {localized(notice.text, notice.textZh)}
-          </NoticeStrip>
-        ) : (
-          <p key={i} className="text-xs text-fg-muted">
-            {localized(notice.text, notice.textZh)}
-          </p>
-        ),
-      )}
+          notice.tone === "progress" ? (
+            <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
+              <Spinner size="sm" label={S.common.loading} />
+              <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
+            </p>
+          ) : notice.tone === "attention" ? (
+            <NoticeStrip tone="attention" as="p" key={i} className="rounded-md px-3 py-2 text-xs">
+              {localized(notice.text, notice.textZh)}
+            </NoticeStrip>
+          ) : (
+            <p key={i} className="text-xs text-fg-muted">
+              {localized(notice.text, notice.textZh)}
+            </p>
+          ),
+        )}
     </div>
   );
 }

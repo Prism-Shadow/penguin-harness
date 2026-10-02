@@ -97,7 +97,10 @@ export function ConfigTable({
                 {columns.map((c) => {
                   const cell = table[row.id]?.[c.name];
                   const locked = row.locked?.includes(c.name) === true;
-                  const declared = localized(String(row.values[c.name] ?? ""), row.valuesZh?.[c.name]);
+                  const declared = localized(
+                    String(row.values[c.name] ?? ""),
+                    row.valuesZh?.[c.name],
+                  );
                   const cellLabel = `${localized(String(row.values.name ?? row.id), row.valuesZh?.name)} · ${localized(c.title, c.titleZh)}`;
                   const optionTitle = (value: unknown) => {
                     const option = c.options?.find((o) => o.value === value);

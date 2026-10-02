@@ -63,7 +63,10 @@ export interface SettingsGroupStatus {
    * reads them (`derive` applied) (the sandbox pins its default preset, so the
    * first save ends a document's pre-preset reading).
    */
-  saving?(update: Record<string, unknown>, current: Record<string, unknown>): Record<string, unknown>;
+  saving?(
+    update: Record<string, unknown>,
+    current: Record<string, unknown>,
+  ): Record<string, unknown>;
 }
 
 /** One enum option a settings group cannot honour on this machine, and why. */
@@ -137,7 +140,9 @@ export class PluginConfigPage {
       const backend = group?.backend?.();
       return {
         ...entry,
-        ...(group?.derive !== undefined ? { values: group.derive(entry.values, pluginConfig.get(entry.name)) } : {}),
+        ...(group?.derive !== undefined
+          ? { values: group.derive(entry.values, pluginConfig.get(entry.name)) }
+          : {}),
         ...(notices.length > 0 ? { notices } : {}),
         ...(actions.length > 0 ? { actions } : {}),
         ...(unavailable.length > 0 ? { unavailable } : {}),
@@ -154,9 +159,7 @@ export class PluginConfigPage {
       set: async (name, sent) => {
         const group = status.get(name);
         const update =
-          group?.saving === undefined
-            ? sent
-            : group.saving(sent, readValues(name, group));
+          group?.saving === undefined ? sent : group.saving(sent, readValues(name, group));
         // An option this machine cannot honour is refused like an invalid value, naming it.
         for (const u of status.get(name)?.unavailable?.() ?? []) {
           if (u.column !== undefined) {

@@ -95,7 +95,7 @@ export const SANDBOX_GROUP = "sandbox";
                 options: [
                   { value: "open", title: "Full", titleZh: "完全" },
                   { value: "local", title: "Localhost", titleZh: "仅本机" },
-                  { value: "none", title: "None", titleZh: "无"} ,
+                  { value: "none", title: "None", titleZh: "无" },
                 ],
               },
               {

@@ -63,8 +63,7 @@ export function sandboxStartOf(
   if (saved && doc.defaultPreset === undefined) return { policy: legacyPolicyOf(doc) };
   const presets = sandboxPresetsOf(schema, doc);
   const preset =
-    presets.find((p) => p.id === doc.defaultPreset) ??
-    presets.find((p) => p.id === DEFAULT_PRESET);
+    presets.find((p) => p.id === doc.defaultPreset) ?? presets.find((p) => p.id === DEFAULT_PRESET);
   if (preset === undefined) return { policy: UNCONFINED };
   const { approvalMode } = preset;
   if (preset.mode === "danger-full-access" && preset.network === "open") {

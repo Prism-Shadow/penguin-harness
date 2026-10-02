@@ -535,9 +535,9 @@ describe("a table's row choice", () => {
     );
 
   it("stores into an enum of the same group whose options are the row ids", () => {
-    expect(table({ field: "pick", title: "Default" }, ["b", "a"])!.properties.rows!.rowChoice).toEqual(
-      { field: "pick", title: "Default" },
-    );
+    expect(
+      table({ field: "pick", title: "Default" }, ["b", "a"])!.properties.rows!.rowChoice,
+    ).toEqual({ field: "pick", title: "Default" });
   });
 
   it("refuses a choice naming no such enum, or one whose options are not the rows", () => {
