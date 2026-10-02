@@ -1638,6 +1638,12 @@ export interface SessionSandboxPreset {
   mode: SessionSandboxMode;
   network: SessionSandboxNetwork;
   approvalMode: ApprovalMode;
+  /**
+   * Response-only: its file mode or network is wider than the server's sandbox settings (the
+   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
+   * The same comparison as that refusal; absent when it is within them.
+   */
+  aboveCeiling?: true;
 }
 
 /** An enabled sandbox backend that is not in use on this server, and why. */

@@ -11,7 +11,8 @@
  * The Session stores the three values, never the preset: the button names it by the first row
  * matching them, and says custom when none does. A preset this server cannot enforce is greyed
  * out rather than hidden, marked with why — with no sandbox backend installed, every preset
- * that confines.
+ * that confines. So is, for a non-admin, a preset wider than the server's sandbox settings
+ * (`aboveCeiling`), which the server would refuse: marked admin-only, unless it is the current one.
  *
  * With the server's Sandbox switch off, new Sessions start unconfined and the menu lists the
  * approval modes alone (permissionMenu); a pick changes only the approval mode.
@@ -51,7 +52,7 @@ import {
   presetsOf,
   sandboxSwitchOff,
 } from "../../lib/permission-level";
-import type { LevelBlock, PermissionPick } from "../../lib/permission-level";
+import type { PermissionPick, PresetBlock } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "./skill-use";
@@ -129,13 +130,15 @@ export function PermissionSelect({
   // mounted, every preset that confines: not installed, or enabled but failing its check, with
   // the first such backend's reason.
   const failed = firstUnavailableBackend(sandbox);
-  const blockText = (block: LevelBlock): { reason: string; note?: string } =>
-    block === "no-backend"
-      ? { reason: P.noBackend, note: P.notInstalled }
-      : block === "unavailable" && failed !== null
-        ? { reason: P.backendUnavailable(failed.name, failed.reason), note: P.notAvailable }
-        : { reason: block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported };
-  const hintOf = (p: SessionSandboxPreset, block: LevelBlock | null) => {
+  const blockText = (block: PresetBlock): { reason: string; note?: string } =>
+    block === "above-ceiling"
+      ? { reason: P.aboveCeiling, note: P.adminOnly }
+      : block === "no-backend"
+        ? { reason: P.noBackend, note: P.notInstalled }
+        : block === "unavailable" && failed !== null
+          ? { reason: P.backendUnavailable(failed.name, failed.reason), note: P.notAvailable }
+          : { reason: block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported };
+  const hintOf = (p: SessionSandboxPreset, block: PresetBlock | null) => {
     const { blocks, allows } = presetEffects(p);
     const list = (effects: string[]) =>
       effects.length === 0 ? P.nothing : effects.map((e) => P.effects[e] ?? e).join(", ");
@@ -243,7 +246,7 @@ export function PermissionSelect({
               );
             }
             const p = row.preset;
-            const block = presetBlock(sandbox, p);
+            const block = presetBlock(sandbox, p, { isAdmin, current });
             return (
               <Choice
                 key={p.id}

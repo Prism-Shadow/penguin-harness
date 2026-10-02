@@ -228,6 +228,42 @@ describe("the composer's presets", () => {
     expect(presetBlock(FULL, { mode: "read-only", network: "local" })).toBe("local-unsupported");
   });
 
+  it("greys out a preset above the ceiling for a non-admin, never for an admin or the current one", () => {
+    // The server marks the rows wider than its settings: from Workspace Write, the Off ones.
+    const presets = BUILTIN_PRESETS.map((p) =>
+      p.mode === "danger-full-access" ? { ...p, aboveCeiling: true as const } : p,
+    );
+    const sandbox: SessionSandbox = {
+      mode: "workspace-write",
+      network: "open",
+      confinementSupported: true,
+      presets,
+    };
+    const blocked = (isAdmin: boolean, currentId: string | null) =>
+      presets
+        .filter(
+          (p) =>
+            presetBlock(sandbox, p, {
+              isAdmin,
+              current: presets.find((c) => c.id === currentId) ?? null,
+            }) !== null,
+        )
+        .map((p) => p.id);
+    expect(blocked(false, "workspace-write")).toEqual(["full-access", "always-ask", "denied-all"]);
+    expect(presetBlock(sandbox, presets[0]!, { isAdmin: false, current: null })).toBe(
+      "above-ceiling",
+    );
+    // An administrator may go past the server's settings.
+    expect(blocked(true, "workspace-write")).toEqual([]);
+    // The row the Session is on stays pickable: picking it changes nothing.
+    expect(blocked(false, "always-ask")).toEqual(["full-access", "denied-all"]);
+    // A row this server cannot enforce says that first, whoever picks it.
+    const none: SessionSandbox = { ...sandbox, confinementSupported: false };
+    expect(presetBlock(none, byId("read-only"), { isAdmin: true, current: null })).toBe(
+      "no-backend",
+    );
+  });
+
   it("says what a preset blocks and allows, from its three values", () => {
     expect(presetEffects(byId("full-access"))).toEqual({
       blocks: [],

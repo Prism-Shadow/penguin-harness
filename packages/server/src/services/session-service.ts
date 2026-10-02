@@ -44,18 +44,7 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-
-const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
-  "read-only": 0,
-  "workspace-write": 1,
-  "danger-full-access": 2,
-};
-
-const SANDBOX_NETWORK_RANK: Record<SessionSandbox["network"], number> = {
-  none: 0,
-  local: 1,
-  open: 2,
-};
+import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 
 /** A stored policy's network level as the composer names it. */
 function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
@@ -69,7 +58,9 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
  * failed to load or failed its check, with why; one for another platform is not among them.
  * `presets` is the Sandbox card's table the composer names levels by, when there is one; the
  * policy is `advanced` when it holds what no preset shows (masked paths, a read-only temp).
- * `switchOn` is the card's switch, when the server reports it.
+ * `switchOn` is the card's switch, when the server reports it. Given the server's settings
+ * (`ceiling`), each preset wider than them is marked `aboveCeiling`, by the comparison
+ * `applySandboxPick` refuses a non-admin's pick with.
  */
 export function sessionSandboxOf(
   policy: SandboxSettings,
@@ -77,8 +68,12 @@ export function sessionSandboxOf(
   unavailable: readonly UnavailableSandboxBackend[] = [],
   presets?: readonly SessionSandboxPreset[],
   switchOn?: boolean,
+  ceiling?: SandboxSettings,
 ): SessionSandbox {
   const advanced = (policy.maskPaths ?? []).length > 0 || policy.writableTemp === false;
+  const above = (p: SessionSandboxPreset) =>
+    ceiling !== undefined &&
+    aboveSandboxCeiling(p, { mode: ceiling.mode, network: networkOf(ceiling) }) !== null;
   return {
     mode: policy.mode,
     network: networkOf(policy),
@@ -86,7 +81,9 @@ export function sessionSandboxOf(
     noNetworkSupported: dimensions.includes("network"),
     localNetworkSupported: dimensions.includes("network-local"),
     unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
-    ...(presets !== undefined ? { presets: presets.map((p) => ({ ...p })) } : {}),
+    ...(presets !== undefined
+      ? { presets: presets.map((p) => ({ ...p, ...(above(p) ? { aboveCeiling: true } : {}) })) }
+      : {}),
     ...(advanced ? { advanced: true } : {}),
     ...(switchOn !== undefined ? { switchOn } : {}),
   };
@@ -116,14 +113,18 @@ export function applySandboxPick(
     );
   }
   if (!isAdmin) {
-    if (SANDBOX_MODE_RANK[mode] > SANDBOX_MODE_RANK[defaults.mode]) {
+    const above = aboveSandboxCeiling(
+      { mode, network },
+      { mode: defaults.mode, network: networkOf(defaults) },
+    );
+    if (above === "mode") {
       throw new HttpError(
         403,
         "sandbox_forbidden",
         `Only an administrator can give a Session more filesystem access than the server's sandbox settings (${defaults.mode}).`,
       );
     }
-    if (SANDBOX_NETWORK_RANK[network] > SANDBOX_NETWORK_RANK[networkOf(defaults)]) {
+    if (above === "network") {
       throw new HttpError(
         403,
         "sandbox_forbidden",
@@ -285,6 +286,7 @@ export class SessionService {
       this.deps.sandboxUnavailable?.() ?? [],
       this.deps.sandboxPresets?.(),
       this.deps.sandboxSwitchOn?.(),
+      this.defaultSandbox(),
     );
   }
 

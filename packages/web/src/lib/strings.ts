@@ -2966,6 +2966,8 @@ Benchmark：
         "本服务器没有安装沙盒后端，命令无法被封禁。管理员可在插件页启用适用于本平台的后端（更多…）。",
       noNetworkUnsupported: "本机的沙盒后端不支持断开网络",
       notAvailable: "不可用",
+      adminOnly: "仅管理员",
+      aboveCeiling: "超出了本服务器的沙盒上限：只有管理员可以给会话这么大的权限。",
       backendUnavailable: (name: string, reason: string) =>
         `沙盒后端 ${name} 已启用但未在用：${reason}。管理员可在「更多…」里的沙盒卡片处理。`,
       more: "更多…",

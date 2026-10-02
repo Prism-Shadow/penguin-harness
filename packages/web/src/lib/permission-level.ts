@@ -243,12 +243,41 @@ export function permissionMenu(
   }));
 }
 
-/** Why this server cannot enforce a preset, or null when it can: its mode's block, else its network's. */
+/**
+ * Why a preset cannot be picked: a `LevelBlock` (this server cannot enforce it), or
+ * `above-ceiling` — wider than the server's sandbox settings, which only an administrator may go
+ * past (the server marks such a row `aboveCeiling` and refuses a non-admin's pick of it).
+ */
+export type PresetBlock = LevelBlock | "above-ceiling";
+
+/** Who is picking: whether an administrator, and the preset the Session is on, if any. */
+export interface PresetPicker {
+  isAdmin: boolean;
+  current: SessionSandboxPreset | null;
+}
+
+/**
+ * Why a preset cannot be picked, or null when it can: its mode's enforcement block, else its
+ * network's, else — given who is picking — the ceiling, which holds a non-admin only and never on
+ * the preset the Session is already on (picking it changes nothing).
+ */
 export function presetBlock(
   sandbox: SessionSandbox,
-  preset: Pick<SessionSandboxPreset, "mode" | "network">,
-): LevelBlock | null {
-  return fsModeBlock(sandbox, preset.mode) ?? networkBlock(sandbox, preset.network);
+  preset: Pick<SessionSandboxPreset, "mode" | "network"> &
+    Partial<Pick<SessionSandboxPreset, "id" | "aboveCeiling">>,
+  picker?: PresetPicker,
+): PresetBlock | null {
+  const enforce = fsModeBlock(sandbox, preset.mode) ?? networkBlock(sandbox, preset.network);
+  if (enforce !== null) return enforce;
+  if (
+    picker !== undefined &&
+    !picker.isAdmin &&
+    preset.aboveCeiling === true &&
+    preset.id !== picker.current?.id
+  ) {
+    return "above-ceiling";
+  }
+  return null;
 }
 
 /** One thing a preset holds back or lets through, as the hover text names it. */

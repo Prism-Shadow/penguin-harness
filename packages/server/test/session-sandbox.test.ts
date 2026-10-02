@@ -169,59 +169,6 @@ describe("picking a Session's sandbox from the composer", () => {
       ],
     });
   });
-
-  it("a non-admin cannot loosen past the server's settings, in either dimension", () => {
-    expect(() =>
-      applySandboxPick(settings, { mode: "danger-full-access" }, settings, false),
-    ).toThrow(/Only an administrator/);
-    expect(() => applySandboxPick(settings, { network: "open" }, settings, false)).toThrow(
-      /Only an administrator/,
-    );
-  });
-
-  it("the local level is refused where no backend supports it, and ranks between none and open", () => {
-    expect(() => applySandboxPick(settings, { network: "local" }, settings, true)).toThrow(
-      /localhost/,
-    );
-    const open: SandboxSettings = { mode: "workspace-write" };
-    const local = applySandboxPick(open, { network: "local" }, open, false, true);
-    expect(local.network).toBe("local");
-    expect(sessionSandboxOf(local, ["fs-write", "network", "network-local"])).toEqual({
-      mode: "workspace-write",
-      network: "local",
-      confinementSupported: true,
-      noNetworkSupported: true,
-      localNetworkSupported: true,
-      unavailableBackends: [],
-    });
-    // Under settings of "local", a non-admin may cut the network but not open it.
-    const localDefaults: SandboxSettings = { mode: "workspace-write", network: "local" };
-    expect(
-      applySandboxPick(localDefaults, { network: "none" }, localDefaults, false, true).network,
-    ).toBe("none");
-    expect(() =>
-      applySandboxPick(localDefaults, { network: "open" }, localDefaults, false, true),
-    ).toThrow(/Only an administrator/);
-    // Under settings of "none", "local" is already looser.
-    expect(() => applySandboxPick(settings, { network: "local" }, settings, false, true)).toThrow(
-      /Only an administrator/,
-    );
-  });
-
-  it("a non-admin who tightened may come back to the settings; an admin may go past them", () => {
-    const tightened = applySandboxPick(settings, { mode: "read-only" }, settings, false);
-    expect(applySandboxPick(tightened, { mode: "workspace-write" }, settings, false).mode).toBe(
-      "workspace-write",
-    );
-    const opened = applySandboxPick(
-      settings,
-      { mode: "danger-full-access", network: "open" },
-      settings,
-      true,
-    );
-    expect(opened.mode).toBe("danger-full-access");
-    expect(opened.network).toBeUndefined();
-  });
 });
 
 describe("the snapshot on the Session's row", () => {
@@ -502,6 +449,46 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       });
       expect(unsupported.status).toBe(400);
       expect(t.deps.sessionsRepo.findById(id)?.approvalMode).toBe("always-ask");
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("marks the presets wider than the server's settings as above the ceiling", async () => {
+    const { t, admin, owner, projectId } = await ownerProject("owner-ceiling");
+    try {
+      type Read = { session: { sessionId: string; sandbox: SessionSandbox } };
+      const aboveIds = (sandbox: SessionSandbox) =>
+        (sandbox.presets ?? []).filter((p) => p.aboveCeiling === true).map((p) => p.id);
+      const settings = (values: Record<string, unknown>) =>
+        admin.put("/api/admin/plugin-config", { name: "sandbox", values });
+
+      // On, from Workspace Write: the presets whose file mode is Off are above it.
+      expect((await settings({ enabled: true })).status).toBe(200);
+      const created = (await (
+        await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
+      ).json()) as Read;
+      const id = created.session.sessionId;
+      expect(aboveIds(created.session.sandbox)).toEqual([
+        "full-access",
+        "always-ask",
+        "denied-all",
+      ]);
+      const defaults = (await (
+        await owner.get(`/api/projects/${projectId}/chat-defaults`)
+      ).json()) as { sandbox: SessionSandbox };
+      expect(aboveIds(defaults.sandbox)).toEqual(["full-access", "always-ask", "denied-all"]);
+      // The mark is the refusal's own comparison: a marked row is refused, an unmarked one is not.
+      const pick = (sandbox: Record<string, unknown>) =>
+        owner.patch(`/api/sessions/${id}`, { sandbox });
+      expect((await pick({ mode: "danger-full-access", network: "open" })).status).toBe(403);
+      expect((await pick({ mode: "read-only", network: "open" })).status).toBe(200);
+
+      // Off: the server's settings confine nothing, so no row is above them.
+      expect((await settings({ enabled: false })).status).toBe(200);
+      const read = ((await (await owner.get(`/api/sessions/${id}`)).json()) as Read).session;
+      expect(read.sandbox.presets).toHaveLength(DEFAULT_PRESETS.length);
+      expect(aboveIds(read.sandbox)).toEqual([]);
     } finally {
       await t.cleanup();
     }

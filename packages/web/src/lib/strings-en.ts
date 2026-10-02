@@ -2869,6 +2869,10 @@ Scenarios:
       noNetworkUnsupported: "No sandbox backend on this machine can cut the network off",
       /** The short note beside a level whose enabled backend failed its check. */
       notAvailable: "Unavailable",
+      /** The short note beside a preset wider than the server's sandbox settings, for a non-admin. */
+      adminOnly: "Admin only",
+      aboveCeiling:
+        "Exceeds this server's sandbox ceiling: only an administrator can give a Session this much access.",
       backendUnavailable: (name: string, reason: string) =>
         `The sandbox backend ${name} is enabled but not in use: ${reason}. An administrator can fix this on the Sandbox card (More…).`,
       more: "More…",
