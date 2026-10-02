@@ -3,7 +3,7 @@
  * Appearance section's font choices). The root is a small fake answering both the `dataset`
  * and the attribute API.
  *
- * - An empty store reads as Frost, its own accent, 16px and its own faces.
+ * - An empty store reads as the initial theme, its own accent, 16px and its own faces.
  * - The legacy three-step font scale migrates by pixels once and its key is dropped; a stored
  *   text size is kept and anything unknown reads as the default.
  * - The theme and font faces are validated against the package's lists; another theme's accent
@@ -16,7 +16,7 @@
  *   dictionary.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { ACCENT_PRESET_IDS, THEME_IDS } from "@prismshadow/penguin-ui";
+import { ACCENT_PRESET_IDS, INITIAL_THEME_ID, THEME_IDS } from "@prismshadow/penguin-ui";
 import {
   FONT_CJK_OPTIONS,
   FONT_LATIN_OPTIONS,
@@ -80,9 +80,9 @@ function fakeRoot() {
 }
 
 describe("reading the stored appearance", () => {
-  it("falls back to the defaults on an empty store: Frost, its own accent, 16px, its own faces", () => {
+  it("falls back to the defaults on an empty store: the initial theme, its own accent, 16px, its own faces", () => {
     expect(readThemePrefs(memoryStorage())).toEqual({
-      themeId: "modern",
+      themeId: INITIAL_THEME_ID,
       accent: "neutral",
       textSize: "m",
       fontLatin: "theme",
@@ -127,7 +127,7 @@ describe("reading the stored appearance", () => {
     expect(prefs.fontLatin).toBe(FONT_LATIN_OPTIONS.at(-1)!.id);
     expect(prefs.fontCjk).toBe("theme");
     expect(readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.themeId]: "neon" })).themeId).toBe(
-      "modern",
+      INITIAL_THEME_ID,
     );
     // A stored choice of the former default is a choice like any other: it is kept.
     expect(readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.themeId]: "github" })).themeId).toBe(
@@ -158,7 +158,7 @@ describe("the attributes the preferences put on <html>", () => {
     expect(attrs.get("data-font-latin")).toBe(latin);
     expect(attrs.get("data-font-cjk")).toBe(cjk);
     // The theme an empty store starts in is written like a chosen one.
-    expect(attrs.get("data-theme")).toBe("modern");
+    expect(attrs.get("data-theme")).toBe(INITIAL_THEME_ID);
     expect(style.fontSize).toBe("20px");
 
     applyThemeAttributes(root, { fontLatin: "theme", fontCjk: "theme", themeId: "github" });

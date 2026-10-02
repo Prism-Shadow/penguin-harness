@@ -232,12 +232,12 @@ describe("BOOT_SCRIPT", () => {
     expect(root.style.fontSize).toBe("18px");
   });
 
-  it("opens a browser that stores no theme, or an unknown one, in Frost, and Primer as a bare root", () => {
+  it("opens a browser that stores no theme, or an unknown one, in the initial theme, and Primer as a bare root", () => {
     // The theme a fresh browser starts in is written to the root like a chosen one; the stylesheet
     // alone paints its fallback, Primer, which is how a stored choice of Primer is painted.
     for (const stored of [null, "retro"]) {
       expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: stored }, false).theme, `${stored}`).toBe(
-        "modern",
+        INITIAL_THEME_ID,
       );
     }
     expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: DEFAULT_THEME_ID }, false).theme).toBe(
