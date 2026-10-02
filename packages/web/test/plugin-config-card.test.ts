@@ -121,15 +121,15 @@ describe("the settings card", () => {
       );
     expect(pin("Full Access")).toContain('aria-pressed="true"');
     expect(pin("Read Only")).toContain('aria-pressed="false"');
-    // Pressing it: the toggle's own handler reports the flip.
+    // Pressing it: the icon toggle it renders reports the flip.
     const toggle = PinToggle({
       label: "Read Only · Pin",
       pinned: false,
       tooltip: "Not in the menu",
       disabled: false,
       onChange: (on) => flips.push(["b", "enabled", on]),
-    }) as ReactElement<{ onClick: () => void }>;
-    toggle.props.onClick();
+    }) as ReactElement<{ onPress: () => void }>;
+    toggle.props.onPress();
     expect(flips).toEqual([["b", "enabled", true]]);
   });
 
