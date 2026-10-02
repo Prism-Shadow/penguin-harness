@@ -46,7 +46,7 @@ import type { TableDraft } from "./plugin-config-draft";
  * default width with the name column taking what is left.
  */
 const WIDTH = {
-  enum: "w-[6.5rem]",
+  enum: "w-[6.25rem]",
   pin: "w-[3rem]",
   choice: "w-[4.5rem]",
   boolean: "w-[3.25rem]",
@@ -375,7 +375,7 @@ function WrappingNameBox({
       disabled={disabled}
       autoComplete="off"
       spellCheck={false}
-      className="!w-full resize-none overflow-hidden !px-2 !py-1 !leading-snug !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
+      className="!w-full resize-none overflow-hidden !px-1 !py-1 !leading-snug !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
       onKeyDown={(e) => {
         if (e.key === "Enter") e.preventDefault();
       }}
