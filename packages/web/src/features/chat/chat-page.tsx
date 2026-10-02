@@ -1615,25 +1615,20 @@ export function ChatPage() {
 
   // A preset from the permission button: the approval mode and the Session's own sandbox
   // policy in one PATCH, applied from the next tool call and command. A refused change (a
-  // non-admin loosening past the server's settings) is a toast, and the button shows what the
-  // server has — read back, since the route writes the approval mode before it checks the
-  // sandbox, so a refusal can leave the one saved without the other.
+  // non-admin loosening past the server's settings) stores nothing — the route checks every
+  // field before writing any — so the Session is as it was, and the toast says why.
   const onChangePermission = useCallback(
     (pick: PermissionPick) => {
       if (!selected || modeSaving) return;
-      const sessionId = selected.sessionId;
       setModeSaving(true);
       // Returned so the permission button keeps the pick on screen until the save settles.
       return api
-        .patchSession(sessionId, { approvalMode: pick.approvalMode, sandbox: pick.sandbox })
-        .then((res) => replace(res.session))
-        .catch(async (e: unknown) => {
-          toastError(apiErrorText(e));
-          await api.getSession(sessionId).then(
-            (res) => replace(res.session),
-            () => undefined,
-          );
+        .patchSession(selected.sessionId, {
+          approvalMode: pick.approvalMode,
+          sandbox: pick.sandbox,
         })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => toastError(apiErrorText(e)))
         .finally(() => setModeSaving(false));
     },
     [selected, modeSaving, replace],

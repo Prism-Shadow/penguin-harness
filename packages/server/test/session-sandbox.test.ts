@@ -287,6 +287,24 @@ describe("confining under a Session's own policy", () => {
   });
 });
 
+/** A fresh app, an admin, and an owner's Project with a model, to create Sessions in. */
+async function ownerProject(id: string) {
+  const { apiClient, createTestApp, loginAdmin, provisionUser } = await import("./helpers.js");
+  const t = await createTestApp();
+  const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+  const owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+  const projectId = (
+    (await (await owner.post("/api/projects", { projectId: id, name: "project" })).json()) as {
+      project: { projectId: string };
+    }
+  ).project.projectId;
+  await owner.put(`/api/projects/${projectId}/models`, {
+    defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+    models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
+  });
+  return { t, admin, owner, projectId };
+}
+
 describe("the API: settings seed new Sessions, and never reach existing ones", () => {
   it("snapshots at creation, keeps the snapshot across a settings change, and bounds non-admins", async () => {
     const { apiClient, createTestApp, loginAdmin, provisionUser } = await import("./helpers.js");
@@ -430,6 +448,60 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       const masked = await create();
       expect(masked.session.sandbox.advanced).toBe(true);
       expect((await read(first.session.sessionId)).advanced).toBeUndefined();
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("a refused pick stores nothing", async () => {
+    const { t, admin, owner, projectId } = await ownerProject("owner-refused");
+    try {
+      // New Sessions start on "Workspace Write with Ask": confined, asking first.
+      await admin.put("/api/admin/plugin-config", {
+        name: "sandbox",
+        values: { enabled: true, defaultPreset: "workspace-write-ask" },
+      });
+      type Read = {
+        session: {
+          sessionId: string;
+          title: string | null;
+          approvalMode: string;
+          sandbox: SessionSandbox;
+        };
+      };
+      const created = (await (
+        await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
+      ).json()) as Read;
+      const id = created.session.sessionId;
+      expect(created.session).toMatchObject({
+        approvalMode: "always-ask",
+        sandbox: { mode: "workspace-write", network: "open" },
+      });
+
+      // A non-admin picks Full Access, renaming the Session in the same request: the sandbox
+      // half is past the server's settings, so nothing of it is stored.
+      const refused = await owner.patch(`/api/sessions/${id}`, {
+        title: "Renamed",
+        approvalMode: "allow-all",
+        sandbox: { mode: "danger-full-access", network: "open" },
+      });
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toMatchObject({ error: { code: "sandbox_forbidden" } });
+      const after = ((await (await owner.get(`/api/sessions/${id}`)).json()) as Read).session;
+      expect(after).toMatchObject({
+        title: created.session.title,
+        approvalMode: "always-ask",
+        sandbox: { mode: "workspace-write", network: "open" },
+      });
+      expect(t.deps.sessionsRepo.findById(id)?.approvalMode).toBe("always-ask");
+
+      // A level this server cannot enforce is refused the same way, by an admin too.
+      const unsupported = await admin.patch(`/api/sessions/${id}`, {
+        approvalMode: "allow-all",
+        sandbox: { network: "local" },
+      });
+      expect(unsupported.status).toBe(400);
+      expect(t.deps.sessionsRepo.findById(id)?.approvalMode).toBe("always-ask");
     } finally {
       await t.cleanup();
     }

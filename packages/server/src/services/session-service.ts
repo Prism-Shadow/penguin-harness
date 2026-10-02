@@ -316,17 +316,23 @@ export class SessionService {
     return row.sandbox ?? this.defaultSandbox();
   }
 
-  /** Changes one Session's policy (its next command runs under it); returns the new policy. */
-  updateSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
-    const next = applySandboxPick(
+  /**
+   * The policy a pick would give one Session, checked — the non-admin ceiling and what this
+   * server can enforce — and not written: a PATCH checks every field before it writes any.
+   */
+  pickSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
+    return applySandboxPick(
       this.sandboxOf(row),
       pick,
       this.defaultSandbox(),
       isAdmin,
       this.localNetworkSupported(),
     );
-    this.deps.sessions.updateSandbox(row.sessionId, next);
-    return next;
+  }
+
+  /** Stores one Session's policy (`pickSandbox`'s): its next command runs under it. */
+  updateSandbox(sessionId: string, policy: SandboxSettings): void {
+    this.deps.sessions.updateSandbox(sessionId, policy);
   }
 
   /**
