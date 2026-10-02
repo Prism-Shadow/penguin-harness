@@ -12,11 +12,10 @@ import { AdvancedFold } from "../src/features/settings/advanced-fold";
 
 const render = (defaultOpen?: boolean) =>
   renderToStaticMarkup(
-    createElement(
-      AdvancedFold,
-      defaultOpen === undefined ? {} : { defaultOpen },
-      createElement("p", null, "masked paths"),
-    ),
+    createElement(AdvancedFold, {
+      ...(defaultOpen === undefined ? {} : { defaultOpen }),
+      children: createElement("p", null, "masked paths"),
+    }),
   );
 
 describe("the Advanced fold", () => {
