@@ -40,6 +40,12 @@ function tab(id: number, over: Partial<BuiltinBrowserTab> = {}): BuiltinBrowserT
   };
 }
 
+/** A status's backend fields, as a desktop server answers them for its admin. */
+const BUILTIN = {
+  backend: "builtin" as const,
+  backends: [{ backend: "builtin" as const, available: true }],
+};
+
 function run(state: BrowserState, ...actions: BrowserAction[]): BrowserState {
   return actions.reduce(reduceBrowser, state);
 }
@@ -58,7 +64,7 @@ const open = (requestId: string, over: Partial<{ url: string; activate: boolean 
 const READY = run(
   INITIAL_BROWSER_STATE,
   { type: "supported", supported: true },
-  { type: "status", status: { available: true, tabs: [], activeTabId: null } },
+  { type: "status", status: { available: true, ...BUILTIN, tabs: [], activeTabId: null } },
 );
 
 describe("availability", () => {
@@ -67,14 +73,20 @@ describe("availability", () => {
     expect(browserOffered(READY)).toBe(true);
     const shellTooOld = reduceBrowser(READY, {
       type: "status",
-      status: { available: false, reason: "shell_unsupported", tabs: [], activeTabId: null },
+      status: {
+        available: false,
+        reason: "shell_unsupported",
+        ...BUILTIN,
+        tabs: [],
+        activeTabId: null,
+      },
     });
     expect(browserOffered(shellTooOld)).toBe(false);
     expect(shellTooOld.reason).toBe("shell_unsupported");
     // A plain browser tab: the server may be fine, but there is no <webview> here.
     const noWebview = reduceBrowser(INITIAL_BROWSER_STATE, {
       type: "status",
-      status: { available: true, tabs: [], activeTabId: null },
+      status: { available: true, ...BUILTIN, tabs: [], activeTabId: null },
     });
     expect(browserOffered(noWebview)).toBe(false);
   });
@@ -86,7 +98,7 @@ describe("availability", () => {
   it("takes the registry from the status", () => {
     const state = reduceBrowser(READY, {
       type: "status",
-      status: { available: true, tabs: [tab(3), tab(5)], activeTabId: 5 },
+      status: { available: true, ...BUILTIN, tabs: [tab(3), tab(5)], activeTabId: 5 },
     });
     expect(state.tabs.map((t) => t.id)).toEqual([3, 5]);
     expect(activeTab(state)?.id).toBe(5);
@@ -341,7 +353,7 @@ describe("load", () => {
   });
 
   it("takes the status's measurement, and keeps the last one when a status has none", () => {
-    const status = { available: true, tabs: [tab(1), tab(2)], activeTabId: 1 };
+    const status = { available: true, ...BUILTIN, tabs: [tab(1), tab(2)], activeTabId: 1 };
     const read = run(READY, { type: "status", status: { ...status, metrics: heavy } });
     expect(read.metrics).toEqual(heavy);
     expect(run(read, { type: "status", status }).metrics).toEqual(heavy);

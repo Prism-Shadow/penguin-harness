@@ -164,6 +164,10 @@ function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): Brow
           : { action: event.action };
       return { ...state, activity: { ...state.activity, [event.tabId]: mark } };
     }
+    case "builtin_browser_backend":
+    case "builtin_browser_extension":
+      // The chrome backend's events: isBuiltinBrowserEvent does not pass them here yet.
+      return state;
   }
 }
 

@@ -37,6 +37,20 @@ export abstract class SessionIndex {
   abstract deleteById(sessionId: string): void;
 }
 
+/**
+ * SessionDrivers: the human a Session acts for — the one who last started a run in it (a prompt
+ * in the app, the scheduler on its creator's behalf), else the owner of its Project. An agent's
+ * calls reach the server with the admin API token; this is how they are attributed to a person
+ * (whose own Chrome the agent then drives). The mechanism SessionDriverRegistry implements.
+ */
+@Interface()
+export abstract class SessionDrivers {
+  /** `userId` started a run in `sessionId`. */
+  abstract note(sessionId: string, userId: string): void;
+  /** The human `sessionId` acts for; null for a Session the server does not know. */
+  abstract driverOf(sessionId: string): string | null;
+}
+
 /** SessionOrigins: the mechanism SessionSources implements. */
 @Interface()
 export abstract class SessionOrigins {

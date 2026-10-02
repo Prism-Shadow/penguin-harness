@@ -86,6 +86,7 @@ import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { SessionSources } from "./runtime/session-sources.js";
+import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
@@ -148,7 +149,13 @@ import {
   ProjectLifecycle,
   Projects,
 } from "./mechanisms/projects.js";
-import { Schedules, Scheduling, SessionIndex, SessionOrigins } from "./mechanisms/sessions.js";
+import {
+  Schedules,
+  Scheduling,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+} from "./mechanisms/sessions.js";
 import { Workflows } from "./mechanisms/workflows.js";
 import { WorkflowService } from "./workflows/service.js";
 import { WorkflowRoutes } from "./workflows/routes.js";
@@ -313,6 +320,7 @@ export class ProjectsModule {}
   children: [
     SessionsRepo,
     SessionSources,
+    SessionDriverRegistry,
     SchedulesRepo,
     Scheduler,
     CoreSessionLoaders,
@@ -325,6 +333,7 @@ export class ProjectsModule {}
   exports: [
     SessionIndex,
     SessionOrigins,
+    SessionDrivers,
     Schedules,
     Scheduling,
     Sessions,

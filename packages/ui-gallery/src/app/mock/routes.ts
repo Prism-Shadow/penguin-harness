@@ -1969,6 +1969,8 @@ router
   .get("/api/builtin-browser/status", (): BuiltinBrowserStatus => ({
     available: false,
     reason: "not_desktop",
+    backend: "builtin",
+    backends: [{ backend: "builtin", available: false, reason: "not_desktop" }],
     tabs: [],
     activeTabId: null,
   }))

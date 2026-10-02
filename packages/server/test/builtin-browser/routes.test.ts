@@ -167,6 +167,8 @@ describe("availability", () => {
     expect(status).toEqual({
       available: false,
       reason: "not_desktop",
+      backend: "builtin",
+      backends: [{ backend: "builtin", available: false, reason: "not_desktop" }],
       tabs: [],
       activeTabId: null,
     });
@@ -195,7 +197,13 @@ describe("availability", () => {
     shell.guests.set(7, tab(7));
     const h = mount({ shell });
     const status = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
-    expect(status).toEqual({ available: true, tabs: [tab(4), tab(7)], activeTabId: 7 });
+    expect(status).toEqual({
+      available: true,
+      backend: "builtin",
+      backends: [{ backend: "builtin", available: true }],
+      tabs: [tab(4), tab(7)],
+      activeTabId: 7,
+    });
   });
 
   it("is for admins only, status included", async () => {
