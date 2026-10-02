@@ -74,3 +74,26 @@ export async function apiFetchWithMeta<T>(
   if (answer.kind === "raw") return { data: answer.body as T, serverNowMs };
   return { data: answer.body as T, serverNowMs };
 }
+
+/**
+ * The real client's `fetch`-shaped entry (api/client.ts), for the few callers that read the
+ * Response themselves: the same router's answer, handed back as a Response.
+ */
+export async function apiRequest(url: string, init: { method?: Method } = {}): Promise<Response> {
+  try {
+    const { data } = await apiFetchWithMeta<unknown>(
+      url,
+      init.method ? { method: init.method } : {},
+    );
+    return new Response(data === undefined ? null : JSON.stringify(data), {
+      status: data === undefined ? 204 : 200,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+    return new Response(JSON.stringify({ error: { code: error.code, message: error.message } }), {
+      status: error.status,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}

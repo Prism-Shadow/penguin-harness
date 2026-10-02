@@ -4096,6 +4096,35 @@ export interface DesktopTrayCommandMessage {
   locale?: DesktopTrayLocale;
 }
 
+/**
+ * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
+ * endpoint. It is opened on the terminal-stream upgrade path under a reserved id naming the
+ * signed-in user — `api-socket@<userId>` — which the server's terminal lookup answers with a
+ * reference the socket protocol is served for (server: socket/ref.ts). Shared here so the
+ * Web App and the machine relay spell the address the same way.
+ */
+export const API_SOCKET_ID_PREFIX = "api-socket@";
+
+/**
+ * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
+ * own window (`sessionVia === "desktop"`: its update, tray and privacy relays, folder access,
+ * revealing a file) or a first-login link (a password change without the old password). The
+ * socket's handshake does not say how the cookie behind it was minted, so these are made over
+ * HTTP: the socket answers them 421 `not_on_socket` and the Web App never sends them there.
+ */
+export function sessionKindPath(pathname: string): boolean {
+  return (
+    pathname === "/api/me/password" ||
+    pathname === "/api/desktop" ||
+    pathname.startsWith("/api/desktop/") ||
+    /^\/api\/projects\/[^/]+\/dirs\/access$/.test(pathname) ||
+    (pathname.startsWith("/api/") && pathname.endsWith("/reveal"))
+  );
+}
+export function apiSocketPath(userId: string): string {
+  return `/api/terminals/${encodeURIComponent(`${API_SOCKET_ID_PREFIX}${userId}`)}/stream`;
+}
+
 // Desktop folder access (desktop mode, macOS)
 //
 // macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
