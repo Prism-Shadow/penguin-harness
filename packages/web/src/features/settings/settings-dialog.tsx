@@ -28,7 +28,6 @@ import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
-import { CreditsSection } from "./credits-section";
 
 /** Rail glyphs (see NAV_ICONS' conventions). */
 const SECTION_ICONS: Record<SettingsSectionKey, string> = {
@@ -41,8 +40,6 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   shortcuts: ICONS.keyboard,
   /** Single person: the signed-in account. */
   account: ICONS.user,
-  /** Circled C: credits and licences. */
-  credits: ICONS.copyright,
   /** Globe: outbound traffic. */
   proxy: ICONS.globe,
   /** Up arrow over a base: uploads. */
@@ -95,7 +92,6 @@ export function SettingsDialog({
     appearance: S.settings.appearanceTitle,
     shortcuts: S.settings.shortcutsTitle,
     account: S.settings.accountTitle,
-    credits: S.settings.creditsTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
@@ -145,7 +141,6 @@ export function SettingsDialog({
       {current === "appearance" && <AppearanceSection />}
       {current === "shortcuts" && <ShortcutsSection />}
       {current === "account" && <AccountSection />}
-      {current === "credits" && <CreditsSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}

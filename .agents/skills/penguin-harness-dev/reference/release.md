@@ -85,6 +85,7 @@ and `check-publishable.mjs` fails if a published package depends on it.
 | `changelog/unreleased/` | `git mv` to `changelog/<version>/`. Nothing else moves; released folders are frozen. |
 | `changelog/<version>/RELEASE.md` | New. The Release body, verbatim. Shape below. |
 | `CHANGELOG.md`, `CHANGELOG.zh.md` | One line at the top, linking `changelog/<version>/`. |
+| `packages/web/src/lib/release-notes-data.ts` | One entry at the top: the version, the release line's date, and 2–5 short user-facing lines in zh and in en (App Store "What's New" register, no internal names). The App info dialog renders it; it is edited here and nowhere else. |
 | `README.md`, `README.zh.md` | The Docker example pins the exact version (`hiyouga/penguinharness:<version>`). |
 | `package.json`, `packages/*/package.json`, `plugins/*/package.json` | Version, in lockstep. |
 | `packages/core/src/index.ts` | `export const VERSION`. |

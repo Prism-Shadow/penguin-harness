@@ -101,7 +101,7 @@ From top to bottom, the sidebar holds:
 - The conversation list, with search and grouping by Workspace, agent or time. See [Chat](/chat).
 - Your user row at the bottom. It opens the account menu:
   - **Settings**. See [Settings](/settings).
-  - The update row, which names where an update stands and opens the update dialog. See [Updates](/updates).
+  - **About**, which shows the running version and opens the About dialog: the homepage and GitHub links, the release notes, the credits, and the software update where this session can update. See [Updates](/updates).
   - **Sign out**.
 
 ### Pinned and collapsible entries

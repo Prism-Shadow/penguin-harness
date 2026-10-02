@@ -439,16 +439,6 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
-    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
-    creditsTitle: "版权信息",
-    creditsThemes: "用于",
-    creditsNoTheme: "没有主题默认使用",
-    creditsLicense: "许可",
-    creditsSource: "来源",
-    creditsLicenseText: "许可全文",
-    /** The Credits page's two groups: the bundled fonts, and the icon families the icons are drawn from. */
-    creditsFonts: "字体",
-    creditsIcons: "图标",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -715,35 +705,60 @@ export const zh = {
     fields: "字段",
     slots: "槽位",
   },
+  /** The App info dialog, opened from the avatar menu: identity, links, update, release notes, credits. */
+  appInfo: {
+    title: "应用信息",
+    /** The avatar-menu row. */
+    menuEntry: "应用信息",
+    homepage: "主页",
+    repository: "GitHub",
+    releaseNotes: "更新日志",
+    /** Pill on the release-notes entry of the running version. */
+    current: "当前版本",
+    credits: "版权信息",
+    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    /** Disclosure row that expands the font and icon credits. */
+    licenses: "字体与图标许可",
+    // —— the credit lists: the bundled fonts and the icon families, each with its licence ——
+    creditsThemes: "用于",
+    creditsNoTheme: "没有主题默认使用",
+    creditsLicense: "许可",
+    creditsSource: "来源",
+    creditsLicenseText: "许可全文",
+    creditsFonts: "字体",
+    creditsIcons: "图标",
+  },
   /**
-   * The software-update flow (lib/update-flow.ts): the one modal for both the server release
-   * and the desktop client, the account-menu row, the version-line badge, and the toasts for
-   * outcomes that land while the modal is closed. Null version = the backend named none.
+   * The software-update flow (lib/update-flow.ts): the App info dialog's update section for
+   * both the server release and the desktop client, the account-menu row's status line, the
+   * version-line badge, and the toasts for outcomes that land while the dialog is closed. Null
+   * version = the backend named none.
    */
   update: {
     /** Version-line date label (owner-specified wording); `date` is formatMonthDay output. */
     lastUpdated: (date: string) => `最近更新日期 ${date}`,
-    /** The version line's superscript (owner-specified wording), a button into the modal; the other two follow the flow. */
+    /** The version line's superscript (owner-specified wording), a button into the App info dialog; the other two follow the flow. */
     newVersionBadge: "有新版本可用",
     badgeDownloading: "正在下载更新",
     badgeReady: "重启以更新",
-    /** A release offered: the row's label and the avatar badges' sentence. */
+    /** A release offered: the row's status line and the avatar badges' sentence. */
     newVersion: (v: string) => `新版本 v${v} 可用`,
-    /** A release downloaded / installed and waiting for the restart: the row's label and the badges' sentence. */
+    /** A release downloaded / installed and waiting for the restart: the row's status line and the badges' sentence. */
     restartToUpdate: (v: string | null) => (v !== null ? `重启以更新到 v${v}` : "重启以完成更新"),
     /** The combined wording for an anchor covering several update trails at once. */
     updatesAvailable: "有可用更新",
-    // —— the account-menu row ——
+    /** The update section's button that forces a fresh check. */
     checkNow: "检查更新",
+    // —— the account-menu row's status line ——
     checking: "检查中…",
     rowDownloading: (v: string | null, percent: number | null) =>
       `正在下载${v !== null ? ` v${v}` : "更新"}${percent !== null ? ` ${percent}%` : "…"}`,
     rowRestarting: "正在重启…",
-    rowUnsupported: "无法在线更新",
-    // —— the modal ——
+    // —— the App info dialog's update section ——
     title: "软件更新",
-    currentVersion: (v: string) => `当前版本 v${v}`,
     checkingBody: "正在检查更新…",
+    /** Nothing is known yet: no check has answered since the page loaded. */
+    notChecked: "尚未检查更新",
     upToDate: "已是最新版本",
     checkFailed: "检查更新失败，请稍后重试",
     checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
@@ -757,8 +772,6 @@ export const zh = {
     /** Shown to non-admins in place of the body above (they can read the notes but cannot run the update). */
     adminOnly: "只有管理员可以在这里执行更新。",
     downloadAndInstall: "下载并更新",
-    later: "稍后",
-    background: "放到后台",
     downloading: (v: string | null) => (v !== null ? `正在下载 v${v}…` : "正在下载更新…"),
     /** The progress bar's accessible name. */
     downloadProgress: "下载进度",
@@ -784,7 +797,7 @@ export const zh = {
     unsupportedNonAppImage: "Linux 上只有 AppImage 版本支持自更新——包安装请通过包管理器更新",
     unsupportedNotViaCli: "当前服务不是通过 penguin web 或 penguin server 启动的，无法从这里更新",
     unsupportedCli: "当前安装方式不支持在线更新",
-    // —— toasts: outcomes that land while the modal is closed ——
+    // —— toasts: outcomes that land while the dialog is closed ——
     foundNew: (v: string) => `发现新版本 v${v}，打开更新入口即可下载`,
     foundNewUnnamed: "发现新版本，打开更新入口即可下载",
     readyToast: (v: string | null) =>

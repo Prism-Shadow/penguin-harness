@@ -17,7 +17,7 @@ Check which version of PenguinHarness you are running, and update it in the way 
 In the Web App:
 
 - The new-chat page shows the running version on a version line such as `vX.Y.Z · Last updated Jul 26`. The release workflow stamps the date into the build, so it is shown without any network access. Dev builds and releases from before the stamping, v0.1.2 and earlier, show no date.
-- In the sidebar user menu, the update row directly under **Settings** shows the running version, muted, on its right.
+- In the sidebar user menu, the **About** row directly under **Settings** shows the running version, muted, on its right.
 
 In a terminal:
 
@@ -28,19 +28,19 @@ In a terminal:
 
 Updating works the way an app updater does, from one dialog.
 
-### Open the update dialog
+### Open the About dialog
 
 Two entries open the dialog:
 
-- The update row directly under **Settings** in the sidebar user menu. The row says where things stand: **Check for updates**, **Checking…**, **New version vX available**, **Downloading vX 42%** or **Restart to update to vX**. Whatever it says, it opens the dialog.
+- The **About** row directly under **Settings** in the sidebar user menu. While an update is moving, a status line appears under it: **Checking…**, **New version vX available**, **Downloading vX 42%** or **Restart to update to vX**. Selecting the row opens the About dialog; the update runs in its **Software Update** section.
 - The small superscript on the new-chat page's version line. It reads **New version available** when a release is offered, **Downloading update** while a download runs, and **Restart to update** once the download is ready.
 
 ### Run the update
 
-1. Open the update dialog. If nothing is known yet, it checks for a new release. The app also checks GitHub once per page load, and a check you start from the dialog skips the cached result.
+1. Open the About dialog. Its **Software Update** section shows the result of the last check, and the app checks GitHub once per page load. **Check for updates** runs a fresh check that skips the cached result.
 2. When a newer release is available, the dialog offers it with a **Release notes** link. Nothing is downloaded until you continue.
 3. Click **Download and update**. A progress bar follows the download.
-4. To keep working, click **Continue in background**. This closes the dialog without cancelling anything: the update row keeps showing the percentage, and once the release is ready, a dot appears on the user button and a toast announces it.
+4. To keep working, close the dialog. Closing cancels nothing: the **About** row keeps showing the percentage under its label, and once the release is ready, a dot appears on the user button and a toast announces it.
 5. Click **Restart and update** to finish.
 
 > [!NOTE]
@@ -58,16 +58,16 @@ If the download fails, the dialog shows the update command's own output and offe
 
 In the desktop app, the same dialog drives the app's own updater. It does so only in the app's own window, where the server release never appears.
 
-The app checks for releases on its own schedule but never downloads on its own. A release it finds shows up as the dot on the user button and in the update row. To install it:
+The app checks for releases on its own schedule but never downloads on its own. A release it finds shows up as the dot on the user button and under the **About** row. To install it:
 
-1. Open the update dialog.
+1. Open the About dialog.
 2. Click **Download and update**. The percentage is the updater's real progress.
 3. Click **Restart and update**. The app restarts into the downloaded build.
 
 The app's native **Check for Updates…** menu item offers the same download-then-restart steps in native dialogs.
 
 > [!NOTE]
-> A browser signed in with a password to the same desktop-mode server gets no update entry at all. It can neither read that machine's updater state nor restart the app's window, and it cannot run the CLI self-update on that server either.
+> A browser signed in with a password to the same desktop-mode server gets no **Software Update** section in its About dialog. It can neither read that machine's updater state nor restart the app's window, and it cannot run the CLI self-update on that server either.
 
 Two forms of the app cannot replace themselves, and the dialog says so: a Linux install owned by the system package manager (`.deb`), which you update through the package manager, and a development run. The [Desktop app](/quickstart-desktop) page covers the installers.
 

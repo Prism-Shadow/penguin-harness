@@ -1,7 +1,7 @@
 /**
  * The account menu, shared by both avatars that open one: the pinned sidebar's user row and
  * the collapsed rail's avatar. One component rather than a copy per anchor — the rows
- * (Settings, the update entry, sign out) and the dialog behind the first of them must
+ * (Settings, App info, sign out) and the dialog behind the first of them must
  * stay the same menu from either side, and a second copy is how two menus drift apart.
  *
  * Only the trigger differs, so the trigger is the caller's: it is handed the menu's own open
@@ -28,8 +28,8 @@ import {
 import type { DropdownPortal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
-import { UpdateRow } from "../account/update-row";
-import { openUpdateModal } from "../../lib/use-update-flow";
+import { AppInfoRow } from "../account/app-info-row";
+import { openAppInfo } from "../../lib/use-update-flow";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { onSettingsRequest } from "../../features/settings/settings-request";
 import type { SettingsSectionKey } from "../../lib/settings-sections";
@@ -121,17 +121,19 @@ export function UserMenu({
                 setSettingsOpen(true);
               }}
             />
-            {/* Update entry, directly under the settings entry rather than on a page inside
-                it: one row for both backends (the server release here, the shell's own
-                updater in the desktop window), naming where the update flow stands and
-                opening the update modal — where the flow is explained and acted on. The
-                modal is mounted by the app layout, so it outlives this menu. Hidden where
-                this session can update nothing (a browser signed into a desktop-mode
-                server, see updateModeFor). */}
-            <UpdateRow
+            {/* App info entry: version, links, release notes, licences, and the update flow for
+                the sessions that can update — directly under the settings entry rather than on
+                a page inside it. One row for both backends (the server release here, the
+                shell's own updater in the desktop window); while the update flow moves or
+                waits, its status line says where it stands. It opens the App info dialog,
+                where the flow is explained and acted on; the dialog is mounted by the app
+                layout, so it outlives this menu. Shown to every session, including one that
+                can update nothing (a browser signed into a desktop-mode server, see
+                updateModeFor): the version, the notes and the licences are everyone's. */}
+            <AppInfoRow
               onOpen={() => {
                 setOpen(false);
-                openUpdateModal();
+                openAppInfo();
               }}
             />
             {/* Hidden in desktop mode: the window IS the session — logging out would

@@ -1,6 +1,6 @@
 /**
- * The software-update flow: one state machine over two backends, rendered by the update
- * modal, the account-menu row and the version-line badge.
+ * The software-update flow: one state machine over two backends, rendered by the App info
+ * dialog's update section, the account-menu row and the version-line badge.
  *
  * `release` mode is every ordinary server: the newer release comes from the server's
  * GitHub lookup (`use-version-info.ts`), the download is the admin self-update job
@@ -9,10 +9,10 @@
  * `client` mode is the desktop shell's own window: the shell's updater snapshot
  * (`use-desktop-update.ts`) carries every step, and the page only relays check / download
  * / install. `none` is a browser signed into a desktop-mode server, which can act on
- * neither and gets no update surface at all (the same gate as before this modal).
+ * neither: its App info dialog has no update section and its row announces nothing.
  *
  * The flow itself is what both surfaces agree on: nothing is fetched until the user
- * confirms, a running download can be sent to the background and keeps reporting through
+ * confirms, a running download keeps going when the dialog closes and keeps reporting through
  * the row, and a downloaded (or installed) release waits for an explicit restart. Pure
  * decisions only (vitest runs node-only here, so nothing renders) — `use-update-flow.ts`
  * feeds these from the live stores and owns the actions.
@@ -201,15 +201,6 @@ export function clientFlow(status: DesktopUpdateStatus | null, local: FlowLocal)
   }
 }
 
-/** Whether opening the modal should also start a check: nothing is known, or the last answer is stale/failed. */
-export function opensWithCheck(flow: UpdateFlow): boolean {
-  return (
-    flow.kind === "unknown" ||
-    flow.kind === "up-to-date" ||
-    (flow.kind === "error" && flow.retry === "check")
-  );
-}
-
 /** The account-menu row's render mode; busy / dot / action derive from it so they cannot disagree. */
 export type UpdateRowLabel =
   "check" | "checking" | "available" | "downloading" | "ready" | "restarting" | "unsupported";
@@ -224,35 +215,43 @@ export interface UpdateRowModel {
   busy: boolean;
   /** Accent dot: something is waiting for the user (an offer, or a restart). */
   dot: boolean;
+  /**
+   * The row speaks: a status line under its label names where the flow stands. Only while
+   * something moves or waits — an idle row says nothing, and an install that cannot update
+   * itself would otherwise say so on every menu open.
+   */
+  announces: boolean;
 }
 
-/** What the row says for one flow. Every state is clickable — the modal explains each one. */
+/** What the row says for one flow. Every state opens the App info dialog, which explains each one. */
 export function updateRowModel(flow: UpdateFlow): UpdateRowModel {
+  const quiet = { version: null, percent: null, busy: false, dot: false, announces: false };
   switch (flow.kind) {
     case "checking":
-      return { label: "checking", version: null, percent: null, busy: true, dot: false };
+      return { ...quiet, label: "checking", busy: true, announces: true };
     case "available":
-      return { label: "available", version: flow.version, percent: null, busy: false, dot: true };
+      return { ...quiet, label: "available", version: flow.version, dot: true, announces: true };
     case "downloading":
       return {
+        ...quiet,
         label: "downloading",
         version: flow.version,
         percent: flow.percent,
         busy: true,
-        dot: false,
+        announces: true,
       };
     case "ready":
-      return { label: "ready", version: flow.version, percent: null, busy: false, dot: true };
+      return { ...quiet, label: "ready", version: flow.version, dot: true, announces: true };
     case "restarting":
-      return { label: "restarting", version: flow.version, percent: null, busy: true, dot: false };
+      return { ...quiet, label: "restarting", version: flow.version, busy: true, announces: true };
     case "unsupported":
-      return { label: "unsupported", version: null, percent: null, busy: false, dot: false };
+      return { ...quiet, label: "unsupported" };
     default:
-      return { label: "check", version: null, percent: null, busy: false, dot: false };
+      return { ...quiet, label: "check" };
   }
 }
 
-/** What the version line's superscript says, or null when nothing is waiting — a button into the modal in every case. */
+/** What the version line's superscript says, or null when nothing is waiting — a button into the App info dialog in every case. */
 export type VersionBadge = "available" | "downloading" | "ready";
 
 export function versionBadgeFor(flow: UpdateFlow): VersionBadge | null {

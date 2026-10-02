@@ -1924,7 +1924,7 @@ export function Sidebar({
           expanded={open}
           onClick={toggle}
           // The dot alone is mysterious: name what is waiting on the trigger (hover tooltip +
-          // accessible name), in the update row's own wording.
+          // accessible name), in the App info row's own wording.
           {...(badges.softwareNote !== null
             ? {
                 hint: badges.softwareNote,

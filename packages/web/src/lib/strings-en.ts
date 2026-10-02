@@ -374,16 +374,6 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
-    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
-    creditsTitle: "Credits",
-    creditsThemes: "Used by",
-    creditsNoTheme: "Not a theme's default",
-    creditsLicense: "License",
-    creditsSource: "Source",
-    creditsLicenseText: "Full license text",
-    /** The Credits page's two groups: the bundled fonts, and the icon families the icons are drawn from. */
-    creditsFonts: "Fonts",
-    creditsIcons: "Icons",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -654,36 +644,61 @@ export const en: Strings = {
     fields: "fields",
     slots: "slots",
   },
+  /** The App info dialog, opened from the avatar menu: identity, links, update, release notes, credits. */
+  appInfo: {
+    title: "About PenguinHarness",
+    /** The avatar-menu row. */
+    menuEntry: "About",
+    homepage: "Homepage",
+    repository: "GitHub",
+    releaseNotes: "What's new",
+    /** Pill on the release-notes entry of the running version. */
+    current: "Current",
+    credits: "Credits",
+    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    /** Disclosure row that expands the font and icon credits. */
+    licenses: "Font and icon licenses",
+    // —— the credit lists: the bundled fonts and the icon families, each with its licence ——
+    creditsThemes: "Used by",
+    creditsNoTheme: "Not a theme's default",
+    creditsLicense: "License",
+    creditsSource: "Source",
+    creditsLicenseText: "Full license text",
+    creditsFonts: "Fonts",
+    creditsIcons: "Icons",
+  },
   /**
-   * The software-update flow (lib/update-flow.ts): the one modal for both the server release
-   * and the desktop client, the account-menu row, the version-line badge, and the toasts for
-   * outcomes that land while the modal is closed. Null version = the backend named none.
+   * The software-update flow (lib/update-flow.ts): the App info dialog's update section for
+   * both the server release and the desktop client, the account-menu row's status line, the
+   * version-line badge, and the toasts for outcomes that land while the dialog is closed. Null
+   * version = the backend named none.
    */
   update: {
     /** Version-line date label; `date` is formatMonthDay output, e.g. "Last updated Jul 26". */
     lastUpdated: (date: string) => `Last updated ${date}`,
-    /** The version line's superscript, a button into the modal; the other two follow the flow. */
+    /** The version line's superscript, a button into the App info dialog; the other two follow the flow. */
     newVersionBadge: "New version available",
     badgeDownloading: "Downloading update",
     badgeReady: "Restart to update",
-    /** A release offered: the row's label and the avatar badges' sentence. */
+    /** A release offered: the row's status line and the avatar badges' sentence. */
     newVersion: (v: string) => `New version v${v} available`,
-    /** A release downloaded / installed and waiting for the restart: the row's label and the badges' sentence. */
+    /** A release downloaded / installed and waiting for the restart: the row's status line and the badges' sentence. */
     restartToUpdate: (v: string | null) =>
       v !== null ? `Restart to update to v${v}` : "Restart to finish updating",
     /** The combined wording for an anchor covering several update trails at once. */
     updatesAvailable: "Updates available",
-    // —— the account-menu row ——
+    /** The update section's button that forces a fresh check. */
     checkNow: "Check for updates",
+    // —— the account-menu row's status line ——
     checking: "Checking…",
     rowDownloading: (v: string | null, percent: number | null) =>
       `Downloading${v !== null ? ` v${v}` : " update"}${percent !== null ? ` ${percent}%` : "…"}`,
     rowRestarting: "Restarting…",
-    rowUnsupported: "Cannot update from here",
-    // —— the modal ——
+    // —— the App info dialog's update section ——
     title: "Software Update",
-    currentVersion: (v: string) => `Current version v${v}`,
     checkingBody: "Checking for updates…",
+    /** Nothing is known yet: no check has answered since the page loaded. */
+    notChecked: "Not checked yet",
     upToDate: "You're on the latest version",
     checkFailed: "Update check failed — try again later",
     checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
@@ -697,8 +712,6 @@ export const en: Strings = {
     /** Shown to non-admins in place of the body above (they can read the notes but cannot run the update). */
     adminOnly: "Only an administrator can run the update from here.",
     downloadAndInstall: "Download and update",
-    later: "Later",
-    background: "Continue in background",
     downloading: (v: string | null) =>
       v !== null ? `Downloading v${v}…` : "Downloading the update…",
     /** The progress bar's accessible name. */
@@ -729,7 +742,7 @@ export const en: Strings = {
     unsupportedNotViaCli:
       "This service was not started through penguin web or penguin server, so it cannot be updated from here",
     unsupportedCli: "This install cannot be updated from the web UI",
-    // —— toasts: outcomes that land while the modal is closed ——
+    // —— toasts: outcomes that land while the dialog is closed ——
     foundNew: (v: string) => `New version v${v} found — open the update entry to download it`,
     foundNewUnnamed: "New version found — open the update entry to download it",
     readyToast: (v: string | null) =>
