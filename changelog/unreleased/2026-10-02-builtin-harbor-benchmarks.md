@@ -3,6 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `plugins`, `docs`
+- **PR:** [#956](https://github.com/Prism-Shadow/penguin-harness/pull/956)
 
 [中文版](2026-10-02-builtin-harbor-benchmarks.zh.md)
 
