@@ -3,6 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** fix
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#952](https://github.com/Prism-Shadow/penguin-harness/pull/952)
 
 [中文版](2026-10-02-redundant-tooltips.zh.md)
 
