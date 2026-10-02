@@ -12,15 +12,17 @@
  * restores it), which wraps; a `boolean` cell is a switch, or a pin toggle for the column the
  * table's `pin` names; an `enum` cell is its value's full title as text, which opens a menu of
  * the options (plugin-config-enum-cell.tsx). A cell the row locks is the value's text alone,
- * with "locked" in its name and tooltip. A `rowChoice` column marks the chosen row with a badge
- * and offers "Set as …" on the others, shown on row hover or focus and always reachable by Tab.
+ * with "locked" in its name and tooltip. A `rowChoice` column is a star toggle per row, filled
+ * on the chosen one.
  *
- * An `extensible` table leads every row with a drag handle (the arrow keys move a focused one),
- * ends an added row with a delete button, and has an add button under it. Every control is
+ * An `extensible` table ends every row with a drag handle (the arrow keys move a focused one)
+ * and, on an added row, a delete button — inside the column group when it ends the columns —
+ * and has an add button under it. A drag lifts the row and moves it with the pointer, shows a
+ * line where it will land, and reorders once, on the drop; Esc puts it back. Every control is
  * named "<row> · <column>" (or after its action) for a screen reader, the row's name in the
  * page's language.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   PluginConfigEntry,
   PluginConfigField,
@@ -34,21 +36,26 @@ import type { Locale } from "../../state/locale";
 import { localizedText } from "../chat/skill-use";
 import type { TableDraft } from "./plugin-config-draft";
 import { EnumCell } from "./plugin-config-enum-cell";
-import { PinToggle, RowGrip, WrappingNameBox } from "./plugin-config-table-cells";
+import {
+  ICON_BUTTON,
+  IconToggle,
+  PinToggle,
+  RowGrip,
+  WrappingNameBox,
+} from "./plugin-config-table-cells";
 
 /**
  * Column widths, in the table's fixed layout. Equal for every choice column so none reads wider
- * than its siblings; sized together so the sandbox's presets fit the settings dialog at its
- * default width with the name column taking what is left.
+ * than its siblings, one width for every icon column (the action group), and a floor under the
+ * name: below the table's minimum width its box scrolls sideways rather than crushing names.
  */
 const WIDTH = {
   enum: "w-[6.25rem]",
-  pin: "w-[3rem]",
-  choice: "w-[4.75rem]",
+  icon: "w-7",
   boolean: "w-[3.25rem]",
-  handle: "w-8",
-  remove: "w-8",
 } as const;
+/** Name floor (6rem) + three choice columns + four icon columns. */
+const TABLE_MIN = "min-w-[31.75rem]";
 
 const TH = "px-1 py-2 text-left text-xs font-medium text-fg-muted";
 
@@ -62,14 +69,34 @@ function HeaderTitle({ title, info }: { title: string; info: string | undefined 
   );
 }
 
-/** One drawn column: a field column, or the row choice's. */
-type Slot = { kind: "column"; column: PluginConfigTableColumn } | { kind: "choice" };
+/** One drawn column: a field column, the row choice's, or an extensible table's move/delete. */
+type Slot =
+  | { kind: "column"; column: PluginConfigTableColumn }
+  | { kind: "choice" }
+  | { kind: "move" }
+  | { kind: "remove" };
 
 /** A row as drawn: its declared form (absent for an added row) and its cells. */
 interface DrawnRow {
   id: string;
   declared?: PluginConfigTableRow;
   cells: Record<string, string | boolean>;
+}
+
+/**
+ * A drag in progress: the row, how far the pointer has moved, and where the row would land
+ * among the others (an index into the order without it). Nothing is reordered until the drop,
+ * so the handle holding the pointer capture never moves in the DOM.
+ */
+interface Drag {
+  id: string;
+  startY: number;
+  dy: number;
+  /** The other rows' vertical midpoints, measured once when the drag starts. */
+  mids: number[];
+  /** The dragged row's own midpoint at the start. */
+  mid: number;
+  target: number;
 }
 
 /** A fresh id for an added row: lower-case, never a declared one. */
@@ -107,7 +134,8 @@ export function ConfigTable({
   const info = described(field);
   const { rowChoice, pin, columnGroup, extensible } = field;
 
-  // The columns in drawing order: the row choice slots in before the column it names.
+  // The columns in drawing order: the row choice slots in before the column it names, and an
+  // extensible table's move and delete come last — inside the column group when it ends there.
   const slots: Slot[] = [];
   for (const column of field.columns ?? []) {
     if (rowChoice !== undefined && rowChoice.before === column.name) slots.push({ kind: "choice" });
@@ -116,24 +144,44 @@ export function ConfigTable({
   if (rowChoice !== undefined && !slots.some((s) => s.kind === "choice")) {
     slots.push({ kind: "choice" });
   }
-  const slotName = (slot: Slot) => (slot.kind === "choice" ? rowChoice!.field : slot.column.name);
-  const grouped = (slot: Slot) => columnGroup?.columns.includes(slotName(slot)) === true;
+  if (extensible !== undefined) slots.push({ kind: "move" }, { kind: "remove" });
+  const slotKey = (slot: Slot) =>
+    slot.kind === "choice" ? rowChoice!.field : slot.kind === "column" ? slot.column.name : slot.kind;
+  const isIcon = (slot: Slot) =>
+    slot.kind !== "column" || pin?.column === slot.column.name;
+  let lastField = -1;
+  slots.forEach((s, i) => {
+    if (s.kind === "column" || s.kind === "choice") lastField = i;
+  });
+  const grouped = (slot: Slot, i: number) => {
+    if (columnGroup === undefined) return false;
+    if (slot.kind === "move" || slot.kind === "remove") {
+      // The row controls join the group when the group is what the field columns end with.
+      const last = slots[lastField];
+      return last !== undefined && columnGroup.columns.includes(slotKey(last)) && i > lastField;
+    }
+    return columnGroup.columns.includes(slotKey(slot));
+  };
   const widthOf = (slot: Slot) =>
-    slot.kind === "choice"
-      ? WIDTH.choice
-      : slot.column.type === "enum"
+    isIcon(slot)
+      ? WIDTH.icon
+      : slot.kind === "column" && slot.column.type === "enum"
         ? WIDTH.enum
-        : slot.column.type === "boolean"
-          ? pin?.column === slot.column.name
-            ? WIDTH.pin
-            : WIDTH.boolean
+        : slot.kind === "column" && slot.column.type === "boolean"
+          ? WIDTH.boolean
           : "";
   const slotTitle = (slot: Slot) =>
     slot.kind === "choice"
       ? localized(rowChoice!.title, rowChoice!.titleZh)
-      : localized(slot.column.title, slot.column.titleZh);
+      : slot.kind === "column"
+        ? localized(slot.column.title, slot.column.titleZh)
+        : "";
   const slotInfo = (slot: Slot) =>
-    slot.kind === "choice" ? described(rowChoice!) : described(slot.column);
+    slot.kind === "choice"
+      ? described(rowChoice!)
+      : slot.kind === "column"
+        ? described(slot.column)
+        : undefined;
 
   const declared = new Map((field.rows ?? []).map((r) => [r.id, r]));
   const rows: DrawnRow[] = table.order.flatMap((id): DrawnRow[] => {
@@ -156,13 +204,13 @@ export function ConfigTable({
         ? { ...table, rows: { ...table.rows, [row.id]: { ...row.cells, [column]: value } } }
         : { ...table, added: { ...table.added, [row.id]: { ...row.cells, [column]: value } } },
     );
-  const moveTo = (id: string, index: number) => {
-    const from = table.order.indexOf(id);
-    const to = Math.max(0, Math.min(table.order.length - 1, index));
-    if (from === -1 || from === to) return;
-    const order = table.order.filter((x) => x !== id);
-    order.splice(to, 0, id);
-    onChange({ ...table, order });
+  /** Puts a row at `index` of the order without it. */
+  const placeAt = (id: string, index: number) => {
+    const rest = table.order.filter((x) => x !== id);
+    const at = Math.max(0, Math.min(rest.length, index));
+    if (table.order.indexOf(id) === at) return;
+    rest.splice(at, 0, id);
+    onChange({ ...table, order: rest });
   };
   const remove = (row: DrawnRow) => {
     const { [row.id]: _gone, ...added } = table.added;
@@ -182,8 +230,8 @@ export function ConfigTable({
     onChange({ ...table, added: { ...table.added, [id]: values }, order: [...table.order, id] });
   };
 
-  // Rows by id, for a drag to find which row the pointer is over; a handle that moved its row
-  // by keyboard keeps the focus.
+  // Rows by id, to measure them when a drag starts; a handle that moved its row by keyboard
+  // keeps the focus after the rows re-render in their new order.
   const rowEls = useRef(new Map<string, HTMLTableRowElement>());
   const grips = useRef(new Map<string, HTMLButtonElement>());
   const refocus = useRef<string | null>(null);
@@ -192,30 +240,58 @@ export function ConfigTable({
     grips.current.get(refocus.current)?.focus();
     refocus.current = null;
   });
-  const dragTo = (id: string, clientY: number) => {
-    const index = table.order.findIndex((other) => {
-      const box = rowEls.current.get(other)?.getBoundingClientRect();
-      return box !== undefined && clientY < box.top + box.height / 2;
-    });
-    const target = index === -1 ? table.order.length - 1 : index;
-    const from = table.order.indexOf(id);
-    // Crossing into the lower half of the next row moves it below that row.
-    moveTo(id, target > from ? target - 1 : target);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const dragRef = useRef<Drag | null>(null);
+  dragRef.current = drag;
+  const midOf = (id: string) => {
+    const box = rowEls.current.get(id)?.getBoundingClientRect();
+    return box === undefined ? 0 : box.top + box.height / 2;
   };
+  const startDrag = (id: string, clientY: number) => {
+    const others = table.order.filter((x) => x !== id);
+    const next: Drag = {
+      id,
+      startY: clientY,
+      dy: 0,
+      mids: others.map(midOf),
+      mid: midOf(id),
+      target: table.order.indexOf(id),
+    };
+    setDrag(next);
+  };
+  const moveDrag = (clientY: number) => {
+    const d = dragRef.current;
+    if (d === null) return;
+    const dy = clientY - d.startY;
+    // Where the dragged row's middle now sits among the others' middles.
+    const target = d.mids.filter((m) => m < d.mid + dy).length;
+    setDrag({ ...d, dy, target });
+  };
+  const endDrag = (commit: boolean) => {
+    const d = dragRef.current;
+    setDrag(null);
+    if (commit && d !== null) placeAt(d.id, d.target);
+  };
+  // Esc puts a dragged row back where it was.
+  useEffect(() => {
+    if (drag === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      endDrag(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+  // The drop line: on top of the row the dragged one would land before, or under the last.
+  const others = drag === null ? [] : table.order.filter((x) => x !== drag.id);
+  const dropBefore = drag === null ? null : (others[drag.target] ?? null);
+  const dropAfterLast = drag !== null && drag.target >= others.length;
 
-  const head = (slot: Slot, rowSpan?: number) => (
-    <th
-      key={slotName(slot)}
-      scope="col"
-      {...(rowSpan !== undefined ? { rowSpan } : {})}
-      className={`${TH} ${slot.kind === "choice" || slot.column.type === "boolean" ? "text-center" : ""}`}
-    >
-      <HeaderTitle title={slotTitle(slot)} info={slotInfo(slot)} />
-    </th>
-  );
-  const groupedSlots = slots.filter(grouped);
-  const twoRows = columnGroup !== undefined && groupedSlots.length > 0;
-  const span = twoRows ? 2 : undefined;
+  const groupSlots = slots.filter(grouped);
+  const groupTitle =
+    columnGroup !== undefined ? localized(columnGroup.title, columnGroup.titleZh) : "";
 
   return (
     <div className="space-y-1.5">
@@ -227,40 +303,52 @@ export function ConfigTable({
         <p className="text-xs text-fg-muted">{localized(field.hint, field.hintZh)}</p>
       )}
       <div className="overflow-x-auto rounded-lg border border-line">
-        <table className="w-full min-w-[30rem] table-fixed border-collapse text-sm">
+        <table className={`w-full ${TABLE_MIN} table-fixed border-collapse text-sm`}>
           <colgroup>
-            {extensible !== undefined && <col className={WIDTH.handle} />}
             {slots.map((slot) => (
-              <col key={slotName(slot)} className={widthOf(slot)} />
+              <col key={slotKey(slot)} className={widthOf(slot)} />
             ))}
-            {extensible !== undefined && <col className={WIDTH.remove} />}
           </colgroup>
           <thead className="bg-surface-muted">
             <tr>
-              {extensible !== undefined && <th aria-hidden {...(span ? { rowSpan: span } : {})} />}
               {slots.map((slot, i) => {
-                if (!twoRows || !grouped(slot)) return head(slot, span);
-                // The group's header stands once, over its first column, spanning them all.
-                if (slots.findIndex(grouped) !== i) return null;
-                const title = localized(columnGroup!.title, columnGroup!.titleZh);
+                if (grouped(slot, i)) {
+                  // The group's header stands once, over its first column, spanning them all:
+                  // its "?" says what each icon in it does.
+                  if (slots.findIndex(grouped) !== i) return null;
+                  return (
+                    <th
+                      key="group"
+                      scope="colgroup"
+                      colSpan={groupSlots.length}
+                      className={`${TH} text-center`}
+                    >
+                      <HeaderTitle title={groupTitle} info={described(columnGroup!)} />
+                    </th>
+                  );
+                }
+                if (slot.kind === "move" || slot.kind === "remove") {
+                  return <th key={slot.kind} aria-hidden />;
+                }
                 return (
                   <th
-                    key="group"
-                    scope="colgroup"
-                    colSpan={groupedSlots.length}
-                    className={`${TH} border-b border-line-muted text-center`}
+                    key={slotKey(slot)}
+                    scope="col"
+                    className={`${TH} ${isIcon(slot) ? "text-center" : ""}`}
                   >
-                    <HeaderTitle title={title} info={described(columnGroup!)} />
+                    <HeaderTitle title={slotTitle(slot)} info={slotInfo(slot)} />
                   </th>
                 );
               })}
-              {extensible !== undefined && <th aria-hidden {...(span ? { rowSpan: span } : {})} />}
             </tr>
-            {twoRows && <tr>{groupedSlots.map((slot) => head(slot))}</tr>}
           </thead>
           <tbody>
             {rows.map((row) => {
-              const name_ = rowName(row);
+              const rowLabel = rowName(row);
+              const dy = drag !== null && drag.id === row.id ? drag.dy : null;
+              const dragging = dy !== null;
+              const lineAbove = dropBefore === row.id;
+              const lineBelow = dropAfterLast && row.id === others[others.length - 1];
               return (
                 <tr
                   key={row.id}
@@ -268,77 +356,87 @@ export function ConfigTable({
                     if (el === null) rowEls.current.delete(row.id);
                     else rowEls.current.set(row.id, el);
                   }}
-                  className="group border-t border-line-muted transition-colors duration-150 hover:bg-surface-muted/60 focus-within:bg-surface-muted/60"
+                  // Lifted while dragged: it follows the pointer by transform, above the rest.
+                  style={
+                    dragging
+                      ? { transform: `translateY(${dy}px)`, position: "relative", zIndex: 1 }
+                      : undefined
+                  }
+                  className={`border-t border-line-muted ${dragging ? "bg-surface shadow-lg" : "transition-colors duration-150 hover:bg-surface-muted/60"} ${lineAbove ? "[&>td]:border-t-2 [&>td]:border-t-accent" : ""} ${lineBelow ? "[&>td]:border-b-2 [&>td]:border-b-accent" : ""}`}
                 >
-                  {extensible !== undefined && (
-                    <td className="px-1 py-1.5 text-center align-middle">
-                      <RowGrip
-                        row={name_}
-                        disabled={disabled}
-                        gripRef={(el) => {
-                          if (el === null) grips.current.delete(row.id);
-                          else grips.current.set(row.id, el);
-                        }}
-                        onStep={(by) => {
-                          refocus.current = row.id;
-                          moveTo(row.id, table.order.indexOf(row.id) + by);
-                        }}
-                        onDrag={(y) => dragTo(row.id, y)}
-                      />
-                    </td>
-                  )}
-                  {slots.map((slot) =>
-                    slot.kind === "choice" ? (
-                      <td key="choice" className="px-1 py-1.5 text-center align-middle">
-                        {choice === row.id ? (
-                          <span className="inline-block rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-fg">
-                            {slotTitle(slot)}
-                          </span>
-                        ) : (
-                          // Hidden until the row is pointed at or focused; Tab still reaches it,
-                          // and focus shows it.
-                          <button
-                            type="button"
-                            aria-label={`${name_} · ${S.settings.pluginTableChoose(slotTitle(slot))}`}
+                  {slots.map((slot) => {
+                    if (slot.kind === "choice") {
+                      const chosen = choice === row.id;
+                      return (
+                        <td key="choice" className="px-0.5 py-1.5 text-center align-middle">
+                          <IconToggle
+                            label={`${rowLabel} · ${slotTitle(slot)}`}
+                            pressed={chosen}
+                            glyph={ICONS.star}
+                            tooltip={chosen ? S.settings.pluginTableChosen : S.settings.pluginTableChoose}
                             disabled={disabled}
-                            onClick={() => onChoice?.(row.id)}
-                            className="rounded-md px-1 py-0.5 text-xs text-fg-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none disabled:cursor-not-allowed"
-                          >
-                            {S.settings.pluginTableChoose(slotTitle(slot))}
-                          </button>
-                        )}
-                      </td>
-                    ) : (
+                            onPress={() => {
+                              if (!chosen) onChoice?.(row.id);
+                            }}
+                          />
+                        </td>
+                      );
+                    }
+                    if (slot.kind === "move") {
+                      return (
+                        <td key="move" className="px-0.5 py-1.5 text-center align-middle">
+                          <RowGrip
+                            row={rowLabel}
+                            disabled={disabled}
+                            gripRef={(el) => {
+                              if (el === null) grips.current.delete(row.id);
+                              else grips.current.set(row.id, el);
+                            }}
+                            onStep={(by) => {
+                              refocus.current = row.id;
+                              placeAt(row.id, table.order.indexOf(row.id) + by);
+                            }}
+                            onDragStart={(y) => startDrag(row.id, y)}
+                            onDragMove={moveDrag}
+                            onDragEnd={endDrag}
+                          />
+                        </td>
+                      );
+                    }
+                    if (slot.kind === "remove") {
+                      // The cell stays on declared rows, empty, so the icons line up.
+                      return (
+                        <td key="remove" className="px-0.5 py-1.5 text-center align-middle">
+                          {row.declared === undefined && (
+                            <button
+                              type="button"
+                              aria-label={S.settings.pluginTableDelete(rowLabel)}
+                              data-tooltip={S.settings.pluginTableDelete(rowLabel)}
+                              disabled={disabled}
+                              onClick={() => remove(row)}
+                              className={ICON_BUTTON}
+                            >
+                              <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+                            </button>
+                          )}
+                        </td>
+                      );
+                    }
+                    return (
                       <Cell
                         key={slot.column.name}
                         entry={entry}
                         name={name}
                         column={slot.column}
                         row={row}
-                        rowName={name_}
+                        rowName={rowLabel}
                         pinned={pin?.column === slot.column.name ? pin : undefined}
                         localized={localized}
                         disabled={disabled}
                         onCell={(value) => setCell(row, slot.column.name, value)}
                       />
-                    ),
-                  )}
-                  {extensible !== undefined && (
-                    <td className="px-1 py-1.5 text-center align-middle">
-                      {row.declared === undefined && (
-                        <button
-                          type="button"
-                          aria-label={S.settings.pluginTableDelete(name_)}
-                          data-tooltip={S.settings.pluginTableDelete(name_)}
-                          disabled={disabled}
-                          onClick={() => remove(row)}
-                          className="inline-flex size-6 items-center justify-center rounded-md align-middle text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <GlyphIcon d={ICONS.trash} size={ICON_SIZE.inlineGlyph} />
-                        </button>
-                      )}
-                    </td>
-                  )}
+                    );
+                  })}
                 </tr>
               );
             })}

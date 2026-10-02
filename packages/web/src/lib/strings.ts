@@ -635,8 +635,9 @@ export const zh = {
     pluginTableDelete: (row: string) => `删除 ${row}`,
     /** The add button under an extensible table that names none of its own. */
     pluginTableAdd: "添加一行",
-    /** The button that makes a row the table's choice ("Set as default"). */
-    pluginTableChoose: (choice: string) => `设为${choice}`,
+    /** The star on a table's chosen row (the sandbox's default preset), and on the others. */
+    pluginTableChosen: "新会话的默认预设",
+    pluginTableChoose: "设为新会话的默认预设",
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "安装沙盒后端",

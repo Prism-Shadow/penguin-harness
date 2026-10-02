@@ -18,16 +18,16 @@ named file mode, network level and approval mode, and one pick saves all three o
   tooltip. When the Session also has masked paths or a read-only temp directory, the menu says
   "Advanced settings in effect".
 - **The Sandbox card has a presets table.** More… opens the Sandbox card on the Settings
-  dialog's Plugins page. At the top of the card is a table with one row per preset: a drag
-  handle, the name, its file mode, network level and approval mode, and under a "Menu" header
-  Default and Pin (whether the menu lists it). The choice cells show the value's full title as
-  text and open a small menu of the options. The default row wears a "Default" badge; any other
-  row offers "Set as default" on hover or focus. Rows are reordered by dragging the handle (or
-  the arrow keys on it), and that order is the composer's menu order. "Add preset" adds a row
-  (Workspace write only, Full access, Ask every time, not pinned); only added rows can be
-  deleted, and not while they are the default. Renaming keeps a row's mapping; Full Access can
-  only be renamed, unpinned or made the default. The name wraps, columns are even, locked cells
-  show their value as plain text, and every column header has a "?".
+  dialog's Plugins page. At the top of the card is a table with one row per preset: the name,
+  its file mode, network level and approval mode, and an "Action" group of icons — a star for
+  the default, a pin for whether the menu lists it, a drag handle, and a trash can on presets
+  an administrator added. The choice cells show the value's full title as text and open a small
+  menu of the options. Dragging the handle lifts the row and shows where it will land; the
+  arrow keys move a focused handle's row. That order is the composer's menu order. "Add preset"
+  adds a row (Workspace write only, Full access, Ask every time, not pinned); only added rows
+  can be deleted, and not while they are the default. Renaming keeps a row's mapping; Full
+  Access can only be renamed, unpinned or made the default. Names wrap by words, and below the
+  table's minimum width the table scrolls instead of crushing them.
 - **Explanations sit behind a "?" beside their title** on every settings card; the "?" opens on
   hover and keyboard focus, and a click or tap still toggles it: the card's
   description, each field's and the table's. A format rule (masked paths: one absolute path

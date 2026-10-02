@@ -563,8 +563,9 @@ export const en: Strings = {
     pluginTableDelete: (row: string) => `Delete ${row}`,
     /** The add button under an extensible table that names none of its own. */
     pluginTableAdd: "Add a row",
-    /** The button that makes a row the table's choice ("Set as default"). */
-    pluginTableChoose: (choice: string) => `Set as ${choice.toLowerCase()}`,
+    /** The star on a table's chosen row (the sandbox's default preset), and on the others. */
+    pluginTableChosen: "Default for new sessions",
+    pluginTableChoose: "Make this the default for new sessions",
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "Install a sandbox backend",

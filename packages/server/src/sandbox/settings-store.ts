@@ -83,12 +83,12 @@ export const SANDBOX_GROUP = "sandbox";
               before: "enabled",
             },
             columnGroup: {
-              title: "Menu",
-              titleZh: "菜单",
+              title: "Action",
+              titleZh: "操作",
               description:
-                "How the composer's permission menu uses each row: the default is what a new session starts from while the sandbox is on, and a pinned row is listed in the menu.",
+                "Star: the default — the row a new session starts from while the sandbox is on. Pin: listed in the composer's permission menu. Handle: drag to reorder (or focus it and use the arrow keys); the order is the menu's. Trash: delete a preset you added (built-in ones can only be unpinned).",
               descriptionZh:
-                "输入框权限菜单如何使用每一行：默认行是沙盒打开时新会话的起点，固定的行会列在菜单里。",
+                "星标：默认——沙盒打开时新会话从这一行开始。图钉：列在输入框的权限菜单里。手柄：拖动调整顺序（或聚焦后按上下方向键），菜单按此顺序列出。垃圾桶：删除你新增的预设（内置预设只能取消固定）。",
               columns: ["defaultPreset", "enabled"],
             },
             // Presets an administrator adds: only those can be deleted; every row can be moved,

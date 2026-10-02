@@ -6,10 +6,45 @@ import { useLayoutEffect, useRef } from "react";
 import { GlyphIcon, ICONS, ICON_SIZE, Textarea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
+/** The one box every icon control in a table row takes, so a row's icons line up. */
+export const ICON_BUTTON =
+  "inline-flex size-6 items-center justify-center rounded-md align-middle text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg disabled:cursor-not-allowed disabled:opacity-60";
+
 /**
- * A pin toggle: the pin glyph, filled while pinned. A real button with `aria-pressed`, named
- * "<row> · <column>"; its tooltip says the state in words.
+ * An icon toggle: the glyph, filled while pressed. A real button with `aria-pressed`; its
+ * tooltip says the state in words.
  */
+export function IconToggle({
+  label,
+  pressed,
+  glyph,
+  tooltip,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  pressed: boolean;
+  glyph: string;
+  tooltip: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={pressed}
+      data-tooltip={tooltip}
+      disabled={disabled}
+      onClick={onPress}
+      className={`${ICON_BUTTON} ${pressed ? "!text-fg" : ""}`}
+    >
+      <GlyphIcon d={glyph} size={ICON_SIZE.iconButton} filled={pressed} />
+    </button>
+  );
+}
+
+/** A pin toggle: the pin glyph, filled while pinned (see IconToggle). */
 export function PinToggle({
   label,
   pinned,
@@ -24,17 +59,14 @@ export function PinToggle({
   onChange: (pinned: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={pinned}
-      data-tooltip={tooltip}
+    <IconToggle
+      label={label}
+      pressed={pinned}
+      glyph={ICONS.pin}
+      tooltip={tooltip}
       disabled={disabled}
-      onClick={() => onChange(!pinned)}
-      className={`inline-flex size-7 items-center justify-center rounded-md align-middle transition-colors duration-150 hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-60 ${pinned ? "text-fg" : "text-fg-subtle"}`}
-    >
-      <GlyphIcon d={ICONS.pin} size={ICON_SIZE.iconButton} filled={pinned} />
-    </button>
+      onPress={() => onChange(!pinned)}
+    />
   );
 }
 
@@ -98,25 +130,37 @@ export function WrappingNameBox({
 }
 
 /**
- * A row's drag handle (three lines). Dragging it moves the row: the table is told the pointer's
- * height on every move and reorders as it crosses rows. Focused, the up and down arrow keys move
- * the row one place. `touch-none` keeps a touch drag from scrolling the page instead.
+ * A row's drag handle (three lines). Pressed, it takes the pointer capture and reports the drag
+ * to the table, which moves the row by transform and reorders only on the drop — so this button
+ * never moves in the DOM while it holds the capture. Losing the capture or a cancelled pointer
+ * puts the row back. Focused, the up and down arrow keys move the row one place. `touch-none`
+ * keeps a touch drag from scrolling the page instead.
  */
 export function RowGrip({
   row,
   disabled,
   onStep,
-  onDrag,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
   gripRef,
 }: {
   /** The row's name, for the accessible name. */
   row: string;
   disabled: boolean;
   onStep: (by: -1 | 1) => void;
-  onDrag: (clientY: number) => void;
+  onDragStart: (clientY: number) => void;
+  onDragMove: (clientY: number) => void;
+  /** `true` drops the row where it is; `false` puts it back. */
+  onDragEnd: (commit: boolean) => void;
   gripRef: (el: HTMLButtonElement | null) => void;
 }) {
   const dragging = useRef(false);
+  const end = (commit: boolean) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    onDragEnd(commit);
+  };
   return (
     <button
       ref={gripRef}
@@ -131,22 +175,21 @@ export function RowGrip({
         }
       }}
       onPointerDown={(e) => {
-        if (disabled) return;
+        if (disabled || e.button !== 0) return;
+        e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
         dragging.current = true;
+        onDragStart(e.clientY);
       }}
       onPointerMove={(e) => {
-        if (dragging.current) onDrag(e.clientY);
+        if (dragging.current) onDragMove(e.clientY);
       }}
-      onPointerUp={() => {
-        dragging.current = false;
-      }}
-      onPointerCancel={() => {
-        dragging.current = false;
-      }}
-      className="inline-flex size-6 cursor-grab touch-none items-center justify-center rounded-md align-middle text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-60"
+      onPointerUp={() => end(true)}
+      onPointerCancel={() => end(false)}
+      onLostPointerCapture={() => end(true)}
+      className={`${ICON_BUTTON} cursor-grab touch-none active:cursor-grabbing`}
     >
-      <GlyphIcon d={ICONS.menu} size={ICON_SIZE.inlineGlyph} />
+      <GlyphIcon d={ICONS.menu} size={ICON_SIZE.iconButton} />
     </button>
   );
 }
