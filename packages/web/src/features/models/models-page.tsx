@@ -2247,7 +2247,8 @@ function AddGroupDialog({
       open
       title={S.models.addGroupTitle}
       onClose={() => !busy && onClose()}
-      widthClass="sm:max-w-sm"
+      // The group settings' width: the group's base URL and its protocol path read whole.
+      widthClass="sm:max-w-3xl"
       footer={
         <>
           <Button size="sm" disabled={busy} onClick={onClose}>
