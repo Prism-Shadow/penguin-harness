@@ -35,9 +35,7 @@ export function ConfigHeading({
           {localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name}
         </p>
         <p className="font-mono text-xs text-fg-muted">{entry.name}</p>
-        {description !== undefined && (
-          <p className="mt-1 text-xs text-fg-muted">{description}</p>
-        )}
+        {description !== undefined && <p className="mt-1 text-xs text-fg-muted">{description}</p>}
       </div>
       {(entry.actions ?? []).length > 0 && (
         <div className="space-y-2">

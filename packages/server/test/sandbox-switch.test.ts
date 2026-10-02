@@ -73,9 +73,9 @@ async function boot(opts: { plugins?: PluginHost; dbPath?: string } = {}) {
   const sandbox = t.deps.tree.api<SandboxService>("SandboxModule", "sandbox");
   await sandbox.whenReady();
   const card = async (): Promise<PluginConfigEntry> =>
-    ((await (await admin.get("/api/admin/plugin-config")).json()) as PluginConfigResponse).plugins.find(
-      (e) => e.name === "sandbox",
-    )!;
+    (
+      (await (await admin.get("/api/admin/plugin-config")).json()) as PluginConfigResponse
+    ).plugins.find((e) => e.name === "sandbox")!;
   const save = (values: Record<string, unknown>) =>
     admin.put("/api/admin/plugin-config", { name: "sandbox", values });
   return { t, admin, sandbox, card, save };

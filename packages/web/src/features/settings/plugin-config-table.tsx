@@ -12,7 +12,15 @@
  * language.
  */
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICONS, ICON_GAP, ICON_SIZE, Input, Select, Switch } from "@prismshadow/penguin-ui";
+import {
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  Select,
+  Switch,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Locale } from "../../state/locale";
@@ -41,7 +49,8 @@ export function ConfigTable({
 }) {
   const localized = (en: string, zh: string | undefined) => localizedText(locale, en, zh);
   const label = localized(field.title, field.titleZh);
-  const hint = field.description !== undefined ? localized(field.description, field.descriptionZh) : undefined;
+  const hint =
+    field.description !== undefined ? localized(field.description, field.descriptionZh) : undefined;
   const columns = field.columns ?? [];
   return (
     <div className="space-y-1.5">
@@ -74,7 +83,9 @@ export function ConfigTable({
                   const cellLabel = `${localized(String(row.values.name ?? row.id), row.valuesZh?.name)} · ${localized(c.title, c.titleZh)}`;
                   const optionTitle = (value: unknown) => {
                     const option = c.options?.find((o) => o.value === value);
-                    return option !== undefined ? localized(option.title, option.titleZh) : String(value);
+                    return option !== undefined
+                      ? localized(option.title, option.titleZh)
+                      : String(value);
                   };
                   return (
                     <td key={c.name} className="px-2 py-1 align-middle">
@@ -89,13 +100,20 @@ export function ConfigTable({
                               ? optionTitle(cell)
                               : c.type === "string"
                                 ? cell === ""
-                                  ? localized(String(row.values[c.name] ?? ""), row.valuesZh?.[c.name])
+                                  ? localized(
+                                      String(row.values[c.name] ?? ""),
+                                      row.valuesZh?.[c.name],
+                                    )
                                   : String(cell)
                                 : cell === true
                                   ? S.settings.pluginCellOn
                                   : S.settings.pluginCellOff}
                           </span>
-                          <GlyphIcon d={ICONS.lock} size={ICON_SIZE.inlineGlyph} className="text-fg-subtle" />
+                          <GlyphIcon
+                            d={ICONS.lock}
+                            size={ICON_SIZE.inlineGlyph}
+                            className="text-fg-subtle"
+                          />
                         </span>
                       ) : c.type === "boolean" ? (
                         <Switch

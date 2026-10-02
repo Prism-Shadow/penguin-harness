@@ -221,8 +221,7 @@ export function sandboxSwitchOff(sandbox: Pick<SessionSandbox, "switchOn">): boo
 
 /** One row of the composer's permission menu. */
 export type PermissionMenuRow =
-  | { kind: "preset"; preset: SessionSandboxPreset }
-  | { kind: "approval"; mode: ApprovalMode };
+  { kind: "preset"; preset: SessionSandboxPreset } | { kind: "approval"; mode: ApprovalMode };
 
 /**
  * What the composer's permission menu lists. With the Sandbox switch on, the presets
