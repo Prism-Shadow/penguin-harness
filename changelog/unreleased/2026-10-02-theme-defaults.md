@@ -20,6 +20,7 @@ A round of theme adjustments from the owner's review of the three themes against
   - Its icons are the line drawings again; the Octicons of 2026-10-01 were withdrawn.
   - The dark-mode contrast adjustment of 2026-09-29 stays.
 - **Accent:** every theme's own accent ("Theme's own") is now black in light and white in dark. Frost's forest green became the preset `forest`, first in its list. A stored preset is unchanged.
+  - Frost's running highlight, the band that sweeps across a working step's label, is now the accent mixed toward the page, so it stands out from the text whatever the accent. With the own accent equal to the text colour, the band would otherwise vanish.
 - **Settings dialog:** wider on desktop (56rem, from 48rem) in every theme.
 - **Settings avatar:** the profile page's avatar is 40px (it was 64px).
 - **Tags:** badges and counts, the model marks (Free, Vision, Fast, Discount) among them, are set one step under each theme's small text size, through two new badge tokens.

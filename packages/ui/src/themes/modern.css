@@ -912,17 +912,20 @@
   /* Work in progress is shown the way Codex and macOS show it: nothing around the row — no
      fill, no border, no ring, no halo (a first pass drew a luminous surface; the owner asked
      for the lineless version) — and a soft highlight in the accent's hue sweeping across the
-     label, the one running signal once the status mark is hidden (above). At rest (done, error)
-     the row is its plain words, so a finished transcript adds nothing. The highlight is a
-     gradient clipped to the label's glyphs and slid across them; parked at either end it shows
-     only the ink, which is what reduced motion shows: a plain label. The slots are found anywhere inside the row (a
-     card nests them in its own button); a work group's header shares the recipe with its rows. */
+     label, the one running signal once the status mark is hidden (above). The band is the
+     accent mixed toward the page, so it stands off the ink whatever the accent: the theme's own
+     accent is the ink itself, and the band would vanish into it. At rest (done, error) the row
+     is its plain words, so a finished transcript adds nothing. The highlight is a gradient
+     clipped to the label's glyphs and slid across them; parked at either end it shows only the
+     ink, which is what reduced motion shows: a plain label. The slots are found anywhere inside
+     the row (a card nests them in its own button); a work group's header shares the recipe with
+     its rows. */
   :root[data-theme="modern"] .ui-activity[data-state="running"] [data-slot="label"] {
     color: var(--ui-fg);
     background-image: linear-gradient(
       90deg,
       currentColor 0 38%,
-      var(--ui-accent) 50%,
+      color-mix(in oklab, var(--ui-accent) 55%, var(--ui-canvas)) 50%,
       currentColor 62% 100%
     );
     background-size: 300% 100%;
