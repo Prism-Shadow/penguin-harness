@@ -843,7 +843,12 @@ export class BrowserBackendRuntime {
       if (snapshot === this.published) return;
       this.published = snapshot;
       try {
-        this.deps.publish({ type: "builtin_browser_tabs", tabs, activeTabId });
+        this.deps.publish({
+          type: "builtin_browser_tabs",
+          tabs,
+          activeTabId,
+          backend: this.backend,
+        });
       } catch (err) {
         this.published = null;
         this.deps.log(`${this.backend} browser: the tab list could not be sent: ${messageOf(err)}`);

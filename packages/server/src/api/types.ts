@@ -5702,7 +5702,16 @@ export type BuiltinBrowserAction =
  * `builtin_browser_extension`.
  */
 export type BuiltinBrowserServerEvent =
-  | { type: "builtin_browser_tabs"; tabs: BuiltinBrowserTab[]; activeTabId: number | null }
+  /**
+   * A backend's whole tab list. `backend` names whose: a desktop admin hears both the built-in
+   * browser's and their own Chrome's, and the two lists must not overwrite each other.
+   */
+  | {
+      type: "builtin_browser_tabs";
+      tabs: BuiltinBrowserTab[];
+      activeTabId: number | null;
+      backend: BrowserBackend;
+    }
   /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
   | {
       type: "builtin_browser_open";

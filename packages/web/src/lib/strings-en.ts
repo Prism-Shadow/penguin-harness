@@ -298,7 +298,58 @@ export const en: Strings = {
     unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
     unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
     unavailableWindow: "No app window is available to show the browser.",
+    useChrome: "Use System Chrome",
     openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
+    closeFailed: (reason: string): string => `Could not close the tab: ${reason}`,
+    backendGroup: "Browser",
+    backendBuiltin: "Built-in",
+    backendChrome: "System Chrome",
+    chromeConnected: (name: string | null): string =>
+      name !== null ? `Chrome: connected · ${name}` : "Chrome: connected",
+    chromeNotConnected: "Chrome: not connected",
+    chromeNotPaired: "No Chrome paired",
+    chromeDisabled: "Chrome connections are off",
+    connectChrome: "Connect your Chrome…",
+    manageChrome: "Manage…",
+    switchedToChrome: "Agents now use your Chrome",
+    switchedToBuiltin: "Agents now use the built-in browser",
+    switchRefused: "An agent is using the browser; switch once it is done",
+    switchFailed: (reason: string): string => `Could not switch the browser: ${reason}`,
+    chromeTabCard: "This tab is open in your Chrome",
+    showInChrome: "Show in Chrome",
+    chromeNoTabsTitle: "No agent tabs in your Chrome yet",
+    chromeNoTabsBody: "Pages an agent opens appear in Chrome's Penguin tab group.",
+    chromeDisconnectedTitle: "Chrome is not connected",
+    chromeDisconnectedBody: (name: string | null): string =>
+      name !== null
+        ? `${name} is not connected to this server right now.`
+        : "Your paired Chrome is not connected to this server right now.",
+    reconnectHelp: "Reconnect help",
+    reconnectOpen:
+      "Open Chrome and check that the PenguinHarness Browser extension is turned on in chrome://extensions.",
+    reconnectResume:
+      "Click the extension's icon in the toolbar; if it says it is paused, choose Resume.",
+    reconnectPair:
+      "If the server's address changed, or the server was removed in the extension, pair it again.",
+    chromeDisabledTitle: "Chrome connections are off",
+    chromeDisabledBody: "An admin of this server has turned off Chrome extension connections.",
+    chromeUnpairedIntro:
+      "Install the PenguinHarness Browser extension and pair it, and agents can open and work in pages in your own Chrome, signed in as you are there.",
+    pairTitle: "Connect your Chrome",
+    pairStepInstall:
+      "Download the extension and unzip it. In Chrome, open chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder, then pin the extension to the toolbar.",
+    pairDownload: "Download the extension (zip)",
+    pairStepOpen:
+      "Click the PenguinHarness Browser icon in the toolbar and choose Settings to open its pairing page.",
+    pairStepPaste: "Paste the server address and the pairing code below, and choose Connect.",
+    pairServer: "Server address",
+    pairCode: "Pairing code",
+    pairCodeExpiry: (time: string): string => `Works once, until ${time}`,
+    pairCodeExpired: "This code has expired",
+    pairNewCode: "New code",
+    pairCodeFailed: (reason: string): string => `Could not create a pairing code: ${reason}`,
+    pairWaiting: "Waiting for Chrome…",
+    pairConnected: "Connected",
     importTitle: "Import from browser",
     importIntro:
       "Copies sign-ins and history from a browser on this computer into the built-in browser. The browser you import from is left unchanged.",
@@ -363,6 +414,35 @@ export const en: Strings = {
     },
   },
 
+  browserSettings: {
+    backend: "Browser agents use",
+    backendInfo:
+      "The built-in browser lives in the desktop app and keeps its own sign-ins. System Chrome is your own Chrome, where agents act only in the tabs they open and the tabs you hand them. Agents cannot switch it themselves.",
+    paired: "Paired Chromes",
+    pairedNone: "No Chrome is paired yet.",
+    pairedLine: (version: string, seen: string | null): string =>
+      seen === null
+        ? `Extension ${version} · never connected`
+        : `Extension ${version} · last seen ${seen}`,
+    connected: "Connected",
+    notConnected: "Not connected",
+    revoke: "Revoke",
+    revokeTitle: "Revoke this Chrome?",
+    revokeBody: (name: string): string =>
+      `Agents lose ${name}: it disconnects now, and it has to be paired again before agents can use it.`,
+    revoked: (name: string): string => `Revoked ${name}`,
+    revokeFailed: (reason: string): string => `Could not revoke it: ${reason}`,
+    connectFirst: "Connect your Chrome",
+    connectAnother: "Connect another Chrome",
+    loadFailed: (reason: string): string => `Could not read the paired Chromes: ${reason}`,
+    disabledNote: "An admin of this server has turned off Chrome extension connections.",
+    allow: "Allow Chrome extension connections",
+    offTitle: "Turn off Chrome extension connections?",
+    offBody:
+      "Every user's extension disconnects at once, and no agent on this server can use a Chrome. Pairings are kept: turn it back on and the extensions reconnect.",
+    off: "Turn off",
+  },
+
   tracePanel: {
     empty: "No traces yet",
     emptyHint: "This session has not produced a Trace file yet",
@@ -374,6 +454,10 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
+    browserTitle: "Browser",
+    chromeExtensionTitle: "Chrome extension",
+    chromeExtensionInfo:
+      "When on, every user of this server can pair their own Chrome for agents to work in. When off, every extension disconnects; pairings are kept.",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -3204,6 +3288,7 @@ Scenarios:
     } as Record<string, string>,
     linkMenu: {
       openInBuiltinBrowser: "Open in built-in browser",
+      openInChromeTab: "Open in agent's Chrome tab",
       openExternal: "Open in system browser",
       openInNewTab: "Open in new tab",
       copyLink: "Copy link address",
@@ -5014,7 +5099,7 @@ Scenarios:
       handbook_file_not_found: "That document no longer exists.",
       handbook_index_required: "The handbook index (README.md) cannot be deleted.",
       browser_unavailable:
-        "The built-in browser is unavailable: it needs the PenguinHarness desktop app to be open.",
+        "The browser is not available right now: the built-in browser needs the PenguinHarness desktop app open, and your Chrome needs the PenguinHarness Browser extension connected.",
       source_not_found: "That browser profile was not found.",
       shell_unreachable: "The desktop app could not be reached.",
       timeout: "That took too long. Try again.",

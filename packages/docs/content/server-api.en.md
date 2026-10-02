@@ -81,7 +81,7 @@ Sign-in, sign-out, account claiming, and the current user's password, profile an
 | PUT | `/api/me/password` | Changes the password: `{oldPassword, newPassword}` |
 | PUT | `/api/me/profile` | Sets the avatar and nickname: `{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | Reads UI preferences |
-| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge) |
+| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge); `browserBackend` is refused (`400`), since it is chosen through [`PUT /api/builtin-browser/backend`](#agent-browser) |
 
 - `GET /api/auth/claim` redeems a first-login link or the desktop shell's one-shot token. An invalid or already-used link redirects to `/login?claimFailed=…` instead, where the Web App explains how to get a working one.
 - `GET /api/install` needs no authentication. `installId` is an opaque id stored in `<root>/install-id`, minted the first time the root is used. The Web App compares it with the id it stored and, when they differ, clears the browser-side UI state that refers to server entities, so replacing the data root no longer leaves the old Workspace, drafts and pins behind. `null` means the server could not establish an id, and clients must then change nothing.
@@ -106,11 +106,11 @@ In desktop mode (a server spawned by the desktop app), every route in this group
 
 ## Server Settings (admin only)
 
-Server-wide proxy, attachment and company-mode settings, and the settings groups plugins declare.
+Server-wide proxy, attachment, company-mode and Chrome extension settings, and the settings groups plugins declare.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode}}` |
+| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled}}` |
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
@@ -162,6 +162,10 @@ Two limits cannot be changed: the number of files per message (20) and the inlin
 ### Company mode switch
 
 `companyMode` is the server's **Enable company mode** switch, off by default. A change applies without a restart: while the switch is off, every organization route returns `404` `company_mode_off` and the organization scheduler fires nothing.
+
+### Chrome extension switch
+
+`browserExtensionsEnabled` is the server's **Allow Chrome extension connections** switch, on by default. Turning it off closes every connected PenguinHarness Browser extension at once (WebSocket close code `4009`), refuses new connections and pairing codes, and makes the Chrome backend unavailable for every user (`extension_disabled`). Pairings are kept, so turning it back on lets the extensions reconnect. See [Agent Browser](#agent-browser).
 
 ### Plugin settings
 
@@ -1034,6 +1038,56 @@ Interactive shells on the server host. The Web App's terminals use these routes,
 - `keys` is literal text or a key token: `Enter`, `Tab`, `Escape`, `Backspace`, `Space`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, `Delete`, or a control chord such as `C-c`. With `literal: true`, the text is sent exactly as given. A terminal whose shell has exited returns `409` `terminal_exited`.
 - The byte stream does not use these routes: it is a WebSocket at `GET /api/terminals/:id/stream` (an Upgrade request).
 - A request without a valid session or token returns `401` `unauthorized`.
+
+## Agent Browser
+
+The browser agents drive with `penguin browser`, under `/api/builtin-browser`. It has two backends: `builtin`, the desktop app's built-in browser, hosted by the desktop shell that spawned this server; and `chrome`, a user's own Chrome, connected through the PenguinHarness Browser extension. Each user has one backend in effect: the one they chose with `PUT /backend`, else `builtin` for an administrator under the desktop shell and `chrome` everywhere else. A server outside the desktop shell offers only `chrome`. A call never falls back from one backend to the other. See [Built-in Browser](/builtin-browser).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/status` | The caller's backend: `{available, reason?, backend, backends, tabs, activeTabId, metrics?}`. Never `503` |
+| GET | `/backend` | `{backend, choices}`: the backend in effect and the ones the caller may choose |
+| PUT | `/backend` | Chooses one: `{backend}` → `{backend, choices}` |
+| GET | `/tabs` | The tabs and the active one: `{tabs, activeTabId}` |
+| POST | `/tabs` | Opens a tab: `{url?, activate?, sessionId?}` → `{tab}`. Without `url`, the homepage or a blank page |
+| POST | `/tabs/claim` | Built-in: a window names the tab it created for an open request: `{requestId, tabId}` |
+| POST | `/tabs/on-screen` | Built-in: the tab a window shows now, or `null` |
+| POST | `/tabs/:tab/activate` | Makes a tab the active one; on `chrome`, Chrome shows it too |
+| DELETE | `/tabs/:tab` | Closes a tab; `204` |
+| POST | `/tabs/:tab/navigate`, `scan`, `exec`, `click`, `type`, `screenshot`, `cdp` | The agent's actions; see [penguin browser](/cli#penguin-browser) |
+| GET | `/import/sources` | Built-in: the system browser profiles that can be imported |
+| POST | `/import` | Built-in: imports cookies and history: `{sourceId, cookies?, history?, domains?}` |
+| GET / PUT | `/settings` | The homepage: `{homepage}`. Administrators only |
+| GET / DELETE | `/history?q=&limit=` | Built-in: searches or clears the history |
+| POST | `/clear-data` | Built-in: `{storages}`, any of `cookies`, `cache` and `storage` |
+| POST | `/extension/pairings` | A one-time pairing code for the signed-in user: `{code, expiresAt, origin}` |
+| GET | `/extension` | The caller's paired Chromes: `{paired, connected?, enabled}` |
+| DELETE | `/extension/:id` | Revokes one; `204`. Its connection is closed with `4003` |
+| POST | `/extension/pair` | The extension trades a code for its token: `{code, name, version}` → `{extensionId, token, installId, user, serverVersion}` |
+| GET | `/extension/ws` | The extension's WebSocket (an Upgrade request) |
+
+`:tab` is a tab id or `active`.
+
+### Who may call what
+
+- Every route takes any signed-in user. The built-in browser and what only it has (import, history, clearing data, `/tabs/claim`, the homepage) are for administrators: a member gets `403` `admin_required`. Asked of the `chrome` backend, import, history and clearing data return `405` `not_supported`.
+- `PUT /backend` and `POST /extension/pairings` are the signed-in person's own: the local API token gets `403` `human_required`. A backend the caller may not choose returns `405` `not_supported` (or `403` `admin_required` for a member asking for `builtin`), and a switch while an agent acts in the browser returns `409` `action_in_flight`. Switching closes no tabs.
+- An agent's calls use the local API token, which acts as the administrator. When such a call carries a `sessionId` (in the body, or in the query of a `GET` or `DELETE`), the server acts for the person driving that session instead: the one who started its current run, or the creator of a scheduled task, else the Project's owner. That is whose Chrome the agent drives; another user's Chrome is never used.
+- `GET /extension` and `DELETE /extension/:id` see only the caller's own pairings. A pairing code works once, for 10 minutes, and five wrong attempts end it; a new code replaces the caller's previous one.
+
+When the backend cannot be driven, an action returns `503` `browser_unavailable` with a `reason` beside the code. Built-in: `not_desktop` (no desktop shell), `shell_unsupported` (a shell too old for the browser) or `no_window` (no window took a new tab). Chrome: `extension_not_paired`, `extension_disconnected` or `extension_disabled`. Without a reason, the message says why, such as the user having paused the extension. On `chrome`, a tab the user took back answers `409` `tab_released`, and raw CDP that reaches outside the tab answers `403` `cdp_refused`: the `Target`, `Browser`, `Storage`, `Fetch`, `Extensions`, `Tethering` and `Security` domains, the `Network` methods that read or change cookies, clear the cache or intercept requests, `DOM.setFileInputFiles` and `Page.setDownloadBehavior`.
+
+### The extension's pairing and WebSocket
+
+- `POST /extension/pair` is mounted outside the session gate: the code is the credential, and no cookie is read. It answers CORS, including Chrome's Private Network Access preflight, for the extension's own origin alone; another `Origin` gets `403` `forbidden_origin`, and a request with none is let through. A bad or expired code returns `401` `invalid_code`.
+- The WebSocket at `/api/builtin-browser/extension/ws` authenticates with the extension's token, carried in the subprotocol list (`Sec-WebSocket-Protocol: penguin-browser.1, token.<token>`), never in the address; the server selects `penguin-browser.1`. The `Origin` must be the extension's (`chrome-extension://dodgfhpcbmkjfcbgnoidablfgjjhhmgp`, or any extension on a server with the dev profile), and cookies are not read. A foreign `Origin` gets `403` and a missing or unknown token `401`, before the upgrade.
+- Messages are JSON text frames in the desktop shell's envelopes (`desktop-browser-command`, `-reply`, `-event`), extended with the `open-tab`, `close-tab`, `activate-tab` and `ping` commands and the `tab-released` event. The server sends `hello` first and pings every 20 seconds.
+- Close codes: `4001` another Chrome of the same user connected (the last one wins); `4003` the pairing was revoked; `4005` a subprotocol or `hello` version the server does not speak; `4008` the pings went unanswered; `4009` the administrator's switch is off; `1012` the server is restarting.
+- The token is 32 random bytes, shown once, and stored only as its SHA-256. A reverse proxy must forward `Upgrade` for this path, as for the terminal stream.
+
+### Events
+
+The user channel carries the browser's events: `builtin_browser_tabs` (`{tabs, activeTabId, backend}`, the whole list of one backend), `builtin_browser_open` and `builtin_browser_close` (built-in), `builtin_browser_activity` (an agent starts or ends an action in a tab), `builtin_browser_metrics` (built-in), `builtin_browser_backend` (`{backend}`, the user switched) and `builtin_browser_extension` (`{state, extension?}`, the user's Chrome `connected`, `disconnected`, was `replaced` by another or `revoked`). The built-in browser's go to every administrator; a Chrome's go to its user.
 
 ## Desktop Shell, Hot Update and Web Contributions
 

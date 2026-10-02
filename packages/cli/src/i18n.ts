@@ -589,6 +589,7 @@ export interface Messages {
       screenshot: string;
       dialog: string;
       memory: string;
+      backend: string;
     };
     /** `label: value`, in the language's punctuation. */
     line(label: string, value: string): string;
@@ -598,8 +599,19 @@ export interface Messages {
     noTabs(): string;
     available(): string;
     unavailable(reason: string): string;
-    /** Why the browser cannot be driven, and what to do: it lives in the desktop app, which must be open. */
+    /**
+     * The value of `backend:` on the status line: `builtin` or `chrome` as the API names them, then
+     * the user's Chrome when one is paired (its name and the extension's version).
+     */
+    backendValue(backend: string, extension?: { name: string; version: string }): string;
+    /**
+     * Why the browser cannot be driven, and what to do: the built-in browser lives in the desktop
+     * app, which must be open; the user's own Chrome needs the extension paired, connected and
+     * allowed on the server. Undefined: no server could be reached at all.
+     */
     unavailableHint(reason: string | undefined): string;
+    /** `not_supported`: what only the built-in browser has (import, history), asked of the user's Chrome. */
+    notSupported(): string;
     /**
      * The value of `memory:`: what the browser's pages hold together and how many tabs, then this
      * computer's free and total memory when the server reports them.
@@ -1465,8 +1477,8 @@ const en: Messages = {
     colPrincipal: () => "PRINCIPAL",
   },
   browser: {
-    desc: "The desktop app's built-in browser: read pages, run JavaScript, click and type, import sign-ins",
-    statusDesc: "Whether the built-in browser is available, and its tabs",
+    desc: "The agent browser: read pages, run JavaScript, click and type, import sign-ins",
+    statusDesc: "Whether the agent browser is available, which backend it is, and its tabs",
     tabsDesc: "List the open tabs (* marks the active one)",
     openDesc:
       "Open a URL in the active tab (in a new one when none is open), or in a new tab with --new-tab",
@@ -1535,6 +1547,7 @@ const en: Messages = {
       screenshot: "screenshot",
       dialog: "dialog",
       memory: "memory",
+      backend: "backend",
     },
     line: (label, value) => `${label}: ${value}`,
     tabHead: (id, title, url, loading) =>
@@ -1542,6 +1555,10 @@ const en: Messages = {
     noTabs: () => "none",
     available: () => "available",
     unavailable: (reason) => `unavailable (${reason})`,
+    backendValue: (backend, extension) =>
+      extension === undefined
+        ? backend
+        : `${backend} (${extension.name}, extension ${extension.version})`,
     unavailableHint: (reason) => {
       const base =
         "The built-in browser needs the PenguinHarness desktop app, and the app must be open";
@@ -1549,8 +1566,16 @@ const en: Messages = {
         return `${base}: this desktop app is too old for it, so update the app.`;
       if (reason === "no_window") return `${base}: it has no open window, so open it.`;
       if (reason === "not_desktop") return `${base}: this server is not running inside it.`;
-      return `${base}.`;
+      if (reason === "extension_not_paired")
+        return "No Chrome is paired for this user. Ask the user to install the PenguinHarness Browser extension and pair it: Browser panel → Connect your Chrome.";
+      if (reason === "extension_disconnected")
+        return "The user's Chrome is not connected. Ask the user to open Chrome with the PenguinHarness Browser extension enabled, or to pair it again in the Browser panel.";
+      if (reason === "extension_disabled")
+        return "An admin has turned off Chrome extension connections on this server, so the user's Chrome cannot be driven.";
+      return "The browser is driven through a running PenguinHarness server, and none was reached: open the desktop app, or point --server or PENGUIN_API_URL at the server.";
     },
+    notSupported: () =>
+      "This belongs to the built-in browser; this user's agents drive their own Chrome, which keeps its own sign-ins and history. Ask the user to sign in in the Penguin tab in Chrome instead.",
     memoryLine: (total, tabs, system) =>
       `${total} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}` +
       (system !== undefined ? ` · this computer: ${system.free} free of ${system.total}` : ""),
@@ -2388,8 +2413,8 @@ const zh: Messages = {
     colPrincipal: () => "主体",
   },
   browser: {
-    desc: "桌面应用的内置浏览器：读取页面、运行 JavaScript、点击与输入、导入登录状态",
-    statusDesc: "内置浏览器是否可用，以及它的标签页",
+    desc: "Agent 浏览器：读取页面、运行 JavaScript、点击与输入、导入登录状态",
+    statusDesc: "Agent 浏览器是否可用、使用哪种后端，以及它的标签页",
     tabsDesc: "列出打开的标签页（* 标出当前标签页）",
     openDesc: "在当前标签页打开 URL（没有标签页时新开一个）；--new-tab 则在新标签页打开",
     switchDesc: "把一个标签页设为当前标签页",
@@ -2454,6 +2479,7 @@ const zh: Messages = {
       screenshot: "截图",
       dialog: "对话框",
       memory: "内存",
+      backend: "后端",
     },
     line: (label, value) => `${label}：${value}`,
     tabHead: (id, title, url, loading) =>
@@ -2461,13 +2487,25 @@ const zh: Messages = {
     noTabs: () => "无",
     available: () => "可用",
     unavailable: (reason) => `不可用（${reason}）`,
+    backendValue: (backend, extension) =>
+      extension === undefined
+        ? backend
+        : `${backend}（${extension.name}，扩展 ${extension.version}）`,
     unavailableHint: (reason) => {
       const base = "内置浏览器需要 PenguinHarness 桌面应用，且应用必须处于打开状态";
       if (reason === "shell_unsupported") return `${base}：当前桌面应用版本过旧，请更新应用。`;
       if (reason === "no_window") return `${base}：应用当前没有打开的窗口，请打开它。`;
       if (reason === "not_desktop") return `${base}：当前服务器不是在桌面应用中运行的。`;
-      return `${base}。`;
+      if (reason === "extension_not_paired")
+        return "该用户还没有配对 Chrome。请用户安装 PenguinHarness Browser 扩展并完成配对：浏览器面板 →「连接你的 Chrome…」。";
+      if (reason === "extension_disconnected")
+        return "该用户的 Chrome 未连接。请用户打开装有 PenguinHarness Browser 扩展的 Chrome 并确认扩展已启用，或在浏览器面板中重新配对。";
+      if (reason === "extension_disabled")
+        return "管理员已在本服务器上关闭 Chrome 扩展连接，无法驱动该用户的 Chrome。";
+      return "浏览器要经由正在运行的 PenguinHarness 服务器驱动，但没有连上任何服务器：请打开桌面应用，或用 --server 或 PENGUIN_API_URL 指向该服务器。";
     },
+    notSupported: () =>
+      "这项功能只属于内置浏览器；该用户的 Agent 驱动的是用户自己的 Chrome，它自己保存登录状态和历史记录。需要登录时，请用户在 Chrome 的 Penguin 标签页中自行登录。",
     memoryLine: (total, tabs, system) =>
       `${total}（${tabs} 个标签页）` +
       (system !== undefined ? ` · 本机可用 ${system.free}，共 ${system.total}` : ""),

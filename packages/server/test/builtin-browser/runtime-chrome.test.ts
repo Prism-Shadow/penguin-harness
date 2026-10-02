@@ -4,7 +4,7 @@
  *
  * - Given a connected Chrome, when the agent opens a tab, the extension creates it (the
  *   server never asks a window to), the call waits for its page, and the user's windows hear
- *   the tab list; when it closes the tab, the extension closes it.
+ *   the tab list, named as Chrome's; when it closes the tab, the extension closes it.
  * - Switching to a tab shows it in the user's Chrome; an action's own activation of its tab
  *   does not steal the user's focus.
  * - When the user takes a tab back while an action runs in it, the action answers 409
@@ -170,7 +170,10 @@ describe("tabs in the user's Chrome", () => {
     // No window was asked to create it.
     expect(h.events.some((e) => e.type === "builtin_browser_open")).toBe(false);
     await until(
-      () => h.events.some((e) => e.type === "builtin_browser_tabs" && e.tabs.length === 1),
+      () =>
+        h.events.some(
+          (e) => e.type === "builtin_browser_tabs" && e.backend === "chrome" && e.tabs.length === 1,
+        ),
       "the tab list",
     );
 

@@ -248,7 +248,11 @@ describe("tabs", () => {
     });
     expect(h.browser.tabs.activeTabId).toBe(21);
     await until(
-      () => h.events.some((e) => e.type === "builtin_browser_tabs" && e.activeTabId === 21),
+      () =>
+        h.events.some(
+          (e) =>
+            e.type === "builtin_browser_tabs" && e.backend === "builtin" && e.activeTabId === 21,
+        ),
       "the tabs event",
     );
   });

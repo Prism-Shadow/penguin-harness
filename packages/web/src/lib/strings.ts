@@ -303,7 +303,7 @@ export const zh = {
     restore: "还原高度",
   },
 
-  /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
+  /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
   builtinBrowser: {
     /** The dock tab's name, also in the dock's menus and the launcher. */
     panelTitle: "浏览器",
@@ -350,7 +350,65 @@ export const zh = {
     unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
     unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
     unavailableWindow: "没有可以显示浏览器的应用窗口。",
+    /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
+    useChrome: "改用系统 Chrome",
     openFailed: (reason: string): string => `无法打开标签页：${reason}`,
+    closeFailed: (reason: string): string => `无法关闭标签页：${reason}`,
+    /** The overflow menu's backend choice (desktop app): the group's name and its two choices. */
+    backendGroup: "浏览器",
+    backendBuiltin: "内置",
+    backendChrome: "系统 Chrome",
+    /** The status row under the choice: the user's Chrome as the server last said. */
+    chromeConnected: (name: string | null): string =>
+      name !== null ? `Chrome：已连接 · ${name}` : "Chrome：已连接",
+    chromeNotConnected: "Chrome：未连接",
+    chromeNotPaired: "尚未配对 Chrome",
+    chromeDisabled: "Chrome 连接已关闭",
+    /** The status row's action: the pairing dialog, or Settings › Browser once one is paired. */
+    connectChrome: "连接你的 Chrome…",
+    manageChrome: "管理…",
+    /** The toast after a switch, and the one when an agent at work refuses it. */
+    switchedToChrome: "Agent 现在使用你的 Chrome",
+    switchedToBuiltin: "Agent 现在使用内置浏览器",
+    switchRefused: "Agent 正在使用浏览器，等它完成后再切换",
+    switchFailed: (reason: string): string => `无法切换浏览器：${reason}`,
+    /** The Chrome surface: in place of the page, a card for a tab that lives in the user's Chrome. */
+    chromeTabCard: "此标签页在你的 Chrome 中打开",
+    showInChrome: "在 Chrome 中显示",
+    chromeNoTabsTitle: "你的 Chrome 里还没有 Agent 的标签页",
+    chromeNoTabsBody: "Agent 打开的页面会出现在 Chrome 的 Penguin 标签组里。",
+    /** Paired but not connected: the title, which Chrome, and the fold with what to check. */
+    chromeDisconnectedTitle: "Chrome 未连接",
+    chromeDisconnectedBody: (name: string | null): string =>
+      name !== null
+        ? `${name} 现在没有连到这台服务器。`
+        : "你配对的 Chrome 现在没有连到这台服务器。",
+    reconnectHelp: "重新连接帮助",
+    reconnectOpen: "打开 Chrome，确认 PenguinHarness Browser 扩展在 chrome://extensions 中已启用。",
+    reconnectResume: "点工具栏上的扩展图标；如果显示已暂停，选择「继续」。",
+    reconnectPair: "服务器地址变了，或扩展里移除了这台服务器时，需要重新配对。",
+    /** The admin's switch is off. */
+    chromeDisabledTitle: "Chrome 连接已关闭",
+    chromeDisabledBody: "这台服务器的管理员关闭了 Chrome 扩展连接。",
+    /** No Chrome paired: the line above the pairing steps the panel shows in its place. */
+    chromeUnpairedIntro:
+      "安装 PenguinHarness Browser 扩展并完成配对后，Agent 就能在你自己的 Chrome 里打开和操作网页，使用你在 Chrome 中的登录状态。",
+    /** The pairing dialog, and the same three steps inline in the panel while no Chrome is paired. */
+    pairTitle: "连接你的 Chrome",
+    pairStepInstall:
+      "下载扩展并解压。在 Chrome 中打开 chrome://extensions，开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹，再把扩展固定到工具栏。",
+    pairDownload: "下载扩展（zip）",
+    pairStepOpen: "点工具栏上的 PenguinHarness Browser 图标，选择「设置」，打开扩展的配对页。",
+    pairStepPaste: "把下面的服务器地址和配对码粘贴进去，选择「连接」。",
+    pairServer: "服务器地址",
+    pairCode: "配对码",
+    /** Under the code: one use, until when (a local HH:mm). */
+    pairCodeExpiry: (time: string): string => `只能使用一次，${time} 前有效`,
+    pairCodeExpired: "配对码已过期",
+    pairNewCode: "换一个",
+    pairCodeFailed: (reason: string): string => `无法生成配对码：${reason}`,
+    pairWaiting: "正在等待 Chrome…",
+    pairConnected: "已连接",
     /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
     importTitle: "从浏览器导入",
     importIntro: "把系统浏览器里的登录状态和历史记录复制到内置浏览器，原浏览器中的数据不会改变。",
@@ -427,6 +485,38 @@ export const zh = {
     },
   },
 
+  /** Settings › Personal › Browser (the user's agent browser) and Settings › Server › Chrome extension. */
+  browserSettings: {
+    /** The backend choice; only on the desktop app, which has both. */
+    backend: "Agent 使用的浏览器",
+    backendInfo:
+      "内置浏览器在桌面应用里，有自己的登录状态；系统 Chrome 是你自己的 Chrome，Agent 只操作它打开的标签页和你交给它的标签页。Agent 自己不能切换。",
+    paired: "已配对的 Chrome",
+    pairedNone: "还没有配对的 Chrome。",
+    /** A paired Chrome's line under its name: the extension's version, and when it was last connected. */
+    pairedLine: (version: string, seen: string | null): string =>
+      seen === null ? `扩展 ${version} · 尚未连接过` : `扩展 ${version} · 最近连接 ${seen}`,
+    /** The state dot's accessible name. */
+    connected: "已连接",
+    notConnected: "未连接",
+    revoke: "撤销",
+    revokeTitle: "撤销这个 Chrome？",
+    revokeBody: (name: string): string =>
+      `撤销后，Agent 不能再操作「${name}」，它会立即断开；要再使用它，需要重新配对。`,
+    revoked: (name: string): string => `已撤销「${name}」`,
+    revokeFailed: (reason: string): string => `无法撤销：${reason}`,
+    connectFirst: "连接你的 Chrome",
+    connectAnother: "连接另一个 Chrome",
+    loadFailed: (reason: string): string => `无法读取已配对的 Chrome：${reason}`,
+    disabledNote: "这台服务器的管理员关闭了 Chrome 扩展连接。",
+    /** Settings › Server › Chrome extension: the admin's switch, and the question before it goes off. */
+    allow: "允许 Chrome 扩展连接",
+    offTitle: "关闭 Chrome 扩展连接？",
+    offBody:
+      "所有用户的扩展会立即断开，整个服务器上的 Agent 都不能再使用 Chrome。配对会保留，重新开启后扩展会自行重连。",
+    off: "关闭",
+  },
+
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -439,6 +529,11 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
+    /** Settings › Personal › Browser, and the server page with the admin's Chrome switch. */
+    browserTitle: "浏览器",
+    chromeExtensionTitle: "Chrome 扩展",
+    chromeExtensionInfo:
+      "开启时，这台服务器上的每个用户都可以配对自己的 Chrome，让 Agent 在其中操作；关闭时，所有扩展断开，已有的配对保留。",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -3266,6 +3361,8 @@ Benchmark：
      */
     linkMenu: {
       openInBuiltinBrowser: "在内置浏览器中打开",
+      /** The same row while the agents drive the user's Chrome: the link opens in a tab there. */
+      openInChromeTab: "在 Agent 的 Chrome 标签页中打开",
       openExternal: "在系统浏览器中打开",
       openInNewTab: "在新标签页中打开",
       copyLink: "复制链接地址",
@@ -5016,7 +5113,8 @@ Benchmark：
       ticket_session_failed: "无法发起工单会话。",
       handbook_file_not_found: "该文档已不存在。",
       handbook_index_required: "手册索引（README.md）不能删除。",
-      browser_unavailable: "内置浏览器不可用：它需要 PenguinHarness 桌面应用处于打开状态。",
+      browser_unavailable:
+        "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
       source_not_found: "找不到这个浏览器配置文件。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",

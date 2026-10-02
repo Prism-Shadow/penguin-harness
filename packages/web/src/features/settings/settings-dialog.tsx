@@ -26,6 +26,8 @@ import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
+import { BrowserSection } from "./browser-section";
+import { ChromeExtensionSection } from "./chrome-extension-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
@@ -40,12 +42,16 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   shortcuts: ICONS.keyboard,
   /** Single person: the signed-in account. */
   account: ICONS.user,
+  /** A browser window: the agent browser. */
+  browser: ICONS.appWindow,
   /** Globe: outbound traffic. */
   proxy: ICONS.globe,
   /** Up arrow over a base: uploads. */
   uploads: ICONS.arrowUpFromLine,
   /** The building the mode switch wears: company mode. */
   company: ICONS.building,
+  /** Plug: whether users may connect their Chrome. */
+  chromeExtension: ICONS.plug,
   /** Puzzle piece: plugins, the plugin library's own mark. */
   plugins: ICONS.puzzle,
   /** Two people: user management. */
@@ -92,9 +98,11 @@ export function SettingsDialog({
     appearance: S.settings.appearanceTitle,
     shortcuts: S.settings.shortcutsTitle,
     account: S.settings.accountTitle,
+    browser: S.settings.browserTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
+    chromeExtension: S.settings.chromeExtensionTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
@@ -109,6 +117,7 @@ export function SettingsDialog({
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
+    chromeExtension: S.settings.chromeExtensionInfo,
     plugins: S.settings.pluginsInfo,
   };
 
@@ -141,9 +150,11 @@ export function SettingsDialog({
       {current === "appearance" && <AppearanceSection />}
       {current === "shortcuts" && <ShortcutsSection />}
       {current === "account" && <AccountSection />}
+      {current === "browser" && <BrowserSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
+      {current === "chromeExtension" && <ChromeExtensionSection />}
       {current === "plugins" && (
         <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
       )}
