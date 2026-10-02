@@ -127,13 +127,13 @@ describe("the settings card", () => {
 
   it("draws a locked cell as its value alone, with no control and no mark", () => {
     const html = renderTable(PRESETS);
-    const locked =
-      /<span aria-label="Full Access · Files: Off \(Locked[^"]*\)"[^>]*>(.*?)<\/span><\/td>/.exec(
-        html,
-      );
-    expect(locked).not.toBeNull();
-    expect(locked![1]).not.toContain("<svg");
-    expect(locked![1]).not.toContain("<button");
+    const at = html.indexOf('aria-label="Full Access · Files: Off (');
+    expect(at).toBeGreaterThan(-1);
+    const cell = html.slice(at, html.indexOf("</td>", at));
+    expect(cell).toContain(">Off<");
+    expect(cell).toContain("data-tooltip=");
+    expect(cell).not.toContain("<svg");
+    expect(cell).not.toContain("<button");
   });
 });
 
