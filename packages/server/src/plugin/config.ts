@@ -341,7 +341,11 @@ export function parsePluginConfiguration(
     if (field.type === "table") {
       Object.assign(field, parseTable(f, `${where}: configuration.properties.${name}`));
       if (f.pin !== undefined) {
-        field.pin = parsePin(f.pin, field.columns ?? [], `${where}: configuration.properties.${name}`);
+        field.pin = parsePin(
+          f.pin,
+          field.columns ?? [],
+          `${where}: configuration.properties.${name}`,
+        );
       }
       if (f.rowChoice !== undefined) {
         const c = (f.rowChoice ?? {}) as Record<string, unknown>;

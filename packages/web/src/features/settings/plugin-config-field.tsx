@@ -152,7 +152,7 @@ export function ConfigField({
             label={label}
             {...(hint !== undefined ? { hint } : {})}
             {...disclosed}
-          {...disclosed}
+            {...disclosed}
             {...(error !== undefined ? { error } : {})}
             value={typed}
             placeholder={

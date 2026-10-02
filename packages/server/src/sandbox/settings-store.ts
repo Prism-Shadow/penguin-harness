@@ -97,7 +97,8 @@ export const SANDBOX_GROUP = "sandbox";
                 titleZh: "名称",
                 description:
                   "What the menu and the permission button call this row. A rename keeps what the row does; clear the box to restore the original name.",
-                descriptionZh: "菜单与权限按钮显示的名称。改名不改变该行的作用；清空输入框即恢复原名。",
+                descriptionZh:
+                  "菜单与权限按钮显示的名称。改名不改变该行的作用；清空输入框即恢复原名。",
               },
               {
                 name: "mode",

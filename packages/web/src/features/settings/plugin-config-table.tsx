@@ -25,7 +25,15 @@ import type {
   PluginConfigField,
   PluginConfigTableColumn,
 } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICONS, ICON_SIZE, InfoPopover, Select, Switch, Textarea } from "@prismshadow/penguin-ui";
+import {
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  InfoPopover,
+  Select,
+  Switch,
+  Textarea,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Locale } from "../../state/locale";
@@ -108,8 +116,11 @@ export function ConfigTable({
             ? WIDTH.pin
             : WIDTH.boolean
           : "";
-  const rowName = (row: { id: string; values: Record<string, unknown>; valuesZh?: Record<string, string> }) =>
-    localized(String(row.values.name ?? row.id), row.valuesZh?.name);
+  const rowName = (row: {
+    id: string;
+    values: Record<string, unknown>;
+    valuesZh?: Record<string, string>;
+  }) => localized(String(row.values.name ?? row.id), row.valuesZh?.name);
   return (
     <div className="space-y-1.5">
       <p className="inline-flex items-center gap-1 text-sm font-medium">

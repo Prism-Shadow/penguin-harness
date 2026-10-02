@@ -79,7 +79,7 @@ describe("the settings card", () => {
     expect(html).not.toContain("placeholder=");
   });
 
-  it("puts every description behind a \"?\" beside its title, never on screen", () => {
+  it('puts every description behind a "?" beside its title, never on screen', () => {
     const html = renderToStaticMarkup(
       createElement(ConfigHeading, {
         entry: { ...ENTRY, configuration: { ...ENTRY.configuration, description: "Card meaning" } },
@@ -96,7 +96,13 @@ describe("the settings card", () => {
     for (const title of ["Presets", "Name", "Files", "Default", "Pin"]) {
       expect(table).toContain(`aria-label="More info: ${title}"`);
     }
-    for (const text of ["Table meaning", "Name meaning", "Files meaning", "Default meaning", "Pin meaning"]) {
+    for (const text of [
+      "Table meaning",
+      "Name meaning",
+      "Files meaning",
+      "Default meaning",
+      "Pin meaning",
+    ]) {
       expect(table).not.toContain(text);
     }
   });
@@ -111,14 +117,20 @@ describe("the settings card", () => {
     expect(pin("Full Access")).toContain('aria-pressed="true"');
     expect(pin("Read Only")).toContain('aria-pressed="false"');
     // Pressing it: the element's own handler, found on the rendered tree.
-    const button = findByLabel(tableElement(PRESETS, (r, c, v) => flips.push([r, c, v])), "Read Only · Pin");
+    const button = findByLabel(
+      tableElement(PRESETS, (r, c, v) => flips.push([r, c, v])),
+      "Read Only · Pin",
+    );
     (button.props as { onClick: () => void }).onClick();
     expect(flips).toEqual([["b", "enabled", true]]);
   });
 
   it("draws a locked cell as its value alone, with no control and no mark", () => {
     const html = renderTable(PRESETS);
-    const locked = /<span aria-label="Full Access · Files: Off \(Locked[^"]*\)"[^>]*>(.*?)<\/span><\/td>/.exec(html);
+    const locked =
+      /<span aria-label="Full Access · Files: Off \(Locked[^"]*\)"[^>]*>(.*?)<\/span><\/td>/.exec(
+        html,
+      );
     expect(locked).not.toBeNull();
     expect(locked![1]).not.toContain("<svg");
     expect(locked![1]).not.toContain("<button");

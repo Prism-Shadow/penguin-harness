@@ -31,8 +31,7 @@ export function ConfigHeading({
 }) {
   const localized = (en: string | undefined, zh: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zh);
-  const title =
-    localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name;
+  const title = localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name;
   // What the group is for sits behind a "?" beside its title.
   const description = localized(entry.configuration.description, entry.configuration.descriptionZh);
   return (
