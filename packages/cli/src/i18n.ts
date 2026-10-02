@@ -70,11 +70,15 @@ export interface Messages {
     addDesc: string;
     addModelId: string;
     addProvider: string;
+    /** `model add`'s connection flags: the model's own value with --model-id, the group's without. */
     addApiKey: string;
+    addClearApiKey: string;
     addBaseUrl: string;
+    addClearBaseUrl: string;
     addContextWindow: string;
     addMaxTokens: string;
     addClientType: string;
+    addClearClientType: string;
     addVision: string;
     addNoVision: string;
     addFastMode: string;
@@ -92,6 +96,8 @@ export interface Messages {
     refProvider: string;
     listDesc: string;
     removeDesc: string;
+    /** `model remove`'s --model-id: optional there; without it the command removes the group's connection. */
+    removeModelId: string;
     langDesc: string;
     langArg: string;
     vaultDesc: string;
@@ -957,12 +963,33 @@ export interface Messages {
   modelNotConfigured(model: string): string;
   /** `model add` refused: a new entry in a first-party vendor group under a model id MMSP cannot route (it begins with no known vendor prefix). */
   modelNotRoutable(model: string): string;
-  /** A new entry in a built-in group that takes no hand-added models (everything but custom and vLLM). */
+  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance and SiliconFlow). */
   modelNotAddable(model: string, group: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;
+  /** `model list`: heads the models block. */
   modelListTitle(): string;
   modelListEmpty(): string;
+  /** `model list`: heads the groups' stored connections, printed above the models. */
+  groupListTitle(): string;
+  /** `model add` without --model-id refused: a flag that describes one model (context window, output cap, vision, fast mode, prices, --set-default) was given. */
+  modelGroupOnlyFlags(group: string): string;
+  /** `model add` without --model-id refused: --provider is no built-in group, names no model, and breaks the group-name rule. */
+  providerInvalidGroup(group: string): string;
+  /** `model add` refused: a connection field was both set and cleared. */
+  providerFlagConflict(flag: string, clearFlag: string): string;
+  /** `model add` refused: a connection field was given an empty value (clearing takes its --clear-* flag). */
+  providerBlankValue(flag: string, clearFlag: string): string;
+  /** `model add` without --model-id refused: no field to set or clear. */
+  providerNothingToSet(group: string): string;
+  /** `model add` without --model-id done; `overriding` = the group's models a changed field passes by (their own value, or a group key that does not reach their base URL). */
+  providerSaved(group: string, overriding: number): string;
+  /** Follows providerSaved for a group of the user's own that has no model yet. */
+  providerNoModels(group: string): string;
+  /** `model remove` without --model-id refused: the group stores no connection. */
+  providerNothingToRemove(group: string): string;
+  /** `model remove` without --model-id done; `models` = the group's models, which all stay. */
+  providerRemoved(group: string, models: number): string;
   vaultSet(key: string): string;
   vaultRemoved(key: string): string;
   vaultKeyMissing(key: string): string;
@@ -1042,17 +1069,28 @@ const en: Messages = {
   },
   config: {
     desc: "Manage Project configuration",
-    modelDesc: "Manage model credentials and the default model",
-    addDesc: "Add or update a model, optionally writing a credential",
-    addModelId: "Upstream model id sent to MMSP as-is (e.g. claude-sonnet-4-6)",
+    modelDesc: "Manage models, their groups' connections and the default model",
+    addDesc:
+      "Add or update a model; without --model-id, set a group's connection (API key, base URL, protocol)",
+    addModelId:
+      "Upstream model id sent to MMSP as-is (e.g. claude-sonnet-4-6); omit it to set the group's connection",
     addProvider:
-      "Provider group stored alongside model_id; required, never inferred (use custom for anything without a vendor group)",
-    addApiKey: "API key, stored inline in the Project's hidden .project_config.toml",
-    addBaseUrl: "Custom base URL",
+      "Provider group: the model's, or the one whose connection to set; required, never inferred (use custom for anything without a vendor group)",
+    addApiKey:
+      "API key, stored in the Project's hidden .project_config.toml: the model's own with --model-id, else the group key (used by the group's models without a key of their own that go to the group's endpoint)",
+    addClearApiKey:
+      "Remove the stored API key: the model's own with --model-id (it then uses the group key), else the group key",
+    addBaseUrl:
+      "Base URL: the model's own with --model-id, else the group's; a model without one follows its group, then the client's default endpoint",
+    addClearBaseUrl:
+      "Remove the stored base URL: the model's own with --model-id, else the group's",
     addContextWindow: "Context window size (tokens)",
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
-    addClientType: "MMSP client type (e.g. openai-chat); defaults by provider group when omitted",
+    addClientType:
+      "MMSP client type (e.g. openai-chat): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none)",
+    addClearClientType:
+      "Remove the stored client type: the model's own with --model-id, else the group's",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
     addFastMode:
@@ -1069,8 +1107,12 @@ const en: Messages = {
       "Set the vision model that reads images for non-vision session models (read_file hands images to it)",
     refModelId: "Upstream model id; forms the (provider, model_id) pair reference with --provider",
     refProvider: "Provider group of the referenced entry (see `penguin config model list`)",
-    listDesc: "List the Project's models (API keys hidden)",
-    removeDesc: "Remove a model from the Project (clears the default / vision pointers naming it)",
+    listDesc:
+      "List the groups' connections, then the Project's models with the connection each one uses: (provider) marks a group value, (env) an environment key (API keys hidden)",
+    removeDesc:
+      "Remove a model from the Project (clears the default / vision pointers naming it); without --model-id, remove the group's connection",
+    removeModelId:
+      "Upstream model id of the entry to remove; omit it to remove the group's connection instead (its models stay)",
     langDesc:
       "Set the interface language (en|zh); persists PENGUIN_LANG to your shell startup file",
     langArg: "Language: en or zh",
@@ -1936,8 +1978,38 @@ const en: Messages = {
     `Add it under a custom group (--provider custom, or a group name of your own) ` +
     `with --client-type and --base-url.`,
   visionModelCleared: () => "It was also the vision model; that setting is now unset.",
-  modelListTitle: () => "Configured models:",
+  modelListTitle: () => "Models:",
   modelListEmpty: () => "No models configured yet. Add one with `penguin config model add`.",
+  groupListTitle: () => "Groups:",
+  modelGroupOnlyFlags: (group) =>
+    `--context-window, --max-tokens, --vision, --fast-mode, the --price-* flags and --set-default ` +
+    `describe one model: add --model-id <upstream id>, or drop them to set the ${group} group's connection.`,
+  providerInvalidGroup: (group) =>
+    `Invalid group "${group}": a group name starts with a lowercase letter or digit and uses ` +
+    `only lowercase letters, digits, - and _ (at most 32 characters).`,
+  providerFlagConflict: (flag, clearFlag) => `${flag} and ${clearFlag} cannot be combined.`,
+  providerBlankValue: (flag, clearFlag) =>
+    `${flag} is empty. Pass a value, or ${clearFlag} to remove the stored one.`,
+  providerNothingToSet: (group) =>
+    `Nothing to change for group ${group}: pass --api-key, --base-url or --client-type, or one of the --clear-* flags.`,
+  providerSaved: (group, overriding) =>
+    `Saved the ${group} group's connection; its models without a value of their own follow it.` +
+    (overriding === 0
+      ? ""
+      : overriding === 1
+        ? " 1 model sets its own value and is unaffected."
+        : ` ${overriding} models set their own value and are unaffected.`),
+  providerNoModels: (group) =>
+    `Group ${group} has no models yet; the models you add to it will follow this connection.`,
+  providerNothingToRemove: (group) =>
+    `Group ${group} has no connection to remove. To remove a model, add --model-id <upstream id>.`,
+  providerRemoved: (group, models) =>
+    `Removed the ${group} group's connection.` +
+    (models === 0
+      ? ""
+      : models === 1
+        ? " Its 1 model stays; where it has no value of its own, it now uses the client defaults."
+        : ` Its ${models} models stay; the ones without a value of their own now use the client defaults.`),
   vaultSet: (key) =>
     `Saved vault entry ${key}. New conversations pick it up right away; running ones after their next compaction.`,
   vaultRemoved: (key) =>
@@ -2000,16 +2072,24 @@ const zh: Messages = {
   },
   config: {
     desc: "管理 Project 配置",
-    modelDesc: "管理模型 credential 与默认模型",
-    addDesc: "新增或更新一个模型，并可写入 credential",
-    addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 MMSP）",
-    addProvider: "与 model_id 分列存储的 provider 分组；必填，不作推断（无厂商分组时填 custom）",
-    addApiKey: "API key，内联存入 Project 的隐藏文件 .project_config.toml",
-    addBaseUrl: "自定义 base url",
+    modelDesc: "管理模型、分组连接信息与默认模型",
+    addDesc: "新增或更新一个模型；不带 --model-id 即设置分组的连接信息（API key、base URL、协议）",
+    addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 MMSP）；不给即设置分组的连接信息",
+    addProvider:
+      "provider 分组：模型所属的分组，或要设置连接信息的分组；必填，不作推断（无厂商分组时填 custom）",
+    addApiKey:
+      "API key，存入 Project 的隐藏文件 .project_config.toml：带 --model-id 为该模型自己的，否则为分组密钥（组内没有自己 key、访问分组端点的模型使用它）",
+    addClearApiKey:
+      "清除已存的 API key：带 --model-id 为该模型自己的（之后改用分组密钥），否则为分组密钥",
+    addBaseUrl:
+      "base URL：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即用客户端缺省端点",
+    addClearBaseUrl: "清除已存的 base URL：带 --model-id 为该模型自己的，否则为分组的",
     addContextWindow: "上下文窗口大小（token 数）",
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
-    addClientType: "MMSP 客户端协议（如 openai-chat）；缺省按 provider 分组的语义取值",
+    addClientType:
+      "MMSP 客户端协议（如 openai-chat）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）",
+    addClearClientType: "清除已存的协议：带 --model-id 为该模型自己的，否则为分组的",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
     addFastMode: "开启快速模式：输出更快、按溢价计费（不支持 fast 档位的模型会拒绝请求）",
@@ -2024,8 +2104,11 @@ const zh: Messages = {
     visionDesc: "设置代读图片的视觉模型（不支持图片的会话模型用 read_file 读图时由它代读）",
     refModelId: "上游模型 id；与 --provider 构成 (provider, model_id) 成对引用",
     refProvider: "引用条目的 provider 分组（见 `penguin config model list`）",
-    listDesc: "列出当前 Project 的模型（API key 隐藏）",
-    removeDesc: "从当前 Project 删除一个模型（指向它的默认模型 / 视觉模型设置一并清空）",
+    listDesc:
+      "先列各分组的连接信息，再列当前 Project 的模型及其生效的连接信息：(provider) 标出取自分组的值，(env) 标出来自环境变量的 key（API key 隐藏）",
+    removeDesc:
+      "从当前 Project 删除一个模型（指向它的默认模型 / 视觉模型设置一并清空）；不带 --model-id 即移除分组的连接信息",
+    removeModelId: "要删除条目的上游模型 id；不给即只移除分组的连接信息（组内模型保留）",
     langDesc: "设置界面语言（en|zh）；将 PENGUIN_LANG 写入 shell 启动文件并持久化",
     langArg: "语言：en 或 zh",
     vaultDesc: "管理 Agent vault（注入该 Agent shell 命令的环境变量）",
@@ -2829,8 +2912,29 @@ const zh: Messages = {
     `模型 ${model} 无法添加：${group} 分组只承载内置模型。` +
     `请改用自定义分组（--provider custom，或自己命名的分组）并附上 --client-type 与 --base-url。`,
   visionModelCleared: () => "它同时是视觉模型，该设置已一并清空。",
-  modelListTitle: () => "已配置的模型：",
+  modelListTitle: () => "模型：",
   modelListEmpty: () => "尚未配置任何模型。用 `penguin config model add` 添加。",
+  groupListTitle: () => "分组：",
+  modelGroupOnlyFlags: (group) =>
+    `--context-window、--max-tokens、--vision、--fast-mode、各 --price-* 选项与 --set-default 只描述单个模型：` +
+    `请加上 --model-id <上游 id>，或去掉它们以设置分组 ${group} 的连接信息。`,
+  providerInvalidGroup: (group) =>
+    `分组名「${group}」无效：分组名以小写字母或数字开头，只含小写字母、数字、- 与 _，长度不超过 32。`,
+  providerFlagConflict: (flag, clearFlag) => `${flag} 与 ${clearFlag} 不能同时使用。`,
+  providerBlankValue: (flag, clearFlag) =>
+    `${flag} 为空。请给出取值，或用 ${clearFlag} 清除已存的值。`,
+  providerNothingToSet: (group) =>
+    `分组 ${group} 没有要修改的内容：请给出 --api-key、--base-url 或 --client-type，或其中某一项的 --clear-* 选项。`,
+  providerSaved: (group, overriding) =>
+    `已保存分组 ${group} 的连接信息，组内没有自己设置对应项的模型随之使用。` +
+    (overriding === 0 ? "" : `另有 ${overriding} 个模型单独设置了对应项，不受影响。`),
+  providerNoModels: (group) =>
+    `分组 ${group} 下还没有模型；之后添加到该分组的模型将跟随这份连接信息。`,
+  providerNothingToRemove: (group) =>
+    `分组 ${group} 没有可移除的连接信息。要删除模型，请加上 --model-id <上游 id>。`,
+  providerRemoved: (group, models) =>
+    `已移除分组 ${group} 的连接信息。` +
+    (models === 0 ? "" : `组内 ${models} 个模型保留，没有自己设置对应项的模型改用客户端缺省。`),
   vaultSet: (key) => `已保存 vault 条目 ${key}。新对话立即生效；进行中的对话在下一次压缩后生效。`,
   vaultRemoved: (key) =>
     `已删除 vault 条目 ${key}。新对话立即生效；进行中的对话在下一次压缩后生效。`,

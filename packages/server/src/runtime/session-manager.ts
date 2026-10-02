@@ -2588,8 +2588,15 @@ export class SessionsModule {
     const modelScopeAuth = this.modelScopeAuth;
 
     const assembly: AgentAssembly = {
+      // ModelScope's group key is an access token the bridge refreshes, so each request reads
+      // it fresh. A model with a key of its own keeps that key (undefined = the credential
+      // the client was built with stands); the rest use the group key, refreshed first, and a
+      // model with neither has nothing to send.
       resolveModelApiKey: async ({ projectId, provider, modelId }) => {
         if (provider !== MODELSCOPE_PROVIDER_ID) return undefined;
+        if ((await projectConfig.getModelApiKey(projectId, provider, modelId)) !== undefined) {
+          return undefined;
+        }
         await modelScopeAuth.ensureFresh({ projectId, provider });
         const apiKey = await projectConfig.getGroupApiKey(projectId, provider);
         if (apiKey === undefined) throw modelCredentialMissing(modelId);

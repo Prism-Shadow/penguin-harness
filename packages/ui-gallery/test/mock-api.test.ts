@@ -183,6 +183,28 @@ describe("the mocked API", () => {
     expect(store.f.models.models.find((m) => m.isDefault)?.modelId).toBe("claude-sonnet-5");
   });
 
+  it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const models = await api.getModels(project);
+    // A gateway row stores nothing of its own and follows its group's table.
+    expect(models.providers.openrouter?.baseUrl).toMatch(/^https:\/\//);
+    const gateway = models.models.find((m) => m.provider === "openrouter")!;
+    expect(gateway.credential?.baseUrl).toBeUndefined();
+    expect(gateway.effective.baseUrlSource).toBe("provider");
+    // Atria stores its own endpoint in custom, which has no table.
+    const atria = models.models.find((m) => m.modelId === "Atria-Dawn-Preview")!;
+    expect(atria.effective.baseUrlSource).toBe("model");
+    // Every group takes a protocol, Penguin Go included.
+    const go = await api.putProviderConnection(project, "penguin-go", {
+      clientType: "openai-chat",
+    });
+    expect(go.providers["penguin-go"]?.clientType).toBe("openai-chat");
+    // Disconnect clears the group key and leaves the group without one.
+    const cleared = await api.putProviderConnection(project, "deepseek", { clearApiKey: true });
+    expect(cleared.providers.deepseek?.apiKeyMasked).toBeUndefined();
+  });
+
   it("serves a Workspace file with its version marker through the fetch path", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const session = store.f.sessions[0]!.sessionId;

@@ -753,7 +753,7 @@ export const en: Strings = {
   todo: {
     pluginUpdates: (n: number) => (n === 1 ? "1 plugin update" : `${n} plugin updates`),
     presetUpdates: (n: number) =>
-      n === 1 ? "1 preset model to sync" : `${n} preset models to sync`,
+      n === 1 ? "1 new preset model to add" : `${n} new preset models to add`,
     unexpectedErrors: (n: number) => (n === 1 ? "1 unexpected error" : `${n} unexpected errors`),
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "Something needs attention",
@@ -764,10 +764,7 @@ export const en: Strings = {
 
     // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
-    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
-    changesWithAdded: (added: number, updated: number): string =>
-      `Changes detected: ${added} new, ${updated} to upgrade`,
-    /** The same line where the trail has only one honest count — no padded zero (Agents, Plugins). */
+    /** The notice line on the trails whose objects are upgraded in place (Agents, Plugins). */
     changesUpgradable: (updated: number): string => `Changes detected: ${updated} to upgrade`,
     /** Updates every object the notice counts, behind the page's own confirmation. */
     updateNow: "Update now",
@@ -779,8 +776,9 @@ export const en: Strings = {
     pluginsConfirmTitle: (n: number): string => `Update ${n} plugin(s)`,
     pluginsConfirmBody:
       "Updating reinstalls the library copy over each agent's installed skill and hook files — any local edits are lost. Export a backup first if you need them.",
-    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
-    modelsConfirmTitle: (n: number): string => `Sync ${n} preset model(s)`,
+    /** Confirmation of adding the new presets; the body reuses models.syncNewPresetsHint verbatim. */
+    modelsConfirmTitle: (n: number): string =>
+      n === 1 ? "Add 1 new preset model" : `Add ${n} new preset models`,
     /** Every target of the batch was written. Counted in agents: both pages that use this
      * send one request per agent, and the partial-failure line below names agents too. */
     bulkDone: (ok: number): string => `${ok} agent${ok === 1 ? "" : "s"} updated`,
@@ -1378,13 +1376,11 @@ export const en: Strings = {
     addCustom: "Add custom model",
     addToGroup: "Add model",
     editTitle: "Model settings",
-    addTitle: "Add model (OpenAI protocol)",
-    addProtocolHint:
-      "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
+    addTitle: "Add model",
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
-    addProtocolHintPinnedGateway: (protocol: string): string =>
-      `Models in this group always use the ${protocol} protocol; the base URL is preset to the gateway's endpoint`,
+    addProtocolHintInherit: (protocol: string): string =>
+      `Models in this group use the ${protocol} protocol; leave the base URL, API key and protocol empty to follow the group`,
     autoRouteNone:
       "A vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-), and this model ID cannot be routed. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
@@ -1393,25 +1389,13 @@ export const en: Strings = {
       "This model ID cannot be routed and will fail at request time: a vendor group only routes IDs that begin with a known vendor prefix.",
     /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
     moveToCustomGroup: "Move to a custom group",
-    /**
-     * Warning on a built-in row whose stored protocol pin differs from the one the catalog
-     * sets for it today (a pin MMSP no longer has, or one the catalog added since), so it
-     * cannot be routed: re-merging the catalog repairs it, and a move would be the wrong
-     * advice. It never quotes the sync button's own label — a member sees this sentence with
-     * no button beside it, and the owner who does have one reads the label right there.
-     */
-    vendorRowStalePin:
-      "This built-in model's entry does not carry the protocol the catalog now sets for it, so it cannot be routed; re-syncing the built-in catalog restores it.",
     /** Connectivity test on a hand-added row: replaces MMSP's "No client for model" sentence, which names client types the user has no way to act on. */
     testNotRoutable:
       "Failed: this model ID cannot be routed. A vendor group only routes IDs that begin with a known vendor prefix — move it to a custom group and pick or detect its protocol.",
-    /** Connectivity test on a built-in row with a stale pin: the same split the card makes, so the two never give opposite advice. */
-    testStalePin:
-      "Failed: this built-in model's entry does not carry the protocol the catalog now sets for it, so it cannot be routed. Re-syncing the built-in catalog restores it; it does not belong in a custom group.",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, then imports every model it serves in one go; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
+      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, then imports every model it serves in one go — the base URL, API key and protocol you enter are saved once as the group\'s settings, and every imported model follows them; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
     groupModeCreate: "Create only",
     groupModeImport: "Import models",
     groupImportAll: "Import all models",
@@ -1439,12 +1423,21 @@ export const en: Strings = {
     groupDeleted: (n: number): string => `Group deleted (${n} models)`,
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
-    syncCatalog: "Sync presets",
-    syncCatalogHint:
-      "Update preset models from the built-in catalog: add missing entries, and refresh context window, pricing, protocol and vision on the ones already here. Your base URL, API key and output cap are never overwritten, and locally added models are left untouched",
-    syncDone: (added: number, updated: number) =>
-      `Presets synced: ${added} added, ${updated} updated`,
-    syncUpToDate: "Presets are already up to date",
+    syncNewPresets: "Add new models",
+    syncNewPresetsHint:
+      "Adds only the built-in presets this Project lacks; the models already here, the models you added yourself, group settings and API keys are left as they are",
+    presetsAdded: (n: number): string =>
+      n === 1 ? "Added 1 preset model" : `Added ${n} preset models`,
+    presetsNone: "No new preset models",
+    restoreDefaults: "Restore defaults",
+    restoreDefaultsTitle: "Restore default model settings",
+    restoreDefaultsResets:
+      "Reset: built-in models get the catalog's context window, prices and vision flag back, and lose their display name, output cap and fast mode; base URLs and protocols set on models or built-in groups (Custom excepted) return to the catalog's; deleted built-in models come back; promotions are reset to the catalog's (Penguin Go's excepted).",
+    restoreDefaultsKeeps:
+      "Kept: every API key (group and model), the models you added yourself (with their promotions) and the groups you created, Custom's group settings and vLLM's base URL, and your default and vision model choices (unless the model they name no longer qualifies).",
+    restoreDefaultsFinal: "This cannot be undone.",
+    restoredDefaults: (added: number, restored: number): string =>
+      `Defaults restored: ${added} added back, ${restored} reset`,
     aiAddTitle: "Add a model group with AI",
     aiAddIntro:
       "Hand the agent a model listing page or a description of the service, and it adds the models as one group with penguin config commands. For an OpenAI-compatible endpoint that lists its own models, Add group → Import models is faster.",
@@ -1490,7 +1483,8 @@ export const en: Strings = {
         "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
         `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
       ].join("\n"),
-    platformSync: "Sync",
+    platformSyncAdded: (n: number): string => (n === 1 ? "Added 1 model" : `Added ${n} models`),
+    platformUpToDate: "Already up to date",
     homepage: "Model page",
     speedTest: "Speed test",
     /** The same icon button while its group's run is going: stops after the probe in flight. */
@@ -1541,7 +1535,6 @@ export const en: Strings = {
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
       "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
-    addTitleCustom: "Add model",
     vision: "Vision support",
     /** Detect action beside the vision switch. */
     detectVision: "Detect",
@@ -1610,7 +1603,6 @@ export const en: Strings = {
     keyConfigured: "Key configured",
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
-    baseUrlHint: "Leave empty to use the provider default",
     baseUrlSuffixTitle:
       "The client appends the protocol path shown at the field's right edge to the base URL",
     baseUrlRequired: "A base URL is required",
@@ -1618,19 +1610,36 @@ export const en: Strings = {
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
-    groupApiKey: "Enter key",
-    groupApiKeyTitle: (label: string): string => `Set the API key for ${label}`,
-    groupApiKeyHint: (n: number): string =>
-      `Applies to all ${n} models in this group; leave empty to keep them unchanged.`,
     getApiKey: "Manage keys",
     getModelIds: "Get model IDs",
-    groupKeyApplied: (n: number): string => `API key set for ${n} models`,
+    groupSettings: "Settings",
+    groupSettingsTitle: (label: string): string => `${label} group settings`,
+    clearGroupKey: "Clear the group key",
+    baseUrlNone: "Not set: the client's default endpoint",
+    catalogReference: (value: string): string => `Catalog: ${value}`,
+    detectNeedsBaseUrl: "Enter a base URL first",
+    protocolNone: "Not set",
+    protocolRoutedById: "Routed by model ID",
+    protocolEachModel: "Each model sets its own",
+    groupOverridesNote: (k: number): string =>
+      k === 1
+        ? "1 model carries its own base URL, key or protocol; those fields do not follow the group"
+        : `${k} models carry their own base URL, key or protocol; those fields do not follow the group`,
+    protocolFollowGroup: "Follow group",
+    inheritFromGroup: "Leave blank to use the group's setting",
+    keyNotReachedNote:
+      "The group key does not apply: this model's base URL is not on the group's endpoint",
+    details: "Details",
+    keyFromGroup: "Inherited group key",
     oauthKey: "Connect",
-    /** The same button once the group holds a key: the flow again, for a fresh key or another account. */
-    reconnect: "Reconnect",
-    /** The small status beside it: whether the group holds a stored key, however that key got there. */
     connectedStatus: "Connected",
     notConnectedStatus: "Not connected",
+    syncModels: "Sync models",
+    reconnect: "Reconnect",
+    disconnect: "Disconnect",
+    disconnectConfirm: (label: string): string =>
+      `Disconnect ${label}? This deletes the group key; models that use it stop working, models with their own key are unaffected.`,
+    disconnected: (label: string): string => `Disconnected ${label}`,
     /**
      * A group's account balance in its header (and pinned beside the user name): the tooltip
      * names the group, the vendor's own figures and the time of the reading. `amounts` and
@@ -1638,25 +1647,25 @@ export const en: Strings = {
      */
     balanceTitle: (label: string, amounts: string, time: string): string =>
       `${label} balance ${amounts}, read at ${time}`,
-    balanceRefreshHint: "Click to refresh",
+    balanceRefresh: "Refresh",
     /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
     balanceUnavailable: "The account cannot make requests right now; its balance may be too low",
     /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
     balanceErrors: {
       no_key: "This group has no API key to read its balance with",
-      upstream_failed: "The provider returned no balance; click to try again",
+      upstream_failed: "The provider returned no balance; use Refresh to try again",
       unsupported: "This group has no balance to read",
     } as Record<string, string | undefined>,
     /** Appended when the vendor answered with an HTTP error. */
     balanceStatus: (status: number): string => ` (the provider answered HTTP ${status})`,
-    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
+    /** The balance menu's pin: keeps it beside the user name in the sidebar, one at a time. */
     pinBalance: "Pin beside your name",
     unpinBalance: "Unpin",
     /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
     tokenDanceBanner: "Connect your TokenDance wallet — no model keys to set by hand",
     oauthTitle: (label: string): string => `Authorize a new ${label} API key`,
     oauthIntro: (label: string, n: number): string =>
-      `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,
+      `A new API key will be created on your ${label} account and set as this group's key, which ${n === 1 ? "1 model uses" : `${n} models use`}; models with a key of their own are unaffected.`,
     oauthAuthorize: "Open authorization page",
     oauthWaiting: "Waiting for the authorization to finish in the other tab…",
     /**
@@ -1665,7 +1674,7 @@ export const en: Strings = {
      * which authorization they just finished.
      */
     oauthAppliedBody: (provider: string, n: number): string =>
-      `Authorized. ${provider}'s API key is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
+      `Authorized. The ${provider} group key is set, and ${n === 1 ? "1 model uses" : `${n} models use`} it — ready to go.`,
     oauthManualSwitch: "Page can't redirect back? Enter the code by hand",
     oauthCallbackSwitch: "Go back to the automatic redirect",
     oauthManualHint: "Open the authorization page, then paste the one-time code it shows you here.",
@@ -1683,9 +1692,9 @@ export const en: Strings = {
         "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
     },
     platformKeyIntro: (n: number): string =>
-      `Authorization automatically obtains a Penguin Go API key and writes it to all ${n} preset models in this group, replacing their current key.`,
+      `Authorization automatically obtains a Penguin Go API key and sets it as this group's key, which ${n === 1 ? "1 model uses" : `${n} models use`}; models with a key of their own are unaffected.`,
     platformKeyAppliedBody: (n: number): string =>
-      `Authorized. The Penguin Go API key is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
+      `Authorized. The Penguin Go group key is set, and ${n === 1 ? "1 model uses" : `${n} models use`} it — ready to go.`,
     platformKeyStarting: "Starting authorization…",
     platformKeyApplying: "Authorization completed. Writing the key to the model group…",
     platformKeyErrors: {
@@ -1700,11 +1709,11 @@ export const en: Strings = {
     },
     // ModelScope goes through the authorization bridge: the harness never talks to ModelScope
     // itself, and the bridge holds the client secret that buys an api-inference token. The
-    // access token is written to the model table; the refresh token stays in the server DB.
+    // access token is written as the group key; the refresh token stays in the server DB.
     modelScopeKeyIntro: (n: number): string =>
-      `Authorization automatically obtains a ModelScope API token and writes it to all ${n} preset models in this group, replacing their current key; later requests renew it silently on the server, and repeated renewal failures prompt you to authorize again.`,
+      `Authorization automatically obtains a ModelScope API token and sets it as this group's key, which ${n === 1 ? "1 model uses" : `${n} models use`}; models with a key of their own are unaffected. Later requests renew it silently on the server, and repeated renewal failures prompt you to authorize again.`,
     modelScopeKeyAppliedBody: (n: number): string =>
-      `Authorized. The ModelScope API token is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
+      `Authorized. The ModelScope group token is set, and ${n === 1 ? "1 model uses" : `${n} models use`} it — ready to go.`,
     modelScopeKeyErrors: {
       unreachable:
         "The authorization bridge could not be reached. Check the network and start again.",

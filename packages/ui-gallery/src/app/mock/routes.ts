@@ -58,6 +58,9 @@ import type {
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
   ModelsResponse,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionUpdate,
   ModelTestResponse,
   ModelVisionDetectResponse,
   OrganizationsResponse,
@@ -112,9 +115,9 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
-import { dayKey } from "./fixtures";
+import { dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
@@ -306,13 +309,58 @@ router
 // Models and provider keys
 // ---------------------------------------------------------------------------------------------
 
+/** A key as GET /models shows it. */
+const maskKey = (key: string) => `${key.slice(0, 4)}…${key.slice(-4)}`;
+
+/** One group's connection after an update, as the server stores it (omitted fields kept); any group takes a protocol. */
+function updatedConnection(
+  current: ProviderConnectionDto | undefined,
+  update: ProviderConnectionUpdate,
+): ProviderConnectionDto {
+  const next: ProviderConnectionDto = { ...(current ?? {}) };
+  if (update.baseUrl === null || update.baseUrl === "") delete next.baseUrl;
+  else if (typeof update.baseUrl === "string") next.baseUrl = update.baseUrl;
+  if (update.clientType === null || update.clientType === "") delete next.clientType;
+  else if (typeof update.clientType === "string") next.clientType = update.clientType;
+  if (update.clearApiKey === true) {
+    delete next.apiKeyMasked;
+    delete next.createdAt;
+  }
+  if (typeof update.apiKey === "string" && update.apiKey !== "") {
+    next.apiKeyMasked = maskKey(update.apiKey);
+    next.createdAt = new Date().toISOString();
+  }
+  return next;
+}
+
+/** Writes group connections, then re-resolves every model's effective connection. */
+function writeProviders(store: DemoStore, updates: Record<string, ProviderConnectionUpdate>): void {
+  const providers = { ...store.f.models.providers };
+  for (const [id, update] of Object.entries(updates)) {
+    const next = updatedConnection(providers[id], update);
+    if (Object.keys(next).length > 0) providers[id] = next;
+    else delete providers[id];
+  }
+  store.f.models.providers = providers;
+  refreshEffective(store);
+}
+
+function refreshEffective(store: DemoStore): void {
+  const { providers } = store.f.models;
+  store.f.models.models = store.f.models.models.map((m) => ({
+    ...m,
+    effective: effectiveOf(m, providers),
+  }));
+}
+
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)
   .put("/api/projects/:projectId/models", ({ store, body }): ModelsResponse => {
-    const { defaultModel, visionModel, models } = record(body) as Partial<{
+    const { defaultModel, visionModel, models, providers } = record(body) as Partial<{
       defaultModel: ModelsResponse["defaultModel"];
       visionModel: ModelsResponse["visionModel"];
       models: Array<Record<string, unknown>>;
+      providers: Record<string, ProviderConnectionUpdate>;
     }>;
     if (Array.isArray(models)) {
       store.f.models.models = models.map((entry) => {
@@ -322,7 +370,7 @@ router
         const { apiKey, clearApiKey, baseUrl, renamedFrom, discount, ...rest } = entry;
         const credential = { ...(existing?.credential ?? {}) };
         if (typeof apiKey === "string" && apiKey !== "") {
-          credential.apiKeyMasked = `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}`;
+          credential.apiKeyMasked = maskKey(apiKey);
           credential.createdAt = new Date().toISOString();
         }
         if (clearApiKey === true) delete credential.apiKeyMasked;
@@ -346,8 +394,27 @@ router
     }
     if (defaultModel) store.f.models.defaultModel = defaultModel;
     if (visionModel) store.f.models.visionModel = visionModel;
+    writeProviders(store, providers ?? {});
     store.f.models.updatedAt = new Date().toISOString();
     return store.f.models;
+  })
+  .put(
+    "/api/projects/:projectId/models/providers/:provider",
+    ({ store, params, body }): ModelsResponse => {
+      writeProviders(store, { [str(params.provider)]: record(body) as ProviderConnectionUpdate });
+      store.f.models.updatedAt = new Date().toISOString();
+      return store.f.models;
+    },
+  )
+  // The demo table already holds every preset: an add finds nothing, and a restore resets
+  // the built-in models where they stand (the demo's own edits are not tracked, so nothing
+  // visible moves).
+  .post("/api/projects/:projectId/models/sync-presets", ({ store, body }): PresetSyncResponse => {
+    const restore = record(body).mode === "restore";
+    const builtIn = store.f.models.models.filter(
+      (m) => catalogEntryFor(m.provider, m.modelId) !== undefined,
+    ).length;
+    return { ...store.f.models, added: 0, restored: restore ? builtIn : 0 };
   })
   .put("/api/projects/:projectId/models/default", ({ store, body }): DefaultModelResponse => {
     const { provider, modelId } = record(body);
@@ -366,9 +433,8 @@ router
       const message = `The ${provider} group publishes no balance.`;
       return { ok: false, provider, error: "unsupported", message, fetchedAt };
     }
-    const keyed = store.f.models.models.some(
-      (m) => m.provider === provider && m.credential?.apiKeyMasked,
-    );
+    // The group's own key, as the server reads it; a key set on one model does not count.
+    const keyed = store.f.models.providers[provider]?.apiKeyMasked !== undefined;
     if (!keyed) {
       const message = `The ${info.label} group stores no API key.`;
       return { ok: false, provider, error: "no_key", message, fetchedAt };

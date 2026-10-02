@@ -3,7 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `web`, `server`, `cli`, `model-catalog`, `docs`
-- **PR:** [#914](https://github.com/Prism-Shadow/penguin-harness/pull/914)
+- **PR:** [#914](https://github.com/Prism-Shadow/penguin-harness/pull/914), [#948](https://github.com/Prism-Shadow/penguin-harness/pull/948)
 
 [中文版](2026-09-30-models-page-refresh.zh.md)
 
@@ -13,7 +13,7 @@ The models page's group headers were reworked: a group's key is managed from its
 
 - The collapse chevron follows the group's name and model count instead of standing at the header's far edge. The count is a bare number, as on the picker's rail.
 - Every item on the right shares one box: the same height, the same inset and one gap between them, with the divider as tall as the buttons, so the header reads on one centre line.
-- The actions on the right stand in a fixed order, decided in one place (`groupHeaderActions`, `group-header.ts`): balance, a divider, **Connect** with its status, **Sync** (a connected Penguin Go), **Enter key**, the speed test, **Add model**, **Delete group**. The divider is drawn only where something follows the balance. A member sees the balance and the connection status and none of the rest.
+- The actions on the right stand in a fixed order, decided in one place (`groupHeaderActions`, `group-header.ts`): balance, a divider, **Connect** with its status, **Add model**, **Delete group**, the speed test and **Settings** (a gear), which end every group so the two stand at the same right edge. The divider is drawn only where something follows the balance. A member sees the balance and the connection status and none of the rest.
 - "Set key" became **Enter key** (填写密钥). It and **Connect** are flat buttons, a glyph and a label like the header's other actions, which keep the glyph and drop the label on a narrow header. **Enter key** still writes one key to every row of the group, and custom still has none.
 - The provider's key console link left the header. It stays in the **Enter key** dialog and in **Model settings**.
 - The speed test is one icon that starts a run, after the same confirmation, and stops it. A stop lets the probe in flight finish and starts no other; results already measured stay.

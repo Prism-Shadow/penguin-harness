@@ -327,12 +327,15 @@ Projects, their members, and the Project-wide settings stored in `.project_confi
 
 ## Models
 
-Manage a Project's model table and probe model endpoints. Reading the table is open to any member; every other route here is owner only.
+Manage a Project's model table and probe model endpoints. Reading the table and a group's balance is open to any member; every other route here is owner only.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/projects/:projectId/models` | Lists models (`api_key` masked); a row with a running promotion carries it as `discount` |
 | PUT | `/api/projects/:projectId/models` | Replaces the whole table, keyed by `(provider, modelId)`; an entry's `discount` stores or clears its promotion |
+| PUT | `/api/projects/:projectId/models/providers/:provider` | Sets or clears one group's connection in `[providers.<provider>]`, field by field: `{apiKey?, clearApiKey?, baseUrl?, clientType?}` (`null` clears a field) → the model table |
+| POST | `/api/projects/:projectId/models/sync-presets` | **Add new models** or **Restore defaults** against the built-in catalog: `{mode: add\|restore}` → the model table plus `added` and `restored` counts |
+| GET | `/api/projects/:projectId/models/balance?provider=<group>` | Reads a group's account balance with the group key, else the environment key its endpoint allows (`force=1` skips the one-minute cache): `{ok, provider, amount?, currency?, error?, fetchedAt, …}` |
 | PUT | `/api/projects/:projectId/models/default` | Sets the default model: `{provider, modelId}` → `{defaultModel}` |
 | POST | `/api/projects/:projectId/models/test` | Tests connectivity: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | `/api/projects/:projectId/models/detect` | Detects the protocol a custom base URL speaks |
@@ -360,7 +363,7 @@ A provider group that publishes an authorization flow in the built-in catalog ca
 | GET | `/api/projects/:projectId/model-oauth/:flowId` | Polls a flow, redeeming a stored code and applying the key: `{status: pending\|done\|error, provider, error?}` |
 | POST | `/api/projects/:projectId/model-oauth/:flowId/code` | Redeems a code the user pasted: `{code}` → `{ok, applied?, error?}` |
 
-The server generates the PKCE verifier, keeps it in memory for ten minutes and never sends it to a client. The minted key goes straight into the provider group's models and is never returned, logged or put in a URL. A flow belongs to one user in one Project and can be used once: a second redemption is refused, and `/start`, `/:flowId` and `/:flowId/code` refuse anyone except that user.
+The server generates the PKCE verifier, keeps it in memory for ten minutes and never sends it to a client. The minted key is written once, as the provider group's key, and is never returned, logged or put in a URL. A flow belongs to one user in one Project and can be used once: a second redemption is refused, and `/start`, `/:flowId` and `/:flowId/code` refuse anyone except that user.
 
 `GET /callback` has to be the exception. A loopback OAuth redirect arrives in whichever browser the provider redirected, which is not necessarily the one that started the flow. The desktop shell, for example, opens the authorization page in the *system* browser, which holds no cookie for the app's origin. So this one path is mounted outside the session gate and authorizes with the flow id instead: 32 random bytes, valid for ten minutes and usable for one deposit. A deposit is accepted only for the Project the flow was opened in, and only for a flow that asked for a callback: a `manual` flow is refused, because it was never given a callback URL.
 
@@ -375,12 +378,12 @@ Penguin Go delivers its key through a device authorization the server polls, not
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | `/api/projects/:projectId/platform-auth/start` | Opens a one-time flow, with the platform's deadline capped locally at ten minutes: → 201 `{flowId, authorizeUrl, expiresAt}` |
-| POST | `/api/projects/:projectId/platform-auth/sync` | Fetches the platform catalog with the stored key, adds the models the Project lacks and refreshes platform-owned fields: → the model table plus `added` and `updated` counts |
-| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | Polls Penguin Go from the server, then writes the delivered key across the group and adds the platform's models: `{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
+| POST | `/api/projects/:projectId/platform-auth/sync` | Fetches the platform catalog with the group key and adds the models the Project lacks: → the model table plus `added` and `updated` (always 0) counts |
+| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | Polls Penguin Go from the server, then writes the delivered key as the group key and adds the platform's models: `{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/retry` | Retries the local write after it failed; the single-use delivery is not requested again, and a flow in any other state answers `409 platform_auth_not_retryable` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/cancel` | Cancels the local flow; the platform's pending record expires on its own TTL |
 
-The server validates the delivered key, the endpoints and the catalog before it writes anything. It then writes the key to every existing `penguin-go` entry, creates the models the platform advertises and the Project does not have, refreshes the list price and client protocol of the ones it does, and replaces the group's stored promotions with the platform's. Endpoints and other Project-owned fields are preserved, nothing is deleted, and a non-empty catalog creates the group when it is missing. A completed write invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
+The server validates the delivered key, the endpoints and the catalog before it writes anything. It then writes the key once, as the group key in `[providers.penguin-go]`, which every model of the group without a key of its own uses, and adds the models the platform advertises and the Project does not have, with their list price, protocol and promotion. An added model stores its endpoint as **Add new models** does: where the group's settings hold a base URL, only where it differs from the platform's own relay URL, so a group pointed at a proxy takes it along; where they hold none, in full. Models the Project already has are never rewritten, their price, protocol and promotion included, and nothing is deleted. A completed write invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
 
 A flow id that names no live flow is `404 platform_auth_flow_not_found`. `sync` answers `409 platform_reauthorization_required` when there is no stored key or the platform rejects it, and `502 platform_sync_failed` when the platform refuses the catalog or returns one that does not parse; the platform being unreachable is `502 platform_unreachable`. A delivery the server could not write locally leaves the flow in `apply_failed`, which is what the retry route is for.
 

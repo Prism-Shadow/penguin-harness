@@ -274,17 +274,27 @@ test("models: group header actions collapse to icons instead of disappearing", a
 
   // The 900px viewport still renders the desktop sidebar, leaving only ~560px for a group
   // header. That is the issue #294 case: viewport breakpoints alone report plenty of room.
-  const openRouter = page.getByRole("button", { name: /OpenRouter\s*\d+ 个模型/ });
-  await openRouter.waitFor();
+  const tokenDance = page.getByRole("button", { name: /TokenDance\s*\d+ 个模型/ });
+  await tokenDance.waitFor();
 
   // Every group-level action, addressed by its accessible name (aria-label = "action vendor",
   // stable across widths). Narrow rows must never hide an action: it keeps its icon (with a
-  // tooltip) and sheds only the visible text label. OpenRouter carries its presets only, so its
-  // header offers the group key and the speed test — the latter an icon at every width.
+  // tooltip) and sheds only the visible text label. TokenDance, not yet connected, offers
+  // Connect (the one action with words) and Add model, then the speed test and the group
+  // settings — icons at every width, the settings last.
   const actions = [
-    { name: "填写密钥 OpenRouter", label: "填写密钥" },
-    { name: "测速 OpenRouter", label: null },
+    { name: "连接 TokenDance", label: "连接" },
+    { name: "添加模型 TokenDance", label: null },
+    { name: "测速 TokenDance", label: null },
+    { name: "设置 TokenDance", label: null },
   ];
+  // The header's last action is the settings gear, on this group as on every other.
+  const lastAction = await tokenDance
+    .locator("xpath=..")
+    .evaluate((header) =>
+      header.querySelector("div.ml-auto > :last-child")?.getAttribute("aria-label"),
+    );
+  expect(lastAction, "settings stands last in the header").toBe("设置 TokenDance");
 
   // The expected label regime is derived from the row's measured width against the @3xl
   // container threshold (48rem) that admits the labels, because how wide the row is at a
@@ -295,7 +305,7 @@ test("models: group header actions collapse to icons instead of disappearing", a
   const seen = { iconOnly: false, fullyLabeled: false };
   for (const width of [390, 900, 1180, 1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
-    const { rowWidth, rem } = await openRouter.locator("xpath=..").evaluate((header) => {
+    const { rowWidth, rem } = await tokenDance.locator("xpath=..").evaluate((header) => {
       // Container queries resolve against the content box, so strip the row's padding.
       const s = getComputedStyle(header);
       return {
@@ -328,7 +338,7 @@ test("models: group header actions collapse to icons instead of disappearing", a
         await expect(text, `${label} label hidden @${width}`).toBeHidden();
       }
     }
-    const metrics = await openRouter.locator("xpath=..").evaluate((header) => {
+    const metrics = await tokenDance.locator("xpath=..").evaluate((header) => {
       const visible = (el) => {
         for (let node = el; node; node = node.parentElement) {
           const s = getComputedStyle(node);

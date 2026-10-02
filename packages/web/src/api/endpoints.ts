@@ -85,6 +85,9 @@ import type {
   SshHostResponse,
   ModelsResponse,
   ModelsUpdateRequest,
+  PresetSyncRequest,
+  PresetSyncResponse,
+  ProviderConnectionUpdate,
   ModelTestRequest,
   ModelTestResponse,
   ModelVisionDetectRequest,
@@ -397,6 +400,31 @@ export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
     method: "PUT",
     body,
   });
+
+/**
+ * One group's connection (`[providers.<id>]`, owner): only the fields the update names change;
+ * the models that store none of their own follow it. Answers with the whole table, re-read.
+ */
+export const putProviderConnection = (
+  projectId: string,
+  provider: string,
+  body: ProviderConnectionUpdate,
+) =>
+  apiFetch<ModelsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/providers/${encodeURIComponent(provider)}`,
+    { method: "PUT", body },
+  );
+
+/**
+ * The built-in catalog against the table (owner): `add` adds the presets it lacks and touches
+ * nothing else; `restore` puts every built-in model back to the catalog, keeping keys and the
+ * user's own models. Answers with the table and the two counts.
+ */
+export const syncPresets = (projectId: string, body: PresetSyncRequest) =>
+  apiFetch<PresetSyncResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/sync-presets`,
+    { method: "POST", body },
+  );
 
 /** Narrow default-model switch (owner): flips the same default_model the models page maintains, without resending the table. */
 export const putDefaultModel = (projectId: string, body: DefaultModelUpdateRequest) =>

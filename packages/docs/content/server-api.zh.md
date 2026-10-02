@@ -327,12 +327,15 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 ## 模型
 
-管理 Project 的模型表，并探测模型端点。模型表对所有成员开放读取；本节其余路由仅限所有者。
+管理 Project 的模型表，并探测模型端点。模型表与分组余额对所有成员开放读取；本节其余路由仅限所有者。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount` |
 | PUT | `/api/projects/:projectId/models` | 整表替换，以 `(provider, modelId)` 为键；条目的 `discount` 用来保存或清除它的促销 |
+| PUT | `/api/projects/:projectId/models/providers/:provider` | 逐字段设置或清除一个分组在 `[providers.<provider>]` 里的连接信息：`{apiKey?, clearApiKey?, baseUrl?, clientType?}`（`null` 清除该项）→ 模型表 |
+| POST | `/api/projects/:projectId/models/sync-presets` | 按内置目录**同步新增模型**或**恢复默认**：`{mode: add\|restore}` → 模型表，外加 `added` 与 `restored` 计数 |
+| GET | `/api/projects/:projectId/models/balance?provider=<分组>` | 用分组密钥（没有时用其端点允许的环境变量）查询分组的账户余额（`force=1` 跳过一分钟缓存）：`{ok, provider, amount?, currency?, error?, fetchedAt, …}` |
 | PUT | `/api/projects/:projectId/models/default` | 设置默认模型：`{provider, modelId}` → `{defaultModel}` |
 | POST | `/api/projects/:projectId/models/test` | 测试连通性：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | `/api/projects/:projectId/models/detect` | 检测自定义 base URL 使用的协议 |
@@ -360,7 +363,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 | GET | `/api/projects/:projectId/model-oauth/:flowId` | 轮询流程，兑换已存下的授权码并写入 key：`{status: pending\|done\|error, provider, error?}` |
 | POST | `/api/projects/:projectId/model-oauth/:flowId/code` | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
 
-PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发送给客户端。签发出的 key 直接写入这个供应商分组的模型配置，从不返回、从不记录日志，也从不放进 URL。一个流程只属于一个 Project 中的一个用户，且只能使用一次：不接受第二次兑换，除这个用户外，任何人都无法调用 `/start`、`/:flowId` 和 `/:flowId/code`。
+PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发送给客户端。签发出的 key 只写一次，作为这个供应商分组的分组密钥，从不返回、从不记录日志，也从不放进 URL。一个流程只属于一个 Project 中的一个用户，且只能使用一次：不接受第二次兑换，除这个用户外，任何人都无法调用 `/start`、`/:flowId` 和 `/:flowId/code`。
 
 `GET /callback` 必须是例外。回环地址上的 OAuth 跳转，由供应商跳转到的那个浏览器接收，而它未必是发起流程的浏览器。比如桌面 shell 会在*系统*浏览器中打开授权页，而系统浏览器没有这个应用的源的 Cookie。因此只有这一条路径挂在会话校验之外，改用 flow id 鉴权：32 个随机字节，10 分钟内有效，且只允许存入一次。授权码只能存入发起这个流程的 Project，而且只有要求过回调的流程才接受：`manual` 流程一律拒绝，因为它从未拿到过回调 URL。
 
@@ -375,12 +378,12 @@ Penguin Go 的 key 通过服务端轮询的设备授权交付，而不是浏览�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/projects/:projectId/platform-auth/start` | 开启一次性授权流程，平台给出的截止时间在本地最多按十分钟计：→ 201 `{flowId, authorizeUrl, expiresAt}` |
-| POST | `/api/projects/:projectId/platform-auth/sync` | 用已存的 key 拉取平台模型目录，补齐 Project 缺少的模型并刷新平台维护的字段：→ 模型表，外加 `added` 与 `updated` 计数 |
-| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | 由服务端向 Penguin Go 轮询，随后把交付的 key 写入整个分组并补齐平台的模型：`{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
+| POST | `/api/projects/:projectId/platform-auth/sync` | 用分组密钥拉取平台模型目录，补齐 Project 缺少的模型：→ 模型表，外加 `added` 与 `updated`（恒为 0）计数 |
+| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | 由服务端向 Penguin Go 轮询，随后把交付的 key 写为分组密钥并补齐平台的模型：`{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/retry` | 本地写入失败后重试写入；不会再次索取这次一次性交付，流程处于其他状态时返回 `409 platform_auth_not_retryable` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/cancel` | 取消本地流程；平台侧的待处理记录按自己的 TTL 过期 |
 
-服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 写入 `penguin-go` 分组下已有的每个条目，创建平台提供而 Project 没有的模型，刷新已有模型的牌价与客户端协议，并用平台的促销替换这个分组已存的促销。端点和其他由 Project 自己维护的字段保持不变，任何模型都不会被删除；目录非空时，分组不存在也会被建出来。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
+服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 只写一次，作为 `[providers.penguin-go]` 的分组密钥，组内没有自己 key 的模型都使用它；再补入平台提供而 Project 没有的模型，带上牌价、协议与促销。补入模型的端点与**同步新增模型**同一规则：分组设置里有 base URL 时，只在与平台自己的中转地址不同时写在模型上，因此指向代理的分组会把它一并带过去；分组设置里没有 base URL 时，模型带上完整的地址。已有的模型一概不改写，价格、协议与促销都不动，任何模型都不会被删除。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
 
 flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`sync` 在没有已存 key 或平台拒绝这把 key 时返回 `409 platform_reauthorization_required`，平台拒绝提供目录或返回的目录无法解析时返回 `502 platform_sync_failed`，平台不可达则是 `502 platform_unreachable`。交付的 key 未能写入本地时，流程停在 `apply_failed`，重试路由正是为此准备的。
 

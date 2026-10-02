@@ -482,7 +482,8 @@ export interface MemberAddResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Model and credential config (single .project_config.toml file; credentials are inlined on model entries)
+// Model and credential config (single .project_config.toml file; credentials are inlined in it:
+// once per group in [providers.<id>], and on a model entry where that model overrides its group)
 // ---------------------------------------------------------------------------
 
 /**
@@ -500,6 +501,40 @@ export interface ModelPricingDto {
   cacheRead: number;
   cacheWrite: number;
   output: number;
+}
+
+/**
+ * One group's `[providers.<id>]` connection as the page reads it: the values the GROUP stores
+ * (never the catalog's), the key masked. An absent field is unset: a row with no value of its
+ * own then gets the client's default.
+ */
+export interface ProviderConnectionDto {
+  baseUrl?: string;
+  clientType?: string;
+  apiKeyMasked?: string;
+  /** When the group key was written (ISO 8601). */
+  createdAt?: string;
+}
+
+/** Where an effective connection value comes from: the row itself, its group, or nowhere (the client's default). */
+export type ConnectionSourceDto = "model" | "provider" | "none";
+
+/**
+ * What a row is actually used with, after core's effectiveConnection (row -> group -> none,
+ * per field; the file's values only — the catalog is not consulted), and where each value
+ * came from. The group's key counts only where it reaches the row (core's groupKeyReaches).
+ * The row's own values stay in `clientType` / `credential` (what the form edits); this is for
+ * display.
+ */
+export interface ModelEffectiveConnection {
+  baseUrl?: string;
+  baseUrlSource: ConnectionSourceDto;
+  clientType?: string;
+  clientTypeSource: ConnectionSourceDto;
+  /** `env` = no row or group key, and the environment lends one on the effective endpoint (modelEnvFallback). */
+  apiKeySource: "model" | "provider" | "env" | "none";
+  /** Mask of the key the row would use, whichever source; absent when none. */
+  apiKeyMasked?: string;
 }
 
 /** Read-only credential display: masked key and creation time; plaintext is never sent. */
@@ -522,12 +557,15 @@ export interface ModelInfo {
    */
   displayName?: string;
   contextWindow?: number;
-  /** MMSP client type (`openai-chat`, `openai-responses`, etc.); absent = MMSP routes by the vendor family the modelId begins with. */
+  /**
+   * The row's OWN MMSP client type (`openai-chat`, `openai-responses`, etc.) — an override of
+   * its group's; absent = the row follows its group (see `effective`).
+   */
   clientType?: string;
   /**
-   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation takes
-   * priority, falling back to the built-in catalog annotation; if neither exists, defaults to
-   * unset (= treated as supported).
+   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation only
+   * (a new Project writes `false` where the catalog says so); absent = unset, treated as
+   * supported. The catalog is not consulted.
    */
   vision?: boolean;
   /**
@@ -558,13 +596,18 @@ export interface ModelInfo {
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
    * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
    * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
-   * own base URL is a vendor endpoint, or a keyless row in a vendor group or Penguin Go. Gateway
-   * rows never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
+   * effective base URL is a vendor endpoint (or the Penguin Go relay), or a row with no base URL
+   * in a built-in group other than custom, on the client its id's family names. Gateway rows
+   * never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
    * although those do fall back. Absent = the variable is unset or empty, or the entry is not
-   * previewable.
+   * previewable. Computed on the effective shape, and only when no row or group key reaches
+   * the row.
    */
   envKeyMasked?: string;
+  /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */
   credential?: CredentialInfo;
+  /** The connection the row is actually used with, and where each value comes from. */
+  effective: ModelEffectiveConnection;
   isDefault: boolean;
 }
 
@@ -580,7 +623,27 @@ export interface ModelsResponse {
    * (the key was fixed since). Absent when the Project has no config file yet.
    */
   updatedAt?: string;
+  /** Every group's stored connection (`[providers.<id>]`), keyed by provider id; a group with none is absent. */
+  providers: Record<string, ProviderConnectionDto>;
   models: ModelInfo[];
+}
+
+/**
+ * A change to one group's connection (`PUT /models/providers/:provider`, or a member of
+ * `ModelsUpdateRequest.providers`). Omitted fields are kept.
+ */
+export interface ProviderConnectionUpdate {
+  /** `null` clears it; omitted keeps it. */
+  baseUrl?: string | null;
+  /**
+   * `null` or `""` clears it; omitted keeps it. Any group takes one: a row that stores its own
+   * protocol keeps it.
+   */
+  clientType?: string | null;
+  /** A non-empty key; sets `createdAt`. Rows with their own key keep it. */
+  apiKey?: string;
+  /** When true, clears the group key (rows with their own key keep it). */
+  clearApiKey?: boolean;
 }
 
 /** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
@@ -603,7 +666,10 @@ export interface ModelUpdateEntry {
    */
   renamedFrom?: ModelRefDto;
   contextWindow?: number;
-  /** Empty string/omitted = unspecified (MMSP routes by the vendor family the modelId begins with). */
+  /**
+   * Empty string/omitted = the row stores none: it follows its group's protocol, else MMSP
+   * routes by the vendor family the modelId begins with.
+   */
   clientType?: string;
   /** Whether image input (vision/multimodal) is supported; omitted = supported (not persisted). */
   vision?: boolean;
@@ -631,7 +697,31 @@ export interface ModelsUpdateRequest {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
   visionModel?: ModelRefDto;
+  /** Group connection changes, merged per provider; a provider absent here keeps its table. */
+  providers?: Record<string, ProviderConnectionUpdate>;
   models: ModelUpdateEntry[];
+}
+
+/**
+ * `POST /models/sync-presets` (owner): `add` adds the catalog's presets the Project lacks
+ * (retired rows never), as a new Project stores them, writes the catalog's
+ * `[providers.<id>]` table for a group that has neither rows nor a table yet, and seeds the
+ * added rows' promotions, touching nothing else; `restore` puts every built-in row and
+ * built-in group table back to the catalog (facts reset, base URLs and protocols set on models
+ * or groups return to the catalog's, keys and the user's own rows and groups kept, promotions
+ * reset, deleted presets added back).
+ */
+export type PresetSyncMode = "add" | "restore";
+
+export interface PresetSyncRequest {
+  mode: PresetSyncMode;
+}
+
+export interface PresetSyncResponse extends ModelsResponse {
+  /** Preset rows added (both modes). */
+  added: number;
+  /** Built-in rows reset to the catalog (`restore`; 0 for `add`). */
+  restored: number;
 }
 
 /**
@@ -737,7 +827,12 @@ export interface ModelProtocolDetectRequest {
   apiKey?: string;
   /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
   clearApiKey?: boolean;
-  /** Optional paired reference: when it names a stored entry and no apiKey is given, that entry's saved key backs the probes (mirrors the connectivity test). */
+  /**
+   * Optional paired reference: when it names a stored entry and no apiKey is given, that
+   * entry's saved key backs the probes (mirrors the connectivity test), else its group's.
+   * `provider` may be sent without `modelId` (the group settings dialog has no model): the
+   * group key backs the probes.
+   */
   provider?: string;
   modelId?: string;
 }
