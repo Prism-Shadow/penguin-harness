@@ -17,9 +17,9 @@ import {
   shippedNames,
   storePackage,
   storeSources,
+  readShippedIndex,
   syncPluginStore,
 } from "../src/plugin/store.js";
-import { shippedIndex } from "../src/plugin/registry.js";
 import {
   archiveIntegrity,
   entryDir,
@@ -263,8 +263,8 @@ describe("the installation's prefix", () => {
     expect([...shipped]).toEqual([]);
     expect(logged).toEqual([]);
     expect(await readStore(root)).toEqual([]);
-    // Still listed, with its content: the entry a registry fetch is checked against.
-    const listed = await withEntry(entry, () => shippedIndex(null));
-    expect(listed.map((e) => [e.name, e.integrity])).toEqual([[row.name, row.integrity]]);
+    // Still listed, with its content: the row a registry fetch is checked against.
+    const listed = await withEntry(entry, () => readShippedIndex(null));
+    expect(listed?.entries).toEqual([row]);
   });
 });
