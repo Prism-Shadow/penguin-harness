@@ -3,7 +3,7 @@
  * lib/icon-registry.ts) drawn by the package's own renderer, `GlyphIcon`, grouped by the file that
  * declares it, after the size rungs of `ICON_SIZE`, and then the marks drawn as components. Each
  * registry glyph and each mark is drawn in every icon set and the theme shows its own, so
- * switching the theme switches the set: Primer's Octicons, Frost's line drawings with their
+ * switching the theme switches the set: Primer's line drawings, Frost's line drawings with their
  * duotone bodies, Console's pixel drawings. A path declared under several names shows once,
  * marked with its count; a fragment the entries are composed from is not a glyph and stays a line.
  */

@@ -537,7 +537,7 @@ export const zh = {
     theme: "主题",
     themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
     /** Display names of the three themes; the ids stay github / modern / geek. */
-    themeNames: { github: "通用", modern: "白领", geek: "极客" },
+    themeNames: { github: "朴素", modern: "白领", geek: "极客" },
     colorMode: "明暗",
     colorModeInfo: "应用的明暗外观。",
     themeLight: "浅色",
@@ -594,6 +594,7 @@ export const zh = {
       "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。内测功能：可能有不稳定的现象，遇到问题请反馈。",
     accentNames: {
       neutral: "随主题",
+      forest: "森林绿",
       blue: "蓝",
       green: "绿",
       violet: "紫",

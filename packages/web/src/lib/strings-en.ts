@@ -536,6 +536,7 @@ export const en: Strings = {
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
     accentNames: {
       neutral: "Theme's own",
+      forest: "Forest",
       blue: "Blue",
       green: "Green",
       violet: "Violet",

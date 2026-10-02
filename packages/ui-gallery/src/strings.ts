@@ -1,8 +1,8 @@
 /**
  * Gallery chrome copy (bilingual): this file holds the Chinese dictionary `zh` and the
  * `GalleryStrings` shape; the English dictionary lives in strings-en.ts. These strings are the
- * gallery's own and never reach the product. Theme display names are per language (通用 / 白领 /
- * 极客 here, Primer / Frost / Console in English) and so are breadcrumbs; theme ids, token names,
+ * gallery's own and never reach the product. Theme display names are per language (白领 / 极客 /
+ * 朴素 here, Frost / Console / Primer in English) and so are breadcrumbs; theme ids, token names,
  * accent preset ids and font names stay English in both.
  *
  * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) and `library`
@@ -196,7 +196,7 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "通用", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
+    themeNames: { github: "朴素", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
     mode: "明暗",
     accent: "强调色",
     accentTheme: "随主题",
@@ -358,7 +358,8 @@ export const zh = {
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的回答：各主题决定新文字如何出现",
-      "ui-glyph": "按主题换画法的图标：通用为 Octicons，白领为双色调线性，极客为像素画",
+      "ui-glyph":
+        "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -452,7 +453,7 @@ export const zh = {
       streaming: {
         title: "流式输出",
         description:
-          "助手回答随流到达时怎样显现：通用即时显示，白领按词淡入、带一层微光，极客逐字打出。",
+          "助手回答随流到达时怎样显现：朴素即时显示，白领按词淡入、带一层微光，极客逐字打出。",
       },
       charts: {
         title: "图表",

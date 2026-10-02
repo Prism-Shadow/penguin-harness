@@ -3,13 +3,14 @@
  * Appearance section's font choices). The root is a small fake answering both the `dataset`
  * and the attribute API.
  *
- * - An empty store reads as Primer, its own accent, 16px and its own faces.
+ * - An empty store reads as Frost, its own accent, 16px and its own faces.
  * - The legacy three-step font scale migrates by pixels once and its key is dropped; a stored
  *   text size is kept and anything unknown reads as the default.
  * - The theme and font faces are validated against the package's lists; another theme's accent
  *   is kept as stored while the theme's own accent is the one in effect.
- * - A chosen face is named on <html>, the theme's own face leaves no attribute, and the text
- *   size sets the root font size.
+ * - A chosen face is named on <html>, the theme's own face leaves no attribute, the theme an
+ *   empty store starts in is written like a chosen one while Primer (the stylesheet's fallback)
+ *   leaves none, and the text size sets the root font size.
  * - Every theme, text size and accent preset of the UI package is named in both languages.
  * - The font choices put the theme's own face first, once, and word the non-names from the
  *   dictionary.
@@ -79,9 +80,9 @@ function fakeRoot() {
 }
 
 describe("reading the stored appearance", () => {
-  it("falls back to the defaults on an empty store: Primer, its own accent, 16px, its own faces", () => {
+  it("falls back to the defaults on an empty store: Frost, its own accent, 16px, its own faces", () => {
     expect(readThemePrefs(memoryStorage())).toEqual({
-      themeId: "github",
+      themeId: "modern",
       accent: "neutral",
       textSize: "m",
       fontLatin: "theme",
@@ -126,6 +127,10 @@ describe("reading the stored appearance", () => {
     expect(prefs.fontLatin).toBe(FONT_LATIN_OPTIONS.at(-1)!.id);
     expect(prefs.fontCjk).toBe("theme");
     expect(readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.themeId]: "neon" })).themeId).toBe(
+      "modern",
+    );
+    // A stored choice of the former default is a choice like any other: it is kept.
+    expect(readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.themeId]: "github" })).themeId).toBe(
       "github",
     );
   });
@@ -152,13 +157,15 @@ describe("the attributes the preferences put on <html>", () => {
     });
     expect(attrs.get("data-font-latin")).toBe(latin);
     expect(attrs.get("data-font-cjk")).toBe(cjk);
-    expect(attrs.has("data-theme")).toBe(false);
+    // The theme an empty store starts in is written like a chosen one.
+    expect(attrs.get("data-theme")).toBe("modern");
     expect(style.fontSize).toBe("20px");
 
-    applyThemeAttributes(root, { fontLatin: "theme", fontCjk: "theme", themeId: "modern" });
+    applyThemeAttributes(root, { fontLatin: "theme", fontCjk: "theme", themeId: "github" });
     expect(attrs.has("data-font-latin")).toBe(false);
     expect(attrs.has("data-font-cjk")).toBe(false);
-    expect(attrs.get("data-theme")).toBe("modern");
+    // Primer is the stylesheet's fallback, which a bare root paints.
+    expect(attrs.has("data-theme")).toBe(false);
   });
 });
 

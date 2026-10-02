@@ -248,11 +248,13 @@
     /* Badges: one tag. The tones have no tint, so a soft tag draws the same 1px inset rule in its
        tone's line as an outlined one — the two weights are one ruled word, and a solid tag is the
        tone's ink filled in; the regular cut (the weight scale has no middle step to give a tag),
-       in the chrome face at the small rung; and the md tag takes the sm tag's padding, so a row
-       of tags and counts is one height. */
+       in the chrome face a step under the small rung (11px on a 16px line at the 16px root); and
+       the md tag takes the sm tag's padding, so a row of tags and counts is one height. */
     --ui-badge-soft-ring: 1px;
     --ui-badge-weight: var(--ui-weight-body);
     --ui-badge-pad-md: 1px calc(var(--ui-space-unit) * 1.5);
+    --ui-badge-size: 0.6875rem;
+    --ui-badge-lh: 1rem;
 
     /* Typography — families. Latin face first, so ASCII always renders in the theme's face; the
        chrome and reading text share Plex Sans — the chrome reads the sans by name, so a chosen
