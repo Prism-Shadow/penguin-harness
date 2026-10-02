@@ -147,6 +147,9 @@ export function ConfigTable({
                         <Select
                           size="sm"
                           aria-label={cellLabel}
+                          // Compact: a cell's select is as wide as its value, so the table
+                          // fits the settings dialog with the names readable.
+                          className="!gap-1 !px-1.5"
                           value={typeof cell === "string" ? cell : ""}
                           disabled={disabled}
                           onChange={(e) => onCell(row.id, c.name, e.target.value)}
@@ -184,7 +187,7 @@ export function ConfigTable({
                           autoComplete="off"
                           // Borderless until pointed at or focused: the row reads as a table
                           // of names, and the box shows itself when it is about to be edited.
-                          className="!w-[5.75rem] !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
+                          className="!w-[7rem] !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
                           onChange={(e) =>
                             onCell(
                               row.id,
