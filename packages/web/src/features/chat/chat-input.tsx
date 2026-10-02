@@ -2233,17 +2233,20 @@ export function ChatInput({
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
           legitimate answer and a notice with no way down stops being read. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
+        // The buttons keep their labels whole, so where the sentence would be left a few
+        // characters a line beside them (a phone at a large text size), they drop to a row
+        // of their own instead; the sentence keeps a readable width either way.
         <NoticeStrip
           tone="attention"
-          className="anim-fade mb-1 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs"
+          className="anim-fade mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-2.5 py-2 text-xs"
         >
-          <p className="min-w-0">
+          <p className="min-w-0 grow basis-56">
             {S.chat.contextWindowUnderThreshold(
               humanizeTokens(contextWindow),
               humanizeTokens(compactionLimit),
             )}
           </p>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               onClick={() => {

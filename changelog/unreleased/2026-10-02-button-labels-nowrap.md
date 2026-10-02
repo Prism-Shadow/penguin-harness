@@ -7,15 +7,17 @@
 
 [中文版](2026-10-02-button-labels-nowrap.zh.md)
 
-A button's label no longer breaks onto a second line. In Chinese, the Save button of Project settings › General stood one character a line at every window width. An audit of every page, the Settings and Project settings dialogs and the main dialogs — at 390, 1024 and 1440 px, in both languages, at the M and XL text sizes, in all three themes — found the rest.
+Button labels were kept on one line. In Chinese, the Save button of Project settings › General had stood one character a line at every window width. An audit of every page, the Settings, Project settings and App info dialogs and the main dialogs — at 390, 1024 and 1440 px, in both languages, at the M and XL text sizes, in all three themes — found the rest.
 
 ## Details
 
-- **Buttons:** `Button` and the button look a file picker wears keep their label on one line, and so do a segmented control's options: they share its width evenly while they can, and never get narrower than their own label. The text buttons drawn by hand across the app (toggles, row actions, links that act) do the same.
-- **The layout around a button makes the room:**
-  - Project settings › General: the display-name field keeps its intended width, which leaves Save the room it needs.
-  - Dialog footers and the settings pages' action rows start a second row when a phone-width dialog cannot hold all their buttons in one.
-  - Settings › Profile: at phone width the avatar and nickname controls wrap onto a second line, right-aligned, instead of running out of the dialog.
-  - Organization overview: the KPI strip goes two by two, and the first-steps cards take fewer columns, when the main column is too narrow for their buttons (a large text size at a laptop width). The board's count buttons keep their labels.
-  - Terminal page: a long connection error is cut short, with the whole of it in the tooltip, instead of pushing the New terminal button out of the bar.
-- **The rule is written down:** `.agents/skills/penguin-harness-frontend/SKILL.md` states that a button label never wraps and that the layout around it makes the room, with the four ways to do that.
+- **Buttons:** `Button` and the button look a file picker wears kept their label on one line, and so did a segmented control's options: they shared its width evenly while they could and no longer got narrower than their own label. A segmented option could also take a shorter label for phone width, with the full one kept as its name. The text buttons drawn by hand across the app (toggles, row actions, links that act) followed the same rule.
+- **The layout around a button made the room:**
+  - Project settings › General: the display-name field got its intended width, narrower on a phone, which left Save the room it needed.
+  - Dialog footers, the settings pages' action rows and every variant of the notice, action group included, started a second row when their buttons did not fit one.
+  - The composer's context-window notice put its two buttons on a row of their own on a phone, instead of leaving its sentence a few characters a line.
+  - Settings › Profile: at phone width the avatar controls wrapped, right-aligned, instead of running out of the dialog.
+  - Organization overview: the KPI strip went two by two, and the first-steps cards took fewer columns, when the main column was too narrow for their buttons (a large text size at a laptop width). The board's count buttons kept their labels.
+  - Organization finance: on a phone the period switch took a full-width row under the title and showed each period's month alone.
+  - Terminal page: a long connection error was cut short, with the whole of it in the tooltip, and held to half the bar, instead of pushing the New terminal button out of it.
+- **The rule was written down:** `.agents/skills/penguin-harness-frontend/SKILL.md` gained a section stating that a button label never wraps and that the layout around it makes the room, with the four ways to do that and the trap of a segmented control in a settings row.

@@ -40,6 +40,12 @@ const COLUMNS: Record<2 | 3 | 4 | 5, string> = {
 export interface SegmentedOption<T extends string> {
   value: T;
   label: string;
+  /**
+   * A shorter label for a phone-width screen (below `sm`), where the full one would not fit
+   * beside the other options: shown there instead, while `label` stays the option's accessible
+   * name. The full label shows from `sm` up.
+   */
+  shortLabel?: string;
   badge?: { node: ReactNode; name: string };
 }
 
@@ -56,35 +62,53 @@ export function Segmented<T extends string>({
 }) {
   return (
     <div className={`grid ${COLUMNS[cols]} gap-1 rounded-control bg-line-muted p-1`}>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          // An aria-label replaces every descendant in the accessible name, so it is only set
-          // where there is a badge to fold in — otherwise the label's own text is the name.
-          aria-label={opt.badge ? `${opt.label} · ${opt.badge.name}` : undefined}
-          aria-pressed={value === opt.value}
-          className={`${SEGMENTED_CHIP_RADIUS} whitespace-nowrap px-1 py-1 text-xs transition-colors duration-150 ${
-            value === opt.value
-              ? "bg-surface font-medium text-fg shadow-sm"
-              : "text-fg-muted hover:text-fg"
-          }`}
-        >
-          {opt.badge ? (
-            <span className="relative inline-block">
-              {opt.label}
-              {/* `left-full` rather than a negative right offset: the tag hangs off the label's
-                  right edge whatever it is wide, and never overlaps the word. */}
-              <span aria-hidden className="absolute -top-1.5 left-full">
-                {opt.badge.node}
-              </span>
-            </span>
-          ) : (
+      {options.map((opt) => {
+        const text =
+          opt.shortLabel === undefined ? (
             opt.label
-          )}
-        </button>
-      ))}
+          ) : (
+            <>
+              <span className="sm:hidden">{opt.shortLabel}</span>
+              <span className="hidden sm:inline">{opt.label}</span>
+            </>
+          );
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            // An aria-label replaces every descendant in the accessible name, so it is only set
+            // where there is a badge to fold in or a short label standing in for the full one —
+            // otherwise the label's own text is the name.
+            aria-label={
+              opt.badge
+                ? `${opt.label} · ${opt.badge.name}`
+                : opt.shortLabel !== undefined
+                  ? opt.label
+                  : undefined
+            }
+            aria-pressed={value === opt.value}
+            className={`${SEGMENTED_CHIP_RADIUS} whitespace-nowrap px-1 py-1 text-xs transition-colors duration-150 ${
+              value === opt.value
+                ? "bg-surface font-medium text-fg shadow-sm"
+                : "text-fg-muted hover:text-fg"
+            }`}
+          >
+            {opt.badge ? (
+              <span className="relative inline-block">
+                {text}
+                {/* `left-full` rather than a negative right offset: the tag hangs off the label's
+                  right edge whatever it is wide, and never overlaps the word. */}
+                <span aria-hidden className="absolute -top-1.5 left-full">
+                  {opt.badge.node}
+                </span>
+              </span>
+            ) : (
+              text
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

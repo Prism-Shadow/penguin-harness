@@ -233,6 +233,12 @@ label instead. A width passed to `Input` or `Select` through `className` loses t
 `w-full` (the built sheet emits `.w-full` after `.w-44`), and a full-width field beside a button is
 what squeezes it: put the width on a box around the field.
 
+The trap is a `Segmented` with long labels in a `PrefRow`: the row's control column is
+`minmax(0, max-content)` and its slot is `justify-end`, so a control that no longer fits overflows
+leftward over the row's label instead of wrapping. Keep such labels short, or give the options a
+`shortLabel` for phone width (the full label stays the option's name), as the finance page's
+period switch does.
+
 Check a change at 390 and 1024 px with the XL text size (`penguin.textSize` = `xl`), in both
 languages — that is where a row runs out of room first.
 

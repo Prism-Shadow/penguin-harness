@@ -206,8 +206,9 @@ export function TerminalPage() {
           // tooltip shows it on hover either way.
           data-tooltip={statusText}
           // A failure's sentence carries the server's whole error, so it truncates rather
-          // than push the new-shell button out of the bar.
-          className={`flex min-w-0 items-center gap-1 ${
+          // than push the new-shell button out of the bar, and it is capped at half the bar so
+          // the working directory beside it keeps the other half.
+          className={`flex min-w-0 max-w-[50%] items-center gap-1 ${
             status === "ready"
               ? chrome.success
               : status === "connecting"
