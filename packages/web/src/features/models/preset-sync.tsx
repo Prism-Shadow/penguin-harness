@@ -4,9 +4,11 @@
  * and touches nothing else; "Restore defaults" (`restore`) puts every built-in model back to the
  * catalog, keeping keys and the user's own models, behind a danger confirmation.
  *
- * Each control is bound to its mode here and runs through runPresetSync, so which control sends
- * which mode lives in one place. The controls hold no state of their own: the page owns the busy
- * flags and the table, and hands them in as a {@link PresetSyncHost}.
+ * Both run only from their confirmation, each bound to its mode here through runPresetSync, so
+ * which control sends which mode lives in one place: "Add new models" (the header button and the
+ * Models notice) opens a confirmation listing what would be added; "Restore defaults" opens a
+ * danger one saying what it resets and keeps. The controls hold no state of their own: the page
+ * owns the busy flags and the table, and hands them in as a {@link PresetSyncHost}.
  */
 import type { ModelsResponse, PresetSyncMode } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
@@ -52,15 +54,16 @@ export async function runPresetSync(host: PresetSyncHost, mode: PresetSyncMode):
 
 /**
  * "Add new models" in the page header. It appears only while new presets are actually waiting
- * (the caller's gate), and the accent says so — adding nothing is a no-op. `note` is what the
- * Models trail says is waiting; it rides in the title and in an sr-only tail of the name.
+ * (the caller's gate), and the accent says so. It opens the add confirmation (`onOpen`) rather
+ * than writing: every sync entry confirms first. `note` is what the Models trail says is waiting;
+ * it rides in the title and in an sr-only tail of the name.
  */
 export function AddNewModelsButton({
-  host,
+  onOpen,
   disabled,
   note,
 }: {
-  host: PresetSyncHost;
+  onOpen: () => void;
   disabled: boolean;
   note: string;
 }) {
@@ -68,13 +71,66 @@ export function AddNewModelsButton({
     <Button
       size="sm"
       variant="primary"
-      onClick={() => void runPresetSync(host, "add")}
+      onClick={onOpen}
       disabled={disabled}
       title={`${S.models.syncNewPresetsHint} · ${note}`}
     >
       {S.models.syncNewPresets}
       <span className="sr-only"> · {note}</span>
     </Button>
+  );
+}
+
+/**
+ * The "Add new models" confirmation, opened from the header button and from the Models notice:
+ * what an add does and leaves alone, over the list of exactly the models it would add (`items`,
+ * the refs the badge's delta named). Confirming runs the add and closes once the request settles.
+ */
+export function AddNewModelsConfirm({
+  host,
+  title,
+  items,
+  busy,
+  setSyncing,
+  onClose,
+}: {
+  host: PresetSyncHost;
+  title: string;
+  items: readonly string[];
+  /** A catalog action is in flight: the confirm button spins and the dialog stays. */
+  busy: boolean;
+  setSyncing: (syncing: boolean) => void;
+  onClose: () => void;
+}) {
+  return (
+    <ConfirmModal
+      open
+      title={title}
+      tone="primary"
+      confirmLabel={S.models.syncNewPresets}
+      cancelLabel={S.common.cancel}
+      busy={busy}
+      onClose={onClose}
+      onConfirm={() => {
+        setSyncing(true);
+        void runPresetSync(host, "add").finally(() => {
+          setSyncing(false);
+          onClose();
+        });
+      }}
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.models.syncNewPresetsHint}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
+        <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+          {items.map((ref) => (
+            <li key={ref} className="px-3 py-1.5 font-mono text-xs">
+              {ref}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </ConfirmModal>
   );
 }
 

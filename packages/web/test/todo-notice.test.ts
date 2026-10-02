@@ -94,7 +94,8 @@ describe("the bulk button confirms before it writes", () => {
     // Not "the file contains a ConfirmModal somewhere" — every one of these pages already had
     // one (a delete confirm, a group confirm) before this block existed, so that assertion is
     // true whether or not the batch confirms. What has to hold is the LINK: the state the
-    // button sets is the state the dialog is rendered behind.
+    // button sets is the state the dialog is rendered behind — a ConfirmModal, or a component
+    // named for the confirmation it wraps (the models page's AddNewModelsConfirm).
     for (const { file, attrs, source } of withAction) {
       const setter = /\bset([A-Z]\w*)\s*\(/.exec(attrs.get("onAction") ?? "");
       expect(
@@ -102,7 +103,9 @@ describe("the bulk button confirms before it writes", () => {
         `${file}'s onAction must open the confirmation by setting state`,
       ).not.toBeNull();
       const state = setter![1]!.charAt(0).toLowerCase() + setter![1]!.slice(1);
-      const guarded = new RegExp(`${state}[^\\n]*&&[\\s\\S]{0,400}?<ConfirmModal`);
+      const guarded = new RegExp(
+        `${state}[^\\n]*&&[\\s\\S]{0,400}?<(?:ConfirmModal|\\w+Confirm)\\b`,
+      );
       expect(
         guarded.test(source),
         `${file} must render its batch ConfirmModal behind ${state}`,

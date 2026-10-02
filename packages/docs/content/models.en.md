@@ -328,9 +328,9 @@ PenguinHarness updates can add preset models to the built-in catalog. While the 
 
 - a red dot on **Models** in the sidebar, which counts new models only;
 - a notice on the page, "{n} new preset models to add", with **Update now** and **Dismiss**;
-- the same dot on **Add new models** in the page header.
+- **Add new models** in the page header, which appears only while there are models to add.
 
-**Update now** lists the models it will add; confirm to add them. **Add new models** adds them right away, without the list. **Dismiss** hides the notice until a later catalog change.
+**Update now** and **Add new models** both open the same confirmation, which lists the models it will add; confirm to add them. **Dismiss** hides the notice until a later catalog change.
 
 Adding:
 

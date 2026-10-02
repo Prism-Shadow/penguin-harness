@@ -154,7 +154,7 @@ import { clearDraftModelRef } from "../chat/draft-cache";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { AddNewModelsButton, RestoreDefaultsConfirm, runPresetSync } from "./preset-sync";
+import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";
 import { buildImportedRows, groupImportConnection } from "./group-import";
 import {
@@ -1435,7 +1435,7 @@ export function ModelsPage() {
                 Owner-only — the gate never raises this for a member. */}
             {isOwner && todo && presetHost && (
               <AddNewModelsButton
-                host={presetHost}
+                onOpen={() => setSyncConfirmOpen(true)}
                 disabled={busy || rows === null}
                 note={syncNote}
               />
@@ -1791,42 +1791,17 @@ export function ModelsPage() {
         </ConfirmModal>
       )}
 
-      {/* The notice's add. The same add the toolbar button runs, but confirm-first: the button
-          on the notice is reached from a block announcing a batch. The body is the toolbar
-          button's own description, verbatim — what is added and what is left alone — over the
-          list of exactly what would be added. */}
-      {todo && syncConfirmOpen && (
-        <ConfirmModal
-          open
+      {/* The add, confirm-first from both entries — the header button and the notice: the
+          body is what an add does and leaves alone, over the list of exactly what it adds. */}
+      {todo && syncConfirmOpen && presetHost && (
+        <AddNewModelsConfirm
+          host={presetHost}
           title={S.todo.modelsConfirmTitle(todo.count)}
-          tone="primary"
-          confirmLabel={S.models.syncNewPresets}
-          cancelLabel={S.common.cancel}
+          items={todo.items}
           busy={syncing}
+          setSyncing={setSyncing}
           onClose={() => setSyncConfirmOpen(false)}
-          onConfirm={() => {
-            if (!presetHost) return;
-            setSyncing(true);
-            void runPresetSync(presetHost, "add").finally(() => {
-              setSyncing(false);
-              setSyncConfirmOpen(false);
-            });
-          }}
-        >
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              {S.models.syncNewPresetsHint}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
-            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-              {todo.items.map((ref) => (
-                <li key={ref} className="px-3 py-1.5 font-mono text-xs">
-                  {ref}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </ConfirmModal>
+        />
       )}
 
       {/* Restore defaults: it rewrites every built-in model, so the body says, item by item,

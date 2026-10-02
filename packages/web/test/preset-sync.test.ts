@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ModelsResponse, PresetSyncResponse } from "@prismshadow/penguin-server/api";
 import {
   AddNewModelsButton,
+  AddNewModelsConfirm,
   RestoreDefaultsBody,
   RestoreDefaultsConfirm,
 } from "../src/features/models/preset-sync";
@@ -84,14 +85,35 @@ function syncRequests(fetch: ReturnType<typeof stubFetch>) {
 afterEach(() => setActiveStrings(zh));
 
 describe("the catalog actions send the server's sync in their own mode", () => {
-  it('"Add new models" posts mode "add" and adopts the table the server answers with', async () => {
+  it('the "Add new models" button only opens its confirmation; it sends nothing itself', () => {
+    const fetch = stubFetch(() => json(ANSWER));
+    let opened = 0;
+    const button = AddNewModelsButton({
+      onOpen: () => (opened += 1),
+      disabled: false,
+      note: "",
+    }) as ReactElement<{ onClick: () => void }>;
+    button.props.onClick();
+
+    expect(opened).toBe(1);
+    expect(syncRequests(fetch)).toEqual([]);
+  });
+
+  it('the "Add new models" confirm posts mode "add", adopts the answer, then closes', async () => {
     const fetch = stubFetch(() => json(ANSWER));
     const page = host();
-    const button = AddNewModelsButton({ host: page, disabled: false, note: "" }) as ReactElement<{
-      onClick: () => void;
-    }>;
-    button.props.onClick();
-    await page.settled;
+    let closed!: () => void;
+    const closing = new Promise<void>((resolve) => (closed = resolve));
+    const confirm = AddNewModelsConfirm({
+      host: page,
+      title: "",
+      items: ["openrouter/x"],
+      busy: false,
+      setSyncing: () => {},
+      onClose: () => closed(),
+    }) as ReactElement<{ onConfirm: () => void }>;
+    confirm.props.onConfirm();
+    await closing;
 
     expect(syncRequests(fetch).map((r) => [r.method, r.body])).toEqual([["POST", { mode: "add" }]]);
     expect(page.adopted).toEqual([ANSWER]);
@@ -123,10 +145,15 @@ describe("the catalog actions send the server's sync in their own mode", () => {
   it("a refused sync adopts nothing, and still lowers the busy flag and re-probes the badge", async () => {
     const fetch = stubFetch(() => apiError(403, "forbidden"));
     const page = host();
-    const button = AddNewModelsButton({ host: page, disabled: false, note: "" }) as ReactElement<{
-      onClick: () => void;
-    }>;
-    button.props.onClick();
+    const confirm = AddNewModelsConfirm({
+      host: page,
+      title: "",
+      items: [],
+      busy: false,
+      setSyncing: () => {},
+      onClose: () => {},
+    }) as ReactElement<{ onConfirm: () => void }>;
+    confirm.props.onConfirm();
     await page.settled;
 
     expect(syncRequests(fetch)).toHaveLength(1);
