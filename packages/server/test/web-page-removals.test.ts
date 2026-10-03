@@ -4,14 +4,12 @@
  * the slot's type does not accept — a key that is not a string, a field the slot does not
  * declare — is refused by the boot check, naming the contribution.
  */
+import fs from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
-import { boot, initialDoc, parseManifest } from "@prismshadow/penguin-core/kernel";
+import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
-import { HotResources } from "@prismshadow/penguin-hmr";
 import type { ContributionsResponse } from "../src/api/types.js";
-import { HMR_INTERFACES_RESOURCE_ID, PENGUIN_FAMILY } from "../src/hmr/capabilities.js";
-import { packagedPlatform } from "../src/hmr/platform.js";
-import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
+import { PluginHost } from "../src/plugin/host.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -34,17 +32,17 @@ function removing(entries: Array<Record<string, unknown>>): PluginHost {
   return host;
 }
 
-/** Boots the packaged platform's tree with the host's plugins: the check runs before anything is built. */
-function bootWith(host: PluginHost) {
-  const resources = new HotResources();
-  resources.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
-  resources.register(PLUGINS_RESOURCE_ID, host);
-  return boot(
-    packagedPlatform.impl,
-    packagedPlatform.iface,
-    initialDoc(packagedPlatform.iface, { motd: "m" }),
-    resources,
-  );
+/** The boot error of an App with the host's plugins; the check runs before anything is built. */
+async function refusal(host: PluginHost): Promise<unknown> {
+  let root: string | undefined;
+  try {
+    await createTestApp({ plugins: host, beforeSeed: async (r) => void (root = r) });
+  } catch (err) {
+    return err;
+  } finally {
+    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+  }
+  throw new Error("the App booted");
 }
 
 describe("web page removals", () => {
@@ -72,14 +70,13 @@ describe("web page removals", () => {
   });
 
   it("refuses a removal whose key is not a string", async () => {
-    await expect(bootWith(removing([{ key: 7 }]))).rejects.toThrow(
+    expect(String(await refusal(removing([{ key: 7 }])))).toMatch(
       /contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
     );
   });
 
   it("refuses a removal carrying a field the slot does not declare", async () => {
-    await expect(bootWith(removing([{ key: "benchmark", path: "/benchmark" }]))).rejects.toThrow(
-      /contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
-    );
+    const err = await refusal(removing([{ key: "benchmark", path: "/benchmark" }]));
+    expect(String(err)).toMatch(/contribution 'removal\.0' to 'WebModule\.pageRemovals'/);
   });
 });
