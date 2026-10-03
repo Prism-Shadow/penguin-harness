@@ -8,7 +8,7 @@
 
 A long conversation, and a long Trace file in the Trace panel, no longer stall the page while
 they load. The chat opens on fewer Tasks, a history page is bounded in bytes and carries its
-pictures as links, and the Trace panel reads one round at a time instead of the whole file.
+pictures as links, and the Trace panel reads one turn at a time instead of the whole file.
 
 ## History window
 
@@ -20,12 +20,20 @@ pictures as links, and the Trace panel reads one round at a time instead of the 
 
 ## Trace panel
 
-- Opening the panel requests the file's analysis only. The newest round opens expanded; the
-  others stay collapsed and read their own events, by message range, when expanded.
-- The panel draws the newest 50 round cards, with an "N earlier rounds" control that shows 50
-  more. During a run it re-reads only the expanded rounds whose range grew.
-- The analysis carries the head `session_meta`'s `modelContextWindow`, which the context ring
-  reads.
+- Opening a Trace file requests its analysis, then the events of its newest turn only, by that
+  turn's message range (at most 1000 events per request), instead of every event in the file.
+  The newest turn opens expanded and is scrolled into view; the others stay collapsed with their
+  chips and read their own range the first time they are expanded.
+- The panel draws the newest 50 turn cards; an "N earlier turns" control above them draws 50
+  more per click.
+- A refresh during a run re-reads the analysis and only the expanded turns whose range moved,
+  keeping their rows on screen until the read lands; a new turn opens expanded only when the
+  newest one was open. A turn whose read failed shows the error in place of its rows and is
+  retried when reopened or on the next refresh.
+- The context ring reads the analysis' new `modelContextWindow` (the window in the file's head
+  `session_meta`), and 128k when an older server sends none.
+- A turn's events still carry their images inline as `data:` URLs, so a turn holding
+  screenshots can weigh megabytes; reading them by reference is left to a follow-up.
 
 ## Trace events endpoint
 
