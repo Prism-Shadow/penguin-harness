@@ -290,8 +290,6 @@ export interface SidebarNavEntryProps extends Omit<
   draggable?: boolean;
   onDragStart?: (e: ReactDragEvent) => void;
   onDragEnd?: () => void;
-  /** The entry has just moved here from the other area: it surfaces under the theme's reveal. */
-  arrived?: boolean;
 }
 
 /**
@@ -311,9 +309,8 @@ export interface SidebarNavEntryProps extends Omit<
  * steps over at once rather than sliding — a transform under hover is a motion the house rules
  * refuse — so reduced motion has nothing to undo. Draggable, the whole entry is the handle and
  * its link starts no drag of its own; the drag image is the entry's chip (`setDragPreview`).
- *
- * An entry that has just moved to the other area (`arrived`) surfaces there under `data-reveal`,
- * on the theme's reveal, instead of teleporting.
+ * An entry that moves to the other area simply takes its place there: the star filling is the
+ * feedback, and a reveal on the moved row read as a flicker.
  */
 export function SidebarNavEntry({
   pin,
@@ -321,13 +318,11 @@ export function SidebarNavEntry({
   draggable = false,
   onDragStart,
   onDragEnd,
-  arrived = false,
   ...row
 }: SidebarNavEntryProps) {
   return (
     <div
       className="group relative flex items-center"
-      {...(arrived ? { "data-reveal": true } : {})}
       {...(draggable
         ? {
             draggable: true,

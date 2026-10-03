@@ -238,11 +238,9 @@ describe("SidebarNavEntry", () => {
     expect(active).not.toContain(NAV_FILL.groupHover);
   });
 
-  it("surfaces under the theme's reveal when it has just moved to this area, and only then", () => {
-    expect(entry({ arrived: true })).toMatch(
-      /^<div class="group relative flex items-center" data-reveal="true">/,
-    );
+  it("moves between the areas without a reveal: the star filling is the whole feedback", () => {
     expect(entry()).not.toContain("data-reveal");
+    expect(entry({ pin: pin(false) })).not.toContain("data-reveal");
   });
 
   it("drags as a whole: the entry is the handle, and its link starts no drag of its own", () => {

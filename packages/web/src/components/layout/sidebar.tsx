@@ -458,8 +458,6 @@ export function Sidebar({
   const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
   /** The user's changes to which nav entries are pinned (the defaults live in nav-group-collapse.ts); persisted like the fold. */
   const [navPins, setNavPins] = useState(initialNavPinOverrides);
-  /** The entry that last moved between the areas: it surfaces in its new place under the theme's reveal. */
-  const [movedNav, setMovedNav] = useState<NavEntryKey | null>(null);
   /** Nav entry being dragged across the areas, and the area a drop would move it into. */
   const [navDrag, setNavDrag] = useState<NavEntryKey | null>(null);
   const [navDropArea, setNavDropArea] = useState<NavArea | null>(null);
@@ -626,17 +624,18 @@ export function Sidebar({
     const next = !navCollapsed;
     storeNavGroupCollapsed(next);
     setNavCollapsed(next);
-    // The rows fold away and come back with the fold's own fade: a moved row's reveal is spent.
-    setMovedNav(null);
   };
 
-  /** Pin or unpin one nav entry: the pin button and a drop across the areas both land here. */
+  /**
+   * Favourite or unfavourite one nav entry: the star and a drop across the areas both land here.
+   * The entry simply takes its place in the other area; the star filling is the whole feedback,
+   * with no reveal on the moved row (a de-blur there read as the row flickering).
+   */
   const setNavPinned = (key: NavEntryKey, pinned: boolean) => {
     const next = withNavPinned(navPins, key, pinned);
     if (next === navPins) return;
     storeNavPinOverrides(next);
     setNavPins(next);
-    setMovedNav(key);
   };
 
   /**
@@ -1939,7 +1938,6 @@ export function Sidebar({
         renderLink={renderRouterLink}
         onClick={() => onNavigate?.()}
         {...navEntryDragProps(key)}
-        arrived={movedNav === key}
         pin={{
           pinned,
           label: S.nav.pinEntry,
