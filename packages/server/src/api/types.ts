@@ -1616,6 +1616,23 @@ export type SessionCategory = "active" | SessionSource | "archived";
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
 export type SessionCategoryCounts = Record<SessionCategory, number>;
 
+/**
+ * GET /api/projects/:projectId/agents/:agentId/sessions. Every query parameter is optional:
+ *
+ * - `order`: `created` (the default) lists newest creation first; `activity` lists most recent
+ *   `lastActiveAt` first, ties broken by `sessionId` descending, both compared as plain strings
+ *   (code points, never locale collation) so a client can compute the same order.
+ * - `limit` (1–1000) with `offset` (≥ 0): an offset page, in either order. Offsets suit only the
+ *   `created` order, which activity never reshuffles.
+ * - `before=<lastActiveAt>,<sessionId>` with `limit`: under `order=activity` only, the rows
+ *   strictly below that cursor — the key of the last row the client holds. A row that becomes
+ *   active between pages moves above the cursor and is not served again, and no other row is
+ *   skipped (`session_state` tells the client about the moved one). 400 without
+ *   `order=activity`, beside `offset`, without `limit`, or when not a parseable stamp and a
+ *   valid id split at the first comma.
+ * - `category`, `workspaceGroup`, `excludeOrg=1` filter before paging; `counts=1` adds the
+ *   whole-list totals below, which no cursor or offset narrows.
+ */
 export interface SessionsResponse {
   /**
    * The page. With `excludeOrg=1` on the request, the rows an organization owns — its desk
@@ -2696,11 +2713,17 @@ export type ServerEvent =
    * that has now run from one that never has — a first run would otherwise settle back into the
    * blank "never ran" row the client still believes in.
    *
+   * `projectId` names the Session's Project: a list showing one Project ignores another's flips
+   * without a request, and a flip for a Session of its own Project that it holds no row for is a
+   * row it is missing — one that became active below its activity cursor (see SessionsResponse) —
+   * which it fetches by id.
+   *
    * Published only to the user channels of the Project's owner and members.
    */
   | {
       type: "session_state";
       sessionId: string;
+      projectId: string;
       state: SessionStatus;
       lastActiveAt: string;
       hasTrace: boolean;

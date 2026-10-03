@@ -139,6 +139,44 @@ export function sessionIdCreatedAt(sessionId: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+/**
+ * The order a Session list is served in: `created` (the default) is newest creation first;
+ * `activity` is most recent `lastActiveAt` first — the order the sidebar displays, and the only
+ * one an {@link ActivityCursor} pages.
+ */
+export type SessionListOrder = "created" | "activity";
+
+/** A row's place in the activity order; as a `before` cursor, the last row the client holds. */
+export interface ActivityCursor {
+  lastActiveAt: string;
+  sessionId: string;
+}
+
+/**
+ * The activity order: `lastActiveAt` descending, ties broken by `sessionId` descending; negative
+ * when `a` is the more recent. Plain `<` / `>` on both fields, never `localeCompare`: the client
+ * derives the cursor from a row and the server slices on it, so both sides must agree on one
+ * total order, and ICU collation (case, punctuation) is not one they can share. Stamps are ISO
+ * 8601 and ids ASCII, so this is code-point order.
+ */
+export function compareActivityDesc(a: ActivityCursor, b: ActivityCursor): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  if (a.sessionId !== b.sessionId) return a.sessionId > b.sessionId ? -1 : 1;
+  return 0;
+}
+
+/** The `created` order, unchanged since before the activity order existed. */
+function compareCreatedDesc(a: SessionRow, b: SessionRow): number {
+  return b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId);
+}
+
+/**
+ * A slice of a Session list: `offset` rows skipped (the `created` contract, also accepted under
+ * `activity`), or every row strictly below `before` in the activity order.
+ */
+export type SessionListPaging =
+  { offset: number; limit: number } | { before: ActivityCursor; limit: number };
+
 export interface SessionServiceDeps {
   root: string;
   sessions: SessionIndex;
@@ -330,9 +368,10 @@ export class SessionService {
   }
 
   /**
-   * List, sorted by createdAt descending. Every row is served **straight from the DB**,
-   * whichever client created it, with no Trace directory scanning — the answer to
-   * many-session sidebar reloads re-walking the filesystem on every request (#139).
+   * List, sorted by createdAt descending — or, with `order: "activity"`, by lastActiveAt
+   * descending (ties by sessionId, see {@link compareActivityDesc}). Every row is served
+   * **straight from the DB**, whichever client created it, with no Trace directory scanning —
+   * the answer to many-session sidebar reloads re-walking the filesystem on every request (#139).
    * Sessions living only in the Trace directory were adopted into the index by the
    * boot-time sweep (`adoptUnmanagedTraceSessions`), so listing never discovers. One
    * lazy discovery walk still runs for a list call that contains rows this process has
@@ -344,13 +383,19 @@ export class SessionService {
    * "has more"); slicing happens before toInfo, so per-request source derivation (lazy
    * Trace-head reads) stays bounded by the page size.
    *
+   * The `before` form pages the activity order by cursor: only rows strictly below it are
+   * walked and served. An offset cannot page that order, because a row below the offset that
+   * becomes active moves above it and the next page would skip a row; a cursor stays put — the
+   * moved row is simply not served again (the client learns of it from `session_state`). The
+   * offset form keeps serving the `created` order exactly as before.
+   *
    * `category` filters to one sidebar bucket **before** paging, so offset/limit page
    * within the category. Filtering needs each walked row's category (a possible
    * Trace-head read per row, cached in the sources registry); without `withCounts`
    * the walk stops as soon as the requested page is complete. `withCounts` classifies
-   * every row and returns per-category totals over the whole list — plus the same
-   * totals broken down by Workspace path, and each path's newest Session's `createdAt` —
-   * so the sidebar can label the collapsed folders, list every Workspace that holds
+   * every row, a cursor or not, and returns per-category totals over the whole list — plus
+   * the same totals broken down by Workspace path, and each path's newest Session's
+   * `createdAt` — so the sidebar can label the collapsed folders, list every Workspace that holds
    * Sessions (not only the ones its loaded pages happen to touch) and place the groups
    * by recency, all without loading them.
    *
@@ -372,7 +417,8 @@ export class SessionService {
     projectId: string,
     agentId: string,
     opts: {
-      paging?: { offset: number; limit: number };
+      paging?: SessionListPaging;
+      order?: SessionListOrder;
       category?: SessionCategory;
       workspaceGroup?: string;
       withCounts?: boolean;
@@ -384,7 +430,7 @@ export class SessionService {
     workspaceCounts?: Record<string, SessionCategoryCounts>;
     workspaceLatest?: Record<string, string>;
   }> {
-    const { paging, category, workspaceGroup, withCounts, excludeOrg } = opts;
+    const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg } = opts;
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
@@ -415,8 +461,16 @@ export class SessionService {
     }
 
     const sorted = [...rows.values()].sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
+      order === "activity" ? compareActivityDesc : compareCreatedDesc,
     );
+    // The rows a cursor leaves to serve are a suffix of the activity order: those from `start` on.
+    const before = paging && "before" in paging ? paging.before : undefined;
+    let start = 0;
+    if (before) {
+      const below = sorted.findIndex((row) => compareActivityDesc(row, before) > 0);
+      start = below === -1 ? sorted.length : below;
+    }
+    const skip = paging && "offset" in paging ? paging.offset : 0;
     const rowHasTrace = (row: SessionRow): boolean =>
       traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
@@ -424,14 +478,13 @@ export class SessionService {
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && workspaceGroup === undefined && !withCounts) {
+      const from = start + skip;
       return {
-        sessions: await toPage(
-          paging ? sorted.slice(paging.offset, paging.offset + paging.limit) : sorted,
-        ),
+        sessions: await toPage(paging ? sorted.slice(from, from + paging.limit) : sorted),
       };
     }
 
-    const want = paging ? paging.offset + paging.limit : Infinity;
+    const want = paging ? skip + paging.limit : Infinity;
     const counts: SessionCategoryCounts = {
       active: 0,
       subagent: 0,
@@ -442,7 +495,11 @@ export class SessionService {
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const workspaceLatest: Record<string, string> = {};
     const matched: SessionRow[] = [];
-    for (const row of sorted) {
+    for (const [i, row] of sorted.entries()) {
+      // Rows above a cursor are the client's already: never served, and classified only for
+      // the totals, which are whole-list.
+      const servable = i >= start;
+      if (!servable && !withCounts) continue;
       if (!withCounts && matched.length >= want) break;
       const cat = await this.categoryOf(row, rowHasTrace(row));
       counts[cat] += 1;
@@ -455,15 +512,19 @@ export class SessionService {
           archived: 0,
         });
         ws[cat] += 1;
-        // The walk is newest-first, so a path's first row is its newest Session.
-        workspaceLatest[row.workspace] ??= row.createdAt;
+        // A path's newest Session by creation, whichever order the walk is in.
+        const latest = workspaceLatest[row.workspace];
+        if (latest === undefined || row.createdAt.localeCompare(latest) > 0) {
+          workspaceLatest[row.workspace] = row.createdAt;
+        }
       }
       const wanted =
+        servable &&
         (category === undefined || cat === category) &&
         (workspaceGroup === undefined || matchesWorkspaceGroup(row.workspace, workspaceGroup));
       if (wanted && matched.length < want) matched.push(row);
     }
-    const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
+    const sessions = await toPage(paging ? matched.slice(skip, want) : matched);
     return withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions };
   }
 

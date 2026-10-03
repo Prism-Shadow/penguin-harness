@@ -624,7 +624,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/workspace-files/search?workspace=&q=` | 按条目名搜索该目录 |
 | POST | `/workspace-files/reveal?workspace=&path=` | 在机器自带的文件管理器中显示文件 |
 
-- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- `order` 决定列表顺序：`created`（默认）按创建时间从新到旧；`activity` 按 `lastActiveAt` 从新到旧，时间相同时按 `sessionId` 降序，两者都按码点比较而非按区域设置排序。在 `order=activity` 下，`before=<lastActiveAt>,<sessionId>` 搭配 `limit` 以游标代替 `offset` 分页：只返回严格排在这个键之后的行，通常就是客户端已显示的最后一行。两页之间变为活跃的 Session 会移到游标之前，因此不会被再次返回，也不会让其他行漏掉。`before` 未搭配 `order=activity`、与 `offset` 同时出现、缺少 `limit`，或在第一个逗号处拆开后不是日期加合法 id，均返回 400。
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
@@ -1083,7 +1084,7 @@ export type ServerEvent =
       subagents?: SubagentRuntimeInfo[];
     }
   | { type: "session_title"; sessionId: string; title: string }
-  | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
+  | { type: "session_state"; sessionId: string; projectId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
@@ -1126,7 +1127,7 @@ export type ServerEvent =
 - `approval_request` 覆盖 `always-ask` 模式下的每个调用，以及 `read-only` 模式下带 `rw` 或未知权限的调用。待处理的审批会在重连时重新发送。
 - `task_state` 还携带排队的后续消息数量（`queued`）、仍在等待投递的插话消息（`pendingSteering`）、运行结束时没能投递的插话消息（`returnedSteering`）、排队的后续消息本身（`pendingFollowUps`）以及活跃的子 Agent（`subagents`）。字段缺失表示没有。
 - `session_title` 发送到 Session 的通道，以及 Project 所有者和成员的用户通道。
-- `session_state` 用 `sessionId` 指明是哪个 Session，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
+- `session_state` 用 `sessionId` 指明是哪个 Session、用 `projectId` 指明所属 Project，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话；列表还能据此认出本 Project 中自己尚未持有的 Session，再按 id 单独拉取。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。

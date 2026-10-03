@@ -8,6 +8,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
+import type {
+  ActivityCursor,
+  SessionListOrder,
+  SessionListPaging,
+} from "../services/session-service.js";
 import { HttpError } from "./errors.js";
 
 export function badRequest(message: string): HttpError {
@@ -101,6 +106,43 @@ export function optionalPagingQuery(c: Context): { offset: number; limit: number
   const limit = limitQuery(rawLimit);
   const offset = offsetQuery(rawOffset ?? "0");
   return { offset, limit };
+}
+
+/**
+ * Parse an activity cursor, `<lastActiveAt>,<sessionId>`, or null when the text is not one.
+ * Split at the FIRST comma — an ISO stamp holds none and a valid id holds none, so the split is
+ * unambiguous; the stamp must parse as a date and the id must be a valid id. The stamp is kept
+ * as sent: the list compares it as a string against the rows' own stamps, which is where the
+ * client read it from.
+ */
+function parseActivityCursor(raw: string): ActivityCursor | null {
+  const comma = raw.indexOf(",");
+  if (comma === -1) return null;
+  const lastActiveAt = raw.slice(0, comma);
+  const sessionId = raw.slice(comma + 1);
+  if (Number.isNaN(Date.parse(lastActiveAt)) || !isValidId(sessionId)) return null;
+  return { lastActiveAt, sessionId };
+}
+
+/**
+ * The Session list's OPTIONAL paging: {@link optionalPagingQuery}'s offset form, or — under
+ * `order=activity` — the cursor form `before=<lastActiveAt>,<sessionId>&limit=N`, which serves
+ * the rows strictly below the cursor. A cursor in another order, beside an offset or without a
+ * limit is a 400, never a silently different page.
+ */
+export function optionalSessionListPagingQuery(
+  c: Context,
+  order: SessionListOrder,
+): SessionListPaging | null {
+  const rawBefore = c.req.query("before");
+  if (rawBefore === undefined) return optionalPagingQuery(c);
+  if (order !== "activity") throw badRequest("before requires order=activity.");
+  if (c.req.query("offset") !== undefined) throw badRequest("before and offset are exclusive.");
+  const rawLimit = c.req.query("limit");
+  if (rawLimit === undefined) throw badRequest("before requires limit.");
+  const before = parseActivityCursor(rawBefore);
+  if (!before) throw badRequest("before must be <lastActiveAt>,<sessionId>.");
+  return { before, limit: limitQuery(rawLimit) };
 }
 
 /** Read the JSON request body (parse failure / non-object -> 400). */

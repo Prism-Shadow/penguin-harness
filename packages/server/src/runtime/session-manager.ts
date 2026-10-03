@@ -2422,6 +2422,7 @@ export class SessionManager {
     notify(entry.projectId, {
       type: "session_state",
       sessionId: entry.sessionId,
+      projectId: entry.projectId,
       state,
       lastActiveAt,
       hasTrace,

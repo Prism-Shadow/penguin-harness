@@ -54,7 +54,7 @@ import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
   optionalEnum,
-  optionalPagingQuery,
+  optionalSessionListPagingQuery,
   optionalString,
   paginationQuery,
   pathParam,
@@ -69,7 +69,7 @@ import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
-import type { SessionService } from "../../services/session-service.js";
+import type { SessionListOrder, SessionService } from "../../services/session-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SessionsRouteDeps {
@@ -287,6 +287,9 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
   "benchmark",
   "archived",
 ];
+
+/** Accepted `order` query values of the list endpoint (SessionListOrder, spelled out for validation). */
+const SESSION_LIST_ORDERS: readonly SessionListOrder[] = ["created", "activity"];
 
 /**
  * A base64 `data:` URL of an image, in the exact shape core parses it back out of
@@ -527,9 +530,18 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
+    // Optional order: `created` (the default, newest creation first) or `activity` (most recent
+    // lastActiveAt first, ties by id) — the order the sidebar displays, and so the one it pages.
+    const rawOrder = c.req.query("order");
+    if (rawOrder !== undefined && !SESSION_LIST_ORDERS.includes(rawOrder as SessionListOrder)) {
+      throw badRequest(`order must be one of ${SESSION_LIST_ORDERS.join(" / ")}.`);
+    }
+    const order = (rawOrder ?? "created") as SessionListOrder;
     // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
-    // limit+1 and shows limit, detecting "has more" without a response-envelope change.
-    const paging = optionalPagingQuery(c);
+    // limit+1 and shows limit, detecting "has more" without a response-envelope change. Under
+    // `order=activity` it pages by cursor (`before=<lastActiveAt>,<sessionId>`) instead of
+    // offset, since activity moves rows across an offset; see SessionService.listSessions.
+    const paging = optionalSessionListPagingQuery(c, order);
     // Optional category filter (paging then applies within the category) and per-category
     // totals — the sidebar loads active rows only and labels the collapsed folders from counts.
     const rawCategory = c.req.query("category");
@@ -554,6 +566,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const { sessions, counts, workspaceCounts, workspaceLatest } =
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
+        order,
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
