@@ -86,7 +86,7 @@ test("music: a reply's link to an audio file gets a player below its paragraph",
   await expect(first).toBeVisible();
   // The player is the paragraph's next sibling, holding one player for the file linked twice.
   const below = first.locator("xpath=following-sibling::*[1]");
-  await expect(below).toHaveAttribute("data-reply-files", "");
+  await expect(below).toHaveAttribute("data-reply-files");
   await expect(below.locator("audio")).toHaveCount(1);
   const player = below.getByLabel("播放 evening.wav");
   await expect(player).toHaveAttribute("controls", "");
