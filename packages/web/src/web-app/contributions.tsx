@@ -11,6 +11,8 @@ import {
 
 import type { ContributionsResponse, RendererRef } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
+import { FileRendererRulesContext, type FileRendererRule } from "../lib/file-renderers";
+
 import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
@@ -180,9 +182,40 @@ export function contributedPagesOf(
   return out;
 }
 
+/**
+ * The answer's file renderer rules this build can read, in the server's order: extensions are
+ * strings, dropped of a leading dot and lowercased (empty ones dropped), and the renderer is a
+ * `builtin` name. Anything else — no extensions left, an iframe renderer, a missing field, an
+ * answer from a server that sends no such list — is skipped. Whether the name is in this build's
+ * registry is the conversation's question, not this one's.
+ */
+export function fileRendererRulesOf(
+  answer: ContributionsResponse | null,
+): readonly FileRendererRule[] {
+  const entries: unknown = answer?.fileRenderers;
+  if (!Array.isArray(entries)) return NO_RULES;
+  const rules: FileRendererRule[] = [];
+  for (const entry of entries as Array<Record<string, unknown> | null>) {
+    if (entry === null || typeof entry !== "object" || typeof entry.id !== "string") continue;
+    const builtin = (entry.renderer as { builtin?: unknown } | undefined)?.builtin;
+    if (typeof builtin !== "string" || builtin === "" || !Array.isArray(entry.extensions)) continue;
+    const extensions = (entry.extensions as unknown[])
+      .filter((e): e is string => typeof e === "string")
+      .map((e) => e.replace(/^\./, "").toLowerCase())
+      .filter((e) => e !== "");
+    if (extensions.length > 0) rules.push({ id: entry.id, extensions, builtin });
+  }
+  return rules;
+}
+
+const NO_RULES: readonly FileRendererRule[] = [];
+
 /** The answer's parts besides the pages, for the features that read them (web-app/index.ts). */
 
-/** Holds the signed-in user's contributions and the merged page table, for everything under the router. */
+/**
+ * Holds the signed-in user's contributions — the merged page table and the file renderer rules —
+ * for everything under the router.
+ */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const { pages: compiled, pageRenderers } = webAppDeps.useDeps();
   const signedIn = useAuth().user?.userId ?? null;
@@ -205,7 +238,14 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
     }),
     [compiled, answer, pageRenderers, pending, store],
   );
-  return <PagesContext.Provider value={value}>{children}</PagesContext.Provider>;
+  const rules = useMemo(() => fileRendererRulesOf(answer), [answer]);
+  return (
+    <PagesContext.Provider value={value}>
+      <FileRendererRulesContext.Provider value={rules}>
+        {children}
+      </FileRendererRulesContext.Provider>
+    </PagesContext.Provider>
+  );
 }
 
 export { useContributions, useWebAppPages, useWebAppPagesPending } from "../lib/web-app-pages";

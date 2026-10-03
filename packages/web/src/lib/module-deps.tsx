@@ -25,5 +25,9 @@ export function createDeps<D>() {
       if (deps === null) throw new Error("rendered outside its module's root component");
       return deps;
     },
+    /** The module's deps, or null when nothing provides them (a lone render, a test). */
+    useDepsOptional(): D | null {
+      return useContext(Ctx);
+    },
   };
 }
