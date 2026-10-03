@@ -34,6 +34,7 @@ import plugin, {
   testGroupsOf,
 } from "../src/index.js";
 import type { RunGh } from "../src/pr-status.js";
+import { FakeForge, FakeMirror, cr, rel } from "./graph-fakes.js";
 import { withImplPr } from "../src/service.js";
 
 /** The deploy half of the routes, unused here: these tests never reach a deploy route. */
@@ -181,6 +182,12 @@ const githubGh: RunGh = async (args) => {
   return JSON.stringify({ state: "closed", merged: true, merged_at: "2026-09-23T00:00:00Z" });
 };
 
+/** The graph's ports with nothing behind them: no test here reaches GitHub or a remote. */
+function offline(): { forge: FakeForge; mirrorFor: () => FakeMirror } {
+  const mirror = new FakeMirror();
+  return { forge: new FakeForge(), mirrorFor: () => mirror };
+}
+
 /** What the organization's store holds, read through a connection of the test's own. */
 function storeOf<T>(root: string, read: (store: SqliteProposalStore) => T): T {
   const store = SqliteProposalStore.open(companyDbPath(root, PROJECT, ORG));
@@ -225,7 +232,8 @@ describe("ProposalService", () => {
     agents = new FakeAgents();
     lines.length = 0;
     githubCalls.length = 0;
-    service = new ProposalService({ gateway, agents, root, log, gh: githubGh });
+    service = new ProposalService({
+      ...offline(), gateway, agents, root, log, gh: githubGh });
   });
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -244,37 +252,29 @@ describe("ProposalService", () => {
   it("registers one impl PR per proposal through the routes, refuses a taken PR, and the graph carries the proposal", async () => {
     const A = "a".repeat(40);
     const D = "0".repeat(40);
-    const gh: RunGh = async (args) => {
-      const p = args[1]!;
-      if (p.startsWith("repos/acme/site/pulls?"))
-        return JSON.stringify([
-          {
-            number: 11,
-            title: "PR 11",
-            draft: false,
-            url: "https://github.com/acme/site/pull/11",
-            branch: "feat/a",
-            head: A,
-            base: "dev",
-          },
-        ]);
-      if (p === "repos/acme/site") return JSON.stringify("main");
-      if (p === "repos/acme/site/branches/dev" || p === "repos/acme/site/branches/main")
-        return JSON.stringify(D);
-      if (p.startsWith("repos/up/site/pulls?")) return JSON.stringify([]);
-      if (p === `repos/acme/site/compare/${D}...${A}`)
-        return JSON.stringify({ status: "ahead", ahead_by: 2, behind_by: 0 });
-      return githubGh(args, { timeoutMs: 0, maxBytes: 0 });
-    };
+    // The repository as the forge and the mirror answer it: one open PR on dev, two commits ahead.
+    const forge = new FakeForge([cr("acme/site", 11, { head: A, branch: "feat/a" })]);
+    const mirror = new FakeMirror(
+      new Map([
+        ["refs/heads/dev", D],
+        ["refs/heads/main", D],
+        ["refs/pull/11/head", A],
+      ]),
+      "main",
+      new Map([[`${D}...${A}`, rel("ahead", 2, 0, D)]]),
+    );
     let values: Record<string, unknown> = {};
     let remotes = "";
     const gitCalls: string[][] = [];
     service = new ProposalService({
+      ...offline(),
       gateway,
       agents,
       root,
       log,
-      gh,
+      gh: githubGh,
+      forge,
+      mirrorFor: () => mirror,
       git: async (cwd, args) => {
         gitCalls.push([cwd, ...args]);
         return remotes;
@@ -349,19 +349,22 @@ describe("ProposalService", () => {
       "mine\tgit@github.com:acme/site.git (fetch)",
     ].join("\n");
     values = { deliveryBase: "" };
-    const fallback = (await (await call("GET", "/graph")).json()) as Graph;
+    // The refresh button: the server reads the repository before it answers.
+    const fallback = (await (await call("GET", "/graph?refresh=1")).json()) as Graph;
     expect(fallback.repo).toBe("acme/site");
     expect(fallback.base.branch).toBe("main");
     expect(fallback.origins).toEqual([{ name: "origin", repo: "up/site" }]);
     expect(fallback.nodes.map((n) => [n.number, n.proposal?.number])).toEqual([[11, first]]);
     // A declared stack base is kept.
     values = { deliveryBase: "dev" };
-    expect(((await (await call("GET", "/graph")).json()) as Graph).base.branch).toBe("dev");
+    expect(((await (await call("GET", "/graph?refresh=1")).json()) as Graph).base.branch).toBe(
+      "dev",
+    );
 
     // A set delivery repository is read as it is, without the workspace.
     remotes = "";
     values = { deliveryRepo: "acme/site" };
-    const graph = (await (await call("GET", "/graph")).json()) as {
+    const graph = (await (await call("GET", "/graph?refresh=1")).json()) as {
       nodes: Array<{ number: number; proposal: { number: number } | null }>;
       top: number | null;
     };
@@ -436,6 +439,7 @@ describe("ProposalService", () => {
       throw new Error(`HTTP 404: ${p}`);
     };
     service = new ProposalService({
+      ...offline(),
       gateway,
       agents,
       root,
@@ -585,7 +589,8 @@ describe("ProposalService", () => {
     });
     gateway = new FakeGateway();
     githubCalls.length = 0;
-    service = new ProposalService({ gateway, agents, root, log, gh: githubGh });
+    service = new ProposalService({
+      ...offline(), gateway, agents, root, log, gh: githubGh });
     expect(await refused(() => service.list(PROJECT, ORG, OUTSIDER))).toEqual({
       status: 403,
       code: "project_access",
@@ -1017,6 +1022,7 @@ describe("ProposalService", () => {
     const n = await delegated();
     const stored: Record<string, unknown> = {};
     const configured = new ProposalService({
+      ...offline(),
       gateway,
       agents,
       root,
@@ -1072,7 +1078,8 @@ describe("ProposalService", () => {
   it("a revision published without tests reads with no tests", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
-    const again = new ProposalService({ gateway, root, agents, log: { line: () => {} } });
+    const again = new ProposalService({
+      ...offline(), gateway, root, agents, log: { line: () => {} } });
     const read = await again.get(PROJECT, ORG, n, BOSS);
     expect(read.tests).toEqual([]);
     expect(storeOf(root, (s) => s.revision(n, 1)?.tests)).toEqual([]);
@@ -1490,7 +1497,8 @@ describe("ProposalService", () => {
       expect(race.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
       expect(gateway.desks.slice(before)).toHaveLength(2);
       // A new service over the same store reads the same discussions.
-      const again = new ProposalService({ gateway, agents, root, log });
+      const again = new ProposalService({
+      ...offline(), gateway, agents, root, log });
       expect((await again.get(PROJECT, ORG, n, BOSS)).discussions).toEqual(
         (await service.get(PROJECT, ORG, n, BOSS)).discussions,
       );
@@ -1646,6 +1654,11 @@ describe("ProposalService", () => {
   });
 
   it("materials, feedback and runtime feedback: the author is told, runtime feedback tells the implementer too", async () => {
+    const forge = new FakeForge([
+      cr("x/y", 42, { head: "b".repeat(40), branch: "fix", state: "merged" }),
+    ]);
+    service = new ProposalService({
+      ...offline(), gateway, agents, root, log, gh: githubGh, forge });
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author);
@@ -1664,12 +1677,15 @@ describe("ProposalService", () => {
         by: "agent:acme_impl",
       }),
     ]);
-    // The write's answer carries no status; a READ asks GitHub (the injected gh) and adds it.
+    // The write's answer carries no status; a read answers what is cached at once and asks the
+    // forge in the background, in one batch; the next read has it.
     expect(withPr.materials[0]!.status).toBeUndefined();
+    expect((await service.get(PROJECT, ORG, n, BOSS)).materials[0]!.status).toBeUndefined();
+    await service.prStatusSettled(PROJECT, ORG, n);
     const read = await service.get(PROJECT, ORG, n, BOSS);
     expect(read.materials[0]).toMatchObject({ status: "merged" });
     expect(typeof read.materials[0]!.statusCheckedAt).toBe("string");
-    expect(githubCalls).toEqual([["api", "repos/x/y/pulls/42"]]);
+    expect(forge.queries).toEqual([{ repo: "x/y", numbers: [42] }]);
     expect(
       await refused(() => service.addMaterial(PROJECT, ORG, n, { kind: "pr", url: "  " }, impl)),
     ).toEqual({
@@ -1718,36 +1734,27 @@ describe("ProposalService", () => {
 
   it("an employee reports the merge once GitHub reads the impl PR as merged into its default branch", async () => {
     const url = "https://github.com/acme/site/pull/11";
-    let answer: () => string = () => JSON.stringify({ state: "open", draft: false });
-    const asked: string[][] = [];
+    const forge = new FakeForge();
+    const asked = (): number => forge.queries.length;
+    const pull = (state: "open" | "merged" | "closed", base: string) => {
+      forge.pulls = [cr("acme/site", 11, { head: "a".repeat(40), branch: "feat", state, base })];
+    };
+    pull("open", "main");
     service = new ProposalService({
-      gateway,
-      agents,
-      root,
-      log,
-      gh: async (args) => {
-        asked.push([...args]);
-        return answer();
-      },
-    });
-    const pull = (state: string, merged: boolean, base: string) =>
-      JSON.stringify({
-        state,
-        merged,
-        merged_at: merged ? "2026-09-30T15:12:54Z" : null,
-        base: { ref: base, repo: { default_branch: "main" } },
-      });
+      ...offline(), gateway, agents, root, log, gh: githubGh, forge });
 
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
     await service.setImpl(PROJECT, ORG, n, { url }, author);
-    // Before approval the status answers first, GitHub is not asked.
+    await service.graphSettled(PROJECT, ORG);
+    // Before approval the status answers first, the forge is not asked.
+    const before = asked();
     expect(await refused(() => service.merged(PROJECT, ORG, n, qa))).toEqual({
       status: 409,
       code: "proposal_status",
     });
-    expect(asked).toEqual([]);
+    expect(asked()).toBe(before);
 
     await service.approve(PROJECT, ORG, n, BOSS);
     // Nobody builds it: the notice names the impl PR and the command anybody may run once it lands.
@@ -1756,8 +1763,10 @@ describe("ProposalService", () => {
       text: `[proposal #${n}] approved by boss with nobody building it yet — build it with \`penguin org proposal implement ${n}\` (or \`--agent <id>\` to hand it to a colleague); once its impl PR acme/site#11 is merged into the default branch, run \`penguin org proposal merged ${n}\`.`,
     });
 
-    // The page read caches `open` for a minute; the merge check asks GitHub again all the same.
+    // The page read caches `open`; the merge check asks the forge again all the same.
     await service.addMaterial(PROJECT, ORG, n, { kind: "pr", url }, author);
+    await service.get(PROJECT, ORG, n, BOSS);
+    await service.prStatusSettled(PROJECT, ORG, n);
     expect((await service.get(PROJECT, ORG, n, BOSS)).materials).toMatchObject([
       { url, status: "open" },
     ]);
@@ -1772,26 +1781,28 @@ describe("ProposalService", () => {
       throw new Error("merged() was not refused");
     };
     expect(await refusal()).toContain("impl PR acme/site#11 is open");
-    answer = () => pull("closed", true, "dev");
+    pull("merged", "dev");
     expect(await refusal()).toContain("merged into dev, not the default branch main");
-    answer = () => {
-      throw new Error("gh: HTTP 502");
-    };
+    forge.failWith = "HTTP 502";
     expect(await refusal()).toContain("could not be read from GitHub");
+    forge.failWith = null;
     expect((await service.get(PROJECT, ORG, n, BOSS)).status).toBe("approved");
 
-    answer = () => pull("closed", true, "main");
+    pull("merged", "main");
     const merged = await service.merged(PROJECT, ORG, n, qa);
     expect(merged.status).toBe("merged");
     expect(merged.events.at(-1)).toMatchObject({ kind: "merged", by: "agent:acme_qa" });
-    expect(asked.at(-1)).toEqual(["api", "repos/acme/site/pulls/11"]);
-    // Terminal: a second report is a status refusal, not another GitHub read.
-    const reads = asked.length;
+    // The answer is written back to the cache the page reads.
+    expect((await service.get(PROJECT, ORG, n, BOSS)).materials).toMatchObject([
+      { url, status: "merged" },
+    ]);
+    // Terminal: a second report is a status refusal, not another forge read.
+    const reads = asked();
     expect(await refused(() => service.merged(PROJECT, ORG, n, author))).toEqual({
       status: 409,
       code: "proposal_status",
     });
-    expect(asked.length).toBe(reads);
+    expect(asked()).toBe(reads);
   });
 
   it("approve, merge and reject: who may, from which status, and who is told", async () => {
@@ -1922,7 +1933,8 @@ describe("ProposalService", () => {
     });
 
     // A new service over the same store reads the same record.
-    const again = new ProposalService({ gateway, agents, root, log });
+    const again = new ProposalService({
+      ...offline(), gateway, agents, root, log });
     expect((await again.get(PROJECT, ORG, n, BOSS)).events.at(-1)).toMatchObject({
       kind: "rejected",
       by: "agent:acme_ceo",
@@ -2004,6 +2016,7 @@ describe("ProposalService", () => {
     });
     // Replayed from the file, the same facts stand.
     const replay = new ProposalService({
+      ...offline(),
       gateway,
       root,
       log: { line: () => {} },
@@ -2093,7 +2106,8 @@ describe("ProposalService", () => {
       code: "comment_sent",
     });
     // A new service over the same store reads the same view.
-    const again = new ProposalService({ gateway, agents, root, log });
+    const again = new ProposalService({
+      ...offline(), gateway, agents, root, log });
     const replayed = await again.get(PROJECT, ORG, n, BOSS);
     expect(replayed.comments.map((x) => [x.id, x.text, x.batchId !== null])).toEqual([
       [sent.id, "sent words", true],
@@ -2158,7 +2172,8 @@ describe("ProposalService", () => {
     });
     expect(gateway.desks).toHaveLength(desks);
     // A new service over the same store reads the same brief.
-    const again = new ProposalService({ gateway, agents, root, log });
+    const again = new ProposalService({
+      ...offline(), gateway, agents, root, log });
     expect((await again.get(PROJECT, ORG, n, BOSS)).brief).toBe("Batched ticket notices");
     expect((await again.list(PROJECT, ORG, BOSS)).proposals[0]?.title).toBe(
       "Batch the ticket notices",
@@ -2250,7 +2265,8 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
-    const again = new ProposalService({ gateway, agents, root, log });
+    const again = new ProposalService({
+      ...offline(), gateway, agents, root, log });
     const replayed = await again.get(PROJECT, ORG, n, BOSS);
     expect(replayed).toEqual(await service.get(PROJECT, ORG, n, BOSS));
     expect(replayed.status).toBe("ready");

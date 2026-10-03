@@ -30,7 +30,7 @@ import type {
   StatusPlan,
   Written,
 } from "./ports.js";
-import { immediate, openCompanyDb, PROPOSAL_SCHEMA } from "./schema.js";
+import { GRAPH_SCHEMA, immediate, openCompanyDb, PROPOSAL_SCHEMA } from "./schema.js";
 import { ProposalReads } from "./store.js";
 
 const notFound = (number: number): ProposalError =>
@@ -44,9 +44,12 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
     super(db);
   }
 
-  /** Opens (creating when absent) the store over an organization's `company.db`. */
+  /**
+   * Opens (creating when absent) an organization's `company.db` with this plugin's tables — the
+   * proposals' and the graph's (graph-store.ts shares the connection).
+   */
   static open(file: string, now?: () => number): SqliteProposalStore {
-    return new SqliteProposalStore(openCompanyDb(file, PROPOSAL_SCHEMA), now);
+    return new SqliteProposalStore(openCompanyDb(file, PROPOSAL_SCHEMA + GRAPH_SCHEMA), now);
   }
 
   close(): void {
