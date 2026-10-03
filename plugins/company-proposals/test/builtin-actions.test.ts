@@ -34,6 +34,7 @@ import {
   proposalContributions,
   type ActionApp,
 } from "./action-harness.js";
+import { DOC } from "./fake-org.js";
 
 const PROJECT = "proj";
 const ORG = "acme";
@@ -303,15 +304,6 @@ class Gateway implements OrgGateway {
   notifyProject(_projectId: string, _event: ServerEvent): void {}
 }
 
-const DOC = `---
-title: Batch the notices
----
-
-## Change
-
-One sweep.
-`;
-
 describe("through the Action routes", () => {
   let root: string;
   let gateway: Gateway;
@@ -324,6 +316,9 @@ describe("through the Action routes", () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-builtin-"));
     gateway = new Gateway();
     gateway.org.workspace = root;
+    // The file DOC's scope names.
+    await fs.mkdir(path.join(root, "src"), { recursive: true });
+    await fs.writeFile(path.join(root, "src", "notices.ts"), "export {};\n");
     const mirror = new FakeMirror();
     service = new ProposalService({
       gateway,

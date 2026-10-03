@@ -1316,7 +1316,8 @@ export class FakeServer {
       d?: string,
       sent: Json = params,
     ): Response | Promise<Response> =>
-      this.handleProposals(m, org, b, c, d, { ...sent, ...claims }, url);
+      // The old implement route read the implementer from `agentId`: the parameter wins over the claim.
+      this.handleProposals(m, org, b, c, d, { ...claims, ...sent }, url);
     let answer: Response | Promise<Response>;
     switch (key) {
       case "proposal.create":

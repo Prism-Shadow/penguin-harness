@@ -110,9 +110,10 @@ describe("SqliteProposalStore", () => {
     queue = store.list(boss);
     expect(queue.find((q) => q.number === a)!.unread).toBe(0);
     expect(store.readSeq("boss", a)).toBe(store.get(a)!.seq);
-    // An employee has a read position of its own, keyed by its principal.
+    // An employee has a read position of its own, keyed by its principal; its own revisions
+    // are not news to it, the creation is.
     const dev = { principal: "agent:acme_dev", reader: "agent:acme_dev" };
-    expect(store.list(dev).find((q) => q.number === a)!.unread).toBe(2);
+    expect(store.list(dev).find((q) => q.number === a)!.unread).toBe(1);
     store.markRead("agent:acme_dev", a, store.get(a)!.seq);
     expect(store.list(dev).find((q) => q.number === a)!.unread).toBe(0);
     expect(store.list(boss).find((q) => q.number === b)!.unread).toBe(1);

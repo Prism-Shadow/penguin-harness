@@ -128,8 +128,10 @@ export function actionApp(opts: {
       if (actor.agentId !== undefined) q.set("agentId", actor.agentId);
       const claims = q.toString();
       const sep = suffix.includes("?") ? "&" : "?";
+      // The listing is `…/actions`, `…/actions?subject=`: no trailing slash.
+      const rest = suffix === "/" ? "" : suffix.startsWith("/?") ? suffix.slice(1) : suffix;
       return send(
-        `${base}${suffix}${claims === "" ? "" : `${sep}${claims}`}`,
+        `${base}${rest}${claims === "" ? "" : `${sep}${claims}`}`,
         { method: "GET" },
         actor,
       );
