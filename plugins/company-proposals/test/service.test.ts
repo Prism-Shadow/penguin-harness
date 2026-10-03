@@ -233,7 +233,13 @@ describe("ProposalService", () => {
     lines.length = 0;
     githubCalls.length = 0;
     service = new ProposalService({
-      ...offline(), gateway, agents, root, log, gh: githubGh });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+      gh: githubGh,
+    });
   });
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -343,7 +349,8 @@ describe("ProposalService", () => {
     // The only git the read runs is the workspace's `git remote -v` (the impl registrations
     // above refreshed the graph, which read it too); nothing reaches a remote.
     expect(gitCalls.length).toBeGreaterThan(0);
-    for (const c of gitCalls) expect(c).toEqual([expect.stringMatching(/workspace$/), "remote", "-v"]);
+    for (const c of gitCalls)
+      expect(c).toEqual([expect.stringMatching(/workspace$/), "remote", "-v"]);
 
     // Nothing set: the workspace remote holding the impl PR wins over `origin`, on the repository's
     // default branch while the stack base is empty, and the other remote annotates the graph.
@@ -593,7 +600,13 @@ describe("ProposalService", () => {
     gateway = new FakeGateway();
     githubCalls.length = 0;
     service = new ProposalService({
-      ...offline(), gateway, agents, root, log, gh: githubGh });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+      gh: githubGh,
+    });
     expect(await refused(() => service.list(PROJECT, ORG, OUTSIDER))).toEqual({
       status: 403,
       code: "project_access",
@@ -1082,7 +1095,12 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     const again = new ProposalService({
-      ...offline(), gateway, root, agents, log: { line: () => {} } });
+      ...offline(),
+      gateway,
+      root,
+      agents,
+      log: { line: () => {} },
+    });
     const read = await again.get(PROJECT, ORG, n, BOSS);
     expect(read.tests).toEqual([]);
     expect(storeOf(root, (s) => s.revision(n, 1)?.tests)).toEqual([]);
@@ -1501,7 +1519,12 @@ describe("ProposalService", () => {
       expect(gateway.desks.slice(before)).toHaveLength(2);
       // A new service over the same store reads the same discussions.
       const again = new ProposalService({
-      ...offline(), gateway, agents, root, log });
+        ...offline(),
+        gateway,
+        agents,
+        root,
+        log,
+      });
       expect((await again.get(PROJECT, ORG, n, BOSS)).discussions).toEqual(
         (await service.get(PROJECT, ORG, n, BOSS)).discussions,
       );
@@ -1661,7 +1684,14 @@ describe("ProposalService", () => {
       cr("x/y", 42, { head: "b".repeat(40), branch: "fix", state: "merged" }),
     ]);
     service = new ProposalService({
-      ...offline(), gateway, agents, root, log, gh: githubGh, forge });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+      gh: githubGh,
+      forge,
+    });
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author);
@@ -1744,7 +1774,14 @@ describe("ProposalService", () => {
     };
     pull("open", "main");
     service = new ProposalService({
-      ...offline(), gateway, agents, root, log, gh: githubGh, forge });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+      gh: githubGh,
+      forge,
+    });
 
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
@@ -1937,7 +1974,12 @@ describe("ProposalService", () => {
 
     // A new service over the same store reads the same record.
     const again = new ProposalService({
-      ...offline(), gateway, agents, root, log });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+    });
     expect((await again.get(PROJECT, ORG, n, BOSS)).events.at(-1)).toMatchObject({
       kind: "rejected",
       by: "agent:acme_ceo",
@@ -2110,7 +2152,12 @@ describe("ProposalService", () => {
     });
     // A new service over the same store reads the same view.
     const again = new ProposalService({
-      ...offline(), gateway, agents, root, log });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+    });
     const replayed = await again.get(PROJECT, ORG, n, BOSS);
     expect(replayed.comments.map((x) => [x.id, x.text, x.batchId !== null])).toEqual([
       [sent.id, "sent words", true],
@@ -2176,7 +2223,12 @@ describe("ProposalService", () => {
     expect(gateway.desks).toHaveLength(desks);
     // A new service over the same store reads the same brief.
     const again = new ProposalService({
-      ...offline(), gateway, agents, root, log });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+    });
     expect((await again.get(PROJECT, ORG, n, BOSS)).brief).toBe("Batched ticket notices");
     expect((await again.list(PROJECT, ORG, BOSS)).proposals[0]?.title).toBe(
       "Batch the ticket notices",
@@ -2269,7 +2321,12 @@ describe("ProposalService", () => {
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
     const again = new ProposalService({
-      ...offline(), gateway, agents, root, log });
+      ...offline(),
+      gateway,
+      agents,
+      root,
+      log,
+    });
     const replayed = await again.get(PROJECT, ORG, n, BOSS);
     expect(replayed).toEqual(await service.get(PROJECT, ORG, n, BOSS));
     expect(replayed.status).toBe("ready");

@@ -30,7 +30,9 @@ async function refusal(run: Promise<unknown>): Promise<{ status: number; code: s
 }
 
 /** Every roadmap event of the organization, in the order written, read from its store on disk. */
-async function eventsOf(root: string): Promise<Array<{ kind: string; number: number; by: string; note?: string }>> {
+async function eventsOf(
+  root: string,
+): Promise<Array<{ kind: string; number: number; by: string; note?: string }>> {
   const store = SqliteRoadmapStore.open(companyDbPath(root, P, O));
   try {
     return store

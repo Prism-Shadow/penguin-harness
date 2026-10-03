@@ -8,9 +8,31 @@ import { describe, expect, it } from "vitest";
 import { SqliteRoadmapStore, briefSha, type DraftItem } from "../src/index.js";
 
 const ITEMS: DraftItem[] = [
-  { key: "ledger", kind: "proposal", title: "Ledger", brief: "An append-only ledger.", owner: "dev", cites: ["Why"] },
-  { key: "page", kind: "proposal", title: "Page", brief: "A page.", owner: "web", cites: ["Why"], stackedOn: null },
-  { key: "child", kind: "roadmap", title: "Child", brief: "More.", employees: ["dev"], cites: ["Why"] },
+  {
+    key: "ledger",
+    kind: "proposal",
+    title: "Ledger",
+    brief: "An append-only ledger.",
+    owner: "dev",
+    cites: ["Why"],
+  },
+  {
+    key: "page",
+    kind: "proposal",
+    title: "Page",
+    brief: "A page.",
+    owner: "web",
+    cites: ["Why"],
+    stackedOn: null,
+  },
+  {
+    key: "child",
+    kind: "roadmap",
+    title: "Child",
+    brief: "More.",
+    employees: ["dev"],
+    cites: ["Why"],
+  },
 ];
 
 function opened(): SqliteRoadmapStore {
@@ -100,7 +122,9 @@ describe("SqliteRoadmapStore", () => {
       by: "user:boss",
     });
     for (const table of ["roadmap_drafts", "roadmap_approvals", "roadmap_events"]) {
-      expect(() => store.db.prepare(`DELETE FROM ${table}`).run(), table).toThrow(/history_append_only/);
+      expect(() => store.db.prepare(`DELETE FROM ${table}`).run(), table).toThrow(
+        /history_append_only/,
+      );
       expect(() => store.db.prepare(`UPDATE ${table} SET by = 'x'`).run(), table).toThrow(
         /history_append_only/,
       );

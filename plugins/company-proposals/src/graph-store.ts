@@ -298,7 +298,13 @@ export class SqliteGraphStore implements GraphStore {
         );
         const prStatus: ProposalPrStatus =
           cr.state === "open" ? (cr.draft ? "draft" : "open") : cr.state;
-        status.run(`${cr.repo.toLowerCase()}#${cr.number}`, prStatus, cr.base, cr.defaultBranch, at);
+        status.run(
+          `${cr.repo.toLowerCase()}#${cr.number}`,
+          prStatus,
+          cr.base,
+          cr.defaultBranch,
+          at,
+        );
       }
       const cmp = this.q(
         `INSERT INTO graph_comparisons (repo, from_sha, to_sha, relation, ahead, behind, merge_base, empty, used_at)
@@ -316,9 +322,9 @@ export class SqliteGraphStore implements GraphStore {
       if (w.snapshot !== null) {
         this.insertSnapshot(w.repo, w.snapshot.base, w.snapshot.inputKey, w.snapshot.graph, at);
       }
-      this.q(
-        `INSERT INTO graph_refresh (repo) VALUES (?) ON CONFLICT (repo) DO NOTHING`,
-      ).run(w.repo);
+      this.q(`INSERT INTO graph_refresh (repo) VALUES (?) ON CONFLICT (repo) DO NOTHING`).run(
+        w.repo,
+      );
       this.q(
         `UPDATE graph_refresh SET unchanged = ?, next_probe_at = ?, default_branch = coalesce(?, default_branch),
            last_ok_at = ?, last_error = NULL WHERE repo = ?`,

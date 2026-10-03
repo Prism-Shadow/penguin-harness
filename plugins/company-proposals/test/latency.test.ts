@@ -84,7 +84,10 @@ describe("latency at the scale of the largest organization", () => {
   const service = () =>
     new ProposalService({
       gateway,
-      agents: { pluginVersion: async () => ({ installed: null, library: null }), updatePlugin: async () => {} },
+      agents: {
+        pluginVersion: async () => ({ installed: null, library: null }),
+        updatePlugin: async () => {},
+      },
       root,
       log: { line: () => undefined },
       pluginConfig: { get: () => ({ deliveryRepo: "penguin/site", deliveryBase: "dev" }) },
@@ -98,7 +101,13 @@ describe("latency at the scale of the largest organization", () => {
     let below = sha(1);
     for (let n = 1; n <= PULLS; n++) {
       const head = sha(1000 + n);
-      pulls.push(cr("penguin/site", n, { head, branch: `feat/${n}`, base: n === 1 ? "dev" : `feat/${n - 1}` }));
+      pulls.push(
+        cr("penguin/site", n, {
+          head,
+          branch: `feat/${n}`,
+          base: n === 1 ? "dev" : `feat/${n - 1}`,
+        }),
+      );
       refs.set(`refs/pull/${n}/head`, head);
       comparisons.set(`${below}...${head}`, rel("ahead", 1, 0, below));
       below = head;
@@ -139,7 +148,11 @@ describe("latency at the scale of the largest organization", () => {
         store.setImpl(number, () => ({
           head: null,
           base: null,
-          pr: { url: `https://github.com/penguin/site/pull/${i}`, label: `penguin/site#${i}`, key: `penguin/site#${i}` },
+          pr: {
+            url: `https://github.com/penguin/site/pull/${i}`,
+            label: `penguin/site#${i}`,
+            key: `penguin/site#${i}`,
+          },
           by: "agent:dev",
         }));
       }

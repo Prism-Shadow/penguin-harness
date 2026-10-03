@@ -220,7 +220,8 @@ export class ProposalService {
       windowMs: () => this.graphConfig().windowMs,
       mirrorFor:
         deps.mirrorFor ??
-        ((orgDir, repo) => new LocalGitMirror({ dir: mirrorDir(orgDir, repo), url: githubUrl(repo) })),
+        ((orgDir, repo) =>
+          new LocalGitMirror({ dir: mirrorDir(orgDir, repo), url: githubUrl(repo) })),
       forgeFor: (project) => (project.forge === "github" ? forge : new NoForge()),
       probe: deps.probe ?? fetchProbe(),
     });
@@ -955,7 +956,8 @@ export class ProposalService {
       this.rules.publish(p, caller);
       this.rules.revision(p, revision);
       const next = this.rules.afterPublish(p);
-      approvedRevision = p.status === "approved" && next.status !== "approved" ? p.approvedRevision : null;
+      approvedRevision =
+        p.status === "approved" && next.status !== "approved" ? p.approvedRevision : null;
       return {
         revision,
         title: doc.title,
@@ -1075,7 +1077,8 @@ export class ProposalService {
     const before = this.requireProposal(store, number);
     // A person and the implementer report on their word. Anybody else in the organization
     // reports on the forge's: the impl PR merged into its repository's default branch, asked now.
-    if (this.rules.merged(before, caller).confirmWithForge) await this.requireLanded(stores, before);
+    if (this.rules.merged(before, caller).confirmWithForge)
+      await this.requireLanded(stores, before);
     const written = store.setStatus(number, (p) => {
       this.rules.merged(p, caller);
       return { status: "merged", by: caller.principal };
@@ -1693,7 +1696,8 @@ export class ProposalService {
     const stores = this.stores.get(key);
     if (stores === undefined) return;
     void this.deps.gateway.organization(projectId, orgId).then((org) => {
-      if (org !== null) return this.graphs.kick(this.graphContext(projectId, orgId, org, stores), false);
+      if (org !== null)
+        return this.graphs.kick(this.graphContext(projectId, orgId, org, stores), false);
     });
   }
 

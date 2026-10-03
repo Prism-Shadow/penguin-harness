@@ -143,7 +143,11 @@ export class GraphRefresher {
     const checkedAt = new Date(this.now()).toISOString();
     if (project.repo === null) {
       // No delivery repository: the base branch alone; the deployments still get probed.
-      if (registered.length > 0 && state.running === null && this.now() - state.startedAt >= this.windowMs()) {
+      if (
+        registered.length > 0 &&
+        state.running === null &&
+        this.now() - state.startedAt >= this.windowMs()
+      ) {
         void this.start(ctx, false);
       }
       const graph = buildGraph({
@@ -198,7 +202,9 @@ export class GraphRefresher {
       errors: [
         ...errors,
         ...graph.errors,
-        ...(refresh.lastError !== null ? [`${repo}: last refresh failed: ${refresh.lastError}`] : []),
+        ...(refresh.lastError !== null
+          ? [`${repo}: last refresh failed: ${refresh.lastError}`]
+          : []),
       ],
       checkedAt: snapshot.checkedAt,
       deployments,
@@ -249,7 +255,9 @@ export class GraphRefresher {
       const mirror = this.deps.mirrorFor(ctx.orgDir, repo);
       const remote = await mirror.lsRemote(signal);
       const before = store.refreshState(repo);
-      const base = project.baseDeclared ? project.base : (remote.head ?? before.defaultBranch ?? project.base);
+      const base = project.baseDeclared
+        ? project.base
+        : (remote.head ?? before.defaultBranch ?? project.base);
       const graphProject: GraphProject = { repo, base, origins: project.origins };
       const previous = store.refs(repo);
       const moved =
@@ -262,7 +270,13 @@ export class GraphRefresher {
       const deploymentsUnplaced = commits.some(
         (c) => ![...compared.keys()].some((k) => k.endsWith(`...${c}`)),
       );
-      if (!moved && !force && latest !== null && !incomplete(latest.graph) && !deploymentsUnplaced) {
+      if (
+        !moved &&
+        !force &&
+        latest !== null &&
+        !incomplete(latest.graph) &&
+        !deploymentsUnplaced
+      ) {
         const unchanged = before.unchanged + 1;
         store.probeUnchanged(
           repo,

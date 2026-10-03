@@ -186,9 +186,7 @@ export class ProposalReads {
         ? undefined
         : (this.q(READS.headRevision).get(number, revision) as Row | undefined);
     const sessions = this.q(READS.sessions).all(number) as Row[];
-    const comments = (
-      this.q(READS.comments).all(number) as Row[]
-    ).map(commentOf);
+    const comments = (this.q(READS.comments).all(number) as Row[]).map(commentOf);
     const batches = this.q(
       `SELECT id, revision FROM proposal_batches WHERE number = ? AND open = 1 ORDER BY at, id`,
     ).all(number) as Row[];
@@ -207,35 +205,29 @@ export class ProposalReads {
       scope: head === undefined ? [] : (JSON.parse(str(head.scope)) as Proposal["scope"]),
       tests: head === undefined ? [] : (JSON.parse(str(head.tests)) as Proposal["tests"]),
       sections: head === undefined ? [] : (JSON.parse(str(head.sections)) as Proposal["sections"]),
-      materials: (
-        this.q(READS.materials).all(number) as Row[]
-      ).map(materialOf),
+      materials: (this.q(READS.materials).all(number) as Row[]).map(materialOf),
       impl: implOf(
         this.q(`SELECT * FROM proposal_impls WHERE number = ?`).get(number) as Row | undefined,
       ),
       sessions: sessions.filter((s) => s.kind === "implementation").map((s) => str(s.session_id)),
       discussions: sessions
         .filter((s) => s.kind === "discussion")
-        .map(
-          (s): ProposalDiscussion => ({
-            sessionId: str(s.session_id),
-            agentId: str(s.agent_id),
-            by: str(s.by),
-            at: str(s.at),
-            concluded:
-              s.concluded_by === null
-                ? null
-                : {
-                    by: str(s.concluded_by),
-                    at: str(s.concluded_at),
-                    text: str(s.conclusion ?? ""),
-                  },
-          }),
-        ),
+        .map((s): ProposalDiscussion => ({
+          sessionId: str(s.session_id),
+          agentId: str(s.agent_id),
+          by: str(s.by),
+          at: str(s.at),
+          concluded:
+            s.concluded_by === null
+              ? null
+              : {
+                  by: str(s.concluded_by),
+                  at: str(s.concluded_at),
+                  text: str(s.conclusion ?? ""),
+                },
+        })),
       comments,
-      events: (
-        this.q(READS.events).all(number) as Row[]
-      ).map(eventOf),
+      events: (this.q(READS.events).all(number) as Row[]).map(eventOf),
       openBatches: batches.map((b) => ({
         id: str(b.id),
         revision: num(b.revision),
@@ -264,9 +256,11 @@ export class ProposalReads {
   }
 
   revisions(number: number): Array<{ revision: number; by: string; at: string }> {
-    return (
-      this.q(READS.revisionList).all(number) as Row[]
-    ).map((r) => ({ revision: num(r.revision), by: str(r.by), at: str(r.at) }));
+    return (this.q(READS.revisionList).all(number) as Row[]).map((r) => ({
+      revision: num(r.revision),
+      by: str(r.by),
+      at: str(r.at),
+    }));
   }
 
   revision(number: number, revision: number): ProposalRevision | null {
@@ -307,14 +301,12 @@ export class ProposalReads {
   /** The lookups a plan may make inside a write transaction. */
   protected tx(): ProposalTx {
     return {
-      implsByPr: (prKey) =>
-        (
-          this.q(READS.implByPr).all(prKey) as Row[]
-        ).map((r) => num(r.number)),
+      implsByPr: (prKey) => (this.q(READS.implByPr).all(prKey) as Row[]).map((r) => num(r.number)),
       implsByHead: (headKey) =>
-        (
-          this.q(READS.implByHead).all(headKey) as Row[]
-        ).map((r) => ({ number: num(r.number), status: str(r.status) as ProposalStatus })),
+        (this.q(READS.implByHead).all(headKey) as Row[]).map((r) => ({
+          number: num(r.number),
+          status: str(r.status) as ProposalStatus,
+        })),
     };
   }
 }

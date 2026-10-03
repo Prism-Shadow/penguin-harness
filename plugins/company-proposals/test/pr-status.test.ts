@@ -6,7 +6,13 @@
  * tests start node in place of `gh`.
  */
 import { describe, expect, it } from "vitest";
-import { PrStatusReader, STATUS_TTL_MS, ghRunner, parsePullUrl, statusOf } from "../src/pr-status.js";
+import {
+  PrStatusReader,
+  STATUS_TTL_MS,
+  ghRunner,
+  parsePullUrl,
+  statusOf,
+} from "../src/pr-status.js";
 import { GithubForge, SqliteGraphStore, SqliteProposalStore } from "../src/index.js";
 import { FakeForge, cr } from "./graph-fakes.js";
 
@@ -97,7 +103,11 @@ describe("PrStatusReader", () => {
     const b = r.read("acme", store, [URL]);
     await Promise.all([a.refreshed, b.refreshed]);
     expect(forge.queries).toEqual([{ repo: "o/r", numbers: [7, 8] }]);
-    expect(r.read("acme", store, ["https://github.com/o/r/pull/8"]).statuses.get("https://github.com/o/r/pull/8")?.status).toBe("merged");
+    expect(
+      r
+        .read("acme", store, ["https://github.com/o/r/pull/8"])
+        .statuses.get("https://github.com/o/r/pull/8")?.status,
+    ).toBe("merged");
   });
 
   it("keeps a failure as long as an answer and logs it, the last status standing", async () => {
@@ -123,14 +133,18 @@ describe("PrStatusReader", () => {
   it("landing asks the forge past the cache, lands only a merge into the default branch, and writes back", async () => {
     const { r, forge, store } = reader();
     await r.read("acme", store, [URL]).refreshed;
-    forge.pulls = [cr("o/r", 7, { head: "a".repeat(40), branch: "x", state: "merged", base: "dev" })];
+    forge.pulls = [
+      cr("o/r", 7, { head: "a".repeat(40), branch: "x", state: "merged", base: "dev" }),
+    ];
     expect(await r.landing(store, URL)).toMatchObject({
       status: "merged",
       base: "dev",
       defaultBranch: "main",
       landed: false,
     });
-    forge.pulls = [cr("o/r", 7, { head: "a".repeat(40), branch: "x", state: "merged", base: "main" })];
+    forge.pulls = [
+      cr("o/r", 7, { head: "a".repeat(40), branch: "x", state: "merged", base: "main" }),
+    ];
     expect(await r.landing(store, URL)).toMatchObject({ status: "merged", landed: true });
     // The fresh answer is what the page reads next.
     expect(r.read("acme", store, [URL]).statuses.get(URL)?.status).toBe("merged");

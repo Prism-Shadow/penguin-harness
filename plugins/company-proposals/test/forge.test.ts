@@ -64,7 +64,11 @@ describe("GithubForge", () => {
       [2, "open", true, "feat/2", "dev"],
       [3, "open", false, "feat/3", "dev"],
     ]);
-    expect(out[0]).toMatchObject({ repo: "acme/site", head: "a".repeat(40), defaultBranch: "main" });
+    expect(out[0]).toMatchObject({
+      repo: "acme/site",
+      head: "a".repeat(40),
+      defaultBranch: "main",
+    });
     expect(queries).toHaveLength(2);
     expect(queries[1]).toContain('after: "c1"');
   });
@@ -83,7 +87,10 @@ describe("GithubForge", () => {
         : { data: { repository: { n5: node(5, { state: "MERGED" }), n6: null } } },
     );
     const forge = new GithubForge(gh);
-    const shut = await forge.listChangeRequests({ repo: "acme/site", shutOn: ["feat/old", "feat/done"] });
+    const shut = await forge.listChangeRequests({
+      repo: "acme/site",
+      shutOn: ["feat/old", "feat/done"],
+    });
     expect(shut.map((c) => [c.number, c.state, c.branch])).toEqual([
       [21, "closed", "feat/old"],
       [22, "merged", "feat/done"],

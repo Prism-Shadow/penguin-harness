@@ -146,7 +146,10 @@ export class PrStatusReader {
     orgKey: string,
     store: Pick<GraphStore, "prStatuses" | "putPrStatuses">,
     urls: readonly string[],
-  ): { statuses: Map<string, { status: ProposalPrStatus; checkedAt: string }>; refreshed: Promise<void> } {
+  ): {
+    statuses: Map<string, { status: ProposalPrStatus; checkedAt: string }>;
+    refreshed: Promise<void>;
+  } {
     const keys = new Map<string, string>();
     for (const url of urls) {
       const key = statusKey(url);
@@ -158,7 +161,8 @@ export class PrStatusReader {
     for (const [url, key] of keys) {
       const row = rows.get(key);
       if (row?.status != null) statuses.set(url, { status: row.status, checkedAt: row.checkedAt });
-      if (row === undefined || this.now() - Date.parse(row.checkedAt) >= STATUS_TTL_MS) stale.add(key);
+      if (row === undefined || this.now() - Date.parse(row.checkedAt) >= STATUS_TTL_MS)
+        stale.add(key);
     }
     const refreshed =
       stale.size === 0 ? Promise.resolve() : this.refresh(orgKey, store, [...stale]);
@@ -211,7 +215,14 @@ export class PrStatusReader {
         const error = err instanceof Error ? err.message : String(err);
         // A failure is kept as long as an answer, so a broken URL is not asked on every read.
         for (const n of numbers) {
-          rows.push({ key: `${repo}#${n}`, status: null, base: null, defaultBranch: null, checkedAt, error });
+          rows.push({
+            key: `${repo}#${n}`,
+            status: null,
+            base: null,
+            defaultBranch: null,
+            checkedAt,
+            error,
+          });
         }
         this.deps.log(`[company-proposals] PR status not read for ${repo}: ${error}`);
       }

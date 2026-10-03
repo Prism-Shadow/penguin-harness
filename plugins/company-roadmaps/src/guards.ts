@@ -9,7 +9,13 @@
  * Each is synchronous and pure over the roadmap it is given; the write transaction calls it again
  * with the roadmap as it stands there, so nothing slips between a check and its write.
  */
-import { RoadmapError, type ApprovalRole, type DraftItem, type Roadmap, type RoadmapStatus } from "./domain.js";
+import {
+  RoadmapError,
+  type ApprovalRole,
+  type DraftItem,
+  type Roadmap,
+  type RoadmapStatus,
+} from "./domain.js";
 
 /** The caller, resolved: the principal a write is recorded under, and the employee it is, if one. */
 export interface Caller {
@@ -115,7 +121,8 @@ export const defaultRules = {
     // before the approvals, which is what the gate is there to stop.
     const existing =
       d.stage === "brief" &&
-      (caller.agentId === null || (caller.agentId === moderatorOf(r) && caller.agentId !== d.owner));
+      (caller.agentId === null ||
+        (caller.agentId === moderatorOf(r) && caller.agentId !== d.owner));
     if (d.stage === "brief" && !existing) {
       throw new RoadmapError(
         409,

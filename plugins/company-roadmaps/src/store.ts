@@ -113,9 +113,7 @@ export class SqliteRoadmapStore implements RoadmapStore {
   // ---------------------------------------------------------------------------
 
   list(filter: { channel?: string; status?: RoadmapStatus } = {}): Roadmap[] {
-    const heads = (
-      this.q(`SELECT * FROM roadmaps ORDER BY number`).all() as Row[]
-    ).filter(
+    const heads = (this.q(`SELECT * FROM roadmaps ORDER BY number`).all() as Row[]).filter(
       (r) =>
         (filter.channel === undefined || r.channel_id === filter.channel) &&
         (filter.status === undefined || r.status === filter.status),
@@ -155,7 +153,9 @@ export class SqliteRoadmapStore implements RoadmapStore {
       return out;
     };
     const items = group(
-      this.q(`SELECT * FROM roadmap_items ${where} ORDER BY number, position`).all(...args) as Row[],
+      this.q(`SELECT * FROM roadmap_items ${where} ORDER BY number, position`).all(
+        ...args,
+      ) as Row[],
       itemOf,
     );
     const clones = group(
@@ -240,11 +240,10 @@ export class SqliteRoadmapStore implements RoadmapStore {
     return Number(r.value);
   }
 
-  write(
-    entries: RoadmapWrite | readonly RoadmapWrite[],
-    check?: (r: Roadmap) => void,
-  ): Roadmap {
-    const list: readonly RoadmapWrite[] = Array.isArray(entries) ? entries : [entries as RoadmapWrite];
+  write(entries: RoadmapWrite | readonly RoadmapWrite[], check?: (r: Roadmap) => void): Roadmap {
+    const list: readonly RoadmapWrite[] = Array.isArray(entries)
+      ? entries
+      : [entries as RoadmapWrite];
     const first = list[0]!;
     immediate(this.db, () => {
       const at = new Date(this.now()).toISOString();

@@ -49,7 +49,12 @@ function changeRequestOf(repo: string, n: Node): ChangeRequest {
 
 function splitRepo(repo: string): [string, string] {
   const [owner, name] = repo.split("/");
-  if (owner === undefined || name === undefined || !GITHUB_NAME.test(owner) || !GITHUB_NAME.test(name)) {
+  if (
+    owner === undefined ||
+    name === undefined ||
+    !GITHUB_NAME.test(owner) ||
+    !GITHUB_NAME.test(name)
+  ) {
     throw new Error(`${repo}: not a GitHub repository name`);
   }
   return [owner, name];
@@ -131,7 +136,11 @@ export class GithubForge implements Forge {
   }
 
   /** Numbers in one query; when one of them fails the whole answer (a number that is no PR), each is asked alone. */
-  private async byNumbers(repo: string, repoArgs: string, numbers: number[]): Promise<ChangeRequest[]> {
+  private async byNumbers(
+    repo: string,
+    repoArgs: string,
+    numbers: number[],
+  ): Promise<ChangeRequest[]> {
     const ask = async (list: number[]) => {
       const fields = list.map((n) => `n${n}: pullRequest(number: ${n}) { ${FIELDS} }`).join(" ");
       const data = await this.graphql<{ repository: Record<string, Node | null> }>(

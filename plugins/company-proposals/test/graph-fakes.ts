@@ -3,7 +3,13 @@
  * and a GitMirror answering from a map of refs and a table of comparisons — each counting its
  * calls, so a test can say what a refresh asked and what it did not.
  */
-import type { ChangeRequest, ChangeRequestQuery, Forge, GitMirror, RemoteRefs } from "../src/ports.js";
+import type {
+  ChangeRequest,
+  ChangeRequestQuery,
+  Forge,
+  GitMirror,
+  RemoteRefs,
+} from "../src/ports.js";
 import type { Comparison } from "../src/pr-chain.js";
 
 /** A change request with the fields a test rarely cares about filled in. */
@@ -62,10 +68,12 @@ export class FakeForge implements Forge {
     if (this.failWith !== null) return null;
     const ref = this.parseUrl(url);
     const pull = this.pulls.find(
-      (p) => ref !== null && p.repo.toLowerCase() === ref.repo.toLowerCase() && p.number === ref.number,
+      (p) =>
+        ref !== null && p.repo.toLowerCase() === ref.repo.toLowerCase() && p.number === ref.number,
     );
     if (pull === undefined) return null;
-    const status = pull.state === "open" ? (pull.draft ? ("draft" as const) : ("open" as const)) : pull.state;
+    const status =
+      pull.state === "open" ? (pull.draft ? ("draft" as const) : ("open" as const)) : pull.state;
     return {
       status,
       base: pull.base,

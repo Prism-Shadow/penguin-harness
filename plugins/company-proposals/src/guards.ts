@@ -11,7 +11,11 @@
  * its write. The rules that tell a person from an employee are kept as they are.
  */
 import { createHash } from "node:crypto";
-import type { ProposalBranchRef, ProposalComment, ProposalStatus } from "@prismshadow/penguin-server/api";
+import type {
+  ProposalBranchRef,
+  ProposalComment,
+  ProposalStatus,
+} from "@prismshadow/penguin-server/api";
 import { ProposalError, type Proposal } from "./domain.js";
 import { refKey, refLabel } from "./impl-branch.js";
 import type { ProposalTx } from "./ports.js";
@@ -279,7 +283,10 @@ export const defaultRules = {
     if (impl.pr !== null) {
       const other = tx.implsByPr(impl.pr.key).find((n) => n !== number);
       if (other !== undefined) {
-        throw conflict("impl_pr_taken", `${impl.pr.label} is already the impl PR of proposal #${other}.`);
+        throw conflict(
+          "impl_pr_taken",
+          `${impl.pr.label} is already the impl PR of proposal #${other}.`,
+        );
       }
     }
     if (impl.head !== null) {

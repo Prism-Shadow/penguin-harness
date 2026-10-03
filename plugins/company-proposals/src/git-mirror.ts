@@ -108,7 +108,11 @@ export class LocalGitMirror implements GitMirror {
     });
   }
 
-  private async ok(args: readonly string[], timeoutMs: number, signal?: AbortSignal): Promise<string> {
+  private async ok(
+    args: readonly string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const r = await this.run(args, timeoutMs, signal);
     if (r.code !== 0) {
       const line = r.stderr.trim().split(/\r?\n/).at(-1) ?? "";
@@ -240,12 +244,16 @@ export class LocalGitMirror implements GitMirror {
   async mergeBase(a: string, b: string): Promise<string | null> {
     const r = await this.run(this.git(["merge-base", a, b]), LOCAL_TIMEOUT_MS);
     if (r.code === 1) return null;
-    if (r.code !== 0) throw new Error(`git merge-base failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+    if (r.code !== 0)
+      throw new Error(`git merge-base failed: ${r.stderr.trim() || `exit ${r.code}`}`);
     return r.stdout.trim() || null;
   }
 
   async treeEquals(a: string, b: string): Promise<boolean> {
-    const out = await this.ok(this.git(["rev-parse", `${a}^{tree}`, `${b}^{tree}`]), LOCAL_TIMEOUT_MS);
+    const out = await this.ok(
+      this.git(["rev-parse", `${a}^{tree}`, `${b}^{tree}`]),
+      LOCAL_TIMEOUT_MS,
+    );
     const [x, y] = out.trim().split("\n");
     return x !== undefined && x === y;
   }

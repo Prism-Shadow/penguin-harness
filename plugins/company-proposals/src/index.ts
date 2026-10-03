@@ -33,7 +33,13 @@ import { ProposalService } from "./service.js";
 import { DeployService } from "./deploy.js";
 import { ROUTES_ID, proposalRoutes } from "./routes.js";
 
-export { COMPANY_DB, GRAPH_SCHEMA, PROPOSAL_SCHEMA, companyDbPath, openCompanyDb } from "./schema.js";
+export {
+  COMPANY_DB,
+  GRAPH_SCHEMA,
+  PROPOSAL_SCHEMA,
+  companyDbPath,
+  openCompanyDb,
+} from "./schema.js";
 export { ProposalError } from "./domain.js";
 export type { Project, Proposal, ProposalImpl, RegisteredDeployment } from "./domain.js";
 export type * from "./ports.js";

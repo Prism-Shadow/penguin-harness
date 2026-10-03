@@ -118,8 +118,7 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
           `SELECT number, seq FROM proposals
             WHERE roadmap_number = ? AND roadmap_key = ? AND roadmap_create_key = ?`,
         ).get(c.roadmap.number, c.roadmap.key, c.roadmap.createKey) as
-          | { number: number; seq: number }
-          | undefined;
+          { number: number; seq: number } | undefined;
         if (found !== undefined) {
           return { number: Number(found.number), seq: Number(found.seq), created: false };
         }
@@ -174,10 +173,21 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
       // Every comment follows its passage into the new text; one whose passage is gone keeps
       // the revision it was last found in and is listed as a comment on that revision.
       for (const c of p.comments) this.reanchor(number, c, r.sections, r.revision);
-      this.event(number, seq, at, { kind: "revised", by: r.by, text: r.title, revision: r.revision });
+      this.event(number, seq, at, {
+        kind: "revised",
+        by: r.by,
+        text: r.title,
+        revision: r.revision,
+      });
       if (r.status === p.status) return seq;
       const next = this.nextSeq();
-      this.status(number, p, { status: r.status, by: r.by, ...(r.reason !== null ? { reason: r.reason } : {}) }, next, at);
+      this.status(
+        number,
+        p,
+        { status: r.status, by: r.by, ...(r.reason !== null ? { reason: r.reason } : {}) },
+        next,
+        at,
+      );
       return next;
     });
   }
@@ -244,7 +254,11 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
         `INSERT INTO proposal_sessions (session_id, number, kind, agent_id, by, at)
          VALUES (?, ?, 'implementation', ?, ?, ?)`,
       ).run(i.sessionId, number, i.implementer, i.by, at);
-      this.event(number, seq, at, { kind: "implementation_started", by: i.by, text: i.implementer });
+      this.event(number, seq, at, {
+        kind: "implementation_started",
+        by: i.by,
+        text: i.implementer,
+      });
     });
   }
 

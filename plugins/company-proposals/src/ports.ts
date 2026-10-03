@@ -164,7 +164,10 @@ export interface ProposalStore {
   ): Written;
   /** null from the plan: the impl stands as it is, nothing is written. */
   setImpl(number: number, plan: Plan<Proposal, ImplPlan | null>): Written | null;
-  feedback(number: number, plan: Plan<Proposal, { text: string; runtime: boolean; by: string }>): Written;
+  feedback(
+    number: number,
+    plan: Plan<Proposal, { text: string; runtime: boolean; by: string }>,
+  ): Written;
   notifyFailed(number: number, plan: Plan<Proposal, { reason: string; by: string }>): Written;
   addComment(number: number, plan: Plan<Proposal, CommentPlan>): Written;
   editComment(number: number, plan: Plan<Proposal, { id: string; text: string }>): Written;
@@ -308,7 +311,10 @@ export interface GraphStore {
   shutOn(repo: string, branch: string): ShutPull | null;
   pull(repo: string, number: number): ImplPull | null;
   /** The comparisons known among these pairs, by `from...to`. */
-  comparisons(repo: string, pairs: ReadonlyArray<readonly [string, string]>): Map<string, Comparison>;
+  comparisons(
+    repo: string,
+    pairs: ReadonlyArray<readonly [string, string]>,
+  ): Map<string, Comparison>;
   /** Every comparison whose `to` is one of these commits (a deployment's), by `from...to`. */
   comparisonsTo(repo: string, commits: readonly string[]): Map<string, Comparison>;
   snapshot(repo: string, base: string, inputKey: string): Snapshot | null;

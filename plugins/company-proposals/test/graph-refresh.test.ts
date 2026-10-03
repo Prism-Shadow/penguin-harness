@@ -128,7 +128,11 @@ describe("GraphRefresher", () => {
   it("only moves the schedule when the probe finds nothing moved: no fetch, no forge, no snapshot", async () => {
     const w = world();
     await w.refresher.read(w.ctx, { refresh: true });
-    const before = { queries: w.forge.queries.length, fetched: w.mirror.fetched.length, snaps: w.snapshots() };
+    const before = {
+      queries: w.forge.queries.length,
+      fetched: w.mirror.fetched.length,
+      snaps: w.snapshots(),
+    };
     const checked = (await w.refresher.read(w.ctx)).checkedAt;
     w.advance(5 * MIN);
     await w.refresher.read(w.ctx);
@@ -176,7 +180,9 @@ describe("GraphRefresher", () => {
   });
 
   it("doubles the interval with each quiet probe up to 30 minutes, and resets it on a change", async () => {
-    expect([0, 1, 2, 3, 4].map((u) => intervalAfter(5 * MIN, u) / MIN)).toEqual([5, 10, 20, 30, 30]);
+    expect([0, 1, 2, 3, 4].map((u) => intervalAfter(5 * MIN, u) / MIN)).toEqual([
+      5, 10, 20, 30, 30,
+    ]);
     const w = world();
     await w.refresher.read(w.ctx, { refresh: true });
     const next = () => (Date.parse(w.store.refreshState("acme/site").nextProbeAt!) - w.now()) / MIN;
@@ -234,7 +240,9 @@ describe("GraphRefresher", () => {
 
   it("runs one refresher per repository: a held lease keeps it out until it expires", async () => {
     const w = world();
-    expect(w.store.acquire("acme/site", "other", new Date(w.now() + 5 * MIN).toISOString())).toBe(true);
+    expect(w.store.acquire("acme/site", "other", new Date(w.now() + 5 * MIN).toISOString())).toBe(
+      true,
+    );
     await w.refresher.kick(w.ctx);
     expect(w.mirror.lsRemoteCalls).toBe(0);
     w.advance(5 * MIN + 1);

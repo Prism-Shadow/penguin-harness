@@ -25,7 +25,9 @@ describe("SqliteProposalStore", () => {
 
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-store-"));
-    store = SqliteProposalStore.open(path.join(dir, "company.db"), () => Date.parse("2026-10-03T00:00:00Z"));
+    store = SqliteProposalStore.open(path.join(dir, "company.db"), () =>
+      Date.parse("2026-10-03T00:00:00Z"),
+    );
   });
   afterEach(async () => {
     store.close();
@@ -109,7 +111,9 @@ describe("SqliteProposalStore", () => {
     expect(queue.find((q) => q.number === a)!.unread).toBe(0);
     expect(store.readSeq("boss", a)).toBe(store.get(a)!.seq);
     // An employee has no unread count.
-    expect(store.list({ principal: "agent:acme_dev", userId: "boss", person: false })[0]!.unread).toBe(0);
+    expect(
+      store.list({ principal: "agent:acme_dev", userId: "boss", person: false })[0]!.unread,
+    ).toBe(0);
     expect(store.revisions(a).map((r) => r.revision)).toEqual([1, 2]);
     expect(store.revision(a, 1)).toMatchObject({ title: "Revision 1", sections: SECTIONS });
     expect(store.revision(a, 3)).toBeNull();
@@ -127,7 +131,10 @@ describe("SqliteProposalStore", () => {
     const first = store.create(plan);
     const again = store.create(plan);
     expect(again).toEqual({ ...first, created: false });
-    const other = store.create(() => ({ ...plan(), roadmap: { number: 3, key: "ledger", createKey: "k2" } }));
+    const other = store.create(() => ({
+      ...plan(),
+      roadmap: { number: 3, key: "ledger", createKey: "k2" },
+    }));
     expect(other.number).toBe(first.number + 1);
   });
 

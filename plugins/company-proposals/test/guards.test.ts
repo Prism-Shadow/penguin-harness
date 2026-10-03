@@ -90,7 +90,10 @@ describe("the default rules", () => {
     });
     expect(
       defaultRules.afterPublish(proposal({ status: "approved", revision: 3, approvedRevision: 3 })),
-    ).toEqual({ status: "ready", reason: "revision 4 — approval of revision 3 no longer covers it" });
+    ).toEqual({
+      status: "ready",
+      reason: "revision 4 — approval of revision 3 no longer covers it",
+    });
     expect(defaultRules.afterPublish(proposal({ status: "drafting" }))).toEqual({
       status: "drafting",
       reason: null,
@@ -115,7 +118,10 @@ describe("the default rules", () => {
   });
 
   it("give a PR to one proposal, and a head to one proposal that is not rejected", () => {
-    const tx = (byPr: number[], byHead: Array<{ number: number; status: Proposal["status"] }>): ProposalTx => ({
+    const tx = (
+      byPr: number[],
+      byHead: Array<{ number: number; status: Proposal["status"] }>,
+    ): ProposalTx => ({
       implsByPr: () => byPr,
       implsByHead: () => byHead,
     });
@@ -127,7 +133,9 @@ describe("the default rules", () => {
     });
     expect(refusal(() => defaultRules.implUnique(7, { head: null, pr }, tx([7], [])))).toBeNull();
     expect(
-      refusal(() => defaultRules.implUnique(7, { head, pr: null }, tx([], [{ number: 3, status: "ready" }]))),
+      refusal(() =>
+        defaultRules.implUnique(7, { head, pr: null }, tx([], [{ number: 3, status: "ready" }])),
+      ),
     ).toEqual({ status: 409, code: "impl_branch_taken" });
     expect(
       refusal(() =>
@@ -166,10 +174,12 @@ describe("the default rules", () => {
       status: 403,
       code: "roadmap_only",
     });
-    expect(refusal(() => defaultRules.approve(proposal({ status: "ready" }), authorAgent))).toEqual({
-      status: 403,
-      code: "person_required",
-    });
+    expect(refusal(() => defaultRules.approve(proposal({ status: "ready" }), authorAgent))).toEqual(
+      {
+        status: 403,
+        code: "person_required",
+      },
+    );
     expect(refusal(() => defaultRules.comment(authorAgent))).toEqual({
       status: 403,
       code: "person_required",

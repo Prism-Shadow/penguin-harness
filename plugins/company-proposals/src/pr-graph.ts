@@ -120,8 +120,7 @@ export function inputsOf(
   }
   const origins = project.origins.map((o) => ({
     ...o,
-    pulls:
-      o.repo.toLowerCase() === project.repo.toLowerCase() ? null : facts.openPulls(o.repo),
+    pulls: o.repo.toLowerCase() === project.repo.toLowerCase() ? null : facts.openPulls(o.repo),
   }));
   const keyed = {
     repo: project.repo,
@@ -324,7 +323,10 @@ export class PrGraphReader {
     for (const o of project.origins) {
       if (o.repo.toLowerCase() === repo.toLowerCase() || originPulls.has(o.repo)) continue;
       try {
-        originPulls.set(o.repo, await forge.listChangeRequests({ repo: o.repo, open: true }, signal));
+        originPulls.set(
+          o.repo,
+          await forge.listChangeRequests({ repo: o.repo, open: true }, signal),
+        );
       } catch (err) {
         errors.push(`${o.repo}: open PRs not read: ${reason(err)}`);
       }
@@ -362,7 +364,9 @@ export class PrGraphReader {
     if (absentCommits.length > 0) {
       await mirror
         .fetch(absentCommits, signal !== undefined ? { signal } : {})
-        .catch((err: unknown) => this.deps.log?.(`[company-proposals] deployment commits not fetched: ${reason(err)}`));
+        .catch((err: unknown) =>
+          this.deps.log?.(`[company-proposals] deployment commits not fetched: ${reason(err)}`),
+        );
     }
 
     // The facts as read, laid out; every comparison it asks for computed in the mirror, then
@@ -373,7 +377,10 @@ export class PrGraphReader {
       openPulls: (r) =>
         r.toLowerCase() === repo.toLowerCase()
           ? openPulls
-          : (originPulls.get(r)?.filter((cr) => cr.state === "open").map(openPullOf) ??
+          : (originPulls
+              .get(r)
+              ?.filter((cr) => cr.state === "open")
+              .map(openPullOf) ??
             // Not read this time: the stored list, as a read would lay it out.
             store.openPulls(r)),
       shutOn: (branch) => shutRead.get(branch) ?? null,
