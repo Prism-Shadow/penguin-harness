@@ -874,10 +874,16 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     await n;
     expect(h.controller.tailAttached).toBe(true);
     expect(h.controller.newer).toEqual({ hasMore: false, loading: false, error: null });
-    // C, B, A + tail = 101 → shed C, then B: A and the tail remain (51).
-    expect(h.controller.windowCount).toBe(1);
-    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail", "live prompt"]);
-    expect(h.controller.outlineOffset).toBe(3);
+    // C, B, A + tail = 101 → shed C only: B (the window the reader is on) and A stay
+    // with the tail, over the budget (76) rather than evicting the reader's window.
+    expect(h.controller.windowCount).toBe(2);
+    expect(userTexts(h.controller.items)).toEqual([
+      "question B",
+      "question A",
+      "question tail",
+      "live prompt",
+    ]);
+    expect(h.controller.outlineOffset).toBe(2);
     expect(h.controller.older.hasMore).toBe(true);
     await h.controller.loadNewer({ shed: true }); // attached: nothing to do
     expect(h.loadCalls()).toBe(5);
@@ -896,8 +902,122 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(h.loadCalls()).toBe(calls);
     expect(h.controller.tailAttached).toBe(true);
     expect(h.controller.newer.hasMore).toBe(false);
-    // B, A + tail = 75 → B leaves: the tail's own units are never held twice.
-    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
+    // B, A + tail = 75, over the budget: the last two windows stay, the reader is on A
+    // and B is right above it.
+    expect(h.controller.windowCount).toBe(2);
+    expect(userTexts(h.controller.items)).toEqual(["question B", "question A", "question tail"]);
+  });
+
+  it("re-attaching an over-budget tail keeps the window the reader is on and the one just added, contiguous", async () => {
+    const h = await withRun();
+    // Two windows up: the run [C, B] ends a window short of the tail.
+    const b = h.controller.loadOlder({ shed: true });
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    const c = h.controller.loadOlder({ shed: true });
+    h.resolveLoad(bigTurn("C", 25), undefined, null, pageInfo({ before: "2:0", earlierTurns: 1 }));
+    await c;
+    expect(userTexts(h.controller.items)).toEqual(["question C", "question B"]);
+    // The detached tail grows off screen to 55 messages, past the budget on its own.
+    for (let i = 0; i < 30; i += 1) {
+      h.controller.handleOmni(at(assistantText(`live ${i}`), "2026-07-04T00:01:00.000Z"));
+    }
+
+    // The reader scrolls down from the bottom of B: the page after it reaches the tail.
+    const n = h.controller.loadNewer({ shed: true });
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
+      kind: "after",
+      cursor: "4:0",
+      until: "5:0",
+      messages: WINDOW_MESSAGES,
+    });
+    h.resolveLoad(
+      bigTurn("A", 25),
+      undefined,
+      null,
+      pageInfo({ before: "4:0", after: "5:0", earlierTurns: 3 }),
+    );
+    await n;
+    expect(h.controller.tailAttached).toBe(true);
+    // C leaves; B (under the reader) and A (just appended) stay: B ends where A starts
+    // ("4:0", the forward page's cursor) and A ends at the tail's start ("5:0").
+    expect(h.controller.windowCount).toBe(2);
+    expect(userTexts(h.controller.items)).toEqual(["question B", "question A", "question tail"]);
+    expect(h.controller.outlineOffset).toBe(2);
+    // The run's top is B's start: the next scroll-up continues from there.
+    void h.controller.loadOlder({ shed: true });
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
+      kind: "before",
+      cursor: "3:0",
+      messages: WINDOW_MESSAGES,
+    });
+  });
+
+  it("a resync that keeps the run releases a scroll-up fetch it superseded", async () => {
+    const h = await withRun();
+    const stale = h.controller.loadOlder({ shed: true });
+    expect(h.controller.older.loading).toBe(true);
+    h.controller.handleServer({ type: "resync_required" });
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({ kind: "after", cursor: "5:0" });
+    // The superseded backfill lands first and is discarded; the splice then succeeds.
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await stale;
+    h.resolveLoad(
+      bigTurn("tail", 25),
+      undefined,
+      null,
+      pageInfo({ before: "5:0", earlierTurns: 4 }),
+    );
+    await flush();
+    expect(h.controller.windowCount).toBe(1);
+    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
+    const calls = h.loadCalls();
+    void h.controller.loadOlder({ shed: true });
+    expect(h.loadCalls()).toBe(calls + 1);
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
+      kind: "before",
+      cursor: "4:0",
+      messages: WINDOW_MESSAGES,
+    });
+  });
+
+  it("a resync that keeps the run releases a scroll-down fetch it superseded", async () => {
+    const h = await withRun();
+    const b = h.controller.loadOlder({ shed: true });
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    const c = h.controller.loadOlder({ shed: true });
+    h.resolveLoad(bigTurn("C", 25), undefined, null, pageInfo({ before: "2:0", earlierTurns: 1 }));
+    await c;
+    const stale = h.controller.loadNewer({ shed: true });
+    expect(h.controller.newer.loading).toBe(true);
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad(
+      bigTurn("A", 25),
+      undefined,
+      null,
+      pageInfo({ before: "4:0", after: "5:0", earlierTurns: 3 }),
+    );
+    await stale;
+    h.resolveLoad(
+      bigTurn("tail", 25),
+      undefined,
+      null,
+      pageInfo({ before: "5:0", earlierTurns: 4 }),
+    );
+    await flush();
+    expect(h.controller.tailAttached).toBe(false);
+    expect(h.controller.windowCount).toBe(2);
+    expect(h.controller.newer).toEqual({ hasMore: true, loading: false, error: null });
+    const calls = h.loadCalls();
+    void h.controller.loadNewer({ shed: true });
+    expect(h.loadCalls()).toBe(calls + 1);
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
+      kind: "after",
+      cursor: "4:0",
+      until: "5:0",
+      messages: WINDOW_MESSAGES,
+    });
   });
 
   it("a forward page short of the tail appends a window and stays detached; a failure surfaces on newer.error", async () => {

@@ -394,9 +394,14 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     }
   };
 
-  /** Past the budget after an append or a re-attach (the reader is at the bottom of the run): shed the oldest windows, keeping what surrounds the reader. */
+  /**
+   * Past the budget after an append or a re-attach (the reader is at the bottom of the
+   * run): shed the oldest windows, keeping the last two — the one the reader is on and
+   * the one just below it. A re-attached tail does not count as one of them: the reader
+   * is still on the frozen window above it, which must not be evicted from under them.
+   */
   const shedFromTop = (): void => {
-    while (loadedMessages() > MAX_LOADED_MESSAGES && windows.length > (tailAttached ? 1 : 2)) {
+    while (loadedMessages() > MAX_LOADED_MESSAGES && windows.length > 2) {
       windows.shift();
     }
     older.hasMore = topCursor() !== null;
@@ -519,6 +524,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    */
   const rebuild = async (): Promise<void> => {
     epoch += 1;
+    // The bump discards any frontier fetch in flight, and its `finally` leaves the flag to
+    // the epoch it no longer owns; a splice that keeps the run keeps the paging state too,
+    // so the flags are released here or the frontier stays "loading" for good. No new
+    // fetch can start before this rebuild goes live (both frontiers are phase-guarded).
+    older.loading = false;
+    newer.loading = false;
     phase = "buffering";
     buffer = [];
     // Clear the pending-approvals table: an approval decided while
