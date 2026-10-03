@@ -14,5 +14,3 @@ The server can now say where its time goes (PRFC-0008). A new system setting, `t
 - A session open: `session.messages` for a windowed history read (window kind, messages, shards and bytes read) and `trace.read` for each shard read (a hash of its path, bytes, records).
 
 `GET /api/telemetry?view=probes|sessions|samples` (admins only; others get 403) summarizes the buffer per probe (count, p50, p95, max, bytes) or per session, or lists the samples; `DELETE /api/telemetry` empties it. `penguin telemetry` prints the same views and has `on`, `off` and `clear`; run inside a session it shows that session's samples unless `--all` is given.
-
-Trace event reads (`…/traces/:index` at session and Agent level) and machine job logs now replace credential-shaped fields and values — tokens, keys, passwords, PEM private keys, ssh private key paths — with `[redacted]` before they leave the server. A Trace file download stays verbatim.

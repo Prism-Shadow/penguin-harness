@@ -14,5 +14,3 @@
 - 打开会话：窗口式历史读取记 `session.messages`（窗口种类、消息数、读的分片数与字节数），每次读分片记 `trace.read`（路径的哈希、字节数、记录数）。
 
 `GET /api/telemetry?view=probes|sessions|samples`（仅管理员，其他人 403）按采集点（次数、p50、p95、最大值、字节）或按会话汇总缓冲，或列出样本；`DELETE /api/telemetry` 清空。`penguin telemetry` 打印同样的视图，并有 `on`、`off`、`clear`；在会话里运行时只显示这个会话的样本，`--all` 取消。
-
-trace 事件的读取（会话级与 Agent 级的 `…/traces/:index`）与 machine 作业日志，现在在离开服务端之前把 token、key、密码形状的字段与值、PEM 私钥和 ssh 私钥路径换成 `[redacted]`。trace 文件下载保持原样。

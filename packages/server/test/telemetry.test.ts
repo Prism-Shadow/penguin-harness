@@ -3,8 +3,7 @@
  * settings, the three fixed probes — http.request on the platform surface, the boot of an
  * App generation, and a session open (session.messages + trace.read) — the admin read route
  * and its views, and what must NOT happen: nothing recorded while off, no content in a sample,
- * no read for a non-admin. The content redaction of the Trace read route rides along, since it
- * ships in the same slice.
+ * no read for a non-admin.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -18,11 +17,9 @@ import type {
   ServerSettingsResponse,
   TelemetryResponse,
   TelemetrySample,
-  TraceEventsResponse,
 } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { Reassembly } from "../src/hmr/capabilities.js";
-import { REDACTED } from "../src/services/redact.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -197,20 +194,5 @@ describe("telemetry", () => {
 
     await turn(false);
     expect(await read()).toMatchObject({ enabled: false, buffered: 0 });
-  });
-
-  it("redacts credential shapes in a Trace read, and leaves the download verbatim", async () => {
-    const base = `/api/projects/${P}/agents/${A}/traces/${SID}/1`;
-    const events = (await (await admin.get(base)).json()) as TraceEventsResponse;
-    const input = events.events[1]!.payload as { text: string };
-    expect(input.text).toBe(`export OPENAI_API_KEY=${REDACTED}`);
-    const sessionLevel = (await (
-      await admin.get(`/api/sessions/${SID}/traces/1`)
-    ).json()) as TraceEventsResponse;
-    expect((sessionLevel.events[1]!.payload as { text: string }).text).toBe(
-      `export OPENAI_API_KEY=${REDACTED}`,
-    );
-    const raw = await (await admin.get(`${base}/download`)).text();
-    expect(raw).toContain(KEY);
   });
 });

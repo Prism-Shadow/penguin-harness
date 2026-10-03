@@ -98,7 +98,6 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
-import { redactText } from "../services/redact.js";
 
 /** A job's narrator: a line for the log, and optionally the step of the pipeline it begins. */
 type Say = (line: string, phase?: MachinePhase) => void;
@@ -767,9 +766,7 @@ export class MachinesService {
     job.running = true;
     this.#job = job;
     const say: Say = (line, phase) => {
-      // Redacted as it is kept: the log is served to the page as it stands, and an ssh or
-      // install step can echo a key path or a token.
-      job.log.push(redactText(line));
+      job.log.push(line);
       if (phase !== undefined) job.phase = phase;
     };
     try {
@@ -779,7 +776,7 @@ export class MachinesService {
       job.result = {
         ok: false,
         step: job.kind,
-        message: redactText(err instanceof Error ? err.message : String(err)),
+        message: err instanceof Error ? err.message : String(err),
       };
     } finally {
       if (
