@@ -28,13 +28,15 @@ const win32 = process.platform === "win32";
 // System32's WSL launcher before PATH ("Bash/Service/CreateInstance/E_ACCESSDENIED"); handed
 // Git's bash.exe by path, the MSYS runtime aborts under the write-restricted token
 // ("CreateFileMapping S-1-5-21-…, Win32 error 5").
-// TODO(win32): so a bash session confined by DSH is not guaranteed on Windows; only pwsh is,
-// until the runner starts an MSYS bash. Set before the adaptor loads and before the first
+// TODO(win32): so a bash session confined by DSH is not guaranteed on Windows; only PowerShell
+// is (pwsh, and 5.1 per windows-shells.test.ts), until the runner starts an MSYS bash. Set before the adaptor loads and before the first
 // spawn: core resolves the session shell once per process, and the load reads it.
 if (win32) process.env.PENGUIN_SHELL = "pwsh";
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-dsh-live-"));
 const outsideProbe = path.join(homedir(), `penguin-dsh-live-${process.pid}.txt`);
+/** What the background child writes inside the Workspace: proof it ran at all. */
+const backgroundMarker = path.join(ws, "bg-inside.txt");
 
 let loadError = "the DSH adaptor did not load";
 const provider: SandboxProvider | null = await loadDshAdaptor().catch((err: unknown) => {
@@ -85,20 +87,22 @@ const readProbe = win32 ? process.execPath : "/etc/hosts";
 /**
  * One probe per test, in the session shell's dialect. Each Windows probe has the POSIX one's
  * effect: a failed write prints its error and the probe carries on, and the background probe
- * is a child process the confined shell starts, which inherits the restricted token.
+ * is a child process the confined shell starts, which inherits the restricted token. That
+ * child writes a marker inside the Workspace before it tries outside, so a child that never
+ * ran cannot pass for a confined one.
  */
 const probes = win32
   ? {
       insideAndRead: `$ErrorActionPreference = 'Stop'; Set-Content -LiteralPath inside.txt -Value confined-ok; Get-Content -LiteralPath inside.txt; $null = Get-Content -AsByteStream -TotalCount 1 -LiteralPath ${ps(readProbe)}; 'READ_OK'`,
       writeOutside: `try { Set-Content -LiteralPath ${ps(outsideProbe)} -Value leak -ErrorAction Stop } catch { $_.Exception.Message }`,
-      backgroundOutside: `Start-Process -FilePath cmd.exe -ArgumentList ${ps(`/d /c echo bg > "${outsideProbe}"`)} -NoNewWindow -Wait; 'done'`,
+      backgroundOutside: `Start-Process -FilePath cmd.exe -ArgumentList ${ps(`/d /c echo bg > "${backgroundMarker}" & echo bg > "${outsideProbe}"`)} -NoNewWindow -Wait; 'done'`,
       writeWorkspace: `try { Set-Content -LiteralPath ro-probe.txt -Value x -ErrorAction Stop } catch { $_.Exception.Message }`,
       writeOutsideUnconfined: `Set-Content -LiteralPath ${ps(outsideProbe)} -Value unconfined`,
     }
   : {
       insideAndRead: `echo confined-ok > inside.txt && cat inside.txt && head -c 1 ${readProbe} > /dev/null && echo READ_OK`,
       writeOutside: `echo leak > ${JSON.stringify(outsideProbe)} 2>&1; echo exit=$?`,
-      backgroundOutside: `(sleep 0.2 && echo bg > ${JSON.stringify(outsideProbe)}) & wait; echo done`,
+      backgroundOutside: `(sleep 0.2; echo bg > ${JSON.stringify(backgroundMarker)}; echo bg > ${JSON.stringify(outsideProbe)}) & wait; echo done`,
       writeWorkspace: "echo x > ro-probe.txt 2>&1; echo exit=$?",
       writeOutsideUnconfined: `echo unconfined > ${JSON.stringify(outsideProbe)}; echo exit=$?`,
     };
@@ -149,6 +153,7 @@ describe.skipIf(!usable)("DSH adaptor live enforcement (host-gated)", () => {
     mode = "workspace-write";
     const r = await run(probes.backgroundOutside);
     expect(r.out).toContain("done");
+    expect(existsSync(backgroundMarker)).toBe(true);
     expect(existsSync(outsideProbe)).toBe(false);
   });
 
