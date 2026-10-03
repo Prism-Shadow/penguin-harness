@@ -16,6 +16,7 @@ const page: ContributionsResponse["pages"][number] = {
 const answer = (pages: ContributionsResponse["pages"]): ContributionsResponse => ({
   pages,
   fileRenderers: [],
+  pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],
 });
