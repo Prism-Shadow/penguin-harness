@@ -4,7 +4,8 @@
  * - The list reads each benchmark_config.toml's title, description and status (only a literal
  *   draft locks a Benchmark; draft and failed are themselves, anything else is published),
  *   lists a Benchmark that never ran but not a directory without a config, and is empty when
- *   nothing is configured.
+ *   nothing is configured. The seeding marker, a staging copy an interrupted seeding left and the
+ *   Harbor checkouts are never listed.
  * - A Harbor Benchmark (`kind = "harbor"` with a usable [harbor] table) reports its kind and
  *   repository; the table without the kind, another kind, the kind without a usable table (a
  *   repository that is not an http(s) URL, a task folder outside the repository) all list as a
@@ -25,7 +26,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseToml } from "smol-toml";
-import { benchmarksDir } from "@prismshadow/penguin-core";
+import { SEEDED_BENCHMARKS_FILE, benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCasesResponse,
   BenchmarkCreateRequest,
@@ -90,6 +91,31 @@ describe("benchmarks api", () => {
     expect((await (await owner.get(base)).json()) as BenchmarksResponse).toEqual({
       benchmarks: [],
     });
+  });
+
+  it("never lists the seeding marker, a staging copy an interrupted seeding left, or the Harbor checkouts", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    await fs.writeFile(
+      path.join(dir, SEEDED_BENCHMARKS_FILE),
+      `${JSON.stringify({ seeded: ["report-writing-v1"] })}\n`,
+    );
+    // A seeding cut short leaves a whole Benchmark, config included, under staging.
+    const staged = path.join(dir, ".seeding", "terminal-bench-AbC123");
+    await fs.mkdir(path.join(staged, "CASE-001-music-harmony", "statement"), { recursive: true });
+    await fs.writeFile(
+      path.join(staged, "benchmark_config.toml"),
+      'title = "Terminal-Bench"\nruns = 1\n',
+    );
+    // A Harbor checkout holds the benchmark repository's own benchmarks/ tree.
+    await fs.mkdir(path.join(dir, ".harbor", "penguin-harness-benchmark-0123abc", "benchmarks"), {
+      recursive: true,
+    });
+    const mine = path.join(dir, "report-writing-v1");
+    await fs.mkdir(mine, { recursive: true });
+    await fs.writeFile(path.join(mine, "benchmark_config.toml"), 'title = "Report writing"\n');
+
+    const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
+    expect(body.benchmarks.map((b) => b.id)).toEqual(["report-writing-v1"]);
   });
 
   itWithSymlinks(
