@@ -4,12 +4,12 @@
  * popup) + the message stream and input area (input box vertically centered when there
  * are no messages), with the dock surfaces beside and below (features/dock): every side
  * element — subagents, Workspace files, Memory, Trace, terminals — is a tab in the right
- * or bottom dock, arranged by the user and persisted globally. This page contributes the
- * panel BODIES (they need its session/stream state) through DockPanel's renderPanel, and
- * the stream's jump commands: a message file card, or a reply's link to a Workspace file,
- * opens the Workspace tab on that file (onOpenFile), a subagent chip opens the agents tab
- * focused (onOpenSubagent), a memory-change row opens the Memory tab located
- * (onLocateMemoryChange).
+ * or bottom dock, arranged by the user and persisted globally. The panel BODIES are registry
+ * definitions (builtin-dock-panels.tsx); this page provides the session/stream state they read
+ * around both docks (chat-dock-context.tsx), and the stream's jump commands: a message file
+ * card, or a reply's link to a Workspace file, opens the Workspace tab on that file
+ * (onOpenFile), a subagent chip opens the agents tab focused (onOpenSubagent), a memory-change
+ * row opens the Memory tab located (onLocateMemoryChange).
  * Approval mode and Model/context usage live in the input area's toolbar; context is compacted
  * via the /compact slash command.
  * Draft state (/chat/new) is carried by DraftView: Agent / Workspace / approval mode / Model are
@@ -134,20 +134,16 @@ import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from 
 import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, promotedPricing, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { WorkspaceBrowser } from "./workspace-browser";
-import { ChatMemoryView } from "./memory-view";
 import { useMemoryListing } from "./use-memory-listing";
 import { deletedChangeKeys } from "./memory-nav";
-import { SubagentsView } from "./subagents-view";
-import { TracePanel } from "../traces/trace-panel";
-import { MessagingPanel } from "../messaging/messaging-panel";
-import { SchedulePanel } from "../schedules/schedule-panel";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
-import { BuiltinBrowserPanel } from "../builtin-browser/browser-panel";
 import { useDockMount } from "../dock/use-dock-mount";
-import { panelLabel } from "../dock/panel-meta";
+// importing it registers the built-in panels (their definitions and bodies) with the dock
+import "./builtin-dock-panels";
+import { ChatDockProvider } from "./chat-dock-context";
+import type { ChatDockState } from "./chat-dock-context";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
 import { setDockCwd } from "../dock/dock-terminal";
 import {
@@ -159,7 +155,6 @@ import {
   openPanel,
   panelDock,
   subscribeDock,
-  type PanelKind,
 } from "../dock/dock-state";
 import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-list";
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
@@ -1963,112 +1958,42 @@ export function ChatPage() {
   );
   const terminalSupported = terminalApiSupported();
 
+  // The Memory panel's way to its management: add / edit / delete live on the Agent's
+  // settings page, on the memory tab.
+  const openMemorySettings = useCallback(
+    (memoryAgentId: string) => navigate(`/agents/${memoryAgentId}?tab=memory`),
+    [navigate],
+  );
   /**
-   * The panel tabs' bodies. Keyed by Session where the view starts over per conversation
-   * (agents / memory / trace); the Workspace browser instead re-binds through its props —
-   * its own handled-once request guard is what the conversation-switch e2e covers.
+   * What the dock panel bodies read off this page (builtin-dock-panels.tsx), provided around
+   * both docks below. Not memoised: `ctx` is rebuilt on every render and the stream fields
+   * move with every version, so a memo would miss every time; the bodies re-render with the
+   * page, exactly as they did when the page built them inline. The callbacks in it are the
+   * page's own memoised ones, passed as they are, never wrapped afresh.
    */
-  const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
-    // The browser is one set of pages shared by every conversation, not a Session's view,
-    // so it needs no Session and works on the draft page too.
-    if (kind === "builtin-browser") return <BuiltinBrowserPanel active={active} />;
-    // The draft's Files panel browses the folder picked in the composer, addressed by the
-    // directory itself; a temporary Workspace has none yet.
-    if (!selected && draft && kind === "workspace" && projectId) {
-      return draftWorkspace !== null ? (
-        <WorkspaceBrowser
-          scope={{
-            kind: "workspace",
-            projectId,
-            workspace: draftWorkspace.path,
-            machineId: draftWorkspace.machineId,
-          }}
-          active={active}
-          onAddReference={addComposerReference}
-        />
-      ) : (
-        <EmptyState title={panelLabel(kind)} description={S.files.draftTemporary} />
-      );
-    }
-    if (!selected)
-      return (
-        <EmptyState
-          title={panelLabel(kind)}
-          // The schedules tab says what the first message unlocks; the other tabs share one line.
-          description={kind === "schedules" ? S.schedule.panelDraftEmpty : S.dock.draftEmpty}
-        />
-      );
-    switch (kind) {
-      case "agents":
-        return (
-          <SubagentsView
-            key={selected.sessionId}
-            session={selected}
-            // The merged view (backfilled windows included): a chip on an older turn keeps
-            // its historical graph and child conversation reachable after pagination.
-            model={panelModel}
-            version={stream.version}
-            taskRunning={stream.taskState !== "idle"}
-            ctx={ctx}
-            focusRequest={subagentFocus}
-            taskScope={subagentTaskScope}
-            subagents={stream.subagents}
-            models={models?.models ?? []}
-            approvalMode={selected.approvalMode}
-            approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
-            onChangeApprovalMode={onChangeApprovalMode}
-            onChangeSandbox={onChangeSandbox}
-            modeSaving={modeSaving}
-            parentThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
-          />
-        );
-      case "workspace":
-        return (
-          <WorkspaceBrowser
-            scope={{ kind: "session", sessionId: selected.sessionId }}
-            openRequest={fileOpenRequest}
-            active={active}
-            reloadSignal={settledTurnSignal}
-            onAddReference={addComposerReference}
-          />
-        );
-      case "memory":
-        return (
-          <ChatMemoryView
-            key={selected.sessionId}
-            session={selected}
-            changes={sessionMemoryChanges}
-            scopes={memoryListing.scopes}
-            listingError={memoryListing.error}
-            request={memoryRequest}
-            active={active}
-            // Management (add / edit / delete) lives on the agent-settings memory tab.
-            onOpenSettings={() => navigate(`/agents/${selected.agentId}?tab=memory`)}
-          />
-        );
-      case "trace":
-        return (
-          <TracePanel
-            key={selected.sessionId}
-            session={selected}
-            active={active}
-            reloadSignal={settledTurnSignal}
-          />
-        );
-      case "messaging":
-        return (
-          <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
-        );
-      case "schedules":
-        return (
-          <SchedulePanel
-            key={selected.sessionId}
-            session={selected}
-            active={active}
-            onPrefillComposer={prefillComposer}
-          />
-        );
-    }
+  const chatDock: ChatDockState = {
+    selected,
+    draft,
+    draftWorkspace,
+    projectId,
+    panelModel,
+    stream,
+    ctx,
+    subagentFocus,
+    subagentTaskScope,
+    models,
+    onChangeApprovalMode,
+    onChangeSandbox,
+    modeSaving,
+    parentThinkingLevel: sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel),
+    fileOpenRequest,
+    settledTurnSignal,
+    addComposerReference,
+    sessionMemoryChanges,
+    memoryListing,
+    memoryRequest,
+    openMemorySettings,
+    prefillComposer,
   };
 
   if (!projectId || !agentId) {
@@ -2541,168 +2466,176 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: chat column + the right dock on this row (below the toolbar — a dock
-          beside the whole page would squeeze the header), with the bottom dock after the
-          row spanning the full page width. data-dock-row is what the drag preview
-          measures for a right landing. */}
-      <div data-dock-row className="flex min-h-0 flex-1">
-        {/* The chat area, and the only region a dragged file may be dropped on (#311): it
-            covers the conversation and the composer in both branches below, and nothing else
-            — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
-            it (terminal panes included) are all outside, where a file drop is inert (see
-            drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
-        <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          {draft ? (
-            // Draft state: DraftView's vertically centered input card + Agent / Workspace
-            // selection panel; the Session is only created once the first message is sent. Keyed
-            // by Project (switching Project remounts onto that Project's draft cache) and by the
-            // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
-            // chat" while already on the draft page (which just parked the typed text) remounts
-            // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
-            // so it's not part of the key.)
-            <DraftView
-              key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
-              projectId={projectId}
-              models={models}
-              {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
-              composerRef={composerRef}
-              onWorkspaceChange={onDraftWorkspace}
-            />
-          ) : (
-            // Keyed by Session: the whole block does a light fade-in when switching sessions.
-            <div
-              key={selected?.sessionId ?? "empty"}
-              className="anim-fade flex min-h-0 flex-1 flex-col"
-            >
-              {selected ? (
-                stream.error ? (
-                  // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
-                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
-                    <p className="text-sm text-red-600 dark:text-red-400">
-                      {S.chat.historyLoadFailed}：{stream.error}
-                    </p>
-                    <Button onClick={stream.retry}>{S.common.retry}</Button>
-                  </div>
-                ) : stream.loading ? (
-                  <div className="space-y-3 p-6">
-                    <Skeleton className="h-5 w-1/3" />
-                    <Skeleton className="h-5 w-2/3" />
-                    <Skeleton className="h-5 w-1/2" />
-                  </div>
-                ) : (
-                  // The empty state shares the same structure as the message stream (message
-                  // area + bottom input area): only the message area's content differs, and
-                  // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
-                  // recreated when the first message arrives (preserving draft/focus).
-                  <>
-                    {/* `relative`: the floating dock launcher below anchors to this body —
-                        the region between the toolbar and the composer — so clamping to
-                        it keeps the launcher off both. */}
-                    <div className="relative min-h-0 flex-1">
-                      {emptyChat ? (
-                        <div className="flex h-full items-center justify-center px-4">
-                          <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
-                            {S.chat.emptyGreeting}
-                          </p>
-                        </div>
-                      ) : (
-                        <MessageStream
-                          items={allItems}
-                          version={stream.version}
-                          ctx={ctx}
-                          scrollElRef={streamScrollRef}
-                          // The selection menu's "Add to conversation": the excerpt is staged
-                          // in this composer as a chip, the same way the Files panel stages a
-                          // quoted range.
-                          onAddExcerpt={addComposerReference}
-                          // Scroll-up backfill of older history windows (tail-first
-                          // loading): near-top scrolling prepends the previous window,
-                          // scroll position anchored (see MessageStream).
-                          older={{
-                            hasMore: stream.older.hasMore,
-                            loading: stream.older.loading,
-                            error: stream.older.error,
-                            prependedCount: stream.prefixItems.length,
-                            onLoad: stream.loadOlder,
-                          }}
-                          // Tick-rail minimap over the stream's left gutter (zero layout
-                          // width; hides itself when the gutter is too narrow or the
-                          // pointer can't hover).
-                          outline={
-                            <ConversationOutline
-                              entries={outline}
-                              turnOffset={stream.outlineOffset}
-                              version={stream.version}
-                              scrollRef={streamScrollRef}
-                              running={stream.taskState !== "idle"}
-                              fit={railFit}
-                            />
-                          }
-                        />
-                      )}
-                      {/* The right dock's floating launcher: rides this body's right edge
-                          while that dock is hidden, and opens its panels in one click. */}
-                      <DockLauncher agentsPending={anySubagentPending} />
-                    </div>
-                    <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
-                      <div className="mx-auto max-w-3xl">
-                        {/* Goal banner docked above the composer: an in-flight goal's progress
-                            (restored on load while still active), or the terminal state reached
-                            during this page's lifetime. The stop button is the composer's
-                            regular stop (one abort ends the whole goal loop). */}
-                        {stream.goal && <GoalStatusBanner goal={stream.goal} />}
-                        {input}
-                      </div>
-                    </div>
-                  </>
-                )
-              ) : routeSessionOffline ? (
-                <EmptyState
-                  title={
-                    routeSessionOwner === null
-                      ? S.chat.sessionOnOfflineMachineUnknown
-                      : S.chat.sessionOnOfflineMachine(
-                          machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
-                        )
-                  }
-                  description={S.chat.sessionOfflineHint}
+      {/* The state the dock panels' bodies read (chat-dock-context.tsx): one provider over
+          the row's right dock and the bottom dock after it — a provider adds no element. */}
+      <ChatDockProvider value={chatDock}>
+        {/* data-dock-area: the row and the bottom dock together — what a fullscreen bottom dock
+            (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
+            dock covers the row alone. Layout-neutral: it takes the column's remaining height
+            exactly as the row and the dock did when they sat in the column themselves. */}
+        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+          {/* Body: chat column + the right dock on this row (below the toolbar — a dock
+              beside the whole page would squeeze the header), with the bottom dock after the
+              row spanning the full page width. data-dock-row is what the drag preview
+              measures for a right landing. */}
+          <div data-dock-row className="flex min-h-0 flex-1">
+            {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+                covers the conversation and the composer in both branches below, and nothing else
+                — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+                it (terminal panes included) are all outside, where a file drop is inert (see
+                drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
+            <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {draft ? (
+                // Draft state: DraftView's vertically centered input card + Agent / Workspace
+                // selection panel; the Session is only created once the first message is sent. Keyed
+                // by Project (switching Project remounts onto that Project's draft cache) and by the
+                // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
+                // chat" while already on the draft page (which just parked the typed text) remounts
+                // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
+                // so it's not part of the key.)
+                <DraftView
+                  key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
+                  projectId={projectId}
+                  models={models}
+                  {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
+                  composerRef={composerRef}
+                  onWorkspaceChange={onDraftWorkspace}
                 />
-              ) : sessionsLoading || routeSessionPending ? (
-                <div className="space-y-3 p-6">
-                  <Skeleton className="h-5 w-1/2" />
-                </div>
               ) : (
-                <EmptyState
-                  title={S.chat.noSessions}
-                  action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
-                />
+                // Keyed by Session: the whole block does a light fade-in when switching sessions.
+                <div
+                  key={selected?.sessionId ?? "empty"}
+                  className="anim-fade flex min-h-0 flex-1 flex-col"
+                >
+                  {selected ? (
+                    stream.error ? (
+                      // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
+                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
+                        <p className="text-sm text-red-600 dark:text-red-400">
+                          {S.chat.historyLoadFailed}：{stream.error}
+                        </p>
+                        <Button onClick={stream.retry}>{S.common.retry}</Button>
+                      </div>
+                    ) : stream.loading ? (
+                      <div className="space-y-3 p-6">
+                        <Skeleton className="h-5 w-1/3" />
+                        <Skeleton className="h-5 w-2/3" />
+                        <Skeleton className="h-5 w-1/2" />
+                      </div>
+                    ) : (
+                      // The empty state shares the same structure as the message stream (message
+                      // area + bottom input area): only the message area's content differs, and
+                      // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
+                      // recreated when the first message arrives (preserving draft/focus).
+                      <>
+                        {/* `relative`: the floating dock launcher below anchors to this body —
+                            the region between the toolbar and the composer — so clamping to
+                            it keeps the launcher off both. */}
+                        <div className="relative min-h-0 flex-1">
+                          {emptyChat ? (
+                            <div className="flex h-full items-center justify-center px-4">
+                              <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
+                                {S.chat.emptyGreeting}
+                              </p>
+                            </div>
+                          ) : (
+                            <MessageStream
+                              items={allItems}
+                              version={stream.version}
+                              ctx={ctx}
+                              scrollElRef={streamScrollRef}
+                              // The selection menu's "Add to conversation": the excerpt is staged
+                              // in this composer as a chip, the same way the Files panel stages a
+                              // quoted range.
+                              onAddExcerpt={addComposerReference}
+                              // Scroll-up backfill of older history windows (tail-first
+                              // loading): near-top scrolling prepends the previous window,
+                              // scroll position anchored (see MessageStream).
+                              older={{
+                                hasMore: stream.older.hasMore,
+                                loading: stream.older.loading,
+                                error: stream.older.error,
+                                prependedCount: stream.prefixItems.length,
+                                onLoad: stream.loadOlder,
+                              }}
+                              // Tick-rail minimap over the stream's left gutter (zero layout
+                              // width; hides itself when the gutter is too narrow or the
+                              // pointer can't hover).
+                              outline={
+                                <ConversationOutline
+                                  entries={outline}
+                                  turnOffset={stream.outlineOffset}
+                                  version={stream.version}
+                                  scrollRef={streamScrollRef}
+                                  running={stream.taskState !== "idle"}
+                                  fit={railFit}
+                                />
+                              }
+                            />
+                          )}
+                          {/* The right dock's floating launcher: rides this body's right edge
+                              while that dock is hidden, and opens its panels in one click. */}
+                          <DockLauncher agentsPending={anySubagentPending} />
+                        </div>
+                        <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                          <div className="mx-auto max-w-3xl">
+                            {/* Goal banner docked above the composer: an in-flight goal's progress
+                                (restored on load while still active), or the terminal state reached
+                                during this page's lifetime. The stop button is the composer's
+                                regular stop (one abort ends the whole goal loop). */}
+                            {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                            {input}
+                          </div>
+                        </div>
+                      </>
+                    )
+                  ) : routeSessionOffline ? (
+                    <EmptyState
+                      title={
+                        routeSessionOwner === null
+                          ? S.chat.sessionOnOfflineMachineUnknown
+                          : S.chat.sessionOnOfflineMachine(
+                              machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
+                            )
+                      }
+                      description={S.chat.sessionOfflineHint}
+                    />
+                  ) : sessionsLoading || routeSessionPending ? (
+                    <div className="space-y-3 p-6">
+                      <Skeleton className="h-5 w-1/2" />
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title={S.chat.noSessions}
+                      action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
+                    />
+                  )}
+                </div>
               )}
-            </div>
+            </ChatDropRegion>
+
+            {rightMount.view && (
+              <DockPanel
+                view={rightMount.view}
+                open={rightMount.open}
+                animateEntrance={rightMount.animateEntrance}
+                panelBadges={{ agents: anySubagentPending }}
+                terminalSupported={terminalSupported}
+              />
+            )}
+          </div>
+
+          {bottomMount.view && (
+            <DockPanel
+              view={bottomMount.view}
+              open={bottomMount.open}
+              animateEntrance={bottomMount.animateEntrance}
+              panelBadges={{ agents: anySubagentPending }}
+              terminalSupported={terminalSupported}
+            />
           )}
-        </ChatDropRegion>
-
-        {rightMount.view && (
-          <DockPanel
-            view={rightMount.view}
-            open={rightMount.open}
-            animateEntrance={rightMount.animateEntrance}
-            renderPanel={renderPanel}
-            panelBadges={{ agents: anySubagentPending }}
-            terminalSupported={terminalSupported}
-          />
-        )}
-      </div>
-
-      {bottomMount.view && (
-        <DockPanel
-          view={bottomMount.view}
-          open={bottomMount.open}
-          animateEntrance={bottomMount.animateEntrance}
-          renderPanel={renderPanel}
-          panelBadges={{ agents: anySubagentPending }}
-          terminalSupported={terminalSupported}
-        />
-      )}
+        </div>
+      </ChatDockProvider>
 
       <Modal
         open={credentialGuide}

@@ -240,6 +240,8 @@ The chat page has two docks for panels: the right sidebar and the bottom panel. 
 
 Each conversation remembers its own panel layout in this browser, and switching conversations restores it. Hiding a dock keeps its panels as they were, including unsaved edits. While a subagent waits for approval, an amber dot marks the button of the dock that holds the Agents panel, or the **Right sidebar** button when the panel is closed.
 
+To make a dock as large as it goes, select **Full screen** in its header, or drag its edge past the widest (for the bottom panel, tallest) it can be. The right sidebar then covers the conversation and the bottom panel grows up to the toolbar; the toolbar with the title and statistics, and the sidebar on the left, stay where they are. Its tabs and **Add panel** keep working. To come back, select **Exit full screen** in the same place, or drag the edge back. Full screen also ends when you switch conversations, hide the dock or close its last tab, or when a panel opens in a dock it covers.
+
 ### Open panels with the shortcuts launcher
 
 When the right sidebar is closed on a desktop-width window, or no panel is open on a narrow one, a round **Shortcuts** button floats 32px inside the right edge of the conversation. It is not shown on the draft page or while the conversation's history is loading or failed to load.

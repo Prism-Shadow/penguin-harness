@@ -49,10 +49,12 @@ describe("DockFrame", () => {
     expect(html).toContain("BODY");
   });
 
-  it("puts the right dock's handle before the dock, where it costs real width", () => {
+  it("puts the right dock's handle before the dock, in a spacer that costs real width", () => {
     const html = render({ position: "right", size: 360, contentSize: 360 });
+    // The spacer holds the row's width for the handle; the seat between them is
+    // `display: contents` in the flow, so the handle lays out in the spacer as before.
     expect(html).toMatch(
-      /^<div data-testid="handle"><\/div><div data-testid="dock" data-position="right"/,
+      /^<div class="flex w-1\.5 shrink-0"><div class="contents"><div data-testid="handle"><\/div><\/div><\/div><div data-testid="dock" data-position="right"/,
     );
     expect(html).toContain('style="width:360px"');
     expect(classTokens(html)).toEqual(
