@@ -8,9 +8,9 @@
  * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
  *   rules for running a task and the measured results, and launches that same task with its
- *   caps — the no-network line only for deep-swe, the shared-network line only for
- *   terminal-bench and terminal-bench-science, as the repository's rules allow; its rubric is
- *   worth 100 points.
+ *   caps — the no-network line only for deep-swe, and the shared-network line for every other
+ *   benchmark, whose tasks have a public agent phase, as the repository's rules allow; its
+ *   rubric is worth 100 points.
  * - The five list in Sec A to Sec E order, and each description opens by naming the original
  *   benchmark its cases cite as their source.
  * - Provisioning again writes nothing; a directory already under an id, built-in or the
@@ -179,12 +179,15 @@ describe("built-in Benchmarks", () => {
           /https:\/\/\S+\/blob\/[^/\s]+\/README\.md#running-a-task-for-agents/,
         );
         expect(statement, caseId).toMatch(/https:\/\/\S+\/blob\/[^/\s]+\/results\/\S+/);
-        // The network lines the repository's rules call for, and only those.
-        expect(statement.includes("--allow-agent-host "), caseId).toBe(repoDir === "deep-swe");
+        // The network lines the repository's rules call for, and only those: the no-network
+        // benchmark allows its model's host and never joins the shared network, which every
+        // task with a public agent phase joins.
+        const offline = repoDir === "deep-swe";
+        expect(statement.includes("--allow-agent-host "), caseId).toBe(offline);
         expect(
           statement.includes("--extra-docker-compose tools/docker/shared-network.yaml"),
           caseId,
-        ).toBe(repoDir === "terminal-bench" || repoDir === "terminal-bench-science");
+        ).toBe(!offline);
 
         const rubric = await readCase(bench.id, caseId, "rubric");
         const points = [...rubric.matchAll(/^- (\d+) pts:/gm)].map((m) => Number(m[1]));
