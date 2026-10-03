@@ -463,7 +463,7 @@ export class DeployService {
         `${label} ${run.status}${code === null ? "" : ` (exit ${code})`}${run.error === null ? "" : `: ${run.error}`}`,
       );
       this.prune(orgKey);
-      this.deps.onFinished?.(projectId, orgId);
+      this.deps.onFinished?.(scope.org.projectId, scope.org.orgId);
     });
     return run;
   }
