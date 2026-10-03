@@ -20,6 +20,8 @@ const U = `noeval_${Date.now().toString(36)}`;
 const P = "password123";
 const CHILD = "/example-hello";
 
+// The catch-all leads to /chat, which a fresh user's chat page turns into /chat/new.
+const AT_CHAT = /\/chat(\/new)?$/;
 const marker = (page) => page.getByRole("status").filter({ hasText: "安全模式：未加载服务端贡献" });
 
 test.beforeEach(async ({ page }) => {
@@ -49,7 +51,7 @@ test("page removal: the plugin removes the Evaluation Center, its routes and the
 
   for (const path of ["/benchmark", "/benchmark/some-benchmark", CHILD]) {
     await page.goto(`${BASE}${path}`);
-    await expect(page, path).toHaveURL(/\/chat$/);
+    await expect(page, path).toHaveURL(AT_CHAT);
   }
 });
 
@@ -68,6 +70,6 @@ test("page removal: safe mode brings the Evaluation Center back, leaving it remo
 
   await marker(page).getByRole("button", { name: "离开安全模式", exact: true }).click();
   await expect(marker(page)).toHaveCount(0);
-  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page).toHaveURL(AT_CHAT);
   await expect(sidebar.locator('a[href="/benchmark"]')).toHaveCount(0);
 });
