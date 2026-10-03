@@ -569,9 +569,6 @@ export function DraftView({
     // Carried through every write, so a reload finds the prefill still marked as composed
     // rather than resuming it as if it had been typed here.
     if (aiPrefillRef.current) data.aiPrefill = true;
-    // The evaluation mark the Evaluation Center's Use dialog set on this draft rides along for
-    // the same reason: after a reload the Session must still be created as an evaluation run.
-    if (cached.source !== undefined) data.source = cached.source;
     // A parked draft writes back into its own list entry; the active draft into its slot.
     if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
     else saveDraft(draftKey(userId, projectId), data);
@@ -586,7 +583,6 @@ export function DraftView({
     approvalMode,
     sandboxPick,
     modelRef,
-    cached.source,
   ]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
@@ -768,9 +764,6 @@ export function DraftView({
           body.provider = modelRef.provider;
         }
         if (workspace.trim()) body.workspace = workspace.trim();
-        // A draft the Evaluation Center's Use dialog composed creates its Session as an
-        // evaluation run, which the sidebar files under the Evaluations folder.
-        if (cached.source !== undefined) body.source = cached.source;
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
@@ -816,7 +809,6 @@ export function DraftView({
       sandboxPick,
       modelRef,
       workspace,
-      cached.source,
       add,
       discardDraft,
       navigate,

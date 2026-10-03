@@ -59,13 +59,6 @@ export interface DraftCache {
    * Dropped by the first edit: from then on the text is the user's and is cached like any other.
    */
   aiPrefill?: true;
-  /**
-   * The conversation this draft creates is a Benchmark evaluation / optimization run (the
-   * Evaluation Center's Use dialog): written by the same bridge as aiPrefill and sent on as
-   * `SessionCreateRequest.source`, which files the Session under the sidebar's Evaluations
-   * folder. Like aiPrefill it lives and dies with the draft it seeds — nothing else sets it.
-   */
-  source?: "benchmark";
 }
 
 /** Minimal storage interface (a subset of localStorage). */
@@ -126,7 +119,6 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
     if (skills.length > 0) out.skills = skills;
   }
   if (o.aiPrefill === true) out.aiPrefill = true;
-  if (o.source === "benchmark") out.source = "benchmark";
   if (
     typeof o.approvalMode === "string" &&
     APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)

@@ -366,7 +366,7 @@ The background-task mark does not depend on the others: an idle conversation who
 
 Below each group's active conversations are its folders: **Subagents**, **Scheduled**, **Evaluations** and **Archived**, each loading its rows only when opened. When grouped by time, one set of folders covers the whole Project, and **Load more chats** fetches older conversations.
 
-- **Evaluations** holds the conversations opened by **Use** in the [Evaluation Center](/evaluation-center), and the Test Sessions an evaluation starts for every case and run, so they do not crowd the tested agent's list.
+- **Evaluations** holds the Test Sessions an evaluation starts for every case and run, so they do not crowd the tested agent's list. The conversation that **Use** opens in the [Evaluation Center](/evaluation-center) is an ordinary conversation and is not filed there.
 - Opening a subagent, scheduled or evaluation conversation opens its folder.
 - A group with nothing but folder rows, such as an agent that has only run evaluations, starts collapsed and sorts after the other groups (pinned groups excepted), with a dimmed header counting the folded rows. Once you open it, it stays open for that Project.
 

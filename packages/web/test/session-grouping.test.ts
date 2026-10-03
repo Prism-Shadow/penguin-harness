@@ -11,7 +11,8 @@
  *   folds every temporary Workspace into one trailing group per machine, keeps one path on two
  *   machines apart, and keeps archived rows in their group.
  * - A Session's folder is decided by archived first, then its source; partitioning keeps the
- *   order inside each folder, and benchmark runs get a folder of their own.
+ *   order inside each folder, and the Test Sessions an evaluation starts get a folder of their
+ *   own while the evaluation conversation stays an active row.
  * - The auto-opened "last conversation" is the most recently active user or scheduled row
  *   (ties by id), never an archived, subagent or benchmark one.
  * - A page fetched with one extra row reports whether the server has more, never showing it.
@@ -350,17 +351,17 @@ describe("latestConversation (the auto-opened 'last conversation')", () => {
   });
 });
 
-describe("benchmark Sessions (the Evaluation Center's runs)", () => {
-  it("files a benchmark Session into its own folder and never auto-opens it", () => {
-    // The Test Session an evaluation launches for a Case × Run, active more recently than
-    // anything the user opened themselves.
+describe("benchmark Sessions (the Test Sessions an evaluation starts)", () => {
+  it("files a Test Session into the Evaluations folder and never auto-opens it, while the evaluation conversation stays an active row", () => {
+    // The conversation the Evaluation Center's Use dialog opened carries no source; the Test
+    // Session it launched for a Case × Run (`penguin run --source benchmark`) ran after it.
+    const evaluation = session("/srv/a", "2026-07-02T10:00:00.000Z");
     const run = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "benchmark" });
-    const user = session("/srv/a", "2026-07-02T10:00:00.000Z");
-    const parts = partitionSessions([run, user]);
+    const parts = partitionSessions([run, evaluation]);
     expect(parts.benchmark.map((s) => s.sessionId)).toEqual([run.sessionId]);
-    expect(parts.active.map((s) => s.sessionId)).toEqual([user.sessionId]);
-    // The evaluator's run is not the conversation the user was last in.
-    expect(latestConversation([run, user])).toBe(user);
+    expect(parts.active.map((s) => s.sessionId)).toEqual([evaluation.sessionId]);
+    // The conversation the user was last in is the evaluation they sent, not a run it launched.
+    expect(latestConversation([run, evaluation])).toBe(evaluation);
   });
 });
 
