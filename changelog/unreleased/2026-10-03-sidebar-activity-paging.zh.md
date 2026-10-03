@@ -3,6 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** fix
 - **Scope:** `web`, `server`, `ui-gallery`, `docs`
+- **PR:** [#960](https://github.com/Prism-Shadow/penguin-harness/pull/960)
 
 [English](2026-10-03-sidebar-activity-paging.md)
 
