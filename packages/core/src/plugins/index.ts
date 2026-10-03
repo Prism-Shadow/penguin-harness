@@ -28,6 +28,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { formatFrontmatter, parseFrontmatter } from "@prismshadow/skills";
+import { readLegacyFrontmatter } from "./legacy-skill-frontmatter.js";
 
 /** A skill's metadata. A library SKILL.md's frontmatter carries only `name` and `description`; the short descriptions and `version` are stamped from plugin.json by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
 export interface SkillMetadata {
@@ -210,23 +212,26 @@ export function predatesEveryPromptHooks(manifestVersion: string): boolean {
 }
 
 /**
- * Parses the frontmatter at the start of SKILL.md: only recognizes `key: value` lines inside the
- * first `---` block (split on the first colon, value trimmed, values may themselves contain colons);
- * all fields are scalars, no YAML dependency needed.
- * Error tolerance: returns null if the `---` block or name is missing; a version in neither the
- * current `YYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N` spelling reads as "".
+ * Parses the frontmatter at the start of SKILL.md with the repository's one SKILL.md parser,
+ * `parseFrontmatter` from @prismshadow/skills (vendored from vercel-labs/skills, YAML), and maps
+ * its data to SkillMetadata. A non-string scalar (a bare number or boolean) is read through
+ * String(); a list or mapping value is ignored. An older installed copy whose block is not
+ * valid YAML — an unquoted `: ` inside a value, which the earlier line-based writer produced —
+ * is still read line by line (see ./legacy-skill-frontmatter.ts).
+ * Error tolerance: returns null if the `---` block or name is missing, or the block is not a
+ * mapping; a version in neither the current `YYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N`
+ * spelling reads as "".
  */
 export function parseSkillFrontmatter(content: string): SkillMetadata | null {
-  // Strip a possible UTF-8 BOM (may be introduced by editors when manually editing an installed SKILL.md); CRLF is handled by \r?\n.
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content.replace(/^﻿/, ""));
-  if (!match) return null;
-  const fields: Record<string, string> = {};
-  for (const line of match[1]!.split(/\r?\n/)) {
-    const idx = line.indexOf(":");
-    if (idx <= 0) continue;
-    const key = line.slice(0, idx).trim();
-    if (key) fields[key] = line.slice(idx + 1).trim();
+  // Strip a possible UTF-8 BOM (may be introduced by editors when manually editing an installed SKILL.md).
+  const text = content.replace(/^\ufeff/, "");
+  let fields: Record<string, string> | null;
+  try {
+    fields = scalarFields(parseFrontmatter(text).data);
+  } catch {
+    fields = readLegacyFrontmatter(text);
   }
+  if (!fields) return null;
   const name = fields["name"];
   if (!name) return null;
   const version = fields["version"] ?? "";
@@ -241,6 +246,18 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
     // An installed copy may carry either spelling; both are real versions (see parsePluginVersion).
     version: parsePluginVersion(version) !== null ? version : "",
   };
+}
+
+/** The scalar fields of parsed frontmatter as strings; null when the data is not a mapping. A null value counts as absent. */
+function scalarFields(data: unknown): Record<string, string> | null {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return null;
+  const fields: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === "string") fields[key] = value;
+    else if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+      fields[key] = String(value);
+  }
+  return fields;
 }
 
 /**
@@ -397,15 +414,13 @@ function stampSkill(
   },
 ): LibrarySkill {
   const { shortDescription, shortDescriptionZh } = plugin;
-  const front = [
-    "---",
-    `name: ${skill.name}`,
-    `description: ${skill.description}`,
-    ...(shortDescription !== undefined ? [`short_description: ${shortDescription}`] : []),
-    ...(shortDescriptionZh !== undefined ? [`short_description_zh: ${shortDescriptionZh}`] : []),
-    `version: ${plugin.version}`,
-    "---",
-  ].join("\n");
+  const front = formatFrontmatter([
+    ["name", skill.name],
+    ["description", skill.description],
+    ["short_description", shortDescription],
+    ["short_description_zh", shortDescriptionZh],
+    ["version", plugin.version],
+  ]);
   const body = skill.content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---/, "");
   return {
     ...skill,

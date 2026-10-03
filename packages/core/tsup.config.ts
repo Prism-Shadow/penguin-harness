@@ -28,4 +28,8 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   define: buildGitDefine(),
+  // @prismshadow/skills (the vendored SKILL.md parser and its writer) is a devDependency bundled
+  // into dist, so the published core carries that code and never imports the package at run
+  // time; its own runtime dependency, yaml, is one of core's dependencies and stays external.
+  noExternal: ["@prismshadow/skills"],
 });

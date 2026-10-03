@@ -79,6 +79,7 @@
   "devDependencies": {
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
+    "@prismshadow/skills": "workspace:*",
     "@types/node": "^24.0.0",
     "dotenv": "^17.0.0",
     "tsup": "^8.3.0",
