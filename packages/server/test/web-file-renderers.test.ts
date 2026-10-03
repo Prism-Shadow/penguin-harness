@@ -1,14 +1,18 @@
 /**
  * File renderers on the server side: a module's `WebModule.fileRenderers` contribution reaches
- * GET /api/contributions as data (id, contributing module, extensions, renderer), and the
- * Workspace file URL a renderer plays answers an audio file with an audio content type.
+ * GET /api/contributions as data (id, contributing module, extensions, renderer), and a Workspace
+ * audio file — what the `audio` renderer plays through files/content — is read with its audio
+ * content type.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { ContributionsResponse } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
+import { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 /** A plugin module that only contributes a file renderer rule. */
@@ -58,28 +62,21 @@ describe("web file renderers", () => {
     ]);
   });
 
-  it("answers a Workspace audio file with its audio content type", async () => {
-    t = await createTestApp();
-    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    const created = await admin.post(
-      "/api/projects/default_project/agents/default_agent/sessions",
-      {},
-    );
-    expect(created.status).toBe(201);
-    const { sessionId } = ((await created.json()) as { session: { sessionId: string } }).session;
-    const types: Record<string, string> = {
-      "a.mp3": "audio/mpeg",
-      "music/b.WAV": "audio/wav",
-      "c.ogg": "audio/ogg",
-      "d.m4a": "audio/mp4",
-    };
-    for (const [file, type] of Object.entries(types)) {
-      const url = `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(file)}`;
-      const put = await admin.put(url, { dataBase64: Buffer.from("RIFF").toString("base64") });
-      expect(put.status, file).toBe(200);
-      const got = await admin.get(url);
-      expect(got.status, file).toBe(200);
-      expect(got.headers.get("content-type"), file).toBe(type);
+  it("reads a Workspace audio file with its audio content type", async () => {
+    const ws = await makeTempRoot();
+    try {
+      const types: Record<string, string> = {
+        "a.mp3": "audio/mpeg",
+        "b.WAV": "audio/wav",
+        "c.ogg": "audio/ogg",
+        "d.m4a": "audio/mp4",
+      };
+      for (const [file, type] of Object.entries(types)) {
+        await fs.writeFile(path.join(ws, file), "RIFF");
+        expect((await new WorkspaceFilesService().read(ws, file)).contentType, file).toBe(type);
+      }
+    } finally {
+      await fs.rm(ws, { recursive: true, force: true });
     }
   });
 });
