@@ -6346,6 +6346,11 @@ Scenarios:
         } as Record<string, string>,
         originTitle: (origin: string, n: number, relation: string): string =>
           `PR #${n} on ${origin}, same branch: ${relation}`,
+        mergedFoldShow: (n: number): string =>
+          `${n} merged proposal${n === 1 ? "" : "s"} not shown — show`,
+        mergedFoldHide: (n: number): string => `Hide the ${n} merged proposal${n === 1 ? "" : "s"}`,
+        mergedFoldTitle:
+          "Merged proposals off the chain are done; they are folded so the lists show what still needs a hand",
         offSection: "Off the chain",
         offSectionHint:
           "Drawn on the graph but not on the chain, each with the reason: an old line, a branch not taken at a fork, or a layer on one of those.",

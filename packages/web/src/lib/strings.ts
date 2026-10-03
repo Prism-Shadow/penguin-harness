@@ -6532,6 +6532,9 @@ Benchmark：
         } as Record<string, string>,
         originTitle: (origin: string, n: number, relation: string): string =>
           `${origin} 上同名分支的 PR #${n}：${relation}`,
+        mergedFoldShow: (n: number): string => `另有 ${n} 份已合入的提案未列出——显示`,
+        mergedFoldHide: (n: number): string => `收起 ${n} 份已合入的提案`,
+        mergedFoldTitle: "不在链上的已合入提案已经结束，收起后列表里只剩还需要处理的",
         offSection: "链外的 PR",
         offSectionHint:
           "画在图上、但不在链上的 PR，各带原因：旧线、分叉处没被取的一支，或叠在这两类之上的层。",
