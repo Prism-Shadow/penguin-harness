@@ -11,6 +11,7 @@ import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
 import { DockPanel, DockLauncher, measureComposer } from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
+import { ReplyFilesProvider } from "../reply-files-provider";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 
@@ -60,6 +61,10 @@ export function renderMainChatBody(scope: MainChatView) {
   return (
     <>
       <ChatDockProvider value={chatDock}>
+        {/* ReplyFilesProvider: the conversation's reply-files trailer, built once from the
+            conversation state the dock provider around it hands down (reply-files-provider.tsx).
+            A context provider adds no element, so the row and the docks below keep their layout. */}
+        <ReplyFilesProvider>
         {/* data-dock-area: the row and the bottom dock together — what a fullscreen bottom dock
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
@@ -282,6 +287,7 @@ export function renderMainChatBody(scope: MainChatView) {
             />
           )}
         </div>
+        </ReplyFilesProvider>
       </ChatDockProvider>
     </>
   );
