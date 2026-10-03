@@ -1219,9 +1219,11 @@ export class MachinesService {
   }
 
   /**
-   * This side's model table for a Project, narrowed to the entries worth carrying: an entry
-   * with an inline key or its own base URL is something the machine cannot already have.
-   * Bare catalog entries are skipped — every server seeds the same presets.
+   * This side's model table for a Project, whole: every group connection (`[providers.<id>]`)
+   * and every entry, a bare one included. The file is the only truth, here as over there: a
+   * bare row runs on its group's table, which travels beside it, and the machine's own copy of
+   * a preset may have been seeded by another release or edited since — so nothing is skipped
+   * on the guess that the far side already holds the same.
    */
   async #localModels(projectId: string): Promise<LocalModels | null> {
     let config: ProjectConfig;
@@ -1230,11 +1232,9 @@ export class MachinesService {
     } catch {
       return null;
     }
-    const models = config.models.filter(
-      (entry) => (entry.api_key ?? "") !== "" || (entry.base_url ?? "") !== "",
-    );
     return {
-      models,
+      models: config.models,
+      ...(config.providers !== undefined ? { providers: config.providers } : {}),
       ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
       ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
       ...(config.name !== undefined ? { name: config.name } : {}),

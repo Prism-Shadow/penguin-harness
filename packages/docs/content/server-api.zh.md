@@ -331,12 +331,15 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 ## 模型
 
-管理 Project 的模型表，并探测模型端点。模型表对所有成员开放读取；本节其余路由仅限所有者。
+管理 Project 的模型表，并探测模型端点。模型表与分组余额对所有成员开放读取；本节其余路由仅限所有者。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount` |
 | PUT | `/api/projects/:projectId/models` | 整表替换，以 `(provider, modelId)` 为键；条目的 `discount` 用来保存或清除它的促销 |
+| PUT | `/api/projects/:projectId/models/providers/:provider` | 逐字段设置或清除一个分组在 `[providers.<provider>]` 里的连接信息：`{apiKey?, clearApiKey?, baseUrl?, clientType?}`（`null` 清除该项）→ 模型表 |
+| POST | `/api/projects/:projectId/models/sync-presets` | 按内置目录**同步新增模型**或**恢复默认**：`{mode: add\|restore}` → 模型表，外加 `added` 与 `restored` 计数 |
+| GET | `/api/projects/:projectId/models/balance?provider=<分组>` | 用分组密钥（没有时用其端点允许的环境变量）查询分组的账户余额（`force=1` 跳过一分钟缓存）：`{ok, provider, amount?, currency?, error?, fetchedAt, …}` |
 | PUT | `/api/projects/:projectId/models/default` | 设置默认模型：`{provider, modelId}` → `{defaultModel}` |
 | POST | `/api/projects/:projectId/models/test` | 测试连通性：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | `/api/projects/:projectId/models/detect` | 检测自定义 base URL 使用的协议 |
@@ -364,7 +367,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 | GET | `/api/projects/:projectId/model-oauth/:flowId` | 轮询流程，兑换已存下的授权码并写入 key：`{status: pending\|done\|error, provider, error?}` |
 | POST | `/api/projects/:projectId/model-oauth/:flowId/code` | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
 
-PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发送给客户端。签发出的 key 直接写入这个供应商分组的模型配置，从不返回、从不记录日志，也从不放进 URL。一个流程只属于一个 Project 中的一个用户，且只能使用一次：不接受第二次兑换，除这个用户外，任何人都无法调用 `/start`、`/:flowId` 和 `/:flowId/code`。
+PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发送给客户端。签发出的 key 只写一次，作为这个供应商分组的分组密钥，从不返回、从不记录日志，也从不放进 URL。一个流程只属于一个 Project 中的一个用户，且只能使用一次：不接受第二次兑换，除这个用户外，任何人都无法调用 `/start`、`/:flowId` 和 `/:flowId/code`。
 
 `GET /callback` 必须是例外。回环地址上的 OAuth 跳转，由供应商跳转到的那个浏览器接收，而它未必是发起流程的浏览器。比如桌面 shell 会在*系统*浏览器中打开授权页，而系统浏览器没有这个应用的源的 Cookie。因此只有这一条路径挂在会话校验之外，改用 flow id 鉴权：32 个随机字节，10 分钟内有效，且只允许存入一次。授权码只能存入发起这个流程的 Project，而且只有要求过回调的流程才接受：`manual` 流程一律拒绝，因为它从未拿到过回调 URL。
 
@@ -379,12 +382,12 @@ Penguin Go 的 key 通过服务端轮询的设备授权交付，而不是浏览�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/projects/:projectId/platform-auth/start` | 开启一次性授权流程，平台给出的截止时间在本地最多按十分钟计：→ 201 `{flowId, authorizeUrl, expiresAt}` |
-| POST | `/api/projects/:projectId/platform-auth/sync` | 用已存的 key 拉取平台模型目录，补齐 Project 缺少的模型并刷新平台维护的字段：→ 模型表，外加 `added` 与 `updated` 计数 |
-| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | 由服务端向 Penguin Go 轮询，随后把交付的 key 写入整个分组并补齐平台的模型：`{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
+| POST | `/api/projects/:projectId/platform-auth/sync` | 用分组密钥拉取平台模型目录，补齐 Project 缺少的模型：→ 模型表，外加 `added` 与 `updated`（恒为 0）计数 |
+| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | 由服务端向 Penguin Go 轮询，随后把交付的 key 写为分组密钥并补齐平台的模型：`{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/retry` | 本地写入失败后重试写入；不会再次索取这次一次性交付，流程处于其他状态时返回 `409 platform_auth_not_retryable` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/cancel` | 取消本地流程；平台侧的待处理记录按自己的 TTL 过期 |
 
-服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 写入 `penguin-go` 分组下已有的每个条目，创建平台提供而 Project 没有的模型，刷新已有模型的牌价与客户端协议，并用平台的促销替换这个分组已存的促销。端点和其他由 Project 自己维护的字段保持不变，任何模型都不会被删除；目录非空时，分组不存在也会被建出来。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
+服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 只写一次，作为 `[providers.penguin-go]` 的分组密钥，组内没有自己 key 的模型都使用它；再补入平台提供而 Project 没有的模型，带上牌价、协议与促销。补入模型的端点与**同步新增模型**同一规则：分组设置里有 base URL 时，只在与平台自己的中转地址不同时写在模型上，因此指向代理的分组会把它一并带过去；分组设置里没有 base URL 时，模型带上完整的地址。已有的模型一概不改写，价格、协议与促销都不动，任何模型都不会被删除。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
 
 flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`sync` 在没有已存 key 或平台拒绝这把 key 时返回 `409 platform_reauthorization_required`，平台拒绝提供目录或返回的目录无法解析时返回 `502 platform_sync_failed`，平台不可达则是 `502 platform_unreachable`。交付的 key 未能写入本地时，流程停在 `apply_failed`，重试路由正是为此准备的。
 
@@ -628,13 +631,14 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/workspace-files/search?workspace=&q=` | 按条目名搜索该目录 |
 | POST | `/workspace-files/reveal?workspace=&path=` | 在机器自带的文件管理器中显示文件 |
 
-- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- `order` 决定列表顺序：`created`（默认）按创建时间从新到旧；`activity` 按 `lastActiveAt` 从新到旧，时间相同时按 `sessionId` 降序，两者都按码点比较而非按区域设置排序。在 `order=activity` 下，`before=<lastActiveAt>,<sessionId>` 搭配 `limit` 以游标代替 `offset` 分页：只返回严格排在这个键之后的行，通常就是客户端已显示的最后一行。两页之间变为活跃的 Session 会移到游标之前，因此不会被再次返回，也不会让其他行漏掉。`before` 未搭配 `order=activity`、与 `offset` 同时出现、缺少 `limit`，或在第一个逗号处拆开后不是日期加合法 id，均返回 400。
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
 - `source` 只接受 `"benchmark"`，用于 Benchmark 评估或优化创建的 Session。`subagent` 和 `schedule` 由服务器自己设置。
-- `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，请求主目录时另带 `roots`，即实际存在的各盘符根目录。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
+- `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
 - `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
 - `/workspace-files` 对 `workspace` 里以绝对路径指定的目录执行 [Workspace 文件](#workspace-文件)中的那组操作，供还没有 Session 的页面使用：新建对话页选定的文件夹，以及侧栏 Workspace 分组的**打开文件浏览**。响应与 Session 路由完全相同。调用方需要有该 Project 的访问权——也就是能在该目录下创建 Session 的同一种权限；`workspace` 必须是已存在的目录，校验口径与在该目录创建 Session 时相同（否则返回 400 `workspace_not_found`）。每个 `path` 都像对 Session 一样被限制在该目录内。这里没有预览跳转，因为预览令牌绑定 Session：目录里的 HTML 以 `preview=1` 在同源沙箱中预览。其他机器上的目录经该机器的 `/server/<machineId>` 代理访问。
@@ -650,7 +654,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/usage/errors` | 错误详情表的一页，按时间倒序：→ `{items, total, rows}` |
 | DELETE | `/usage/errors` | 按当前过滤条件清空错误表：→ `{deleted}`（仅限 Project 所有者） |
 | GET | `/agents/:agentId/traces` | Trace 文件，按日期 → Session 逐级下钻 |
-| GET | `/agents/:agentId/traces/:sessionId/:index` | 读取 Trace 事件（`offset` / `limit` 分页） |
+| GET | `/agents/:agentId/traces/:sessionId/:index` | 读取 Trace 事件（`offset` / `limit` 分页，由按文件维护的行索引提供） |
 | GET | `/agents/:agentId/traces/:sessionId/:index/analysis` | Trace 性能分析 |
 | GET | `/agents/:agentId/traces/:sessionId/:index/download` | 下载原始 Trace 文件（JSONL 附件） |
 | POST | `/agents/:agentId/traces/import` | 导入 Trace 文件：`{dataBase64}` → `{sessionId, index, date}` |
@@ -685,6 +689,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | PATCH | `/` | 更新 Session：`{approvalMode?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | 删除 Session，连同它的 Trace 和暂存文件 |
 | GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
+| GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
 | GET | `/context` | 当前模型上下文的组成，以及压缩将从哪里开始 |
@@ -692,7 +697,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
-- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。内置 Web App 打开一段对话时先显示最近 50 轮，滚动时再加载更早的内容。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
 
@@ -866,7 +872,7 @@ GET  /preview/<token>/<relative path>          (unauthenticated; the token is th
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/traces` | 列出当前 Session 的 Trace 文件 |
-| GET | `/traces/:index` | 读取 Trace 事件（分页） |
+| GET | `/traces/:index` | 读取 Trace 事件（分页，由按文件维护的行索引提供） |
 | GET | `/traces/:index/analysis` | Trace 性能分析 |
 
 ## 消息渠道绑定（飞书、Telegram、QQ、微信）
@@ -1137,7 +1143,7 @@ export type ServerEvent =
       subagents?: SubagentRuntimeInfo[];
     }
   | { type: "session_title"; sessionId: string; title: string }
-  | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
+  | { type: "session_state"; sessionId: string; projectId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
@@ -1180,7 +1186,7 @@ export type ServerEvent =
 - `approval_request` 覆盖 `always-ask` 模式下的每个调用，以及 `read-only` 模式下带 `rw` 或未知权限的调用。待处理的审批会在重连时重新发送。
 - `task_state` 还携带排队的后续消息数量（`queued`）、仍在等待投递的插话消息（`pendingSteering`）、运行结束时没能投递的插话消息（`returnedSteering`）、排队的后续消息本身（`pendingFollowUps`）以及活跃的子 Agent（`subagents`）。字段缺失表示没有。
 - `session_title` 发送到 Session 的通道，以及 Project 所有者和成员的用户通道。
-- `session_state` 用 `sessionId` 指明是哪个 Session，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
+- `session_state` 用 `sessionId` 指明是哪个 Session、用 `projectId` 指明所属 Project，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话；列表还能据此认出本 Project 中自己尚未持有的 Session，再按 id 单独拉取。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。

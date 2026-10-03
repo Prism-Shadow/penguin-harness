@@ -529,7 +529,7 @@ function ContextPanel({
                       type="button"
                       aria-pressed={ranking === view}
                       onClick={() => pickRanking(view)}
-                      className={`rounded px-1 text-xs leading-4 transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 ${
+                      className={`whitespace-nowrap rounded px-1 text-xs leading-4 transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 ${
                         ranking === view
                           ? "font-medium text-gray-700 dark:text-gray-200"
                           : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"

@@ -22,12 +22,14 @@ import type {
   MemberInfo,
   MemoryFileResponse,
   MemoryOverviewResponse,
+  ModelEffectiveConnection,
   ModelInfo,
   ModelsResponse,
   PluginConfigEntry,
   PluginIndexResponse,
   PluginLibraryResponse,
   ProjectScheduleItem,
+  ProviderConnectionDto,
   ProjectSummary,
   ProxyProbeTargetsResponse,
   ServerSettings,
@@ -43,12 +45,16 @@ import type {
   WorkspaceFileEntry,
 } from "@prismshadow/penguin-server/api";
 // The built-in catalog, as the app reads it (the same built module the app imports): the model
-// table is every preset it seeds a Project with, so the app's "sync presets" badge stays quiet.
+// table and the group tables are what it seeds a Project with, so the app's "add new models"
+// badge stays quiet, and each row's effective connection is resolved by the same function the
+// server uses.
 import {
   catalogEntryFor,
+  effectiveConnection,
   PENGUIN_GO_PROVIDER_ID,
   presetModelEntries,
   presetPromotions,
+  presetProviderTable,
 } from "../../../../core/dist/state/model-catalog.js";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
@@ -58,6 +64,39 @@ import type { ModelRef } from "./transcripts";
 // ---------------------------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * What a model is used with, as GET /models reports it: its own values, else its group's
+ * (`providers`), else nothing (the client's default) — the catalog is not consulted; the key's
+ * source and mask, the environment's where the server reported one. The mocked writes call this
+ * again after every change.
+ */
+export function effectiveOf(
+  m: Omit<ModelInfo, "effective">,
+  providers: Readonly<Record<string, ProviderConnectionDto>>,
+): ModelEffectiveConnection {
+  const group = providers[m.provider];
+  const e = effectiveConnection(
+    {
+      provider: m.provider,
+      modelId: m.modelId,
+      clientType: m.clientType,
+      baseUrl: m.credential?.baseUrl,
+      apiKey: m.credential?.apiKeyMasked,
+    },
+    group && { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked },
+  );
+  // The resolver was handed masks for keys, so the key it picked is already masked.
+  const masked = e.apiKeySource === "none" ? m.envKeyMasked : e.apiKey;
+  return {
+    ...(e.baseUrl !== undefined ? { baseUrl: e.baseUrl } : {}),
+    baseUrlSource: e.baseUrlSource,
+    ...(e.clientType !== undefined ? { clientType: e.clientType } : {}),
+    clientTypeSource: e.clientTypeSource,
+    apiKeySource: e.apiKeySource === "none" && m.envKeyMasked ? "env" : e.apiKeySource,
+    ...(masked !== undefined ? { apiKeyMasked: masked } : {}),
+  };
+}
 
 const DAY = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -334,32 +373,41 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   });
 
   // Every preset the catalog seeds a Project with, in catalog order, each row exactly as the
-  // server serves a freshly synced table — name, context window, protocol, vision, list price,
-  // base URL and the running promotion — so the app's catalog check finds nothing to add or
-  // update. Three groups carry a credential; the rest wait for a key, as in a fresh install.
+  // server serves a fresh table — name, context window, vision, list price and the running
+  // promotion, and a protocol or endpoint only where it differs from its group's table (an
+  // OpenCode Go Messages row, Penguin Go's pins, Atria in custom) — beside the group tables a new
+  // Project writes, so every gateway row follows its group and the app's catalog check finds
+  // nothing to add. Two groups hold a group key and one is covered by the environment; the rest
+  // wait for a key, as in a fresh install.
   const promotions = new Map(
     presetPromotions().map((p) => [`${p.provider}\0${p.modelId}`, p.discount]),
   );
-  const credentials: Record<string, Partial<ModelInfo>> = {
-    deepseek: {
-      envKey: "DEEPSEEK_API_KEY",
-      credential: { apiKeyMasked: "sk-3f…9a2c", createdAt: iso(ago(60)) },
-    },
+  const providers: Record<string, ProviderConnectionDto> = Object.fromEntries(
+    Object.entries(presetProviderTable()).map(([id, table]) => [
+      id,
+      {
+        ...(table.base_url !== undefined ? { baseUrl: table.base_url } : {}),
+        ...(table.client_type !== undefined ? { clientType: table.client_type } : {}),
+      },
+    ]),
+  );
+  providers.deepseek = { apiKeyMasked: "sk-3f…9a2c", createdAt: iso(ago(60)) };
+  providers.openai = { apiKeyMasked: "sk-pr…7Hd1", createdAt: iso(ago(12)) };
+  const envKeys: Record<string, Partial<ModelInfo>> = {
+    deepseek: { envKey: "DEEPSEEK_API_KEY" },
     anthropic: { envKey: "ANTHROPIC_API_KEY", envKeyMasked: "sk-ant…Qm4x" },
-    openai: {
-      envKey: "OPENAI_API_KEY",
-      credential: { apiKeyMasked: "sk-pr…7Hd1", createdAt: iso(ago(12)) },
-    },
+    openai: { envKey: "OPENAI_API_KEY" },
   };
-  const models: ModelInfo[] = presetModelEntries().map((entry) => {
+  const rows: Array<Omit<ModelInfo, "effective">> = presetModelEntries().map((entry) => {
     const catalog = catalogEntryFor(entry.provider, entry.model_id);
     const discount = promotions.get(`${entry.provider}\0${entry.model_id}`);
-    const row: ModelInfo = {
+    return {
       provider: entry.provider,
       modelId: entry.model_id,
       ...(catalog?.displayName ? { displayName: catalog.displayName } : {}),
       ...(entry.context_window !== undefined ? { contextWindow: entry.context_window } : {}),
       ...(entry.client_type !== undefined ? { clientType: entry.client_type } : {}),
+      ...(entry.base_url !== undefined ? { credential: { baseUrl: entry.base_url } } : {}),
       ...(entry.vision === false ? { vision: false } : {}),
       ...(entry.pricing
         ? {
@@ -371,16 +419,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           }
         : {}),
       ...(discount !== undefined && entry.provider !== PENGUIN_GO_PROVIDER_ID ? { discount } : {}),
-      ...(credentials[entry.provider] ?? {}),
+      ...(envKeys[entry.provider] ?? {}),
       isDefault:
         entry.provider === DEFAULT_MODEL.provider && entry.model_id === DEFAULT_MODEL.modelId,
     };
-    if (entry.base_url !== undefined) {
-      row.credential = { ...(row.credential ?? {}), baseUrl: entry.base_url };
-    }
-    return row;
   });
-  models.push({
+  rows.push({
     provider: "custom",
     modelId: "qwen3.8-27b-local",
     displayName: L("本机 Qwen 3.8", "Local Qwen 3.8"),
@@ -395,7 +439,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     defaultModel: { provider: DEFAULT_MODEL.provider, modelId: DEFAULT_MODEL.modelId },
     visionModel: { provider: "anthropic", modelId: "claude-sonnet-5" },
     updatedAt: iso(ago(3)),
-    models,
+    providers,
+    models: rows.map((m) => ({ ...m, effective: effectiveOf(m, providers) })),
   };
 
   const sandbox: SessionInfo["sandbox"] = {
@@ -1284,6 +1329,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ],
     },
     "/home": { path: "/home", parent: "/", entries: [{ name: "demo", path: "/home/demo" }] },
+    "/mnt/data": {
+      path: "/mnt/data",
+      parent: "/mnt",
+      entries: [{ name: "datasets", path: "/mnt/data/datasets" }],
+    },
     "/": { path: "/", parent: null, entries: [{ name: "home", path: "/home" }] },
   };
 

@@ -8,7 +8,7 @@ fetched from a CDN, so the desktop build renders offline.
 
 | theme | sans (reading) | ui (chrome) | mono | CJK |
 | --- | --- | --- | --- | --- |
-| Primer `github` | Mona Sans Variable | = sans | JetBrains Mono Variable | Noto Sans SC Variable |
+| Primer `github` | system sans | = sans | JetBrains Mono Variable | system CJK |
 | Frost `modern` | **MiSans** 400 / 500 | = sans | JetBrains Mono Variable | MiSans (the same family) |
 | Console `geek` | IBM Plex Sans Variable | = sans | JetBrains Mono Variable | Noto Sans SC Variable |
 
@@ -23,14 +23,15 @@ dependency is dropped.
 
 | family | files | source | licence |
 | --- | --- | --- | --- |
-| Mona Sans Variable | `github.css`: latin + latin-ext | `@fontsource-variable/mona-sans` | OFL-1.1 |
+| Mona Sans Variable | `github.css`: latin + latin-ext — a pairing option; no theme names it since 2026-10-02 | `@fontsource-variable/mona-sans` | OFL-1.1 |
 | JetBrains Mono Variable | `github.css`: latin + latin-ext (Frost and Console name the same faces) | `@fontsource-variable/jetbrains-mono` | OFL-1.1 |
 | MiSans | `modern.css` → `misans/misans.css`: Regular as 400 and Medium as 500, 99 `unicode-range` slices each | vendored: `scripts/build-misans.py` cuts them from Xiaomi's official package | MiSans Font Intellectual Property License Agreement |
 | IBM Plex Sans Variable | `geek.css`: latin + latin-ext | `@fontsource-variable/ibm-plex-sans` | OFL-1.1 |
 | IBM Plex Sans Condensed | `geek.css`: 600, latin + latin-ext | `@fontsource/ibm-plex-sans-condensed` | OFL-1.1 |
 | Noto Sans SC Variable | `cjk.css`: fontsource's own sheet, 101 `unicode-range` slices | `@fontsource-variable/noto-sans-sc` | OFL-1.1 |
 
-Why these faces: Mona Sans is GitHub's product face. MiSans gives Frost one family for Latin and
+Why these faces: Mona Sans was Primer's face from W1a (2026-09-30) until 2026-10-02 and stays as a
+pairing option; Primer reads in the platform's own faces. MiSans gives Frost one family for Latin and
 Chinese, so a zh line sits in the same face as the English around it; no other face on the shortlist
 has Chinese. IBM Plex Sans is Console's main face, chrome and reading text alike, and JetBrains
 Mono, the code face the three themes share, sets its code and its technical marks.
@@ -59,7 +60,7 @@ each language; Playwright network log, identical in light and dark):
 
 | theme | English page | Chinese page |
 | --- | --- | --- |
-| Primer | not measured since it took its bundled faces (2026-09-30) | not measured |
+| Primer | JetBrains Mono only (system faces otherwise) | the same |
 | Frost | 5 files, 92.6 KB (MiSans 3 + 1 slices, JetBrains Mono) | 27 files, 627 KB (MiSans 16 + 10 slices, JetBrains Mono) |
 | Console | not measured since it took JetBrains Mono (2026-09-30) | not measured |
 

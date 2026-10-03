@@ -192,9 +192,10 @@
  * `octicons` svg (GitHub's 16-grid filled drawing, scaled to the box) and the `pixel` svg (a
  * 16x16 drawing on crisp edges, laid out one cell to a CSS pixel from a 13px box up, so it spills
  * a little past a box under 16px). The foundation shows the line set, hides the other two and sets
- * the duo body's opacity from `--ui-icon-duo-opacity`; Primer shows the Octicons, Console the
- * pixel drawings, and Frost keeps the line drawings with their duotone bodies. A host's
- * transform (a chevron's turn, an activity mark's motion) moves all three together.
+ * the duo body's opacity from `--ui-icon-duo-opacity`; Primer keeps the line drawings as they are,
+ * Frost keeps them with their duotone bodies, and Console shows the pixel drawings (no theme
+ * shows the Octicons today; the set still ships). A host's transform (a chevron's turn, an
+ * activity mark's motion) moves all three together.
  */
 export const HOOKS = [
   "ui-glass",

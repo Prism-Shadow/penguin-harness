@@ -133,8 +133,10 @@ export function ProfileSection() {
   return (
     <section>
       <SettingsGroup>
+        {/* The avatar's controls wrap, right-aligned, where a phone-width column cannot hold
+            them on one line: a button keeps its label whole and does not shrink. */}
         <PrefRow label={S.profile.avatar} info={S.profile.avatarInfo}>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <UserAvatar
               userId={user.userId}
               {...(user.displayName !== undefined ? { displayName: user.displayName } : {})}
@@ -160,7 +162,7 @@ export function ProfileSection() {
             </Button>
           </div>
         </PrefRow>
-        <PrefRow label={S.profile.displayName} hint={S.profile.displayNameHint}>
+        <PrefRow label={S.profile.displayName} info={S.profile.displayNameInfo}>
           <div className="flex items-center gap-2">
             <Input
               size="sm"

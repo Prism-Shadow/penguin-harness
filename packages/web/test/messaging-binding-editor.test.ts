@@ -297,7 +297,7 @@ describe("MessagingBindingBody", () => {
     }
     // The grid's column count is spelled out in the component rather than interpolated, so
     // a fourth channel that did not widen it would silently wrap onto a second row.
-    expect(html).toContain("grid-cols-4");
+    expect(html).toContain("grid-cols-[repeat(4,1fr)]");
   });
 
   it("says whether anything has arrived, and which end failed when something did", () => {

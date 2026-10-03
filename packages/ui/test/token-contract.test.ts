@@ -36,7 +36,6 @@ import {
 } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
 import {
-  GRAY_STEPS,
   accentProblems,
   analyzeFile,
   analyzeThemeFile,
@@ -44,7 +43,6 @@ import {
   darkRepeats,
   matchesPolicyPath,
   modeDeclarations,
-  parseColor,
   parseCssRules,
   scanSourceRoots,
   stripCssComments,
@@ -145,9 +143,10 @@ describe("theme files", () => {
 
 describe("the accent presets, per theme (2026-09-19)", () => {
   // Each theme lists its own presets and values (user decision): Primer the five ids and values
-  // the Web App has always had, so it moves no pixel; Frost warm and muted; Console terminal
-  // hues. A theme's rules match only its own root, so a stored preset another theme lists paints
-  // nothing under it and comes back when that theme returns.
+  // the Web App has always had, so it moves no pixel; Frost its former forest green and warm,
+  // muted hues; Console its former orange and terminal hues. A theme's rules match only its own
+  // root, so a stored preset another theme lists paints nothing under it and comes back when
+  // that theme returns.
   const PRIMER_TODAY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     blue: {
       "--ui-accent": "#2563eb",
@@ -218,14 +217,15 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     }
   });
 
-  it("gives every theme its own list (Console's has six), with no id shared between two themes", () => {
+  it("gives every theme its own list (Frost's and Console's have six), with no id shared between two themes", () => {
     const all = THEME_IDS.flatMap((id) => THEME_ACCENT_PRESETS[id]);
     expect(all.length).toBe(new Set(all).size);
-    // Console's own accent went black and white (2026-09-30); the orange it had is now its first
-    // preset, so its list is one longer.
-    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 5, geek: 6 };
+    // Console's own accent went black and white (2026-09-30) and Frost's followed (2026-10-02);
+    // the hue each had is now its first preset, so their lists are one longer.
+    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 6, geek: 6 };
     for (const id of THEME_IDS) expect(THEME_ACCENT_PRESETS[id].length, id).toBe(listed[id]);
     expect(THEME_ACCENT_PRESETS.geek[0]).toBe("orange");
+    expect(THEME_ACCENT_PRESETS.modern[0]).toBe("forest");
   });
 
   it("spells each theme's own accent (the neutral choice) in tokens.ts as the CSS does", () => {
@@ -339,8 +339,9 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     // the bar outline's three, plus the knob's hairline edge (2026-09-30), plus the update
     // mark's fill (W1, the same day), plus the streaming pair (the same day), plus the neutral
     // fill of bubbles and chips (W6, the same day), plus the icon sets' duotone opacity and
-    // nine glyph hues and Console's one-tag badge trio (ring, weight, md padding; 2026-10-01).
-    expect(TOKEN_NAMES.length).toBe(249);
+    // nine glyph hues and Console's one-tag badge trio (ring, weight, md padding; 2026-10-01),
+    // plus the badge's size and line-height (2026-10-02).
+    expect(TOKEN_NAMES.length).toBe(251);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -447,11 +448,11 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     }
   });
 
-  it("keeps Primer's light ink, lines and switch on today's rungs, and moves only its dark", () => {
+  it("keeps Primer's light ink, lines and switch on today's rungs, reads in the platform's faces, and moves only its dark", () => {
     const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     const light = primer.analysis.modes.light;
-    // The rungs are the ones the app always drew; the bridge under them went neutral (below).
+    // The rungs are the ones the app always drew, on Tailwind's stock gray bridge.
     const rungs: Readonly<Record<string, string>> = {
       "--ui-surface-muted": "var(--color-gray-50)",
       "--ui-fg": "var(--color-gray-900)",
@@ -464,50 +465,20 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     };
     for (const [name, value] of Object.entries(rungs)) expect(light.get(name), name).toBe(value);
     expect(light.get("--ui-switch-knob")).toBe("#ffffff");
-    // The faces are GitHub Primer's (2026-09-30): the sans stack reads the CJK face where it
-    // named the two system CJK faces, and those two stay behind Noto as its fallback.
+    // The faces are the platform's, as v0.2.13 set them (the W1a move to Mona Sans and Noto was
+    // withdrawn on 2026-10-02): the sans stack reads the CJK face, and that face leads with a
+    // system CJK family, not a bundled one.
     expect(light.get("--ui-font-sans")).toContain("var(--ui-font-cjk)");
-    expect(light.get("--ui-font-cjk")).toBe(
-      '"Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei"',
-    );
+    const firstCjk = (light.get("--ui-font-cjk") ?? "")
+      .split(",")[0]!
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    expect(firstCjk).not.toBe("");
+    expect(Object.values(BUNDLED_FONT_FAMILIES) as readonly string[]).not.toContain(firstCjk);
     // Dark lifts off pure black and calms the body ink: the ramp, not the app's #000.
     const dark = primer.analysis.modes.dark;
     expect(dark.get("--color-gray-950")).not.toBe("#000000");
     expect(dark.get("--color-gray-100")).not.toBe(light.get("--color-gray-100"));
-  });
-
-  it("keeps Primer's grays and its own accent pure neutral in both modes", () => {
-    // The owner found the slate tint of Tailwind's stock gray (hue about 264) read off, and took
-    // the zero-chroma grays of Vercel's Geist as the reference (2026-09-30): light re-points the
-    // bridge to Tailwind's `neutral` scale at the same rungs, dark was a neutral ramp already, and
-    // the accent family is the neutral near-black in light and near-white in dark. A value is
-    // neutral when its three channels agree; the oklch conversion leaves a rounding hair.
-    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
-    if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
-    const tinted = (value: string | undefined): boolean => {
-      const color = value === undefined ? null : parseColor(value);
-      if (color === null) return true;
-      return Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b) > 0.5;
-    };
-    const accent = [
-      "--ui-accent",
-      "--ui-accent-hover",
-      "--ui-accent-active",
-      "--ui-accent-fg",
-      "--ui-accent-muted",
-      "--ui-accent-line",
-    ];
-    for (const mode of THEME_MODES) {
-      const values = modeDeclarations(primer.analysis, mode);
-      const names = [...GRAY_STEPS.map((step) => `--color-gray-${step}`), ...accent];
-      const off = names.filter((name) => tinted(values.get(name)));
-      expect(
-        off.map((name) => `${name}: ${values.get(name)}`),
-        mode,
-      ).toEqual([]);
-    }
-    expect(primer.analysis.modes.light.get("--color-gray-900")).toBe("oklch(20.5% 0 0)");
-    expect(THEME_OWN_ACCENTS.github).toEqual({ light: "#171717", dark: "#f5f5f5" });
   });
 
   it("resolves the font pairing in theme.css's ui-font layer, for every face the lists offer", () => {

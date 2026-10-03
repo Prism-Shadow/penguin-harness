@@ -71,7 +71,7 @@ describe("a balance in the display currency", () => {
 });
 
 describe("what a balance reads as", () => {
-  it("a reading: the amount in the display currency, the vendor's figures in the tooltip", () => {
+  it("a reading: the amount in the display currency, the vendor's figures spoken behind it", () => {
     const view = balanceView({ loading: false, answer: reading }, "DeepSeek", "CNY");
     expect(view.text).toBe("¥145");
     expect(view.title).toContain("DeepSeek");
@@ -80,7 +80,7 @@ describe("what a balance reads as", () => {
     expect(balanceView({ loading: false, answer: reading }, "DeepSeek", "USD").text).toBe("$20.71");
   });
 
-  it("an account the vendor says cannot make requests says so in the tooltip", () => {
+  it("an account the vendor says cannot make requests says so behind the amount", () => {
     const view = balanceView(
       { loading: false, answer: { ...reading, available: false } },
       "DeepSeek",
@@ -89,7 +89,7 @@ describe("what a balance reads as", () => {
     expect(view.title).toContain(S.models.balanceUnavailable);
   });
 
-  it("no balance is a muted dash, the reason and the vendor's status in the tooltip", () => {
+  it("no balance is a muted dash: the update failed, with the reason and the vendor's status", () => {
     const view = balanceView(
       {
         loading: false,
@@ -106,14 +106,19 @@ describe("what a balance reads as", () => {
       "CNY",
     );
     expect(view.text).toBe("—");
+    expect(view.title.startsWith(S.models.balanceFailed(""))).toBe(true);
     expect(view.title).toContain(S.models.balanceErrors.upstream_failed!);
     expect(view.title).toContain("401");
   });
 
   it("a request that failed outright is a dash too; nothing read yet is not", () => {
-    expect(
-      balanceView({ loading: false, requestError: "Network error" }, "TokenDance", "CNY"),
-    ).toEqual({ text: "—", title: "Network error" });
+    const failed = balanceView(
+      { loading: false, requestError: "Network error" },
+      "TokenDance",
+      "CNY",
+    );
+    expect(failed.text).toBe("—");
+    expect(failed.title).toContain("Network error");
     expect(balanceView(undefined, "TokenDance", "CNY").text).toBe("…");
     expect(balanceView({ loading: true }, "TokenDance", "USD").text).toBe("…");
   });

@@ -573,25 +573,27 @@ CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失
 
 ## penguin config
 
-管理 Project 的模型配置、每个 Agent 的 vault 环境变量以及界面语言。除 `lang` 外，每个子命令都接受 `--project-id <id>`（默认值：默认 Project）和 `--root <dir>`。
+管理 Project 的模型配置、各分组的连接信息、每个 Agent 的 vault 环境变量以及界面语言。除 `lang` 外，每个子命令都接受 `--project-id <id>`（默认值：默认 Project）和 `--root <dir>`。
 
 ### model add
 
-添加或更新一条模型条目。
+添加或更新一条模型条目。不带 `--model-id` 时改为设置分组的连接信息：组内没有自己设置对应项的模型都使用这里的 API key、base URL 与协议，它在 `[providers.<分组>]` 里只存一份（见[分组连接信息](/configuration#分组连接信息)）。
 
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider tokendance --api-key td-...
+penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --clear-api-key
 ```
 
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |
-| `--model-id <id>` | 上游模型 id。必填。 | — |
-| `--provider <group>` | 条目所属的供应商分组。必填。 | — |
-| `--api-key <key>` | API key，直接写在 Project 隐藏的 `.project_config.toml` 里。 | — |
-| `--base-url <url>` | 自定义端点的 base URL。 | 见下文 |
+| `--model-id <id>` | 上游模型 id。不给即设置分组的连接信息。 | — |
+| `--provider <group>` | 条目所属的供应商分组，或要设置连接信息的分组：内置分组 id 或你自己的分组。必填。 | — |
+| `--api-key <key>` / `--clear-api-key` | 设置或清除 API key，直接写在 Project 隐藏的 `.project_config.toml` 里：带 `--model-id` 为该模型自己的，否则为分组密钥。 | 分组密钥 |
+| `--base-url <url>` / `--clear-base-url` | 设置或清除 base URL：模型自己的，否则为分组的。 | 见下文 |
+| `--client-type <type>` / `--clear-client-type` | 设置或清除 MMSP 客户端类型，例如 `openai-chat`：模型自己的，否则为分组的。 | 见下文 |
 | `--context-window <n>` | 上下文窗口大小，单位是 Token。 | — |
 | `--max-tokens <n>` | 这个模型的最大输出 Token 数，必须是正整数。设置后会覆盖 Agent 的 `model.max_tokens`；小上下文模型应调低此值。 | Agent 的 `model.max_tokens` |
-| `--client-type <type>` | MMSP 客户端类型，例如 `openai-chat`。 | 见下文 |
 | `--vision` / `--no-vision` | 标记是否支持图片输入。 | 保持当前值 |
 | `--fast-mode` / `--no-fast-mode` | 开启或关闭快速模式（输出更快，价格更高）。 | 关闭；两个都不写则保持当前值 |
 | `--price-cache-read <n>` | 缓存读取价格，单位为美元每百万 Token。 | — |
@@ -600,9 +602,18 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--set-default` | 同时把这条条目设为 Project 的默认模型。 | — |
 
 - CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
-- 新建条目时，`--client-type` 和 `--base-url` 默认取内置模型目录为对应 `(provider, model_id)` 组合设置的值。模型目录里没有这一条时由分组决定：指定了协议的分组就用它指定的协议（`vllm`），`custom` 和用户自定义分组用 `openai-chat`。更新已有条目时，只有显式传入这两个选项才会改动。
-- 只有 `custom`、`vllm` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
+- 新建条目只在显式传入时才存 `--client-type`、`--base-url` 与 `--api-key`。不传的项跟随分组，分组也没有即交给客户端缺省；不读内置模型目录。新建 Project 的文件已在各分组上存好网关的端点与协议、Penguin Go 的中转地址与 `vllm` 的 `openai-chat-vllm-adapter`。分组没有设置协议时，`custom` 或用户自定义分组的条目取 `openai-chat`。更新已有条目时，只有显式传入这些选项才会改动；`--clear-*` 选项清除条目自己的值，此后它跟随分组。
+- 用这种方式重新加回删掉的预置模型，只会存下你传入的值；模型库页面的**同步新增模型**会把它连同目录的协议与端点一起补回。
+- 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
 - 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
+- 两种形式下，没有指定的项都保持不变；每一对设置 / 清除选项互斥；取值为空会被拒绝，清除请用对应的 `--clear-*` 选项。
+
+不带 `--model-id` 时：
+
+- 只描述单个模型的选项——`--context-window`、`--max-tokens`、`--vision`、`--fast-mode`、各 `--price-*` 选项与 `--set-default`——会被拒绝，什么也不写入。一个连接字段都没指定的调用同样被拒绝。
+- 每个分组都可以设置协议：模型自己的 `client_type` 优先于分组的，因此 Penguin Go 与 OpenCode Go 的模型保留各自的协议。
+- 分组密钥只借给访问分组端点的模型：没有自己的 base URL，或自己的 base URL 与分组的同 origin（scheme、host、port）。
+- 命令会报告组内有多少模型不受改动影响（自己设置了对应项，或分组密钥借不到它们），并在用户自定义分组还没有模型时给出提示。
 
 ### model default / model vision / model list / model remove
 
@@ -611,11 +622,13 @@ penguin config model default --model-id <id> --provider <group>
 penguin config model vision --model-id <id> --provider <group>
 penguin config model list
 penguin config model remove --model-id <id> --provider <group>
+penguin config model remove --provider <group>
 ```
 
 - `model default` 设置 Project 的默认模型，`model vision` 设置视觉代理模型。两者都要求 `--model-id` 和 `--provider`，而且这对组合必须已经在模型列表里。
-- `model list` 列出已配置的模型，并用 `*` 标记默认模型。
-- `model remove` 删除一条模型条目，连同直接写在条目上的凭证一起删除。命令要求 `--model-id` 和 `--provider`，并精确匹配这对组合，所以另一个分组下相同上游 id 的条目不受影响。这对组合不在配置里时，命令以非零退出码退出。如果删除的条目是默认模型或视觉模型，相应设置会一并清空：指向已不存在的模型，会让下一次会话直接失败。
+- `model list` 先列各分组的连接信息：每个 `[providers.<分组>]` 的 `base_url`、`client_type` 与 key（掩码），分组没有存的项显示 `-`。随后列出已配置的模型，并用 `*` 标记默认模型。其中 `client_type`、`api_key`（掩码）与 `base_url` 列显示每个模型实际使用的值，只读文件：取自分组的值标 `(provider)`，读自环境变量的 key 标 `(env)`，不带标记的是模型自己的值。
+- `model remove` 删除一条模型条目，连同直接写在条目上的凭证一起删除。命令精确匹配 `--model-id` 和 `--provider` 这对组合，所以另一个分组下相同上游 id 的条目不受影响；这对组合不在配置里时，命令以非零退出码退出。如果删除的条目是默认模型或视觉模型，相应设置会一并清空：指向已不存在的模型，会让下一次会话直接失败。删除用户自定义分组的最后一个模型时，该分组的连接信息也一并删除。
+- 不带 `--model-id` 的 `model remove` 移除分组的连接信息，即整张 `[providers.<分组>]` 表（包括分组密钥），组内模型保留：没有自己设置对应项的模型随之改用客户端缺省。分组没有存连接信息时，命令以非零退出码退出。
 
 ### vault
 

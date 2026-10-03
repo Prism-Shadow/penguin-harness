@@ -1,11 +1,11 @@
 /**
- * Primer (`github`) Latin faces: Mona Sans (sans) and JetBrains Mono, variable `wght`, latin +
- * latin-ext slices only, from @fontsource-variable/mona-sans and
+ * The Latin faces first bundled for Primer (`github`): Mona Sans (sans) and JetBrains Mono,
+ * variable `wght`, latin + latin-ext slices only, from @fontsource-variable/mona-sans and
  * @fontsource-variable/jetbrains-mono (OFL-1.1).
  *
- * `themes/github.css` puts them first in its sans and mono stacks (Primer's CJK face, Noto Sans
- * SC, is `cjk.css`); Frost and Console name the same JetBrains Mono faces, declared once here.
- * The `url()`s are relative to this file on purpose — see `index.css`.
+ * Every theme's mono stack names JetBrains Mono, declared once here; Mona Sans is a pairing
+ * option (`data-font-latin="mona-sans"`) named by no theme. The `url()`s are relative to this
+ * file on purpose — see `index.css`.
  */
 
 @font-face {

@@ -18,8 +18,10 @@
  *   environment variable (ANTHROPIC_* for ant-messages, OPENAI_* for the others), never for any
  *   other URL; unset and blank are absent, and a typed key wins.
  * - POST /api/projects/:p/models/detect validates the URL, falls back to the stored key of the
- *   paired reference unless clearApiKey says not to, never echoes the key, and never sends
- *   vendor environment keys to the Penguin Go relay.
+ *   paired reference unless clearApiKey says not to — the model's own key, else its group's —
+ *   takes a group alone (the group settings dialog) and probes with the group's key unless
+ *   clearApiKey clears it, never echoes the key, and never sends vendor environment keys to
+ *   the Penguin Go relay.
  *
  * No test reaches the network except against a loopback server of its own: the probed endpoint
  * is the suite's fetch fake.
@@ -759,6 +761,50 @@ describe("POST /api/projects/:p/models/detect", () => {
         if (savedAnthropicBase === undefined) delete process.env.ANTHROPIC_BASE_URL;
         else process.env.ANTHROPIC_BASE_URL = savedAnthropicBase;
       }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("a group alone probes with the group's key, and so does a model with no key of its own; clearApiKey on the group probes keyless", async () => {
+    const seen: Array<{ path: string; auth?: string; xApiKey?: string }> = [];
+    const server = antOnlyServer(seen);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    try {
+      const put = await api.put(`/api/projects/${projectId}/models`, {
+        providers: { "my-lab": { baseUrl, apiKey: "sk-lab-group-0001" } },
+        models: [{ provider: "my-lab", modelId: "lab-model", clientType: "openai-chat" }],
+      });
+      expect(put.status).toBe(200);
+      const messagesKey = () => seen.find((c) => c.path === "/v1/messages")?.xApiKey;
+
+      for (const body of [
+        { baseUrl, provider: "my-lab" },
+        { baseUrl, provider: "my-lab", modelId: "lab-model" },
+        // Clearing the model's own key leaves it on its group's.
+        { baseUrl, provider: "my-lab", modelId: "lab-model", clearApiKey: true },
+      ]) {
+        seen.length = 0;
+        const res = await api.post(detectUrl(), body);
+        expect(res.status).toBe(200);
+        expect(JSON.stringify(await res.json())).not.toContain("sk-lab-group-0001");
+        expect(messagesKey(), JSON.stringify(body)).toBe("sk-lab-group-0001");
+      }
+
+      // The group dialog's "clear the group key": the probe is the draft's, so it is keyless.
+      seen.length = 0;
+      const cleared = await api.post(detectUrl(), {
+        baseUrl,
+        provider: "my-lab",
+        clearApiKey: true,
+      });
+      expect(((await cleared.json()) as ModelProtocolDetectResponse).detected).toBe("ant-messages");
+      expect(messagesKey()).toBeUndefined();
+
+      // A model id still needs its group.
+      expect((await api.post(detectUrl(), { baseUrl, modelId: "lab-model" })).status).toBe(400);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

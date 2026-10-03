@@ -61,6 +61,9 @@ import type {
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
   ModelsResponse,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionUpdate,
   ModelTestResponse,
   ModelVisionDetectResponse,
   OrganizationsResponse,
@@ -115,9 +118,9 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
-import { dayKey } from "./fixtures";
+import { dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
@@ -309,13 +312,58 @@ router
 // Models and provider keys
 // ---------------------------------------------------------------------------------------------
 
+/** A key as GET /models shows it. */
+const maskKey = (key: string) => `${key.slice(0, 4)}…${key.slice(-4)}`;
+
+/** One group's connection after an update, as the server stores it (omitted fields kept); any group takes a protocol. */
+function updatedConnection(
+  current: ProviderConnectionDto | undefined,
+  update: ProviderConnectionUpdate,
+): ProviderConnectionDto {
+  const next: ProviderConnectionDto = { ...(current ?? {}) };
+  if (update.baseUrl === null || update.baseUrl === "") delete next.baseUrl;
+  else if (typeof update.baseUrl === "string") next.baseUrl = update.baseUrl;
+  if (update.clientType === null || update.clientType === "") delete next.clientType;
+  else if (typeof update.clientType === "string") next.clientType = update.clientType;
+  if (update.clearApiKey === true) {
+    delete next.apiKeyMasked;
+    delete next.createdAt;
+  }
+  if (typeof update.apiKey === "string" && update.apiKey !== "") {
+    next.apiKeyMasked = maskKey(update.apiKey);
+    next.createdAt = new Date().toISOString();
+  }
+  return next;
+}
+
+/** Writes group connections, then re-resolves every model's effective connection. */
+function writeProviders(store: DemoStore, updates: Record<string, ProviderConnectionUpdate>): void {
+  const providers = { ...store.f.models.providers };
+  for (const [id, update] of Object.entries(updates)) {
+    const next = updatedConnection(providers[id], update);
+    if (Object.keys(next).length > 0) providers[id] = next;
+    else delete providers[id];
+  }
+  store.f.models.providers = providers;
+  refreshEffective(store);
+}
+
+function refreshEffective(store: DemoStore): void {
+  const { providers } = store.f.models;
+  store.f.models.models = store.f.models.models.map((m) => ({
+    ...m,
+    effective: effectiveOf(m, providers),
+  }));
+}
+
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)
   .put("/api/projects/:projectId/models", ({ store, body }): ModelsResponse => {
-    const { defaultModel, visionModel, models } = record(body) as Partial<{
+    const { defaultModel, visionModel, models, providers } = record(body) as Partial<{
       defaultModel: ModelsResponse["defaultModel"];
       visionModel: ModelsResponse["visionModel"];
       models: Array<Record<string, unknown>>;
+      providers: Record<string, ProviderConnectionUpdate>;
     }>;
     if (Array.isArray(models)) {
       store.f.models.models = models.map((entry) => {
@@ -325,7 +373,7 @@ router
         const { apiKey, clearApiKey, baseUrl, renamedFrom, discount, ...rest } = entry;
         const credential = { ...(existing?.credential ?? {}) };
         if (typeof apiKey === "string" && apiKey !== "") {
-          credential.apiKeyMasked = `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}`;
+          credential.apiKeyMasked = maskKey(apiKey);
           credential.createdAt = new Date().toISOString();
         }
         if (clearApiKey === true) delete credential.apiKeyMasked;
@@ -349,8 +397,27 @@ router
     }
     if (defaultModel) store.f.models.defaultModel = defaultModel;
     if (visionModel) store.f.models.visionModel = visionModel;
+    writeProviders(store, providers ?? {});
     store.f.models.updatedAt = new Date().toISOString();
     return store.f.models;
+  })
+  .put(
+    "/api/projects/:projectId/models/providers/:provider",
+    ({ store, params, body }): ModelsResponse => {
+      writeProviders(store, { [str(params.provider)]: record(body) as ProviderConnectionUpdate });
+      store.f.models.updatedAt = new Date().toISOString();
+      return store.f.models;
+    },
+  )
+  // The demo table already holds every preset: an add finds nothing, and a restore resets
+  // the built-in models where they stand (the demo's own edits are not tracked, so nothing
+  // visible moves).
+  .post("/api/projects/:projectId/models/sync-presets", ({ store, body }): PresetSyncResponse => {
+    const restore = record(body).mode === "restore";
+    const builtIn = store.f.models.models.filter(
+      (m) => catalogEntryFor(m.provider, m.modelId) !== undefined,
+    ).length;
+    return { ...store.f.models, added: 0, restored: restore ? builtIn : 0 };
   })
   .put("/api/projects/:projectId/models/default", ({ store, body }): DefaultModelResponse => {
     const { provider, modelId } = record(body);
@@ -369,9 +436,8 @@ router
       const message = `The ${provider} group publishes no balance.`;
       return { ok: false, provider, error: "unsupported", message, fetchedAt };
     }
-    const keyed = store.f.models.models.some(
-      (m) => m.provider === provider && m.credential?.apiKeyMasked,
-    );
+    // The group's own key, as the server reads it; a key set on one model does not count.
+    const keyed = store.f.models.providers[provider]?.apiKeyMasked !== undefined;
     if (!keyed) {
       const message = `The ${info.label} group stores no API key.`;
       return { ok: false, provider, error: "no_key", message, fetchedAt };
@@ -735,20 +801,45 @@ function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
   return counts;
 }
 
+/** Newest creation first: the list's default order. */
+const byCreated = (a: SessionInfo, b: SessionInfo) =>
+  a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+
+/** `order=activity`: last activity first, ties by id — both by code point, as the server compares. */
+function byActivity(
+  a: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+  b: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  return a.sessionId > b.sessionId ? -1 : a.sessionId < b.sessionId ? 1 : 0;
+}
+
 router
   .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
     const { store, params, query } = ctx;
     // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
     // and the totals alike.
     const ownOnly = query.get("excludeOrg") === "1";
+    const activity = query.get("order") === "activity";
     const all = store.f.sessions
       .filter((s) => s.agentId === params.agentId && !(ownOnly && isOrgRow(s)))
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+      .sort(activity ? byActivity : byCreated);
     const category = query.get("category") as SessionCategory | null;
     const group = query.get("workspaceGroup");
     let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
     if (group !== null) {
       rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
+    }
+    // `before=<lastActiveAt>,<sessionId>`: the rows strictly below the last one the sidebar
+    // holds, in activity order only.
+    const before = query.get("before");
+    if (before !== null) {
+      if (!activity) fail(400, "bad_request", "before requires order=activity.");
+      const comma = before.indexOf(",");
+      const cursor = { lastActiveAt: before.slice(0, comma), sessionId: before.slice(comma + 1) };
+      if (comma < 0 || !Number.isFinite(Date.parse(cursor.lastActiveAt)) || !cursor.sessionId)
+        fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+      rows = rows.filter((s) => byActivity(s, cursor) > 0);
     }
     const limit = Number(query.get("limit"));
     const offset = Number(query.get("offset")) || 0;
@@ -766,15 +857,31 @@ router
       response.workspaceCounts = Object.fromEntries(
         Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
       );
+      // The newest CREATION per path, whatever order the page is in.
       response.workspaceLatest = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [path, list[0]!.createdAt]),
+        Object.entries(byWorkspace).map(([path, list]) => [
+          path,
+          list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
+        ]),
       );
     }
     return response;
   })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
-    return store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    const listing = store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    // The home request that builds the finder's sidebar also carries the machine's own places,
+    // as the server's does: a Linux machine's root and one mounted disk.
+    if (query.get("path") || query.get("places") !== "1") return listing;
+    return {
+      ...listing,
+      platform: "linux",
+      standardFolders: {},
+      locations: [
+        { path: "/", kind: "root" },
+        { path: "/mnt/data", kind: "volume", label: "data" },
+      ],
+    };
   })
   .get("/api/projects/:projectId/machines/:machineId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
@@ -1117,8 +1224,13 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
     (sum, t) => sum + (t.startTs ? Math.max(0, Date.parse(t.endTs) - Date.parse(t.startTs)) : 0),
     0,
   );
+  // The context ring's bound, read off the file's head session_meta as the server does.
+  const head = history.find((m) => m.type === "session_meta")?.payload;
+  const contextWindow =
+    head !== undefined && "model_context_window" in head ? head.model_context_window : undefined;
   return {
     elapsedMs,
+    ...(contextWindow !== undefined ? { modelContextWindow: contextWindow } : {}),
     apiMs: tasks.reduce((sum, t) => sum + t.llmMs, 0),
     toolMs: tasks.reduce((sum, t) => sum + t.toolMs, 0),
     cost: tasks.reduce((sum, t) => sum + (t.cost ?? 0), 0),

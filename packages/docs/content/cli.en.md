@@ -573,25 +573,27 @@ At an approval prompt, `n` or `no` denies the call. `y`, `yes` or any other answ
 
 ## penguin config
 
-Manages a Project's model configuration, per-agent vault environment variables and the UI language. Every subcommand except `lang` takes `--project-id <id>` (default: the default Project) and `--root <dir>`.
+Manages a Project's model configuration, its groups' connections, per-agent vault environment variables and the UI language. Every subcommand except `lang` takes `--project-id <id>` (default: the default Project) and `--root <dir>`.
 
 ### model add
 
-Adds or updates a model entry.
+Adds or updates a model entry. Without `--model-id`, it sets a group's connection instead: the API key, base URL and protocol that the group's models without a value of their own use, stored once in `[providers.<group>]` (see [Group connections](/configuration#group-connections)).
 
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider tokendance --api-key td-...
+penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --clear-api-key
 ```
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--model-id <id>` | The upstream model id. Required. | — |
-| `--provider <group>` | The provider group the entry belongs to. Required. | — |
-| `--api-key <key>` | API key, stored inline in the Project's hidden `.project_config.toml`. | — |
-| `--base-url <url>` | Custom endpoint base URL. | See below |
+| `--model-id <id>` | The upstream model id. Omit it to set the group's connection. | — |
+| `--provider <group>` | The provider group the entry belongs to, or whose connection to set: a built-in group id or a group of your own. Required. | — |
+| `--api-key <key>` / `--clear-api-key` | Sets or removes an API key, stored inline in the Project's hidden `.project_config.toml`: the model's own with `--model-id`, else the group key. | The group key |
+| `--base-url <url>` / `--clear-base-url` | Sets or removes a base URL: the model's own, else the group's. | See below |
+| `--client-type <type>` / `--clear-client-type` | Sets or removes an MMSP client type, such as `openai-chat`: the model's own, else the group's. | See below |
 | `--context-window <n>` | Context window size, in tokens. | — |
 | `--max-tokens <n>` | Maximum output tokens for this model, a positive integer. When set, it overrides the agent's `model.max_tokens`; lower it for small-context models. | The agent's `model.max_tokens` |
-| `--client-type <type>` | MMSP client type, such as `openai-chat`. | See below |
 | `--vision` / `--no-vision` | Marks image input as supported or unsupported. | Keeps the current value |
 | `--fast-mode` / `--no-fast-mode` | Turns fast mode (faster output at premium pricing) on or off. | Off; omitting both keeps the current value |
 | `--price-cache-read <n>` | Cache-read price, in USD per million tokens. | — |
@@ -600,9 +602,18 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--set-default` | Also sets the entry as the Project's default model. | — |
 
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
-- For a new entry, `--client-type` and `--base-url` default to what the built-in catalog sets for that exact `(provider, model_id)` pair. Without a catalog row, the group decides: a group that pins a protocol uses it (`vllm`), and `custom` and user-defined groups get `openai-chat`. Updating an existing entry changes them only when you pass the flags.
-- Only `custom`, `vllm` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL and `vllm`'s `openai-chat-vllm-adapter` on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
+- Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
+- In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
+
+Without `--model-id`:
+
+- The flags that describe one model — `--context-window`, `--max-tokens`, `--vision`, `--fast-mode`, the `--price-*` flags and `--set-default` — are refused, and nothing is written. So is a call that names no connection field.
+- Any group takes a protocol: a model's own `client_type` wins over its group's, so the Penguin Go and OpenCode Go models keep theirs.
+- The group key reaches only the models that go to the group's endpoint: those with no base URL of their own, or one on the group's origin (scheme, host and port).
+- The command reports how many of the group's models a changed field passes by, because they set their own value or the key does not reach them, and notes a user-defined group that has no models yet.
 
 ### model default / model vision / model list / model remove
 
@@ -611,11 +622,13 @@ penguin config model default --model-id <id> --provider <group>
 penguin config model vision --model-id <id> --provider <group>
 penguin config model list
 penguin config model remove --model-id <id> --provider <group>
+penguin config model remove --provider <group>
 ```
 
 - `model default` sets the Project's default model, and `model vision` sets the vision proxy model. Both require `--model-id` and `--provider`, and the pair must already be in the model list.
-- `model list` lists the configured models and marks the default model with `*`.
-- `model remove` deletes a model entry together with the credential stored inline on it. It requires `--model-id` and `--provider` and matches the pair exactly, so the same upstream id under another group is left alone. It exits non-zero when the pair is not in the config. If the removed entry was the default model or the vision model, that setting is cleared, because a setting that names a model no longer configured would make the next session fail outright.
+- `model list` prints the groups' connections first: each `[providers.<group>]` with its `base_url`, `client_type` and key (masked), `-` where the group stores none. The configured models follow, the default marked with `*`. Their `client_type`, `api_key` (masked) and `base_url` columns show what each model is used with, read from the file alone: a value taken from the group is marked `(provider)`, a key read from an environment variable `(env)`, and an unmarked value is the model's own.
+- `model remove` deletes a model entry together with the credential stored inline on it. It matches the `--model-id` and `--provider` pair exactly, so the same upstream id under another group is left alone, and exits non-zero when the pair is not in the config. If the removed entry was the default model or the vision model, that setting is cleared, because a setting that names a model no longer configured would make the next session fail outright. Removing the last model of a user-defined group also removes that group's connection.
+- `model remove` without `--model-id` removes the group's connection, the whole `[providers.<group>]` table, key included, and keeps the group's models: those without a value of their own then use the client's defaults. It exits non-zero when the group stores no connection.
 
 ### vault
 

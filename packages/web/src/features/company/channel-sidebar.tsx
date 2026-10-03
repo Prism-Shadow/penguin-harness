@@ -169,7 +169,7 @@ function ChannelRow({
         <button
           type="button"
           onClick={join}
-          className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 opacity-0 transition-opacity duration-150 hover:text-gray-900 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+          className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 opacity-0 transition-opacity duration-150 hover:text-gray-900 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
         >
           {S.company.channels.join}
         </button>

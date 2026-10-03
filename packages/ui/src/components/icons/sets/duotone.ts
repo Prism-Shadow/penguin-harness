@@ -6,8 +6,8 @@
  * part that carries the shape, as 24-grid closed subpaths that reuse the line drawing's own
  * coordinates, so the fill meets the stroke's centre line with no gap and no overhang. The
  * renderer paints it in currentColor under the strokes, at the theme's `--ui-icon-duo-opacity`:
- * Frost sets a low opacity, and the themes that draw another set (Primer's Octicons, Console's
- * pixels) set 0. It follows the icon's ink, so a tinted icon gets a tinted body and a danger
+ * Frost sets a low opacity; Primer, which draws the line set bare, and Console, which draws its
+ * pixels, set 0. It follows the icon's ink, so a tinted icon gets a tinted body and a danger
  * row's a red one.
  *
  * `ICON_TINTS` gives every glyph one hue by concept family — agents violet, models and files

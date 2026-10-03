@@ -117,15 +117,17 @@ export interface IconCredit {
 
 /**
  * The icon families the package's drawings come from, credited beside the fonts. The Octicons set
- * is GitHub's path data copied verbatim (`components/icons/sets/octicons.ts`), and Primer draws
- * it; the line set's glyphs are drawn after Lucide's and Feather's, whose one licence text covers
- * both, and Frost draws them. The pixel set is drawn for this package and credits nobody.
+ * is GitHub's path data copied verbatim (`components/icons/sets/octicons.ts`), and no theme draws
+ * it today; the line set's glyphs are drawn after Lucide's and Feather's, whose one licence text
+ * covers both, and Frost and Primer draw them. The pixel set is drawn for this package and
+ * credits nobody.
  */
 export const ICON_CREDITS: readonly IconCredit[] = [
   {
+    // Drawn by no theme since 2026-10-02; the set still ships, so it is still credited.
     id: "octicons",
     name: "Octicons",
-    themes: ["github"],
+    themes: [],
     source: "https://github.com/primer/octicons",
     licenseTitle: "MIT License",
     licenseText: octicons,
@@ -133,7 +135,7 @@ export const ICON_CREDITS: readonly IconCredit[] = [
   {
     id: "lucide",
     name: "Lucide",
-    themes: ["modern"],
+    themes: ["modern", "github"],
     source: "https://github.com/lucide-icons/lucide",
     licenseTitle: "ISC License",
     licenseText: lucide,

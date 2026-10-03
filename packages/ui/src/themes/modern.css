@@ -76,11 +76,12 @@
     --ui-line-emphasis: #d0d3d6;
     --ui-divider: #f0f1f2;
 
-    /* Colour — accent: Sierra's forest green. The rest of the family derives from it: hover and
-       active are the accent shaded toward black (the label is white, so a darker fill only gains
-       contrast), the wash and the line are the accent at an alpha. A preset therefore sets
-       `--ui-accent` alone; its label ink is the theme's for the mode. */
-    --ui-accent: #006838;
+    /* Colour — accent: the ink itself under a white label — black and white by default (user
+       decision, 2026-10-02; the forest green became the preset `forest`). The rest of the family
+       derives from it: hover and active are the accent shaded toward black (the label is white,
+       so a darker fill only gains contrast), the wash and the line are the accent at an alpha. A
+       preset therefore sets `--ui-accent` alone; its label ink is the theme's for the mode. */
+    --ui-accent: #232527;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
     --ui-accent-fg: #ffffff;
@@ -225,10 +226,13 @@
     --ui-switch-knob-line: rgb(0 0 0 / 0.1);
 
     /* Badges: a soft tag is its tint alone, with no rule round it (a tone's line is its tint
-       here anyway), set in the semibold cut, and the md tag is padded half a space unit by two. */
+       here anyway), set in the semibold cut, and the md tag is padded half a space unit by two;
+       12px on a 16px line at the 16px root, a step under the small rung (0.8125rem). */
     --ui-badge-soft-ring: 0px;
     --ui-badge-weight: 600;
     --ui-badge-pad-md: calc(var(--ui-space-unit) * 0.5) calc(var(--ui-space-unit) * 2);
+    --ui-badge-size: 0.75rem;
+    --ui-badge-lh: 1rem;
 
     /* Typography — families. MiSans sets Latin and Chinese alike; the system CJK faces stay ahead
        of the generic fallbacks for the rare ideograph MiSans's slices do not carry. Chrome and
@@ -430,10 +434,10 @@
     --ui-line-emphasis: rgb(255 255 255 / 0.16);
     --ui-divider: rgb(255 255 255 / 0.04);
 
-    /* Colour — accent. The green lifts and takes the canvas as ink (white on it is under
-       4.5:1), so hover now shades toward white and active toward black — away from the ink,
-       as in light — and the wash and the line strengthen a step on the dark page. */
-    --ui-accent: #4aa45c;
+    /* Colour — accent: a near-white under the dark ink, as the light fills here take; hover
+       shades toward white and active toward black — away from the ink — and the wash and the
+       line strengthen a step on the dark page. */
+    --ui-accent: #f5f5f6;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 90%, #000000);
     --ui-accent-fg: #111214;
@@ -908,17 +912,20 @@
   /* Work in progress is shown the way Codex and macOS show it: nothing around the row — no
      fill, no border, no ring, no halo (a first pass drew a luminous surface; the owner asked
      for the lineless version) — and a soft highlight in the accent's hue sweeping across the
-     label, the one running signal once the status mark is hidden (above). At rest (done, error)
-     the row is its plain words, so a finished transcript adds nothing. The highlight is a
-     gradient clipped to the label's glyphs and slid across them; parked at either end it shows
-     only the ink, which is what reduced motion shows: a plain label. The slots are found anywhere inside the row (a
-     card nests them in its own button); a work group's header shares the recipe with its rows. */
+     label, the one running signal once the status mark is hidden (above). The band is the
+     accent mixed toward the page, so it stands off the ink whatever the accent: the theme's own
+     accent is the ink itself, and the band would vanish into it. At rest (done, error) the row
+     is its plain words, so a finished transcript adds nothing. The highlight is a gradient
+     clipped to the label's glyphs and slid across them; parked at either end it shows only the
+     ink, which is what reduced motion shows: a plain label. The slots are found anywhere inside
+     the row (a card nests them in its own button); a work group's header shares the recipe with
+     its rows. */
   :root[data-theme="modern"] .ui-activity[data-state="running"] [data-slot="label"] {
     color: var(--ui-fg);
     background-image: linear-gradient(
       90deg,
       currentColor 0 38%,
-      var(--ui-accent) 50%,
+      color-mix(in oklab, var(--ui-accent) 55%, var(--ui-canvas)) 50%,
       currentColor 62% 100%
     );
     background-size: 300% 100%;
@@ -1086,14 +1093,21 @@
 }
 
 /*
- * The user's accent presets (tokens.ts, `ACCENT_PRESETS.modern`): five warm, muted hues beside
- * Frost's own forest green, each deep enough in light for the theme's white label and lifted in
- * dark for its dark ink, the way the theme's own accent flips. A preset sets `--ui-accent` and
- * nothing else — hover, active, wash and line derive from it in the theme's rules above, and
- * the label ink is the theme's for the mode — so each preset is one value per mode. The
- * selectors match only Frost's root, so a preset another theme lists paints nothing here.
+ * The user's accent presets (tokens.ts, `ACCENT_PRESETS.modern`), six: the forest green the
+ * theme shipped with (first, as Console lists its orange) and five warm, muted hues, each deep
+ * enough in light for the theme's white label and lifted in dark for its dark ink, the way the
+ * theme's own accent flips. A preset sets `--ui-accent` and nothing else — hover, active, wash
+ * and line derive from it in the theme's rules above, and the label ink is the theme's for the
+ * mode — so each preset is one value per mode. The selectors match only Frost's root, so a
+ * preset another theme lists paints nothing here.
  */
 @layer ui-accent {
+  :root[data-theme="modern"][data-accent="forest"] {
+    --ui-accent: #006838;
+  }
+  :root[data-theme="modern"][data-accent="forest"].dark {
+    --ui-accent: #4aa45c;
+  }
   :root[data-theme="modern"][data-accent="ocean"] {
     --ui-accent: #3b6ea8;
   }

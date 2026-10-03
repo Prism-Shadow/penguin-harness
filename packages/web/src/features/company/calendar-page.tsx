@@ -911,7 +911,7 @@ export function CalendarPage() {
                     {editingEvent.lastOutcome === "fired" && (
                       <button
                         type="button"
-                        className="underline"
+                        className="whitespace-nowrap underline"
                         onClick={() => void openDesk(editingEvent.agentId)}
                       >
                         {S.company.openDesk}
@@ -1119,7 +1119,7 @@ function DayOverflow({
                   close();
                   onOpenDay();
                 }}
-                className="shrink-0 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+                className="shrink-0 whitespace-nowrap text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
               >
                 {S.company.calendar.openDay}
               </button>

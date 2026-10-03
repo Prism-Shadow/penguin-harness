@@ -9,9 +9,9 @@
  * outside the modules whose job the theme id is.
  *
  * Refused: the identifiers that carry the id (`useTheme`, `themeId`, `ThemeId`, `THEME_IDS`,
- * `DEFAULT_THEME_ID`), any string or template text naming `data-theme` (an attribute read, a
- * selector, or a `[data-theme=…]:` class variant), a JSX `data-theme` attribute, and
- * `dataset.theme`. Comments are not code and are not scanned.
+ * `DEFAULT_THEME_ID`, `INITIAL_THEME_ID`), any string or template text naming `data-theme` (an
+ * attribute read, a selector, or a `[data-theme=…]:` class variant), a JSX `data-theme`
+ * attribute, and `dataset.theme`. Comments are not code and are not scanned.
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -37,6 +37,7 @@ const THEME_IDENTIFIERS = new Set([
   "ThemeId",
   "THEME_IDS",
   "DEFAULT_THEME_ID",
+  "INITIAL_THEME_ID",
 ]);
 
 function themeReads(text: string): string[] {

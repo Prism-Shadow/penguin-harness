@@ -26,7 +26,7 @@ import { SkillIcon } from "./skill-icon-view";
 
 /** A bulk-row action: a plain text button, sized to sit inside the panel's chrome without competing with the rows. */
 const bulkActionClass =
-  "rounded px-1 py-0.5 text-xs text-gray-500 transition-colors duration-150 " +
+  "whitespace-nowrap rounded px-1 py-0.5 text-xs text-gray-500 transition-colors duration-150 " +
   "hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200";
 
 /** One pickable row: a Skill's metadata, plus the glyph to draw when it carries no icon (the book when absent). */

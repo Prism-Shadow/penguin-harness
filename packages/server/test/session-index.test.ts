@@ -16,6 +16,11 @@
  *   Session, one only a Trace head knows after a restart, and adopted ones (junk narrowed).
  * - Given many rows, the list pages newest first, filters by sidebar category, by Workspace
  *   group and by organization, and its counts stay whole-Agent; junk parameters are 400s.
+ * - Given order=activity, the list runs by last activity (equal stamps by id, code points), and
+ *   a client that asks for no order keeps the creation order and its offsets.
+ * - Given a before cursor, pages cover every row once; a row that runs mid-paging moves above
+ *   the cursor and is neither repeated nor makes another row go missing; the cursor composes
+ *   with the filters and leaves the totals whole-list; a cursor in the wrong form is a 400.
  * - Given an unmanaged Trace, the startup sweep adopts it once as a client:'cli' row.
  * - Given a client hint, 'cli' or 'web' is stored and listed; 'org' cannot be claimed.
  * - Given a PATCH, the answer is the row after the write; approval mode and thinking level
@@ -554,6 +559,181 @@ describe("session-index", () => {
 
     // An empty group name is rejected, never silently unfiltered.
     expect((await api.get(`${base()}?workspaceGroup=`)).status).toBe(400);
+  });
+
+  describe("order=activity and the before cursor", () => {
+    /** Inserted straight into the index: the order reads only the stored stamps. */
+    const seed = (
+      sessionId: string,
+      createdAt: string,
+      lastActiveAt: string,
+      workspace = "/tmp/ws-activity",
+    ) =>
+      t.deps.sessionsRepo.insert({
+        sessionId,
+        projectId,
+        agentId,
+        provider: "custom",
+        modelId: "m-x",
+        workspace,
+        approvalMode: "allow-all",
+        title: null,
+        createdAt,
+        lastActiveAt,
+      });
+    /** `n` rows whose stamps repeat in fours, so a page of ten ends inside a run of equal stamps. */
+    const seedMany = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        const stamp = `2026-08-0${1 + Math.floor(i / 4)}T10:00:00.000Z`;
+        seed(`session-act-${String(i).padStart(2, "0")}`, stamp, stamp);
+      }
+    };
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status, qs).toBe(200);
+      return (await res.json()) as SessionsResponse;
+    };
+    const ids = async (qs: string) => (await list(qs)).sessions.map((s) => s.sessionId);
+    const cursor = (row: { lastActiveAt: string; sessionId: string }) =>
+      encodeURIComponent(`${row.lastActiveAt},${row.sessionId}`);
+    /**
+     * The sidebar's walk: pages of `shown + 1` rows, each next page asked for below the last
+     * SHOWN row (the overflow row only says there is more). Starts below `from` when given.
+     */
+    const pageThrough = async (
+      shown: number,
+      scope = "",
+      from?: { lastActiveAt: string; sessionId: string },
+    ) => {
+      const pages: string[][] = [];
+      let below = from;
+      for (;;) {
+        const qs = `?order=activity&limit=${shown + 1}${below ? `&before=${cursor(below)}` : ""}${scope}`;
+        const rows = (await list(qs)).sessions;
+        pages.push(rows.slice(0, shown).map((s) => s.sessionId));
+        if (rows.length <= shown) return pages;
+        below = rows[shown - 1];
+      }
+    };
+
+    it("lists by last activity, equal stamps by id descending in code-point order, while no order keeps the creation order and its offsets", async () => {
+      // Created first but run last: leads the activity order, trails the creation order.
+      seed("session-act-old", "2026-07-01T08:00:00.000Z", "2026-07-09T08:00:00.000Z");
+      // Equal stamps, ids differing only in case: code points put "a" (0x61) above "B" (0x42)
+      // where locale collation puts B first. The client sorts the same rows itself, so the
+      // server must not collate.
+      seed("session-act-tie-B", "2026-07-02T08:00:00.000Z", "2026-07-06T08:00:00.000Z");
+      seed("session-act-tie-a", "2026-07-03T08:00:00.000Z", "2026-07-06T08:00:00.000Z");
+      seed("session-act-new", "2026-07-05T08:00:00.000Z", "2026-07-05T08:00:00.000Z");
+
+      expect(await ids("?order=activity")).toEqual([
+        "session-act-old",
+        "session-act-tie-a",
+        "session-act-tie-B",
+        "session-act-new",
+      ]);
+      // A client that sends no order (every client before this one) gets the creation order and
+      // its offset pages, unchanged.
+      const created = [
+        "session-act-new",
+        "session-act-tie-a",
+        "session-act-tie-B",
+        "session-act-old",
+      ];
+      expect(await ids("")).toEqual(created);
+      expect(await ids("?order=created")).toEqual(created);
+      expect(await ids("?limit=2&offset=1")).toEqual(created.slice(1, 3));
+      expect((await api.get(`${base()}?order=recent`)).status).toBe(400);
+    });
+
+    it("pages below the last shown row cover every row exactly once, the overflow row opening the next page", async () => {
+      seedMany(25);
+      const pages = await pageThrough(10);
+      expect(pages.map((p) => p.length)).toEqual([10, 10, 5]);
+      expect(pages.flat()).toEqual(await ids("?order=activity"));
+    });
+
+    it("a row that runs mid-paging moves above the cursor: the later pages neither repeat it nor skip another row", async () => {
+      seedMany(25);
+      const whole = await ids("?order=activity");
+      const first = (await list("?order=activity&limit=11")).sessions.slice(0, 10);
+      // A row on the third page runs now and rises above everything already shown.
+      const moved = whole[20]!;
+      t.deps.sessionsRepo.touchLastActive(moved, "2026-09-01T10:00:00.000Z");
+      expect(await ids("?order=activity&limit=1")).toEqual([moved]);
+
+      const later = await pageThrough(10, "", first.at(-1));
+      expect([...first.map((s) => s.sessionId), ...later.flat()]).toEqual(
+        whole.filter((id) => id !== moved),
+      );
+    });
+
+    it("a cursor composes with category and workspaceGroup, while counts stay whole-list and each path keeps its newest creation", async () => {
+      const alpha = "/tmp/ws-act-alpha";
+      const beta = "/tmp/ws-act-beta";
+      // alpha: four active rows and an archived one; beta: one row, created and run last.
+      seed("session-act-a1", "2026-07-01T08:00:00.000Z", "2026-07-08T08:00:00.000Z", alpha);
+      seed("session-act-a2", "2026-07-02T08:00:00.000Z", "2026-07-07T08:00:00.000Z", alpha);
+      seed("session-act-a3", "2026-07-03T08:00:00.000Z", "2026-07-03T08:00:00.000Z", alpha);
+      seed("session-act-a4", "2026-07-04T08:00:00.000Z", "2026-07-06T08:00:00.000Z", alpha);
+      seed("session-act-a5", "2026-07-05T08:00:00.000Z", "2026-07-05T08:00:00.000Z", alpha);
+      t.deps.sessionsRepo.setArchived("session-act-a5", "2026-07-10T08:00:00.000Z");
+      seed("session-act-b1", "2026-07-06T08:00:00.000Z", "2026-07-09T08:00:00.000Z", beta);
+
+      const scope = `&category=active&workspaceGroup=${encodeURIComponent(alpha)}`;
+      expect(await pageThrough(2, scope)).toEqual([
+        ["session-act-a1", "session-act-a2"],
+        ["session-act-a4", "session-act-a3"],
+      ]);
+
+      const below = cursor({
+        lastActiveAt: "2026-07-07T08:00:00.000Z",
+        sessionId: "session-act-a2",
+      });
+      const counted = await list(`?order=activity&limit=1&before=${below}&counts=1${scope}`);
+      expect(counted.sessions.map((s) => s.sessionId)).toEqual(["session-act-a4"]);
+      expect(counted.counts).toEqual({
+        active: 5,
+        subagent: 0,
+        schedule: 0,
+        benchmark: 0,
+        archived: 1,
+      });
+      expect(counted.workspaceCounts?.[alpha]).toEqual({
+        active: 4,
+        subagent: 0,
+        schedule: 0,
+        benchmark: 0,
+        archived: 1,
+      });
+      // Groups are still placed by their newest CREATION, not by the walk's first row.
+      expect(counted.workspaceLatest).toEqual({
+        [alpha]: "2026-07-05T08:00:00.000Z",
+        [beta]: "2026-07-06T08:00:00.000Z",
+      });
+    });
+
+    it("a cursor outside order=activity, beside an offset, without a limit, or malformed is a 400", async () => {
+      const ok = cursor({ lastActiveAt: "2026-07-01T08:00:00.000Z", sessionId: "session-x" });
+      const stamp = encodeURIComponent("2026-07-01T08:00:00.000Z");
+      for (const qs of [
+        `?before=${ok}&limit=2`,
+        `?order=created&before=${ok}&limit=2`,
+        `?order=activity&before=${ok}&limit=2&offset=0`,
+        `?order=activity&before=${ok}`,
+        "?order=activity&limit=2&before=",
+        `?order=activity&limit=2&before=${stamp}`,
+        `?order=activity&limit=2&before=${stamp}%2C`,
+        "?order=activity&limit=2&before=yesterday%2Csession-x",
+        `?order=activity&limit=2&before=${stamp}%2C..%2Fsession-x`,
+      ]) {
+        const res = await api.get(`${base()}${qs}`);
+        expect(res.status, qs).toBe(400);
+        expect(((await res.json()) as { error: { code: string } }).error.code, qs).toBe(
+          "bad_request",
+        );
+      }
+    });
   });
 
   it("half a model reference is 400: the missing half is never inferred", async () => {
