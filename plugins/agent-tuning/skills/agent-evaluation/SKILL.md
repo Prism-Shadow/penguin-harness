@@ -56,11 +56,11 @@ Before launch, snapshot every file under the Case's `statement/` and `rubric/` d
 If the Rubric has a `Runtime` section, follow its prerequisite, preparation,
 scoring and cleanup instructions for this cell. It may reference resources inside
 this Benchmark and a private temporary run directory outside the Test Workspace.
-Prepare before Student launch, verify readiness, and bind runtime values only in
+Prepare before Target Agent launch, verify readiness, and bind runtime values only in
 the copied Statement; keep the Benchmark and Agent State unchanged. Snapshot the
 prepared Workspace as the launch baseline. Reset or restore state as the declared
 protocol requires, including temporal continuation. Keep graders and private data
-away from the Student. Always clean up owned resources after scoring or failure.
+away from the Target Agent. Always clean up owned resources after scoring or failure.
 Retain this cell's exact workspace/run paths and process handle across tool calls;
 never select a most-recent directory or another parallel cell's process. A service
 must survive its launching tool call and remain healthy through scoring.
@@ -100,7 +100,7 @@ Inspect only new or changed Traces. Bind exactly one root Test Trace whose Works
 Inspect only the isolated Workspace, the bound root Trace, its directly referenced child Traces, and the private Rubric. Apply every scoring item and allowed equivalent. Keep Rubric contents, Gold answers, per-item scoring, and scoring rationale private.
 
 When the Rubric specifies an executable grader, use its declared command, accepted
-exit codes and score conversion. Give it the explicit Student artifact path,
+exit codes and score conversion. Give it the explicit Target Agent artifact path,
 never a default path that might select a reference answer. Its result is
 authoritative; do not substitute an LLM regrade. Runtime logs are readable only
 for this cell's diagnosis. Invalid grader output or an infrastructure error is

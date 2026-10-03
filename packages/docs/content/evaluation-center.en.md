@@ -46,9 +46,8 @@ Every Project comes with `example-benchmark`, whose sample evaluations test `def
 Ask an Agent with `benchmark-reproduction` to reproduce a GitHub benchmark in
 this Project. It imports the source protocol, builds the normal benchmark files,
 runs smoke checks, and verifies that the result appears here before offering a
-full evaluation. GDPevo is an on-demand recipe, not a default dataset. Required
-runtime resources are described in each generated Rubric, so Evaluate can prepare,
-score and clean up the same way on later runs.
+full evaluation. Required runtime resources are described in each generated
+Rubric, so Evaluate can prepare, score and clean up the same way on later runs.
 
 ## Create a Benchmark with AI
 

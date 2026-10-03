@@ -1,6 +1,6 @@
 ---
 title: Self-Improvement
-description: How Skills build a Benchmark, score an agent on it, and keep only the changes that raise its score, with every version snapshotted and every score traceable.
+description: Use Skills to create or reproduce benchmarks, evaluate a Target Agent, and improve its harness with an RSI method.
 ---
 
 The default Penguin method is a loop: build a Benchmark for an agent, score the agent on it, change the agent, and keep a change only when the score strictly improves. The loop adds no runtime of its own. Skills orchestrate the ordinary agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and every result is a file in the Project.
@@ -11,12 +11,12 @@ Building a Benchmark and optimizing an agent run in two independent top-level Se
 
 | Role | Skill | Runs as | Responsibility |
 | --- | --- | --- | --- |
-| Builder | `agent-initialization`, then `benchmark-design` | A top-level Session | Sets up the agent, then writes and calibrates a multi-Case Benchmark and records its baseline |
+| Builder | `agent-initialization`, then `benchmark-design` or `benchmark-reproduction` | A top-level Session | Sets up the Target Agent and creates or reproduces its Benchmark |
 | Target Agent | — | A fresh top-level Session for every run | The agent being evaluated or improved; it works only inside its own isolated Workspace |
 | Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
-| Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
+| Optimizer | `agent-optimization` | A separate top-level Session | Analyzes training traces and updates the Target Agent's harness according to the selected RSI method |
 
-No built-in agent is reserved for a role: each role is a Skill, and the five Agent Tuning Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+These are workflow roles, not dedicated built-in Agent identities. The five Skills ship in `agent-tuning`. **Target Agent**, **Test Agent** and **Tested agent** refer to the same role; it runs both training and testing cases. **Optimizer** is the role that improves it. The built-in `default_agent` is the General Agent and may perform ordinary work. A separate **Root Agent** supervisor is proposed in the FDE design; it is not a built-in identity or a root Session.
 
 ### How the roles call each other
 
@@ -29,7 +29,7 @@ Both callers first check that each Evaluator's complete response is plain protoc
 
 ## The information barrier
 
-A score is only meaningful while the agent under test cannot see private scoring information. The following table describes the default Penguin method; ACE and AWM declare their training feedback permissions in their references. Testing remains outside the Teacher context.
+A score is only meaningful while the agent under test cannot see private scoring information. The following table describes the default Penguin method; other RSI methods declare their training feedback permissions in their references. Testing remains outside the Optimizer context.
 
 | Role | Reads | Does not read |
 | --- | --- | --- |
@@ -38,7 +38,7 @@ A score is only meaningful while the agent under test cannot see private scoring
 | Optimizer | Public statements, the Scoreboard, score-linked Test Traces, and the Target Agent's State | Rubrics, Gold answers, private scoring conditions, the Evaluator's State, Workspace or Trace, other agents, and Project secrets |
 | Builder | The whole Benchmark, including the rubrics it writes, the Target Agent's State, and the Test Traces | The Evaluator's State, Workspace or Trace, other agents, and Project secrets |
 
-The Evaluator keeps rubric contents, Gold answers, per-item scores and scoring rationale out of the result it returns. Before a new or changed Case is dispatched, the Builder runs a leak check: no public file may reveal Gold answers, private scoring conditions, or hints that identify the intended solution. If private evaluation information ever reaches the Optimizer's context, the Optimizer rolls back the active Candidate and stops as contaminated.
+The Evaluator keeps rubric contents, Gold answers, per-item scores and scoring rationale out of the result it returns. Before a new or changed Case is dispatched, the Builder runs a leak check: no public file may reveal Gold answers, private scoring conditions, or hints that identify the intended solution. If information outside the selected method's permissions reaches the Optimizer, it restores an active candidate it owns and stops as contaminated.
 
 > [!WARNING]
 > The barrier is enforced by Skill instructions and auditable Traces, not by a sandbox. No file-system sandbox, file permission or tool restriction stops an agent from reading a rubric: the Target Agent runs with `--approve allow-all`, its Workspace simply contains no rubric, and the Skills tell the other roles what they may read. Every tool call an agent makes is recorded in its Trace, so a breach can be found afterwards. Project members can also read every rubric in the Web App.
@@ -83,8 +83,8 @@ Missing the desired score does not invalidate a Benchmark. The publish gate is a
 ## Reproduce an existing benchmark
 
 Use `benchmark-reproduction` with a GitHub URL, benchmark name or local checkout.
-It chooses a known reference recipe (including GDPevo), otherwise a generic
-conversion, or a user-supplied construction prompt. Official training/testing
+It follows the matching benchmark reference, the generic construction rules,
+or a user-supplied construction prompt. Official training/testing
 splits become `<name>_train` and `<name>_test`. Long-running tasks keep identical
 task definitions and use an explicit trial/time boundary and environment handoff.
 
@@ -95,10 +95,11 @@ baseline. Existing task difficulty is preserved; the below-85 calibration gate
 applies only to newly designed benchmarks. Datasets and adapters are created on
 demand in the Project, not bundled into Penguin or installed as defaults.
 
-`agent-optimization` defines general inputs, role boundaries, evaluation and output
-formats. Its references define Penguin (the default), ACE and AWM. Use a method
-name in the request to select it; read only that method. The strict-improvement
-loop below describes Penguin, not a rule imposed on every method.
+`agent-optimization` applies an RSI method to the Target Agent. It uses Penguin
+by default; other methods are defined in references. Specify the method in the
+request and read its recipe for the update and selection rules. Inputs, evaluation
+and output formats are defined in the Skill. The loop below describes Penguin's
+strict-improvement policy.
 
 ## Optimizing an agent
 

@@ -3,6 +3,6 @@
   "description_zh": "初始化 Agent，设计或复现 Benchmark，隔离评估题目，再按实测结果优化。",
   "short_description": "Initialize, benchmark, evaluate and improve agents.",
   "short_description_zh": "初始化、评测、评分与改进 Agent。",
-  "version": "2026.10.03.3",
+  "version": "2026.10.03.4",
   "category": "ai-app-development"
 }

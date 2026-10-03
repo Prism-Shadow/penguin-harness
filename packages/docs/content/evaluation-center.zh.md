@@ -45,8 +45,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 让装有 `benchmark-reproduction` 的 Agent 在当前 Project 中复现一个 GitHub benchmark。
 它保留原始协议，生成现有 benchmark 格式，跑冒烟检查并确认结果在评估中心可见，再询问全量评估。
-GDPevo 是按需构造的 reference，不是默认数据集。运行资源写在生成的 Rubric 中，
-后续从评估入口运行时也会按同一约定准备环境、评分和清理。
+运行资源写在生成的 Rubric 中，后续从评估入口运行时也会按同一约定准备环境、评分和清理。
 
 ## 让 AI 创建 Benchmark
 

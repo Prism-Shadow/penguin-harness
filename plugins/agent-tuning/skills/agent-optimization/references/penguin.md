@@ -7,8 +7,8 @@ acceptance policy. It preserves the original method's behavior.
 ## Requirements and declaration
 
 Require a published training Benchmark, a complete Formal Baseline matching the
-current Student State, desired `target_score`, positive candidate `runs` and
-positive `rounds`. Read Student runtime from that baseline; do not create a missing
+current Target Agent State, desired `target_score`, positive candidate `runs` and
+positive `rounds`. Read Target Agent runtime from that baseline; do not create a missing
 Agent, benchmark or baseline inside this method.
 
 Require a finite target in `0..100`. Use the baseline's complete case set, not a
@@ -16,9 +16,9 @@ new subset, and verify its State/runtime before beginning. Existing prompts that
 describe a desired score and round limit without field names keep the same meaning.
 
 Declare nonparametric State edits, offline training, one candidate per round,
-Teacher updates, training scores/public traces, and strict aggregate-score selection.
+Optimizer updates, training scores/public traces, and strict aggregate-score selection.
 Rubrics, gold, private scoring conditions and Evaluator internals are forbidden.
-If they enter Teacher context, stop as contaminated and restore an owned active
+If they enter Optimizer context, stop as contaminated and restore an owned active
 candidate. An experiment requiring such supervision must choose another method.
 
 Editable behavior lives in AGENTS.md, target-owned Skills and safe runtime-limit
@@ -28,8 +28,8 @@ with the shared snapshot/rollback protocol.
 
 The initial Formal Baseline has one run per case. Preserve its recorded repeat
 count, even when candidate `runs` is larger; do not backfill it. Compare stored
-aggregate scores directly and disclose this unequal-repeat policy. It is a
-property of Penguin's original method, not a common requirement for ACE or AWM.
+aggregate scores directly and disclose this unequal-repeat policy. This is a
+policy of Penguin's method; other RSI methods define their own repeat policy.
 
 ## Search and acceptance
 
@@ -37,7 +37,7 @@ The Reference is the highest-scoring accepted State and its complete evaluation.
 For each round:
 
 1. Verify Reference identity, version, case coverage and runtime. Read its public
-   statements, scores and bound Student traces, plus earlier rejected candidates.
+   statements, scores and bound Target Agent traces, plus earlier rejected candidates.
 2. Diagnose observable capability gaps. State a falsifiable hypothesis connecting
    a bounded general edit to a predicted change in decisions or outputs. Merely
    adding more analysis without a behavioral prediction is not a useful proposal.

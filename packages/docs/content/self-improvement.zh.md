@@ -1,6 +1,6 @@
 ---
 title: 自我进化
-description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让分数提高的改动；每个版本都有快照，每个分数都能追溯。
+description: 用 Skill 构建或复现 Benchmark、评估 Target Agent，再按选定的 RSI 方法改进其 harness。
 ---
 
 默认的 Penguin 优化方法是一个循环：为 Agent 构建 Benchmark，在上面给 Agent 打分，修改 Agent，只有分数严格提升才保留改动。这个循环不额外引入任何运行机制，而是由 Skill 编排普通的 Agent 机制：评估是普通的 Session，优化是普通的文件编辑，每个结果都是 Project 里的文件。
@@ -11,12 +11,12 @@ description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让�
 
 | 角色 | Skill | 运行方式 | 职责 |
 | --- | --- | --- | --- |
-| Builder | 先 `agent-initialization`，后 `benchmark-design` | 一个顶层 Session | 搭建 Agent，然后编写并校准一个包含多道题目的 Benchmark，记录基线 |
+| Builder | `agent-initialization`，然后 `benchmark-design` 或 `benchmark-reproduction` | 一个顶层 Session | 搭建 Target Agent，再新建或复现 Benchmark |
 | Target Agent | — | 每次运行一个全新的顶层 Session | 被评估或被优化的 Agent，只在自己隔离的 Workspace 里工作 |
 | Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
-| Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
+| Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 分析训练轨迹，按选定的 RSI 方法更新 Target Agent 的 harness |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，五个 Agent Tuning Skill 都随 `agent-tuning` 插件提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+这些是工作流角色，不是专门预留的内置 Agent 身份；五个 Skill 随 `agent-tuning` 提供。**Target Agent**、**Test Agent** 与界面里的**被测智能体**是同一个角色，既运行训练题也运行测试题。**Optimizer** 负责优化它。内置 `default_agent` 是处理日常工作的 General Agent；FDE 设计中的 **Root Agent** 是拟议的独立监管角色，不是内置身份或 root Session。
 
 ### 角色之间的调用
 
@@ -29,7 +29,7 @@ description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让�
 
 ## 信息隔离
 
-被测 Agent 不应看到私有评分信息。下表描述默认 Penguin 方法；ACE、AWM 在各自 reference 中声明训练反馈权限。测试信息始终不进入 Teacher 上下文。
+被测 Agent 不应看到私有评分信息。下表描述默认 Penguin 方法；其他 RSI 方法在各自 reference 中声明训练反馈权限。测试信息始终不进入 Optimizer 上下文。
 
 | 角色 | 读取 | 不读取 |
 | --- | --- | --- |
@@ -38,7 +38,7 @@ description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让�
 | Optimizer | 公开的题干、记分板、与分数关联的被测 Trace，以及 Target Agent 的 State | 评分细则、Gold（标准答案）、私有评分条件、Evaluator 的 State、Workspace 或 Trace、其他 Agent，以及 Project 的密钥 |
 | Builder | 整个 Benchmark（包括它自己写的评分细则）、Target Agent 的 State，以及被测 Trace | Evaluator 的 State、Workspace 或 Trace、其他 Agent，以及 Project 的密钥 |
 
-Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和评分理由。新增或修改的题目下发之前，Builder 先做泄题检查：任何公开文件都不得泄露 Gold、私有评分条件，或能指向预期解法的提示。一旦私有的评估信息进入 Optimizer 的上下文，Optimizer 就回滚正在测试的 Candidate，并以「污染」为由停止。
+Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和评分理由。新增或修改的题目下发之前，Builder 先做泄题检查：任何公开文件都不得泄露 Gold、私有评分条件，或能指向预期解法的提示。一旦超出所选方法权限的信息进入 Optimizer 上下文，就恢复由它改动的当前候选版本，并以「污染」为由停止。
 
 > [!WARNING]
 > 信息隔离靠的是 Skill 指令和可审计的 Trace，不是沙箱。这里没有文件系统沙箱、文件权限或工具限制来阻止 Agent 读取评分细则：Target Agent 以 `--approve allow-all` 运行，只是它的 Workspace 里没有评分细则；其他角色能读什么，则由 Skill 规定。Agent 的每一次工具调用都记在它的 Trace 里，违规事后可以查出来。Project 成员也能在 Web App 里查看所有评分细则。
@@ -83,7 +83,7 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 ## 复现已有 benchmark
 
 向 `benchmark-reproduction` 提供 GitHub URL、benchmark 名称或本地源码。
-命中 reference 时按对应配方构造，GDPevo 是其中一个；未命中时走通用流程，也可由用户给出自定义 prompt。
+命中 reference 时按对应配方构造；未命中时走通用流程，也可由用户给出自定义 prompt。
 原始 training/testing 划分生成 `<name>_train` 与 `<name>_test`。
 长程任务保留相同任务定义，通过明确的 trial／时间切点和环境状态交接分开执行。
 
@@ -92,9 +92,9 @@ Skill 生成原生 Statement/Rubric，委派 `agent-evaluation` 跑少量完整�
 复现保持原题难度，低于 85 分的校准门槛只适用于新建题目。
 数据和必要的适配器按需生成到 Project 中，不打包进 Penguin，也不设为默认 benchmark。
 
-`agent-optimization` 定义通用输入、角色边界、评估和输出格式，reference 定义
-Penguin（默认）、ACE、AWM 的具体方法。在请求中指定方法名称即可选择，只读取对应 reference。
-下文的严格提分循环描述的是 Penguin 方法，不是所有方法必须遵守的规则。
+`agent-optimization` 对 Target Agent 执行选定的 RSI 方法，默认使用 Penguin，
+其他方法由 reference 提供。在请求中指定方法名称，读取对应的更新与选择规则。
+输入、评估和输出格式写在 Skill 中。下文描述 Penguin 的严格提分策略。
 
 ## 优化 Agent
 

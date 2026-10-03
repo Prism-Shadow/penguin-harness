@@ -14,10 +14,10 @@ Project; do not bundle them into Penguin or make them default benchmarks.
 
 Resolve the source URL/name/local checkout, destination Project and Test Agent
 for smoke runs. Use `agent-initialization` if a new experimental Agent was requested.
-Resolve a complete Student provider/model pair and configured thinking, with the
+Resolve a complete Target Agent provider/model pair and configured thinking, with the
 same inheritance rules as Agent Tuning. Ask only for required missing information.
-Before dispatch, parse the Student config with duplicate-key rejection and verify
-the requested identity/runtime. Initialization defects are not Student scores.
+Before dispatch, parse the Target Agent config with duplicate-key rejection and verify
+the requested identity/runtime. Initialization defects are not Target Agent scores.
 
 Choose the recipe:
 
@@ -28,6 +28,9 @@ Choose the recipe:
    `.git`, trailing `/` and `tree/<ref>` when matching; retain the requested ref
    for checkout. Verify compatibility for a fork or a newer revision.
 3. Otherwise follow the generic construction rules in this Skill.
+
+Available benchmark recipes are indexed below; unknown sources use the generic
+rules that follow.
 
 | Repository / names | Recipe |
 | --- | --- |
@@ -60,11 +63,11 @@ and any adaptations; inaccessible source or required credentials are blockers.
   task or temporal split exists, ask how the user wants to construct it.
 
 For a continuous task, save its boundary environment and required observation
-history; testing resumes from that state with the Student harness frozen. For
+history; testing resumes from that state with the Target Agent harness frozen. For
 independent trials, reset as the source does. An external controller manages the
-handoff; Students never update their own persistent harness. Base/final testing
+handoff; Target Agents never update their own persistent harness. Base/final testing
 uses the same boundary snapshot and budget. Record this as temporal continuation,
-not independent held-out-task generalization. Future observations, Teacher analysis
+not independent held-out-task generalization. Future observations, Optimizer analysis
 and test answers cannot leak into training. A short smoke probe uses disposable
 state, not a replacement for the declared full temporal window.
 
@@ -98,7 +101,7 @@ Retain task objectives, inputs and output schemas. Record transport edits such a
 URL substitution or an `answer.json` delivery line. Keep gold, graders, solution
 notes and manifests containing private criteria out of Statement. Preserve shared
 grader dependencies and directory depth. A preparer may read both splits to
-package them but must not later become the training Teacher or pass it test data.
+package them but must not later become the training Optimizer or pass it test data.
 
 In `reproduction.yaml`, record source URL/commit, chosen reference/custom prompt,
 source-to-case mapping, split/cutoff, runtime mode/dependencies, score conversion,
@@ -113,10 +116,10 @@ Reuse upstream runners. Generate a small benchmark-local helper only when needed
 for a repeatable handoff. Each Rubric's `## Runtime` section must give the evaluator:
 
 - Prerequisite checks and exact setup commands; fresh private run storage outside
-  the Student workspace, readiness evidence, and public runtime bindings.
+  the Target Agent workspace, readiness evidence, and public runtime bindings.
 - Per-run reset or temporal-restore instructions, without changing frozen benchmark
   files. Bind URLs only in the copied Statement.
-- An explicit Student artifact argument to the original scoring command, accepted
+- An explicit Target Agent artifact argument to the original scoring command, accepted
   exit codes, score field/scale, partial-credit and malformed-answer rules.
 - Cleanup of owned resources after scoring or failure, with lifetime bounds where
   needed. A server left running after reproduction is not a repeatable setup.
@@ -131,29 +134,29 @@ returns and again before scoring; a bare shell `&` may die with its parent shell
 in Penguin source. Express rubric weights as exact fractions totalling 100 and
 map the original score to `0..100`. Read the scorer instead of guessing by a
 field's name. Missing dependencies, invalid grader output and unavailable services
-are infrastructure failures, not Student zeros. Preserve legitimate partial credit.
+are infrastructure failures, not Target Agent zeros. Preserve legitimate partial credit.
 
 Use Docker when required and usable; check its daemon. If local execution is
 allowed, use isolated dependencies, fresh workspaces, owned processes and free
-ports, and report the actual mode. If the Student runs elsewhere, verify its
+ports, and report the actual mode. If the Target Agent runs elsewhere, verify its
 endpoint reachability; evaluator-local `localhost` is insufficient. State the
 actual file/network isolation level. Never substitute mocks and call them the
 original environment. Prepare dependencies before evaluation, not inside the
-Student's task. Do not modify the Test Agent's persistent harness to host adapters.
+Target Agent's task. Do not modify the Test Agent's persistent harness to host adapters.
 
 ## Smoke, publish, ask
 
 Default to two representative cases per split, one run each, or one short
 lifecycle probe per split for a long-running task. Honor a smaller user budget;
-count every started Student. Cover distinct selected environment/scorer types.
+count every started Target Agent. Cover distinct selected environment/scorer types.
 
 First check representative official gold/oracle output and a negative control.
-Then delegate complete fresh Student executions through `agent-evaluation`, with
+Then delegate complete fresh Target Agent executions through `agent-evaluation`, with
 runtime setup, source grading and cleanup. Its request fields remain
 `protocol_version: 1`, `case_id`, `run`, `expected_version`, `test_agent_id`,
-`benchmark_id`, `provider`, `model_id`. Freeze Student State/runtime; explicitly
+`benchmark_id`, `provider`, `model_id`. Freeze Target Agent State/runtime; explicitly
 pass its configured thinking at launch. For stored `none`, omit that unsupported
-CLI flag and clear only `PENGUIN_SESSION_ID` for the Student command, preserving
+CLI flag and clear only `PENGUIN_SESSION_ID` for the Target Agent command, preserving
 explicit identity/model/workspace flags and connection/auth configuration.
 
 Keep actual scores, artifacts, bound session IDs, costs and setup/cleanup evidence.
@@ -163,7 +166,7 @@ adapter defects and rerun only affected coverage with a new attempt record.
 Grader-only checks do not establish that the Agent execution path works.
 
 Use an independent smoke Agent/Reporter and keep test probes from the future
-Teacher. Record smoke as development coverage, not a complete Formal Baseline or
+Optimizer. Record smoke as development coverage, not a complete Formal Baseline or
 an RSI result. Leave scoreboard empty until a complete evaluation of the declared
 case set exists; never insert partial/oracle matrices as full evaluations.
 
