@@ -3,6 +3,7 @@
 - **Date:** 2026-10-04
 - **Type:** fix
 - **Scope:** `web`, `docs`
+- **PR:** [#969](https://github.com/Prism-Shadow/penguin-harness/pull/969)
 
 [English](2026-10-04-evaluation-tasks-list.md)
 
