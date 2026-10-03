@@ -8,7 +8,7 @@ harness 只有一套插件系统，其中装着两类 npm 包，都是仓库 `pl
 - **库插件**携带内容——Agent 读取的 Skill 和运行的钩子包，由 `plugin.json` 清单声明；安装就是把这份内容复制到 Agent 的 `agent_state/` 下。
 - **代码包**，也就是[技能与插件](/skills#服务端插件)里说的**服务端插件**，携带模块：一组带装饰器的类，由服务器作为自己模块树的子节点启动。它没有 `plugin.json`，一个包被列进某个 Project 的配置里，就成了这一类插件。
 
-仓库里共有 23 个插件目录：14 个库插件和 9 个代码包——四个 `sandbox-*` 后端，外加 `claude-code`、`company-proposals`、`company-roadmaps`、`discord-bot` 和 `languages`。
+仓库里共有 19 个插件目录：15 个库插件和 4 个代码包，即四个 `sandbox-*` 后端。其它代码包（例如各语言插件）从各自的仓库发布。
 
 - **要装东西？** 两条安装路径见[安装插件](#安装插件)，页面和步骤见[在 Agent 上安装插件](/skills#在-agent-上安装插件)。
 - **要给插件加自己的选项？** 见[配置插件](#配置插件)。
@@ -21,11 +21,11 @@ harness 只有一套插件系统，其中装着两类 npm 包，都是仓库 `pl
 | --- | --- | --- |
 | 携带 | Skill 和/或钩子包——Agent 读取并运行的内容 | 带装饰器的模块——服务器启动的代码 |
 | 清单 | `plugin.json`，旁边有 `icon.svg` | 无；`package.json` 旁生成的 `ifaces.json` 就是模块载荷 |
-| npm 包 | `@penguinharness/<name>` | 任意包名，例如 `@prismshadow/penguin-plugin-sandbox-bwrap` |
+| npm 包 | `@penguinharness/<name>` | 任意包名，例如 `@penguinharness/sandbox-bwrap` |
 | 由谁声明 | 宿主包的依赖列表——即内置插件库 | Project 的 `[plugins]` 表，位于 `.project_config.toml` |
 | 装在哪里 | 某个 Agent 的 `agent_state/skills/` 和 `agent_state/hooks/` | 服务器进程，通过加载这个包 |
 | 在哪里运行 | Agent 的 Session 中，作为指令和钩子脚本 | 服务器中，作为模块树的节点 |
-| 例子 | `agent-company`、`goal`、`humanizer` | 四个 `sandbox-*` 后端、`discord-bot`、`languages` |
+| 例子 | `agent-company`、`goal`、`humanizer` | 四个 `sandbox-*` 后端 |
 
 两类插件都以文件为准。插件库每次调用都重新读取、不做缓存，所以改过的 `plugin.json` 或 `SKILL.md` 立即生效；代码包每次加载时读取它生成的表。
 
@@ -43,9 +43,9 @@ plugins/<plugin>/
 
 `plugin.json` 存放插件的元数据——`version`、`category`、`preinstall` 以及各钩子点。库里的 `SKILL.md` 只带 `name` 和 `description`；加载器会把插件的版本和简短描述写入每个已安装副本，跟已安装钩子包的 `hooks.json` 由清单生成是同一个道理。逐个字段的说明见[插件文件格式](/skills#插件文件格式)。
 
-命名和版本只有一套规则。插件名就是目录名，须匹配 `^[A-Za-z0-9_-]+$`，包名是 `@penguinharness/<name>`，位于 `plugins/<name>/`。清单里的 `version` 形如 `YYYY.MM.DD.N`——日期加当日序号，先比日期再比序号，所以 `2026.08.29.10` 排在 `2026.08.29.9` 之后——它与包自身的 npm 版本是两回事，后者跟着发行走。恰好五个插件带 `preinstall: false`，因此 `default_agent` 初始化时不会装上：`agent-company`、`agent-company-proposals`、`continual-learning`、`humanizer` 和 `use-claude-code`。
+命名和版本只有一套规则。插件名就是目录名，须匹配 `^[A-Za-z0-9_-]+$`，包名是 `@penguinharness/<name>`，位于 `plugins/<name>/`。清单里的 `version` 形如 `YYYY.MM.DD.N`——日期加当日序号，先比日期再比序号，所以 `2026.08.29.10` 排在 `2026.08.29.9` 之后——它与包自身的 npm 版本是两回事，后者跟着发行走。恰好四个插件带 `preinstall: false`，因此 `default_agent` 初始化时不会装上：`agent-company`、`continual-learning`、`humanizer` 和 `use-claude-code`。
 
-插件库的范围不是目录列表。`@prismshadow/penguin-core` 里的加载器读取宿主包自己依赖里的 `@penguinharness/*` 条目，再用 Node 逐个解析这些包：core 和桌面端声明了全部 14 个插件，CLI 声明了其中 13 个——只缺 `agent-company-proposals`——`packages/server` 一个都不声明，而是经 core 取得它们。在 workspace 检出里，加载器会把每个名字重定向到仓库自己的 `plugins/<name>/`——pnpm 把 `workspace:*` 包以注入快照的形式安装，会漏掉之后新增的文件，而插件没有构建脚本可以刷新这份快照——而 npm 安装和打包后的桌面端读取各自携带的副本。声明了却解析不到的包会带着路径直接抛错，而不是让插件库悄悄变小。
+插件库的范围不是目录列表。`@prismshadow/penguin-core` 里的加载器读取宿主包自己依赖里的 `@penguinharness/*` 条目，再用 Node 逐个解析这些包：core、桌面端和 CLI 都声明了全部 15 个插件，`packages/server` 一个都不声明，而是经 core 取得它们。在 workspace 检出里，加载器会把每个名字重定向到仓库自己的 `plugins/<name>/`——pnpm 把 `workspace:*` 包以注入快照的形式安装，会漏掉之后新增的文件，而插件没有构建脚本可以刷新这份快照——而 npm 安装和打包后的桌面端读取各自携带的副本。声明了却解析不到的包会带着路径直接抛错，而不是让插件库悄悄变小。
 
 ## 代码包
 
@@ -66,7 +66,7 @@ export default { modules: [MyBackend], replaces: [] } satisfies Plugin;
 - `modules`——在宿主根节点下新增的节点。
 - `replaces`——按被顶替节点的名字顶替已有节点，可以是组件、模块，或带子节点的整个组。
 
-契约（`Plugin`、五个内核装饰器，以及沙箱、语言与 surface 词汇表）位于 `@prismshadow/penguin-core/plugin` 子路径；插件模块可以 require 的接口位于 `@prismshadow/penguin-server/plugin`，只有类型，因此只对着沙箱词汇表写的后端只认 core。
+契约（`Plugin`、五个内核装饰器，以及沙箱与语言词汇表）位于 `@prismshadow/penguin-core/plugin` 子路径；插件模块可以 require 的接口位于 `@prismshadow/penguin-server/plugin`，只有类型，因此只对着沙箱词汇表写的后端只认 core。
 
 清单是生成的，不是手写的。包的构建对自己的 tsconfig 运行 `scripts/gen-ifaces.mjs`，把生成的 `ifaces.json` 放在 `package.json` 旁一起发布。这张表里有每个带装饰器的类的 manifest，以及它们点到的每个接口的签名；它就是模块载荷，让宿主不必执行包就知道里面有什么。没有这张表的包不携带任何模块。
 
@@ -83,7 +83,7 @@ export default { modules: [MyBackend], replaces: [] } satisfies Plugin;
 
 ```toml
 [plugins]
-"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"
+"@penguinharness/sandbox-bwrap" = "*"
 "@scope/name" = "1.2.3"
 "@scope/pinned" = { version = "1.2.3", integrity = "sha512-…" }
 ```
@@ -124,10 +124,10 @@ export default { modules: [MyBackend], replaces: [] } satisfies Plugin;
 
 | 包 | 平台 | `fs-write` | `network` | `network-local` | `mask-paths` |
 | --- | --- | --- | --- | --- | --- |
-| `@prismshadow/penguin-plugin-sandbox-bwrap` | Linux | 有 | 有 | — | 有 |
-| `@prismshadow/penguin-plugin-sandbox-seatbelt` | macOS | 有 | 有 | 有 | 有 |
-| `@prismshadow/penguin-plugin-sandbox-wsl` | Windows | 有 | 有 | — | 有 |
-| `@prismshadow/penguin-plugin-sandbox-dsh` | 三个平台 | 有 | — | — | — |
+| `@penguinharness/sandbox-bwrap` | Linux | 有 | 有 | — | 有 |
+| `@penguinharness/sandbox-seatbelt` | macOS | 有 | 有 | 有 | 有 |
+| `@penguinharness/sandbox-wsl` | Windows | 有 | 有 | — | 有 |
+| `@penguinharness/sandbox-dsh` | 三个平台 | 有 | — | — | — |
 
 维度有 `fs-write`、`network`、`network-local` 和 `mask-paths`，后端声明自己实现其中的哪些；什么都不声明就等于只有 `fs-write`。路由按能力而非注册顺序：只要求文件效果层面的策略会交给第一个覆盖它的后端——DSH 适配器，它自己的链条按宿主分别选用 bubblewrap、Landlock、Seatbelt 或 Windows ACL 运行器——而还要求网络或屏蔽路径的策略会交给第一个实现这些维度的后端；注册顺序只在两个后端都能覆盖时用于打破平局。什么都覆盖不了的请求会**失败关闭**，并列出各后端分别覆盖什么，而不会让命令不受封禁地跑起来，也不会悄悄丢掉被要求的某个维度。
 
@@ -135,7 +135,7 @@ Windows 由专用 WSL2 发行版里的 bubblewrap 承担，因此那里的命令
 
 ## 代码位置
 
-- `packages/core/src/plugin/` —— 契约：`Plugin`、各装饰器，以及沙箱、语言与 surface 词汇表。
+- `packages/core/src/plugin/` —— 契约：`Plugin`、各装饰器，以及沙箱与语言词汇表。
 - `packages/core/src/plugins/` —— 插件库加载器：哪些包是插件、它们的清单与版本，以及分类分组。
 - `packages/server/src/plugin/` —— 宿主：一个进程加载哪些插件、生成表的读取，以及设置分组机制。
 - `packages/server/src/sandbox/` —— 沙箱服务、维度辅助函数和 `sandbox` 设置分组。
