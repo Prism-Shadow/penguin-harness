@@ -21,7 +21,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 每张 Benchmark 卡片显示：
 
-- 标题、目录名和描述，[内置 Harbor Benchmark](#内置-harbor-benchmark) 还带一个 **Harbor** 标签；
+- 标题、目录名和描述；
 - 题目数量和每题运行次数；
 - 最近一次评估的时间，以及测过的 Agent；
 - 分数走势小图，以及最新分数和它相对同一[标签](#分数曲线)下上一次评估的变化。
@@ -39,33 +39,33 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 ### 示例 Benchmark
 
-每个 Project 都自带 `example-benchmark`，其中的示例评估测的是 `default_agent`，所以页面一开始就有数据。每个 Project 只会得到它一次：删掉之后就不会再出现。
+每个 Project 都自带 `example-benchmark`，其中的示例评估测的是 `default_agent`，所以页面一开始就有数据。它在 Project 创建时写入：删掉之后就不会再出现。
 
-### 内置 Harbor Benchmark
+### 内置 Benchmark
 
-每个 Project 还自带五个取自公开评测集的 Benchmark，每个都是挑选出的、能在纯 CPU 的 Docker 环境里运行的子集：
+新建的 Project 还自带五个取自公开评测集的 Benchmark，即 **PenguinHarness Benchmark Sec A** 到 **Sec E**，每个都是挑选出的、能在纯 CPU 的 Docker 环境里运行的子集。各自的描述里写明了原始评测集：
 
-| Benchmark | 衡量什么 |
+| Benchmark | 原始评测集：衡量什么 |
 | --- | --- |
-| `terminal-bench` | Terminal-Bench 4.0：在终端里完成的高难度真实任务 |
-| `terminal-bench-science` | Terminal-Bench-Science 0.1：研究级的科学计算 |
-| `deep-swe` | DeepSWE v1.1：在真实开源仓库里实现功能、修复缺陷 |
-| `automation-bench` | AutomationBench：跨模拟 SaaS 应用的业务流程 |
-| `rag-bench-essential` | Data Analysis Bench：基于 PDF、扫描件、表格与文档库的数据分析 |
+| `penguinharness-benchmark-sec-a` | rag-bench-essential（Data Analysis Bench）：基于 PDF、扫描件、表格与文档库的数据分析 |
+| `penguinharness-benchmark-sec-b` | DeepSWE v1.1：在真实开源仓库里实现功能、修复缺陷 |
+| `penguinharness-benchmark-sec-c` | AutomationBench：跨模拟 SaaS 应用的业务流程 |
+| `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1：研究级的科学计算 |
+| `penguinharness-benchmark-sec-e` | Terminal-Bench 4.0：在终端里完成的高难度真实任务 |
 
-它们的卡片带一个 **Harbor** 标签。每道题都以 [Harbor](https://github.com/harbor-framework/harbor) 任务的形式在 Docker 里运行。任务文件不在 PenguinHarness 里，而是放在公开仓库 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，Benchmark 页面的**题目文件**处链接到它。题干只写任务的简述、任务文件夹的链接和启动命令。分数由任务自己的验证器决定：通过得 100 分，未通过得 0 分。
+每道题都以 [Harbor](https://github.com/harbor-framework/harbor) 任务的形式在 Docker 里运行。任务文件不在 PenguinHarness 里，而是放在公开仓库 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，运行它们的规则也写在那里。题干写着任务的简述和任务文件夹在该仓库固定提交下的链接，其中的 **How this case is run** 一节链接这些规则，并给出启动任务的命令。分数由任务自己的验证器决定：通过得 100 分，未通过得 0 分。
 
 **评估之前**
 
 - 执行评估的 Agent 所在机器装有 Docker（含 Compose v2）和 [uv](https://docs.astral.sh/uv/)，并能访问 GitHub、Docker Hub、nodejs.org、npm 仓库和模型服务。
 - 评估所用的模型，即评估会话的模型，已在**模型库**页面保存了 API key。评估会把这一条模型配置复制进每个任务容器，不需要 Vault。
-- 执行评估的 Agent 的 `agent-evaluation` Skill 来自 `agent-tuning` 2026.10.03.1 或更新版本。在此之前创建的 Agent 保留着旧副本，需要在**智能体**页面更新这个插件。
+- 执行评估的 Agent 的 `agent-evaluation` Skill 来自 `agent-tuning` 2026.10.04.1 或更新版本。在此之前创建的 Agent 保留着旧副本，需要在**智能体**页面更新这个插件。
 
-它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。**评估**标签页会用一行字写明上面的前提。评估先取一次仓库，再为每道题的每次运行跑一次 Harbor trial，同时至多四个，因为每个 trial 都要占用主机上数量有限的 Docker 网络：被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
+它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。执行评估的 Agent 的 `agent-evaluation` Skill 从题干认出这类题，并按仓库里的规则运行：评估先按题干给出的提交取一次仓库，再为每道题的每次运行跑一次 Harbor trial，同时至多四个，因为每个 trial 都要占用主机上数量有限的 Docker 网络。被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
 跑一次大约花多少钱、PenguinHarness 在这些题上得分如何（三次尝试的准确率、成本、Token 数与耗时），见仓库里的 [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md)。
 
-它们自带的评估记录为空。每个 Project 对它们各只得到一次：删掉的不会再出现；之后的版本若新增内置 Harbor Benchmark，只补上新增的那个。
+它们自带的评估记录为空。它们和示例一样，只在 Project 创建时写入，此后不再写入：删掉的不会再出现。升级前就已存在的 Project 不会因为升级而得到它们；之后新建的 Project 都有。
 
 ## 让 AI 创建 Benchmark
 
@@ -209,7 +209,7 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 3. 选择**删除**。
 
 > [!NOTE]
-> 删掉 `example-benchmark` 或[内置 Harbor Benchmark](#内置-harbor-benchmark) 同样是最终的：每个 Project 对它们各只得到一次。想让某一个重新写入，就从 `benchmarks/.seeded.json` 里删掉它的 id，下次加载 `default_agent` 时它会被写入。
+> 删掉 `example-benchmark` 或[内置 Benchmark](#内置-benchmark) 同样是最终的：它们只在 Project 创建时写入，此后不再写入。
 
 ## 工作原理
 
@@ -219,5 +219,5 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent，在本会话自己的模型上跑完完整的 Case × runs 矩阵；执行评估的 Agent 从系统提示词的 `Provider` 与 `Model ID` 两行读出这个模型。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
 - **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark_config.toml`，不会出现在列表里，可以手动删除。
-- **示例与内置 Benchmark。** `default_agent` 初始化以及之后每次加载时，会把这个 Project 还没得到过的示例或内置 Benchmark 写入，并记在 `benchmarks/.seeded.json` 里；删掉的不会再写回。你自己的目录占用了某个内置 Harbor id 时，这个目录一概不动，等它不在了才补上那个内置 Benchmark。早先版本留下的 `example-benchmark` 记为已得到、原样保留；升级前已经删掉的示例会再写入一次。
-- **内置 Harbor Benchmark。** 它们的 `benchmark_config.toml` 写着 `kind = "harbor"`，并在 `[harbor]` 表里写明仓库、所用的 ref 和任务目录。`agent-evaluation` Skill 读到这些后，每个格子跑一次 Harbor trial，不再开 Workspace 会话；具体步骤见它的 `reference/harbor.md`。
+- **示例与内置 Benchmark。** 在 Project 创建时写入，此后不再写入。早先版本的 Project 保留已有的内容，不会得到内置 Benchmark。
+- **内置 Benchmark。** 它们的配置与普通 Benchmark 无异；每道题的题干写明任务在仓库固定提交下的文件夹，并链接仓库里的运行规则，`agent-evaluation` Skill 照此运行。它的 `reference/harbor.md` 只补充 PenguinHarness 需要的部分：检出放在哪里、运行哪份 Agent State、trial 如何折算成分数。

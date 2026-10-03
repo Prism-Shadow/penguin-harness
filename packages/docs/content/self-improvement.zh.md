@@ -137,7 +137,7 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 | `published` | Formal Baseline 已经记录 | 可以使用 |
 | `failed` | `benchmark-design` 报告了 `calibration_failed` | 遮罩显示为创建失败，并提示删除后重新创建 |
 
-`failed` 的 Benchmark 不能使用。手动创建的 Benchmark 和内置示例一开始就是 `published`。配置里没有这个字段，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。
+`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。配置里没有这个字段，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。
 
 ### 评估记录
 
@@ -153,9 +153,9 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 
 ### 示例 Benchmark
 
-初始化 Project 的 `default_agent` 时，会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`）。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
+创建 Project 时，会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`）。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
 
-每个 Project 只会得到示例一次，内置 Harbor Benchmark 也一样（`packages/core/src/state/project-benchmarks.ts`）。`benchmarks/.seeded.json` 记录这个 Project 已经得到过哪些：初始化或加载 `default_agent` 时，尚未记录的会先写入、再记下，不管 `benchmarks/` 里已经有什么，也不管旧的数据根在已退役的按 Agent 存放位置 `agents/<agent>/benchmarks/` 下还留着什么（没有任何代码读取那里）。已经存在的示例一概不动，删掉的示例不会再出现。在有这份记录之前的数据根上，已经存在的示例记为已得到；早先删掉的示例会再写入一次。记录无法读取时什么也不写，删掉的不会因此回来，并在标准错误输出里提示一次：修好这个文件，或者删掉它，让缺少的 Benchmark 全部重新写入。共用一个数据根的服务端与 CLI 可以同时做这件事，不会丢掉对方的记录。
+示例与五个内置 Benchmark 只在 Project 创建时写入一次（`packages/core/src/state/project-benchmarks.ts`）：服务端创建 Project 时写入，`default_project` 则在全新安装首次启动时写入。每个都先写进 `benchmarks/.seeding/` 下的临时目录，再改名就位；写入失败即 Project 创建失败，并整体回滚。目录已存在的 id 直接跳过、从不往里写，因此服务端沿用已有数据根里的 `default_project` 时，它自己的 Benchmark 原样保留，只补上缺少的。此后不再写入：初始化或加载 `default_agent` 都不碰 `benchmarks/`，删掉的不会再出现。早先版本的 Project 保持原样：不会得到内置 Benchmark，示例在的仍在，删掉的也不会回来。
 
 ## 快照与版本
 

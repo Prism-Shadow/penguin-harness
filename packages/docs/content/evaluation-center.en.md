@@ -21,7 +21,7 @@ Under the title, three numbered step cards outline the loop: **Create**, **Evalu
 
 Each Benchmark card shows:
 
-- the title, the directory name and the description, with a **Harbor** tag on a [built-in Harbor Benchmark](#built-in-harbor-benchmarks);
+- the title, the directory name and the description;
 - the number of cases and the runs per case;
 - when the Benchmark was last evaluated, and the agents it has tested;
 - a sparkline of its scores, and the newest score with its change from the previous evaluation under the same [label](#score-chart).
@@ -39,33 +39,33 @@ A Benchmark that is not finished is masked. Its card is dimmed under a notice, *
 
 ### The example Benchmark
 
-Every Project comes with `example-benchmark`, whose sample evaluations test `default_agent`, so the page has data from the start. A Project is given it once: if you delete it, it stays deleted.
+Every Project comes with `example-benchmark`, whose sample evaluations test `default_agent`, so the page has data from the start. It is written when the Project is created: if you delete it, it stays deleted.
 
-### Built-in Harbor Benchmarks
+### Built-in Benchmarks
 
-Every Project also comes with five Benchmarks built from public evaluation sets, each a subset chosen to run on CPU-only Docker:
+A new Project also comes with five Benchmarks built from public evaluation sets, **PenguinHarness Benchmark Sec A** to **Sec E**, each a subset chosen to run on CPU-only Docker. Each one's description names the original benchmark:
 
-| Benchmark | What it measures |
+| Benchmark | Original benchmark: what it measures |
 | --- | --- |
-| `terminal-bench` | Terminal-Bench 4.0: hard, realistic tasks done in a terminal |
-| `terminal-bench-science` | Terminal-Bench-Science 0.1: research-grade scientific computing |
-| `deep-swe` | DeepSWE v1.1: features and fixes in real open-source repositories |
-| `automation-bench` | AutomationBench: business workflows across simulated SaaS apps |
-| `rag-bench-essential` | Data Analysis Bench: analysis over PDFs, scanned forms, spreadsheets and document libraries |
+| `penguinharness-benchmark-sec-a` | rag-bench-essential (Data Analysis Bench): analysis over PDFs, scanned forms, spreadsheets and document libraries |
+| `penguinharness-benchmark-sec-b` | DeepSWE v1.1: features and fixes in real open-source repositories |
+| `penguinharness-benchmark-sec-c` | AutomationBench: business workflows across simulated SaaS apps |
+| `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1: research-grade scientific computing |
+| `penguinharness-benchmark-sec-e` | Terminal-Bench 4.0: hard, realistic tasks done in a terminal |
 
-Their cards carry a **Harbor** tag. Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in Docker. The task files are not part of PenguinHarness: they are in the public repository [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), which the Benchmark's page links under **Task files**. A case's statement holds a short description of the task, the link to its folder and the command that launches it. The task's own verifier decides the score: a pass scores 100 and a fail 0.
+Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in Docker. The task files are not part of PenguinHarness: they are in the public repository [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), which also holds the rules for running them. A case's statement holds a short description of the task and the link to its folder in that repository at a pinned commit, and its **How this case is run** section links those rules and gives the command that launches the task. The task's own verifier decides the score: a pass scores 100 and a fail 0.
 
 **Before you evaluate**
 
 - The machine the evaluator agent runs on has Docker with Compose v2 and [uv](https://docs.astral.sh/uv/), and can reach GitHub, Docker Hub, nodejs.org, the npm registry and the model provider.
 - The model the evaluation runs on, the evaluation conversation's, has its API key saved on the **Models** page. The evaluation copies that one model entry into each task container; it needs no Vault entry.
-- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.03.1 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
+- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.04.1 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
 
-You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The **Evaluate** tab names the prerequisites above in one line. The evaluation fetches the repository once, then runs one Harbor trial per case and run, at most four at a time because every trial takes Docker networks from a limited supply: the tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
+You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The evaluator agent's `agent-evaluation` Skill recognizes such a case from its statement and follows the repository's rules: the evaluation fetches the repository once, at the statement's commit, then runs one Harbor trial per case and run, at most four at a time because every trial takes Docker networks from a limited supply. The tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
 
 What a run costs and how PenguinHarness scores on these tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md).
 
-They ship with no evaluations. A Project is given each of them once: if you delete one, it stays deleted, and a later release that adds another built-in Harbor Benchmark gives you just that one.
+They ship with no evaluations. Like the example, they are written when the Project is created and never again: if you delete one, it stays deleted. A Project that existed before your PenguinHarness shipped them does not get them when you upgrade; every Project created afterwards does.
 
 ## Create a Benchmark with AI
 
@@ -209,7 +209,7 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 3. Select **Delete**.
 
 > [!NOTE]
-> Deleting `example-benchmark` or a [built-in Harbor Benchmark](#built-in-harbor-benchmarks) is final too: a Project is given each of them once. To have one written again, remove its id from `benchmarks/.seeded.json`; it is written the next time `default_agent` loads.
+> Deleting `example-benchmark` or a [built-in Benchmark](#built-in-benchmarks) is final too: they are written only when the Project is created, never again.
 
 ## How it works
 
@@ -219,5 +219,5 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
 - **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark_config.toml`, so it is not listed, and you can delete it by hand.
-- **The example and the built-in Benchmarks.** `default_agent`'s initialization and every later load give the Project each of them it has not been given yet, and record it in `benchmarks/.seeded.json`; a deleted one is not written back. A directory of your own under a built-in Harbor id is never written into, and that built-in is given once the directory is gone. An `example-benchmark` left by an earlier release is recorded as given and kept as it is; one you had deleted before upgrading is written once more.
-- **Built-in Harbor Benchmarks.** Their `benchmark_config.toml` says `kind = "harbor"` and names the repository, its ref and the task folder in a `[harbor]` table. The `agent-evaluation` Skill reads them and runs one Harbor trial per cell in place of a Workspace session; its `reference/harbor.md` has the steps.
+- **The example and the built-in Benchmarks.** Written when the Project is created; never written again. A Project from an earlier release keeps what it has and is not given the built-in Benchmarks.
+- **Built-in Benchmarks.** Their configs are ordinary; each statement names the task's folder in the repository at a pinned commit and links the repository's run rules, which the `agent-evaluation` Skill follows. Its `reference/harbor.md` adds only what PenguinHarness needs: where the checkout lives, which Agent State runs, and how a trial becomes a score.

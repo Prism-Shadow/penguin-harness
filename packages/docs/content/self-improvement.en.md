@@ -137,7 +137,7 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 | `published` | The Formal Baseline is recorded | Usable |
 | `failed` | `benchmark-design` reports `calibration_failed` | Masked as a failed creation, with a request to delete it and create it again |
 
-A failed Benchmark cannot be used. A Benchmark created by hand, and the built-in example, are published from the start. A config without the field, or with any value other than `draft` or `failed`, reads as published.
+A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A config without the field, or with any value other than `draft` or `failed`, reads as published.
 
 ### Evaluation records
 
@@ -153,9 +153,9 @@ Every run and every Case is scored out of 100, so Scoreboard entries carry no `m
 
 ### The example Benchmark
 
-Initializing a Project's `default_agent` seeds an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`). Its three sample evaluations are labelled `agent_id: default_agent`, so the evaluation pages have data out of the box. The whole directory can be deleted or replaced at any time.
+Creating a Project writes an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`). Its three sample evaluations are labelled `agent_id: default_agent`, so the evaluation pages have data out of the box. The whole directory can be deleted or replaced at any time.
 
-A Project is given the example once, together with the built-in Harbor Benchmarks (`packages/core/src/state/project-benchmarks.ts`). `benchmarks/.seeded.json` records what the Project has been given; when `default_agent` is initialized or loaded, whatever is not recorded yet is written and then recorded, whatever else `benchmarks/` holds, and whatever an older data root still keeps at the retired per-agent location `agents/<agent>/benchmarks/`, which nothing reads. An example that is present is never touched, and a deleted one stays deleted. On a data root from before the record, an example that is already there is recorded as given; one deleted earlier is written once more. A record that cannot be read gives nothing, so nothing deleted comes back, and is reported once on standard error: fix the file, or remove it to be given every missing Benchmark again. The server and a CLI on one data root can do this at the same time without losing each other's records.
+The example and the five built-in Benchmarks are written once, when the Project is created (`packages/core/src/state/project-benchmarks.ts`): by the server when it creates a Project, and for `default_project` at a fresh install's first start. Each is written into a temporary directory under `benchmarks/.seeding/` and renamed into place; a write that fails fails the Project's creation, which is rolled back. An id whose directory already exists is skipped and never written into, so a `default_project` the server adopts from an existing data root keeps its own Benchmarks and is given only the missing ones. Nothing writes them again afterwards: initializing or loading `default_agent` never touches `benchmarks/`, so a deleted one stays deleted. A Project from an earlier release is left as it is: it is not given the built-in Benchmarks, and its example stays, or stays deleted.
 
 ## Snapshots and versions
 
