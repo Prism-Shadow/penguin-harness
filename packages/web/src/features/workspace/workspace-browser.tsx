@@ -160,8 +160,7 @@ import {
 import { restoreSelection } from "../../components/ui/text-selection";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
-import { setCloseGuard } from "../../lib/dock-close-guard";
-import { tabKey } from "../../lib/dock-tab-key";
+import { setCloseGuard, tabKey } from "../dock";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 
 /**

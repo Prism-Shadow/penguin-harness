@@ -15,7 +15,6 @@ import { useSessions } from "../../../state/sessions";
 import type { StagedThinkingSwitch } from "../../model-picker";
 import { createCostStatHold } from "../header-stats";
 import type { SwitchContextShape } from "../model-switch";
-import "../builtin-dock-panels";
 
 /** Exact consecutive main ChatPage statements 0..24; called once, in original order. */
 export function useMainChatInputs() {
