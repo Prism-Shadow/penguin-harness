@@ -47,6 +47,10 @@ For each update:
    supported behavior and proposes a bounded delta. It can inspect cited training
    evidence and may consolidate duplicates; it cannot use testing or rewrite the
    full playbook indiscriminately.
+   Check each proposed instruction against its evidence and unresolved hypotheses.
+   Keep a source-precedence rule scoped to the fields and records actually in
+   conflict; silence about another field does not make its known value invalid.
+   A missing policy definition is uncertainty, not evidence of a policy violation.
 3. The Optimizer validates parent version/hash, IDs, evidence, operations, limits
    and write set. Reject unsupported procedures, answer tables and runtime edits.
    Preserve unchanged rule text and feedback history. Publish the staged delta
@@ -55,6 +59,13 @@ For each update:
    retain it even when score falls, append its evaluation and use its new traces
    next. ACE admits supported deltas, not only score improvements. Report score
    change and whether the intended behavior changed.
+
+Separate a trace-supported procedure from a proposed repair. For each new rule,
+name the decision it changes and evidence for its conditions and exceptions.
+Score-only feedback cannot identify the cause of an error. Keep an unverified
+business rule in OUT; an active diagnostic instruction must tell the Target what
+public evidence to check before applying it. Do not fill `max_delta_entries` as a
+quota or combine unrelated repairs merely to fit under it.
 
 An invalid proposal ends with the last measured version. A no-op or full capacity
 without supported consolidation also stops. Invalid candidate measurement uses
@@ -87,6 +98,10 @@ AGENTS.md:
 Every execution must show actual file reads in its public trace. A claimed usage
 note alone is insufficient. With an empty playbook, a read followed by ordinary
 task solving is valid. Keep this reader identical for initial and final testing.
+Complete the reads before substantive business calls; do not batch those calls
+with loading the rules. For a claimed application, cite the matching condition,
+action and observed check. A loaded rule with no such evidence is application
+unverified, not automatically helpful.
 
 ## Rules and evidence
 
@@ -119,6 +134,14 @@ proof. Count each `(measurement, case, run, rule_id)` at most once. Reuse of one
 trace by several Reflectors never multiplies its count. Keep feedback events in
 Optimizer records, derive cumulative counters from those events, and archive retired
 entries rather than reassigning their IDs.
+
+Only label rules present in the measured version and supported by an observed
+application. New rules start at zero; do not retroactively call their source
+traces evidence of usefulness. If the budget ends after candidate measurement,
+keep its diagnostics in OUT and report counters as not yet updated. Updating
+published counters changes State and belongs to the next version, not a silent
+edit of the measured snapshot. Reading a rule or obtaining a higher total score
+alone is not a helpful event.
 
 ## Delta contract
 

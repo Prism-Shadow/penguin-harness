@@ -28,6 +28,11 @@ output schema. Add one uniform `answer.json` delivery instruction if needed.
 Bind `<TASK_ENV_BASE_URL>` only in the execution's copied Statement after its
 business service is ready; never mutate the published benchmark per run.
 
+Document public route templates, supported query parameters and pagination limits
+from the pinned service. State whether unknown-route discovery is allowed before
+freezing; a list declared exhaustive makes off-list probes a protocol violation
+even when they return 404. Do not broaden permissions afterward to validate a run.
+
 Keep gold, `eval/`, `notes/` and full `task_group.yaml` private. The group manifest
 contains test criteria too and must not be passed whole to a training Optimizer.
 Keep shared grader helpers in their original relative layout, or make a documented
@@ -58,6 +63,11 @@ adapter that preserves all observable grading behavior. Retain the upstream lice
   Preserve documented synthetic business-API authentication, but do not expose
   admin/reset credentials. Source endpoints use different auth headers or JSON
   token fields; read the actual service and task instructions.
+- Check import-time dependencies before removing judge assets. Group `023` loads
+  `judge_specs.json` and validates evaluator files while importing its business
+  service, even with judging disabled. Retain required assets in the private
+  runtime directory, keep the judge endpoint disabled, and expose only the
+  business API to the Target Agent; do not copy that directory into Statement.
 - Readiness, lifetime limits and cleanup belong in the generated Rubric Runtime
   section. Stop only owned processes/containers. Leaving a background service
   running after smoke does not make the benchmark reproducible from a new session.
@@ -71,6 +81,10 @@ adapter that preserves all observable grading behavior. Retain the upstream lice
   Some outputs have a normalized `score` and a raw `max_score`; dividing the two
   would be wrong. Read each implementation and verify the conversion with gold
   and a negative control before freezing it.
+- Record score extraction per case and split. Within group `002`, graders use
+  different fields and scales: `percentage` can be a fraction, while another
+  case needs `score / max_score`. A mapping inferred from the group's first
+  case does not cover the others.
 - Group `009` resolves `eval_common.py` three levels above its per-case `eval/`
   directory. Package this shared helper and preserve group/split/case depth.
 - Group `021` test graders infer the task ID from `test_tasks/<id>` in the gold

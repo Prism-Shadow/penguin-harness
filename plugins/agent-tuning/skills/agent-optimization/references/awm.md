@@ -49,6 +49,10 @@ For each round:
    trace and outputs, returning success/failure/uncertain with evidence. It never
    sees private scores, rubric or gold. With `training_score`, use the declared
    threshold on delegated results instead. Uncertain traces are not admitted.
+   Check substantive requirements against observed inputs and outputs, not just
+   schema validity, a self-check or the Target's completion claim. If an unresolved
+   conflict could change a required result, return uncertain. Distinguish harmless
+   wording freedom from uncertainty about the business decision.
 2. Give the inducer admitted successful traces, current workflows and explicitly
    permitted training information. Gold/rubric can explain a success, but cannot
    turn a failed execution into a claimed demonstrated workflow. Failed traces
@@ -66,10 +70,27 @@ For each round:
    same full training matrix and verify actual workflow-file reads. Keep a valid
    measured version even if its score falls; AWM has no strict-score gate.
 
+For every workflow step, keep its supporting trace action/output in OUT and check
+that its preconditions hold there. A successful task label does not validate every
+step in that trace. Do not generalize an unresolved assumption, a copied draft
+value or agreement with a supplied candidate answer into an authoritative rule.
+Omit unsupported steps; if the remaining subroutine has no demonstrated completion
+check, reject it. A public judge's verdict remains evidence under that signal,
+not a claim of gold correctness.
+
+For `public_judge`, numeric scores may be collected for reporting, but must not
+reach the judge, inducer or consolidator or affect admission. Declare separately
+whether the Optimizer sees them; do not label the entire experiment score-blind
+when only the analysis workers are. If score-blind optimization is requested,
+follow the separate-controller handoff in the common Skill.
+
 No successful/useful experience, no-op, capacity without supported refinement or
 invalid proposal ends with the last measured version. Invalid measurement uses
 the common recovery rules. Do not regenerate wrong answers to create success
 outside the declared matrix. Keep an empty learned library when that is the result.
+When admission is empty, skip induction and consolidation. Count trace-content
+reads separately from file-existence checks; neither an empty proposal nor a
+planned read proves a trace was inspected.
 
 Report admission signal, supervision, source experiences, learned/reused workflow
 IDs, actual reads, scores and regressions. Freeze the latest valid measured
@@ -128,6 +149,9 @@ custom `YYYY.MM.DD.N` version, and `workflows.json` containing
 `{"workflows": []}`. Index rows contain `id`, `description`, `revision`,
 `content_hash`, `parameters`, and `dependencies`; never include training answers
 or trace paths. Record ownership and evidence separately in Optimizer OUT.
+Keep the live entries only in `workflows.json`; the reader Skill describes how to
+load them without embedding a second copy of the empty or current index. An
+inline example must not substitute for reading the actual file.
 
 Use this fixed AGENTS.md instruction for both base and final harnesses:
 
@@ -142,6 +166,9 @@ Use this fixed AGENTS.md instruction for both base and final harnesses:
 Require a trace-visible file read before claiming a workflow was used. An empty
 index or no matching workflow is valid. If the reader itself needs repair, start
 a new baseline rather than confounding a reader change with learned workflows.
+For claimed use, also cite an action and completion check using this task's
+parameters. Record read-but-unused workflows separately. A note saying a check
+passed is insufficient when its cited observations contradict it.
 
 ## Source and adaptations
 

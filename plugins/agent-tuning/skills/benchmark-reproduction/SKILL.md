@@ -102,6 +102,15 @@ URL substitution or an `answer.json` delivery line. Keep gold, graders, solution
 notes and manifests containing private criteria out of Statement. Preserve shared
 grader dependencies and directory depth. A preparer may read both splits to
 package them but must not later become the training Optimizer or pass it test data.
+Verification logs can also reveal gold or scoring details. Keep them private and
+scoped to their case/split; never copy combined train/test controls into each
+benchmark's shared runtime or training handoff.
+
+Include the source's public interface documentation needed to use the environment.
+State the task's allowed files and API endpoints; private runtime code, databases
+and other executions are not alternate discovery paths. Exclude judge/admin
+routes from public endpoint lists. Verify that the task is runnable using only
+these public materials before freezing the benchmark.
 
 In `reproduction.yaml`, record source URL/commit, chosen reference/custom prompt,
 source-to-case mapping, split/cutoff, runtime mode/dependencies, score conversion,
@@ -129,12 +138,17 @@ paths; never rediscover the newest workspace or use a shared temporary filename.
 Keep the service alive across tool calls using a managed background process or
 supervisor with redirected input/output. Check readiness after the launch tool
 returns and again before scoring; a bare shell `&` may die with its parent shell.
+Retain process ownership evidence and reap child processes during cleanup; a
+stopped but unreaped process must not be mistaken for a running service.
 
 `agent-evaluation` reads these instructions; there is no benchmark-specific branch
 in Penguin source. Express rubric weights as exact fractions totalling 100 and
 map the original score to `0..100`. Read the scorer instead of guessing by a
 field's name. Missing dependencies, invalid grader output and unavailable services
 are infrastructure failures, not Target Agent zeros. Preserve legitimate partial credit.
+Do not round individual weights to force a total of 100. Keep exact fractions and
+let the source scorer determine the final score. Parse its complete documented
+output; formatted JSON may span lines. Preserve raw output before normalization.
 
 Use Docker when required and usable; check its daemon. If local execution is
 allowed, use isolated dependencies, fresh workspaces, owned processes and free
@@ -151,6 +165,10 @@ lifecycle probe per split for a long-running task. Honor a smaller user budget;
 count every started Target Agent. Cover distinct selected environment/scorer types.
 
 First check representative official gold/oracle output and a negative control.
+Keep the upstream scorer even when its judgment appears inconsistent with public
+evidence. Record such discrepancies separately; neither gold passing its own
+scorer nor a plausible answer proves that the task is unambiguous. Any correction
+to task semantics or grading is a declared benchmark revision, not an adapter fix.
 Then delegate complete fresh Target Agent executions through `agent-evaluation`, with
 runtime setup, source grading and cleanup. Its request fields remain
 `protocol_version: 1`, `case_id`, `run`, `expected_version`, `test_agent_id`,
@@ -164,6 +182,12 @@ Wrong answers are valid scored executions; do not rerun them to improve smoke
 results. Environment, protocol or grading failure blocks publication. Fix real
 adapter defects and rerun only affected coverage with a new attempt record.
 Grader-only checks do not establish that the Agent execution path works.
+Save each attempt's evidence before repair; never overwrite a failed check with
+the successful rerun. Verify the packaged runtime, not just the source checkout.
+Resolve every control-evidence path from the delivered benchmark; retain the
+case/split-specific private record there or explicitly mark external evidence as
+unavailable. Keep the raw score and its scale separate from the converted 0..100
+score so later Evaluators cannot convert an already normalized value twice.
 
 Use an independent smoke Agent/Reporter and keep test probes from the future
 Optimizer. Record smoke as development coverage, not a complete Formal Baseline or
@@ -173,6 +197,10 @@ case set exists; never insert partial/oracle matrices as full evaluations.
 Once construction, smoke and cleanup pass, set `status = "published"`. Reproduction
 preserves existing tasks, so Benchmark Design's below-85 calibration gate does
 not apply. Leave a blocked build draft; mark an abandoned invalid build failed.
+After handoff, do not repair or rebuild a benchmark while any evaluation or
+optimization uses it. Coordinate an idle boundary, preserve the old files/hashes,
+then publish a revision and measure a new baseline. Even a public documentation
+change alters the evaluated inputs; an in-flight batch must not span revisions.
 
 Check the existing `/api/projects/<project>/benchmarks` list, then each
 `/<benchmark>/cases` and case `files`/`rubric/files` endpoint. Confirm expected IDs,

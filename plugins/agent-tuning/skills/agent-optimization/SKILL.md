@@ -71,6 +71,23 @@ hashes, runtime, budgets and the following declarations:
 - Baseline source/repeats, proposal and evaluation budgets, stopping conditions,
   and the method's final-version rule. Testing never selects versions.
 
+Record hashes or copies of the Skills/references actually loaded, including any
+controller instructions that override them. Keep instruction revisions fixed
+within an experiment; a later repair does not retroactively validate its traces.
+Feedback permissions apply per role: receiving a score in an Evaluator response
+counts as seeing it even when it is excluded from an inducer's prompt. If the
+Optimizer itself must be score-blind, use a separate controller to collect scored
+results and give the Optimizer only its permitted evidence.
+
+Resolve feedback permissions before opening any case material. With
+`read_train_rubric: false`, the Optimizer must not open `rubric/README.md`,
+`scoring.json`, grader code or private control logs, even to prepare a launch.
+The Evaluator reads Runtime instructions privately. Hashing files for identity
+may return digests, but must not expose their contents. If forbidden information
+enters Optimizer context, stop that run and mark it contaminated; changing the
+permission afterward cannot make it valid. A repaired run starts in a fresh
+Optimizer context from a verified uncontaminated snapshot.
+
 Use an existing matching evaluation to resolve Target Agent runtime when the method
 requires one. Otherwise accept an explicit complete provider/model pair, or
 inherit both from the Optimizer Environment. Read thinking from the full Target Agent
@@ -97,6 +114,13 @@ Evaluator private reasoning, other Agents, credentials or testing contents. For
 detailed feedback, use a separate authorized training-feedback worker on the same
 saved prediction and frozen scorer; do not rerun the Target Agent to obtain feedback.
 Record what this feedback exposes and verify its score agrees with the evaluation.
+
+For raw JSONL traces, `session_meta.payload` identifies the execution.
+`model_msg.payload.type` distinguishes `text`, `thinking`, `tool_call` and
+`tool_call_output`; parse a tool call's `arguments` JSON and match its output by
+`tool_call_id`. Cite actual actions and outputs, not a claimed action in thinking
+or a forbidden path merely mentioned in authored text. Session `token_usage`
+records token counts; they do not establish a monetary cost.
 
 Every scored cell goes through `agent-evaluation` in a fresh worker. The Optimizer
 does not run or score the Target Agent directly. Use its unchanged request:
@@ -134,6 +158,9 @@ correction and remaining budget; never repeat a completed Target Agent for a bet
 
 Before changing a measured State, create or verify `snapshots/v<N>.tar.gz`, excluding
 `.vault.toml`. Never overwrite a snapshot or reuse a rejected candidate number.
+Build and verify an archive in temporary storage before publishing it at that
+path. Keep archive and content hashes separately; repacking the same content
+still changes a published archive and must be recorded as a protocol deviation.
 Record original bytes and created files, stage only allowed edits, publish while
 all workers are idle, and increment the integer State version. Custom Skills use
 `YYYY.MM.DD.N` versions as Agent Initialization specifies. Model settings stay fixed.
@@ -146,6 +173,12 @@ raw cells, accepted/rejected versions, evidence, costs and failures in OUT.
 Append complete retained evaluations under `TRAIN/scoreboard.yaml`'s `evaluations`
 list using the established shape below. Partial/invalid or rejected matrices stay
 in OUT. Do not change the schema to carry method-specific fields.
+Concurrent writers use the same `scoreboard.yaml.lock`: acquire it once, reread
+and parse the latest YAML, append the evaluation object, then atomically replace
+the file. Do not concatenate YAML text or nest a second lock on the same file.
+Preserve unrelated rows inside the append operation without printing them or
+their summaries into a role that may not read other experiments. Display only
+the authorized records and append verification.
 
 ```yaml
 - time: <actual UTC timestamp>
@@ -181,14 +214,36 @@ Finish with the retained State path/version/hash, snapshot, method and supervisi
 baseline/candidate measurements, accepted/rejected decisions, evidence references,
 all-role total cost, stop reason and limitations. Never report a score for an
 unevaluated State. Scoreboard averages are not total experiment costs.
+For each update, report changed files and rules/workflows, source trace evidence,
+the predicted behavior and the observed behavior. Distinguish a file being read,
+a rule being followed and a score improving; none proves the next. Include
+per-case regressions and unsupported hypotheses, not just an aggregate delta.
+If no new version is produced, report one measured State; reusing its score is
+not an independent before/after comparison.
+Use observed UTC timestamps, never a guessed completion time. Report cost coverage
+and the accounting cutoff; a running role's cost is a partial snapshot.
+
+Keep an append-only record of failures, interventions and repairs: evidence,
+affected sessions/versions, what changed, why, the lesson and verification status.
+Separate score reproducibility, protocol compliance and learning benefit. State
+audit coverage and unresolved checks instead of calling unchecked runs clean.
+Keep each replacement linked to its original logical cell, invalidated attempt,
+authorization and changed instructions. One retained score does not mean one
+Target start; report both counts. A replacement must pass the full applicable
+contract, not just the check that failed previously.
 
 For independent testing, hand initial/final snapshots and matched runtime/repeats
 to a separate Reporter. It restores each on an idle experimental Target Agent, runs
 the declared testing matrix without learning, records test scores separately and
 restores the final State. No testing feedback returns to the Optimizer or causes
 more training. Without that handoff, report training results only.
+If method instructions are revised after examining testing traces or scores,
+record that exposure. Those cases can support regression checks, but a new claim
+of held-out improvement needs testing data not used to develop the revision.
 
 These are Skill-level role boundaries, not guaranteed sandbox enforcement.
-Root Agent is a proposed independent supervisory role, not another name for
-`default_agent` or a root Session. Do not make the Optimizer its own supervisor
-or claim an observer/control capability that is not available.
+A dedicated Supervisor may be created by `default_agent` or another orchestrator
+to observe the experiment continuously in a separate context. It need not be the
+root Session or a built-in Agent type. Keep supervision separate from optimization;
+record which observation and stop controls are actually available, and distinguish
+live monitoring from an audit performed after execution.
