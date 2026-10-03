@@ -106,7 +106,8 @@ export function workspaceLabel(workspace: string): string {
  * display cap step for active rows — 10 conversations show by default and every "More"
  * click reveals/loads 10 more. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage)
  * so one request both fills a page and answers "is there more" without a
- * response-envelope change.
+ * response-envelope change. Pages run in activity order (compareActivityDesc), cut at the
+ * watermark (cutAtWatermark) wherever several streams merge.
  */
 export const SIDEBAR_PAGE_SIZE = 10;
 
@@ -207,6 +208,85 @@ export function revealPlan({
     hidden: hiddenRowCount({ shown, loaded, total, fullyLoaded }),
     canCollapse: cap > SIDEBAR_PAGE_SIZE && loaded > SIDEBAR_PAGE_SIZE,
   };
+}
+
+/**
+ * A row's place in the sidebar's activity order — the order every list of it is displayed
+ * AND paged in (the server's `order=activity`): last activity first, ties broken by id.
+ */
+export interface ActivityKey {
+  lastActiveAt: string;
+  sessionId: string;
+}
+
+/**
+ * The activity order: `lastActiveAt` descending, then `sessionId` descending, both compared by
+ * code point (`<` / `>`, never `localeCompare`). Negative when `a` is more recent.
+ *
+ * Code point because the two ends must agree on one total order: the browser names a page's
+ * cursor and the server slices on it, and a collation that ranks case or punctuation
+ * differently from the server would skip or repeat a row at every page boundary it touches.
+ * The stamps are uniform ISO-8601 UTC strings, so string order is time order.
+ */
+export function compareActivityDesc(a: ActivityKey, b: ActivityKey): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  if (a.sessionId !== b.sessionId) return a.sessionId > b.sessionId ? -1 : 1;
+  return 0;
+}
+
+/** The key alone, detached from the row — what a page position stores, so a later live event that moves the row does not move the cursor with it. */
+export const activityKeyOf = (row: ActivityKey): ActivityKey => ({
+  lastActiveAt: row.lastActiveAt,
+  sessionId: row.sessionId,
+});
+
+/** The `before=` query value of a cursor: `<lastActiveAt>,<sessionId>` (neither half can contain a comma). */
+export const activityCursorParam = (key: ActivityKey): string =>
+  `${key.lastActiveAt},${key.sessionId}`;
+
+/** One server stream's position as the watermark sees it: the key of the last row read from it, and whether rows lie below that. */
+export interface StreamPosition {
+  hasMore: boolean;
+  cursor: ActivityKey | null;
+}
+
+/**
+ * The watermark of a list merged from several streams (Agents, machines): the most recent
+ * cursor among the streams that still have more. Every row a stream has not served yet lies
+ * below its own cursor, so nothing missing can sort above this key — the rows at or above it
+ * are a true prefix of the merged order, and rows below it may still have unfetched rows
+ * between them.
+ *
+ * Null when no stream has more (everything is fetched; every loaded row shows). A stream with
+ * more but no cursor — nothing read from it yet — bounds nothing, so what is loaded still shows.
+ */
+export function activityWatermark(streams: readonly StreamPosition[]): ActivityKey | null {
+  let mark: ActivityKey | null = null;
+  for (const { hasMore, cursor } of streams) {
+    if (!hasMore || cursor === null) continue;
+    if (mark === null || compareActivityDesc(cursor, mark) < 0) mark = cursor;
+  }
+  return mark;
+}
+
+/**
+ * The rows a merged list shows: those at or above `watermark`, in activity order. `keep` (the
+ * open conversation) stays wherever it falls — a reader is never left looking at a chat its
+ * own list does not show. A null watermark keeps every row.
+ *
+ * The rows below are fetched but held back: showing them now would let a later page insert
+ * rows above them, and a list that grows anywhere but at its bottom reads as rows jumping.
+ */
+export function cutAtWatermark<T extends ActivityKey>(
+  rows: readonly T[],
+  watermark: ActivityKey | null,
+  keep?: string | null,
+): T[] {
+  const kept =
+    watermark === null
+      ? [...rows]
+      : rows.filter((r) => r.sessionId === keep || compareActivityDesc(r, watermark) <= 0);
+  return kept.sort(compareActivityDesc);
 }
 
 /**
@@ -551,11 +631,12 @@ export interface TimeGroup<T = SessionInfo> {
 /**
  * Buckets Sessions by their last activity into the three time groups, in TIME_BUCKETS
  * order. Empty buckets are dropped — a "Last day" header over nothing states an absence
- * the list is not asked to report. Members are sorted by `lastActiveAt` desc (the flat
- * store list concatenates per-Agent responses, so its order isn't globally chronological);
- * the sidebar re-orders them again for pins and manual sort.
+ * the list is not asked to report. Members are sorted in activity order (compareActivityDesc;
+ * the flat store list merges per-Agent responses, so its order is not one to rely on); the
+ * sidebar re-orders them again for pins and manual sort. The caller has already cut the rows at
+ * the list's watermark, so a bucket only ever holds a prefix of the activity order.
  */
-export function groupSessionsByTime<T extends { lastActiveAt: string }>(
+export function groupSessionsByTime<T extends ActivityKey>(
   sessions: readonly T[],
   nowMs: number,
 ): TimeGroup<T>[] {
@@ -570,9 +651,7 @@ export function groupSessionsByTime<T extends { lastActiveAt: string }>(
   for (const bucket of TIME_BUCKETS) {
     const rows = byBucket.get(bucket);
     if (rows === undefined) continue;
-    rows.sort((a, b) =>
-      a.lastActiveAt < b.lastActiveAt ? 1 : a.lastActiveAt > b.lastActiveAt ? -1 : 0,
-    );
+    rows.sort(compareActivityDesc);
     groups.push({ key: timeGroupKey(bucket), bucket, sessions: rows });
   }
   return groups;

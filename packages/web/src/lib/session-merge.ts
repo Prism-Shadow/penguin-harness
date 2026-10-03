@@ -7,13 +7,16 @@
  * across the sources that answered; a source that could not answer contributes no count,
  * which is the truth — a count is a claim about what a server holds now.
  */
+import { compareActivityDesc } from "./session-grouping";
+import type { ActivityKey } from "./session-grouping";
 
-/** Newest first, by the field the server's own index orders on; ties by id, so the order is total. */
-export function newestFirst<T extends { createdAt: string; sessionId: string }>(
-  a: T,
-  b: T,
-): number {
-  return b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId);
+/**
+ * Most recently active first: the order the sidebar displays its rows in and the order every
+ * server pages them in (`order=activity`), so the merged pool and each source's pages agree.
+ * Ties by id, so the order is total and equal stamps do not reshuffle between refreshes.
+ */
+export function mostRecentFirst<T extends ActivityKey>(a: T, b: T): number {
+  return compareActivityDesc(a, b);
 }
 
 /**

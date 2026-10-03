@@ -732,20 +732,45 @@ function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
   return counts;
 }
 
+/** Newest creation first: the list's default order. */
+const byCreated = (a: SessionInfo, b: SessionInfo) =>
+  a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+
+/** `order=activity`: last activity first, ties by id — both by code point, as the server compares. */
+function byActivity(
+  a: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+  b: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  return a.sessionId > b.sessionId ? -1 : a.sessionId < b.sessionId ? 1 : 0;
+}
+
 router
   .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
     const { store, params, query } = ctx;
     // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
     // and the totals alike.
     const ownOnly = query.get("excludeOrg") === "1";
+    const activity = query.get("order") === "activity";
     const all = store.f.sessions
       .filter((s) => s.agentId === params.agentId && !(ownOnly && isOrgRow(s)))
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+      .sort(activity ? byActivity : byCreated);
     const category = query.get("category") as SessionCategory | null;
     const group = query.get("workspaceGroup");
     let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
     if (group !== null) {
       rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
+    }
+    // `before=<lastActiveAt>,<sessionId>`: the rows strictly below the last one the sidebar
+    // holds, in activity order only.
+    const before = query.get("before");
+    if (before !== null) {
+      if (!activity) fail(400, "bad_request", "before requires order=activity.");
+      const comma = before.indexOf(",");
+      const cursor = { lastActiveAt: before.slice(0, comma), sessionId: before.slice(comma + 1) };
+      if (comma < 0 || !Number.isFinite(Date.parse(cursor.lastActiveAt)) || !cursor.sessionId)
+        fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+      rows = rows.filter((s) => byActivity(s, cursor) > 0);
     }
     const limit = Number(query.get("limit"));
     const offset = Number(query.get("offset")) || 0;
@@ -763,8 +788,12 @@ router
       response.workspaceCounts = Object.fromEntries(
         Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
       );
+      // The newest CREATION per path, whatever order the page is in.
       response.workspaceLatest = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [path, list[0]!.createdAt]),
+        Object.entries(byWorkspace).map(([path, list]) => [
+          path,
+          list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
+        ]),
       );
     }
     return response;

@@ -181,10 +181,11 @@ export function orderWithinPinPartitions<T>(
  * 3. under manual sort, the stored order within the pinned cluster and within the rest
  *    independently, so a drag can never move a row across the pin boundary.
  *
- * Only rows already FETCHED are ordered. The server still pages by `created_at DESC`
- * (listByAgent — there is no index on last_active_at), so a Session created long ago but
- * active today sits on a later page and cannot climb into the sidebar's first page until
- * "More" pulls that page in; fixing that needs a server-side ordering + index change.
+ * Only rows already FETCHED — and shown: the sidebar cuts each merged list at its watermark
+ * first (session-grouping.ts's cutAtWatermark) — are ordered. The server pages the list in this
+ * same activity order (`order=activity`, sorted in memory per Agent; no index is involved), so
+ * a Session created long ago but active today is on the first page, and "More" only ever adds
+ * rows below the ones on screen.
  */
 export function orderSessionRows<T>(
   rows: readonly T[],
