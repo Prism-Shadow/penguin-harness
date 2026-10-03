@@ -2,13 +2,15 @@
  * What the extension keeps, and where.
  *
  * `chrome.storage.local` (survives restarts): the paired servers with their tokens, the Pause
- * switch, and the holds a server's close code put on reconnecting. `chrome.storage.session`
+ * switch, the language the user picked for the pages, and the holds a server's close code put
+ * on reconnecting. `chrome.storage.session`
  * (survives a worker restart, not a Chrome restart): the driven-tab set and each connection's
  * status, which the pages read and follow.
  *
  * Nothing here is reachable from a web page: the extension has no content scripts and no
  * `externally_connectable`, and session storage keeps its default trusted-contexts access.
  */
+import type { UiLanguage } from "./strings.js";
 import { parseTabSet, type TabSetState } from "./tab-set.js";
 
 export interface PairedServer {
@@ -110,6 +112,20 @@ export async function readPaused(): Promise<boolean> {
 
 export async function setPaused(paused: boolean): Promise<void> {
   await chrome.storage.local.set({ paused });
+}
+
+/** The stored language choice: Chinese only when the user picked it, English otherwise. */
+export function parseUiLanguage(value: unknown): UiLanguage {
+  return value === "zh" ? "zh" : "en";
+}
+
+export async function readUiLanguage(): Promise<UiLanguage> {
+  const { uiLanguage } = await chrome.storage.local.get("uiLanguage");
+  return parseUiLanguage(uiLanguage);
+}
+
+export async function setUiLanguage(language: UiLanguage): Promise<void> {
+  await chrome.storage.local.set({ uiLanguage: language });
 }
 
 export async function readHolds(): Promise<Record<string, Hold>> {

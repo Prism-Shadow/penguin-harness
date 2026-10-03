@@ -5,6 +5,8 @@
 // real chain (CLI, server, extension, Chrome) is run.mjs.
 //
 // Covers: pairing through the options page (token in the subprotocol, never in a URL); the
+// pages in English under a Chinese Chrome until the user picks 中文, which turns the options page
+// and the toolbar title Chinese at once, and the manifest's messages from _locales; the
 // hello handshake and pings; open-tab into the "Penguin" group; a scan-like Runtime.evaluate;
 // a trusted click and typing through Input.*; a relayed CDP event; a page the tab opens joining
 // the group; refusals (a cookie method, a tab the server does not drive); close-tab; and a
@@ -46,9 +48,12 @@ async function eventually(fn, timeoutMs = 10_000) {
 const fixture = await startFixtureSite();
 const stub = await startStubServer({ pingMs: 2_000 });
 const userDataDir = mkdtempSync(path.join(tmpdir(), "penguin-ext-e2e-"));
+// A Chinese Chrome: the extension's pages must still open in English. Chrome on Linux takes its
+// language from LANGUAGE as well as --lang.
 const context = await chromium.launchPersistentContext(userDataDir, {
   headless: false,
   viewport: null,
+  env: { ...process.env, LANGUAGE: "zh_CN" },
   args: [
     `--disable-extensions-except=${dist}`,
     `--load-extension=${dist}`,
@@ -56,8 +61,10 @@ const context = await chromium.launchPersistentContext(userDataDir, {
     "--window-position=0,0",
     "--window-size=1280,860",
     "--no-first-run",
+    "--lang=zh-CN",
   ],
 });
+const HAN = /\p{Script=Han}/u;
 
 const cdp = (tabId, method, params = {}, events) =>
   stub.request({ op: "cdp", tabId, method, params, ...(events ? { events } : {}) });
@@ -114,6 +121,47 @@ try {
     await sleep(500);
     screenshotX(process.env.DISPLAY, process.env.E2E_SCREENSHOT.replace(/\.png$/, "-options.png"));
   }
+
+  // --- the pages' language ---------------------------------------------------------------------
+  const opening = await options.evaluate(() => ({
+    browser: navigator.language,
+    page: document.documentElement.lang,
+    intro: document.getElementById("intro")?.textContent ?? "",
+  }));
+  check(
+    "under a Chinese Chrome the options page opens in English",
+    opening.browser.startsWith("zh") && opening.page === "en" && !HAN.test(opening.intro),
+    JSON.stringify({ browser: opening.browser, page: opening.page }),
+  );
+  const listing = await worker.evaluate(() => ({
+    name: chrome.i18n.getMessage("extName"),
+    description: chrome.i18n.getMessage("extDescription"),
+  }));
+  check(
+    "the manifest's name and description come from _locales, in Chrome's language",
+    listing.name === "PenguinHarness Browser" && HAN.test(listing.description),
+    listing.description,
+  );
+  const toolbarTitle = () => worker.evaluate(() => chrome.action.getTitle({}));
+  await options.click('#language button[data-language="zh"]');
+  const chinese = await eventually(async () => {
+    const intro = (await options.textContent("#intro")) ?? "";
+    const title = await toolbarTitle();
+    return HAN.test(intro) && HAN.test(title) && { title };
+  });
+  check(
+    "picking 中文 turns the options page and the toolbar title Chinese at once",
+    chinese !== undefined &&
+      (await worker.evaluate(() => chrome.storage.local.get("uiLanguage"))).uiLanguage === "zh",
+    chinese?.title,
+  );
+  await options.click('#language button[data-language="en"]');
+  const english = await eventually(async () => {
+    const intro = (await options.textContent("#intro")) ?? "";
+    const title = await toolbarTitle();
+    return !HAN.test(intro) && !HAN.test(title) && title.includes("connected to") && { title };
+  });
+  check("picking EN turns both back", english !== undefined, english?.title);
 
   const pairRequest = stub.state.pairRequests[0];
   check(

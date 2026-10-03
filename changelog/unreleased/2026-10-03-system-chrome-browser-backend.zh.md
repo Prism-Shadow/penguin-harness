@@ -21,7 +21,7 @@ Agent 浏览器新增了第二种后端：用户自己的 Chrome，经由新的 
 - 新增 `packages/browser-extension`：名为 PenguinHarness Browser 的 MV3 扩展，用 esbuild 构建。它申请 `debugger`、`tabs`、`tabGroups`、`storage`、`webNavigation` 和 `alarms` 权限，不注入内容脚本，也不向页面开放任何接口。manifest 钉住了 key，所以 Release 中的 zip 和日后 Chrome Web Store 上的版本，扩展 id 都是 `dodgfhpcbmkjfcbgnoidablfgjjhhmgp`。
 - 它只驱动自己打开的标签页（每个窗口、每台服务器一个名为 Penguin 的蓝色标签组）、用户用工具栏图标添加的标签页，以及由它们打开的页面。把标签页拖出组、关闭它、弹窗里的「收回此标签页」和调试提示栏上的「取消」都会收回标签页。Chrome 自己的页面、Web Store 和本地文件一律拒绝。
 - 调试器在标签页收到第一条命令时挂接，空闲 60 秒后分离，因此 Agent 停手后 Chrome 的调试提示栏会消失。弹窗里的「暂停」会拒绝所有命令，直到「继续」。
-- 选项页用于与服务器配对（服务器地址和配对码）；弹窗显示连接状态，添加或收回当前标签页，以及暂停。界面文字有英文和中文。
+- 选项页用于与服务器配对（服务器地址和配对码）；弹窗显示连接状态，添加或收回当前标签页，以及暂停。两个页面和工具栏提示文字缺省为英文，不随浏览器语言变化；各页的 **EN / 中文** 切换把选择记在 `chrome.storage.local`（`uiLanguage`），所有打开的页面随即一同切换。manifest 的名称与说明经 `_locales` 本地化（缺省 `en`，另有 `zh_CN`）。
 - 发布工作流上传 `penguin-browser-extension-<version>.zip` 和不带版本号的 `penguin-browser-extension.zip`。桌面安装包不捆绑扩展。
 
 ## 配对与传输

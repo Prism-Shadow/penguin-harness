@@ -1,7 +1,19 @@
 /**
- * The extension's copy in English and Chinese, picked by the browser's language. The two
- * dictionaries are typed against each other, so a key missing from one fails the typecheck.
+ * The extension's copy in English and Chinese. The pages and the toolbar title are in English
+ * until the user picks 中文 with the switch on the options page or in the popup; the browser's
+ * own language plays no part (storage.ts keeps the choice). The two dictionaries are typed
+ * against each other, so a key missing from one fails the typecheck.
  */
+
+export type UiLanguage = "en" | "zh";
+
+export const UI_LANGUAGES: readonly UiLanguage[] = ["en", "zh"];
+
+/** What the switch shows for each language, each in its own language. */
+export const LANGUAGE_NAMES: Record<UiLanguage, string> = { en: "EN", zh: "中文" };
+
+/** The `lang` attribute a page takes in each language. */
+export const LANGUAGE_TAGS: Record<UiLanguage, string> = { en: "en", zh: "zh-CN" };
 
 const en = {
   appName: "PenguinHarness Browser",
@@ -9,6 +21,7 @@ const en = {
   titleNotConnected: "PenguinHarness Browser — not connected",
   titlePaused: "PenguinHarness Browser — paused",
   groupTitle: "Penguin",
+  languageLabel: "Language",
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:
@@ -82,6 +95,7 @@ const zh: Strings = {
   titleNotConnected: "PenguinHarness Browser — 未连接",
   titlePaused: "PenguinHarness Browser — 已暂停",
   groupTitle: "Penguin",
+  languageLabel: "界面语言",
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:
@@ -139,11 +153,6 @@ const zh: Strings = {
   popupNotPaired: "还没有配对服务器。打开「设置」进行配对。",
 };
 
-/** The dictionary for a browser language ("zh-CN" → Chinese, anything else → English). */
-export function stringsFor(language: string | undefined): Strings {
-  return language?.toLowerCase().startsWith("zh") ? zh : en;
+export function stringsFor(language: UiLanguage): Strings {
+  return language === "zh" ? zh : en;
 }
-
-export const strings: Strings = stringsFor(
-  typeof navigator === "undefined" ? undefined : navigator.language,
-);

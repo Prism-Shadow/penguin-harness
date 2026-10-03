@@ -1,6 +1,7 @@
 /**
  * The options page: the paired servers with their connection status (Remove, Reconnect), and
- * "Add a server" — the server address and the pairing code from the Web App.
+ * "Add a server" — the server address and the pairing code from the Web App. Its copy follows the
+ * EN / 中文 switch in its header, live.
  */
 import {
   currentPlatform,
@@ -10,13 +11,23 @@ import {
   type PairError,
 } from "../src/pairing.js";
 import { readServers, readStatus, removeServer, type PairedServer } from "../src/storage.js";
-import { strings } from "../src/strings.js";
-import { element, setText, statusDot, statusText } from "./view.js";
+import { stringsFor, type Strings } from "../src/strings.js";
+import {
+  element,
+  followLanguage,
+  renderLanguageSwitch,
+  setText,
+  statusDot,
+  statusText,
+} from "./view.js";
 
 const extensionVersion = chrome.runtime.getManifest().version;
 
+let strings: Strings = stringsFor("en");
+/** The outcome of the last Connect, kept as copy so it follows a language switch too. */
+let message: { text: (copy: Strings) => string; tone: "ok" | "danger" } | null = null;
+
 function fillCopy(): void {
-  document.documentElement.lang = navigator.language;
   setText("heading", strings.pairHeading);
   setText("intro", strings.pairIntro);
   setText("paired-title", strings.pairedTitle);
@@ -25,17 +36,19 @@ function fillCopy(): void {
   setText("add-title", strings.addTitle);
   setText("server-url-label", strings.serverUrlLabel);
   setText("code-label", strings.codeLabel);
-  setText("connect", strings.connect);
   setText("steps-title", strings.stepsTitle);
   setText("step1", strings.step1);
   setText("step2", strings.step2);
   setText("step3", strings.step3);
+  const button = document.getElementById("connect") as HTMLButtonElement;
+  button.textContent = button.disabled ? strings.connecting : strings.connect;
   const docs = document.getElementById("docs-link") as HTMLAnchorElement;
   docs.textContent = strings.docsLink;
   docs.href = strings.docsUrl;
   (document.getElementById("server-url") as HTMLInputElement).placeholder =
     strings.serverUrlPlaceholder;
   (document.getElementById("code") as HTMLInputElement).placeholder = strings.codePlaceholder;
+  showMessage();
 }
 
 async function renderServers(): Promise<void> {
@@ -74,14 +87,14 @@ function serverRow(
   const row = element(
     "li",
     { className: "row" },
-    statusDot(state),
+    statusDot(state, strings),
     element(
       "div",
       { className: "grow" },
       element("div", { className: "name", text: server.label }),
       element("div", {
         className: "small muted",
-        text: `${statusText(state?.status)} · ${details}`,
+        text: `${statusText(state?.status, strings)} · ${details}`,
       }),
       update,
     ),
@@ -93,29 +106,29 @@ function serverRow(
   return row;
 }
 
-function errorText(error: PairError): string {
+function errorText(error: PairError, copy: Strings): string {
   switch (error.code) {
     case "url_empty":
-      return strings.errorUrlEmpty;
+      return copy.errorUrlEmpty;
     case "url_invalid":
-      return strings.errorUrlInvalid;
+      return copy.errorUrlInvalid;
     case "url_scheme":
-      return strings.errorUrlScheme;
+      return copy.errorUrlScheme;
     case "code_invalid":
-      return strings.errorCode;
+      return copy.errorCode;
     case "unreachable":
-      return strings.errorUnreachable(error.origin);
+      return copy.errorUnreachable(error.origin);
     case "refused":
-      return strings.errorRefused(error.message);
+      return copy.errorRefused(error.message);
     case "bad_response":
-      return strings.errorBadResponse;
+      return copy.errorBadResponse;
   }
 }
 
-function showMessage(text: string, tone: "ok" | "danger"): void {
-  const message = document.getElementById("pair-message") as HTMLElement;
-  message.textContent = text;
-  message.dataset.tone = tone;
+function showMessage(): void {
+  const node = document.getElementById("pair-message") as HTMLElement;
+  node.textContent = message === null ? "" : message.text(strings);
+  node.dataset.tone = message?.tone ?? "ok";
 }
 
 function wireForm(): void {
@@ -127,7 +140,8 @@ function wireForm(): void {
     event.preventDefault();
     button.disabled = true;
     button.textContent = strings.connecting;
-    showMessage("", "ok");
+    message = null;
+    showMessage();
     void pair({
       serverUrl: url.value,
       code: code.value,
@@ -138,10 +152,13 @@ function wireForm(): void {
         if (outcome.ok) {
           code.value = "";
           url.value = "";
-          showMessage(strings.paired(outcome.server.label), "ok");
+          const { label } = outcome.server;
+          message = { text: (copy) => copy.paired(label), tone: "ok" };
         } else {
-          showMessage(errorText(outcome.error), "danger");
+          const { error } = outcome;
+          message = { text: (copy) => errorText(error, copy), tone: "danger" };
         }
+        showMessage();
       })
       .finally(() => {
         button.disabled = false;
@@ -150,9 +167,13 @@ function wireForm(): void {
   });
 }
 
-fillCopy();
 wireForm();
-void renderServers();
+followLanguage((language, next) => {
+  strings = next;
+  renderLanguageSwitch(language, strings);
+  fillCopy();
+  void renderServers();
+});
 chrome.storage.onChanged.addListener((changes, area) => {
   if ((area === "local" && "servers" in changes) || (area === "session" && "status" in changes)) {
     void renderServers();

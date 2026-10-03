@@ -1,13 +1,22 @@
 /**
  * The toolbar popup: each server's status, how many tabs are handed over, what this tab is
  * (handed over, released, a page Chrome does not let extensions drive) with the matching
- * action, and Pause.
+ * action, Pause, and the EN / 中文 switch, which it follows live.
  */
 import { isRestrictedUrl } from "../src/policy.js";
 import { readPaused, readServers, readStatus, readTabSet, setPaused } from "../src/storage.js";
-import { strings } from "../src/strings.js";
+import { stringsFor, type Strings } from "../src/strings.js";
 import { drivenCount, lookup } from "../src/tab-set.js";
-import { element, setText, statusDot, statusText } from "./view.js";
+import {
+  element,
+  followLanguage,
+  renderLanguageSwitch,
+  setText,
+  statusDot,
+  statusText,
+} from "./view.js";
+
+let strings: Strings = stringsFor("en");
 
 function button(text: string, onClick: () => void, primary = false): HTMLButtonElement {
   const node = element("button", { text, ...(primary ? { className: "primary" } : {}) });
@@ -38,12 +47,12 @@ async function render(): Promise<void> {
       return element(
         "li",
         { className: "row" },
-        statusDot(state),
+        statusDot(state, strings),
         element(
           "div",
           { className: "grow" },
           element("div", { className: "name", text: server.label }),
-          element("div", { className: "small muted", text: statusText(state?.status) }),
+          element("div", { className: "small muted", text: statusText(state?.status, strings) }),
         ),
         reconnect,
       );
@@ -96,13 +105,18 @@ async function render(): Promise<void> {
   pausedNote.hidden = !paused;
 }
 
-document.documentElement.lang = navigator.language;
-setText("settings", strings.popupSettings);
 document.getElementById("settings")?.addEventListener("click", () => {
   void chrome.runtime.openOptionsPage();
 });
 document.getElementById("pause")?.addEventListener("click", () => {
   void readPaused().then((paused) => setPaused(!paused));
 });
-void render();
-chrome.storage.onChanged.addListener(() => void render());
+followLanguage((language, next) => {
+  strings = next;
+  renderLanguageSwitch(language, strings);
+  setText("settings", strings.popupSettings);
+  void render();
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (!(area === "local" && "uiLanguage" in changes)) void render();
+});

@@ -2,13 +2,22 @@
 //
 //   dist/background.js, dist/pages/{pair,popup}.{html,js}, dist/pages/pages.css
 //   dist/icons/icon{,-grey}-{16,32,48,128}.png   (sized and greyed from icons/penguin-128.png)
+//   dist/_locales/{en,zh_CN}/messages.json       (the manifest's name and description)
 //   dist/manifest.json                           (manifest.json + the package version)
 //   dist/penguin-browser-extension-<version>.zip (everything above, manifest at the zip root)
 //
 // The manifest's version is the repo version, which release prep bumps in every package.json;
 // a pre-release suffix ("0.3.0-rc.1") goes to `version_name`, since Chrome takes digits only.
 import { build } from "esbuild";
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodePng, encodePng, greyOut, resize } from "./png.mjs";
@@ -47,6 +56,7 @@ writeFileSync(path.join(dist, "manifest.json"), `${JSON.stringify(manifest, null
 for (const file of ["pair.html", "popup.html", "pages.css"]) {
   writeFileSync(path.join(dist, "pages", file), readFileSync(path.join(root, "pages", file)));
 }
+cpSync(path.join(root, "_locales"), path.join(dist, "_locales"), { recursive: true });
 
 const source = decodePng(readFileSync(path.join(root, "icons", "penguin-128.png")));
 for (const size of [16, 32, 48, 128]) {

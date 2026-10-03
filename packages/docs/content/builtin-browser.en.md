@@ -124,6 +124,8 @@ The extension is published with each release as a zip file; a Chrome Web Store l
 
 Chrome then opens the extension's pairing page. Chrome reminds you about extensions in developer mode when it starts; the extension keeps working. To update, unzip the new release over the same folder and select the reload icon on the extension's card.
 
+The extension's pages are in English whatever Chrome's language. **EN / 中文** at the top of the pairing page and at the bottom of the popup switches both pages, and the toolbar icon's tooltip, at once.
+
 ### Pair it with the server
 
 Pairing gives your Chrome a key to your account on one server. You need the server address and a one-time pairing code from the Web App.

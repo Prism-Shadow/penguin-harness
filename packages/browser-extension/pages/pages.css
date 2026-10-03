@@ -157,6 +157,34 @@ input {
   color: var(--danger);
 }
 
+/* the EN / 中文 switch, on both pages: the chosen language reads in full colour */
+
+.language {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.language button {
+  border-color: transparent;
+  padding: 2px 4px;
+  color: var(--muted);
+}
+
+.language button:hover {
+  color: var(--fg);
+}
+
+.language button[aria-pressed="true"] {
+  color: var(--fg);
+  font-weight: 600;
+  cursor: default;
+}
+
+.language .divider {
+  color: var(--rule);
+}
+
 /* the options page */
 
 .page {
@@ -170,6 +198,10 @@ input {
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+.page header .language {
+  margin-left: auto;
 }
 
 .page section {
@@ -241,4 +273,10 @@ input {
   margin-top: 12px;
   padding-top: 8px;
   border-top: 1px solid var(--rule);
+}
+
+.popup footer .end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

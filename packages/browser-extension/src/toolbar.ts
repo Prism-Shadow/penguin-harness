@@ -1,6 +1,7 @@
 /**
  * The toolbar button: a grey icon while no server is connected (or while paused), the coloured
- * one while at least one is; the badge counts the tabs handed over; the title says which.
+ * one while at least one is; the badge counts the tabs handed over; the title says which, in the
+ * language the user picked for the pages.
  *
  * A click on an ordinary tab hands it over at once (the user's consent gesture) when exactly one
  * server is paired and nothing needs the user's attention. Everywhere else (a tab already handed
@@ -9,7 +10,7 @@
  */
 import { isRestrictedUrl } from "./policy.js";
 import type { ConnectionStatus } from "./storage.js";
-import { strings } from "./strings.js";
+import { stringsFor, type UiLanguage } from "./strings.js";
 
 export const POPUP_PAGE = "pages/popup.html";
 
@@ -21,6 +22,7 @@ export interface ToolbarInput {
   servers: { label: string; status: ConnectionStatus | undefined }[];
   paused: boolean;
   driven: number;
+  language: UiLanguage;
 }
 
 export function toolbarState(input: ToolbarInput): {
@@ -28,6 +30,7 @@ export function toolbarState(input: ToolbarInput): {
   title: string;
   badge: string;
 } {
+  const strings = stringsFor(input.language);
   const connected = input.servers.filter((s) => s.status === "connected").map((s) => s.label);
   const badge = input.driven > 0 ? String(input.driven) : "";
   if (input.paused) return { lit: false, title: strings.titlePaused, badge };

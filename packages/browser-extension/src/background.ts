@@ -13,10 +13,12 @@ import { currentPlatform, deviceName } from "./pairing.js";
 import { isNavigableUrl } from "./policy.js";
 import {
   clearHold,
+  parseUiLanguage,
   readHolds,
   readPaused,
   readServers,
   readTabSet,
+  readUiLanguage,
   removeServer,
   setHold,
   writeStatus,
@@ -26,7 +28,7 @@ import {
   type PairedServer,
   type ServerStatus,
 } from "./storage.js";
-import { strings } from "./strings.js";
+import { stringsFor, type UiLanguage } from "./strings.js";
 import { drivenCount, type TabSetState } from "./tab-set.js";
 import { TabController } from "./tabs.js";
 import { applyToolbar, popupFor } from "./toolbar.js";
@@ -43,6 +45,8 @@ const log = (line: string) => console.debug(`[penguin] ${line}`);
 
 let servers: PairedServer[] = [];
 let paused = false;
+/** The language the user picked for the pages, which the toolbar title follows. */
+let language: UiLanguage = "en";
 const connections = new Map<string, ServerConnection>();
 const status: Record<string, ServerStatus> = {};
 /** The holds as last written, so a state change writes storage only when its hold changed. */
@@ -73,6 +77,7 @@ const ready: Promise<void> = (async () => {
     await chrome.debugger.detach({ tabId: tab.tabId }).catch(() => {});
   }
   paused = await readPaused();
+  language = await readUiLanguage();
   await reconcile();
 })();
 
@@ -164,9 +169,10 @@ function hello(): BrowserHello {
 }
 
 function groupTitle(server: string): string {
-  if (servers.length <= 1) return strings.groupTitle;
+  const { groupTitle: title } = stringsFor(language);
+  if (servers.length <= 1) return title;
   const label = servers.find((s) => s.origin === server)?.label ?? server;
-  return `${strings.groupTitle} · ${label}`;
+  return `${title} · ${label}`;
 }
 
 // --- commands ----------------------------------------------------------------------------------
@@ -219,6 +225,7 @@ async function refresh(): Promise<void> {
     servers: servers.map((s) => ({ label: s.label, status: status[s.origin]?.status })),
     paused,
     driven: tabs === undefined ? 0 : drivenCount(tabs.snapshot),
+    language,
   });
   const active = await chrome.tabs.query({ active: true }).catch(() => []);
   for (const tab of active) await refreshPopup(tab);
@@ -251,6 +258,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
     void ready.then(async () => {
       paused = changes.paused?.newValue === true;
       if (paused) debuggee.detachAll();
+      await refresh();
+    });
+  }
+  if ("uiLanguage" in changes) {
+    void ready.then(async () => {
+      language = parseUiLanguage(changes.uiLanguage?.newValue);
+      await tabs.retitle();
       await refresh();
     });
   }
