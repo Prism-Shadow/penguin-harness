@@ -837,6 +837,11 @@ interface CompanyContextValue {
   channelMentions: number;
   reloadChannels: () => Promise<void>;
   markChannelRead: (channelId: string) => void;
+  /**
+   * When each channel was last marked read here (`markChannelRead`), unlisted rooms included:
+   * a count read before that moment is already read, whoever holds it.
+   */
+  channelReadAt: ReadonlyMap<string, number>;
   /** Desk and ticket Sessions of every organization of the current Project, keyed by org key. */
   orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
   /** Writes a desk's messaging binding change into `orgSessions` (null = unbound), so its row's mark follows at once. */
@@ -1050,6 +1055,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         return open === null ? Promise.resolve() : state.reloadChannels(open.projectId, open.orgId);
       },
       markChannelRead: state.markChannelRead,
+      channelReadAt: state.channelReadAt,
       orgSessions: state.orgSessions,
       setDeskMessagingChannel: state.setDeskMessagingChannel,
       orgChart: state.orgChart,

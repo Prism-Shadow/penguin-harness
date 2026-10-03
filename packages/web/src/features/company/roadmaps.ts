@@ -5,7 +5,8 @@
  * row for):
  *
  * - the sidebar's ROADMAPS section, below the channel list and apart from it: the most recently
- *   active roadmaps under discussion, five at rest, the rest behind an expand;
+ *   active roadmaps with a room, five at rest, the rest folded under "More (n)", each row
+ *   carrying its room's unread count and "@me" chip as a channel row does;
  * - a roadmap's room is its channel, shown by the app's own channel page, and that page puts the
  *   roadmap's detail (the plugin's page, in its detail view) in a column beside the stream.
  */
@@ -37,29 +38,132 @@ export function roadmapDetailSrc(src: string, number: number): string {
   return `${src}${src.includes("?") ? "&" : "?"}view=detail&n=${number}`;
 }
 
-/** When a roadmap last moved: its latest ledger event, else when it was opened. */
-export function lastActivity(r: OrgRoadmapItem): string {
+/**
+ * When a roadmap last moved: the latest of when it was opened, its ledger events and the last
+ * message in its room (`roomAt`, when known) — a reply in the room is activity too.
+ */
+export function lastActivity(r: OrgRoadmapItem, roomAt?: string | null): string {
   let latest = r.createdAt;
   for (const e of r.events ?? []) if (e.at > latest) latest = e.at;
+  if (roomAt != null && roomAt > latest) latest = roomAt;
   return latest;
 }
 
-/** Active: under discussion, not shelved, with a room to go to. */
-export function isActiveRoadmap(r: OrgRoadmapItem): r is OrgRoadmapItem & { channelId: string } {
-  return r.status === "discussing" && !r.archived && r.channelId !== null;
+/**
+ * What the sidebar knows of a roadmap's room, the way it knows a listed channel: the last
+ * message, and the unread count and "@me" count a channel row carries. Rooms are unlisted, so
+ * the channel listing and the store's counters never hold them; the sidebar reads each room on
+ * its own and moves the counts with the message events.
+ *
+ * `countedAt` is when the counts were taken (the read's start, or the event's arrival). The
+ * store's rule for channel rows carries over: a channel marked read at or after that moment
+ * shows no badge — the server's read cursor may lag the reader, and a badge that comes back
+ * after the room was read looks like a bug.
+ */
+export interface RoomState {
+  lastMessageAt: string | null;
+  unread: number;
+  mentionsMe: number;
+  isMember: boolean;
+  countedAt: number;
 }
 
 /**
- * The sidebar section's rows: the active roadmaps, most recently active first (ties: the higher
- * number first), split into the first {@link ROADMAPS_SHOWN} and the rest.
+ * A room after its detail read, started at `startedAt`, answered: the later last message of the
+ * two wins; the read's counts win unless a message event counted after the read went out, in
+ * which case the event's counts are the newer ones and stay.
  */
-export function sidebarRoadmaps(roadmaps: readonly OrgRoadmapItem[]): {
+export function roomFromRead(
+  prev: RoomState | undefined,
+  read: { lastMessageAt: string | null; unread: number; mentionsMe: number; isMember: boolean },
+  startedAt: number,
+): RoomState {
+  const lastMessageAt =
+    prev?.lastMessageAt != null &&
+    (read.lastMessageAt === null || prev.lastMessageAt > read.lastMessageAt)
+      ? prev.lastMessageAt
+      : read.lastMessageAt;
+  if (prev !== undefined && prev.countedAt > startedAt && prev.isMember) {
+    return { ...prev, lastMessageAt, isMember: read.isMember };
+  }
+  return {
+    lastMessageAt,
+    unread: read.unread,
+    mentionsMe: read.mentionsMe,
+    isMember: read.isMember,
+    countedAt: startedAt,
+  };
+}
+
+/** The counts a room's row shows now: zero when the room was marked read since they were taken. */
+export function roomCounts(
+  room: RoomState | undefined,
+  readAt: number | undefined,
+): { unread: number; mentionsMe: number } {
+  if (room === undefined || (readAt ?? 0) >= room.countedAt) return { unread: 0, mentionsMe: 0 };
+  return { unread: room.unread, mentionsMe: room.mentionsMe };
+}
+
+/**
+ * A room after a new message: its last message moves, and — as the store counts a channel —
+ * a message from someone else in a room the reader belongs to adds one unread, and one "@me"
+ * when it names the reader. A room not read yet takes the message's time (so it still rises)
+ * but no counts: its read brings them, and a guess before it could only be wrong.
+ */
+export function roomAfterMessage(
+  room: RoomState | undefined,
+  message: { time: string; sender: string; mentions: readonly string[] },
+  me: string,
+  readAt: number | undefined,
+  now: number,
+): RoomState {
+  if (room === undefined) {
+    return {
+      lastMessageAt: message.time,
+      unread: 0,
+      mentionsMe: 0,
+      isMember: false,
+      countedAt: now,
+    };
+  }
+  const lastMessageAt =
+    room.lastMessageAt !== null && room.lastMessageAt >= message.time
+      ? room.lastMessageAt
+      : message.time;
+  if (!room.isMember || message.sender === me) return { ...room, lastMessageAt };
+  const base = roomCounts(room, readAt);
+  return {
+    ...room,
+    lastMessageAt,
+    unread: base.unread + 1,
+    mentionsMe: base.mentionsMe + (message.mentions.includes(me) ? 1 : 0),
+    countedAt: now,
+  };
+}
+
+/**
+ * Listed in the sidebar: a roadmap with a room to go to that is not shelved — under discussion
+ * or established alike, since an established roadmap's room is still where it is talked about.
+ */
+export function isListedRoadmap(r: OrgRoadmapItem): r is OrgRoadmapItem & { channelId: string } {
+  return !r.archived && r.channelId !== null;
+}
+
+/**
+ * The sidebar section's rows: the listed roadmaps, most recently active first (ties: the higher
+ * number first), split into the first {@link ROADMAPS_SHOWN} and the rest. `roomActivity` maps a
+ * room's channel id to its last message's time.
+ */
+export function sidebarRoadmaps(
+  roadmaps: readonly OrgRoadmapItem[],
+  roomActivity: Readonly<Record<string, string>> = {},
+): {
   shown: Array<OrgRoadmapItem & { channelId: string }>;
   more: Array<OrgRoadmapItem & { channelId: string }>;
 } {
   const active = roadmaps
-    .filter(isActiveRoadmap)
-    .map((r) => ({ r, at: lastActivity(r) }))
+    .filter(isListedRoadmap)
+    .map((r) => ({ r, at: lastActivity(r, roomActivity[r.channelId]) }))
     .sort((a, b) => (a.at === b.at ? b.r.number - a.r.number : a.at < b.at ? 1 : -1))
     .map((x) => x.r);
   return { shown: active.slice(0, ROADMAPS_SHOWN), more: active.slice(ROADMAPS_SHOWN) };

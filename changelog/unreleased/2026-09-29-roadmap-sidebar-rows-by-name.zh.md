@@ -1,0 +1,10 @@
+# 侧栏的路线图行只显示讨论室的名字
+
+- **Date:** 2026-09-29
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [Myriad-Dreamin/penguin-harness#20](https://github.com/Myriad-Dreamin/penguin-harness/pull/20)
+
+[English](2026-09-29-roadmap-sidebar-rows-by-name.md)
+
+侧栏 **ROADMAPS** 一段的每一行，现在和上方的频道行一样读：路线图图标加讨论室的名字。行尾灰色的 `#n` 去掉了，悬停时的「`#n` 名字」提示也去掉了；名字长到行里放不下时，悬停仍会显示完整名字，和侧栏里其他被截断的名字一样。编号仍留在以编号指代路线图的地方——讨论室里的路线图一栏，以及插件的「全部路线图」页。这一段列出哪些路线图、怎么排序、怎么展开，都没有变。
