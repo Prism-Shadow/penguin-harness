@@ -262,10 +262,11 @@ export class ProposalService {
     const config = this.graphConfig();
     const forge = (repo: string | null) => (repo === null ? "none" : "github") as Project["forge"];
     if (config.repo !== null) {
+      // A set repository stacks on the set base, or the default one: never its default branch.
       return {
         repo: config.repo,
         base: config.base,
-        baseDeclared: config.baseDeclared,
+        baseDeclared: true,
         origins: config.origins,
         forge: "github",
       };

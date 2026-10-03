@@ -81,6 +81,8 @@ export class FakeMirror implements GitMirror {
   readonly compared: Array<[string, string]> = [];
   /** Commits the mirror holds; a fetch adds the commit of each ref it names. */
   readonly objects = new Set<string>();
+  /** Bare commits a fetch can bring (a deployment's, pushed somewhere the remote has it). */
+  readonly reachable = new Set<string>();
   failWith: string | null = null;
 
   constructor(
@@ -99,8 +101,9 @@ export class FakeMirror implements GitMirror {
   async fetch(refs: readonly string[]): Promise<void> {
     if (refs.length === 0) return;
     this.fetched.push([...refs]);
+    // A ref brings its commit; a bare commit only when the remote has it (`reachable`).
     for (const r of refs) {
-      const oid = this.refs.get(r) ?? (/^[0-9a-f]{40}$/.test(r) ? r : undefined);
+      const oid = this.refs.get(r) ?? (this.reachable.has(r) ? r : undefined);
       if (oid !== undefined) this.objects.add(oid);
     }
   }
@@ -121,7 +124,6 @@ export class FakeMirror implements GitMirror {
   }
 
   async mergeBase(a: string, b: string): Promise<string | null> {
-    this.compared.push([a, b]);
     return this.cmp(a, b).mergeBase;
   }
 
@@ -130,6 +132,7 @@ export class FakeMirror implements GitMirror {
   }
 
   async counts(from: string, to: string): Promise<{ ahead: number; behind: number }> {
+    this.compared.push([from, to]);
     const c = this.cmp(from, to);
     return { ahead: c.ahead, behind: c.behind };
   }

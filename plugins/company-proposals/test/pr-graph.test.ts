@@ -1,16 +1,25 @@
 /**
- * The PR graph over a fake `gh`: the delivery repository's open PRs laid out by their
- * declared bases and checked against ancestry, the chain walked from the base branch, forks
- * and the top marked, off-chain PRs listed apart, each node annotated with its proposal and
- * with the other origins' PRs on the same branch — and GitHub asked once per comparison.
- * pr-chain.test.ts covers the handbook's chain rules and the reasons in the pure layout.
+ * The PR graph's refresh reads over fake ports: change request metadata from a Forge, refs and
+ * comparisons from a GitMirror — the delivery repository's open PRs laid out by their declared
+ * bases and checked against ancestry, the chain walked from the base branch, forks and the top
+ * marked, off-chain PRs listed apart, each node annotated with its proposal and with the other
+ * origins' PRs on the same branch, each comparison computed once and stored, a failure left
+ * `unread` and listed in `errors`. pr-chain.test.ts covers the chain rules in the pure layout.
  */
 import { describe, expect, it } from "vitest";
-import { PrGraphReader, buildGraph, pullKey, type GraphProposal } from "../src/index.js";
+import {
+  PrGraphReader,
+  SqliteGraphStore,
+  SqliteProposalStore,
+  buildGraph,
+  pullKey,
+  type GraphProposal,
+} from "../src/index.js";
 import { remotesOf } from "../src/config.js";
+import { placeDeployment, type DeploymentReading } from "../src/deployments.js";
 import type { Comparison } from "../src/pr-chain.js";
-import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
-import type { RunGh } from "../src/pr-status.js";
+import type { ProposalGraphNode, ProposalGraphResponse } from "@prismshadow/penguin-server/api";
+import { FakeForge, FakeMirror, cr, rel } from "./graph-fakes.js";
 
 const sha = (c: string): string => c.repeat(40);
 const D0 = sha("0");
@@ -22,88 +31,72 @@ const C1 = sha("c");
 const E1 = sha("e");
 const F1 = sha("f");
 const G1 = sha("d");
-/** Commits deployments run: X is on GitHub (past #12), L only on some machine's local line. */
+/** Commits deployments run: X is in the repository (past #12), L only on some machine's local line. */
 const X = sha("7");
 const L = sha("6");
 
 const pull = (number: number, branch: string, head: string, base: string, repo = "acme/site") => ({
   number,
   title: `PR ${number}`,
-  draft: number === 13 ? true : null,
+  draft: number === 13,
   url: `https://github.com/${repo}/pull/${number}`,
   branch,
   head,
   base,
 });
 
-/** GitHub as the graph asks it; every call recorded, a compare listed in `fail` refused. */
-function fakeGitHub(fail: string[] = []): { gh: RunGh; calls: string[] } {
-  const calls: string[] = [];
-  const compares: Record<string, { status: string; ahead_by: number; behind_by: number }> = {
-    [`${D0}...${A1}`]: { status: "ahead", ahead_by: 2, behind_by: 0 },
-    [`${A1}...${B1}`]: { status: "ahead", ahead_by: 1, behind_by: 0 },
-    [`${A1}...${C1}`]: { status: "ahead", ahead_by: 3, behind_by: 0 },
-    [`${B1}...${E1}`]: { status: "diverged", ahead_by: 2, behind_by: 5 },
-    [`${A1}...${A0}`]: { status: "behind", ahead_by: 0, behind_by: 4 },
-    // #16 stacks on feat/a through the closed #21: its layer carries #21's commits.
-    [`${A1}...${G1}`]: { status: "ahead", ahead_by: 3, behind_by: 0 },
-    // A deployment's commit X, three past #12's head and further past the layers below it.
-    [`${D0}...${X}`]: { status: "ahead", ahead_by: 9, behind_by: 0 },
-    [`${A1}...${X}`]: { status: "ahead", ahead_by: 4, behind_by: 0 },
-    [`${B1}...${X}`]: { status: "ahead", ahead_by: 3, behind_by: 0 },
-    [`${C1}...${X}`]: { status: "diverged", ahead_by: 4, behind_by: 3 },
-  };
-  const gh: RunGh = async (args) => {
-    const path = args[1]!;
-    calls.push(path);
-    if (path.startsWith("repos/acme/site/pulls?state=closed")) {
-      // feat/gone had no PR; feat/old was #21, closed without merging, on top of feat/a.
-      return JSON.stringify(
-        path.endsWith(encodeURIComponent("acme:feat/old"))
-          ? [{ number: 21, merged: false, at: "2026-09-30T00:00:00Z", base: "feat/a" }]
-          : [],
-      );
-    }
-    if (path === "repos/acme/site/pulls/99") {
-      return JSON.stringify({
-        merged: true,
-        state: "closed",
-        branch: "feat/z",
-        head: sha("7"),
-        base: "dev",
-      });
-    }
-    if (path.startsWith("repos/acme/site/pulls?")) {
-      return JSON.stringify(
-        path.endsWith("page=1")
-          ? [
-              pull(11, "feat/a", A1, "dev"),
-              pull(12, "feat/b", B1, "feat/a"),
-              pull(13, "feat/c", C1, "feat/a"),
-              pull(14, "feat/d", E1, "feat/b"),
-              pull(15, "feat/e", F1, "feat/gone"),
-              pull(16, "feat/g", G1, "feat/old"),
-            ]
-          : [],
-      );
-    }
-    if (path.startsWith("repos/up/site/pulls?")) {
-      return JSON.stringify([
-        pull(801, "feat/a", A0, "main", "up/site"),
-        pull(802, "feat/b", B1, "main", "up/site"),
-      ]);
-    }
-    if (path === "repos/acme/site/branches/dev") return JSON.stringify(D0);
-    const m = /^repos\/acme\/site\/compare\/(.+)$/.exec(path);
-    if (m !== null) {
-      if (fail.includes(m[1]!)) throw new Error("HTTP 404");
-      const body = compares[m[1]!];
-      if (body === undefined) throw new Error(`no fake compare for ${m[1]}`);
-      return JSON.stringify(body);
-    }
-    throw new Error(`no fake route for ${path}`);
-  };
-  return { gh, calls };
+/** The repository as the forge and the mirror know it; `fail` names comparisons the mirror cannot make. */
+function fakeRepo(fail: string[] = []) {
+  const forge = new FakeForge([
+    cr("acme/site", 11, { head: A1, branch: "feat/a", base: "dev" }),
+    cr("acme/site", 12, { head: B1, branch: "feat/b", base: "feat/a" }),
+    cr("acme/site", 13, { head: C1, branch: "feat/c", base: "feat/a", draft: true }),
+    cr("acme/site", 14, { head: E1, branch: "feat/d", base: "feat/b" }),
+    cr("acme/site", 15, { head: F1, branch: "feat/e", base: "feat/gone" }),
+    cr("acme/site", 16, { head: G1, branch: "feat/g", base: "feat/old" }),
+    // feat/gone had no PR; feat/old was #21, closed without merging, on top of feat/a.
+    cr("acme/site", 21, {
+      head: sha("2"),
+      branch: "feat/old",
+      base: "feat/a",
+      state: "closed",
+      closedAt: "2026-09-30T00:00:00Z",
+    }),
+    cr("acme/site", 99, { head: sha("8"), branch: "feat/z", base: "dev", state: "merged" }),
+    cr("up/site", 801, { head: A0, branch: "feat/a", base: "main" }),
+    cr("up/site", 802, { head: B1, branch: "feat/b", base: "main" }),
+  ]);
+  const comparisons = new Map<string, Comparison>([
+    [`${D0}...${A1}`, rel("ahead", 2, 0, D0)],
+    [`${A1}...${B1}`, rel("ahead", 1, 0, A1)],
+    [`${A1}...${C1}`, rel("ahead", 3, 0, A1)],
+    [`${B1}...${E1}`, rel("diverged", 2, 5, D0)],
+    [`${A1}...${A0}`, rel("behind", 0, 4, A0)],
+    [`${A1}...${G1}`, rel("ahead", 3, 0, A1)],
+    [`${D0}...${X}`, rel("ahead", 9, 0, D0)],
+    [`${A1}...${X}`, rel("ahead", 4, 0, A1)],
+    [`${B1}...${X}`, rel("ahead", 3, 0, B1)],
+    [`${C1}...${X}`, rel("diverged", 4, 3, A1)],
+  ]);
+  for (const f of fail) comparisons.delete(f);
+  const refs = new Map<string, string>([
+    ["refs/heads/dev", D0],
+    ["refs/pull/11/head", A1],
+    ["refs/pull/12/head", B1],
+    ["refs/pull/13/head", C1],
+    ["refs/pull/14/head", E1],
+    ["refs/pull/15/head", F1],
+    ["refs/pull/16/head", G1],
+    ["refs/pull/21/head", sha("2")],
+    ["refs/pull/99/head", sha("8")],
+  ]);
+  const mirror = new FakeMirror(refs, "main", comparisons);
+  // The origin's head and the deployment's commit X arrive with the fetches that bring them.
+  mirror.objects.add(A0);
+  mirror.objects.add(X);
+  const store = new SqliteGraphStore(SqliteProposalStore.open(":memory:").db);
+  const reader = new PrGraphReader({ forge, mirror, store });
+  return { forge, mirror, store, reader };
 }
 
 const proposals: GraphProposal[] = [
@@ -118,15 +111,53 @@ const proposals: GraphProposal[] = [
   { number: 4, title: "Unbuilt", status: "drafting", implPr: null },
 ];
 
-const config = {
+const project = {
   repo: "acme/site",
   base: "dev",
   origins: [
     { name: "fork", repo: "acme/site" },
     { name: "origin", repo: "up/site" },
   ],
-  proposals,
 };
+
+/** One refresh's read, written to the store as the refresher writes it; the graph it lays out. */
+async function refresh(
+  repo: ReturnType<typeof fakeRepo>,
+  deployments: DeploymentReading[] = [],
+): Promise<ProposalGraphResponse> {
+  const got = await repo.reader.collect({
+    project,
+    proposals,
+    refs: repo.mirror.refs,
+    deploymentCommits: deployments.flatMap((d) => (d.commit === null ? [] : [d.commit])),
+    checkedAt: "1970-01-01T00:00:00.000Z",
+  });
+  repo.store.write({
+    repo: "acme/site",
+    refs: repo.mirror.refs,
+    defaultBranch: "main",
+    pulls: got.pulls,
+    openOf: got.openOf,
+    comparisons: got.comparisons,
+    used: got.layout.used,
+    snapshot: null,
+    nextProbeAt: "1970-01-01T00:05:00.000Z",
+    unchanged: 0,
+  });
+  const graph = got.layout.graph;
+  const known = new Map(got.comparisons.map((c) => [`${c.from}...${c.to}`, c.cmp]));
+  const layers = [
+    { number: 0, head: graph.base.head },
+    ...graph.nodes.map((n) => ({ number: n.number, head: n.head })),
+  ];
+  return {
+    ...graph,
+    errors: got.errors,
+    deployments: deployments.map((d) =>
+      placeDeployment(d, layers, (from, to) => known.get(`${from}...${to}`)),
+    ),
+  };
+}
 
 describe("pullKey", () => {
   it("names one PR the same way whatever the case of its owner and repository", () => {
@@ -137,8 +168,7 @@ describe("pullKey", () => {
 
 describe("PrGraphReader", () => {
   it("lays out the chain from the base branch, marks the fork and leaves the top open, and lists the off-chain PRs apart", async () => {
-    const { gh } = fakeGitHub();
-    const g = await new PrGraphReader({ gh, now: () => 0 }).read(config);
+    const g = await refresh(fakeRepo());
     expect(g.base).toEqual({ branch: "dev", head: D0, fork: false });
     const row = (n: ProposalGraphNode) => [
       n.number,
@@ -175,10 +205,7 @@ describe("PrGraphReader", () => {
     const g = buildGraph({
       repo: "acme/site",
       base: { branch: "dev", head: D0 },
-      pulls: [pull(11, "feat/a", A1, "dev"), pull(12, "feat/b", B1, "feat/a")].map((p) => ({
-        ...p,
-        draft: false,
-      })),
+      pulls: [pull(11, "feat/a", A1, "dev"), pull(12, "feat/b", B1, "feat/a")],
       origins: [],
       compare: (from, to) => layers[`${from}...${to}`],
       proposals: [],
@@ -191,8 +218,7 @@ describe("PrGraphReader", () => {
   });
 
   it("annotates each node with its proposal and with the other origins' PR on the same branch", async () => {
-    const { gh } = fakeGitHub();
-    const g = await new PrGraphReader({ gh }).read(config);
+    const g = await refresh(fakeRepo());
     const n11 = g.nodes.find((n) => n.number === 11)!;
     const n12 = g.nodes.find((n) => n.number === 12)!;
     expect(n11.proposal).toEqual({ number: 1, title: "A", status: "ready" });
@@ -209,7 +235,7 @@ describe("PrGraphReader", () => {
       },
     ]);
     expect(n12.origins.map((o) => [o.number, o.relation])).toEqual([[802, "same"]]);
-    expect(g.origins).toEqual(config.origins);
+    expect(g.origins).toEqual(project.origins);
     expect(g.unplaced).toEqual([
       {
         number: 2,
@@ -224,32 +250,53 @@ describe("PrGraphReader", () => {
     ]);
   });
 
-  it("compares two commits once, reads the lists again after a minute, and leaves a failed comparison unknown", async () => {
-    const { gh, calls } = fakeGitHub([`${A1}...${C1}`]);
-    let now = 0;
-    const reader = new PrGraphReader({ gh, now: () => now });
-    const first = await reader.read(config);
-    expect(first.nodes.find((n) => n.number === 13)?.relation).toBe("unknown");
-    expect(first.errors).toEqual([
-      `acme/site: ${A1.slice(0, 9)}...${C1.slice(0, 9)} not compared: HTTP 404`,
+  it("reads the forge in batches and fetches only what the mirror lacks", async () => {
+    const repo = fakeRepo();
+    await refresh(repo);
+    // One open list per repository, one walk round for the bases no open PR has, one batch of impl PRs.
+    expect(repo.forge.queries).toEqual([
+      { repo: "acme/site", open: true },
+      { repo: "acme/site", shutOn: ["feat/gone", "feat/old"] },
+      { repo: "acme/site", numbers: [99] },
+      { repo: "up/site", open: true },
     ]);
-    const compares = calls.filter((c) => c.includes("/compare/")).length;
-    expect(compares).toBe(6);
-    calls.length = 0;
-    await reader.read(config);
-    // Within the minute: nothing but the failed comparison is asked again.
-    expect(calls).toEqual([`repos/acme/site/compare/${A1}...${C1}`]);
-    calls.length = 0;
-    now = 61_000;
-    await reader.read(config);
-    expect(calls.filter((c) => c.includes("/pulls?state=open")).length).toBe(2);
-    expect(calls.filter((c) => c.includes("/pulls?state=closed")).length).toBe(2);
-    expect(calls.filter((c) => c.endsWith("/pulls/99")).length).toBe(1);
-    expect(calls.filter((c) => c.includes("/compare/")).length).toBe(1);
+    expect(repo.mirror.fetched).toEqual([
+      [
+        "refs/heads/dev",
+        "refs/pull/11/head",
+        "refs/pull/12/head",
+        "refs/pull/13/head",
+        "refs/pull/14/head",
+        "refs/pull/15/head",
+        "refs/pull/16/head",
+        "refs/pull/99/head",
+      ],
+    ]);
+    // A second refresh has every commit: nothing is fetched, nothing compared again.
+    repo.mirror.fetched.length = 0;
+    const compared = repo.mirror.compared.length;
+    await refresh(repo);
+    expect(repo.mirror.fetched).toEqual([]);
+    expect(repo.mirror.compared.length).toBe(compared);
+  });
+
+  it("computes each comparison once, and leaves a failed one unread in errors, asked again next time", async () => {
+    const repo = fakeRepo([`${A1}...${C1}`]);
+    const first = await refresh(repo);
+    const n13 = first.nodes.find((n) => n.number === 13)!;
+    expect(n13.relation).toBe("unknown");
+    expect(n13.off).toMatchObject({ reason: "unread" });
+    expect(first.errors).toEqual([
+      `acme/site: ${A1.slice(0, 9)}...${C1.slice(0, 9)} not compared: no comparison ${A1}...${C1}`,
+    ]);
+    expect(repo.mirror.compared).toHaveLength(6);
+    repo.mirror.compared.length = 0;
+    await refresh(repo);
+    expect(repo.mirror.compared).toEqual([[A1, C1]]);
   });
 
   it("places each deployment at the layer its commit is or contains, and lists the rest apart with one reason each", async () => {
-    const { gh, calls } = fakeGitHub();
+    const repo = fakeRepo();
     const reading = (id: string, commit: string | null, error: string | null = null) => ({
       id,
       url: `http://${id}`,
@@ -257,15 +304,12 @@ describe("PrGraphReader", () => {
       describe: commit === null ? null : `v1-1-g${commit.slice(0, 7)}`,
       error,
     });
-    const g = await new PrGraphReader({ gh, now: () => 0 }).read({
-      ...config,
-      deployments: [
-        reading("here", A1.slice(0, 9)),
-        reading("late", X),
-        reading("local", L),
-        reading("dark", null, "/api/install answered 401"),
-      ],
-    });
+    const g = await refresh(repo, [
+      reading("here", A1.slice(0, 9)),
+      reading("late", X),
+      reading("local", L),
+      reading("dark", null, "/api/install answered 401"),
+    ]);
     expect(g.deployments.map((d) => [d.id, d.at, d.relation, d.ahead, d.error])).toEqual([
       ["here", 11, "same", 0, null],
       ["late", 12, "ahead", 3, null],
@@ -273,62 +317,14 @@ describe("PrGraphReader", () => {
       ["dark", null, null, null, "/api/install answered 401"],
     ]);
     // A commit that is a layer's head is not compared at all.
-    expect(calls.some((c) => c.endsWith(`...${A1.slice(0, 9)}`))).toBe(false);
-    // The commit GitHub does not have: one line, not one per layer.
-    const lines = g.errors.filter((e) => e.startsWith("deployment "));
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(
-      new RegExp(
-        `^deployment local: commit ${L} not compared with any layer: no fake compare for [0-9a-f]{40}\\.\\.\\.${L}$`,
-      ),
+    expect(repo.mirror.compared.some(([, to]) => to.startsWith(A1.slice(0, 9)) && to !== A1)).toBe(
+      false,
     );
-  });
-
-  it("does not ask gh about a repository name GitHub would not accept", async () => {
-    const { gh, calls } = fakeGitHub();
-    const g = await new PrGraphReader({ gh }).read({
-      ...config,
-      repo: "acme/site; rm",
-      origins: [],
-    });
-    expect(calls).toEqual([]);
-    expect(g.nodes).toEqual([]);
-    expect(g.errors[0]).toContain("not a GitHub repository name");
-  });
-
-  it("draws the base branch alone, unread, when there is no repository, and says why", async () => {
-    const { gh, calls } = fakeGitHub();
-    const g = await new PrGraphReader({ gh }).read({
-      ...config,
-      repo: "",
-      errors: ["no delivery repository"],
-    });
-    expect(calls).toEqual([]);
-    expect(g.base).toMatchObject({ branch: "dev", head: null });
-    expect(g.nodes).toEqual([]);
-    expect(g.errors).toEqual(["no delivery repository"]);
-  });
-
-  it("reads a repository's default branch once a minute and reports a failed read", async () => {
-    let now = 0;
-    const calls: string[] = [];
-    const gh: RunGh = async (args) => {
-      calls.push(args[1]!);
-      if (args[1] === "repos/acme/site") return JSON.stringify("main");
-      throw new Error("HTTP 404");
-    };
-    const reader = new PrGraphReader({ gh, now: () => now });
-    const errors: string[] = [];
-    expect(await reader.defaultBranch("acme/site", errors)).toBe("main");
-    expect(await reader.defaultBranch("acme/site", errors)).toBe("main");
-    expect(calls).toEqual(["repos/acme/site"]);
-    now = 61_000;
-    await reader.defaultBranch("acme/site", errors);
-    expect(calls.length).toBe(2);
-    expect(await reader.defaultBranch("acme/gone", errors)).toBeNull();
-    expect(errors).toEqual(["acme/gone: default branch not read: HTTP 404"]);
-    expect(await reader.defaultBranch("acme/site; rm", errors)).toBeNull();
-    expect(calls.length).toBe(3);
+    // The commit the mirror cannot have: one line, not one per layer.
+    const lines = g.errors.filter((e) => e.startsWith("deployment "));
+    expect(lines).toEqual([
+      `deployment commit ${L} not compared with any layer: ${L.slice(0, 9)} not in the mirror`,
+    ]);
   });
 });
 

@@ -387,7 +387,7 @@ export class PrGraphReader {
     };
     const inputs = inputsOf(facts, project, opts.proposals);
     const known = new Map<string, Comparison>();
-    const failed = new Set<string>();
+    const failed = new Map<string, string>();
     const computed: Array<{ from: string; to: string; cmp: Comparison }> = [];
     const compare = (from: string, to: string): Comparison | undefined => {
       const key = `${from}...${to}`;
@@ -399,13 +399,15 @@ export class PrGraphReader {
     };
     const run = async (pairs: Array<[string, string]>) => {
       const todo = pairs.filter(
-        ([a, b]) => SHA.test(a) && SHA.test(b) && compare(a, b) === undefined && !failed.has(`${a}...${b}`),
+        ([a, b]) =>
+          SHA.test(a) && SHA.test(b) && compare(a, b) === undefined && !failed.has(`${a}...${b}`),
       );
       const absent = new Set(await mirror.missing(todo.flat()));
       await eachAtMost(CONCURRENCY, todo, async ([from, to]) => {
         const key = `${from}...${to}`;
-        if (absent.has(from.toLowerCase()) || absent.has(to.toLowerCase())) {
-          failed.add(key);
+        const lacking = [from, to].filter((c) => absent.has(c.toLowerCase()));
+        if (lacking.length > 0) {
+          failed.set(key, `${lacking.map((c) => c.slice(0, 9)).join(", ")} not in the mirror`);
           return;
         }
         try {
@@ -413,8 +415,7 @@ export class PrGraphReader {
           known.set(key, cmp);
           computed.push({ from, to, cmp });
         } catch (err) {
-          failed.add(key);
-          this.deps.log?.(`[company-proposals] ${repo}: ${from.slice(0, 9)}...${to.slice(0, 9)} not compared: ${reason(err)}`);
+          failed.set(key, reason(err));
         }
       });
     };
@@ -425,7 +426,32 @@ export class PrGraphReader {
       await run(pending);
       laid = layout(inputs, compare, opts.checkedAt);
     }
-    await run(deploymentPairs(laid.graph, deploymentCommits));
+    const ofDeployments = deploymentPairs(laid.graph, deploymentCommits);
+    await run(ofDeployments);
+
+    // What could not be compared, said once: an impl PR's head may not be in this repository at
+    // all, and a deployment's commit the mirror cannot have fails against every layer alike, so
+    // those are summed up; any other pair is its own line.
+    const implHeads = new Set(impl.map((cr) => cr.head));
+    const implFailed: string[] = [];
+    for (const [key, why] of failed) {
+      const [from, to] = key.split("...") as [string, string];
+      if (deploymentCommits.includes(to)) continue;
+      if (implHeads.has(to)) implFailed.push(why);
+      else errors.push(`${repo}: ${from.slice(0, 9)}...${to.slice(0, 9)} not compared: ${why}`);
+    }
+    if (implFailed.length > 0) {
+      errors.push(
+        `${repo}: ${implFailed.length} impl PR heads not compared with ${project.base}: ${implFailed[0]}`,
+      );
+    }
+    for (const commit of deploymentCommits) {
+      const pairs = ofDeployments.filter(([, to]) => to === commit);
+      const why = pairs.map(([a, b]) => failed.get(`${a}...${b}`));
+      if (pairs.length > 0 && why.every((w) => w !== undefined)) {
+        errors.push(`deployment commit ${commit} not compared with any layer: ${why[0]}`);
+      }
+    }
     return {
       pulls: pullsRead,
       openOf: [repo, ...originPulls.keys()],
