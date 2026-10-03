@@ -131,6 +131,31 @@ export class TelemetryService implements Telemetry {
     return result;
   }
 
+  time<T>(
+    probe: string,
+    keys: TelemetryKeys,
+    run: () => T,
+    describe?: (result: T) => Pick<TelemetrySampleInput, "n" | "bytes" | "attrs">,
+  ): T {
+    if (this.#ring === null) return run();
+    const start = performance.now();
+    let result: T;
+    try {
+      result = run();
+    } catch (err) {
+      this.record({ probe, durMs: performance.now() - start, status: "error", keys });
+      throw err;
+    }
+    this.record({
+      probe,
+      durMs: performance.now() - start,
+      status: "ok",
+      keys,
+      ...describe?.(result),
+    });
+    return result;
+  }
+
   samples(query: TelemetryQuery): TelemetrySample[] {
     return this.#ring === null ? [] : selectSamples(this.#ring.list(), query);
   }

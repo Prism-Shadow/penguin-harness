@@ -52,6 +52,7 @@ import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionOrigins } from "../mechanisms/sessions.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
+import { spanIn } from "../telemetry/measure.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -153,41 +154,29 @@ export class TraceIndexService implements TraceIndex {
     if (existing) {
       // A forced request must observe disk AFTER the point it was issued: chain a fresh
       // pass behind the in-flight one instead of piggybacking on possibly-gated work.
-      if (opts.force === true) {
-        return existing.then(() => this.reconcileAgent(projectId, agentId, opts));
-      }
-      return this.timed(existing, "shared", false);
+      return opts.force === true
+        ? existing.then(() => this.reconcileAgent(projectId, agentId, opts))
+        : // Joined a pass already in flight: what this caller waited, counted apart from the pass.
+          spanIn(
+            this.telemetry,
+            "trace.reconcile",
+            {},
+            () => existing,
+            () => ({ attrs: { shared: true } }),
+          );
     }
     const run = this.doReconcile(projectId, agentId, opts.force === true).finally(() => {
       this.inflight.delete(key);
     });
     this.inflight.set(key, run);
-    return this.timed(run, "led", opts.force === true);
-  }
-
-  /**
-   * Telemetry's trace.reconcile: the pass is counted once, on the call that started it (in
-   * that caller's request scope, so the request that paid for it is named); a call that
-   * joined a pass already in flight records `shared` and how long it waited.
-   */
-  private timed(run: Promise<void>, status: "led" | "shared", force: boolean): Promise<void> {
-    const telemetry = this.telemetry;
-    if (telemetry === undefined || !telemetry.on()) return run;
-    const start = performance.now();
-    const record = (outcome: string): void => {
-      telemetry.record({
-        probe: "trace.reconcile",
-        durMs: performance.now() - start,
-        status: outcome === "ok" ? status : "error",
-        attrs: { force },
-      });
-    };
-    return run.then(
-      () => record("ok"),
-      (err: unknown) => {
-        record("error");
-        throw err;
-      },
+    return spanIn(
+      this.telemetry,
+      "trace.reconcile",
+      {},
+      () => run,
+      () => ({
+        attrs: { force: opts.force === true },
+      }),
     );
   }
 

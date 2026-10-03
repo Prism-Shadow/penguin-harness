@@ -23,6 +23,12 @@ describe("TurnTally", () => {
   it("sums each segment, keeps its slowest call, and counts the messages", async () => {
     const clock = manualClock();
     const tally = new TurnTally(clock.now);
+    expect(() =>
+      tally.time("errors", () => {
+        clock.advance(0);
+        throw new Error("boom");
+      }),
+    ).toThrow("boom");
     for (const ms of [2, 5, 1]) {
       tally.message(assistantText("x"));
       tally.time("fanout", () => clock.advance(ms));
@@ -41,7 +47,8 @@ describe("TurnTally", () => {
     expect(byProbe.get("turn.fanout")).toMatchObject({ durMs: 8, n: 3, attrs: { maxMs: 5 } });
     expect(byProbe.get("turn.tail")).toMatchObject({ durMs: 3, n: 3, attrs: { maxMs: 1 } });
     expect(byProbe.get("turn.usage")).toMatchObject({ durMs: 9, n: 3, attrs: { maxMs: 3 } });
-    expect(byProbe.get("turn.errors")).toMatchObject({ durMs: 0, n: 0 });
+    // A segment whose work threw still counts, and rethrows.
+    expect(byProbe.get("turn.errors")).toMatchObject({ durMs: 0, n: 1 });
     expect(byProbe.get("turn.run")).toMatchObject({
       durMs: 20,
       n: 3,
@@ -50,7 +57,7 @@ describe("TurnTally", () => {
     });
   });
 
-  it("measures the model from each top-level request_begin to its request_end", () => {
+  it("measures the model from each top-level request_begin to its request_end, an open one up to the end", () => {
     const clock = manualClock();
     const tally = new TurnTally(clock.now);
     clock.advance(4); // before the first request: server and core time
@@ -62,33 +69,13 @@ describe("TurnTally", () => {
     tally.message(requestEnd("completed"));
     clock.advance(30); // a tool call between the two requests
     tally.message(requestBegin());
-    clock.advance(50);
-    tally.message(requestEnd("completed"));
-    const run = tally.samples("ok").find((s) => s.probe === "turn.run")!;
-    expect(run.durMs).toBe(204);
-    expect(run.n).toBe(5);
-    expect(run.attrs).toMatchObject({ modelMs: 170, requests: 2 });
-  });
-
-  it("counts a request still open when the stream ends (an abort) up to the end", () => {
-    const clock = manualClock();
-    const tally = new TurnTally(clock.now);
-    tally.message(requestBegin());
-    clock.advance(40);
+    clock.advance(50); // aborted: the stream ends with the request open
     const run = tally.samples("error").find((s) => s.probe === "turn.run")!;
-    expect(run).toMatchObject({ status: "error", attrs: { modelMs: 40, requests: 1 } });
-  });
-
-  it("adds a segment's time even when its work throws, and rethrows", () => {
-    const clock = manualClock();
-    const tally = new TurnTally(clock.now);
-    expect(() =>
-      tally.time("errors", () => {
-        clock.advance(7);
-        throw new Error("boom");
-      }),
-    ).toThrow("boom");
-    const errors = tally.samples("ok").find((s) => s.probe === "turn.errors")!;
-    expect(errors).toMatchObject({ durMs: 7, n: 1 });
+    expect(run).toMatchObject({
+      durMs: 204,
+      n: 4,
+      status: "error",
+      attrs: { modelMs: 170, requests: 2 },
+    });
   });
 });

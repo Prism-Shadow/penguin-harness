@@ -11,6 +11,7 @@
  */
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { TelemetrySampleInput } from "../api/types.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
 
 export const TURN_SEGMENTS = ["tail", "fanout", "errors", "usage"] as const;
 export type TurnSegment = (typeof TURN_SEGMENTS)[number];
@@ -22,6 +23,36 @@ interface SegmentTally {
 }
 
 const round = (ms: number): number => Math.round(ms * 10) / 10;
+
+/** What the drive loop holds for one run: a real tally while telemetry is on, else one that only runs the work. */
+export interface TurnTimer {
+  message(msg: OmniMessage): void;
+  time<T>(segment: TurnSegment, run: () => T): T;
+  timeAsync<T>(segment: TurnSegment, run: () => Promise<T>): Promise<T>;
+  /** Hands the run's samples to telemetry. */
+  finish(status: "ok" | "error"): void;
+}
+
+const UNTIMED: TurnTimer = {
+  message: () => {},
+  time: (_segment, run) => run(),
+  timeAsync: (_segment, run) => run(),
+  finish: () => {},
+};
+
+/** The timer for one run, decided at its start: whether the switch is on then holds for the whole run. */
+export function turnTimer(telemetry: Telemetry | undefined): TurnTimer {
+  if (telemetry?.on() !== true) return UNTIMED;
+  const tally = new TurnTally();
+  return {
+    message: (msg) => tally.message(msg),
+    time: (segment, run) => tally.time(segment, run),
+    timeAsync: (segment, run) => tally.timeAsync(segment, run),
+    finish: (status) => {
+      for (const sample of tally.samples(status)) telemetry.record(sample);
+    },
+  };
+}
 
 export class TurnTally {
   readonly #now: () => number;

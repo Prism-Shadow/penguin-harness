@@ -251,35 +251,33 @@ describe("plugin loading", () => {
     expect(result.failed.get("@nope/definitely-not-installed")).toBeTruthy();
   });
 
-  it("reports each step of a load to an observer, a failed step as not ok, a reused entry as reused", async () => {
+  it("times each plugin it imports, a failed one as not ok, and not a reused one", async () => {
     const good = await writePackage(
-      "@acme/steps",
+      "@acme/timed",
       oneModule,
-      `${thingClass}
-       export default { modules: [Thing] };`,
+      `${thingClass}\n export default { modules: [Thing] };`,
     );
-    await writeConfig({ plugins: ["@nope/definitely-not-installed", good] });
-    const steps: Array<[string, string, boolean]> = [];
-    const observe = (step: string, specifier: string, ms: number, ok: boolean) => {
+    await writeConfig({ plugins: [good] });
+    const seen: Array<[string, boolean]> = [];
+    const observe = (specifier: string, ms: number, ok: boolean) => {
       expect(ms).toBeGreaterThanOrEqual(0);
-      steps.push([step, specifier, ok]);
+      seen.push([specifier, ok]);
     };
     const first = await loadPlugins(root, undefined, new Map(), null, observe);
-    expect(steps[0]).toEqual(["activate", "*", true]);
-    expect(steps.filter(([, specifier]) => specifier === good)).toEqual([
-      ["import", good, true],
-      ["table", good, true],
-      ["check", good, true],
-    ]);
-    // The missing one stops at whichever step finds it missing, and that step is not ok.
-    const missing = steps.filter(([, specifier]) => specifier === "@nope/definitely-not-installed");
-    expect(missing.every(([, , ok]) => !ok)).toBe(true);
-
-    // The same file behind the name on the next load: kept, not imported again.
-    steps.length = 0;
-    const reuse = new Map(first.loaded.map((entry) => [entry.specifier, entry]));
-    await loadPlugins(root, undefined, reuse, null, observe);
-    expect(steps.filter(([, specifier]) => specifier === good)).toEqual([["reused", good, true]]);
+    expect(seen).toEqual([[good, true]]);
+    seen.length = 0;
+    await loadPlugins(
+      root,
+      undefined,
+      new Map(first.loaded.map((e) => [e.specifier, e])),
+      null,
+      observe,
+    );
+    expect(seen).toEqual([]);
+    const bad = await writePackage("@acme/untimed", oneModule, "export default 7;");
+    await writeConfig({ plugins: [bad] });
+    await loadPlugins(root, undefined, new Map(), null, observe);
+    expect(seen).toEqual([[bad, false]]);
   });
 
   it("a default export that is not a list of classes is a load failure that says so", async () => {

@@ -463,13 +463,13 @@ async function createInner(
           // A Project may list a plugin for one machine only (`[plugins.<machineId>]`); this
           // server's own id says which of those tables are its own.
           new MachinesRepo(caps.db).ownId(),
-          // Telemetry's plugin.load, per plugin and step — kept like the boot timings.
-          (step, plugin, ms, ok) =>
+          // Telemetry's plugin.load, one per plugin imported — kept like the boot timings.
+          (plugin, ms, ok) =>
             boot.add({
               probe: "plugin.load",
               durMs: ms,
               status: ok ? "ok" : "error",
-              attrs: { step, plugin },
+              attrs: { plugin },
             }),
         ).catch(restoreGeneration);
   boot.since("boot.plugins", pluginsAt);

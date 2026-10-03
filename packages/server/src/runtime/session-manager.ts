@@ -109,7 +109,8 @@ import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
-import { TurnTally } from "../telemetry/turn.js";
+import { turnTimer } from "../telemetry/turn.js";
+import { spanIn, timeIn } from "../telemetry/measure.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 
@@ -453,7 +454,7 @@ export interface SessionManagerDeps {
    */
   onHumanInput?: (sessionId: string) => void;
   /**
-   * Telemetry's per-turn probes (PRFC-0008): task.accept, session.ensure, turn.* and
+   * Telemetry's per-turn probes (PRFC-0008): task.accept, session.load, turn.* and
    * turn.badge. Optional; without it — or with its switch off — nothing is timed.
    */
   telemetry?: Telemetry;
@@ -587,13 +588,6 @@ export interface RuntimeEntry {
    * process being removed from the list) publishes nothing.
    */
   backgroundTasks: SessionBackgroundTasks;
-}
-
-/** What one session.ensure sample says beyond its time (see SessionManager.ensureEntry). */
-interface EnsureProbe {
-  outcome: "hit" | "load" | "reload";
-  loadMs?: number;
-  resumed?: number;
 }
 
 /** Active-table idle eviction: same convention as the SSE channel (an idle entry with no activity for 30 minutes releases its memory). */
@@ -1184,42 +1178,22 @@ export class SessionManager {
     input: OmniMessage[],
     opts?: { queueIfBusy?: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }> {
-    const telemetry = this.deps.telemetry?.on() === true ? this.deps.telemetry : null;
-    if (telemetry === null) return this.acceptTask(sessionId, input, opts);
     // task.accept: from the call to the answer, the wait for the session lock included.
-    const start = performance.now();
-    let lockedAt: number | null = null;
-    let status = "error";
-    let queued = false;
-    try {
-      const accepted = await this.acceptTask(sessionId, input, opts, () => {
-        lockedAt = performance.now();
-      });
-      status = "ok";
-      queued = accepted.queued;
-      return accepted;
-    } finally {
-      telemetry.record({
-        probe: "task.accept",
-        durMs: performance.now() - start,
-        status,
-        keys: { session: sessionId },
-        attrs: {
-          queued,
-          ...(lockedAt !== null ? { lockMs: Math.round((lockedAt - start) * 10) / 10 } : {}),
-        },
-      });
-    }
+    return spanIn(
+      this.deps.telemetry,
+      "task.accept",
+      { session: sessionId },
+      () => this.acceptTask(sessionId, input, opts),
+      (r) => ({ attrs: { queued: r.queued } }),
+    );
   }
 
   private acceptTask(
     sessionId: string,
     input: OmniMessage[],
     opts?: { queueIfBusy?: boolean; recall?: RecallStore },
-    locked?: () => void,
   ): Promise<{ sessionId: string; queued: boolean }> {
     return this.withLock(sessionId, async () => {
-      locked?.();
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
@@ -2090,34 +2064,6 @@ export class SessionManager {
 
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
   private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
-    const telemetry = this.deps.telemetry;
-    if (telemetry === undefined || !telemetry.on()) return this.resolveEntry(sessionId);
-    // session.ensure: get or resume. `outcome` says which — an active-table hit, a load, or a
-    // reload of an entry built before the Agent's last config change — and a load reports its
-    // loader time and how many history messages the core Session was resumed with.
-    const probe: EnsureProbe = { outcome: "hit" };
-    const start = performance.now();
-    let status = "error";
-    try {
-      const entry = await this.resolveEntry(sessionId, probe);
-      status = "ok";
-      return entry;
-    } finally {
-      telemetry.record({
-        probe: "session.ensure",
-        durMs: performance.now() - start,
-        status,
-        ...(probe.resumed !== undefined ? { n: probe.resumed } : {}),
-        keys: { session: sessionId },
-        attrs: {
-          outcome: probe.outcome,
-          ...(probe.loadMs !== undefined ? { loadMs: Math.round(probe.loadMs * 10) / 10 } : {}),
-        },
-      });
-    }
-  }
-
-  private async resolveEntry(sessionId: string, probe?: EnsureProbe): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
     /** Background-task counts the discarded runtime last reported (see the publish below). */
     let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
@@ -2143,9 +2089,7 @@ export class SessionManager {
       this.entries.delete(sessionId);
       this.disposeRemoved(existing);
       discardedBackgroundTasks = existing.backgroundTasks;
-      if (probe !== undefined) probe.outcome = "reload";
     }
-    if (probe !== undefined && probe.outcome === "hit") probe.outcome = "load";
     const row = this.deps.sessions.findById(sessionId);
     if (!row) {
       throw new HttpError(
@@ -2168,12 +2112,13 @@ export class SessionManager {
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
-    const loadAt = probe !== undefined ? performance.now() : 0;
-    const session = await this.deps.loader.load(row);
-    if (probe !== undefined) {
-      probe.loadMs = performance.now() - loadAt;
-      if (session.resumedHistory !== undefined) probe.resumed = session.resumedHistory.length;
-    }
+    const session = await spanIn(
+      this.deps.telemetry,
+      "session.load",
+      { session: sessionId },
+      () => this.deps.loader.load(row),
+      (loaded) => ({ n: loaded.resumedHistory?.length }),
+    );
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
@@ -2333,11 +2278,11 @@ export class SessionManager {
     const subagentPrompts = new Map<string, string>();
     // Telemetry's per-turn segments: one tally per run while the switch is on (decided at run
     // start), handed over as a few samples when the run ends — never one per message.
-    const tally = this.deps.telemetry?.on() === true ? new TurnTally() : null;
+    const tally = turnTimer(this.deps.telemetry);
     let runStatus: "ok" | "error" = "ok";
     try {
       for await (const msg of gen) {
-        tally?.message(msg);
+        tally.message(msg);
         // A parent-level (no origin) run_subagent call: record its prompt for the child
         // session_meta that arrives later to use as its title.
         if (!msg.origin || msg.origin.length === 0) {
@@ -2432,18 +2377,11 @@ export class SessionManager {
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
-        if (tally === null) {
-          this.liveTail.observe(entry.sessionId, msg);
-          this.deps.channels.get(entry.sessionId).publish(msg);
-          watcher?.observe(msg);
-        } else {
-          tally.time("tail", () => this.liveTail.observe(entry.sessionId, msg));
-          tally.time("fanout", () => this.deps.channels.get(entry.sessionId).publish(msg));
-          if (watcher !== null) tally.time("errors", () => watcher.observe(msg));
-        }
+        tally.time("tail", () => this.liveTail.observe(entry.sessionId, msg));
+        tally.time("fanout", () => this.deps.channels.get(entry.sessionId).publish(msg));
+        if (watcher !== null) tally.time("errors", () => watcher.observe(msg));
         try {
-          if (tally === null) await this.deps.recorder.record(ctx, msg);
-          else await tally.timeAsync("usage", () => this.deps.recorder.record(ctx, msg));
+          await tally.timeAsync("usage", () => this.deps.recorder.record(ctx, msg));
         } catch (err) {
           this.log(`[usage] Insert failed: ${err instanceof Error ? err.message : String(err)}`);
           this.deps.errors?.record({ source: "usage", err, ctx, code: "usage_insert_failed" });
@@ -2484,9 +2422,7 @@ export class SessionManager {
         entry.pendingSteering = [];
       }
       entry.lastActivityMs = Date.now();
-      if (tally !== null) {
-        for (const sample of tally.samples(runStatus)) this.deps.telemetry?.record(sample);
-      }
+      tally.finish(runStatus);
       // Run-end stamp (see the run-start counterpart at the top of drive). Guarded like
       // every other write in this finally: what follows — the idle broadcast and the
       // auto-start of queued follow-ups (this is its only call site) — must not be
@@ -2603,21 +2539,15 @@ export class SessionManager {
     }
   }
 
+  /** turn.badge: one state flip on both channels — the list row's badge and task_state. */
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {
-    const telemetry = this.deps.telemetry;
-    if (telemetry === undefined || !telemetry.on()) return this.publishStateNow(entry, state);
-    // turn.badge: one state flip on both channels — the list row's badge and task_state.
-    const start = performance.now();
-    try {
-      this.publishStateNow(entry, state);
-    } finally {
-      telemetry.record({
-        probe: "turn.badge",
-        durMs: performance.now() - start,
-        keys: { session: entry.sessionId },
-        attrs: { state },
-      });
-    }
+    timeIn(
+      this.deps.telemetry,
+      "turn.badge",
+      { session: entry.sessionId },
+      () => this.publishStateNow(entry, state),
+      () => ({ attrs: { state } }),
+    );
   }
 
   private publishStateNow(entry: RuntimeEntry, state: SessionStatus): void {
