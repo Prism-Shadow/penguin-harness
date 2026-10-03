@@ -10,7 +10,9 @@ export abstract class ProposalCreator {
   /**
    * Creates the proposal of roadmap item `roadmap.key` of roadmap `roadmap.number`, written by
    * `author`, and answers its number. `delegatedBy` is the principal whose approval completed
-   * the pair.
+   * the pair. Idempotent: the same item with the same brief answers the proposal created the
+   * first time, so an approval retried after a failure between the creation and its record
+   * links that one instead of creating a second.
    */
   abstract createFromRoadmap(
     projectId: string,
