@@ -91,9 +91,11 @@ describe("the settings card", () => {
       );
     const html = render("en");
     expect(html).toContain("Enforced here: file writes, by Landlock (dsh-local).");
-    // A disclosure: a button saying it is collapsed, controlling a hidden panel holding the text.
-    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*aria-controls="([^"]+)"/);
-    const panel = /<div id="[^"]+" hidden=""[^>]*>(.*?)<\/div>/.exec(html)?.[1] ?? "";
+    // A disclosure: a collapsed button controlling the hidden panel that holds the text.
+    const control = /aria-expanded="false" aria-controls="([^"]+)"/.exec(html)?.[1];
+    expect(control).toBeDefined();
+    const panel = html.slice(html.indexOf(`id="${control}"`));
+    expect(panel).toMatch(/^id="[^"]+" hidden=""/);
     expect(panel).toContain("penguin-bwrap is installed but not in use: refused");
     expect(render("zh")).toContain("penguin-bwrap 已安装但未启用：refused");
     expect(heading({ enabled: true })).not.toContain("aria-expanded");

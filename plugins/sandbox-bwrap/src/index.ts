@@ -235,7 +235,7 @@ export async function loadPenguinBwrapProvider(
     // Ubuntu 23.10 and later lets only AppArmor-profiled programs create them (24.04's default).
     // Neither is needed for the sandbox to work: sandbox-dsh confines files through Landlock.
     throw new Error(
-      `'${runner}' is missing or refuses the base profile (${refusal}). Are unprivileged user namespaces allowed on this host? Debian: \`sysctl kernel.unprivileged_userns_clone\`; Ubuntu 23.10 and later: \`sysctl kernel.apparmor_restrict_unprivileged_userns\`. Optional: a one-time root step lets bubblewrap run here, adding network isolation and masked paths to what sandbox-dsh confines — see "Sandbox on Ubuntu" in the CLI quickstart`,
+      `'${runner}' is missing or refuses the base profile (${refusal}). Are unprivileged user namespaces allowed on this host? Debian: \`sysctl kernel.unprivileged_userns_clone\`; Ubuntu 23.10 and later: \`sysctl kernel.apparmor_restrict_unprivileged_userns\`. @penguinharness/sandbox-dsh confines file writes without them, through Landlock. Optional: a one-time root step lets bubblewrap run here, adding network isolation and masked paths — see "Sandbox on Ubuntu" in the CLI quickstart`,
     );
   }
   return createPenguinBwrapProvider(internals);

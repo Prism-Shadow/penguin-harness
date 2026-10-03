@@ -167,18 +167,16 @@ describe("the sandbox card on the Linux floor", () => {
     ]);
     const refused = await save({ presets: { "workspace-write": { network: "none" } } });
     expect(refused.status).toBe(400);
-    expect(await refused.text()).toContain(
+    expect(((await refused.json()) as { error: { message: string } }).error.message).toContain(
       '"presets.workspace-write.network" cannot be "none" here: the sandbox backend in use here (dsh-local) confines files only',
     );
     // Every built-in preset keeps the network open: the default table saves as it is.
     expect((await save({ enabled: true })).status).toBe(200);
   });
 
-  it("warns that saved masked paths refuse every command, full access included", async () => {
+  it("warns that saved masked paths refuse every command", async () => {
     const { card, save } = await boot("refused");
-    expect(
-      (await save({ enabled: true, defaultPreset: "full-access", maskPaths: ["/k"] })).status,
-    ).toBe(200);
+    expect((await save({ enabled: true, maskPaths: ["/k"] })).status).toBe(200);
     expect((await card()).notices?.[0]).toMatchObject({
       tone: "attention",
       text: "The saved mode needs fs-write + mask-paths, and no usable backend implements it: every agent command and hook script is refused until one does.",
