@@ -3,7 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [Myriad-Dreamin/penguin-harness#PRNUM](https://github.com/Myriad-Dreamin/penguin-harness/pull/PRNUM)
+- **PR:** [Myriad-Dreamin/penguin-harness#201](https://github.com/Myriad-Dreamin/penguin-harness/pull/201)
 
 [中文版](2026-10-03-backward-compatibility-port-forwards-legacy-shape.zh.md)
 
