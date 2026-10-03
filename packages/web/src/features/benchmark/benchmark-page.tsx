@@ -57,7 +57,6 @@ import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompt
 import { benchmarkRoute } from "./benchmark-route";
 import { fetchBenchmarks } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
-import { HarborTag } from "./harbor";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
@@ -148,13 +147,13 @@ function TestedAgents({
 }
 
 /**
- * One Benchmark in the Agents list's card shape: an info column of title (with the Harbor tag
- * for a Benchmark whose cases run as Harbor tasks), description and stats, then the Agents it
- * has tested, the sparkline, the newest Score with its change from the previous record of the
- * same label, and the actions. The info column is the card's main button — it enters the
- * Benchmark's page — so everything inside it is phrasing content rather than a nested block. A
- * card that is not published is masked under a notice — still being built for a draft, creation
- * failed for a Benchmark whose calibration never finished — with only the delete icon left live.
+ * One Benchmark in the Agents list's card shape: an info column of title, description and stats,
+ * then the Agents it has tested, the sparkline, the newest Score with its change from the
+ * previous record of the same label, and the actions. The info column is the card's main button
+ * — it enters the Benchmark's page — so everything inside it is phrasing content rather than a
+ * nested block. A card that is not published is masked under a notice — still being built for a
+ * draft, creation failed for a Benchmark whose calibration never finished — with only the delete
+ * icon left live.
  */
 export function BenchmarkCard({
   benchmark,
@@ -200,7 +199,6 @@ export function BenchmarkCard({
           <span className="min-w-0 truncate text-base font-bold">
             {machineName !== null ? nameOnMachine(benchmark.title, machineName) : benchmark.title}
           </span>
-          <HarborTag benchmark={benchmark} />
           <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
             {benchmark.id}
           </span>

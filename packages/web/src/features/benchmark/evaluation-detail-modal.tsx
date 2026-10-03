@@ -14,6 +14,7 @@ import {
   AgentAvatar,
   Button,
   Chevron,
+  CopyButton,
   GlyphIcon,
   ICONS,
   ICON_GAP,
@@ -27,7 +28,33 @@ import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
 import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
 import type { AskEvaluationParams } from "./benchmark-prompts";
-import { RunSessionId } from "./harbor";
+
+/** How agent-evaluation records a Harbor trial in a run's `session_id`: it is no Session. */
+const TRIAL_PREFIX = "harbor:";
+
+/** The trial a run's id names, or null for a Session id. */
+export function harborTrialName(sessionId: string): string | null {
+  return sessionId.startsWith(TRIAL_PREFIX) ? sessionId.slice(TRIAL_PREFIX.length) : null;
+}
+
+/**
+ * A run's Session id, for correlating it with what the side panel shows: identification only,
+ * reading a Trace is the side panel's job. A run recorded as a Harbor trial is no Session the
+ * app can open, so its id comes with a button that copies the trial's name — the directory to
+ * look for under the Benchmark's `.jobs/`. It keys off the recorded id alone.
+ */
+export function RunSessionId({ sessionId }: { sessionId?: string }) {
+  if (!sessionId) return <span className="text-gray-400">—</span>;
+  const id = <span className="font-mono text-gray-600 dark:text-gray-300">{sessionId}</span>;
+  const trial = harborTrialName(sessionId);
+  if (trial === null) return id;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {id}
+      <CopyButton text={trial} label={S.benchmark.copyTrialName} size="sm" className="shrink-0" />
+    </span>
+  );
+}
 
 /**
  * Score row for one Case: stored Case averages are authoritative. Expanding shows raw Run
@@ -102,7 +129,6 @@ function CaseRow({
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
             </td>
             <td className="px-2 py-1">
-              {/* Identification only: reading a Trace is the side panel's job. */}
               <RunSessionId {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
             </td>
           </tr>
