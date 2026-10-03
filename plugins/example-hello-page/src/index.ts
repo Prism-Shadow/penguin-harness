@@ -10,9 +10,6 @@
 import { Component } from "@prismshadow/penguin-core/plugin";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 
-/** Where the server serves this package's `ui/` (the package name, as package.json spells it). */
-const UI = "/api/plugins/@penguinharness/example-hello-page/ui";
-
 /** The plugin's one module: nothing to bind, only the page it contributes. */
 @Component({
   contributes: {
@@ -27,7 +24,14 @@ const UI = "/api/plugins/@penguinharness/example-hello-page/ui";
         title: "Hello World",
         titleZh: "你好世界",
         icon: "sparkle",
-        renderer: { iframe: { src: `${UI}/index.html`, namespace: "example-hello" } },
+        // Where the server serves this package's `ui/`: the package name, as package.json
+        // spells it. Written out in full — a manifest is data, read without running this file.
+        renderer: {
+          iframe: {
+            src: "/api/plugins/@penguinharness/example-hello-page/ui/index.html",
+            namespace: "example-hello",
+          },
+        },
       },
     ],
   },
