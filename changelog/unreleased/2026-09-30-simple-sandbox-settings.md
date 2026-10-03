@@ -84,7 +84,9 @@ named file mode, network level and approval mode, and one pick saves all three o
   file mode is Off) is greyed out for a non-admin and marked "Admin only", and its tooltip says it
   exceeds this server's sandbox ceiling; administrators, and the preset the Session is on, are
   unaffected. A refused pick leaves the Session as it was, and a toast says why.
-- `ConfirmModal` (UI package) takes a `glyph` for its leading mark.
+- `ConfirmModal` (UI package) takes a `glyph` for its leading mark. A portaled `Dropdown` moves
+  focus to its first item once the panel is placed; before, opening one from the keyboard left
+  focus on the trigger and the arrow keys did nothing.
 - The Session's `sandbox` object in the API gains three response-only fields: `presets` (the
   table, disabled rows included), `advanced`, and `switchOn` (the Sandbox switch). The chat
   defaults carry them too, plus `defaultApprovalMode`: the default preset's approval mode

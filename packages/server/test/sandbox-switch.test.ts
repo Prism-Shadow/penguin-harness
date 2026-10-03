@@ -110,7 +110,7 @@ describe("the sandbox switch", () => {
     try {
       const confined = await restartWith({ mode: "read-only", network: "none" });
       // The card shows the switch on; the document's own mode and network decide new Sessions
-      // (what the card's Default column shows for it is the next case's).
+      // (the row the card marks as default for it is the next case's).
       expect((await confined.card()).values.enabled).toBe(true);
       expect(confined.sandbox.currentSettings()).toEqual({ mode: "read-only", network: "none" });
       expect(confined.t.deps.serverSettingsRepo.get("plugin-config:sandbox")).toBe(
@@ -180,7 +180,7 @@ describe("the sandbox switch", () => {
     }
 
     // No row starts there: a cut or local network, or Off with masked paths (Full Access
-    // confines nothing). The Default column marks none, and the card says what is in effect.
+    // confines nothing). No row is marked as the default, and the card says what is in effect.
     for (const doc of [
       { mode: "read-only", network: "none" },
       { mode: "workspace-write", network: "local" },

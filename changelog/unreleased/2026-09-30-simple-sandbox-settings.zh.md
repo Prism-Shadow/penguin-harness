@@ -20,6 +20,6 @@
 - 设置字段可以标记 `advanced: true`；插件页在每张卡片上都把这类字段收进折叠区。
 - 沙盒的设置条目新增 `backend`（`installed`、`recommended`）；其分组新增 `enabled` 与 `defaultPreset`，去掉 `mode` 与 `network`。配置可以把一个布尔字段声明为 `switch`：它关闭时，页面只画这一个字段。
 - **非管理员能看出哪些预设只有管理员能选。** 比服务端沙盒设置更宽的预设（默认为 Workspace Write 时，即文件模式为关闭的 Full Access 与 Always Ask）对非管理员置灰并标「仅管理员」，悬停说明它超出了本服务器的沙盒上限；管理员不受影响，会话当前所在的预设也不受影响。被拒绝的选择不改动会话，由 toast 说明原因。
-- UI 包的 `ConfirmModal` 新增 `glyph`，用于指定左侧标记。
+- UI 包的 `ConfirmModal` 新增 `glyph`，用于指定左侧标记。以 portal 方式弹出的 `Dropdown` 在面板定位后才把焦点移到第一项；此前用键盘打开时焦点留在触发按钮上，方向键也无效。
 - API 中会话的 `sandbox` 对象新增三个只出现在响应里的字段：`presets`（整张表，含未固定的行）、`advanced` 与 `switchOn`（沙盒开关）。chat defaults 也带上它们，另加 `defaultApprovalMode`：开关打开时默认预设的审批方式。创建时未指定审批方式的会话取这一项；组织的会话仍为 `allow-all`。预设表的每一行在比服务端设置更宽时带 `aboveCeiling: true`，与以 `403 sandbox_forbidden` 拒绝非管理员选择的是同一次比较。
 - `PATCH /api/sessions/:sessionId` 先完成全部校验（含沙盒的上限与可实施性）再写入任何字段：被拒的请求什么都不落盘。原先它先写审批方式，被拒的预设选择会只存下审批方式那一半。

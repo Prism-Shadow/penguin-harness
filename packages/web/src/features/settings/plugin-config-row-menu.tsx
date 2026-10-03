@@ -88,7 +88,8 @@ export function RowMenu({
           aria-label={S.settings.pluginTableRowMenu(row)}
           aria-haspopup="menu"
           aria-expanded={open}
-          data-tooltip={S.settings.pluginTableRowMenuHint}
+          // No tooltip while the menu is open: it would sit on top of the panel.
+          data-tooltip={open ? undefined : S.settings.pluginTableRowMenuHint}
           disabled={disabled}
           onClick={() => setOpen(!open)}
           className={ICON_BUTTON}
