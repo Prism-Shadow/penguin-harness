@@ -25,7 +25,7 @@
  * fills in the part after it.
  */
 import { useId, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -35,6 +35,7 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  InfoPopover,
   Input,
   toastError,
 } from "@prismshadow/penguin-ui";
@@ -56,6 +57,7 @@ export function SemanticIdField({
   error,
   lockedPrefix,
   generateHint,
+  info,
   disabled = false,
   onChange,
   onEnter,
@@ -81,6 +83,12 @@ export function SemanticIdField({
   lockedPrefix?: string;
   /** The generation clause appended to `hint`, when "the display name" is not what the dialog calls it. */
   generateHint?: string;
+  /**
+   * What the id means beyond its format (it names a directory, it is fixed once created), behind
+   * a "?" beside the label. With it the hint below keeps the format alone: the generation clause
+   * goes behind the "?" too, since the button beside the box already says it generates.
+   */
+  info?: ReactNode;
   disabled?: boolean;
   onChange: (id: string) => void;
   /** Enter inside the field, where the dialog submits on it. */
@@ -147,9 +155,18 @@ export function SemanticIdField({
 
   return (
     <div>
-      <FieldLabel htmlFor={controlId} required>
-        {label}
-      </FieldLabel>
+      {info === undefined ? (
+        <FieldLabel htmlFor={controlId} required>
+          {label}
+        </FieldLabel>
+      ) : (
+        <span className="mb-1 flex items-center gap-1">
+          <FieldLabel htmlFor={controlId} required block={false}>
+            {label}
+          </FieldLabel>
+          <InfoPopover label={label}>{info}</InfoPopover>
+        </span>
+      )}
       <div className="flex items-center gap-2">
         {lockedPrefix === undefined ? (
           input
@@ -187,7 +204,9 @@ export function SemanticIdField({
           {/* The generation clause carries its own leading separator: what joins two clauses
               is punctuation, and punctuation is part of the language. The id rule stays on
               screen beside a quiet note — it is what the user reads while typing. */}
-          <FieldHint>{`${hint}${generateHint ?? S.semanticId.idGenerateHint}`}</FieldHint>
+          <FieldHint>
+            {info === undefined ? `${hint}${generateHint ?? S.semanticId.idGenerateHint}` : hint}
+          </FieldHint>
           {notice !== null && (
             <span id={messageId} role="status" className={`mt-1 block text-xs ${toneInk.muted}`}>
               {notice.text}

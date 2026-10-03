@@ -1,11 +1,12 @@
 /**
  * Small pieces every organization page shares: the organization's status pill and dot, the
  * budget bar and ring, the budget field and the two marks a budget box wears (its unit, and
- * what a converted amount will be stored as), the ticket status and priority pills, the
- * blocked badge, the failed-refresh line, the two ways out of a summary — the title that
- * opens what it names, and the corner button a titleless card or row uses instead — and
- * principal naming. The bordered KPI tile is the shared UI package's `StatTile`.
- * Every status colour here is a tone from lib/tone.ts, picked by meaning.
+ * what a converted amount will be stored as), a field title with its "?" for a control that
+ * has no info slot of its own, the ticket status and priority pills, the blocked badge, the
+ * failed-refresh line, the two ways out of a summary — the title that opens what it names, and
+ * the corner button a titleless card or row uses instead — and principal naming. The bordered
+ * KPI tile is the shared UI package's `StatTile`. Every status colour here is a tone from
+ * lib/tone.ts, picked by meaning.
  */
 import { useId } from "react";
 import type { ReactNode } from "react";
@@ -18,11 +19,11 @@ import {
   AgentAvatar,
   Badge,
   FieldError,
-  FieldHint,
   FieldLabel,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  InfoPopover,
   Input,
   Notice,
   ProgressBar,
@@ -325,10 +326,41 @@ export function StoredUsdNote({ usd, currency }: { usd: number | null; currency:
 }
 
 /**
- * A budget field: a number box in the reader's currency with the unit after it, the hint (or
- * the error) beneath, and the stored amount under that while the two currencies differ. The
- * three dialogs that set a budget share it; the finance table edits inside a cell and wears
- * the two marks above on their own.
+ * A field's title with its "?" beside it, for a control that has no `info` slot of its own: a
+ * `Select`, a picker, the budget box. The "?" is a `<button>`, so it cannot sit inside a
+ * wrapping `<label>` (it would take the title's name, the trap the UI package's field.tsx
+ * documents); this row stands above the control instead. Pass `htmlFor` when the control has
+ * an id, otherwise the control names itself with `aria-label`. `required` draws the mark here
+ * only: the control's own `required` is what sets `aria-required`, and the caller keeps the two
+ * in step.
+ */
+export function InfoFieldLabel({
+  label,
+  info,
+  required,
+  htmlFor,
+}: {
+  label: string;
+  /** What the field means, disclosed by the "?". */
+  info: ReactNode;
+  required?: boolean;
+  htmlFor?: string;
+}) {
+  return (
+    <span className="mb-1 flex items-center gap-1">
+      <FieldLabel block={false} required={required} htmlFor={htmlFor}>
+        {label}
+      </FieldLabel>
+      <InfoPopover label={label}>{info}</InfoPopover>
+    </span>
+  );
+}
+
+/**
+ * A budget field: a number box in the reader's currency with the unit after it, what the cap
+ * means behind the title's "?", the error beneath, and the stored amount under that while the
+ * two currencies differ. The three dialogs that set a budget share it; the finance table edits
+ * inside a cell and wears the two marks above on their own.
  *
  * The box is bare — an `Input` with no title of its own — and the title is associated by
  * `htmlFor`, because a wrapping `<label>` names its first labelable descendant and this
@@ -338,7 +370,7 @@ export function MoneyPerMonthInput({
   label,
   currency,
   value,
-  hint,
+  info,
   error,
   placeholder,
   disabled = false,
@@ -349,7 +381,7 @@ export function MoneyPerMonthInput({
   currency: Currency;
   /** The typed text, in the reader's currency; budget-input.ts converts it to what is stored. */
   value: string;
-  hint?: string;
+  info?: ReactNode;
   error?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -360,7 +392,11 @@ export function MoneyPerMonthInput({
   const errorId = `${controlId}-error`;
   return (
     <div>
-      <FieldLabel htmlFor={controlId}>{label}</FieldLabel>
+      {info !== undefined ? (
+        <InfoFieldLabel label={label} info={info} htmlFor={controlId} />
+      ) : (
+        <FieldLabel htmlFor={controlId}>{label}</FieldLabel>
+      )}
       <div className="flex items-center gap-2">
         <Input
           id={controlId}
@@ -380,11 +416,7 @@ export function MoneyPerMonthInput({
         />
         <MoneyPerMonthUnit currency={currency} />
       </div>
-      {error !== undefined ? (
-        <FieldError id={errorId}>{error}</FieldError>
-      ) : hint !== undefined ? (
-        <FieldHint>{hint}</FieldHint>
-      ) : null}
+      {error !== undefined && <FieldError id={errorId}>{error}</FieldError>}
       <StoredUsdNote usd={toStoredUsd(value, currency)} currency={currency} />
     </div>
   );

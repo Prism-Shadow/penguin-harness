@@ -4240,7 +4240,9 @@ Benchmark：
     /** Create dialog. */
     createTitle: "新建组织",
     orgId: "组织 id",
-    orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
+    orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线",
+    /** Behind the org id's "?": what the id is beyond its format. */
+    orgIdInfo: "组织 id 也是组织的目录名，创建后不可修改；可以点「用 AI 生成」从显示名或使命生成。",
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",
@@ -4280,7 +4282,6 @@ Benchmark：
     modelField: "模型",
     modelInfo:
       "工位会话与工单会话默认使用的模型；员工在组织图里另有指定时以员工的为准。改动从下一次工作轮起生效。",
-    modelHint: "留空则使用 Project 的默认模型",
     /** The picker offers models only, so the way back to the Project default is its own control. */
     modelClear: "改回 Project 默认",
     /** The stored model is no longer in the Project's model list. */
@@ -4305,7 +4306,8 @@ Benchmark：
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "组织设置",
     timezone: "时区",
-    timezoneHint: "IANA 时区名，如 Asia/Shanghai；预算周期（自然月）与频道日志按它划分",
+    timezoneHint: "IANA 时区名，如 Asia/Shanghai",
+    timezoneInfo: "预算周期（自然月）与频道日志按这个时区划分",
     language: "工作语言",
     languageInfo:
       "组织的工作语言：手册、员工简报、CEO 初始化会话与各工位的输出都用这个语言；创建时按使命的语言自动判断。",
@@ -4490,9 +4492,6 @@ Benchmark：
       dutiesHint: "写进组织图，员工每次工作轮都会读到",
       workspace: "工作区",
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
-      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
-      hireWorkspaceHint:
-        "公共工作区下的子目录，或一个已存在的绝对路径；留空即以该员工的 Agent id 命名的子目录",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
       hireConfirm: (name: string, manager: string): string =>
@@ -4531,7 +4530,6 @@ Benchmark：
       hireAgentSection: "Agent",
       hirePositionSection: "职位",
       agentHint: "只列出本 Project 中尚未加入组织的 Agent",
-      budgetPlaceholder: "例如 30",
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
@@ -4598,7 +4596,7 @@ Benchmark：
       loadFailed: (error: string): string => `日历加载失败：${error}`,
       /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
       dismissHint: "知道了",
-      /** Under the start time: why two employees should not share one minute. */
+      /** Behind the start time's "?": why two employees should not share one minute. */
       staggerHint:
         "错峰安排：给每位员工各自的时刻，不要让多位员工在同一分钟触发，避免争抢预算与工单。",
       /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
@@ -4633,11 +4631,11 @@ Benchmark：
       noOwner: "未指定",
       /** The create dialog's default owner: whoever is filing the ticket. */
       ownerSelf: "自己",
-      ownerSelfHint: "留空则为自己",
       parent: "父工单",
       noParent: "无",
       notify: "通知人",
-      notifyHint: "逗号分隔的主体，如 agent:ceo, user:alice；状态变化时通知",
+      notifyHint: "逗号分隔的主体，如 agent:ceo, user:alice",
+      notifyInfo: "工单状态变化时通知这些主体",
       priority: "优先级",
       due: "截止",
       noDue: "无",

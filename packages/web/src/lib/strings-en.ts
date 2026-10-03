@@ -4173,8 +4173,9 @@ Scenarios:
     /** Create dialog. */
     createTitle: "New organization",
     orgId: "Organization id",
-    orgIdHint:
-      "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
+    orgIdHint: "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores",
+    orgIdInfo:
+      "The organization id is also its directory name and cannot change once created. Select Generate with AI to derive one from the display name or the mission.",
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
     mission: "Mission",
@@ -4217,7 +4218,6 @@ Scenarios:
     modelField: "Model",
     modelInfo:
       "The model desk and ticket sessions run on by default; an employee given its own model in the org chart uses that instead. Takes effect from the next work round.",
-    modelHint: "Leave empty to use the Project's default model",
     modelClear: "Back to the Project default",
     modelStale: "This model is no longer in the Project's model list",
     modelProjectDefault: "Project default",
@@ -4242,8 +4242,8 @@ Scenarios:
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "Organization settings",
     timezone: "Timezone",
-    timezoneHint:
-      "An IANA timezone such as Asia/Shanghai; budget periods (calendar months) and channel day files follow it",
+    timezoneHint: "An IANA timezone such as Asia/Shanghai",
+    timezoneInfo: "Budget periods (calendar months) and channel day files follow this timezone",
     language: "Working language",
     languageInfo:
       "The language the organization works in: its handbook, the employee briefs, the CEO's initialization session and every desk's output are written in it; it is detected from the mission when the organization is created.",
@@ -4428,9 +4428,6 @@ Scenarios:
       workspace: "Workspace",
       workspaceHint:
         "A sub-directory of the shared workspace (`.` for all of it), or an absolute path that already exists",
-      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
-      hireWorkspaceHint:
-        "A sub-directory of the shared workspace, or an absolute path that already exists; left empty, a sub-directory named after the employee's Agent id",
       budget: "Monthly budget",
       budgetHint:
         "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
@@ -4472,7 +4469,6 @@ Scenarios:
       hireAgentSection: "Agent",
       hirePositionSection: "Position",
       agentHint: "Only Agents of this Project not yet in the organization",
-      budgetPlaceholder: "e.g. 30",
       clearBudget: "Set unbounded",
       currentValue: (value: string): string => `Current: ${value}`,
       manager: "Manager",
@@ -4557,7 +4553,7 @@ Scenarios:
       loadFailed: (error: string): string => `Could not load the calendar: ${error}`,
       /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
       dismissHint: "Got it",
-      /** Under the start time: why two employees should not share one minute. */
+      /** Behind the start time's "?": why two employees should not share one minute. */
       staggerHint:
         "Stagger the rota: give every employee its own minute; desks that fire together compete for the same budget and tickets.",
       /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
@@ -4591,12 +4587,11 @@ Scenarios:
       owner: "Owner",
       noOwner: "Unassigned",
       ownerSelf: "Yourself",
-      ownerSelfHint: "Left empty, the owner is you",
       parent: "Parent ticket",
       noParent: "None",
       notify: "Notify",
-      notifyHint:
-        "Comma-separated principals, e.g. agent:ceo, user:alice; notified on status changes",
+      notifyHint: "Comma-separated principals, e.g. agent:ceo, user:alice",
+      notifyInfo: "These principals are notified when the ticket's status changes",
       priority: "Priority",
       due: "Due",
       noDue: "None",
