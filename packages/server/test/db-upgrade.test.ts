@@ -37,7 +37,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { SCHEMA_SQL } from "../src/db/schema.js";
-import { PORT_FORWARDS_V1_DDL } from "./db-migrations-fixtures.js";
+import { seedAgentStateHandover } from "./db-migrations-fixtures.js";
 import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -739,12 +739,7 @@ describe("openDatabase on a numbered root with the first form of port_forwards",
     const dbPath = path.join(dir, "web.db");
     seedDatabase(dbPath, (db) => {
       db.exec(SCHEMA_SQL);
-      db.exec("DROP TABLE model_provider_auth_tokens; DROP TABLE model_promotions;");
-      db.exec("DROP INDEX idx_port_forwards_local_in; DROP TABLE port_forwards;");
-      db.exec(PORT_FORWARDS_V1_DDL);
-      db.prepare(
-        "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run("f1", "m1", "/home/dev/site", 3000, 3000, "2026-09-21T00:00:00.000Z");
+      seedAgentStateHandover(db);
     });
     const db = openDatabase(dbPath);
     try {

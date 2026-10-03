@@ -250,6 +250,15 @@ export const PORT_FORWARDS_V1_DDL = `
  */
 export function openAgentStateHandover(): DatabaseSync {
   const db = openFresh();
+  seedAgentStateHandover(db);
+  return db;
+}
+
+/**
+ * Turns `db`, holding the current declaration, into the agent-state hand-over build's root
+ * (openAgentStateHandover) — for a suite that seeds a database file rather than memory.
+ */
+export function seedAgentStateHandover(db: DatabaseSync): void {
   db.exec("DROP TABLE model_provider_auth_tokens; DROP TABLE model_promotions;");
   db.exec("DROP INDEX idx_port_forwards_local_in; DROP TABLE port_forwards;");
   db.exec(PORT_FORWARDS_V1_DDL);
@@ -257,7 +266,6 @@ export function openAgentStateHandover(): DatabaseSync {
     "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   ).run("f1", "m1", "/home/dev/site", 3000, 3000, "2026-09-21T00:00:00.000Z");
   db.exec("PRAGMA user_version = 14");
-  return db;
 }
 
 /** Through model-promotions: provider auth refresh tokens do not exist yet. */
