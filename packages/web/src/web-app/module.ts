@@ -76,22 +76,10 @@ export class WebAppModule {
     const layers: readonly WebAppLayer[] = byOrder(contributions.layers ?? []);
     const userEvents = this.userEventHandlers.all();
     this.webApp = {
-      Root: localWebAppPages.provide(
-        pages,
-        webAppDeps.provide(
-          {
-            pages,
-            sessionProviders,
-            layers,
-            userEvents,
-            sidebar: this.sidebar,
-            drafts: this.drafts,
-          },
-          AppRouter,
-        ),
+      Root: webAppDeps.provide(
+        { pages, sessionProviders, layers, userEvents, sidebar: this.sidebar, drafts: this.drafts },
+        AppRouter,
       ),
     };
   }
 }
-
-import { localWebAppPages } from "../lib/local-web-app-pages";

@@ -3,12 +3,12 @@
  * the feature that owns it declares its route, its frame, whether it sits in the main nav,
  * whether the server refuses it to non-admins, whether it is offered yet, and its place, and
  * binds the component that draws it. `pageTableOf` turns the contributions into the table the
- * router mounts and the sidebar derives its nav group from.
+ * router mounts and the sidebar derives its nav group from. Pages the server's modules and
+ * plugins contribute are folded in after them by web-app/contributions.tsx.
  *
- * Pages a pushed platform or a plugin contributes arrive from the server (GET
- * /api/contributions) in the `PageEntry` shape, which names a renderer instead of carrying a
- * component; `contributedPages` picks the ones to mount beside this table — a page whose
- * renderer this build does not carry is skipped, since there is nothing to draw it with.
+ * Company mode and state/contributions.tsx read the server's pages in the `PageEntry` shape,
+ * which names a renderer instead of carrying a component; `contributedPages` picks the ones to
+ * mount beside this table — a page whose renderer this build does not carry is skipped.
  */
 import type { ComponentType } from "react";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";

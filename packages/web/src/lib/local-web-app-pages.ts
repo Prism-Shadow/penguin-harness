@@ -1,7 +1,23 @@
-/** Local page table supplied once at the existing WebApp root. No remote store or fetch. */
-import { createDeps } from "./module-deps";
+/** Same merged-page context and readers; original provider/store/fetch stay owned by WebApp. */
+import { createContext, useContext } from "react";
 import type { WebAppPage } from "./local-page-table";
-export const localWebAppPages = createDeps<readonly WebAppPage[]>();
+export interface WebAppPagesValue {
+  pages: readonly WebAppPage[];
+  pending: boolean;
+}
+
+export const PagesContext = createContext<WebAppPagesValue | null>(null);
+
+function usePagesValue(): WebAppPagesValue {
+  const value = useContext(PagesContext);
+  if (value === null) throw new Error("rendered outside WebApp's page table");
+  return value;
+}
+
 export function useWebAppPages(): readonly WebAppPage[] {
-  return localWebAppPages.useDeps();
+  return usePagesValue().pages;
+}
+
+export function useWebAppPagesPending(): boolean {
+  return usePagesValue().pending;
 }
