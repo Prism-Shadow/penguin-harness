@@ -12,7 +12,7 @@
  * - An iframe renderer needs no registry entry.
  */
 import { describe, expect, it } from "vitest";
-import { NAV_PAGE_KEYS, PAGES, mergePages, navPagesFor } from "../src/lib/pages";
+import { NAV_PAGE_KEYS, PAGES, mergePages, navPagesFor } from "../src/web-app/page-table";
 import { zh } from "../src/lib/strings";
 import { NAV_ICONS } from "../src/lib/nav-icons";
 

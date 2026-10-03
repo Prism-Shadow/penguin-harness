@@ -24,7 +24,7 @@ import { LocaleProvider, LocaleScope } from "./state/locale";
 import { ThemeProvider } from "./state/theme";
 import { BackgroundProvider } from "./state/background";
 import { AuthProvider } from "./state/auth";
-import { AppRouter } from "./router";
+import { AppRouter } from "./web-app/router";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
 import { writeClipboard } from "./lib/clipboard";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";

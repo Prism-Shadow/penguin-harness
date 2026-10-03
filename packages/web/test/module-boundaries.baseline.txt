@@ -1,0 +1,264 @@
+# Import edges in packages/web/src that break the module boundaries (module-boundaries.test.ts).
+# One line per edge, sorted: `importing-file -> imported-file` (paths relative to src/), or
+# This list only shrinks: never add a line; delete each line whose edge your change removes.
+# `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
+components/layout/app-layout.tsx -> features/builtin-browser/browser-layer.tsx
+components/layout/app-layout.tsx -> features/chat/chat-page.tsx
+components/layout/app-layout.tsx -> features/chat/use-new-chat.ts
+components/layout/app-layout.tsx -> features/company/channel-sidebar.tsx
+components/layout/app-layout.tsx -> features/company/company-nav-icons.ts
+components/layout/app-layout.tsx -> features/company/company-nav.ts
+components/layout/app-layout.tsx -> features/company/org-session-groups.tsx
+components/layout/app-layout.tsx -> features/company/use-org-pages.ts
+components/layout/app-layout.tsx -> features/dock/dock-state.ts
+components/layout/app-layout.tsx -> features/palette/app-palette.tsx
+components/layout/app-layout.tsx -> features/settings/shortcut-runtime.tsx
+components/layout/app-layout.tsx -> features/terminal/index.ts
+components/layout/app-layout.tsx -> features/todos/index.ts
+components/layout/project-dialogs.tsx -> features/chat/chat-defaults-event.ts
+components/layout/project-dialogs.tsx -> features/chat/draft-cache.ts
+components/layout/project-dialogs.tsx -> features/chat/model-select.tsx
+components/layout/project-dialogs.tsx -> features/chat/thinking-level.ts
+components/layout/project-dialogs.tsx -> features/chat/workspace-select.tsx
+components/layout/project-dialogs.tsx -> features/models/model-grouping.ts
+components/layout/project-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
+components/layout/sidebar.tsx -> features/agents/agent-employment.ts
+components/layout/sidebar.tsx -> features/chat/chat-page.tsx
+components/layout/sidebar.tsx -> features/chat/draft-cache.ts
+components/layout/sidebar.tsx -> features/chat/draft-sessions.ts
+components/layout/sidebar.tsx -> features/chat/new-chat.ts
+components/layout/sidebar.tsx -> features/chat/workspace-select.tsx
+components/layout/sidebar.tsx -> features/company/channel-sidebar.tsx
+components/layout/sidebar.tsx -> features/company/company-beta.tsx
+components/layout/sidebar.tsx -> features/company/company-nav-icons.ts
+components/layout/sidebar.tsx -> features/company/company-nav.ts
+components/layout/sidebar.tsx -> features/company/org-session-groups.tsx
+components/layout/sidebar.tsx -> features/company/org-switcher.tsx
+components/layout/sidebar.tsx -> features/company/roadmaps-sidebar.tsx
+components/layout/sidebar.tsx -> features/company/use-org-pages.ts
+components/layout/sidebar.tsx -> features/dock/dock-state.ts
+components/layout/sidebar.tsx -> features/dock/dock-terminal.ts
+components/layout/sidebar.tsx -> features/messaging/messaging-binding-modal.tsx
+components/layout/sidebar.tsx -> features/models/group-balance.tsx
+components/layout/sidebar.tsx -> features/schedules/schedule-panel-state.ts
+components/layout/sidebar.tsx -> features/schedules/schedule-store.ts
+components/layout/sidebar.tsx -> features/todos/index.ts
+components/layout/user-menu.tsx -> features/settings/settings-dialog.tsx
+components/layout/user-menu.tsx -> features/settings/settings-request.ts
+cycle: features/agents -> features/ai-create
+cycle: features/agents -> features/chat
+cycle: features/agents -> features/plugins
+cycle: features/agents -> features/schedules
+cycle: features/agents -> features/skills
+cycle: features/agents -> features/todos
+cycle: features/ai-create -> features/chat
+cycle: features/builtin-browser -> features/dock
+cycle: features/builtin-browser -> features/settings
+cycle: features/chat -> features/agents
+cycle: features/chat -> features/ai-create
+cycle: features/chat -> features/builtin-browser
+cycle: features/chat -> features/company
+cycle: features/chat -> features/dock
+cycle: features/chat -> features/models
+cycle: features/chat -> features/proposals
+cycle: features/chat -> features/schedules
+cycle: features/chat -> features/settings
+cycle: features/chat -> features/skills
+cycle: features/chat -> features/terminal
+cycle: features/company -> features/chat
+cycle: features/company -> features/models
+cycle: features/company -> features/plugins
+cycle: features/company -> features/proposals
+cycle: features/company -> features/skills
+cycle: features/company -> features/usage
+cycle: features/dock -> features/builtin-browser
+cycle: features/dock -> features/chat
+cycle: features/dock -> features/terminal
+cycle: features/models -> features/ai-create
+cycle: features/models -> features/chat
+cycle: features/models -> features/todos
+cycle: features/plugins -> features/agents
+cycle: features/plugins -> features/ai-create
+cycle: features/plugins -> features/chat
+cycle: features/plugins -> features/settings
+cycle: features/plugins -> features/skills
+cycle: features/plugins -> features/todos
+cycle: features/proposals -> features/company
+cycle: features/schedules -> features/ai-create
+cycle: features/schedules -> features/chat
+cycle: features/schedules -> features/models
+cycle: features/settings -> features/builtin-browser
+cycle: features/settings -> features/chat
+cycle: features/settings -> features/dock
+cycle: features/skills -> features/chat
+cycle: features/terminal -> features/dock
+cycle: features/todos -> features/models
+cycle: features/todos -> features/usage
+cycle: features/usage -> features/todos
+features/agents/agent-settings-page.tsx -> features/chat/thinking-level.ts
+features/agents/agents-page.tsx -> features/ai-create/ai-create-buttons.tsx
+features/agents/agents-page.tsx -> features/chat/chat-page.tsx
+features/agents/agents-page.tsx -> features/chat/new-chat.ts
+features/agents/agents-page.tsx -> features/chat/workspace-select.tsx
+features/agents/agents-page.tsx -> features/plugins/plugin-mcp.tsx
+features/agents/agents-page.tsx -> features/plugins/plugin-status.ts
+features/agents/agents-page.tsx -> features/semantic-id/semantic-id-field.tsx
+features/agents/agents-page.tsx -> features/skills/skill-pick-list.tsx
+features/agents/agents-page.tsx -> features/skills/skill-selection.ts
+features/agents/api-tab.tsx -> features/chat/approval-mode.ts
+features/agents/hooks-tab.tsx -> features/chat/skill-use.ts
+features/agents/hooks-tab.tsx -> features/skills/skill-icon-view.tsx
+features/agents/mcp-servers-section.tsx -> features/chat/skill-use.ts
+features/agents/mcp-servers-section.tsx -> features/plugins/plugin-mcp.tsx
+features/agents/schedules-tab.tsx -> features/ai-create/ai-create-buttons.tsx
+features/agents/schedules-tab.tsx -> features/schedules/schedule-form-modal.tsx
+features/agents/schedules-tab.tsx -> features/schedules/schedule-suggestions.tsx
+features/agents/schedules-tab.tsx -> features/schedules/schedule-upsert.ts
+features/agents/skills-tab.tsx -> features/chat/skill-use.ts
+features/agents/skills-tab.tsx -> features/skills/skill-icon-view.tsx
+features/agents/vault-tab.tsx -> features/ai-create/ai-create-buttons.tsx
+features/ai-create/ai-bridge.ts -> features/chat/chat-page.tsx
+features/ai-create/ai-bridge.ts -> features/chat/draft-cache.ts
+features/ai-create/ai-bridge.ts -> features/chat/draft-sessions.ts
+features/benchmark/benchmark-detail-page.tsx -> features/agents/archive-download.ts
+features/benchmark/benchmark-import-prompt.ts -> features/agents/skill-import-source.ts
+features/benchmark/benchmark-page.tsx -> features/ai-create/ai-create-buttons.tsx
+features/benchmark/benchmark-prompts.ts -> features/ai-create/ai-create-panel.tsx
+features/benchmark/benchmark-prompts.ts -> features/ai-create/ai-create-prompt.ts
+features/benchmark/create-benchmark-modal.tsx -> features/semantic-id/semantic-id-field.tsx
+features/benchmark/use-benchmark-modal.tsx -> features/chat/model-select.tsx
+features/builtin-browser/browser-actions.ts -> features/dock/dock-state.ts
+features/builtin-browser/browser-layer.tsx -> features/dock/dock-state.ts
+features/builtin-browser/browser-panel.tsx -> features/settings/settings-request.ts
+features/builtin-browser/chrome-surface.tsx -> features/settings/settings-request.ts
+features/builtin-browser/hosted-panel.tsx -> features/settings/settings-request.ts
+features/chat/builtin-dock-panels.tsx -> features/builtin-browser/browser-panel.tsx
+features/chat/builtin-dock-panels.tsx -> features/builtin-browser/browser-store.ts
+features/chat/builtin-dock-panels.tsx -> features/dock/panel-registry.ts
+features/chat/builtin-dock-panels.tsx -> features/messaging/messaging-panel.tsx
+features/chat/builtin-dock-panels.tsx -> features/ports/ports-panel.tsx
+features/chat/builtin-dock-panels.tsx -> features/schedules/schedule-panel.tsx
+features/chat/builtin-dock-panels.tsx -> features/traces/trace-panel.tsx
+features/chat/chat-input.tsx -> features/agents/agent-employment.ts
+features/chat/chat-input.tsx -> features/models/model-grouping.ts
+features/chat/chat-input.tsx -> features/skills/skill-icon-view.tsx
+features/chat/chat-input.tsx -> features/skills/skill-pick-list.tsx
+features/chat/chat-input.tsx -> features/skills/skill-selection.ts
+features/chat/chat-page.tsx -> features/company/company-nav.ts
+features/chat/chat-page.tsx -> features/company/desk-model.ts
+features/chat/chat-page.tsx -> features/dock/dock-launcher.tsx
+features/chat/chat-page.tsx -> features/dock/dock-panel.tsx
+features/chat/chat-page.tsx -> features/dock/dock-state.ts
+features/chat/chat-page.tsx -> features/dock/dock-terminal.ts
+features/chat/chat-page.tsx -> features/dock/use-dock-mount.ts
+features/chat/chat-page.tsx -> features/models/model-grouping.ts
+features/chat/chat-page.tsx -> features/schedules/schedule-store.ts
+features/chat/chat-page.tsx -> features/workflows/workflow-tabs.tsx
+features/chat/dock-toggles.tsx -> features/dock/dock-state.ts
+features/chat/dock-toggles.tsx -> features/dock/panel-meta.tsx
+features/chat/draft-view.tsx -> features/agents/agent-employment.ts
+features/chat/draft-view.tsx -> features/dock/dock-state.ts
+features/chat/draft-view.tsx -> features/dock/dock-terminal.ts
+features/chat/draft-view.tsx -> features/models/model-grouping.ts
+features/chat/message-item.tsx -> features/proposals/proposal-links.tsx
+features/chat/model-picker-logic.ts -> features/models/model-grouping.ts
+features/chat/model-picker-logic.ts -> features/models/model-tags.ts
+features/chat/model-picker-modal.tsx -> features/models/model-group-order.ts
+features/chat/model-picker-modal.tsx -> features/models/model-grouping.ts
+features/chat/model-select.tsx -> features/models/model-grouping.ts
+features/chat/model-switch.ts -> features/models/model-grouping.ts
+features/chat/new-chat.ts -> features/ai-create/default-agent.ts
+features/chat/permission-select.tsx -> features/settings/settings-dialog.tsx
+features/chat/stream-selection-menu.tsx -> features/builtin-browser/browser-actions.ts
+features/chat/stream-selection-menu.tsx -> features/builtin-browser/browser-store.ts
+features/chat/workspace-browser.tsx -> features/dock/close-guard.ts
+features/chat/workspace-browser.tsx -> features/dock/dock-state.ts
+features/company/calendar-geom.ts -> features/traces/lane-packing.ts
+features/company/channel-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
+features/company/channel-draft.ts -> features/chat/draft-cache.ts
+features/company/channel-markdown.tsx -> features/proposals/proposal-links.tsx
+features/company/channel-view.tsx -> features/chat/stream-follow.ts
+features/company/employee-dialogs.tsx -> features/chat/thinking-level.ts
+features/company/employee-dialogs.tsx -> features/plugins/plugin-mcp.tsx
+features/company/employee-dialogs.tsx -> features/skills/skill-pick-list.tsx
+features/company/employee-dialogs.tsx -> features/skills/skill-selection.ts
+features/company/finance-page.tsx -> features/usage/trend-chart.tsx
+features/company/org-dialogs.tsx -> features/chat/model-select.tsx
+features/company/org-dialogs.tsx -> features/chat/workspace-select.tsx
+features/company/org-dialogs.tsx -> features/models/model-grouping.ts
+features/company/org-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
+features/company/org-session-groups.tsx -> features/messaging/messaging-binding-modal.tsx
+features/company/roadmap-detail.tsx -> features/proposals/activity-view.tsx
+features/company/roadmap-detail.tsx -> features/proposals/proposals-model.ts
+features/dashboard/dashboard-page.tsx -> features/chat/agent-topology.ts
+features/dock/dock-drag.tsx -> features/chat/use-panel-width.ts
+features/dock/dock-panel.tsx -> features/builtin-browser/slot-registry.ts
+features/dock/dock-panel.tsx -> features/chat/use-panel-width.ts
+features/models/models-page.tsx -> features/ai-create/ai-create-buttons.tsx
+features/models/models-page.tsx -> features/chat/draft-cache.ts
+features/palette/app-palette.tsx -> features/harness/harness-history-overlay.tsx
+features/plugins/plugin-card.tsx -> features/agents/archive-download.ts
+features/plugins/plugin-card.tsx -> features/skills/skill-icon-view.tsx
+features/plugins/plugin-detail.tsx -> features/skills/skill-icon-view.tsx
+features/plugins/plugin-groups.ts -> features/chat/skill-use.ts
+features/plugins/plugin-marks.tsx -> features/chat/skill-use.ts
+features/plugins/plugin-mcp.tsx -> features/chat/skill-use.ts
+features/plugins/plugin-repair.tsx -> features/ai-create/ai-bridge.ts
+features/plugins/plugin-repair.tsx -> features/ai-create/default-agent.ts
+features/plugins/plugins-page.tsx -> features/chat/chat-page.tsx
+features/plugins/plugins-page.tsx -> features/chat/draft-cache.ts
+features/plugins/plugins-page.tsx -> features/chat/new-chat.ts
+features/plugins/plugins-page.tsx -> features/chat/skill-use.ts
+features/plugins/plugins-page.tsx -> features/machines/machine-picker.tsx
+features/plugins/plugins-page.tsx -> features/settings/settings-dialog.tsx
+features/proposals/activity-view.tsx -> features/company/org-layout.tsx
+features/proposals/activity-view.tsx -> features/company/shared.tsx
+features/proposals/pr-graph-lanes.tsx -> features/company/company-nav.ts
+features/proposals/pr-graph-page.tsx -> features/company/company-nav.ts
+features/proposals/pr-graph-page.tsx -> features/company/org-layout.tsx
+features/proposals/pr-graph-page.tsx -> features/company/shared.tsx
+features/proposals/pr-graph-roadmaps.ts -> features/company/roadmaps.ts
+features/proposals/pr-graph-rows.tsx -> features/company/shared.tsx
+features/proposals/proposal-comment-line.tsx -> features/company/shared.tsx
+features/proposals/proposal-diff.tsx -> features/company/org-layout.tsx
+features/proposals/proposal-impl.tsx -> features/company/org-layout.tsx
+features/proposals/proposal-links.tsx -> features/company/company-nav.ts
+features/proposals/proposals-page.tsx -> features/company/company-nav.ts
+features/proposals/proposals-page.tsx -> features/company/employee-avatar.tsx
+features/proposals/proposals-page.tsx -> features/company/org-layout.tsx
+features/proposals/proposals-page.tsx -> features/company/page-hints.ts
+features/proposals/proposals-page.tsx -> features/company/shared.tsx
+features/schedules/schedule-form-modal.tsx -> features/chat/model-select.tsx
+features/schedules/schedule-form-modal.tsx -> features/chat/workspace-select.tsx
+features/schedules/schedule-form-modal.tsx -> features/models/model-grouping.ts
+features/schedules/schedule-panel.tsx -> features/ai-create/ai-create-buttons.tsx
+features/settings/appearance-section.tsx -> features/dock/dock-launcher-state.ts
+features/settings/browser-section.tsx -> features/builtin-browser/browser-actions.ts
+features/settings/browser-section.tsx -> features/builtin-browser/browser-store.ts
+features/settings/browser-section.tsx -> features/builtin-browser/pairing-dialog.tsx
+features/settings/plugin-config-field.tsx -> features/chat/skill-use.ts
+features/settings/plugin-config-heading.tsx -> features/chat/skill-use.ts
+features/settings/plugin-config-table.tsx -> features/chat/skill-use.ts
+features/settings/plugins-section.tsx -> features/chat/skill-use.ts
+features/settings/plugins-section.tsx -> features/machines/machine-picker.tsx
+features/settings/settings-dialog.tsx -> features/admin/admin-users-page.tsx
+features/skills/skill-icon-view.tsx -> features/chat/skill-use.ts
+features/skills/skill-pick-list.tsx -> features/chat/skill-use.ts
+features/terminal/terminal-list.ts -> features/dock/dock-state.ts
+features/terminal/terminal-view-pool.tsx -> features/dock/dock-state.ts
+features/todos/todo-badges.ts -> features/models/catalog-sync.ts
+features/todos/use-project-todos.ts -> features/usage/usage-controls.ts
+features/todos/use-update-badges.ts -> features/models/catalog-sync.ts
+features/workflows/workflow-app-page.tsx -> features/palette/app-palette.tsx
+features/workflows/workflow-tabs.tsx -> features/chat/skill-use.ts
+lib/strings-en.ts -> features/terminal/strings.ts
+lib/strings.ts -> features/models/model-sort.ts
+lib/strings.ts -> features/terminal/strings.ts
+state/company.tsx -> features/company/channel-list.ts
+state/company.tsx -> features/company/company-beta.tsx
+state/company.tsx -> features/company/company-nav.ts
+state/company.tsx -> features/company/org-sessions.ts
+state/company.tsx -> features/company/use-org-pages.ts
+state/company.tsx -> features/company/work-mode.ts
+state/sessions.tsx -> features/builtin-browser/browser-events.ts
+state/sessions.tsx -> features/schedules/schedule-store.ts

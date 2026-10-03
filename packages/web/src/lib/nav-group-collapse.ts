@@ -23,7 +23,7 @@
  * navKeysFor(user.isAdmin), not the raw manifest. Traces is deliberately absent: reading a
  * Trace happens in the chat toolbar's panel switcher, which is the only place it happens.
  */
-import { NAV_PAGE_KEYS, PAGES } from "./pages";
+import { NAV_PAGE_KEYS, PAGES } from "../web-app/page-table";
 
 export type NavGroupKey = "agents" | "plugins" | "models" | "machines" | "usage" | "benchmark";
 /**

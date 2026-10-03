@@ -38,8 +38,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { browserState } from "../builtin-browser/browser-store";
-import { adoptBrowserSession } from "../builtin-browser/browser-actions";
+import { browserState, adoptBrowserSession } from "../builtin-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -55,7 +54,7 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import { AgentSelect } from "../agents/agent-select";
+import { AgentSelect } from "../agents";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
@@ -96,7 +95,7 @@ import { effectiveThinkingLevel } from "./thinking-level";
 import { useAgentSkills } from "./use-agent-skills";
 import { WorkspaceSelect } from "./workspace-select";
 import { FilesPanelToggle } from "./dock-toggles";
-import { sameModelRef } from "../models/model-grouping";
+import { sameModelRef } from "../models";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
