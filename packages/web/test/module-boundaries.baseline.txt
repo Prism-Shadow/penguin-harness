@@ -34,7 +34,6 @@ components/layout/sidebar.tsx -> features/company/company-nav-icons.ts
 components/layout/sidebar.tsx -> features/company/company-nav.ts
 components/layout/sidebar.tsx -> features/company/org-session-groups.tsx
 components/layout/sidebar.tsx -> features/company/org-switcher.tsx
-components/layout/sidebar.tsx -> features/company/roadmaps-sidebar.tsx
 components/layout/sidebar.tsx -> features/company/use-org-pages.ts
 components/layout/sidebar.tsx -> features/dock/dock-state.ts
 components/layout/sidebar.tsx -> features/dock/dock-terminal.ts
@@ -131,12 +130,10 @@ features/builtin-browser/browser-actions.ts -> features/dock/dock-state.ts
 features/builtin-browser/browser-layer.tsx -> features/dock/dock-state.ts
 features/builtin-browser/browser-panel.tsx -> features/settings/settings-request.ts
 features/builtin-browser/chrome-surface.tsx -> features/settings/settings-request.ts
-features/builtin-browser/hosted-panel.tsx -> features/settings/settings-request.ts
 features/chat/builtin-dock-panels.tsx -> features/builtin-browser/browser-panel.tsx
 features/chat/builtin-dock-panels.tsx -> features/builtin-browser/browser-store.ts
 features/chat/builtin-dock-panels.tsx -> features/dock/panel-registry.ts
 features/chat/builtin-dock-panels.tsx -> features/messaging/messaging-panel.tsx
-features/chat/builtin-dock-panels.tsx -> features/ports/ports-panel.tsx
 features/chat/builtin-dock-panels.tsx -> features/schedules/schedule-panel.tsx
 features/chat/builtin-dock-panels.tsx -> features/traces/trace-panel.tsx
 features/chat/chat-input.tsx -> features/agents/agent-employment.ts
@@ -160,7 +157,6 @@ features/chat/draft-view.tsx -> features/agents/agent-employment.ts
 features/chat/draft-view.tsx -> features/dock/dock-state.ts
 features/chat/draft-view.tsx -> features/dock/dock-terminal.ts
 features/chat/draft-view.tsx -> features/models/model-grouping.ts
-features/chat/message-item.tsx -> features/proposals/proposal-links.tsx
 features/chat/model-picker-logic.ts -> features/models/model-grouping.ts
 features/chat/model-picker-logic.ts -> features/models/model-tags.ts
 features/chat/model-picker-modal.tsx -> features/models/model-group-order.ts
@@ -176,7 +172,6 @@ features/chat/workspace-browser.tsx -> features/dock/dock-state.ts
 features/company/calendar-geom.ts -> features/traces/lane-packing.ts
 features/company/channel-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
 features/company/channel-draft.ts -> features/chat/draft-cache.ts
-features/company/channel-markdown.tsx -> features/proposals/proposal-links.tsx
 features/company/channel-view.tsx -> features/chat/stream-follow.ts
 features/company/employee-dialogs.tsx -> features/chat/thinking-level.ts
 features/company/employee-dialogs.tsx -> features/plugins/plugin-mcp.tsx
@@ -187,11 +182,7 @@ features/company/org-dialogs.tsx -> features/chat/model-select.tsx
 features/company/org-dialogs.tsx -> features/chat/workspace-select.tsx
 features/company/org-dialogs.tsx -> features/models/model-grouping.ts
 features/company/org-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
-features/company/org-routes.tsx -> features/proposals/proposals-page.tsx
 features/company/org-session-groups.tsx -> features/messaging/messaging-binding-modal.tsx
-features/company/roadmap-detail.tsx -> features/proposals/activity-view.tsx
-features/company/roadmap-detail.tsx -> features/proposals/proposals-model.ts
-features/dashboard/dashboard-page.tsx -> features/chat/agent-topology.ts
 features/dock/dock-drag.tsx -> features/chat/use-panel-width.ts
 features/dock/dock-panel.tsx -> features/builtin-browser/slot-registry.ts
 features/dock/dock-panel.tsx -> features/chat/use-panel-width.ts
@@ -212,23 +203,6 @@ features/plugins/plugins-page.tsx -> features/chat/new-chat.ts
 features/plugins/plugins-page.tsx -> features/chat/skill-use.ts
 features/plugins/plugins-page.tsx -> features/machines/machine-picker.tsx
 features/plugins/plugins-page.tsx -> features/settings/settings-dialog.tsx
-features/proposals/activity-view.tsx -> features/company/org-layout.tsx
-features/proposals/activity-view.tsx -> features/company/shared.tsx
-features/proposals/pr-graph-lanes.tsx -> features/company/company-nav.ts
-features/proposals/pr-graph-page.tsx -> features/company/company-nav.ts
-features/proposals/pr-graph-page.tsx -> features/company/org-layout.tsx
-features/proposals/pr-graph-page.tsx -> features/company/shared.tsx
-features/proposals/pr-graph-roadmaps.ts -> features/company/roadmaps.ts
-features/proposals/pr-graph-rows.tsx -> features/company/shared.tsx
-features/proposals/proposal-comment-line.tsx -> features/company/shared.tsx
-features/proposals/proposal-diff.tsx -> features/company/org-layout.tsx
-features/proposals/proposal-impl.tsx -> features/company/org-layout.tsx
-features/proposals/proposal-links.tsx -> features/company/company-nav.ts
-features/proposals/proposals-page.tsx -> features/company/company-nav.ts
-features/proposals/proposals-page.tsx -> features/company/employee-avatar.tsx
-features/proposals/proposals-page.tsx -> features/company/org-layout.tsx
-features/proposals/proposals-page.tsx -> features/company/page-hints.ts
-features/proposals/proposals-page.tsx -> features/company/shared.tsx
 features/schedules/schedule-form-modal.tsx -> features/chat/model-select.tsx
 features/schedules/schedule-form-modal.tsx -> features/chat/workspace-select.tsx
 features/schedules/schedule-form-modal.tsx -> features/models/model-grouping.ts
@@ -263,4 +237,3 @@ state/company.tsx -> features/company/use-org-pages.ts
 state/company.tsx -> features/company/work-mode.ts
 state/sessions.tsx -> features/builtin-browser/browser-events.ts
 state/sessions.tsx -> features/schedules/schedule-store.ts
-web-app/router.tsx -> features/company/company-nav.ts

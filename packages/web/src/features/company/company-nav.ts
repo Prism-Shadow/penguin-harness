@@ -106,6 +106,16 @@ export function isOrgRoute(pathname: string): boolean {
 }
 
 /**
+ * Where the shell lands when a route names no page — `/`, which is where a sign-in and the
+ * desktop shell's start both arrive, and any path nothing matches: the home of the mode the
+ * shell stands in. Landing company mode on the conversation page would put the development
+ * page inside the company sidebar, and that page would then claim development mode for itself.
+ */
+export function homePath(mode: WorkMode): string {
+  return mode === "company" ? ORG_ROUTE_PREFIX : "/chat";
+}
+
+/**
  * Where `/org` lands when it names no organization: the one last opened if it still exists,
  * else the first organization of the current Project, else the first organization anywhere —
  * and null when the user has none, which is the empty landing's cue to offer creating one.

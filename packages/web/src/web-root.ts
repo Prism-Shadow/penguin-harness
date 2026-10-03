@@ -22,10 +22,8 @@ import { AgentsModule } from "./features/agents/module";
 import { ModelsModule } from "./features/models/module";
 import { PluginsModule } from "./features/plugins/module";
 import { MachinesModule } from "./features/machines/module";
-import { PortsModule } from "./features/ports/module";
 import { UsageModule } from "./features/usage/module";
 import { BenchmarkModule } from "./features/benchmark/module";
-import { DashboardModule } from "./features/dashboard/module";
 import { TerminalModule } from "./features/terminal/module";
 import { WorkbenchesModule } from "./features/workbenches/module";
 import { CompanyModule } from "./features/company/module";
@@ -38,10 +36,8 @@ import { CompanyModule } from "./features/company/module";
     ModelsModule,
     PluginsModule,
     MachinesModule,
-    PortsModule,
     UsageModule,
     BenchmarkModule,
-    DashboardModule,
     TerminalModule,
     WorkbenchesModule,
     CompanyModule,
