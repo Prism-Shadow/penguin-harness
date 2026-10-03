@@ -479,4 +479,86 @@ describe("a roadmap and its room", () => {
     expect(p.$("button[data-approve]")).toBeNull();
     expect(p.text()).not.toContain(T.waiting);
   });
+
+  it("takes an existing proposal in: the organization's proposals less the roadmap's own, one picked, one POST", async () => {
+    const established = {
+      ...SEEDED,
+      status: "established",
+      archived: true,
+      delegations: { a: { key: "a", owner: "acme_dev", stage: "delegated", proposal: 61 } },
+    };
+    const PROPOSALS = [
+      { number: 61, title: "Ledger", status: "ready", author: "acme_dev", implementer: null },
+      {
+        number: 107,
+        title: "Old <one>",
+        status: "ready",
+        author: "acme_dev",
+        implementer: "acme_web",
+      },
+    ];
+    const adopted: unknown[] = [];
+    const p = await page(
+      (call, roadmaps) => {
+        if (call.method === "GET" && call.url === `${ORG}/proposals`)
+          return { status: 200, body: { proposals: PROPOSALS } };
+        if (call.method === "POST" && call.url === `${ORG}/roadmaps/1/adopt`) {
+          adopted.push(call.body);
+          roadmaps[0] = {
+            ...established,
+            items: [
+              {
+                key: "proposal-107",
+                kind: "proposal",
+                title: "Old <one>",
+                brief: "Old <one>",
+                owner: "acme_web",
+                cites: [],
+                proposal: 107,
+              },
+            ],
+          };
+          return { status: 200, body: { roadmap: roadmaps[0], hints: [] } };
+        }
+        return organization()(call, roadmaps);
+      },
+      [established],
+      { parent: "/org/proj/acme/channels/roadmap_1", own: "?view=detail&n=1" },
+    );
+    await p.click("button[data-adopt-open]");
+    // #61 is in the roadmap already: only #107 is offered, escaped.
+    const offered = [...p.$<HTMLElement>("[data-overlay]").querySelectorAll("[data-adopt]")].map(
+      (b) => b.getAttribute("data-adopt"),
+    );
+    expect(offered).toEqual(["107"]);
+    expect(p.text()).toContain(T.adoptHint);
+    expect(p.$<HTMLElement>("[data-overlay]").innerHTML).toContain("Old &lt;one&gt;");
+    await p.click('button[data-adopt="107"]');
+    // The implementer carries it (else the author); the title is the proposal's own.
+    expect(adopted).toEqual([{ proposal: 107, title: "Old <one>", owner: "acme_web" }]);
+    expect(p.$("[data-overlay]")).toBeNull();
+    expect(p.text()).toContain(`${T.proposal} #107`);
+    expect(p.text()).toContain(T.existing);
+  });
+
+  it("offers no proposal to take in while the roadmap waits for its room, and says so when none is left", async () => {
+    const waiting = { ...SEEDED, status: "awaiting_room", channelId: null };
+    const p = await page(organization(), [waiting], { own: "#1" });
+    await p.follow();
+    expect(p.text()).toContain(T.noRoom);
+    expect(p.$("button[data-adopt-open]")).toBeNull();
+
+    const q = await page(
+      (call, roadmaps) =>
+        call.url === `${ORG}/proposals`
+          ? { status: 200, body: { proposals: [] } }
+          : organization()(call, roadmaps),
+      [SEEDED],
+      { parent: "/org/proj/acme/channels/roadmap_1", own: "?view=detail&n=1" },
+    );
+    await q.click("button[data-adopt-open]");
+    expect(q.text()).toContain(T.adoptNone);
+    await q.press("Escape", "button[data-cancel]");
+    expect(q.$("[data-overlay]")).toBeNull();
+  });
 });

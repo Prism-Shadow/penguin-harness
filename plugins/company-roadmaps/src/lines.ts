@@ -44,7 +44,7 @@ function quote(msg: RoomMessage): string {
 
 function itemLine(item: DraftItem): string {
   return item.kind === "proposal"
-    ? `- [${item.key}] proposal "${item.title}" — owner ${item.owner}: ${item.brief}`
+    ? `- [${item.key}] proposal ${item.proposal !== undefined ? `#${item.proposal} (existing) ` : ""}"${item.title}" — owner ${item.owner}: ${item.brief}`
     : `- [${item.key}] roadmap "${item.title}" — employees ${item.employees.join(", ")}: ${item.brief}`;
 }
 
@@ -93,6 +93,8 @@ export function cloneBrief(args: {
         '  write draft.json: {"sessionId": "$PENGUIN_SESSION_ID", "agentId": "$PENGUIN_AGENT_ID", "record": "...", "body": "...", "items": [{"key": "a", "kind": "proposal", "title": "...", "brief": "...", "owner": "<agent id>", "cites": ["<body section heading>"]}, {"key": "b", "kind": "roadmap", "title": "...", "brief": "...", "employees": ["<agent id>"], "cites": ["..."]}]}',
         "  (substitute the two variables' values; any of record/body/items may be left out; a proposal item is stacked on the previous one unless it says `stackedOn`)",
         `  ${curlFileOf("PUT", routeOf(orgId, r.number, "/draft"), "draft.json")}`,
+        'A proposal that exists already is taken in as it is, not written again: it is a proposal item with its number (`"proposal": <n>`, no cites needed) — keep such an item in the items you write. To take one in:',
+        `  ${curlOf("POST", routeOf(orgId, r.number, "/adopt"), ['\\"proposal\\":<n>', '\\"title\\":\\"<its title>\\"', '\\"owner\\":\\"<agent id>\\"'])}`,
         "Nothing is created while the room discusses. When the room agrees, establish it — the roadmap is archived and every roadmap item derives its own roadmap at once, but a proposal item stays a brief: nothing is created for it, and its owner is not told, until a person and you (the moderator) have both approved it:",
         `  ${curlOf("POST", routeOf(orgId, r.number, "/establish"))}`,
       ].join("\n"),
@@ -147,6 +149,7 @@ export function approvalRequestLine(args: {
     `${tag(r)} established. Its proposal items are briefs now; each needs two approvals before its proposal may be created — a person's, given on the roadmaps page, and yours as moderator:`,
     ...args.items.map((i) => `- [${i.key}] "${i.title}" — owner ${i.owner}: ${i.brief}`),
     `Approve an item whose brief is ready: \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/approve"))}\`. Approving creates nothing; leave an item unapproved, or reopen the roadmap, when its brief is not ready.`,
+    `An item that is a proposal which exists already is not approved — there is no work to start: link it to that proposal, which delegates it without the two approvals and tells its owner nothing (an item you own yourself is linked by a person): \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/link"), ['\\"proposal\\":<n>'])}\`.`,
   ].join("\n");
 }
 

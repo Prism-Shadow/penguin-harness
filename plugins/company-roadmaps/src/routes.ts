@@ -14,6 +14,8 @@
  *                                    moderator's; with both, its owner is told (nothing is created)
  *   POST   /:number/items/:key/link  { proposal } link the proposal created for an approved item (its
  *                                    owner or a person)
+ *   POST   /:number/adopt            { proposal, title, owner, brief? } take an existing proposal in as a
+ *                                    proposal item (a person or the moderator; discussing or established)
  *   POST   /:number/reopen           { reason } an owner, an employee of the room, or a person
  *   POST   /:number/room             { channelId } bind the room of a derived roadmap
  *   POST   /:number/archive | /unarchive
@@ -171,6 +173,20 @@ export function roadmapRoutes(service: RoadmapService): Hono {
     const body = await jsonBody(c);
     const key = c.req.param("key") ?? "";
     return c.json(await service.link(p, o, numberParam(c), key, body.proposal, actorOf(c, body)));
+  });
+
+  app.post("/:number/adopt", async (c) => {
+    const [p, o] = orgOf(c);
+    const body = await jsonBody(c);
+    return c.json(
+      await service.adopt(
+        p,
+        o,
+        numberParam(c),
+        { proposal: body.proposal, title: body.title, owner: body.owner, brief: body.brief },
+        actorOf(c, body),
+      ),
+    );
   });
 
   app.post("/:number/reopen", async (c) => {

@@ -234,9 +234,28 @@ describe("the page's script", () => {
     expect(out.html).toContain("Queue &lt;migration&gt;");
     expect(out.html).not.toContain("<migration>");
     expect(out.html).toContain(PAGE_STRINGS.zh.discussing);
-    expect(out.html).toContain("acme_dev");
-    expect(out.html).toContain("#61");
     expect(out.html).toContain(PAGE_STRINGS.zh.itemsOne);
+    // A list, as the proposals list is: the items themselves are the roadmap's own page.
+    expect(out.html).not.toContain("Ledger");
+    expect(out.html).not.toContain("An append-only ledger.");
+    expect(out.html).not.toContain("#61");
+  });
+
+  it("says when each roadmap last moved: its last ledger line", async () => {
+    const out = await render("/org/proj/acme/roadmaps", () => ({
+      ok: true,
+      body: {
+        roadmaps: [
+          {
+            ...ROADMAP,
+            createdAt: "2026-09-27T01:00:00.000Z",
+            events: [{ seq: 9, at: "2026-09-29T08:30:00.000Z", by: "user:admin", kind: "draft" }],
+          },
+        ],
+      },
+    }));
+    expect(out.html).toContain('title="2026-09-29T08:30:00.000Z"');
+    expect(out.html).toContain("updated ");
   });
 
   it("opens one roadmap — its record and body — when the parent's URL names it", async () => {

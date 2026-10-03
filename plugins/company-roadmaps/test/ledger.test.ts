@@ -69,6 +69,29 @@ describe("the fold", () => {
     expect(r).toMatchObject({ record: "r2", body: "## Why\n", items: [item] });
   });
 
+  it("appends an adopted proposal to the items as they stand, and passes over a line without one", () => {
+    const written = {
+      key: "a",
+      kind: "proposal" as const,
+      title: "T",
+      brief: "B",
+      owner: "acme_dev",
+      cites: ["Why"],
+    };
+    const adopted = { ...written, key: "proposal-107", cites: [], stackedOn: null, proposal: 107 };
+    const r = foldLedger([
+      opened(1),
+      line({ kind: "draft", number: 1, items: [written] }),
+      line({ kind: "adopted", number: 1, item: adopted }),
+      { ...line({ kind: "adopted", number: 1, item: adopted }), item: undefined } as never,
+    ]).roadmaps.get(1);
+    expect(r?.items).toEqual([written, adopted]);
+    expect(r?.events.at(-2)).toMatchObject({
+      kind: "adopted",
+      note: "proposal-107 ← proposal #107",
+    });
+  });
+
   it("archives on establishment, and a reopening lifts both", () => {
     const established = foldLedger([opened(1), line({ kind: "established", number: 1 })]);
     expect(established.roadmaps.get(1)).toMatchObject({ status: "established", archived: true });

@@ -186,6 +186,10 @@ input[name="name"], select { width: 100%; font: inherit; font-size: 0.75rem; pad
 .picks label { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.625rem; font-size: 0.75rem; cursor: pointer; }
 .picks label:hover { background: var(--rm-hover); }
 .picks input { accent-color: var(--rm-accent); margin: 0; }
+.picks button.pick { display: flex; width: 100%; align-items: center; gap: 0.5rem; padding: 0.375rem 0.625rem; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; font-size: 0.75rem; text-align: left; cursor: pointer; }
+.picks button.pick:hover { background: var(--rm-hover); }
+.picks button.pick .grow { flex: 1; min-width: 0; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 /* In the channel page's column (view=detail): tighter, and as wide as the column. */
 body.panel { padding: 0.75rem 1rem; }
 body.panel main { max-width: none; }
@@ -255,6 +259,14 @@ export const PAGE_STRINGS = {
     noRoom: "This roadmap has no room yet.",
     onMachine:
       "This organization runs on machine {m}; its roadmaps are asked there, so the plugin has to be installed on that machine too.",
+    updated: "updated {t}",
+    existing: "existing",
+    adopt: "Add an existing proposal",
+    adoptLoading: "Reading this organization's proposals…",
+    adoptHint:
+      "An existing proposal joins as it is: nothing is created for it and it needs no approvals here — it has its own page.",
+    adoptNone: "No proposal left to add: every one is in this roadmap already.",
+    adoptFailed: "Could not add the proposal",
   },
   zh: {
     title: "路线图",
@@ -312,6 +324,13 @@ export const PAGE_STRINGS = {
     approveHint: "提案条目在人和主持人都批准之前只是一段 brief，在此之前不会建任何东西。",
     noRoom: "这份路线图还没有讨论室。",
     onMachine: "这个组织运行在机器 {m} 上；它的路线图要去那里问，所以那台机器上也得装这个插件。",
+    updated: "{t} 更新",
+    existing: "已有",
+    adopt: "纳入已有提案",
+    adoptLoading: "正在读取本组织的提案……",
+    adoptHint: "已有的提案按原样纳入：不为它新建任何东西，这里也不用批准——它有自己的页面。",
+    adoptNone: "没有可纳入的提案：每一份都已在这份路线图里。",
+    adoptFailed: "没能纳入这份提案",
   },
 } as const;
 
@@ -441,7 +460,18 @@ try {
     return '<div class="approvals"><span class="pill warn">' + esc(T.brief) + "</span> " + esc(T.approvals) + ": " + one(T.byPerson, a.person) + " · " + one(T.byModerator, a.moderator) +
       (approvable && !a.person ? ' <button type="button" data-approve="' + esc(i.key) + '">' + esc(T.approve) + "</button>" : "") + "</div>";
   };
-  const itemLine = (i, d, approvable) => "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (d && d.proposal ? ' <span class="pill gray">' + esc(T.proposal) + " #" + d.proposal + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div>" + approvalLine(i, d, approvable) + "</li>";
+  // A proposal's number: the one linked to the item, or the existing proposal it adopted.
+  const itemLine = (i, d, approvable) => {
+    const num = (d && d.proposal) || i.proposal;
+    return "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (num ? ' <span class="pill gray">' + esc(T.proposal) + " #" + num + "</span>" : "") + (i.proposal ? ' <span class="muted small">' + esc(T.existing) + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div>" + approvalLine(i, d, approvable) + "</li>";
+  };
+  // When a roadmap last moved: its last ledger line (else its opening), as a short local time.
+  const updatedOf = (r) => {
+    const at = r.events && r.events.length > 0 ? r.events[r.events.length - 1].at : r.createdAt;
+    if (!at) return "";
+    const t = read(() => new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), at);
+    return '<span title="' + esc(at) + '">' + esc(T.updated.replace("{t}", t)) + "</span>";
+  };
   // A read of the roadmaps, first said out loud (with the rows it is about to fill sketched in).
   async function get(path) {
     const url = org + "/roadmaps" + path;
@@ -491,7 +521,7 @@ try {
   const moderates = ' <span class="pill gray" data-moderates>' + esc(T.moderates) + "</span>";
   // A note under the fields (opening…, why it was refused), without touching the fields.
   const formNote = (html) => { const n = q("[data-note]"); if (n) n.innerHTML = html; else drawForm(html); };
-  const closeForm = () => { form = null; main.innerHTML = view; };
+  const closeForm = () => { form = null; adopting = false; main.innerHTML = view; };
   // The submit button follows the fields without redrawing them, so typing keeps its focus.
   const syncSubmit = () => {
     const b = q("[data-submit]");
@@ -545,15 +575,18 @@ try {
       draw((note || "") + '<div class="empty"><p class="title">' + esc(T.empty) + '</p><p class="hint">' + esc(T.emptyHint) + "</p>" + openButton + "</div>");
       return;
     }
+    // One line per roadmap, as the proposals list has it: its number, its name as the link, its
+    // status, then its room, who moderates, how many items and when it last moved. The items
+    // themselves — briefs, owners, approvals — are the roadmap's own page (its room's column).
     draw((note || "") + '<ul class="rows">' + roadmaps.map((r) => {
       const mod = moderatorOf(r);
       const meta = [
         roomLink(r, "room"),
         mod ? "<span>" + esc(T.moderator) + " " + esc(mod) + "</span>" : "",
         "<span>" + esc(r.items.length === 1 ? T.itemsOne : T.itemsCount.replace("{n}", String(r.items.length))) + "</span>",
+        updatedOf(r),
       ].filter(Boolean).join('<span aria-hidden="true">·</span>');
-      return '<li class="row" data-n="' + r.number + '" tabindex="0"><span class="num mono">#' + r.number + '</span><div class="grow"><div class="line"><a class="title" href="#' + r.number + '" data-n="' + r.number + '">' + esc(r.name) + "</a>" + pill(r) + '</div><div class="meta">' + meta + "</div>" +
-        (r.items.length === 0 ? "" : '<ul class="items">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul>") + "</div></li>";
+      return '<li class="row" data-n="' + r.number + '" tabindex="0"><span class="num mono">#' + r.number + '</span><div class="grow"><div class="line"><a class="title" href="#' + r.number + '" data-n="' + r.number + '">' + esc(r.name) + "</a>" + pill(r) + '</div><div class="meta">' + meta + "</div></div></li>";
     }).join("") + "</ul>", openButton);
   }
   // One roadmap: its record, body and items. On its own (roadmaps/<n>) a roadmap that has a
@@ -573,11 +606,56 @@ try {
     return top + '<header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1>" + (panel ? "" : roomLink(r, "button primary")) + "</header>" + (note || "") +
       '<div class="meta">' + [mod ? esc(T.moderator) + " " + esc(mod) : "", r.channelId ? "" : esc(T.noRoom)].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
       section(T.record, r.record) + section(T.body, r.body) +
-      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key], r.status === "established")).join("") + "</ul></li></ul>" +
+      '<section><div class="section-head"><h2>' + esc(T.items) + "</h2>" + (adoptable(r) ? '<button type="button" data-adopt-open>' + esc(T.adopt) + "</button>" : "") + "</div>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key], r.status === "established")).join("") + "</ul></li></ul>" +
         (r.items.some((i) => i.kind === "proposal") ? '<p class="muted small">' + esc(T.approveHint) + "</p>" : "")) + "</section>";
   };
-  // The roadmap the detail shows, for the person's approvals.
+  // The roadmap the detail shows, for the person's approvals and for taking a proposal in.
   let shown = "";
+  let shownRoadmap = null;
+  // An existing proposal is taken in while the room discusses the roadmap, or once it stands.
+  const adoptable = (r) => (r.status === "discussing" && !r.archived) || r.status === "established";
+  // The dialog that takes an existing proposal in: company-proposals' own list of this
+  // organization's proposals, less the ones this roadmap has already, one to pick.
+  let adopting = false;
+  function drawAdopt(body) {
+    const slot = q("[data-overlay] .dialog-body");
+    if (slot) { slot.innerHTML = body; return; }
+    main.innerHTML = view + '<div class="overlay" data-overlay><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rm-adopt-title"><div class="dialog-head"><h2 id="rm-adopt-title">' + esc(T.adopt) + '</h2><button type="button" class="icon" data-cancel aria-label="' + esc(T.close) + '">✕</button></div><div class="dialog-body">' + body + "</div></div></div>";
+  }
+  const cancelFoot = '<div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + "</button></div>";
+  const inRoadmap = (r) => {
+    const have = new Set();
+    for (const i of r.items) if (i.proposal) have.add(i.proposal);
+    for (const d of Object.values(r.delegations || {})) if (d.proposal) have.add(d.proposal);
+    return have;
+  };
+  async function openAdopt() {
+    adopting = true;
+    drawAdopt('<p class="muted">' + esc(T.adoptLoading) + "</p>");
+    try {
+      const res = await request("GET", org + "/proposals");
+      if (!adopting) return;
+      const have = inRoadmap(shownRoadmap || { items: [], delegations: {} });
+      const left = (res.proposals || []).filter((p) => !have.has(p.number));
+      if (left.length === 0) { drawAdopt('<p class="muted">' + esc(T.adoptNone) + "</p>" + cancelFoot); return; }
+      drawAdopt('<p class="hint">' + esc(T.adoptHint) + '</p><div data-note></div><ul class="picks">' + left.map((p) => {
+        const owner = p.implementer || p.author;
+        return '<li><button type="button" class="pick" data-adopt="' + p.number + '" data-title="' + esc(p.title) + '" data-owner="' + esc(owner) + '"><span class="mono muted">#' + p.number + '</span><span class="grow">' + esc(p.title) + '</span><span class="pill gray">' + esc(p.status) + '</span><span class="muted small">' + esc(owner) + "</span></button></li>";
+      }).join("") + "</ul>" + cancelFoot);
+    } catch (e) { if (adopting) drawAdopt(failure(e, T.adoptFailed) + cancelFoot); }
+  }
+  async function adopt(pick) {
+    const note = q("[data-note]");
+    for (const b of main.querySelectorAll("[data-adopt]")) b.disabled = true;
+    try {
+      await request("POST", org + "/roadmaps/" + shown + "/adopt", { proposal: Number(pick.getAttribute("data-adopt")), title: pick.getAttribute("data-title"), owner: pick.getAttribute("data-owner") });
+      adopting = false;
+      await one(shown);
+    } catch (e) {
+      if (note) note.innerHTML = failure(e, T.adoptFailed);
+      for (const b of main.querySelectorAll("[data-adopt]")) b.disabled = false;
+    }
+  }
   async function approve(key) {
     const url = org + "/roadmaps/" + shown + "/items/" + encodeURIComponent(key) + "/approve";
     try {
@@ -595,14 +673,18 @@ try {
     const r = await get("/" + n);
     if (!panel && !note && r.channelId && enter(roomPath(r.channelId))) return;
     drawn = JSON.stringify(r);
+    shownRoadmap = r;
     main.innerHTML = detailHtml(r, note);
     view = main.innerHTML;
     if (panel) {
       poll = setInterval(() => {
+        // Not under an open dialog: the next read after it closes catches up.
+        if (adopting) return;
         void request("GET", org + "/roadmaps/" + n).then((again) => {
           const json = JSON.stringify(again);
-          if (json === drawn) return;
+          if (json === drawn || adopting) return;
           drawn = json;
+          shownRoadmap = again;
           main.innerHTML = detailHtml(again);
           view = main.innerHTML;
         }).catch(() => {});
@@ -626,6 +708,9 @@ try {
     if (e.target.closest("[data-overlay]") && !e.target.closest(".dialog")) { closeForm(); return; }
     if (e.target.closest("[data-cancel]")) { closeForm(); return; }
     if (e.target.closest("[data-open]")) { void openForm(); return; }
+    if (e.target.closest("[data-adopt-open]")) { void openAdopt(); return; }
+    const pick = e.target.closest("[data-adopt]");
+    if (pick) { void adopt(pick); return; }
     if (e.target.closest("[data-retry]")) { void show(current); return; }
     const room = e.target.closest("[data-room]");
     if (room) { if (enter(room.getAttribute("href"))) e.preventDefault(); return; }
@@ -640,7 +725,7 @@ try {
     }
   });
   main.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && form) { e.preventDefault(); closeForm(); return; }
+    if (e.key === "Escape" && (form || adopting)) { e.preventDefault(); closeForm(); return; }
     if (e.key === "Enter" && e.target.matches && e.target.matches("li.row[data-n]")) { e.preventDefault(); openRoadmap(e.target.dataset.n); }
   });
   main.addEventListener("input", (e) => {

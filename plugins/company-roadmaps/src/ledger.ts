@@ -35,6 +35,11 @@ export interface ProposalItem {
   cites: string[];
   /** The proposal item it is stacked on; absent = the previous proposal item, null = none. */
   stackedOn?: string | null;
+  /**
+   * An existing proposal the roadmap takes in as it is (adopted): nothing is created for it and
+   * it needs no approvals — it has its own page; an establishment links its number at once.
+   */
+  proposal?: number;
 }
 
 /** A roadmap the roadmap derives: its brief and the employees who discuss it (the first moderates). */
@@ -172,6 +177,8 @@ export type LedgerEntry =
       by: string;
     }
   | { kind: "linked"; number: number; key: string; proposal: number; by: string }
+  /** An existing proposal taken in as a proposal item (appended to the items as they stand). */
+  | { kind: "adopted"; number: number; item: ProposalItem; by: string }
   | { kind: "reopened"; number: number; reason: string; by: string }
   | { kind: "renamed"; number: number; name: string; by: string }
   | { kind: "archived"; number: number; by: string }
@@ -204,6 +211,7 @@ const KINDS = new Set<LedgerEntry["kind"]>([
   "briefed",
   "approved",
   "linked",
+  "adopted",
   "reopened",
   "renamed",
   "archived",
@@ -264,6 +272,8 @@ function noteOf(line: LedgerLine): string | undefined {
       return `${line.key}: ${line.role} ${line.by}`;
     case "linked":
       return `${line.key} → proposal #${line.proposal}`;
+    case "adopted":
+      return `${line.item?.key ?? "?"} ← proposal #${line.item?.proposal ?? "?"}`;
     case "reopened":
       return line.reason;
     case "renamed":
@@ -374,6 +384,11 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       if (d !== undefined) d.proposal = line.proposal;
       break;
     }
+    case "adopted":
+      // A line without an item is passed over, like any line the fold cannot read.
+      if (typeof line.item?.key !== "string") break;
+      r.items = [...r.items.filter((x) => x.key !== line.item.key), { ...line.item }];
+      break;
     case "reopened":
       r.status = "discussing";
       r.archived = false;
