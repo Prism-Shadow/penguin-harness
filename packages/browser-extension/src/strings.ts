@@ -25,7 +25,7 @@ const en = {
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:
-    "Lets the agents of a PenguinHarness server drive the Chrome tabs you hand them: the tabs they open in the Penguin group, and tabs you add with the toolbar icon. Your other tabs, cookies and history stay out of reach.",
+    "Lets the agents of a PenguinHarness server drive the Chrome tabs you hand them: the tabs they open in the Penguin group, and tabs you add with the toolbar icon. Your other tabs, your browsing history and Chrome's cookie store stay out of reach.",
   pairedTitle: "Paired servers",
   pairedNone: "No server is paired yet.",
   pairedBy: (user: string) => `paired by ${user}`,
@@ -99,7 +99,7 @@ const zh: Strings = {
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:
-    "让 PenguinHarness 服务器上的 Agent 驱动你交给它的 Chrome 标签页：它在 Penguin 标签组里打开的标签页，以及你用工具栏图标添加的标签页。其他标签页、Cookie 和历史记录都不会被触及。",
+    "让 PenguinHarness 服务器上的 Agent 驱动你交给它的 Chrome 标签页：它在 Penguin 标签组里打开的标签页，以及你用工具栏图标添加的标签页。其他标签页、浏览历史和 Chrome 的 Cookie 存储都不会被触及。",
   pairedTitle: "已配对的服务器",
   pairedNone: "还没有配对任何服务器。",
   pairedBy: (user) => `由 ${user} 配对`,
