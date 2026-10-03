@@ -2,13 +2,14 @@
  * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads
  * `benchmark_config.toml` (title, description, per-case run count `runs`, and the build
  * `status`: `draft` while the Benchmark is still being written, `failed` when its calibration
- * never produced a result to freeze, `published` otherwise; and, for a Benchmark whose cases
- * run as Harbor tasks, `kind = "harbor"` with the `[harbor]` table naming their repository) and
- * `scoreboard.yaml` (evaluations[], each carrying the Agent it tested, each case its
- * model-written averages and a runs array).
+ * never produced a result to freeze, `published` otherwise) and `scoreboard.yaml`
+ * (evaluations[], each carrying the Agent it tested, each case its model-written averages and
+ * a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
- * directory whole (`remove`), and never touches a scoreboard.
+ * directory whole (`remove`), and never touches a scoreboard. A built-in Benchmark is read like
+ * any other: its cases run elsewhere (their statements say how), and the service does not know
+ * or care.
  * `benchmark_config.toml` is what makes a directory a Benchmark: `list` skips one without it.
  * Files that are there but corrupt degrade gracefully (title falls back to the directory
  * name, scores come back empty) rather than throwing.
@@ -28,7 +29,6 @@ import type {
   BenchmarkCaseSummary,
   BenchmarkCasesResponse,
   BenchmarkEvaluation,
-  BenchmarkHarborSource,
   BenchmarkRunScore,
   BenchmarkStatus,
   BenchmarkSummary,
@@ -103,32 +103,6 @@ function stringOr(v: unknown): string | undefined {
 function agentIdOr(v: unknown): string | null {
   const value = typeof v === "string" ? v.trim() : "";
   return value !== "" ? value : null;
-}
-
-/** A ref or a folder inside a repository: plain path segments, never `..`. */
-const REPO_PATH = /^[A-Za-z0-9._/-]+$/;
-
-/**
- * The `[harbor]` table of a Harbor Benchmark, or undefined when it is not usable. The Web App
- * links the repository, so it has to be an http(s) URL; the ref and the task folder have to be
- * plain repository paths.
- */
-function harborSourceOr(v: unknown): BenchmarkHarborSource | undefined {
-  const table = asRecord(v);
-  const repo = stringOr(table.repo);
-  const ref = stringOr(table.ref);
-  const tasks = stringOr(table.path);
-  if (repo === undefined || ref === undefined || tasks === undefined) return undefined;
-  let protocol: string;
-  try {
-    protocol = new URL(repo).protocol;
-  } catch {
-    return undefined;
-  }
-  if (protocol !== "https:" && protocol !== "http:") return undefined;
-  const plain = (p: string) => REPO_PATH.test(p) && !p.split("/").includes("..");
-  if (!plain(ref) || !plain(tasks)) return undefined;
-  return { repo, ref, path: tasks };
 }
 
 function isWithin(parent: string, child: string): boolean {
@@ -484,7 +458,6 @@ export class BenchmarkService implements Benchmarks {
     let description: string | undefined;
     let runs: number | undefined;
     let status: BenchmarkStatus = "published";
-    let harbor: BenchmarkHarborSource | undefined;
     try {
       const config = asRecord(
         parseToml(await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8")),
@@ -503,9 +476,6 @@ export class BenchmarkService implements Benchmarks {
       // both read as published.
       const raw = stringOr(config.status);
       status = raw === "draft" ? "draft" : raw === "failed" ? "failed" : "published";
-      // A Harbor Benchmark is `kind = "harbor"` with a usable [harbor] table. Any other kind,
-      // or that kind without the table, reads as a plain Benchmark.
-      harbor = config.kind === "harbor" ? harborSourceOr(config.harbor) : undefined;
     } catch {
       // Missing or corrupt: title falls back to the directory name.
     }
@@ -540,7 +510,6 @@ export class BenchmarkService implements Benchmarks {
       ...(description !== undefined ? { description } : {}),
       ...(runs !== undefined ? { runs } : {}),
       status,
-      ...(harbor !== undefined ? { kind: "harbor" as const, harbor } : {}),
       caseCount,
       evaluations,
       // Which Agents this Benchmark has evaluated is a fact of its scoreboard, not of its

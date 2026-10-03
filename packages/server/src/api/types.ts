@@ -3815,19 +3815,6 @@ export interface BenchmarkEvaluation {
  */
 export type BenchmarkStatus = "draft" | "published" | "failed";
 
-/**
- * Where a Harbor Benchmark's tasks live: the `[harbor]` table of its benchmark_config.toml. The
- * cases here are text; the task folders are `<repo>` at `<ref>`, under `<path>`.
- */
-export interface BenchmarkHarborSource {
-  /** Repository URL (http or https). */
-  repo: string;
-  /** The commit or branch every case links and every evaluation fetches. */
-  ref: string;
-  /** Folder of the task directories inside the repository. */
-  path: string;
-}
-
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
@@ -3846,15 +3833,6 @@ export interface BenchmarkSummary {
    * or any other value, reads as published.
    */
   status: BenchmarkStatus;
-  /**
-   * `harbor` for a Benchmark whose cases run as Harbor tasks in Docker (the built-in ones);
-   * absent for a plain Benchmark. Read from `kind` in benchmark_config.toml, and set only
-   * together with `harbor`: a `kind` with no usable `[harbor]` table, or any other value,
-   * reads as a plain Benchmark.
-   */
-  kind?: "harbor";
-  /** The repository the Harbor tasks live in; present exactly when `kind` is `harbor`. */
-  harbor?: BenchmarkHarborSource;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
