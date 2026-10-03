@@ -1,6 +1,7 @@
 /**
  * StatusIcon: the one spinner while a run is live, a registry glyph once it waits or settles, on
- * the spinner's three rungs, in token inks, named only when the caller names it.
+ * the spinner's three rungs, in token inks, named only when the caller names it — and nothing
+ * revealed for an icon that mounts settled (a transcript loading).
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -66,5 +67,11 @@ describe("StatusIcon", () => {
     const quiet = render({ state: "failed" });
     expect(quiet).toContain('aria-hidden="true"');
     expect(quiet).not.toContain("role=");
+  });
+
+  it("mounts in any state without a reveal: only a change on screen brings the glyph in", () => {
+    for (const state of ["running", "waiting", "done", "failed", "stopped"] as const) {
+      expect(render({ state, label: state })).not.toContain("data-reveal");
+    }
   });
 });

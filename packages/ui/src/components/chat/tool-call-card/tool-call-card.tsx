@@ -20,6 +20,10 @@
  * view back on the row when collapsed from stuck. As a step of the agent's work it carries the
  * activity hook: the tool's name is its label, the subtitle and the duration its details.
  *
+ * The output streams through `StreamText` in its plain format, so it arrives the way a reply
+ * does (the theme's pace, veil and caret) and grows with the transcript while it streams; it
+ * takes the output block's height cap back once settled.
+ *
  * Copy is the caller's: the name (an alias, when it resolves one), the subtitle, the state label,
  * the marker, the action, the approval buttons' words and the images' alt text all arrive as
  * props. What the caller decides from the call's own data — the preview, the payload, the
@@ -31,13 +35,14 @@ import { StatusIcon } from "../../icons/status-icon/status-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
 import { LiveDuration, formatDuration } from "../../feedback/duration-slot/duration-slot";
 import {
-  DISCLOSURE_OUTPUT_PRE_CLASS,
+  DISCLOSURE_OUTPUT_CAP_CLASS,
+  DISCLOSURE_OUTPUT_CLASS,
   DisclosureRow,
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
 import { ApprovalBlock } from "../approval-block/approval-block";
-import { StreamingCaret } from "../assistant-text/streaming-caret";
+import { StreamText } from "../stream-text/stream-text";
 import type { ApprovalRequest } from "../approval-block/approval-block";
 
 /**
@@ -69,7 +74,7 @@ export interface ToolCallCardProps {
   argumentsText?: string;
   /** The call's output so far. */
   output?: string;
-  /** The output is still arriving: a caret follows it. */
+  /** The output is still arriving: it streams, the theme's caret after it. */
   outputStreaming?: boolean;
   /** Images the call returned, shown as thumbnails that zoom when pressed (fetched lazily, as they near the viewport). */
   images?: { srcs: readonly string[]; alt: string };
@@ -174,10 +179,13 @@ export function ToolCallCard({
           </pre>
         )}
         {(output || outputStreaming) && (
-          <pre className={`anim-fade ${DISCLOSURE_OUTPUT_PRE_CLASS}`}>
-            {output}
-            {outputStreaming && <StreamingCaret />}
-          </pre>
+          <StreamText
+            format="plain"
+            className={DISCLOSURE_OUTPUT_CLASS}
+            settledClassName={DISCLOSURE_OUTPUT_CAP_CLASS}
+            text={output ?? ""}
+            streaming={outputStreaming}
+          />
         )}
         {images !== undefined && images.srcs.length > 0 && (
           <div className="anim-fade flex flex-wrap gap-2 border-t border-line-muted px-3 py-2">

@@ -18,6 +18,7 @@
  * washes of the ink (`NAV_FILL`). The frame paints no background of its own: the column that holds
  * it does (`AppShell`'s navigation slot, or the phone's drawer).
  */
+import { useState } from "react";
 import type {
   DragEvent as ReactDragEvent,
   MouseEvent as ReactMouseEvent,
@@ -25,11 +26,13 @@ import type {
   Ref,
 } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
+import { useArrived } from "../../../motion/use-arrived";
 import { ChevronFlip } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { ChevronDown } from "../../icons/marks/marks";
 import { Text } from "../../content/typography/typography";
+import { Fold } from "../../layout/fold/fold";
 import { NAV_FILL, NavRow } from "../../navigation/nav-list/nav-list";
 import type { NavRowProps } from "../../navigation/nav-list/nav-list";
 import { setDragPreview } from "../../overlays/drag-preview/drag-preview";
@@ -148,15 +151,17 @@ function DropRing() {
 /**
  * The page nav: the pinned entries, which always show, then the rest in a group that folds away,
  * and under them a slim, full-width toggle whose caret points up while the rows show (fold them)
- * and down once they are folded (the way back). The fold slides: the group's row track tweens
- * between `0fr` and `1fr` under the theme's layout motion while the rows fade, and the list below
- * glides up with it. The rows stay mounted for the tween but turn inert while folded, so a
- * zero-height row is never focusable or clickable. The toggle's resting band is the column's one
- * fill at rest: it reads as the seam between the nav and the list below it.
+ * and down once they are folded (the way back). The fold slides: the rows fold through `Fold`,
+ * their track tweening between `0fr` and `1fr` under the theme's layout motion while they fade,
+ * and the list below glides up with it. Folding, the rows turn inert until they leave, so a
+ * zero-height row is never focusable or clickable; folded, they are not mounted. The toggle's
+ * resting band is the column's one fill at rest: it reads as the seam between the nav and the
+ * list below it.
  *
- * With nothing to fold (`foldable={false}`) neither the group nor its toggle is drawn. With
- * `drop`, the group and its toggle band are one drop target, ringed while a drag it would take is
- * over them.
+ * With nothing to fold (`foldable={false}`) neither the group nor its toggle is drawn. When the
+ * last entry leaves the fold (pinned), the group does not vanish in one frame: its rows fold
+ * away, the band fades, and both unmount once the fold has finished. With `drop`, the group and
+ * its toggle band are one drop target, ringed while a drag it would take is over them.
  */
 export function SidebarNavGroup({
   collapsed,
@@ -186,32 +191,36 @@ export function SidebarNavGroup({
   children: ReactNode;
 }) {
   const label = collapsed ? expandLabel : collapseLabel;
+  const open = foldable && !collapsed;
+  // Whether the fold still holds its rows: they stay through a fold's close, so a group that
+  // stopped being foldable leaves once its rows have folded away, not in the frame it stopped.
+  const [holding, setHolding] = useState(open);
+  if (open && !holding) setHolding(true);
+  // The rows fade in only when the reader unfolds them, not on every page load.
+  const toggled = useArrived(collapsed);
   return (
     <nav className="space-y-px">
       {pinned}
-      {foldable && (
+      {(foldable || holding) && (
         <div {...dropHandlers(drop)} className="relative flex flex-col gap-px">
-          <div
-            data-layout-motion
-            className={`grid ${collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
-          >
-            <div className="overflow-hidden" inert={collapsed}>
-              <div
-                className={`space-y-px transition-opacity duration-200 ${
-                  collapsed ? "opacity-0" : "opacity-100"
-                }`}
-              >
-                {children}
-              </div>
+          <Fold open={open} onClosed={() => setHolding(false)}>
+            <div
+              className={`space-y-px transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}${
+                toggled ? " starting:opacity-0" : ""
+              }`}
+            >
+              {children}
             </div>
-          </div>
+          </Fold>
           <button
             ref={toggleRef}
             type="button"
             onClick={onToggle}
             aria-expanded={!collapsed}
             aria-label={label}
-            className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-colors duration-150 hover:bg-fg/10 hover:text-fg`}
+            className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-[color,background-color,opacity] duration-150 hover:bg-fg/10 hover:text-fg ${
+              foldable ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
           >
             <ChevronFlip up={!collapsed} />
           </button>
@@ -278,6 +287,8 @@ export interface SidebarNavEntryProps extends Omit<
   draggable?: boolean;
   onDragStart?: (e: ReactDragEvent) => void;
   onDragEnd?: () => void;
+  /** The entry has just moved here from the other area: it surfaces under the theme's reveal. */
+  arrived?: boolean;
 }
 
 /**
@@ -296,6 +307,9 @@ export interface SidebarNavEntryProps extends Omit<
  * steps over at once rather than sliding — a transform under hover is a motion the house rules
  * refuse — so reduced motion has nothing to undo. Draggable, the whole entry is the handle and
  * its link starts no drag of its own; the drag image is the entry's chip (`setDragPreview`).
+ *
+ * An entry that has just moved to the other area (`arrived`) surfaces there under `data-reveal`,
+ * on the theme's reveal, instead of teleporting.
  */
 export function SidebarNavEntry({
   pin,
@@ -303,11 +317,13 @@ export function SidebarNavEntry({
   draggable = false,
   onDragStart,
   onDragEnd,
+  arrived = false,
   ...row
 }: SidebarNavEntryProps) {
   return (
     <div
       className="group relative flex items-center"
+      {...(arrived ? { "data-reveal": true } : {})}
       {...(draggable
         ? {
             draggable: true,

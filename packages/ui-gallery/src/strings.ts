@@ -330,7 +330,7 @@ export const zh = {
     presence: "进出",
     presenceNote: "菜单自上方、对话框自中心、通知自下方进出，各按当前主题的进出令牌。",
     reveal: "显现",
-    revealNote: "流式文本逐块显现，每一块只在出现时按显现令牌动一次。",
+    revealNote: "新的行出现在已稳定的列表里，每一行只在出现时按显现令牌动一次。",
     layout: "布局",
     layoutNote: "侧栏在展开与图标栏之间的宽度变化，按布局令牌。",
     replay: "重放",
@@ -341,6 +341,13 @@ export const zh = {
       toast: "通知",
       trigger: "更多",
       sidebarRows: ["新对话", "智能体", "模型库"] as readonly string[],
+      revealRows: [
+        { name: "read_file", detail: "package.json" },
+        { name: "grep", detail: "useStreamReveal" },
+        { name: "exec_command", detail: "运行测试" },
+        { name: "apply_patch", detail: "src/app.ts" },
+        { name: "exec_command", detail: "检查格式" },
+      ] as readonly { name: string; detail: string }[],
     },
     hookJobs: {
       "ui-glass": "磨砂面：盖在内容之上的临时层，白领的插件与技能图块",
@@ -357,7 +364,7 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
-      "ui-stream": "正在流式输出的回答：各主题决定新文字如何出现",
+      "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
     } as Record<HookName, string>,
@@ -770,6 +777,7 @@ export const zh = {
     },
     streaming: {
       reply: "助手回答",
+      output: "工具输出",
       receiving: "正在接收…",
       received: "已全部到达",
       modes: {

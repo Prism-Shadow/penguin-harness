@@ -2,8 +2,9 @@
  * The pinned sidebar's frame and its pieces (src/components/shell/sidebar-frame/), and the page
  * row on the navigation column (NavRow on the muted surface): one column whose scroll area is the
  * only block that shrinks, a page nav whose pinned entries stay above the part that folds under
- * its toggle, entries that carry a pin toggle and drag as a whole, a list header whose label is
- * the eyebrow rung, and the column's washes in place of surface steps.
+ * its toggle (through the shared `Fold`), entries that carry a pin toggle, drag as a whole and
+ * surface under the theme's reveal when they have just moved between the areas, a list header
+ * whose label is the eyebrow rung, and the column's washes in place of surface steps.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -95,12 +96,21 @@ describe("SidebarNavGroup", () => {
       }),
     );
 
-  it("folds under the theme's layout motion, turning the folded rows inert", () => {
-    expect(group(false)).toContain('data-layout-motion="true" class="grid grid-rows-[1fr]"');
-    expect(group(true)).toContain('class="grid grid-rows-[0fr]"');
-    expect(group(true)).toContain('inert=""');
-    expect(group(false)).not.toContain("inert");
-    expect(classTokens(group(false)).filter((t) => t.startsWith("transition-["))).toEqual([]);
+  it("folds through the shared fold, under the theme's layout motion: open it holds its rows, folded none", () => {
+    const open = group(false);
+    expect(open).toContain('data-layout-motion="true" data-fold="settled" class="grid"');
+    expect(open).toContain('href="/agents"');
+    expect(open).not.toContain("inert");
+    const folded = group(true);
+    expect(folded).not.toContain("data-fold");
+    expect(folded).not.toContain('href="/agents"');
+    // Only colour and opacity move on the component's own classes: the size is the fold's.
+    const lists = classTokens(open).filter((t) => t.startsWith("transition-["));
+    expect(lists.filter((t) => /width|height|grid|transform/.test(t))).toEqual([]);
+  });
+
+  it("fades its rows in only when the reader unfolds them, never on a page load", () => {
+    expect(classTokens(group(false))).not.toContain("starting:opacity-0");
   });
 
   it("names its toggle by what pressing it does, with no hover hint on a bare chevron", () => {
@@ -137,7 +147,9 @@ describe("SidebarNavGroup's pinned entries and drop targets", () => {
 
   it("keeps the pinned entries shown and reachable while the rest is folded", () => {
     const html = nav({ collapsed: true, pinned: agents });
-    expect(html.indexOf('href="/agents"')).toBeLessThan(html.indexOf('inert=""'));
+    expect(html).toContain('href="/agents"');
+    expect(html).not.toContain('href="/usage"');
+    expect(html).toContain('aria-expanded="false"');
   });
 
   it("draws neither the fold nor its toggle with nothing to fold", () => {
@@ -224,6 +236,13 @@ describe("SidebarNavEntry", () => {
     const active = classTokens(entry({ active: true }));
     expect(active).toContain(NAV_FILL.selected);
     expect(active).not.toContain(NAV_FILL.groupHover);
+  });
+
+  it("surfaces under the theme's reveal when it has just moved to this area, and only then", () => {
+    expect(entry({ arrived: true })).toMatch(
+      /^<div class="group relative flex items-center" data-reveal="true">/,
+    );
+    expect(entry()).not.toContain("data-reveal");
   });
 
   it("drags as a whole: the entry is the handle, and its link starts no drag of its own", () => {
