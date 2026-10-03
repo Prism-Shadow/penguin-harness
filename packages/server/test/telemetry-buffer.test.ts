@@ -101,7 +101,7 @@ describe("TelemetryService", () => {
           svc.record({ probe: "trace.read", durMs: 2 });
           return [1, 2];
         },
-        (r) => ({ n: r.length }),
+        (r) => ({ attrs: { items: r.length } }),
       ),
     );
     await expect(
@@ -109,7 +109,12 @@ describe("TelemetryService", () => {
     ).rejects.toThrow();
     expect(svc.samples({})).toMatchObject([
       { probe: "trace.read", keys: { request: "r1", session: "s" } },
-      { probe: "session.messages", n: 2, status: "ok", keys: { request: "r1", session: "s" } },
+      {
+        probe: "session.messages",
+        attrs: { items: 2 },
+        status: "ok",
+        keys: { request: "r1", session: "s" },
+      },
       { probe: "trace.read", status: "error" },
     ]);
     svc.setEnabled(false);

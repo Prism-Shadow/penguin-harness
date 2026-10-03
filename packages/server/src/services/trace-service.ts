@@ -343,7 +343,7 @@ export class TraceService implements Traces {
     this.observeShardRead?.(path);
     const read = () => readTraceTolerant(path);
     return this.telemetry
-      ? this.telemetry.span("trace.read", {}, read, (m) => ({ n: m.length }))
+      ? this.telemetry.span("trace.read", {}, read, (m) => ({ attrs: { messages: m.length } }))
       : read();
   }
 
@@ -583,8 +583,7 @@ export class TraceService implements Traces {
     if (!this.telemetry) return read();
     // The Trace files it reads are this sample's trace.read samples, keyed by the same session.
     return this.telemetry.span("session.messages", { session: sessionId }, read, (r) => ({
-      n: r.messages.length,
-      attrs: { kind: req.kind, reachesEnd: r.reachesEnd },
+      attrs: { kind: req.kind, messages: r.messages.length, reachesEnd: r.reachesEnd },
     }));
   }
 

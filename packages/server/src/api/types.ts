@@ -334,11 +334,12 @@ export interface TelemetrySampleInput {
   probe: string;
   durMs?: number;
   bytes?: number;
-  /** A count (records, messages) — what the probe says it counts. */
-  n?: number;
   status?: string;
   keys?: TelemetryKeys;
-  /** The probe's own attributes: a fixed set per probe, never content (no paths, no text). */
+  /**
+   * The probe's own attributes: a fixed set per probe, each named for what it is (`messages`,
+   * `route`) and documented in the probe reference — never content (no paths, no text).
+   */
   attrs?: Record<string, string | number | boolean>;
 }
 
@@ -349,7 +350,6 @@ export interface TelemetrySample {
   probe: string;
   durMs?: number;
   bytes?: number;
-  n?: number;
   status?: string;
   keys: TelemetryKeys;
   attrs?: Record<string, string | number | boolean>;

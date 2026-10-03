@@ -38,7 +38,7 @@ export abstract class Telemetry extends Interface<{
     probe: string,
     keys: TelemetryKeys,
     run: () => Promise<T>,
-    describe?: (result: T) => Pick<TelemetrySampleInput, "n" | "bytes" | "attrs">,
+    describe?: (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">,
   ): Promise<T>;
   /** The buffered samples matching the query, oldest first. */
   samples(query: TelemetryQuery): TelemetrySample[];
