@@ -48,7 +48,10 @@ export function rowHelp(
 ): string | string[] | undefined {
   const choices = columns.filter((c) => c.type === "enum");
   const d = row.declared;
-  if (d?.description !== undefined && choices.every((c) => row.cells[c.name] === d.values[c.name])) {
+  if (
+    d?.description !== undefined &&
+    choices.every((c) => row.cells[c.name] === d.values[c.name])
+  ) {
     return localized(d.description, d.descriptionZh);
   }
   if (choices.length === 0) return undefined;
@@ -130,7 +133,12 @@ export function Cell({
         onChange={onCell}
       />
     ) : (
-      <Switch aria-label={cellLabel} checked={cell === true} disabled={disabled} onChange={onCell} />
+      <Switch
+        aria-label={cellLabel}
+        checked={cell === true}
+        disabled={disabled}
+        onChange={onCell}
+      />
     )
   ) : c.type === "enum" ? (
     <EnumCell

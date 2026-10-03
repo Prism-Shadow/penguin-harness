@@ -196,7 +196,7 @@ describe("the sandbox switch", () => {
     store({ mode: "read-only", network: "none" });
     expect(prePresetNotice(await card())).toEqual({
       tone: "attention",
-      text: "While the sandbox is on, new sessions start from the settings saved before the presets: files Read-only, network No network, ask mode Approve everything. No preset has these values, so no row is the default, and saving the card keeps them. To change that, set a row as the default from its \"…\" menu, or add a preset with these values and set it.",
+      text: 'While the sandbox is on, new sessions start from the settings saved before the presets: files Read-only, network No network, ask mode Approve everything. No preset has these values, so no row is the default, and saving the card keeps them. To change that, set a row as the default from its "…" menu, or add a preset with these values and set it.',
       textZh:
         "沙盒打开时，新会话从预设出现之前保存的设置开始：文件「只读」、网络「无网络」、询问模式「全部批准」。没有预设与之相同，因此没有一行是默认，保存卡片也会保留这些值。要改变它，在一行的「…」菜单里把它设为默认，或先添加一条同值的预设再设为默认。",
     });

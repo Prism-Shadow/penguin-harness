@@ -149,7 +149,7 @@ describe("the settings card", () => {
     const at = html.indexOf('aria-label="Full Access · Name"');
     expect(html.indexOf("(Default)", at)).toBeLessThan(html.indexOf("Read Only", at));
     expect(html).not.toContain(">Default<");
-    expect(html).not.toContain("aria-pressed=\"true\" data-tooltip=\"Already");
+    expect(html).not.toContain('aria-pressed="true" data-tooltip="Already');
     // In Chinese, with the title's Chinese and full-width brackets.
     setActiveStrings(zh);
     try {
@@ -174,7 +174,11 @@ describe("the settings card", () => {
     const localized = (en: string) => en;
     const files = PRESETS.columns![1]!;
     const declared = PRESETS.rows![1]!;
-    const drawn = (mode: string) => ({ id: "b", declared, cells: { name: "", mode, enabled: false } });
+    const drawn = (mode: string) => ({
+      id: "b",
+      declared,
+      cells: { name: "", mode, enabled: false },
+    });
     // A declared row keeping its choices: its own text.
     expect(rowHelp(PRESETS.columns!, drawn("ro"), localized)).toBe("For looking around");
     // Its choices changed, or a row with no text of its own: a line per choice, with what it does.

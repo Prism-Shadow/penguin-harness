@@ -130,7 +130,8 @@ export const SANDBOX_GROUP = "sandbox";
                     value: "read-only",
                     title: "Read-only",
                     titleZh: "只读",
-                    description: "Commands and file tools may write nothing but the temp directory.",
+                    description:
+                      "Commands and file tools may write nothing but the temp directory.",
                     descriptionZh: "命令与文件工具除临时目录外什么都不能写。",
                   },
                 ],
@@ -231,7 +232,8 @@ export const SANDBOX_GROUP = "sandbox";
                 valuesZh: { name: "完全访问" },
                 description:
                   "No sandbox and nothing asked: the agent writes files, runs commands and uses the network freely. For work you trust and watch.",
-                descriptionZh: "不进沙盒，也不询问：Agent 可以随意写文件、执行命令、联网。适合你信任并在旁照看的工作。",
+                descriptionZh:
+                  "不进沙盒，也不询问：Agent 可以随意写文件、执行命令、联网。适合你信任并在旁照看的工作。",
                 locked: ["mode", "network", "approvalMode"],
               },
               {
@@ -260,7 +262,8 @@ export const SANDBOX_GROUP = "sandbox";
                 valuesZh: { name: "仅工作区可写" },
                 description:
                   "Commands and file tools change files only inside the workspace; the network is open and calls run without asking. For everyday coding.",
-                descriptionZh: "命令与文件工具只能改工作区内的文件；网络不受限，调用无需询问。适合日常编码。",
+                descriptionZh:
+                  "命令与文件工具只能改工作区内的文件；网络不受限，调用无需询问。适合日常编码。",
               },
               {
                 id: "read-only",
@@ -274,7 +277,8 @@ export const SANDBOX_GROUP = "sandbox";
                 valuesZh: { name: "只读" },
                 description:
                   "Nothing can be written but the temp directory; the network is open and calls run without asking. For exploring, reviewing and answering questions.",
-                descriptionZh: "除临时目录外什么都不能写；网络不受限，调用无需询问。适合浏览代码、审阅与答疑。",
+                descriptionZh:
+                  "除临时目录外什么都不能写；网络不受限，调用无需询问。适合浏览代码、审阅与答疑。",
               },
               {
                 id: "workspace-write-ask",

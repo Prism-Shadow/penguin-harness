@@ -575,7 +575,9 @@ describe("a table's row choice", () => {
                 name: "level",
                 type: "enum",
                 title: "Level",
-                options: [{ value: "low", title: "Low", description: "Quiet", descriptionZh: "安静" }],
+                options: [
+                  { value: "low", title: "Low", description: "Quiet", descriptionZh: "安静" },
+                ],
               },
             ],
             rows: [

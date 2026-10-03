@@ -67,7 +67,8 @@ function HeaderTitle({ title, info }: { title: string; info: string | undefined 
 }
 
 /** One drawn column: a field column, an extensible table's handle, or the row's "…" menu. */
-type Slot = { kind: "column"; column: PluginConfigTableColumn } | { kind: "move" } | { kind: "more" };
+type Slot =
+  { kind: "column"; column: PluginConfigTableColumn } | { kind: "move" } | { kind: "more" };
 
 /**
  * A drag in progress: the row, how far the pointer has moved, and where the row would land
