@@ -3,6 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#961](https://github.com/Prism-Shadow/penguin-harness/pull/961)
 
 [中文版](2026-10-02-dock-fullscreen.zh.md)
 
