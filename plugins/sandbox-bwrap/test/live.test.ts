@@ -4,8 +4,8 @@
  *
  * Host-gated — a package whose whole job is kernel confinement can only be proven on a
  * host that has bubblewrap; elsewhere the suite skips and profile.test.ts still pins
- * the profile and the fail-closed path — unless the run names `bwrap` in
- * PENGUIN_SANDBOX_LIVE, and then a host that cannot open it fails with the reason (see
+ * the profile and the fail-closed path — unless the run names `sandbox-bwrap` in
+ * PENGUIN_MUST_RUN, and then a host that cannot open it fails with the reason (see
  * liveSuite below). The bubblewrap under test is the one the plugin ships, which this
  * package's global setup (test/global-setup.ts) puts in place on Linux when it is
  * missing. The backend is driven DIRECTLY here (no SandboxService): what a plugin
@@ -29,26 +29,30 @@ const provider = createPenguinBwrapProvider();
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
 /**
- * Whether a live suite runs, skips, or fails, given why this host cannot open its backend
- * (null: it can). PENGUIN_SANDBOX_LIVE is a comma-separated list of the backends whose live
- * suites a run REQUIRES: CI sets it per platform, so a host that stops opening a backend turns
- * the run red with the probe's reason instead of skipping — a skip reads like a pass. A backend
- * the run does not name skips where it cannot open, as on a developer's machine.
+ * Whether a live suite runs, skips, or fails, given why this host cannot open it (null: it
+ * can). PENGUIN_MUST_RUN is a comma-separated list of the environment-dependent suites a run
+ * REQUIRES, each named by its directory under plugins/ (this one is `sandbox-bwrap`): CI sets it
+ * per platform, so a host that stops opening a named suite turns the run red with the probe's
+ * reason instead of skipping — a skip reads like a pass. A suite the run does not name skips
+ * where it cannot open, as on a developer's machine.
  *
  * The same few lines live in the sandbox-dsh and sandbox-seatbelt live suites: three test files
  * read one environment variable, and the three plugins share no test-only package to hold it
- * (each depends on core alone, which is no place for a test knob). Keep the copies identical.
+ * (each depends on core alone, which is no place for a test knob). Keep the copies identical;
+ * they move into a shared helper once a suite outside the sandbox plugins reads PENGUIN_MUST_RUN.
+ * Known weakness: each suite recognises only its own name, so a misspelled name in
+ * PENGUIN_MUST_RUN is silently ignored.
  */
 function liveSuite(
-  backend: string,
+  suite: string,
   cannotOpen: string | null,
   env: NodeJS.ProcessEnv = process.env,
 ): "run" | "skip" | { fail: string } {
   if (cannotOpen === null) return "run";
-  const required = (env.PENGUIN_SANDBOX_LIVE ?? "").split(",");
-  if (!required.some((name) => name.trim() === backend)) return "skip";
+  const required = (env.PENGUIN_MUST_RUN ?? "").split(",");
+  if (!required.some((name) => name.trim() === suite)) return "skip";
   return {
-    fail: `PENGUIN_SANDBOX_LIVE requires the ${backend} live suite, and this host cannot open it: ${cannotOpen}`,
+    fail: `PENGUIN_MUST_RUN requires ${suite}, and this host cannot open it: ${cannotOpen}`,
   };
 }
 
@@ -66,7 +70,7 @@ async function hostCannotOpen(): Promise<string | null> {
   }
 }
 
-const verdict = liveSuite("bwrap", await hostCannotOpen());
+const verdict = liveSuite("sandbox-bwrap", await hostCannotOpen());
 const usable = verdict === "run";
 
 const mgr = new CommandSessionManager({
@@ -104,22 +108,28 @@ afterAll(() => {
   rmSync(outsideProbe, { force: true });
 });
 
-describe("PENGUIN_SANDBOX_LIVE and the bubblewrap under test", () => {
-  it("a backend the run requires fails instead of skipping", () => {
+describe("PENGUIN_MUST_RUN and the bubblewrap under test", () => {
+  it("a suite the run requires fails instead of skipping", () => {
     const reason = "'bwrap' is missing or refuses the base profile";
-    const cannotOpen = (live?: string) =>
-      liveSuite("bwrap", reason, live === undefined ? {} : { PENGUIN_SANDBOX_LIVE: live });
-    expect(cannotOpen("bwrap,dsh")).toEqual({
-      fail: `PENGUIN_SANDBOX_LIVE requires the bwrap live suite, and this host cannot open it: ${reason}`,
+    const cannotOpen = (mustRun?: string) =>
+      liveSuite(
+        "sandbox-bwrap",
+        reason,
+        mustRun === undefined ? {} : { PENGUIN_MUST_RUN: mustRun },
+      );
+    expect(cannotOpen("sandbox-bwrap,sandbox-dsh")).toEqual({
+      fail: `PENGUIN_MUST_RUN requires sandbox-bwrap, and this host cannot open it: ${reason}`,
     });
-    expect(cannotOpen(" dsh , bwrap ")).toHaveProperty("fail");
-    // Not named (or named only as part of another name): skips, as it always has.
+    expect(cannotOpen(" sandbox-dsh , sandbox-bwrap ")).toHaveProperty("fail");
+    // Not named (or named only as part of another name, or by its bare backend): skips, as it
+    // always has.
     expect(cannotOpen(undefined)).toBe("skip");
     expect(cannotOpen("")).toBe("skip");
-    expect(cannotOpen("dsh,seatbelt,bwrap2")).toBe("skip");
+    expect(cannotOpen("sandbox-dsh,sandbox-seatbelt,sandbox-bwrap2")).toBe("skip");
+    expect(cannotOpen("bwrap")).toBe("skip");
     // A host that opens it runs it, named or not.
-    expect(liveSuite("bwrap", null, { PENGUIN_SANDBOX_LIVE: "bwrap" })).toBe("run");
-    expect(liveSuite("bwrap", null, {})).toBe("run");
+    expect(liveSuite("sandbox-bwrap", null, { PENGUIN_MUST_RUN: "sandbox-bwrap" })).toBe("run");
+    expect(liveSuite("sandbox-bwrap", null, {})).toBe("run");
   });
 
   it("the suite fetches the bubblewrap it ships when it is missing", async () => {

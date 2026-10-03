@@ -136,9 +136,10 @@ jobs:
   # and prepares no sandbox backend: sandbox-bwrap's tests fetch the bubblewrap the plugin
   # ships themselves (its vitest global setup), so CI need not know what that takes.
   #
-  # `live` is PENGUIN_SANDBOX_LIVE: the sandbox backends whose live suites this platform
-  # must run. A named backend whose host probe fails turns the shard red with the probe's
-  # reason instead of skipping; an unnamed one skips where it cannot open, as locally.
+  # `must_run` is PENGUIN_MUST_RUN: the environment-dependent suites (directory names under
+  # plugins/) this platform must really run. A named suite whose host probe fails turns the
+  # shard red with the probe's reason instead of skipping; an unnamed one skips where it
+  # cannot open, as locally.
   test:
     name: test (${{ matrix.shard }})
     runs-on: ubuntu-latest
@@ -163,7 +164,7 @@ jobs:
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server'
               --filter '!@prismshadow/penguin-web' --filter '!@prismshadow/penguin-ui'
               --filter '!@prismshadow/penguin-cli' test
-            live: bwrap,dsh
+            must_run: sandbox-bwrap,sandbox-dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -178,7 +179,7 @@ jobs:
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
         env:
-          PENGUIN_SANDBOX_LIVE: ${{ matrix.live }}
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
 
   # The installer bundle and the live-LLM e2e, together because both want a full build and
   # neither is long. The secret is exposed only in its own step (step-level env), so earlier
@@ -231,8 +232,8 @@ jobs:
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             smoke: true
-            # PENGUIN_SANDBOX_LIVE, as on ubuntu: these live suites must run here.
-            live: seatbelt,dsh
+            # PENGUIN_MUST_RUN, as on ubuntu: these suites must run here.
+            must_run: sandbox-seatbelt,sandbox-dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -241,7 +242,7 @@ jobs:
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
         env:
-          PENGUIN_SANDBOX_LIVE: ${{ matrix.live }}
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
       - name: Terminal smoke (node-pty under Electron's Node)
         if: matrix.smoke
         run: node packages/desktop/scripts/terminal-smoke.mjs

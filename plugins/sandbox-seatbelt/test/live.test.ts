@@ -4,7 +4,7 @@
  *
  * Host-gated — this suite can only run where Seatbelt exists, so it skips everywhere
  * else and profile.test.ts carries the deterministic coverage — unless the run names
- * `seatbelt` in PENGUIN_SANDBOX_LIVE, and then a host that cannot open it fails with the
+ * `sandbox-seatbelt` in PENGUIN_MUST_RUN, and then a host that cannot open it fails with the
  * reason (see liveSuite below). Written to be the exact counterpart of the bwrap
  * package's live suite, so the two backends are held to the same behavioral bar.
  */
@@ -24,26 +24,30 @@ const provider = createSeatbeltProvider();
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
 /**
- * Whether a live suite runs, skips, or fails, given why this host cannot open its backend
- * (null: it can). PENGUIN_SANDBOX_LIVE is a comma-separated list of the backends whose live
- * suites a run REQUIRES: CI sets it per platform, so a host that stops opening a backend turns
- * the run red with the probe's reason instead of skipping — a skip reads like a pass. A backend
- * the run does not name skips where it cannot open, as on a developer's machine.
+ * Whether a live suite runs, skips, or fails, given why this host cannot open it (null: it
+ * can). PENGUIN_MUST_RUN is a comma-separated list of the environment-dependent suites a run
+ * REQUIRES, each named by its directory under plugins/ (this one is `sandbox-seatbelt`): CI sets it
+ * per platform, so a host that stops opening a named suite turns the run red with the probe's
+ * reason instead of skipping — a skip reads like a pass. A suite the run does not name skips
+ * where it cannot open, as on a developer's machine.
  *
  * A copy of the one in sandbox-bwrap's live suite, where its unit test lives: three test files
  * read one environment variable, and the three plugins share no test-only package to hold it
- * (each depends on core alone, which is no place for a test knob). Keep the copies identical.
+ * (each depends on core alone, which is no place for a test knob). Keep the copies identical;
+ * they move into a shared helper once a suite outside the sandbox plugins reads PENGUIN_MUST_RUN.
+ * Known weakness: each suite recognises only its own name, so a misspelled name in
+ * PENGUIN_MUST_RUN is silently ignored.
  */
 function liveSuite(
-  backend: string,
+  suite: string,
   cannotOpen: string | null,
   env: NodeJS.ProcessEnv = process.env,
 ): "run" | "skip" | { fail: string } {
   if (cannotOpen === null) return "run";
-  const required = (env.PENGUIN_SANDBOX_LIVE ?? "").split(",");
-  if (!required.some((name) => name.trim() === backend)) return "skip";
+  const required = (env.PENGUIN_MUST_RUN ?? "").split(",");
+  if (!required.some((name) => name.trim() === suite)) return "skip";
   return {
-    fail: `PENGUIN_SANDBOX_LIVE requires the ${backend} live suite, and this host cannot open it: ${cannotOpen}`,
+    fail: `PENGUIN_MUST_RUN requires ${suite}, and this host cannot open it: ${cannotOpen}`,
   };
 }
 
@@ -57,7 +61,7 @@ const cannotOpen = (() => {
   }
 })();
 
-const verdict = liveSuite("seatbelt", cannotOpen);
+const verdict = liveSuite("sandbox-seatbelt", cannotOpen);
 const usable = verdict === "run";
 
 const mgr = new CommandSessionManager({

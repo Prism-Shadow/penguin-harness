@@ -12,6 +12,6 @@ ubuntu 的 `rest` 测试分片逐个点名所跑的包，因此 `plugins/` 下�
 ## 详情
 
 - ubuntu 的 `rest` 分片改为与 macOS、Windows 相同的「递归＋排除」写法：除 core、server、web、ui、cli（它们各有自己的分片）外全部运行。新增的包默认就会被调度，不再依赖有人记得把它列进去。构建清单与 macOS、Windows 的相同。
-- `PENGUIN_SANDBOX_LIVE`（逗号分隔的后端名：`bwrap`、`dsh`、`seatbelt`）声明一次运行必须真跑的沙盒实时套件。被点名的后端探测失败时，其实时套件判红并带出探测失败的原因（bwrap 在 Ubuntu 上即点名 user namespace 开关），不再跳过；未点名的后端打不开时照旧跳过。CI 在 `rest` 分片上设置它：ubuntu 为 `bwrap,dsh`，macOS 为 `seatbelt,dsh`。
+- `PENGUIN_MUST_RUN`（逗号分隔的套件目录名，即 `plugins/` 下的目录：`sandbox-bwrap`、`sandbox-dsh`、`sandbox-seatbelt`）声明一次运行必须真跑的环境相关套件。被点名的套件探测失败时判红并带出探测失败的原因（`sandbox-bwrap` 在 Ubuntu 上即点名 user namespace 开关），不再跳过；未点名的套件打不开时照旧跳过。每个套件只认自己的名字，因此拼错的名字会被忽略。CI 在 `rest` 分片上设置它：ubuntu 为 `sandbox-bwrap,sandbox-dsh`，macOS 为 `sandbox-seatbelt,sandbox-dsh`。
 - `sandbox-bwrap` 的测试在插件自带的 bubblewrap 不在位时自行取到位：vitest 的 global setup 在 Linux 上调用 `scripts/vendor-bwrap.mjs`（按 sha256 固定，缓存于 `node_modules/.cache`）；已在位时什么都不做，非 Linux 上也什么都不做。只跑测试也能测到用户拿到的那一个程序，CI 也不再为此构建该插件。
 - 该分片在测试前新增「Allow unprivileged user namespaces」一步，把 `kernel.apparmor_restrict_unprivileged_userns` 设为 0：Ubuntu 23.10 起只允许带 AppArmor 配置的程序创建非特权 user namespace，而自带的 bwrap 没有配置。
