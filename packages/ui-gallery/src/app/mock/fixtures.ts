@@ -1329,6 +1329,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ],
     },
     "/home": { path: "/home", parent: "/", entries: [{ name: "demo", path: "/home/demo" }] },
+    "/mnt/data": {
+      path: "/mnt/data",
+      parent: "/mnt",
+      entries: [{ name: "datasets", path: "/mnt/data/datasets" }],
+    },
     "/": { path: "/", parent: null, entries: [{ name: "home", path: "/home" }] },
   };
 

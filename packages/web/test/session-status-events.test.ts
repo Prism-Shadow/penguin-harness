@@ -9,7 +9,8 @@
  * - session_background sets or clears the named row's counts, and moves neither the glyph nor
  *   the status.
  * - session_title renames the named row in place.
- * - An event for a Session no loaded page holds changes nothing, and one that matches the row
+ * - An event for a Session no loaded page holds changes nothing (a status from another Project;
+ *   one of this Project's is fetched — sessions-store.test.ts), and one that matches the row
  *   already is a no-op (the same array, so nothing re-renders).
  * - A first run settles into the unread dot, not a blank: the run itself proves the Session
  *   has a Trace, from the server's flag or a live status, and a Session that ran never goes
@@ -74,7 +75,8 @@ const stateEvent = (
   state: SessionStatus,
   lastActiveAt: string,
   hasTrace = true,
-): ServerEvent => ({ type: "session_state", sessionId, state, lastActiveAt, hasTrace });
+  projectId = "proj",
+): ServerEvent => ({ type: "session_state", sessionId, projectId, state, lastActiveAt, hasTrace });
 
 const rowOf = (store: ReturnType<typeof storeWith>, sessionId: string) =>
   store.getState().sessions.find((s) => s.sessionId === sessionId)!;
@@ -185,7 +187,7 @@ describe("session_title on the user channel", () => {
 
 describe("events that need no change", () => {
   const events: ServerEvent[] = [
-    stateEvent("not-loaded", "running", STARTED),
+    stateEvent("not-loaded", "running", STARTED, true, "another-project"),
     { type: "session_background", sessionId: "not-loaded", processes: 1, subagents: 0 },
     { type: "session_title", sessionId: "not-loaded", title: "whatever" },
   ];

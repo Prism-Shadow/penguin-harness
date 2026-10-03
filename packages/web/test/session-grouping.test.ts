@@ -25,9 +25,19 @@
  *   path or an Agent id.
  * - Every counted Workspace becomes a group (empty when none of its rows loaded), placed by
  *   the newer of its stamp and its loaded rows, the temp group last; a count of zero forms none.
+ * - The activity order is last activity, then id, both by code point — where a locale's
+ *   collation would rank case or punctuation the other way, it does not follow it.
+ * - A merged list's watermark is the most recent cursor among the streams with more; a stream
+ *   with nothing read, or nothing left, bounds nothing. The cut keeps the rows at or above it
+ *   and the open conversation wherever it falls; no watermark keeps every row.
+ * - Property (seeded, 200 runs): over 1–4 streams paged by cursor, with live flips moving rows
+ *   up (a loaded one in place, an unloaded one fetched), the cut list is always a prefix of the
+ *   true order; a load only appends below it, and loading every stream with more shows at
+ *   least a page more, or the rest.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-server/api";
+import type { ActivityKey, StreamPosition } from "../src/lib/session-grouping";
 import {
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
@@ -35,7 +45,11 @@ import {
   TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
   aggregateWorkspaceLatest,
+  activityCursorParam,
+  activityWatermark,
+  compareActivityDesc,
   completeWorkspaceGroups,
+  cutAtWatermark,
   matchesSessionQuery,
   groupSessionsByTime,
   groupSessionsByWorkspace,
@@ -749,5 +763,188 @@ describe("completeWorkspaceGroups (every counted Workspace is a group, placed by
     const groups = completeWorkspaceGroups(loaded, counts, new Map());
     expect(groups.map((g) => g.key)).toEqual(["/srv/alpha", TEMP_WORKSPACE_GROUP_KEY]);
     expect(groups[1]).toMatchObject({ label: "", fullPath: null, temp: true, sessions: [] });
+  });
+});
+
+describe("the activity order", () => {
+  const key = (lastActiveAt: string, sessionId: string): ActivityKey => ({
+    lastActiveAt,
+    sessionId,
+  });
+  const ids = (keys: ActivityKey[]) => keys.map((k) => k.sessionId);
+
+  it("puts the most recent activity first, then the higher id", () => {
+    const rows = [
+      key("2026-09-01T00:00:00.000Z", "s-b"),
+      key("2026-09-02T00:00:00.000Z", "s-a"),
+      key("2026-09-01T00:00:00.000Z", "s-c"),
+    ];
+    expect(ids([...rows].sort(compareActivityDesc))).toEqual(["s-a", "s-c", "s-b"]);
+  });
+
+  it("compares by code point where a locale's collation would order the pair the other way", () => {
+    // The browser names the cursor and the server slices on it: both must agree on one order.
+    const stamp = "2026-09-01T00:00:00.000Z";
+    for (const [higher, lower] of [
+      ["session-abcd", "session-ABCD"],
+      ["session-a_b", "session-a-b"],
+    ] as const) {
+      expect(higher.localeCompare(lower, "en")).toBeLessThan(0);
+      expect(compareActivityDesc(key(stamp, higher), key(stamp, lower))).toBeLessThan(0);
+    }
+  });
+
+  it("names a cursor as <lastActiveAt>,<sessionId>", () => {
+    expect(activityCursorParam(key("2026-09-01T00:00:00.000Z", "session-x"))).toBe(
+      "2026-09-01T00:00:00.000Z,session-x",
+    );
+  });
+});
+
+describe("the watermark of a merged list", () => {
+  const at = (day: number, sessionId = `s-${day}`): ActivityKey => ({
+    lastActiveAt: `2026-09-${String(day).padStart(2, "0")}T00:00:00.000Z`,
+    sessionId,
+  });
+
+  it("is the most recent cursor among the streams that still have more", () => {
+    expect(
+      activityWatermark([
+        { hasMore: true, cursor: at(3) },
+        { hasMore: true, cursor: at(7) },
+        // Exhausted: everything it holds is already in hand, however recent its last row.
+        { hasMore: false, cursor: at(9) },
+      ]),
+    ).toEqual(at(7));
+  });
+
+  it("is absent when no stream has more, and a stream with nothing read bounds nothing", () => {
+    expect(activityWatermark([])).toBeNull();
+    expect(activityWatermark([{ hasMore: false, cursor: at(3) }])).toBeNull();
+    expect(
+      activityWatermark([
+        { hasMore: true, cursor: null },
+        { hasMore: true, cursor: at(2) },
+      ]),
+    ).toEqual(at(2));
+  });
+
+  it("the cut keeps the rows at or above it, in order, and the open conversation wherever it falls", () => {
+    const rows = [at(1), at(5), at(3), at(4), at(2)];
+    expect(cutAtWatermark(rows, at(3)).map((r) => r.sessionId)).toEqual(["s-5", "s-4", "s-3"]);
+    expect(cutAtWatermark(rows, at(3), "s-1").map((r) => r.sessionId)).toEqual([
+      "s-5",
+      "s-4",
+      "s-3",
+      "s-1",
+    ]);
+    expect(cutAtWatermark(rows, null).map((r) => r.sessionId)).toEqual([
+      "s-5",
+      "s-4",
+      "s-3",
+      "s-2",
+      "s-1",
+    ]);
+  });
+});
+
+/** A seeded linear congruential generator: deterministic runs whose failures name their seed. */
+function lcg(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+describe("property: a list merged from cursor-paged streams", () => {
+  /** One server stream and the client's position in it. */
+  interface Stream extends StreamPosition {
+    rows: ActivityKey[];
+  }
+
+  it("is a prefix of the true order after any loads and flips, and loads only append", () => {
+    const STAMPS = [1, 2, 3, 5, 8].map((d) => `2026-09-0${d}T00:00:00.000Z`);
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const rand = lcg(seed);
+      const int = (n: number) => Math.floor(rand() * n);
+      let n = 0;
+      const streams: Stream[] = Array.from({ length: 1 + int(4) }, () => ({
+        hasMore: false,
+        cursor: null,
+        rows: Array.from({ length: int(26) }, () => ({
+          lastActiveAt: STAMPS[int(STAMPS.length)]!,
+          sessionId: `s${String(n++).padStart(3, "0")}`,
+        })),
+      }));
+      /** What the client holds: its own copy of each row it was served or fetched. */
+      const pool = new Map<string, ActivityKey>();
+      let clock = Date.parse("2026-09-20T00:00:00.000Z");
+
+      /** The server answering a page: the rows strictly below the cursor, one extra for "more". */
+      const load = (stream: Stream) => {
+        const below = [...stream.rows]
+          .sort(compareActivityDesc)
+          .filter((r) => stream.cursor === null || compareActivityDesc(r, stream.cursor) > 0);
+        const { items, hasMore } = splitPage(
+          below.slice(0, SIDEBAR_PAGE_SIZE + 1),
+          SIDEBAR_PAGE_SIZE,
+        );
+        for (const r of items) pool.set(r.sessionId, { ...r });
+        const last = items.at(-1);
+        stream.hasMore = hasMore;
+        if (last !== undefined) stream.cursor = { ...last };
+      };
+      const view = () => cutAtWatermark([...pool.values()], activityWatermark(streams));
+      const truth = () =>
+        streams
+          .flatMap((s) => s.rows)
+          .sort(compareActivityDesc)
+          .map((r) => r.sessionId);
+      const expectPrefix = (what: string) => {
+        const shown = view().map((r) => r.sessionId);
+        expect(shown, `seed ${seed}, ${what}`).toEqual(truth().slice(0, shown.length));
+      };
+
+      for (const stream of streams) load(stream);
+      expectPrefix("first pages");
+      for (let step = 1; step <= 30; step += 1) {
+        const roll = rand();
+        const withMore = streams.filter((s) => s.hasMore);
+        if (roll < 0.65 && withMore.length > 0) {
+          const every = roll < 0.25;
+          const chosen = every ? withMore : withMore.filter(() => rand() < 0.5);
+          if (chosen.length === 0) chosen.push(withMore[int(withMore.length)]!);
+          const before = view();
+          for (const stream of chosen) load(stream);
+          const what = `step ${step}: load ${every ? "every stream" : "some streams"}`;
+          expectPrefix(what);
+          const after = view();
+          expect(after.slice(0, before.length), `seed ${seed}, ${what}`).toEqual(before);
+          const floor = before.at(-1);
+          if (floor !== undefined) {
+            for (const r of after.slice(before.length)) {
+              expect(compareActivityDesc(r, floor), `seed ${seed}, ${what}`).toBeGreaterThan(0);
+            }
+          }
+          if (every) {
+            const remaining = truth().length - before.length;
+            expect(after.length - before.length, `seed ${seed}, ${what}`).toBeGreaterThanOrEqual(
+              Math.min(SIDEBAR_PAGE_SIZE, remaining),
+            );
+          }
+        } else {
+          const all = streams.flatMap((s) => s.rows);
+          if (all.length === 0) continue;
+          const row = all[int(all.length)]!;
+          clock += 60_000;
+          row.lastActiveAt = new Date(clock).toISOString();
+          // Loaded: its own key rises in place. Not loaded: the event fetches it (it has moved
+          // above every cursor, so no page will serve it again).
+          pool.set(row.sessionId, { ...row });
+          expectPrefix(`step ${step}: flip ${row.sessionId}`);
+        }
+      }
+    }
   });
 });

@@ -162,6 +162,14 @@ export abstract class Traces {
     offset: number,
     limit: number,
   ): Promise<TraceEventsResponse>;
+  abstract readTraceImage(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    fileIndex: number,
+    ordinal: number,
+    slot: number | undefined,
+  ): Promise<{ mime: string; bytes: Buffer }>;
   abstract analyze(
     projectId: string,
     agentId: string,

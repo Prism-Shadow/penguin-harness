@@ -118,6 +118,26 @@ describe("the mocked API", () => {
     expect(notes.counts?.active).toBe(notes.sessions.length);
   });
 
+  it("pages the list by last activity with a cursor, as the sidebar asks for it", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    const opts = { limit: 3, order: "activity" as const, category: "active" as const };
+    const first = await api.listSessions(project, agent, opts);
+    const rest = await api.listSessions(project, agent, {
+      ...opts,
+      limit: 100,
+      before: first.sessions.at(-1)!,
+    });
+    const all = await api.listSessions(project, agent, { ...opts, limit: 100 });
+    // The two pages are the whole list, in one order and with no row twice.
+    expect([...first.sessions, ...rest.sessions].map((s) => s.sessionId)).toEqual(
+      all.sessions.map((s) => s.sessionId),
+    );
+    const stamps = all.sessions.map((s) => s.lastActiveAt);
+    expect(stamps).toEqual([...stamps].sort().reverse());
+  });
+
   it("serves a running Session's history with its live tail, and a finished one without", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const running = store.f.sessions.find((s) => s.status === "running")!;

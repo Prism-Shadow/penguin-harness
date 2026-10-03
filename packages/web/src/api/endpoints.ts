@@ -235,6 +235,8 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
+import { activityCursorParam } from "../lib/session-grouping";
+import type { ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -708,13 +710,23 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
  * detect "has more". `category` filters server-side (paging applies within the category);
  * `workspaceGroup` narrows the same way to one Workspace group, so a group can page its own
  * stream; `withCounts` asks for per-category totals over the whole list alongside the page.
+ *
+ * The sidebar pages in activity order with a cursor (`order: "activity"` + `before`), never by
+ * offset: activity reorders the list while it is being read, and an offset page would skip a row
+ * that moved above it. A server that predates `order` ignores both parameters and answers in
+ * creation order — the next page then repeats rows the pool already holds, deduplicated by id.
  */
 export const listSessions = (
   projectId: string,
   agentId: string,
   opts?: {
-    offset: number;
+    /** Rows to skip, in creation order. Exclusive with `before`. */
+    offset?: number;
     limit: number;
+    /** `activity`: last activity first, ties by id descending (code-point order) — the sidebar's order. Omitted: creation order. */
+    order?: "created" | "activity";
+    /** Activity order only: rows strictly below this key — the last row of the previous page. */
+    before?: ActivityKey;
     category?: SessionCategory;
     /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
     workspaceGroup?: string;
@@ -730,7 +742,10 @@ export const listSessions = (
   machineId?: string | null,
 ) => {
   const qs = opts
-    ? `?limit=${opts.limit}&offset=${opts.offset}` +
+    ? `?limit=${opts.limit}` +
+      (opts.offset !== undefined ? `&offset=${opts.offset}` : "") +
+      (opts.order ? `&order=${opts.order}` : "") +
+      (opts.before ? `&before=${encodeURIComponent(activityCursorParam(opts.before))}` : "") +
       (opts.category ? `&category=${opts.category}` : "") +
       (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
       (opts.withCounts ? "&counts=1" : "") +
@@ -747,15 +762,26 @@ export const listSessions = (
  * Browses directories. With no machine, this server's own filesystem; with one, THAT
  * machine's — listed by this server over ssh, so picking a workspace on another machine
  * needs no second login to that machine's own server.
+ *
+ * `places` asks a home request (empty `path`) for the machine's standard folders and its
+ * locations (drives, volumes, mounts) as well. Only this server discovers them, so the flag
+ * goes on the local route alone; a machine reached over ssh answers with its folders only.
  */
-export const listDirs = (projectId: string, path = "", machineId?: string | null) =>
-  machineId === undefined || machineId === null
+export const listDirs = (
+  projectId: string,
+  path = "",
+  machineId?: string | null,
+  opts?: { places?: boolean },
+) => {
+  const places = opts?.places === true ? "&places=1" : "";
+  return machineId === undefined || machineId === null
     ? apiFetch<DirListResponse>(
-        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}${places}`,
       )
     : apiFetch<DirListResponse>(
         `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
       );
+};
 
 /**
  * Asks the desktop shell to read a folder macOS refused, in the app's own name — what makes
@@ -810,8 +836,16 @@ export const forkSession = (sessionId: string, body: SessionForkRequest) =>
     body,
   });
 
-export const getSession = (sessionId: string) =>
-  apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`);
+/**
+ * One Session's row. `machineId` names the server to ask when the caller knows and the id map
+ * does not yet — a Session the list has never fetched, announced by a machine's own event
+ * stream. Omitted, the id routes itself (lib/session-machines.ts).
+ */
+export const getSession = (sessionId: string, machineId?: string | null) =>
+  apiFetch<SessionResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}`,
+    machineId === undefined ? {} : { server: machineId },
+  );
 
 export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
   apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`, {

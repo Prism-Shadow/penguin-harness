@@ -2109,11 +2109,43 @@ function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): 
 // Overlap dedup (connect-first + dedup)
 // ---------------------------------------------------------------------------
 
-/** Disk-only transport metadata must not make an otherwise identical SSE envelope look new. */
+/** Stands in for an image's content inside a dedup key (see dedupKey). */
+const IMAGE_IN_KEY = "<image>";
+
+/**
+ * An image slot's value as the dedup key sees it: inline bytes (`data:`) and a history page's
+ * reference to the same Trace record (`/api/sessions/<id>/trace-image?…`) are one image; any
+ * other address (a web URL) is kept, since it is the same string in both copies anyway.
+ */
+function imageInKey(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return value.startsWith("data:") || /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
+    ? IMAGE_IN_KEY
+    : value;
+}
+
+/**
+ * The envelope a history copy and its SSE copy share. Disk-only transport metadata
+ * (`tracePosition`) must not make an otherwise identical SSE envelope look new, and neither
+ * may an image's form: a windowed history page carries a user `image_url` and a tool output's
+ * `images` by reference while the stream carries the bytes, and an SSE copy that escaped the
+ * overlap dedup would draw the person's image twice. Two images of one prompt may then share a
+ * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
+ * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ */
 function dedupKey(msg: OmniMessage): string {
   const { tracePosition: _tracePosition, ...envelope } = msg as OmniMessage & {
     tracePosition?: TracePosition;
   };
+  if (msg.type === "model_msg") {
+    const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
+    if (p.type === "image_url") {
+      return JSON.stringify({ ...envelope, payload: { ...p, image_url: imageInKey(p.image_url) } });
+    }
+    if (p.type === "tool_call_output" && Array.isArray(p.images)) {
+      return JSON.stringify({ ...envelope, payload: { ...p, images: p.images.map(imageInKey) } });
+    }
+  }
   return JSON.stringify(envelope);
 }
 

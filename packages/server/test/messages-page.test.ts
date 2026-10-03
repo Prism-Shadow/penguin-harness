@@ -11,6 +11,14 @@
  * shard-read discipline (an old-window request never reads the newest shard and vice
  * versa, once the per-shard prefix cache is primed), and the no-params full read
  * staying byte-identical with no `page` envelope.
+ *
+ * The byte budget (MESSAGES_PAGE_MAX_BYTES):
+ * - Given a newest unit larger than the budget, the page holds that unit alone and a cursor,
+ *   and the page before it continues exactly where it stopped.
+ * - Given units that together pass the budget, they join newest-first until the next one
+ *   would pass it, and the cut page equals a unit-count cut at the same place (cursor,
+ *   prior stats, messages) — even when the whole history is within the unit count.
+ * - Given units carrying screenshots, an image counts as its reference URL, not its bytes.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -36,6 +44,7 @@ import {
 } from "@prismshadow/penguin-core/markers";
 import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { decodeCursor, encodeCursor } from "../src/services/message-window.js";
+import { MESSAGES_PAGE_MAX_BYTES } from "../src/services/trace-service.js";
 import type { TraceService } from "../src/services/trace-service.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
@@ -74,6 +83,32 @@ function turn(mm: number, n: number, sessionTotal: number): OmniMessage[] {
     at(t("02.000"), assistantText(`a${n}`)),
     at(t("03.000"), requestEnd("completed")),
     at(t("03.500"), tokenUsage(counts(sessionTotal), counts(100 + n))),
+  ];
+}
+
+/**
+ * One Task whose tool output carries `outputChars` characters of text, or as many characters
+ * of base64 in one PNG screenshot when `image` is set.
+ */
+function heavyTurn(mm: number, n: number, outputChars: number, image = false): OmniMessage[] {
+  const t = (s: string) => `2026-07-20T10:${String(mm).padStart(2, "0")}:${s}Z`;
+  const output = image
+    ? toolCallOutput({
+        output: "screenshot",
+        toolCallId: `t${n}`,
+        images: [`data:image/png;base64,${"A".repeat(outputChars)}`],
+      })
+    : toolCallOutput({ output: "x".repeat(outputChars), toolCallId: `t${n}` });
+  return [
+    at(t("00.000"), userText(`q${n}`)),
+    at(t("01.000"), requestBegin()),
+    at(t("02.000"), toolCall({ name: "exec", arguments: "{}", toolCallId: `t${n}` })),
+    at(t("03.000"), requestEnd("completed")),
+    at(t("04.000"), output),
+    at(t("05.000"), requestBegin()),
+    at(t("06.000"), assistantText(`a${n}`)),
+    at(t("07.000"), requestEnd("completed")),
+    at(t("07.500"), tokenUsage(counts(1000 * n), counts(100 + n))),
   ];
 }
 
@@ -652,6 +687,64 @@ describe("messages windowed reads", () => {
     expect(tail.before).toBeUndefined();
     expect(tail.prior.turns).toBe(0);
     expect(tail.messages).toEqual(await service.readMessages(P, A, S));
+  });
+
+  it("a newest unit over the byte budget comes alone with a cursor, and the page before continues there", async () => {
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+      ...heavyTurn(2, 3, MESSAGES_PAGE_MAX_BYTES + 1),
+    ]);
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 50 });
+    expect(userTexts(tail.messages)).toEqual(["q3"]);
+    expect(tail.before).toBeDefined();
+    expect(tail.prior.turns).toBe(2);
+
+    const rest = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(tail.before!)!,
+      limit: 50,
+    });
+    expect(userTexts(rest.messages)).toEqual(["q1", "q2"]);
+    expect(rest.before).toBeUndefined();
+    expect([...rest.messages, ...tail.messages]).toEqual(await service.readMessages(P, A, S));
+  });
+
+  it("units join newest-first until the next would pass the budget; the cut equals a unit-count cut there", async () => {
+    const unitChars = Math.ceil(MESSAGES_PAGE_MAX_BYTES * 0.35);
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...heavyTurn(0, 1, unitChars),
+      ...heavyTurn(1, 2, unitChars),
+      ...heavyTurn(2, 3, unitChars),
+    ]);
+    // Three units are within the count but not the budget: two fit.
+    const cut = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 50 });
+    expect(userTexts(cut.messages)).toEqual(["q2", "q3"]);
+    expect(cut).toEqual(await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 }));
+
+    const first = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(cut.before!)!,
+      limit: 50,
+    });
+    expect(userTexts(first.messages)).toEqual(["q1"]);
+    expect(first.before).toBeUndefined();
+    expect([...first.messages, ...cut.messages]).toEqual(await service.readMessages(P, A, S));
+  });
+
+  it("a screenshot costs its reference, not its bytes, against the budget", async () => {
+    const imageChars = Math.ceil(MESSAGES_PAGE_MAX_BYTES * 0.4);
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...heavyTurn(0, 1, imageChars, true),
+      ...heavyTurn(1, 2, imageChars, true),
+      ...heavyTurn(2, 3, imageChars, true),
+    ]);
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 50 });
+    expect(userTexts(tail.messages)).toEqual(["q1", "q2", "q3"]);
+    expect(tail.before).toBeUndefined();
   });
 
   it("names the model of the context a window starts in: the session_meta heading that shard, which the window does not hold", async () => {

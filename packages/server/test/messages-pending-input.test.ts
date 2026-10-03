@@ -9,6 +9,8 @@
  *   (full and tail reads alike) exactly once, and both holds end at the first request_begin,
  *   while the run is still going — a hold outliving the tail window would re-append the input.
  * - An input already persisted with a Trace position is not served twice.
+ * - A held image whose Trace copy has landed is served once on a windowed page, by reference:
+ *   the dedup compares the inline copies, and only then is the Trace copy's image referenced.
  * - A run aborted mid-bootstrap keeps its holds, so a reload still sees the message; the next
  *   run appends its own input and drops the stale connect pair.
  */
@@ -171,6 +173,46 @@ describe("GET /messages serves the running task's pending inputs", () => {
         (message) => (message.payload as { text?: string }).text === "positioned once",
       ),
     ).toHaveLength(1);
+
+    releaseBootstrap();
+    await waitFor(() => t.deps.manager.pendingInputs(SID).length === 0);
+    releaseRequest();
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("serves a held image whose Trace copy has landed once, by reference", async () => {
+    const png =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const res = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [
+        { type: "text", text: "see this" },
+        { type: "image_url", imageUrl: png },
+      ],
+    });
+    expect(res.status).toBe(202);
+    await waitFor(() => t.deps.manager.pendingBootstrap(SID).length === 1);
+    await writeTraceFile(t.root, PROJECT, "default_agent", "2026-08-15", SID, 1, [
+      sessionMeta({
+        session_id: SID,
+        provider: "custom",
+        model_id: "m1",
+        model_context_window: 10_000,
+        system_prompt: "test",
+        agent_state: "/tmp/agent-state",
+        workspace: "/tmp/w",
+      }),
+      ...t.deps.manager.pendingInputs(SID),
+    ]);
+
+    const tail = (await (
+      await api.get(`/api/sessions/${SID}/messages?tailLimit=10`)
+    ).json()) as MessagesResponse;
+    const images = tail.messages.filter(
+      (m) => (m.payload as { type?: string }).type === "image_url",
+    );
+    expect(images.map((m) => (m.payload as { image_url: string }).image_url)).toEqual([
+      `/api/sessions/${SID}/trace-image?file=1&ordinal=2`,
+    ]);
 
     releaseBootstrap();
     await waitFor(() => t.deps.manager.pendingInputs(SID).length === 0);
