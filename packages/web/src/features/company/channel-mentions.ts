@@ -154,6 +154,19 @@ const ASCII_TOKEN = /^((?:(?:agent|user):)?[A-Za-z0-9][A-Za-z0-9_.-]*)/;
 const WORD = /[A-Za-z0-9_]/;
 
 /**
+ * Whether a handle `rest` starts with may end there — the server's rule (endsHandle in
+ * organization/names.ts), copied because the two packages share no code: a handle ending in
+ * an ASCII word character must not be followed by a word character, nor by a `-` or `.` that
+ * goes on into one (`@Ada Lovelace-x` is not Ada; `@Ada Lovelace.` is).
+ */
+function endsHandle(handle: string, rest: string): boolean {
+  if (!WORD.test(handle[handle.length - 1]!)) return true;
+  const next = rest[handle.length] ?? "";
+  if (WORD.test(next)) return false;
+  return !((next === "-" || next === ".") && WORD.test(rest[handle.length + 1] ?? ""));
+}
+
+/**
  * Splits a message into plain runs and mention runs, in order. `names` are the employees'
  * names (name → agent id): a mention by name becomes a run whose token is `agent:<id>`, so
  * it is labelled and recognised exactly like one written by id. Without them only the ASCII
@@ -174,11 +187,9 @@ export function mentionRuns(
     let ascii = ASCII_TOKEN.exec(rest)?.[1] ?? "";
     ascii = ascii.replace(/[.-]+$/, "");
     if (/^(agent|user):$/.test(ascii)) ascii = "";
-    const name = byLength.find((handle) => {
-      if (handle === "" || !rest.startsWith(handle)) return false;
-      const next = rest[handle.length] ?? "";
-      return !(WORD.test(handle[handle.length - 1]!) && WORD.test(next));
-    });
+    const name = byLength.find(
+      (handle) => handle !== "" && rest.startsWith(handle) && endsHandle(handle, rest),
+    );
     // The longest reading wins, as on the server: a name that goes further than the id-shaped
     // token is the mention; otherwise the token is.
     const byName = name !== undefined && name.length >= ascii.length;

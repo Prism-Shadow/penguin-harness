@@ -88,6 +88,22 @@ describe("mentions", () => {
     ]);
   });
 
+  it("lets no handle stop short of an id-shaped token that runs on through - or .", () => {
+    expect(found("@all-hands meeting, ask @ann.smith")).toEqual([]);
+    expect(found("ask @acme_dev_a-ops or @acme_dev_a.b")).toEqual([]);
+    // A sentence's own punctuation after the handle is not part of it.
+    expect(found("thanks @ann. Then @all, and @ann- done")).toEqual([
+      ["@ann", "user:ann"],
+      ["@all", "all"],
+      ["@ann", "user:ann"],
+    ]);
+    // A name in a script without word boundaries still needs none, whatever follows.
+    expect(found("@小明-你好 @小明.ok")).toEqual([
+      ["@小明", "agent:acme_dev_a"],
+      ["@小明", "agent:acme_dev_a"],
+    ]);
+  });
+
   it("keeps the explicit forms", () => {
     expect(found("@agent:acme_dev_a. and @agent:ghost")).toEqual([
       ["@agent:acme_dev_a", "agent:acme_dev_a"],

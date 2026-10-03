@@ -67,6 +67,21 @@ export interface MentionHandle {
 const WORD = /[A-Za-z0-9_]/;
 const EXPLICIT = /^(agent|user):([A-Za-z0-9][A-Za-z0-9_.-]*)/;
 
+/**
+ * Whether `rest` (the text after `@`, known to start with `handle`) lets the handle end there.
+ * A handle ending in an ASCII word character must end its word: the next character is not a
+ * word character, nor a `-` or `.` that goes on into one — an id-shaped token runs through
+ * those (`@all-hands`, `@alice.smith` name neither `all` nor `alice`), while a sentence's
+ * own `.` or `,` after the handle does not. Any other handle needs no boundary. The web
+ * composer's highlighting applies the same rule (features/company/channel-mentions.ts).
+ */
+function endsHandle(handle: string, rest: string): boolean {
+  if (!WORD.test(handle[handle.length - 1]!)) return true;
+  const next = rest[handle.length] ?? "";
+  if (WORD.test(next)) return false;
+  return !((next === "-" || next === ".") && WORD.test(rest[handle.length + 1] ?? ""));
+}
+
 /** A mention found in a text: where it is (the `@` included) and whom it names. */
 export interface MentionMatch {
   start: number;
@@ -82,7 +97,8 @@ export interface MentionMatch {
  * `@` that does not continue a word (so `a@b.c` is an address, not a mention), the LONGEST
  * handle that the text continues with wins, which is what tells `@小明明` from `@小明`. A
  * handle ending in an ASCII word character must end the word there (`@ann` is not found in
- * `@anna`); one ending in anything else needs no boundary, since such scripts have none.
+ * `@anna` nor in `@ann-marie`, see endsHandle); one ending in anything else needs no
+ * boundary, since such scripts have none.
  *
  * `@agent:<id>` and `@user:<id>` stay the explicit forms, resolved by `explicit`. A `@` that
  * names nothing is text.
@@ -109,11 +125,9 @@ export function findMentions(
       }
       continue;
     }
-    const hit = byLength.find(({ handle }) => {
-      if (handle === "" || !rest.startsWith(handle)) return false;
-      const next = rest[handle.length] ?? "";
-      return !(WORD.test(handle[handle.length - 1]!) && WORD.test(next));
-    });
+    const hit = byLength.find(
+      ({ handle }) => handle !== "" && rest.startsWith(handle) && endsHandle(handle, rest),
+    );
     if (hit === undefined) continue;
     const end = at + 1 + hit.handle.length;
     out.push({ start: at, end, principal: hit.principal });

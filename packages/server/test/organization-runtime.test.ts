@@ -2769,6 +2769,34 @@ describe("organization runtime", () => {
       });
     });
 
+    it("refuses a bad name before it creates anything, and takes the Agent's name only when it can be one", async () => {
+      await createOrg();
+      const before = agentsCreated.length;
+      await expect(
+        service.hire(P, ORG, {
+          newAgent: { agentId: HR },
+          name: "R&D @ HQ",
+          title: "HR",
+          reportsTo: CEO,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(agentsCreated).toHaveLength(before);
+      expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).toEqual([CEO]);
+      await expect(fs.stat(path.join(orgDir(), "workspace", HR))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      // A display name the Agent may have but an employee may not: the hire goes through,
+      // and the employee simply has no given name.
+      const item = await service.hire(P, ORG, {
+        newAgent: { agentId: HR, name: "R&D @ HQ" },
+        title: "HR",
+        reportsTo: CEO,
+      });
+      expect(agentsCreated.map((a) => a.agentId)).toContain(HR);
+      expect(item.givenName).toBeUndefined();
+    });
+
     it("keeps an employee's avatar as a file of the organization, and says when it changes", async () => {
       await createOrg();
       // A 1×1 png.
@@ -2790,6 +2818,16 @@ describe("organization runtime", () => {
       await expect(
         service.setEmployeeAvatar(P, ORG, CEO, "data:image/svg+xml;base64,PHN2Zy8+"),
       ).rejects.toMatchObject({ status: 400 });
+      // Labelled as one of them, but the bytes are not that image: nothing, or another format.
+      for (const fake of [
+        "data:image/png;base64,====",
+        `data:image/jpeg;base64,${png.slice("data:image/png;base64,".length)}`,
+        `data:image/webp;base64,${Buffer.from("RIFF0000WEBX").toString("base64")}`,
+      ]) {
+        await expect(service.setEmployeeAvatar(P, ORG, CEO, fake)).rejects.toMatchObject({
+          status: 400,
+        });
+      }
       await expect(service.setEmployeeAvatar(P, ORG, "nobody", png)).rejects.toMatchObject({
         status: 404,
       });

@@ -655,11 +655,14 @@ export function EmployeeProfileDialog({
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
+  // Reset as the dialog opens or turns to another employee — not on every re-read of the
+  // chart, which a picture change triggers and which would wipe a name still being typed.
   useEffect(() => {
     if (!open) return;
     setName(employee.givenName ?? "");
     setError(undefined);
-  }, [open, employee]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, employee.agentId]);
 
   const run = async (work: () => Promise<unknown>, done?: () => void) => {
     setBusy(true);

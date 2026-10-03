@@ -856,6 +856,23 @@ export class OrganizationService {
       }
       if (org.byId.has(agentId))
         throw new HttpError(409, "employee_exists", `${agentId} is already an employee.`);
+      // The name the organization gives this employee: said outright — and then refused here,
+      // before anything is created — else the one a new Agent is created under, so the two
+      // start out the same. That display name follows looser rules (any character, longer),
+      // so one that cannot be an employee's name leaves the employee without a given name
+      // rather than failing the hire.
+      const said = req.name?.trim();
+      if (said !== undefined && said !== "") {
+        const problem = employeeNameProblem(said);
+        if (problem !== null) throw badRequest(problem);
+      }
+      const agentName = req.newAgent?.name?.trim();
+      const given =
+        said !== undefined && said !== ""
+          ? said
+          : agentName !== undefined && employeeNameProblem(agentName) === null
+            ? agentName
+            : undefined;
       // Before the Agent and the chart entry: the partition an employee is hired into exists
       // from the moment the employee does, and a spec that leaves the shared workspace is
       // refused rather than written and found broken on the first trigger. Omitted, it is a
@@ -884,16 +901,9 @@ export class OrganizationService {
           }),
         );
       }
-      // The name the organization gives this employee: said outright, else the one a new
-      // Agent was just created under (so the two start out the same).
-      const given = (req.name ?? req.newAgent?.name)?.trim();
-      if (given !== undefined && given !== "") {
-        const problem = employeeNameProblem(given);
-        if (problem !== null) throw badRequest(problem);
-      }
       const employee: OrgEmployee = {
         agentId,
-        ...(given !== undefined && given !== "" ? { name: given } : {}),
+        ...(given !== undefined ? { name: given } : {}),
         title,
         reportsTo: req.reportsTo,
         ...(req.duties !== undefined && req.duties.trim() !== ""
