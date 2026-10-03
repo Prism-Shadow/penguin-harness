@@ -33,10 +33,14 @@ in the harness's environment and restart it:
 | PowerShell 7 (`pwsh`) | runs confined | `PENGUIN_SHELL=pwsh` |
 | Windows PowerShell 5.1 | runs confined | `PENGUIN_SHELL=powershell` — for hosts without PowerShell 7; it ships with Windows |
 | bash / sh (Git for Windows, MinGit) | does not start | — |
+| Any other MSYS-runtime program (zsh, dash, `git-bash.exe`, anything in an MSYS2 or Git for Windows `usr\bin`) | refused | — |
 
 Measured on GitHub's `windows-latest` (Windows Server 2025, pwsh 7.6.6, Windows PowerShell
 5.1.26100): a write inside the Workspace lands and a write outside it is denied. `cmd` also
-starts under the runner; it is not measured beyond that.
+starts under the runner; it is not measured beyond that. The abort comes from the MSYS runtime
+(`msys-2.0.dll`) that Git for Windows and MSYS2 share, not from bash itself, so the backend
+refuses the other POSIX shells those distributions ship and every program in their `usr\bin`
+the same way.
 
 Until the shell is set, the backend's load fails with a reason naming these settings, so it is
 not mounted: the Session view lists `dsh-local` among the unavailable backends with that
@@ -44,11 +48,11 @@ reason, and the composer marks the confining tier unavailable instead of offerin
 every command would be refused. A harness whose core does not report its session shell (an
 older runtime) loads the backend as before.
 
-Each confined command is still checked on its own. A bash or sh program is refused before it
-reaches the runner: when it is the session shell, the error names the same settings; when it is
-something else — a stdio MCP Server launched through bash, which `PENGUIN_SHELL` does not
-choose — the error says only that the runner cannot start bash or sh. Nothing here changes on
-Linux or macOS, where bash runs confined as usual.
+Each confined command is still checked on its own. A bash, sh or other MSYS-runtime program is
+refused before it reaches the runner: when it is the session shell, the error names the same
+settings; when it is something else — a stdio MCP Server launched through bash, which
+`PENGUIN_SHELL` does not choose — the error says only that the runner cannot start an
+MSYS-runtime program. Nothing here changes on Linux or macOS, where bash runs confined as usual.
 
 ## Requirements
 

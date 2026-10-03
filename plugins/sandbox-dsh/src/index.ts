@@ -31,16 +31,20 @@ import type {
 } from "@prismshadow/penguin-core/plugin";
 
 /**
- * Programs the Windows ACL restricted-token runner cannot start, by basename — and they are the
- * harness's Windows default session shell (Git for Windows' bash, or the `sh.exe` of the MinGit
- * the Windows package bundles). Measured on windows-latest (fork CI run 36607002547): a bare
- * `bash` reaches System32's WSL launcher before PATH ("Error code:
+ * Programs the Windows ACL restricted-token runner cannot start — and they include the harness's
+ * Windows default session shell (Git for Windows' bash, or the `sh.exe` of the MinGit the
+ * Windows package bundles). Measured on windows-latest: a bare `bash`
+ * reaches System32's WSL launcher before PATH ("Error code:
  * Bash/Service/CreateInstance/E_ACCESSDENIED"), and an MSYS bash or sh named by path aborts
  * under the write-restricted token ("fatal error - couldn't create signal pipe, Win32 error
  * 5" / "CreateFileMapping …, Win32 error 5"). In the same run both PowerShells ran confined,
  * writing inside the Workspace and denied outside it: pwsh 7.6.6 and Windows PowerShell 5.1.
+ *
+ * The abort is the MSYS runtime's (msys-2.0.dll, shared by Git for Windows and MSYS2), not
+ * bash's, so it is refused by runtime: the POSIX shells those distributions ship, by name, and
+ * any program in an MSYS `usr\bin` — the directory where every binary links that runtime.
  */
-const ACL_RUNNER_UNSTARTABLE_SHELLS = new Set(["bash", "sh"]);
+const MSYS_SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh", "mksh", "fish", "git-bash"]);
 
 /** What the backend reads of the harness's session shell (core's `ShellInvocation`). */
 export interface SessionShell {
@@ -48,15 +52,13 @@ export interface SessionShell {
   command: string;
 }
 
-const unstartable = (program: string): boolean =>
-  ACL_RUNNER_UNSTARTABLE_SHELLS.has(
-    path.win32
-      .basename(program)
-      .replace(/\.exe$/i, "")
-      .toLowerCase(),
-  );
+const unstartable = (program: string): boolean => {
+  const segments = program.toLowerCase().split(/[\\/]+/);
+  const base = (segments.at(-1) ?? "").replace(/\.exe$/i, "");
+  return MSYS_SHELLS.has(base) || (segments.at(-3) === "usr" && segments.at(-2) === "bin");
+};
 
-/** The one setting that fixes a bash or sh session shell, as every refusal of it words it. */
+/** The one setting that fixes an MSYS-runtime session shell, as every refusal of it words it. */
 const SESSION_SHELL_FIX =
   "Set PENGUIN_SHELL=pwsh (PowerShell 7) — or PENGUIN_SHELL=powershell (Windows PowerShell " +
   "5.1) where PowerShell 7 is not installed — in the harness's environment and restart it";
@@ -76,7 +78,8 @@ export function assertSessionShellConfinable(
   if (platform !== "win32" || shell === null || !unstartable(shell.command)) return;
   throw new Error(
     `sandbox-dsh cannot confine commands on Windows under the session shell "${shell.command}": ` +
-      "its ACL runner does not start bash or sh (Git for Windows or the bundled MinGit). " +
+      "its ACL runner does not start bash, sh or any other MSYS-runtime program (Git for " +
+      "Windows, the bundled MinGit, MSYS2). " +
       `${SESSION_SHELL_FIX}.`,
   );
 }
@@ -98,14 +101,16 @@ export function assertAclRunnerCanStart(
   if (platform !== "win32" || program === undefined || !unstartable(program)) return;
   if (sessionShell === null || sessionShell.command.toLowerCase() === program.toLowerCase()) {
     throw new Error(
-      `sandbox-dsh cannot confine "${program}" on Windows: its ACL runner does not start bash ` +
-        `(Git for Windows or the bundled MinGit). ${SESSION_SHELL_FIX}; refusing to run the ` +
+      `sandbox-dsh cannot confine "${program}" on Windows: its ACL runner does not start bash, ` +
+        `sh or any other MSYS-runtime program (Git for Windows, the bundled MinGit, MSYS2). ` +
+        `${SESSION_SHELL_FIX}; refusing to run the ` +
         "command unconfined.",
     );
   }
   throw new Error(
-    `sandbox-dsh cannot confine "${program}" on Windows: its ACL runner does not start bash or ` +
-      "sh (Git for Windows, the bundled MinGit, or System32's WSL launcher); start the program " +
+    `sandbox-dsh cannot confine "${program}" on Windows: its ACL runner does not start bash, ` +
+      "sh or any other MSYS-runtime program (Git for Windows, the bundled MinGit, MSYS2, or " +
+      "System32's WSL launcher); start the program " +
       "directly, or through PowerShell; refusing to run it unconfined.",
   );
 }
