@@ -1,14 +1,17 @@
 /**
- * The built-in Harbor Benchmarks as data: what each one is, and which upstream tasks it runs.
+ * The built-in Benchmarks as data: what each one is, and which upstream tasks it runs.
  *
- * Every case is a Harbor task directory in the benchmark repository (`task` names it), seeded
- * here as text only — see builtin-benchmarks.ts for how a row becomes a statement and a rubric.
- * Each list is the tasks marked `final` in that benchmark's `selection.json` in the repository,
- * in its order, and the caps are its `job.yaml`'s; a later change to the set is a row edit, and
- * the case numbers (`CASE-001-…`) follow the rows' order. Once a release has seeded a Benchmark, a Project keeps the case list it
- * was given (project-benchmarks.ts never rewrites one). Summaries say what a task asks
- * and what it delivers, never how to solve it: they are public to every agent that reads the
- * Benchmark, an optimizer included.
+ * PenguinHarness Benchmark Sec A to Sec E, in that order. Each names the original benchmark it
+ * is at the start of its description, and `repoDir` is that benchmark's directory in the
+ * benchmark repository, which keeps the source's name. Every case is a Harbor task directory
+ * there (`task` names it), written here as text only — see builtin-benchmarks.ts for how a row
+ * becomes a statement and a rubric. Each list is the tasks marked `final` in that benchmark's
+ * `selection.json` in the repository, in its order, and the caps are its `job.yaml`'s; a later
+ * change to the set is a row edit, and the case numbers (`CASE-001-…`) follow the rows' order.
+ * A Project keeps the case list it was created with (project-benchmarks.ts writes a Benchmark
+ * once, when the Project is created). Summaries say what a task asks and what it delivers, never
+ * how to solve it: they are public to every agent that reads the Benchmark, an optimizer
+ * included.
  */
 import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
 
@@ -29,142 +32,364 @@ export const BENCHMARK_REPO_REF = "main";
  */
 export const BENCHMARK_RESULTS = "results/v0.2.13/README.md";
 
+/**
+ * The repository's rules for running one of its tasks, as a path in the repository: fetching it
+ * at a commit, the launch, concurrency and Docker networks, retries, reading a trial's result,
+ * credentials. Statements link them; the agent-evaluation Skill follows them.
+ */
+export const BENCHMARK_RUN_RULES = "README.md#running-a-task-for-agents";
+
 /** Harbor release the tasks and the adapter are checked against. */
 export const HARBOR_VERSION = "0.23.0";
 
 /** The adapter that runs PenguinHarness inside a task container (`agents/penguin_agent`). */
 export const HARBOR_AGENT = "penguin_agent:PenguinAgent";
 
-const IN_REPO =
-  "A built-in Harbor benchmark: each task runs in Docker through the Harbor framework and is " +
-  "scored by its own verifier, and the task files are in the public repository " +
-  "Prism-Shadow/penguin-harness-benchmark. Each Project is given it once; a deleted one stays " +
-  "deleted.";
+/** What every built-in's description says after naming its original benchmark. */
+const BUILT_IN =
+  "Chosen to run on CPU-only Docker. A built-in benchmark: each task runs in Docker through the " +
+  "Harbor framework and is scored by its own verifier; the task files are in the public " +
+  "repository Prism-Shadow/penguin-harness-benchmark. It is written when the Project is " +
+  "created; a deleted one stays deleted.";
 
 export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
   {
-    id: "terminal-bench",
-    title: "Terminal-Bench 4.0 (CPU subset)",
+    id: "penguinharness-benchmark-sec-a",
+    title: "PenguinHarness Benchmark Sec A",
     description:
-      "Hard, realistic tasks done in a terminal, across software, security, science, machine " +
-      `learning, operations, hardware and media, chosen to run on CPU-only Docker. ${IN_REPO}`,
-    source: "Terminal-Bench 4.0 (Harbor Hub `terminal-bench/terminal-bench`, revision 4)",
-    upstream: { url: "https://github.com/harbor-framework/terminal-bench", license: "Apache-2.0" },
+      "Sec A is rag-bench-essential (Data Analysis Bench): data analysis over long PDFs, scanned " +
+      "forms, hierarchical tables, spreadsheets and document libraries, scored pass or fail by " +
+      `each case's own scorer. ${BUILT_IN}`,
+    repoDir: "rag-bench-essential",
+    source: "rag-bench-essential, Data Analysis Bench (converted to Harbor tasks)",
+    upstream: {
+      url: "https://github.com/Prism-Shadow/rag-bench-essential",
+      license: "MIT; the case data keeps the terms of the benchmark it comes from",
+    },
     agentNetwork: "public",
-    verifier: "separate container",
-    downloads: "Docker Hub (the prebuilt task images)",
-    runTimeout: "25m",
-    maxTurns: 200,
-    note: "The instruction keeps upstream's own time budget; the run stops the agent at `run_timeout`.",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    downloads: "Docker Hub and the Debian and PyPI mirrors the task images build from",
+    runTimeout: "15m",
+    maxTurns: 100,
     cases: [
       {
-        task: "music-harmony",
-        title: "Harmonize a chorale excerpt in four parts",
+        task: "dabstep_real_fees_1681",
+        title: "Find the fee rules that apply to a merchant on one day",
         summary:
-          "Complete a four-voice (SATB) harmonization of the excerpt in a score PDF, in the style of a Bach chorale, and label every chord with a Roman numeral. The deliverable is a MusicXML file with the harmony annotations embedded.",
-        category: "Media / Music",
-        cpus: 2,
+          "Determine which fee rules apply to one merchant on one day from a 138k-row payments file, about a thousand fee rules and a domain manual. The answer is a set of fee IDs.",
+        category: "Payments analytics / DABstep",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 1,
       },
       {
-        task: "html-js-filter",
-        title: "Strip JavaScript from HTML without breaking it",
+        task: "docfinqa_oilgas_canada_pdf_hard",
+        title: "Answer a financial question from an annual-report PDF",
         summary:
-          "Write a Python script that removes every way to run JavaScript from an HTML file in place, while keeping legitimate markup, formatting and harmless attributes intact. The deliverable is the script, run by the verifier on its own HTML samples.",
-        category: "Security / AppSec",
-        cpus: 2,
-        memoryMb: 8192,
-        expertHours: 0.75,
-      },
-      {
-        task: "bun-sourcemap-leak",
-        title: "Stop a Bun release build from leaking private sources",
-        summary:
-          "Fix the release pipeline of a Bun/TypeScript app so its built artifacts and source maps expose only the sources a provenance policy marks public, while the built client and server keep their exact behaviour. The verifier rebuilds the release and inspects what it ships.",
-        category: "Software / Systems",
-        cpus: 2,
+          "Answer a DocFinQA question from the original annual-report PDF rather than pre-extracted text, which takes finding the relevant production table and computing a percentage.",
+        category: "Long PDF financial QA / DocFinQA",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 1.5,
       },
       {
-        task: "mvcc-lsm-compaction",
-        title: "Fix a visibility bug in an MVCC LSM storage engine",
+        task: "docvqa_contract_effective_date_ocr_hard",
+        title: "Read a date from a scanned contract form",
         summary:
-          "Diagnose a data-visibility failure from a crash report against a reduced C++ model of an MVCC LSM engine, fix it without giving up compaction, and add a deterministic regression test. The verifier builds and tests the fixed model.",
-        category: "Software / Databases",
-        cpus: 2,
+          "Answer a DocVQA question about a scanned form with handwritten fields; finding the right date field takes OCR and a careful reading of the page.",
+        category: "Scanned document OCR / DocVQA",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 4,
       },
       {
-        task: "foodstuff-beta-activity",
-        title: "Determine the beta activity of a foodstuff",
+        task: "multihiertt_global_products_atoi_share_hard",
+        title: "Compute a segment-share change from a report library",
         summary:
-          "From liquid-scintillation measurements and Sr-90 reference tables, derive the counting efficiency, the volumetric and gravimetric factors, the detection limit and the sample's activity concentration. The results go into a text file in a fixed format, which the verifier compares with the expected values.",
-        category: "Science / Chemistry",
-        cpus: 2,
+          "Answer a MultiHiertt question over a whole library of reports: find the one report with the relevant segment tables, then compute the change in a segment's share.",
+        category: "Hierarchical tables / MultiHiertt",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 1.5,
       },
       {
-        task: "protein-autointerp-disulfide",
-        title: "Predict an unnamed residue-level protein feature",
+        task: "workspacebench_taobao_permissions_hard",
+        title: "Derive a role-by-module permission matrix",
         summary:
-          "Eleven protein sequences come labelled with the positions of an unnamed residue-level feature. Work out what the feature is and predict its exact positions in held-out query sequences, written as JSON.",
-        category: "Science / Biology",
-        cpus: 4,
-        memoryMb: 8192,
-        expertHours: 2,
-      },
-      {
-        task: "vllm-deepseek-streaming",
-        title: "Fix corrupted streaming responses in vLLM",
-        summary:
-          "Clients of a vLLM server running a reasoning model intermittently get mis-segmented streams and tool-call JSON they cannot parse. Find and fix the bug in the vLLM source tree; the verifier exercises the streaming paths with its own tests.",
-        category: "ML / Inference",
-        cpus: 2,
+          "From spreadsheets, slides, JSON and text files written in Chinese, infer a role-by-module permission matrix and deliver it as a CSV file, a Markdown specification and a JSON rule file.",
+        category: "Workspace deliverables / Workspace-Bench",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 2,
       },
       {
-        task: "embedding-drift-monitor",
-        title: "Repair an embedding drift monitor",
+        task: "finlongdocqa_interest_expense_sensitivity_screen_hard",
+        title: "Screen 10-K reports for interest-expense sensitivity",
         summary:
-          "An embedding drift monitor built on KS, PSI and MMD tests raises false alarms, misses real drift and flickers between states. Fix every production module, the statistical utilities as well as the alert debouncing; the verifier runs the monitor on its own scenarios.",
-        category: "ML / Inference",
-        cpus: 2,
+          "Screen real 10-K reports for interest-expense sensitivity disclosures, put them on a common basis, rank the eligible companies and justify every exclusion.",
+        category: "Long-document screening / FinLongDocQA",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 5,
       },
       {
-        task: "cargo-flight-dispatch",
-        title: "Fix a cargo flight dispatch planner",
+        task: "prepbench_loyalty_tier_normalization_hard",
+        title: "Normalize loyalty tiers and compute a profit share",
         summary:
-          "A cargo airline's dispatch planner computes wrong fuel figures, clears overweight loads and ignores crosswind limits. Fix its navigation, aircraft-performance and dispatch modules against the given airport, aircraft, cargo and weather data; the verifier checks the plans they produce.",
-        category: "Operations / Logistics",
-        cpus: 2,
+          "Clean inconsistent loyalty tiers across transaction and customer tables, treat missing discounts as the task specifies, and compute one tier's share of profit.",
+        category: "Data preparation / PrepBench",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 2.5,
       },
       {
-        task: "freecad-platform-drawing",
-        title: "Model a part in FreeCAD from an engineering drawing",
+        task: "spreadsheetbench_working_paper_transpose_hard",
+        title: "Transpose working-paper blocks between workbooks",
         summary:
-          "Write a FreeCAD Python script that builds the part shown in an engineering drawing image as a single PartDesign body and saves it. The drawing is the only source of dimensions; the verifier measures the saved solid.",
-        category: "Hardware / CAD",
-        cpus: 2,
+          "Find the repeated working-paper blocks in three variant workbooks and transpose them into a destination sheet, which is compared cell by cell.",
+        category: "Spreadsheet manipulation / SpreadsheetBench",
+        cpus: 1,
         memoryMb: 4096,
-        expertHours: 1.5,
+      },
+      {
+        task: "harveylab_reps_diligence_discrepancy_hard",
+        title: "Write a due-diligence discrepancy memo",
+        summary:
+          "Compare a draft purchase agreement's representations and disclosure schedules with the diligence materials (Word, Excel and email files), and deliver a Word memo naming each discrepancy.",
+        category: "Legal due diligence / Harvey LAB",
+        cpus: 1,
+        memoryMb: 4096,
+      },
+      {
+        task: "fdabench_app_sentiment_xsource_hard_v2",
+        title: "Compute an app-review metric from two sources",
+        summary:
+          "Compute an app-review sentiment metric that needs both a review corpus and the method notes beside it; neither source alone defines the answer.",
+        category: "Cross-source analytics / FDABench",
+        cpus: 1,
+        memoryMb: 4096,
       },
     ],
   },
   {
-    id: "terminal-bench-science",
-    title: "Terminal-Bench-Science 0.1 (CPU subset)",
+    id: "penguinharness-benchmark-sec-b",
+    title: "PenguinHarness Benchmark Sec B",
     description:
-      "Research-grade scientific computing across the life, mathematical, physical, engineering " +
-      `and earth sciences, chosen to run on CPU-only Docker. ${IN_REPO}`,
+      "Sec B is DeepSWE v1.1: features and fixes in real open-source repositories, graded by the " +
+      `projects' own tests on what the agent commits. ${BUILT_IN}`,
+    repoDir: "deep-swe",
+    source: "DeepSWE v1.1 (Harbor Hub `datacurve/deep-swe-1-1`, revision 1)",
+    upstream: { url: "https://github.com/datacurve-ai/deep-swe", license: "Apache-2.0" },
+    agentNetwork: "no-network",
+    sharedNetwork: false,
+    verifier: "separate container, hidden tests on the committed diff",
+    downloads: "public.ecr.aws (the prebuilt task images, several GB each)",
+    runTimeout: "30m",
+    maxTurns: 250,
+    note: "Only what the agent commits is graded.",
+    cases: [
+      {
+        task: "prometheus-typed-label-sorting",
+        title: "Fix PromQL label sorting across typed and untyped values",
+        summary:
+          "PromQL's label sorting must order mixed typed and untyped label values by stable typed comparison rules. Make the fix in the Prometheus repository and commit it.",
+        category: "Go / bugfix",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "tengo-callable-instance-isolation",
+        title: "Fix Go-side calls of Tengo callables and closures",
+        summary:
+          "Let Go code invoke exported Tengo functions and closures while keeping their runtime context and isolating the state of each compiled instance. Make the fix in the Tengo repository and commit it.",
+        category: "Go / bugfix",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "expr-try-catch-errors",
+        title: "Add try/catch error recovery to expr",
+        summary:
+          "Add expression- and block-level error recovery to the expr language: try, catch, finally, throw, retry and errtype. Implement it in the expr repository and commit it.",
+        category: "Go / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "dateutil-rfc5545-timezone-interop",
+        title: "Add RFC 5545 timezone interoperability to dateutil",
+        summary:
+          "Extend dateutil's rrule and rruleset so timezone-aware recurrence data can be serialized, parsed and compared as RFC 5545 specifies. Implement it in the dateutil repository and commit it.",
+        category: "Python / enhancement",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "fastapi-implicit-head-options",
+        title: "Add implicit HEAD and automatic OPTIONS responses to FastAPI",
+        summary:
+          "Add configurable implicit HEAD handling and automatic OPTIONS responses for FastAPI routes, routers and included routers. Implement it in the FastAPI repository and commit it.",
+        category: "Python / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "httpx-streaming-json-iteration",
+        title: "Add streaming JSON iteration to HTTPX responses",
+        summary:
+          "Add response iterators that parse JSON values incrementally from supported streaming media types. Implement them in the HTTPX repository and commit them.",
+        category: "Python / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "ts-pattern-match-each",
+        title: "Add matchEach to ts-pattern",
+        summary:
+          "Add a matcher to ts-pattern that evaluates every matching clause and returns all their results in order. Implement it in the ts-pattern repository and commit it.",
+        category: "TypeScript / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "superjson-error-stack-serialization",
+        title: "Add error stack serialization to SuperJSON",
+        summary:
+          "Add configurable serialization and restoration of error stacks, stack frames and causes to SuperJSON, with sanitization. Implement it in the SuperJSON repository and commit it.",
+        category: "TypeScript / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "fd-deterministic-multi-key-sorting",
+        title: "Add deterministic multi-key sorting to fd",
+        summary:
+          "Add repeatable multi-key sorting of fd's output, with deterministic tie-breaking and a seeded random order. Implement it in the fd repository and commit it.",
+        category: "Rust / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "katex-multicolumn-array-spans",
+        title: "Add multicolumn spans to KaTeX array environments",
+        summary:
+          "Parse and render `\\multicolumn` in KaTeX's array-like environments, with span-aware alignment and errors. Implement it in the KaTeX repository and commit it.",
+        category: "JavaScript / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+    ],
+  },
+  {
+    id: "penguinharness-benchmark-sec-c",
+    title: "PenguinHarness Benchmark Sec C",
+    description:
+      "Sec C is AutomationBench: business workflows across simulated SaaS apps, driven through " +
+      `the \`ab\` command and graded by the upstream rubric. ${BUILT_IN}`,
+    repoDir: "automation-bench",
+    source: "AutomationBench 1.0.6 (converted to Harbor tasks)",
+    upstream: { url: "https://github.com/zapier/AutomationBench", license: "MIT" },
+    agentNetwork: "public",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    downloads: "Docker Hub and PyPI (the task image builds in under a minute)",
+    runTimeout: "10m",
+    maxTurns: 50,
+    note: "The agent acts on the simulated apps through the `ab` command the instruction describes.",
+    cases: [
+      {
+        task: "sales-501-multi-hop-lookup",
+        title: "Close a deal and route the win notice",
+        summary:
+          "Close a deal in the CRM and send the win notice to the recipients a routing policy prescribes, which depend on facts spread over several apps (Gmail, Google Drive, Google Sheets, Salesforce). The task passes only when all 6 end-state assertions hold.",
+        category: "Sales / Multi-hop lookup",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "sales-504-recency-selection",
+        title: "Apply the right phone update to a contact",
+        summary:
+          "Several emails propose phone-number changes for a contact who has look-alike namesakes; update the right CRM record and cite the sources in a note (Gmail, Salesforce). The task passes only when all 10 end-state assertions hold.",
+        category: "Sales / Recency",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "marketing-1040-budget-reallocation",
+        title: "Propose a marketing budget reallocation",
+        summary:
+          "Turn a channel-ROI sheet into a budget proposal for finance, following the current quarter's thresholds and the strategic context in the mailbox (Gmail, Google Drive, Google Sheets). The task passes only when all 24 end-state assertions hold.",
+        category: "Marketing / Calculation with context",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "marketing-1008-contact-data-cleanup",
+        title: "Audit and tag CRM contacts",
+        summary:
+          "Audit the CRM's contacts for malformed and duplicate records under the applicable data policy, tag the clean records and report the result, respecting the exemptions the policy names (HubSpot, Gmail, Slack). The task passes only when all 15 end-state assertions hold.",
+        category: "Marketing / Data cleanup",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "operations-1323-access-request-validation",
+        title: "Approve or deny access requests by policy",
+        summary:
+          "Decide the pending access requests against a seniority policy table, skip the ones already processed, and route approvals and denials to their channels (Google Sheets, Asana, Gmail). The task passes only when all 12 end-state assertions hold.",
+        category: "Operations / Negative selection",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "operations-1339-contractor-badge-expiration",
+        title: "Warn contractors whose badges expire soon",
+        summary:
+          "Find the contractor badges that expire within two weeks, apply the exclusions the records call for, and notify each remaining holder by SMS, email and chat (Google Sheets, Twilio, Gmail, Slack). The task passes only when all 18 end-state assertions hold.",
+        category: "Operations / Date window with exclusions",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "support-1511-helpscout-customer-merge",
+        title: "Decide which customer records to merge",
+        summary:
+          "Decide which of six look-alike customer pairs are the same person, leave merge notes on the matching help-desk conversations and post a summary (Google Sheets, Help Scout, Slack). The task passes only when all 30 end-state assertions hold.",
+        category: "Support / Fuzzy matching",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "finance-4003-overdue-invoice-followup",
+        title: "Follow up overdue invoices by the collections process",
+        summary:
+          "Check an accounts-receivable tracker for overdue invoices, act on each as the company's collections process prescribes, and update the tracker rows (Gmail, Google Sheets). The task passes only when all 8 end-state assertions hold.",
+        category: "Finance / Rule-based escalation",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "hr-5032-employee-directory-update",
+        title: "Update the employee directory",
+        summary:
+          "Apply a new hire, a termination and a title change to the employee directory sheet in place, then post a summary (Google Sheets, Slack). The task passes only when all 8 end-state assertions hold.",
+        category: "HR / Record maintenance",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "hr-5018-candidate-rejection-followup",
+        title: "Send candidate rejection follow-ups",
+        summary:
+          "Send each candidate the follow-up the recruiting sheet's notes call for, within the company's contact policy (Google Sheets, Gmail). The task passes only when all 8 end-state assertions hold.",
+        category: "HR / Conflicting instructions",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+    ],
+  },
+  {
+    id: "penguinharness-benchmark-sec-d",
+    title: "PenguinHarness Benchmark Sec D",
+    description:
+      "Sec D is Terminal-Bench-Science 0.1: research-grade scientific computing done in a " +
+      `terminal. ${BUILT_IN}`,
+    repoDir: "terminal-bench-science",
     source:
       "Terminal-Bench-Science 0.1 (Harbor Hub `terminal-bench-science/terminal-bench-science`, revision 10)",
     upstream: {
@@ -172,6 +397,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
       license: "Apache-2.0",
     },
     agentNetwork: "public",
+    sharedNetwork: true,
     verifier: "separate container",
     downloads: "Docker Hub and the package mirrors the task images build from",
     runTimeout: "25m",
@@ -281,333 +507,121 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     ],
   },
   {
-    id: "deep-swe",
-    title: "DeepSWE v1.1 (subset)",
+    id: "penguinharness-benchmark-sec-e",
+    title: "PenguinHarness Benchmark Sec E",
     description:
-      "Long-horizon features and fixes in real Go, Python, TypeScript, JavaScript and Rust " +
-      "repositories, graded by hidden tests on the committed change; the agent works offline " +
-      `except for its model provider. ${IN_REPO}`,
-    source: "DeepSWE v1.1 (Harbor Hub `datacurve/deep-swe-1-1`, revision 1)",
-    upstream: { url: "https://github.com/datacurve-ai/deep-swe", license: "Apache-2.0" },
-    agentNetwork: "no-network",
-    verifier: "separate container, hidden tests on the committed diff",
-    downloads: "public.ecr.aws (the prebuilt task images, several GB each)",
-    runTimeout: "30m",
-    maxTurns: 250,
-    note: "Only what the agent commits is graded.",
-    cases: [
-      {
-        task: "prometheus-typed-label-sorting",
-        title: "Fix PromQL label sorting across typed and untyped values",
-        summary:
-          "PromQL's label sorting must order mixed typed and untyped label values by stable typed comparison rules. Make the fix in the Prometheus repository and commit it.",
-        category: "Go / bugfix",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "tengo-callable-instance-isolation",
-        title: "Fix Go-side calls of Tengo callables and closures",
-        summary:
-          "Let Go code invoke exported Tengo functions and closures while keeping their runtime context and isolating the state of each compiled instance. Make the fix in the Tengo repository and commit it.",
-        category: "Go / bugfix",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "expr-try-catch-errors",
-        title: "Add try/catch error recovery to expr",
-        summary:
-          "Add expression- and block-level error recovery to the expr language: try, catch, finally, throw, retry and errtype. Implement it in the expr repository and commit it.",
-        category: "Go / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "dateutil-rfc5545-timezone-interop",
-        title: "Add RFC 5545 timezone interoperability to dateutil",
-        summary:
-          "Extend dateutil's rrule and rruleset so timezone-aware recurrence data can be serialized, parsed and compared as RFC 5545 specifies. Implement it in the dateutil repository and commit it.",
-        category: "Python / enhancement",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "fastapi-implicit-head-options",
-        title: "Add implicit HEAD and automatic OPTIONS responses to FastAPI",
-        summary:
-          "Add configurable implicit HEAD handling and automatic OPTIONS responses for FastAPI routes, routers and included routers. Implement it in the FastAPI repository and commit it.",
-        category: "Python / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "httpx-streaming-json-iteration",
-        title: "Add streaming JSON iteration to HTTPX responses",
-        summary:
-          "Add response iterators that parse JSON values incrementally from supported streaming media types. Implement them in the HTTPX repository and commit them.",
-        category: "Python / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "ts-pattern-match-each",
-        title: "Add matchEach to ts-pattern",
-        summary:
-          "Add a matcher to ts-pattern that evaluates every matching clause and returns all their results in order. Implement it in the ts-pattern repository and commit it.",
-        category: "TypeScript / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "superjson-error-stack-serialization",
-        title: "Add error stack serialization to SuperJSON",
-        summary:
-          "Add configurable serialization and restoration of error stacks, stack frames and causes to SuperJSON, with sanitization. Implement it in the SuperJSON repository and commit it.",
-        category: "TypeScript / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "fd-deterministic-multi-key-sorting",
-        title: "Add deterministic multi-key sorting to fd",
-        summary:
-          "Add repeatable multi-key sorting of fd's output, with deterministic tie-breaking and a seeded random order. Implement it in the fd repository and commit it.",
-        category: "Rust / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "katex-multicolumn-array-spans",
-        title: "Add multicolumn spans to KaTeX array environments",
-        summary:
-          "Parse and render `\\multicolumn` in KaTeX's array-like environments, with span-aware alignment and errors. Implement it in the KaTeX repository and commit it.",
-        category: "JavaScript / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-    ],
-  },
-  {
-    id: "automation-bench",
-    title: "AutomationBench (subset)",
-    description:
-      "Business workflows across simulated SaaS apps (CRM, email, spreadsheets, chat and help " +
-      "desks) in sales, marketing, operations, support, finance and HR, each passed only when " +
-      `every end-state check on the apps holds. ${IN_REPO}`,
-    source: "AutomationBench 1.0.6 (converted to Harbor tasks)",
-    upstream: { url: "https://github.com/zapier/AutomationBench", license: "MIT" },
+      "Sec E is Terminal-Bench 4.0: hard, realistic tasks done in a terminal, across software, " +
+      `security, science, machine learning, operations, hardware and media. ${BUILT_IN}`,
+    repoDir: "terminal-bench",
+    source: "Terminal-Bench 4.0 (Harbor Hub `terminal-bench/terminal-bench`, revision 4)",
+    upstream: { url: "https://github.com/harbor-framework/terminal-bench", license: "Apache-2.0" },
     agentNetwork: "public",
-    verifier: "same container, after the agent",
-    downloads: "Docker Hub and PyPI (the task image builds in under a minute)",
-    runTimeout: "10m",
-    maxTurns: 50,
-    note: "The agent acts on the simulated apps through the `ab` command the instruction describes.",
+    sharedNetwork: true,
+    verifier: "separate container",
+    downloads: "Docker Hub (the prebuilt task images)",
+    runTimeout: "25m",
+    maxTurns: 200,
+    note: "The instruction keeps upstream's own time budget; the run stops the agent at `run_timeout`.",
     cases: [
       {
-        task: "sales-501-multi-hop-lookup",
-        title: "Close a deal and route the win notice",
+        task: "music-harmony",
+        title: "Harmonize a chorale excerpt in four parts",
         summary:
-          "Close a deal in the CRM and send the win notice to the recipients a routing policy prescribes, which depend on facts spread over several apps (Gmail, Google Drive, Google Sheets, Salesforce). The task passes only when all 6 end-state assertions hold.",
-        category: "Sales / Multi-hop lookup",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "sales-504-recency-selection",
-        title: "Apply the right phone update to a contact",
-        summary:
-          "Several emails propose phone-number changes for a contact who has look-alike namesakes; update the right CRM record and cite the sources in a note (Gmail, Salesforce). The task passes only when all 10 end-state assertions hold.",
-        category: "Sales / Recency",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "marketing-1040-budget-reallocation",
-        title: "Propose a marketing budget reallocation",
-        summary:
-          "Turn a channel-ROI sheet into a budget proposal for finance, following the current quarter's thresholds and the strategic context in the mailbox (Gmail, Google Drive, Google Sheets). The task passes only when all 24 end-state assertions hold.",
-        category: "Marketing / Calculation with context",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "marketing-1008-contact-data-cleanup",
-        title: "Audit and tag CRM contacts",
-        summary:
-          "Audit the CRM's contacts for malformed and duplicate records under the applicable data policy, tag the clean records and report the result, respecting the exemptions the policy names (HubSpot, Gmail, Slack). The task passes only when all 15 end-state assertions hold.",
-        category: "Marketing / Data cleanup",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "operations-1323-access-request-validation",
-        title: "Approve or deny access requests by policy",
-        summary:
-          "Decide the pending access requests against a seniority policy table, skip the ones already processed, and route approvals and denials to their channels (Google Sheets, Asana, Gmail). The task passes only when all 12 end-state assertions hold.",
-        category: "Operations / Negative selection",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "operations-1339-contractor-badge-expiration",
-        title: "Warn contractors whose badges expire soon",
-        summary:
-          "Find the contractor badges that expire within two weeks, apply the exclusions the records call for, and notify each remaining holder by SMS, email and chat (Google Sheets, Twilio, Gmail, Slack). The task passes only when all 18 end-state assertions hold.",
-        category: "Operations / Date window with exclusions",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "support-1511-helpscout-customer-merge",
-        title: "Decide which customer records to merge",
-        summary:
-          "Decide which of six look-alike customer pairs are the same person, leave merge notes on the matching help-desk conversations and post a summary (Google Sheets, Help Scout, Slack). The task passes only when all 30 end-state assertions hold.",
-        category: "Support / Fuzzy matching",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "finance-4003-overdue-invoice-followup",
-        title: "Follow up overdue invoices by the collections process",
-        summary:
-          "Check an accounts-receivable tracker for overdue invoices, act on each as the company's collections process prescribes, and update the tracker rows (Gmail, Google Sheets). The task passes only when all 8 end-state assertions hold.",
-        category: "Finance / Rule-based escalation",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "hr-5032-employee-directory-update",
-        title: "Update the employee directory",
-        summary:
-          "Apply a new hire, a termination and a title change to the employee directory sheet in place, then post a summary (Google Sheets, Slack). The task passes only when all 8 end-state assertions hold.",
-        category: "HR / Record maintenance",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "hr-5018-candidate-rejection-followup",
-        title: "Send candidate rejection follow-ups",
-        summary:
-          "Send each candidate the follow-up the recruiting sheet's notes call for, within the company's contact policy (Google Sheets, Gmail). The task passes only when all 8 end-state assertions hold.",
-        category: "HR / Conflicting instructions",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-    ],
-  },
-  {
-    id: "rag-bench-essential",
-    title: "Data Analysis Bench (rag-bench-essential, subset)",
-    description:
-      "Data analysis over long PDFs, scanned forms, hierarchical tables, spreadsheets and " +
-      "document libraries, scored pass or fail by each case's own scorer; the tasks are " +
-      `generated from the pinned upstream commit on the evaluating machine. ${IN_REPO}`,
-    source: "rag-bench-essential, Data Analysis Bench (converted to Harbor tasks)",
-    upstream: {
-      url: "https://github.com/Prism-Shadow/rag-bench-essential",
-      license: "MIT; the case data keeps the terms of the benchmark it comes from",
-    },
-    agentNetwork: "public",
-    verifier: "same container, after the agent",
-    downloads: "GitHub (the case data), Docker Hub and the Debian and PyPI mirrors",
-    runTimeout: "15m",
-    maxTurns: 100,
-    generated: {
-      command: "tools/rag_bench/fetch.sh && python3 tools/rag_bench/convert.py",
-      casesUrl:
-        "https://github.com/Prism-Shadow/rag-bench-essential/tree/979adae32d59c1b9a8a9d4ebd761c11c9d0f6e29/cases",
-    },
-    cases: [
-      {
-        task: "dabstep_real_fees_1681",
-        title: "Find the fee rules that apply to a merchant on one day",
-        summary:
-          "Determine which fee rules apply to one merchant on one day from a 138k-row payments file, about a thousand fee rules and a domain manual. The answer is a set of fee IDs.",
-        category: "Payments analytics / DABstep",
-        cpus: 1,
+          "Complete a four-voice (SATB) harmonization of the excerpt in a score PDF, in the style of a Bach chorale, and label every chord with a Roman numeral. The deliverable is a MusicXML file with the harmony annotations embedded.",
+        category: "Media / Music",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 1,
       },
       {
-        task: "docfinqa_oilgas_canada_pdf_hard",
-        title: "Answer a financial question from an annual-report PDF",
+        task: "html-js-filter",
+        title: "Strip JavaScript from HTML without breaking it",
         summary:
-          "Answer a DocFinQA question from the original annual-report PDF rather than pre-extracted text, which takes finding the relevant production table and computing a percentage.",
-        category: "Long PDF financial QA / DocFinQA",
-        cpus: 1,
-        memoryMb: 4096,
+          "Write a Python script that removes every way to run JavaScript from an HTML file in place, while keeping legitimate markup, formatting and harmless attributes intact. The deliverable is the script, run by the verifier on its own HTML samples.",
+        category: "Security / AppSec",
+        cpus: 2,
+        memoryMb: 8192,
+        expertHours: 0.75,
       },
       {
-        task: "docvqa_contract_effective_date_ocr_hard",
-        title: "Read a date from a scanned contract form",
+        task: "bun-sourcemap-leak",
+        title: "Stop a Bun release build from leaking private sources",
         summary:
-          "Answer a DocVQA question about a scanned form with handwritten fields; finding the right date field takes OCR and a careful reading of the page.",
-        category: "Scanned document OCR / DocVQA",
-        cpus: 1,
+          "Fix the release pipeline of a Bun/TypeScript app so its built artifacts and source maps expose only the sources a provenance policy marks public, while the built client and server keep their exact behaviour. The verifier rebuilds the release and inspects what it ships.",
+        category: "Software / Systems",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 1.5,
       },
       {
-        task: "multihiertt_global_products_atoi_share_hard",
-        title: "Compute a segment-share change from a report library",
+        task: "mvcc-lsm-compaction",
+        title: "Fix a visibility bug in an MVCC LSM storage engine",
         summary:
-          "Answer a MultiHiertt question over a whole library of reports: find the one report with the relevant segment tables, then compute the change in a segment's share.",
-        category: "Hierarchical tables / MultiHiertt",
-        cpus: 1,
+          "Diagnose a data-visibility failure from a crash report against a reduced C++ model of an MVCC LSM engine, fix it without giving up compaction, and add a deterministic regression test. The verifier builds and tests the fixed model.",
+        category: "Software / Databases",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 4,
       },
       {
-        task: "workspacebench_taobao_permissions_hard",
-        title: "Derive a role-by-module permission matrix",
+        task: "foodstuff-beta-activity",
+        title: "Determine the beta activity of a foodstuff",
         summary:
-          "From spreadsheets, slides, JSON and text files written in Chinese, infer a role-by-module permission matrix and deliver it as a CSV file, a Markdown specification and a JSON rule file.",
-        category: "Workspace deliverables / Workspace-Bench",
-        cpus: 1,
+          "From liquid-scintillation measurements and Sr-90 reference tables, derive the counting efficiency, the volumetric and gravimetric factors, the detection limit and the sample's activity concentration. The results go into a text file in a fixed format, which the verifier compares with the expected values.",
+        category: "Science / Chemistry",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 1.5,
       },
       {
-        task: "finlongdocqa_interest_expense_sensitivity_screen_hard",
-        title: "Screen 10-K reports for interest-expense sensitivity",
+        task: "protein-autointerp-disulfide",
+        title: "Predict an unnamed residue-level protein feature",
         summary:
-          "Screen real 10-K reports for interest-expense sensitivity disclosures, put them on a common basis, rank the eligible companies and justify every exclusion.",
-        category: "Long-document screening / FinLongDocQA",
-        cpus: 1,
-        memoryMb: 4096,
+          "Eleven protein sequences come labelled with the positions of an unnamed residue-level feature. Work out what the feature is and predict its exact positions in held-out query sequences, written as JSON.",
+        category: "Science / Biology",
+        cpus: 4,
+        memoryMb: 8192,
+        expertHours: 2,
       },
       {
-        task: "prepbench_loyalty_tier_normalization_hard",
-        title: "Normalize loyalty tiers and compute a profit share",
+        task: "vllm-deepseek-streaming",
+        title: "Fix corrupted streaming responses in vLLM",
         summary:
-          "Clean inconsistent loyalty tiers across transaction and customer tables, treat missing discounts as the task specifies, and compute one tier's share of profit.",
-        category: "Data preparation / PrepBench",
-        cpus: 1,
+          "Clients of a vLLM server running a reasoning model intermittently get mis-segmented streams and tool-call JSON they cannot parse. Find and fix the bug in the vLLM source tree; the verifier exercises the streaming paths with its own tests.",
+        category: "ML / Inference",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 2,
       },
       {
-        task: "spreadsheetbench_working_paper_transpose_hard",
-        title: "Transpose working-paper blocks between workbooks",
+        task: "embedding-drift-monitor",
+        title: "Repair an embedding drift monitor",
         summary:
-          "Find the repeated working-paper blocks in three variant workbooks and transpose them into a destination sheet, which is compared cell by cell.",
-        category: "Spreadsheet manipulation / SpreadsheetBench",
-        cpus: 1,
+          "An embedding drift monitor built on KS, PSI and MMD tests raises false alarms, misses real drift and flickers between states. Fix every production module, the statistical utilities as well as the alert debouncing; the verifier runs the monitor on its own scenarios.",
+        category: "ML / Inference",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 5,
       },
       {
-        task: "harveylab_reps_diligence_discrepancy_hard",
-        title: "Write a due-diligence discrepancy memo",
+        task: "cargo-flight-dispatch",
+        title: "Fix a cargo flight dispatch planner",
         summary:
-          "Compare a draft purchase agreement's representations and disclosure schedules with the diligence materials (Word, Excel and email files), and deliver a Word memo naming each discrepancy.",
-        category: "Legal due diligence / Harvey LAB",
-        cpus: 1,
+          "A cargo airline's dispatch planner computes wrong fuel figures, clears overweight loads and ignores crosswind limits. Fix its navigation, aircraft-performance and dispatch modules against the given airport, aircraft, cargo and weather data; the verifier checks the plans they produce.",
+        category: "Operations / Logistics",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 2.5,
       },
       {
-        task: "fdabench_app_sentiment_xsource_hard_v2",
-        title: "Compute an app-review metric from two sources",
+        task: "freecad-platform-drawing",
+        title: "Model a part in FreeCAD from an engineering drawing",
         summary:
-          "Compute an app-review sentiment metric that needs both a review corpus and the method notes beside it; neither source alone defines the answer.",
-        category: "Cross-source analytics / FDABench",
-        cpus: 1,
+          "Write a FreeCAD Python script that builds the part shown in an engineering drawing image as a single PartDesign body and saves it. The drawing is the only source of dimensions; the verifier measures the saved solid.",
+        category: "Hardware / CAD",
+        cpus: 2,
         memoryMb: 4096,
+        expertHours: 1.5,
       },
     ],
   },

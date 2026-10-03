@@ -8,10 +8,9 @@
  * tested — so the evaluation center has data out of the box. Its description states plainly that
  * this is a built-in example and the whole directory can be deleted or replaced.
  *
- * When it is written is project-benchmarks.ts's decision, not this module's: a Project is given
- * the example once, on default_agent's initialization or a later load, and a deleted example
- * stays deleted. Whatever else `benchmarks/` holds plays no part — the user's own Benchmarks, or
- * the retired per-agent location `agents/<agent>/benchmarks/` an older data root may keep, which
+ * It is written when the Project is created (project-benchmarks.ts); a deleted example stays
+ * deleted. Whatever else `benchmarks/` holds plays no part — the user's own Benchmarks, or the
+ * retired per-agent location `agents/<agent>/benchmarks/` an older data root may keep, which
  * this code never reads.
  *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;

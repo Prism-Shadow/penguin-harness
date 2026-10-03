@@ -66,7 +66,6 @@ import {
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
-import { provisionProjectBenchmarks } from "./project-benchmarks.js";
 import {
   agentsMdPath,
   agentStateDir,
@@ -184,18 +183,6 @@ export async function loadAgentState(opts?: {
         `Invalid Agent State config: ${configPath} is empty, corrupted, or missing the system_prompt field.`,
       );
     }
-    // The Project's Benchmarks (the example and the built-in Harbor ones) are provisioned on
-    // this path too, not only at initialization: a data root created before one of them
-    // existed, or before the marker that records them, is given it on its default_agent's
-    // first load, whatever else benchmarks/ holds — once, since the marker remembers it. Best
-    // effort — opening a model context must not fail because a directory could not be written.
-    if (agentId === DEFAULT_AGENT_ID) {
-      try {
-        await provisionProjectBenchmarks(root, projectId);
-      } catch {
-        // Nothing to do: the evaluation center simply lists what is there.
-      }
-    }
     return {
       root,
       projectId,
@@ -239,16 +226,11 @@ export async function loadAgentState(opts?: {
     preset === undefined && agentId === DEFAULT_AGENT_ID
       ? loadPreinstalledPlugins()
       : (preset?.plugins ?? []);
+  // The Project's Benchmarks are no Agent's to write, default_agent's included: they are
+  // written when the Project is created (project-benchmarks.ts), never on this path.
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
     ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
-    // The example Benchmark and the built-in Harbor Benchmarks are only provisioned alongside
-    // default_agent (so the evaluation center has data out of the box). They land in the
-    // Project's benchmarks/, a sibling of agents/, each given once (project-benchmarks.ts), and
-    // are never written for a plain Agent, whose creation is not a Project's first day. Awaited
-    // here, unlike on the load path — a Project's first day is the one moment a failure is
-    // worth reporting.
-    ...(agentId === DEFAULT_AGENT_ID ? [provisionProjectBenchmarks(root, projectId)] : []),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run

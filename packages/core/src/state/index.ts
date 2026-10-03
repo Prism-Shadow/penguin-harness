@@ -18,5 +18,4 @@ export * from "./agent-vault.js";
 export * from "./memory.js";
 export * from "./example-benchmark.js";
 export * from "./builtin-benchmarks.js";
-// Named, so provisionSeeds, the tests' stand-in for a second process, stays inside the package.
-export { SEEDED_BENCHMARKS_FILE, provisionProjectBenchmarks } from "./project-benchmarks.js";
+export { provisionProjectBenchmarks } from "./project-benchmarks.js";
