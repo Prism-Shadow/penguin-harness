@@ -52,7 +52,6 @@ function detail(s: TelemetrySample): string {
     if (key === "method" || key === "route") continue;
     parts.push(`${key}=${value}`);
   }
-  if (s.n !== undefined) parts.push(`n=${s.n}`);
   if (s.keys.generation !== undefined) parts.push(`gen=${s.keys.generation}`);
   if (s.keys.session !== undefined) parts.push(`session=${s.keys.session}`);
   if (s.keys.request !== undefined) parts.push(`req=${s.keys.request.slice(0, 8)}`);

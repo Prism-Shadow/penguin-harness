@@ -42,10 +42,9 @@ beforeEach(() => {
         ts: Date.UTC(2026, 8, 30, 8, 0, 0),
         probe: "session.messages",
         durMs: 42,
-        n: 12,
         status: "ok",
         keys: { session: SESSION, request: "0123456789abcdef", generation: 1 },
-        attrs: { kind: "tail" },
+        attrs: { kind: "tail", messages: 12 },
       },
     ],
   };
@@ -89,7 +88,7 @@ describe("penguin telemetry", () => {
 
     expect(await cli(["telemetry", "--samples", "--probe", "session.messages"])).toBe(0);
     expect(lastQuery().get("probe")).toBe("session.messages");
-    for (const text of ["kind=tail", "n=12", "req=01234567"]) expect(out()).toContain(text);
+    for (const text of ["kind=tail", "messages=12", "req=01234567"]) expect(out()).toContain(text);
   });
 
   it("inside a session asks for that session only, unless --all or --session says otherwise", async () => {

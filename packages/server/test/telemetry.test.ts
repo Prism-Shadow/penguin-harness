@@ -112,7 +112,7 @@ describe("telemetry", () => {
     expect(
       samples.find((s) => s.keys.request === request && s.probe === "trace.read"),
     ).toMatchObject({
-      n: 5,
+      attrs: { messages: 5 },
       keys: { session: SID },
     });
     const dump = JSON.stringify(samples);

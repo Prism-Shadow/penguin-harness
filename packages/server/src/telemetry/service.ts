@@ -61,7 +61,6 @@ export class TelemetryService implements Telemetry {
       probe: input.probe,
       ...(input.durMs !== undefined ? { durMs: Math.round(input.durMs * 10) / 10 } : {}),
       ...(input.bytes !== undefined ? { bytes: input.bytes } : {}),
-      ...(input.n !== undefined ? { n: input.n } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       keys: {
         ...(this.#generation !== undefined ? { generation: this.#generation } : {}),
@@ -83,7 +82,7 @@ export class TelemetryService implements Telemetry {
     probe: string,
     keys: TelemetryKeys,
     run: () => Promise<T>,
-    describe?: (result: T) => Pick<TelemetrySampleInput, "n" | "bytes" | "attrs">,
+    describe?: (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">,
   ): Promise<T> {
     if (this.#ring === null) return run();
     const start = performance.now();
