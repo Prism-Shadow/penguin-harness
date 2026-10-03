@@ -31,7 +31,8 @@ import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { AppInfoRow } from "../../components/account/app-info-row";
 import { openAppInfo } from "../../lib/use-update-flow";
-import { SettingsDialog, onSettingsRequest } from "../../features/settings";
+import { SettingsDialog } from "../../features/settings";
+import { onSettingsRequest } from "../../lib/settings-request";
 import type { SettingsSectionKey } from "../../lib/settings-sections";
 
 export function UserMenu({
