@@ -14,7 +14,7 @@
  *   harness.json  which table wrote them, and when
  *
  * and then leaves them alone. (`README.md` beside them is not part of that record: it is this
- * harness describing its own contract, rewritten whenever it differs — see {@link README}.) They are the record of what the workflow was written against:
+ * harness describing its own contract, rewritten whenever it differs — see {@link AGENT_README}.) They are the record of what the workflow was written against:
  * a later generation of the platform, or another harness on the same machine, is compared
  * WITH them rather than overwriting them, which is what lets a removed host method be named
  * before the first call instead of failing at it. Deleting the directory is how a workflow
@@ -31,10 +31,10 @@ const TYPES_FILE = "plugin.d.ts";
 const TABLE_FILE = "ifaces.json";
 
 /**
- * The default export's shape, in terms of the two rendered interfaces. The root module's
+ * An Agent workflow's default export, in terms of the two rendered interfaces. The root module's
  * manifest requires the host under the alias `host` and provides the handler under `main`.
  */
-const PACKAGE_TYPES = `
+export const AGENT_PACKAGE_TYPES = `
 export interface WorkflowModuleCtx<Use> {
   use: Use;
   /** Runs when the tree is disposed (a reload, a removal, the platform going away). */
@@ -62,7 +62,7 @@ export interface WorkflowPackage {
  * without being told is the last step: a page under `ui/` is only a file until the manifest
  * contributes a tab for it, and a workflow with no tab loads clean and shows nothing.
  */
-const README = `# This workflow, as the harness running it sees it
+export const AGENT_README = `# This workflow, as the harness running it sees it
 
 Written by the harness; edits here are overwritten. \`plugin.d.ts\` and \`ifaces.json\` in this
 folder are the types this workflow was written against — delete \`.harness/\` to take the
@@ -109,12 +109,12 @@ Every save reloads the workflow. \`.build/status.json\` says what came of it: \`
 settles it. Read it after every edit before telling anyone the work is done.
 `;
 
-/** Keeps `.harness/README.md` at this harness's text; best effort, it is documentation. */
-function writeReadme(target: string): void {
+/** Keeps `.harness/README.md` at the loader's text; best effort, it is documentation. */
+function writeReadme(target: string, readme: string): void {
   try {
     const file = path.join(target, "README.md");
-    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === README) return;
-    fs.writeFileSync(`${file}.tmp`, README);
+    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === readme) return;
+    fs.writeFileSync(`${file}.tmp`, readme);
     fs.renameSync(`${file}.tmp`, file);
   } catch {
     // The folder may have just been removed.
@@ -125,16 +125,24 @@ export function harnessTypesFile(dir: string): string {
   return path.join(dir, HARNESS_DIR, TYPES_FILE);
 }
 
-/** Writes this harness's types into the workflow folder, unless it already holds some. */
+/**
+ * Writes this harness's types into the workflow folder, unless it already holds some. What kind
+ * of workflow it is decides the rest: the shape of its default export (`packageTypes`) and the
+ * README's words — an Agent's (AGENT_PACKAGE_TYPES, AGENT_README), or a plugin's for its own.
+ */
 export function installHarnessTypes(
   dir: string,
   platform: IfaceTable & { hash?: string },
   keys: readonly string[],
   now: Date,
+  kind: { packageTypes: string; readme: string } = {
+    packageTypes: AGENT_PACKAGE_TYPES,
+    readme: AGENT_README,
+  },
 ): void {
   const target = path.join(dir, HARNESS_DIR);
   if (fs.existsSync(target)) {
-    writeReadme(target);
+    writeReadme(target, kind.readme);
     return;
   }
   const { text, slice } = renderDts(platform, keys);
@@ -142,14 +150,14 @@ export function installHarnessTypes(
   const staging = `${target}.${process.pid}.tmp`;
   fs.rmSync(staging, { recursive: true, force: true });
   fs.mkdirSync(staging, { recursive: true });
-  fs.writeFileSync(path.join(staging, TYPES_FILE), `${text}\n${PACKAGE_TYPES}`);
+  fs.writeFileSync(path.join(staging, TYPES_FILE), `${text}\n${kind.packageTypes}`);
   fs.writeFileSync(path.join(staging, TABLE_FILE), `${JSON.stringify(slice, null, 1)}\n`);
   fs.writeFileSync(
     path.join(staging, "harness.json"),
     `${JSON.stringify({ ifaces: platform.hash ?? null, installedAt: now.toISOString() }, null, 1)}\n`,
   );
   fs.renameSync(staging, target);
-  writeReadme(target);
+  writeReadme(target, kind.readme);
 }
 
 /** The table the workflow was written against, or why it cannot be read. */

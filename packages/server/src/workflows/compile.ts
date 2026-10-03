@@ -39,8 +39,19 @@ const MAX_DIAGNOSTICS = 12;
 
 export class WorkflowCompileError extends Error {}
 
-/** Type-checks the workflow in `dir` and emits it; resolves to the emitted entry file. */
-export function compileWorkflow(ts: TypeScript, dir: string, revision: string): string {
+/**
+ * Type-checks the workflow in `dir` and emits it; resolves to the emitted entry file.
+ * `typeModules` names more modules the source may import types from (specifier → `.d.ts`), the
+ * way `@prismshadow/penguin-server/plugin` resolves to the harness's: a plugin lends its own
+ * declarations to the workflows it loads. Types only — nothing is installed in the folder, so a
+ * value import of one fails when the emitted code runs.
+ */
+export function compileWorkflow(
+  ts: TypeScript,
+  dir: string,
+  revision: string,
+  typeModules: Readonly<Record<string, string>> = {},
+): string {
   const entry = path.join(dir, ENTRY);
   if (!fs.existsSync(entry)) {
     const js = ["index.mjs", "index.js"].find((f) => fs.existsSync(path.join(dir, f)));
@@ -78,19 +89,26 @@ export function compileWorkflow(ts: TypeScript, dir: string, revision: string): 
     extension: ts.Extension.Dts,
     isExternalLibraryImport: false,
   };
+  const lent = (file: string) => ({
+    resolvedFileName: file,
+    extension: ts.Extension.Dts,
+    isExternalLibraryImport: true,
+  });
   host.resolveModuleNameLiterals = (literals, containingFile, redirected, opts, source) =>
     literals.map((literal) =>
       literal.text === TYPES_MODULE
         ? { resolvedModule: types }
-        : ts.resolveModuleName(
-            literal.text,
-            containingFile,
-            opts,
-            host,
-            undefined,
-            redirected,
-            ts.getModeForUsageLocation(source, literal, opts),
-          ),
+        : typeModules[literal.text] !== undefined
+          ? { resolvedModule: lent(typeModules[literal.text]!) }
+          : ts.resolveModuleName(
+              literal.text,
+              containingFile,
+              opts,
+              host,
+              undefined,
+              redirected,
+              ts.getModeForUsageLocation(source, literal, opts),
+            ),
     );
 
   const program = ts.createProgram([entry, checkFile], options, host);

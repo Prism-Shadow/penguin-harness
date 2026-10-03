@@ -14,8 +14,23 @@
  * `Workflows` is the platform-side mechanism the routes drive: list, reload, dispatch,
  * serve a UI file, and the version history every successful load appends to — which is
  * what makes an Agent's own edits to its workflow reversible.
+ *
+ * `WorkflowLoader` is the part of that which does not depend on whose workflow it is: read a
+ * folder by content, compile and check it, boot it as a tree with what the caller publishes
+ * into it, record each successful load as a version and restore one. The Agent's workflows
+ * go through it, and the host offers it to plugins — company-proposals loads an
+ * organization's company workflows with it — so a workflow is the same thing wherever it is
+ * scoped; only what is published into its tree differs.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type {
+  Contributed,
+  IfaceTable,
+  Manifest,
+  ModuleTree,
+  Opaque,
+  Published,
+} from "@prismshadow/penguin-core/kernel";
 
 /** A request the workflow's handler receives (the HTTP shape, minus the transport). */
 export interface WorkflowRequest {
@@ -176,4 +191,91 @@ export abstract class Workflows {
   ): Promise<WorkflowInfo>;
   /** Deletes the folder and its recorded versions; the instance goes with them. */
   abstract remove(projectId: string, agentId: string, workflowId: string): Promise<void>;
+}
+
+/** One workflow folder, read by content: what a load loads and a version records. */
+export interface WorkflowFolderView {
+  id: string;
+  /** Absolute path of the folder. */
+  dir: string;
+  /** Relative paths, sorted: every file but `state.json`, `node_modules` and the dot-directories. */
+  files: string[];
+  /** Content hash of `files` (12 hex digits): names the emitted build and the recorded version. */
+  revision: string;
+  uiRev: string | null;
+  pkg: { name: string; version: string | null };
+}
+
+/**
+ * What one load is asked for. The caller decides what the workflow is written against and what
+ * its tree is given; the loader does the rest the same way for every kind of workflow.
+ */
+export interface WorkflowLoadRequest {
+  folder: WorkflowFolderView;
+  /** How the log names the workflow (`<project>/<agent>/<id>`); its folder by default. */
+  label?: string;
+  /** Where the folder's versions are kept (`<history>/<id>/<revision>/`). */
+  historyDir: string;
+  /** A plugin's own table, merged under the platform's: the interfaces only it declares. */
+  table?: IfaceTable;
+  /** What a new workflow's `.harness/` is written from (./harness-types.ts in the server). */
+  harness: {
+    /** The interfaces rendered into `.harness/plugin.d.ts`, with all they reach. */
+    keys: string[];
+    /** Declarations appended to it: the shape of the default export, `WorkflowPackage`. */
+    packageTypes: string;
+    /** `.harness/README.md`: the contract in the words of whoever loads the workflow. */
+    readme: string;
+  };
+  /** More modules the source may import TYPES from: specifier → an absolute `.d.ts` path. */
+  typeModules?: Record<string, string>;
+  /** The interface the root module `Workflow` must provide; null when it need provide none. */
+  main: string | null;
+  /** Modules published into the tree (requirable, contributable when they declare slots). */
+  published: (table: IfaceTable) => {
+    ifaces: Published;
+    values: Record<string, Record<string, unknown>>;
+  };
+  /**
+   * Host modules the tree contributes code to: module name → the interface declaring its slots.
+   * Each is booted beside the root as a node of its own, so the contributions it receives —
+   * data and code — come back in the outcome.
+   */
+  sinks?: Record<string, string>;
+  /** Asked with the manifests before anything is compiled; throwing fails the load. */
+  inspect?: (manifests: readonly Manifest[]) => void;
+}
+
+/** A load's outcome: the booted tree, or why there is none (the caller keeps the previous one). */
+export type WorkflowLoadOutcome =
+  | {
+      ok: true;
+      tree: ModuleTree;
+      manifests: Manifest[];
+      /** What the tree contributed to the sinks, by slot key (`<Module>.<slot>`). */
+      contributions: Record<string, Contributed[]>;
+    }
+  | { ok: false; error: string };
+
+/**
+ * The workflow loader the host lends: read folders, load one (compile, check both ways, boot,
+ * record the version), list and restore its versions. It keeps no instances — which tree is
+ * serving, and when to load again, is the caller's.
+ */
+@Interface()
+export abstract class WorkflowLoader {
+  /** The folder `dir` as workflow `id`; null when it holds no package.json. */
+  abstract folder(dir: string, id: string): Promise<WorkflowFolderView | null>;
+  /** Every workflow folder directly under `base`, by name. */
+  abstract folders(base: string): Promise<WorkflowFolderView[]>;
+  abstract load(
+    request: Opaque<"WorkflowLoadRequest", WorkflowLoadRequest>,
+  ): Promise<Opaque<"WorkflowLoadOutcome", WorkflowLoadOutcome>>;
+  /** The recorded versions of workflow `id` under `historyDir`, newest first. */
+  abstract history(historyDir: string, id: string): Promise<WorkflowVersion[]>;
+  /**
+   * Makes the folder exactly that recorded version again (its `state.json` kept); false when the
+   * version is not recorded. The caller loads it afterwards.
+   */
+  abstract restore(historyDir: string, dir: string, id: string, revision: string): Promise<boolean>;
 }
