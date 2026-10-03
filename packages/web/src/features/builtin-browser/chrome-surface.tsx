@@ -32,7 +32,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { requestSettings } from "../settings/settings-request";
+import { requestSettings } from "../../lib/settings-request";
 import { AddressBar } from "./address-bar";
 import {
   activateBrowserTab,

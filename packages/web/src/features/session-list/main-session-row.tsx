@@ -1,4 +1,7 @@
-import type { DragEvent as ReactDragEvent } from "react";
+import { useContext, useState, type DragEvent as ReactDragEvent } from "react";
+import { withEntries, MainRowExtensions } from "./index";
+import { glyphOf } from "../../lib/nav-icons";
+
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import {
@@ -90,53 +93,71 @@ export function SidebarSessionRow({
     handler[action](s);
   };
   const rowState = { pinned };
+  const extensions = useContext(MainRowExtensions);
+  if (extensions === null) throw new Error("Session row mounted outside contributed list");
+  const { rows } = extensions;
+  const contributedMarks = extensions.marks(s);
+  const [openEntry, setOpenEntry] = useState<string | null>(null);
+  const selectedEntry = rows.sessionEntries.find((entry) => entry.id === openEntry);
+  const EntryDialog = selectedEntry?.Dialog;
+  const menu = withEntries(
+      (item) => !rows.sessionEntries.some((entry) => entry.id === item.id),
+    ),
+    rows.sessionEntries.map((entry) => ({
+      id: entry.id,
+      label: entry.label(),
+      glyph: glyphOf(entry.icon),
+      onSelect: () => setOpenEntry(entry.id),
+    })),
+  );
   return (
-    <SessionRow
-      sessionId={s.sessionId}
-      renderTitle={(className) => (
-        <Truncated
-          scrollReveal
-          text={s.title ?? S.chat.defaultSessionTitle}
-          className={className}
-        />
-      )}
-      active={active}
-      {...(agentHint !== undefined ? { agent: { id: s.agentId, name: agentHint } } : {})}
-      // The marks for the row's STANDING arrangements, all in one dim cluster: which program
-      // opened it (a Session the user kept after a program opened it), how the row is filed
-      // (pinned), where it can be reached from (the messaging relay, named by its channel),
-      // whether it runs on its own (a scheduled task still to fire; a paused or ended one draws
-      // nothing) and whether it owns work that outlives the turn (background tasks, live via
-      // session_background).
-      {...(backgroundSourceMark(s) ?? {})}
-      {...(pinned ? { pinnedLabel: S.chat.pinnedSession } : {})}
-      {...(s.messagingChannel !== undefined
-        ? { relayLabel: S.messaging.enabledIndicator[s.messagingChannel] }
-        : {})}
-      {...(scheduled ? { scheduledLabel: S.chat.sessionScheduled } : {})}
-      background={{ count: background, label: S.chat.backgroundTasks(background) }}
-      activity={
-        activity === null ? null : { state: activity, label: sessionActivityLabel(activity) }
-      }
-      approvals={{
-        count: s.pendingApprovalCount,
-        label: S.chat.pendingApprovals(s.pendingApprovalCount),
-      }}
-      time={lastActive}
-      // Sized for the widest compact time each language produces — 「12月31日」 and 「59 分钟前」 in
-      // zh, "Nov 30" in en.
-      timeSlot={locale === "zh" ? "wide" : "narrow"}
-      hoverActions={sessionRowActions(HOVER_ROW_ACTIONS, rowState, run)}
-      menuActions={sessionRowActions(CONTEXT_MENU_ACTIONS, rowState, run)}
-      moreLabel={S.chat.moreActions}
-      onOpen={() => onOpen(s)}
-      draggable={draggable}
-      dropEdge={dropEdge}
-      {...(onDragStart ? { onDragStart } : {})}
-      {...(onDragEnd ? { onDragEnd } : {})}
-      {...(onDragOver ? { onDragOver } : {})}
-      {...(onDragLeave ? { onDragLeave } : {})}
-      {...(onDrop ? { onDrop } : {})}
-    />
+    <>
+      {EntryDialog && <EntryDialog session={s} onClose={() => setOpenEntry(null)} />}
+      <SessionRow
+        sessionId={s.sessionId}
+        renderTitle={(className) => (
+          <Truncated
+            scrollReveal
+            text={s.title ?? S.chat.defaultSessionTitle}
+            className={className}
+          />
+        )}
+        active={active}
+        {...(agentHint !== undefined ? { agent: { id: s.agentId, name: agentHint } } : {})}
+        // The marks for the row's STANDING arrangements, all in one dim cluster: which program
+        // opened it (a Session the user kept after a program opened it), how the row is filed
+        // (pinned), where it can be reached from (the messaging relay, named by its channel),
+        // whether it runs on its own (a scheduled task still to fire; a paused or ended one draws
+        // nothing) and whether it owns work that outlives the turn (background tasks, live via
+        // session_background).
+        {...(backgroundSourceMark(s) ?? {})}
+        {...(pinned ? { pinnedLabel: S.chat.pinnedSession } : {})}
+        {...(contributedMarks.relay ? { relayLabel: contributedMarks.relay } : {})}
+        {...(contributedMarks.scheduled ? { scheduledLabel: contributedMarks.scheduled } : {})}
+        background={{ count: background, label: S.chat.backgroundTasks(background) }}
+        activity={
+          activity === null ? null : { state: activity, label: sessionActivityLabel(activity) }
+        }
+        approvals={{
+          count: s.pendingApprovalCount,
+          label: S.chat.pendingApprovals(s.pendingApprovalCount),
+        }}
+        time={lastActive}
+        // Sized for the widest compact time each language produces — 「12月31日」 and 「59 分钟前」 in
+        // zh, "Nov 30" in en.
+        timeSlot={locale === "zh" ? "wide" : "narrow"}
+        hoverActions={sessionRowActions(HOVER_ROW_ACTIONS, rowState, run)}
+        menuActions={menu}
+        moreLabel={S.chat.moreActions}
+        onOpen={() => onOpen(s)}
+        draggable={draggable}
+        dropEdge={dropEdge}
+        {...(onDragStart ? { onDragStart } : {})}
+        {...(onDragEnd ? { onDragEnd } : {})}
+        {...(onDragOver ? { onDragOver } : {})}
+        {...(onDragLeave ? { onDragLeave } : {})}
+        {...(onDrop ? { onDrop } : {})}
+      />
+    </>
   );
 }

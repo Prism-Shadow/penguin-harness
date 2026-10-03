@@ -6,7 +6,7 @@ import { SESSION_DRAG_MIME } from "../../lib/main-sidebar-persistence";
 import { SidebarSessionRow } from "./main-session-row";
 import type { useMainSidebarAgentNameById } from "./main-sidebar-agent-name-by-id";
 
-/** Consecutive live main statements 128..128, called once in original hook order. */
+/** Consecutive live main statements 135..135, called once in original hook order. */
 export function useMainSidebarRenderRows(scope: ReturnType<typeof useMainSidebarAgentNameById>) {
   const {
     locale,

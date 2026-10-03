@@ -1,5 +1,10 @@
+/**
+ * Draws a page the server contributed (GET /api/contributions): an `iframe` renderer needs
+ * nothing from this build; a `builtin` one names a component, which only the page's owner can
+ * supply — WebApp carries none, and company mode passes its own (features/company/org-routes.tsx).
+ */
 import type { ComponentType } from "react";
-import type { PageEntry } from "./early-frame-page-table";
+import type { PageEntry } from "./local-page-table";
 
 export function ContributedPage({
   page,

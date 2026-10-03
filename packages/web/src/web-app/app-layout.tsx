@@ -9,23 +9,24 @@ import { FindBar } from "../components/find/find-bar";
  * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
  * transform would trap the menus it opens); the package's components say how.
  */
-import { useEffect, useLayoutEffect, useState } from "react";
-import { Outlet, useMatch } from "react-router";
-import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
+import { useEffect, useState } from "react";
+import { Outlet } from "react-router";
+import {
+  AppShell,
+  Drawer,
+  MobileTopBar,
+  Notice,
+  UpdateDot,
+} from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";
 import { S } from "../lib/strings";
 import { onCommand } from "../lib/shortcuts/dispatcher";
 import { useWebAppLayers } from "./index";
-import { useUpdateBadges } from "../lib/use-update-badges";
-import { dispatchBrowser } from "../features/builtin-browser";
+import { webAppDeps } from "./deps";
 import { useAuth } from "../state/auth";
 import { useCompletionNotifications } from "../state/use-completion-notifications";
 import { useTrayLocale } from "../state/use-tray-locale";
-import { useCompany } from "../lib/company-context";
-import { Sidebar } from "./sidebar/sidebar";
-import { CollapsedRail } from "./sidebar/rail";
-import { useNewChat } from "../features/chat";
 import { ChangePasswordDialog } from "../components/account/change-password-dialog";
 import { AppInfoDialog } from "../components/account/app-info-dialog";
 
@@ -44,31 +45,18 @@ function pinnedSidebarOnScreen(): boolean {
 export function AppLayout() {
   const background = useBackground();
   const { user, desktopMode, sessionVia } = useAuth();
-  // The docks belong to the conversation they were arranged in, so switching Sessions
-  // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
-  // a parked draft id), qualified by its Project like the browser's, is a scope of its own,
-  // handed to the Session the first send creates; pages with no Session scope to a
-  // placeholder. Layout effect, not a plain one: it has to land before the chat page's docks
-  // paint, or the outgoing conversation's docks flash on the incoming one.
-  const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
-  useLayoutEffect(() => {
-    setDockScope(dockScope);
-  }, [dockScope]);
+  const { sidebar, drafts } = webAppDeps.useDeps();
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
   // Desktop shell only: keeps the tray menu in the language this window is in.
   useTrayLocale();
-  // The single eager owner of the update checks (use-update-badges.ts): one request per
-  // browser session, so a dot can be there on a fresh load instead of waiting for someone to
-  // open the sidebar menu. Every other anchor reads the same caches passively.
-  const badges = useUpdateBadges(true);
   const layers = useWebAppLayers();
   // The drawer holds the sidebar, so the drawer button is named after what the sidebar lists:
-  // conversations in development mode, channels in company mode.
-  const company = useCompany();
-  const drawerName =
-    company.workMode === "company" ? S.company.channels.drawerLabel : S.chat.sessionList;
+  // conversations in development mode, the current mode's own list in another; its badge
+  // covers every one inside (the sidebar's `menu` anchor).
+  const column = sidebar.useColumnState();
+  const drawerName = column.listName;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Initial-password banner dismissal: server-persisted per user (ui_prefs). null = prefs not
@@ -112,14 +100,14 @@ export function AppLayout() {
     });
   // The commands whose surface is this layout. Each declines (returns false, so the browser's
   // own key runs) when its effect could not be seen: the pinned sidebar exists only from the
-  // `md` breakpoint up (below it the drawer's own sidebar answers while open), and company mode
-  // has neither a session search nor a development New chat. New chat runs from here rather
+  // `md` breakpoint up (below it the drawer's own sidebar answers while open), and a contributed
+  // mode has neither a session search nor a development New chat. New chat runs from here rather
   // than from the sidebar so it works with the sidebar collapsed to its rail. The search field
   // only exists in the expanded sidebar: with the rail showing, the command expands the sidebar
   // with the field already open (the pinned Sidebar mounts fresh on every expand and takes the
   // flag as its initial state); otherwise it declines and the sidebar's own handler takes it.
-  const inCompany = company.workMode === "company";
-  const newChat = useNewChat();
+  const inDefaultMode = column.inDefaultMode;
+  const newChat = drafts.useNewChat();
   const [openSearchOnExpand, setOpenSearchOnExpand] = useState(false);
   useEffect(() => {
     const offs = [
@@ -129,11 +117,11 @@ export function AppLayout() {
         toggleCollapsed();
       }),
       onCommand("chat.new", () => {
-        if (inCompany) return false;
+        if (!inDefaultMode) return false;
         newChat();
       }),
       onCommand("sessions.search", () => {
-        if (inCompany || !pinnedSidebarOnScreen() || !collapsed) return false;
+        if (!inDefaultMode || !pinnedSidebarOnScreen() || !collapsed) return false;
         setOpenSearchOnExpand(true);
         toggleCollapsed();
       }),
@@ -141,7 +129,7 @@ export function AppLayout() {
     return () => {
       for (const off of offs) off();
     };
-  }, [collapsed, inCompany, newChat]);
+  }, [collapsed, inDefaultMode, newChat]);
 
   return (
     <AppShell
@@ -153,14 +141,14 @@ export function AppLayout() {
       navCollapsed={collapsed}
       nav={
         collapsed ? (
-          <CollapsedRail
+          <sidebar.Rail
             onExpand={() => {
               setOpenSearchOnExpand(false);
               toggleCollapsed();
             }}
           />
         ) : (
-          <Sidebar
+          <sidebar.Column
             onCollapse={() => {
               setOpenSearchOnExpand(false);
               toggleCollapsed();
@@ -186,7 +174,7 @@ export function AppLayout() {
             onClose={() => setDrawerOpen(false)}
           >
             <div className="h-full bg-surface-muted">
-              <Sidebar onNavigate={() => setDrawerOpen(false)} />
+              <sidebar.Column onNavigate={() => setDrawerOpen(false)} />
             </div>
           </Drawer>
           {/* The find bar (`find.open` / `find.all`): in the layout, so it serves every route
@@ -201,9 +189,10 @@ export function AppLayout() {
           entry). */}
       <MobileTopBar
         title={S.appName}
-        menuLabel={badges.note !== null ? `${drawerName} · ${badges.note}` : drawerName}
-        {...(badges.note !== null ? { menuHint: badges.note } : {})}
-        {...(badges.any ? { menuBadge: <UpdateDot /> } : {})}
+        menuLabel={column.menuNote !== null ? `${drawerName} · ${column.menuNote}` : drawerName}
+        {...(column.menuNote !== null
+          ? { menuHint: column.menuNote, menuBadge: <UpdateDot /> }
+          : {})}
         onMenu={() => setDrawerOpen(true)}
       />
 

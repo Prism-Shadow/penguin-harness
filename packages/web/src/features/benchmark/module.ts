@@ -15,6 +15,9 @@ import { BenchmarkDetailPage } from "./benchmark-detail-page";
         admin: false,
         released: true,
         order: 70,
+        title: "Evaluation Center",
+        titleZh: "评估中心",
+        icon: "trophy",
       },
       {
         id: "benchmark.detail",

@@ -1,8 +1,9 @@
 /**
  * The sidebar's page nav: in development mode the pinned pages, then the collapsible ones folded
  * away under a slim toggle, each row with a hover pin button and, where a pointer can drag, a
- * drag across the areas; in company mode the organization's six pages, all under the toggle.
- * The fold and the pin choices persist (nav-state.ts).
+ * drag across the areas; in a contributed mode that mode's own rows, all under the toggle.
+ * The fold and the pin choices persist (nav-state.ts). A row's name and glyph are its page's
+ * data (web-app/page-table.ts), its dot a nav badge contributed for its key.
  */
 import { useRef, useState, type DragEvent as ReactDragEvent } from "react";
 
@@ -17,8 +18,9 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
+import { glyphOf } from "../../lib/nav-icons";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import {
   initialNavGroupCollapsed,
   initialNavPinOverrides,
@@ -29,10 +31,11 @@ import {
   storeNavPinOverrides,
   withNavPinned,
   type NavEntryKey,
-  type NavGroupKey,
 } from "./nav-state";
 
-import { navPagesOf, useWebAppPages } from "../index";
+import { navPagesOf, pageTitle, useWebAppPages, type WebAppPage } from "../index";
+
+import type { ModeNavItem } from "../../lib/sidebar-contributions";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 
 /** Private drag payload type of a nav entry moved between the pinned and collapsible areas (never text/plain: use-session-drag.ts says why). */
@@ -43,22 +46,6 @@ const isNavDrag = (e: ReactDragEvent): boolean => e.dataTransfer.types.includes(
 
 /** The two nav areas a dragged entry can be dropped into. */
 type NavArea = "pinned" | "collapsible";
-
-/** A page entry of the development nav: every entry but New chat, which keeps its fixed slot. */
-const isNavPage = (key: NavEntryKey): key is NavGroupKey => key !== "newChat";
-
-/** One of company mode's nav rows. */
-export interface CompanyNavItem {
-  key: string;
-  /** Where the row leads — null for a row with nowhere to lead, which renders disabled. */
-  to: string | null;
-  label: string;
-  icon: string;
-  /** What the row's count means, for its tooltip; null for none. */
-  note?: string | null;
-  /** A count the row wears at its end (a contributed page's unread total); null for none. */
-  count?: number | null;
-}
 
 /**
  * The page nav's fold, pins and drag. The sidebar holds it, because the "New chat" slot above
@@ -169,19 +156,21 @@ export function usePageNav(canDrag: boolean) {
 
 export function PageNav({
   nav,
-  companyItems,
-  noteFor,
+  modeItems,
+  notes,
   onNavigate,
 }: {
   nav: ReturnType<typeof usePageNav>;
-  /** Company mode's rows; null in development mode, whose rows are the contributed pages. */
-  companyItems: readonly CompanyNavItem[] | null;
-  /** What a page's badge trail is waiting on (null = no dot). */
-  noteFor: (to: string) => string | null;
+  /** A contributed mode's rows; null in development mode, whose rows are the contributed pages. */
+  modeItems: readonly ModeNavItem[] | null;
+  /** What each badged page's dot says, by page key (no entry = no dot). */
+  notes: ReadonlyMap<string, string>;
   onNavigate: (() => void) | undefined;
 }) {
   const location = useLocation();
   const { user } = useAuth();
+  const { locale } = useLocale();
+  const pageByKey = new Map<string, WebAppPage>(nav.navPages.map((p) => [p.key, p]));
   /**
    * Development mode's entries by area (nav-state.ts): New chat, then the main
    * nav's pages minus the entries this user's role cannot reach, each pinned or
@@ -192,8 +181,8 @@ export function PageNav({
     navEntryKeysFor(nav.navPages, user?.isAdmin === true),
     nav.navPins,
   );
-  const pinnedNavPages = navSplit.pinned.filter(isNavPage);
-  const collapsibleNavPages = navSplit.collapsible.filter(isNavPage);
+  const pinnedNavPages = navSplit.pinned.flatMap((key) => pageByKey.get(key) ?? []);
+  const collapsibleNavPages = navSplit.collapsible.flatMap((key) => pageByKey.get(key) ?? []);
 
   /**
    * One development-mode page entry: the package's pinnable nav row, bound to its route, its
@@ -203,16 +192,17 @@ export function PageNav({
    * only adds what the dot means, and the accessible name keeps the label as its prefix. The dot
    * hangs at the row's right edge, vertically centred on the row.
    */
-  const renderNavEntry = (key: NavGroupKey) => {
+  const renderNavEntry = (page: WebAppPage) => {
+    const key = page.key;
     const to = `/${key}`;
-    const label = S.nav[key];
-    const note = noteFor(to);
+    const label = pageTitle(page, locale);
+    const note = notes.get(key) ?? null;
     const pinned = isNavPinned(key, nav.navPins);
     return (
       <SidebarNavEntry
         key={key}
         label={label}
-        glyph={NAV_ICONS[key]}
+        glyph={glyphOf(page.icon)}
         href={to}
         active={isCurrentPath(to, location.pathname)}
         renderLink={renderRouterLink}
@@ -265,7 +255,7 @@ export function PageNav({
       expandLabel={S.nav.expandGroup}
       collapseLabel={S.nav.collapseGroup}
       toggleRef={nav.navToggleRef}
-      {...(companyItems !== null
+      {...(modeItems !== null
         ? {}
         : {
             pinned:
@@ -278,33 +268,20 @@ export function PageNav({
             drop: nav.areaDrop("collapsible"),
           })}
     >
-      {companyItems !== null
-        ? companyItems.map((item) => (
+      {modeItems !== null
+        ? modeItems.map((item) => (
             /* A row with nowhere to go keeps its place and its glyph, muted, with nothing to
                  click or tab to. */
             <NavRow
               key={item.key}
               surface="muted"
               label={item.label}
-              glyph={item.icon}
+              glyph={glyphOf(item.icon)}
               href={item.to ?? ""}
               disabled={item.to === null}
               active={item.to !== null && isCurrentPath(item.to, location.pathname)}
               renderLink={renderRouterLink}
               onClick={() => onNavigate?.()}
-              {...(item.count !== undefined && item.count !== null
-                ? {
-                    ariaLabel: `${item.label} · ${item.note ?? ""}`,
-                    ...(item.note ? { tooltip: item.note } : {}),
-                    /* A count rather than a dot: the number is the information, as on a
-                       channel row, and the tooltip says what it counts. */
-                    badge: (
-                      <span className="ml-auto shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
-                        {item.count}
-                      </span>
-                    ),
-                  }
-                : {})}
             />
           ))
         : collapsibleNavPages.map(renderNavEntry)}
