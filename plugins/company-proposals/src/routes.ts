@@ -7,7 +7,7 @@
  *   POST   /                         start one: { author, brief, title? } (a person; an employee gets 403 roadmap_only —
  *                                   its new proposals come from approved roadmap items)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
- *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts), with the deployments placed on it
+ *   GET    /graph[?refresh=1]        the delivery repository's open PRs as a commit graph (graph-refresh.ts), with the deployments placed on it; refresh=1 waits for a refresh
  *   GET    /deployments              the deployment registry: the deployments registered, none by default (deployments.ts)
  *   POST   /deployments              anybody in the organization registers one: { id, url? } (url = a penguin server); a repeat is 409 deployment_registered
  *   GET    /deploy-scripts           the organization's deploy scripts (deploy-routes.ts)
@@ -101,7 +101,11 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
   );
 
   app.get("/graph", async (c) =>
-    c.json(await service.graph(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
+    c.json(
+      await service.graph(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c), {
+        refresh: c.req.query("refresh") === "1",
+      }),
+    ),
   );
 
   app.get("/deployments", async (c) =>

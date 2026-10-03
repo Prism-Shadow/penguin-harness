@@ -80,11 +80,18 @@ export function refLabel(ref: ProposalBranchRef): string {
   return `${ref.remote}/${ref.branch}`;
 }
 
+/**
+ * A side's identity as sameRef compares it, and as the store indexes an impl's head
+ * (`proposal_impls.head_key`): an `owner/repo` remote lower-cased, a remote name as it is.
+ */
+export function refKey(ref: ProposalBranchRef): string {
+  const remote = isRepoRemote(ref.remote) ? ref.remote.toLowerCase() : ref.remote;
+  return `${remote}:${ref.branch}`;
+}
+
 /** Two declared sides name the same branch (remote names compare as written, repositories case-insensitively). */
 export function sameRef(a: ProposalBranchRef, b: ProposalBranchRef): boolean {
-  const remote = isRepoRemote(a.remote) ? a.remote.toLowerCase() : a.remote;
-  const other = isRepoRemote(b.remote) ? b.remote.toLowerCase() : b.remote;
-  return remote === other && a.branch === b.branch;
+  return refKey(a) === refKey(b);
 }
 
 /** The GitHub repository a remote names: `owner/repo` itself, or the remote's fetch URL; null when it names none. */

@@ -1,20 +1,22 @@
 /**
- * The proposal service: the state machine over the ledger, the views a caller gets of it,
- * and the one way it speaks to employees — a line of work put straight on the employee's
- * desk, `[proposal #<n>] ` + what happened + the command to run, in nobody's name. No
- * channel, no trigger kind of its own.
+ * The proposal service: the use cases over the ports (ports.ts), the views a caller gets, and
+ * the one way it speaks to employees — a line of work put straight on the employee's desk,
+ * `[proposal #<n>] ` + what happened + the command to run, in nobody's name. No channel, no
+ * trigger kind of its own.
  *
- * Who may do what follows the roles: the person delegates, comments, requests changes and
- * approves; the author publishes, marks ready, asks for an implementer and resolves
- * comments; the implementer reports merged, and so may anybody in the organization once
- * GitHub reads the impl PR as merged into its default branch; anybody in the organization —
- * a person or an employee — gives feedback and rejects. A person may also do what the author or the
- * implementer may, so a stuck proposal never waits on an employee that is not answering.
+ * Who may do what, and in which state, are the default rules (guards.ts): the person delegates,
+ * comments, requests changes and approves; the author publishes, marks ready, asks for an
+ * implementer and resolves comments; the implementer reports merged, and so may anybody in the
+ * organization once the forge reads the impl PR as merged into its default branch; anybody in
+ * the organization — a person or an employee — gives feedback and rejects. A person may also
+ * do what the author or the implementer may, so a stuck proposal never waits on an employee
+ * that is not answering. Each write is one transaction of the store; the rules are checked in it.
  *
- * Reads are per person: a read position (the last `seq` seen) per proposal, kept in the
- * server's settings store, and the counts the queue shows derive from it. An employee has
- * no read position — the page is for people.
+ * Reads are per person: a read position (the last `seq` seen) per proposal, kept in the store,
+ * and the counts the queue shows derive from it. An employee has no read position — the page is
+ * for people.
  */
+import path from "node:path";
 import type {
   AgentLifecycle,
   Log,
@@ -22,7 +24,6 @@ import type {
   OrgGateway,
   OrgView,
   PluginConfig,
-  Settings,
 } from "@prismshadow/penguin-server/plugin";
 import type {
   ProposalAdoptImplResponse,
@@ -43,7 +44,6 @@ import type {
   ProposalDeploymentsResponse,
   ProposalMaterialKind,
   ProposalPluginEvent,
-  ProposalStatus,
   ProposalTestGroup,
   ProposalTestGroupsResponse,
   ProposalsResponse,
@@ -56,24 +56,30 @@ import {
   undeclaredGroupsMessage,
   type GraphConfig,
 } from "./config.js";
-import { renderForAgent, sectionSource } from "./comments.js";
+import { paragraphAtOffset, renderForAgent, sectionSource } from "./comments.js";
 import { readBaseFile } from "./files.js";
 import { PrStatusReader, ghRunner, parsePullUrl, type RunGh } from "./pr-status.js";
-import { pullKey } from "./pr-chain.js";
-import { GraphCache } from "./graph-cache.js";
-import { PrGraphReader } from "./pr-graph.js";
+import { pullKey, type GraphProposal } from "./pr-chain.js";
 import {
   deploymentIdOf,
   DeploymentRegistryError,
   fetchProbe,
   normalizeServerUrl,
-  readDeployments,
   registryOf,
   requireUnregistered,
   type ProbeServer,
 } from "./deployments.js";
 import { gitRunner, type RunGit } from "./workspace-remotes.js";
-import { Ledger, ledgerPath, type Proposal, type ProposalImpl } from "./ledger.js";
+import { ProposalError, type Project, type Proposal, type ProposalImpl } from "./domain.js";
+import { defaultRules, isPerson, type Caller, type ProposalRules } from "./guards.js";
+import type { Forge, GitMirror, ProposalFacts, Viewer } from "./ports.js";
+import { SqliteProposalStore } from "./store-write.js";
+import { SqliteGraphStore } from "./graph-store.js";
+import { companyDbPath } from "./schema.js";
+import { DeploymentStore, deploymentsPath } from "./deploy-store.js";
+import { GithubForge, NoForge } from "./forge.js";
+import { LocalGitMirror, githubUrl, mirrorDir } from "./git-mirror.js";
+import { GraphRefresher, type GraphContext } from "./graph-refresh.js";
 import {
   ImplBranchError,
   compareBranches,
@@ -99,7 +105,9 @@ import {
   renderProposalDocument,
 } from "./markdown.js";
 
-/** The plugin's name in the `plugin` server event and in the settings keys. */
+export { ProposalError } from "./domain.js";
+
+/** The plugin's name in the `plugin` server event. */
 export const PLUGIN_NAME = "company-proposals";
 /** The skills plugin the author and the implementer are given on demand. */
 export const SKILLS_PLUGIN = "agent-company-proposals";
@@ -113,17 +121,8 @@ export const MATERIAL_KINDS: readonly ProposalMaterialKind[] = [
   "url",
 ];
 
-/** What a refused operation answers; the route sends it as `{ error: { code, message } }`. */
-export class ProposalError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "ProposalError";
-  }
-}
+/** How long a directory's `git remote -v` is reused by the reads (the graph's, the impl's). */
+const REMOTES_TTL_MS = 60_000;
 
 export interface ServiceDeps {
   gateway: OrgGateway;
@@ -131,36 +130,39 @@ export interface ServiceDeps {
   agents: Pick<AgentLifecycle, "pluginVersion" | "updatePlugin">;
   /** The data root (Paths.root). */
   root: string;
-  settings: Pick<Settings, "get" | "set">;
   log: Pick<Log, "line">;
   /** The plugin's settings group (config.ts); the declared defaults when absent (a test that does not care). */
   pluginConfig?: Pick<PluginConfig, "get">;
   now?: () => number;
-  /** How the PR status lookup runs `gh`; the machine's own by default (a test feeds answers). */
+  /** How `gh` runs (the impl's PR and diff reads, and the GitHub forge); the machine's own by default. */
   gh?: RunGh;
   /** How the shared workspace's remotes are read; the machine's `git` by default (a test feeds answers). */
   git?: RunGit;
   /** How a server deployment's `/api/install` is read (deployments.ts); the machine's `fetch` by default. */
   probe?: ProbeServer;
+  /** The forge of a project on GitHub; the GitHub adapter over `gh` by default. */
+  forge?: Forge;
+  /** The delivery repository's mirror; a blobless bare repository under the organization by default. */
+  mirrorFor?: (orgDir: string, repo: string) => GitMirror;
+  /** Default rules replaced (guards.ts). */
+  rules?: Partial<ProposalRules>;
 }
 
-/** One write's desk deliveries: the ledger a failed delivery is recorded in, and the reasons collected for the answer. */
+/** One organization's stores: `company.db` (proposals, graph), and the deployment registry's file. */
+interface OrgStores {
+  proposals: SqliteProposalStore;
+  graph: SqliteGraphStore;
+  deployments: DeploymentStore;
+}
+
+/** One write's desk deliveries: the reasons a delivery failed, collected for the answer. */
 interface Delivery {
-  ledger: Ledger;
+  store: SqliteProposalStore;
   hints: string[];
-}
-
-/** The caller, resolved: the principal the write is recorded under, and the person behind it when there is one. */
-interface Caller {
-  principal: string;
-  agentId: string | null;
-  userId: string;
 }
 
 const badRequest = (message: string): ProposalError =>
   new ProposalError(400, "bad_request", message);
-const forbidden = (code: string, message: string): ProposalError =>
-  new ProposalError(403, code, message);
 const graphOff = (): ProposalError =>
   new ProposalError(
     409,
@@ -173,9 +175,6 @@ function whoOf(caller: Caller): string {
   return caller.agentId ?? caller.userId;
 }
 
-function userPrincipal(userId: string): string {
-  return `user:${userId}`;
-}
 function agentPrincipal(agentId: string): string {
   return `agent:${agentId}`;
 }
@@ -198,30 +197,48 @@ export function ownerOf(p: Pick<Proposal, "author" | "implementer">): string {
 }
 
 export class ProposalService {
-  private readonly ledgers = new Map<string, Ledger>();
+  private readonly stores = new Map<string, OrgStores>();
 
   /** Conclusions being delivered (`<projectId>/<orgId>/<sessionId>`): a second one waits for nothing and is refused. */
   private readonly concluding = new Set<string>();
 
-  /** GitHub's word on each `pr` material, read when a proposal is read (pr-status.ts). */
+  /** The PR status cache's reader (pr-status.ts). */
   private readonly prStatus: PrStatusReader;
-
-  /** The PR graph's GitHub reads, with their caches (pr-graph.ts). */
-  private readonly prGraph: PrGraphReader;
-  /** The last graph per organization, answered while a refresh runs (graph-cache.ts). */
-  private readonly graphCache: GraphCache;
+  /** The PR graph's read path and refresher (graph-refresh.ts). */
+  private readonly graphs: GraphRefresher;
+  /** The default rules, with any replaced. */
+  private readonly rules: ProposalRules;
+  /** Each directory's GitHub remotes, briefly (remotesFor). */
+  private readonly remotes = new Map<
+    string,
+    { at: number; value: Promise<Array<{ name: string; repo: string }>> }
+  >();
 
   constructor(private readonly deps: ServiceDeps) {
+    const forge = deps.forge ?? new GithubForge(deps.gh);
+    this.rules = { ...defaultRules, ...deps.rules };
     this.prStatus = new PrStatusReader({
-      ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
+      forge,
       log: (line) => deps.log.line(line),
       ...(deps.now !== undefined ? { now: deps.now } : {}),
     });
-    this.prGraph = new PrGraphReader({
-      ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
+    this.graphs = new GraphRefresher({
+      log: (line) => deps.log.line(line),
       ...(deps.now !== undefined ? { now: deps.now } : {}),
+      windowMs: () => this.graphConfig().windowMs,
+      mirrorFor:
+        deps.mirrorFor ??
+        ((orgDir, repo) => new LocalGitMirror({ dir: mirrorDir(orgDir, repo), url: githubUrl(repo) })),
+      forgeFor: (project) => (project.forge === "github" ? forge : new NoForge()),
+      probe: deps.probe ?? fetchProbe(),
     });
-    this.graphCache = new GraphCache(deps.now ?? Date.now);
+  }
+
+  /** Closes every organization's store and stops the graph refreshes; the plugin is stopping. */
+  close(): void {
+    this.graphs.stop();
+    for (const s of this.stores.values()) s.proposals.close();
+    this.stores.clear();
   }
 
   /** The skipped graph settings last reported, logged once per change like the test groups'. */
@@ -243,26 +260,27 @@ export class ProposalService {
   }
 
   /**
-   * Where the PR graph reads from, settled: the settings where they are set, else the shared
+   * The organization's default Project: the settings where they are set, else the shared
    * workspace's GitHub remotes — the delivery repository is the remote holding the most of the
-   * ledger's impl PRs (`origin` on a tie or when none does, else the first), its base the
-   * repository's default branch, the origins the other remotes. `repo` is null when neither
-   * names one; each fallback that could not be read is in `errors`.
+   * impl PRs (`origin` on a tie or when none does, else the first), its base the repository's
+   * default branch, the origins the other remotes. `repo` is null when neither names one; each
+   * fallback that could not be read is in `errors`.
    */
-  private async deliveryRepo(
-    org: OrgView,
-    ledger: Ledger,
-    errors: string[],
-  ): Promise<{
-    repo: string | null;
-    base: string;
-    origins: Array<{ name: string; repo: string }>;
-  }> {
+  private async project(org: OrgView, facts: ProposalFacts[], errors: string[]): Promise<Project> {
     const config = this.graphConfig();
-    if (config.repo !== null) return config;
+    const forge = (repo: string | null) => (repo === null ? "none" : "github") as Project["forge"];
+    if (config.repo !== null) {
+      return {
+        repo: config.repo,
+        base: config.base,
+        baseDeclared: config.baseDeclared,
+        origins: config.origins,
+        forge: "github",
+      };
+    }
     let remotes: Array<{ name: string; repo: string }> = [];
     try {
-      remotes = remotesOf(await (this.deps.git ?? gitRunner())(org.workspace, ["remote", "-v"]));
+      remotes = await this.remotesOfDir(org.workspace);
     } catch (err) {
       errors.push(
         `shared workspace ${org.workspace}: remotes not read: ${err instanceof Error ? err.message : String(err)}`,
@@ -270,11 +288,9 @@ export class ProposalService {
     }
     const held = (repo: string): number => {
       const prefix = `${repo.toLowerCase()}#`;
-      return ledger
-        .proposals()
-        .filter((p) =>
-          (p.impl?.pr == null ? "" : (pullKey(p.impl.pr.url) ?? "")).startsWith(prefix),
-        ).length;
+      return facts.filter((p) =>
+        (p.impl?.pr == null ? "" : (pullKey(p.impl.pr.url) ?? "")).startsWith(prefix),
+      ).length;
     };
     let picked = remotes.find((r) => r.name === "origin") ?? remotes[0];
     for (const r of remotes)
@@ -283,16 +299,25 @@ export class ProposalService {
       errors.push(
         `no delivery repository: none is set under Settings → Plugins → Company proposals and the shared workspace ${org.workspace} has no GitHub remote`,
       );
-      return { repo: null, base: config.base, origins: config.origins };
+      return {
+        repo: null,
+        base: config.base,
+        baseDeclared: config.baseDeclared,
+        origins: config.origins,
+        forge: forge(null),
+      };
     }
-    const base = config.baseDeclared
-      ? config.base
-      : ((await this.prGraph.defaultBranch(picked.repo, errors)) ?? config.base);
     const origins =
       config.origins.length > 0
         ? config.origins
         : remotes.filter((r) => r.repo.toLowerCase() !== picked.repo.toLowerCase());
-    return { repo: picked.repo, base, origins };
+    return {
+      repo: picked.repo,
+      base: config.base,
+      baseDeclared: config.baseDeclared,
+      origins,
+      forge: forge(picked.repo),
+    };
   }
 
   /** The skipped lines last reported, so a bad line is logged once per change, not on every read. */
@@ -327,30 +352,37 @@ export class ProposalService {
     return this.deps.now?.() ?? Date.now();
   }
 
-  private ledger(projectId: string, orgId: string): Ledger {
+  /** An organization's stores, opened on first use. */
+  private storesOf(projectId: string, orgId: string): OrgStores {
     const key = `${projectId}/${orgId}`;
-    let ledger = this.ledgers.get(key);
-    if (ledger === undefined) {
-      ledger = new Ledger(
-        ledgerPath(this.deps.root, projectId, orgId),
+    let s = this.stores.get(key);
+    if (s === undefined) {
+      const proposals = SqliteProposalStore.open(
+        companyDbPath(this.deps.root, projectId, orgId),
         () => this.now(),
-        (line) => this.deps.log.line(line),
       );
-      this.ledgers.set(key, ledger);
+      s = {
+        proposals,
+        graph: new SqliteGraphStore(proposals.db, () => this.now()),
+        deployments: new DeploymentStore(deploymentsPath(this.deps.root, projectId, orgId), () =>
+          this.now(),
+        ),
+      };
+      this.stores.set(key, s);
     }
-    return ledger;
+    return s;
   }
 
   // ---------------------------------------------------------------------------
   // Access
   // ---------------------------------------------------------------------------
 
-  /** The organization, with company mode on and the caller belonging to it; the ledger loaded. */
+  /** The organization, with company mode on and the caller belonging to it; its stores open. */
   private async open(
     projectId: string,
     orgId: string,
     actor: OrgActor,
-  ): Promise<{ org: OrgView; ledger: Ledger; caller: Caller }> {
+  ): Promise<{ org: OrgView; store: SqliteProposalStore; stores: OrgStores; caller: Caller }> {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new ProposalError(404, "company_mode_off", "Company mode is off.");
     }
@@ -361,18 +393,27 @@ export class ProposalService {
     const principal = await this.deps.gateway.principalOf(projectId, orgId, actor);
     const agentId = principal.startsWith("agent:") ? principal.slice("agent:".length) : null;
     if (agentId === null && !org.userIds.includes(actor.userId)) {
-      throw forbidden("project_access", "Not a member of this Project.");
+      throw new ProposalError(403, "project_access", "Not a member of this Project.");
     }
-    const ledger = this.ledger(projectId, orgId);
-    await ledger.load();
-    return { org, ledger, caller: { principal, agentId, userId: actor.userId } };
+    const stores = this.storesOf(projectId, orgId);
+    return {
+      org,
+      store: stores.proposals,
+      stores,
+      caller: {
+        principal,
+        agentId,
+        userId: actor.userId,
+        ...(actor.sessionId !== undefined ? { sessionId: actor.sessionId } : {}),
+      },
+    };
   }
 
-  /** The organization and its ledger, for a write no caller makes over HTTP (createFromRoadmap). */
+  /** The organization and its store, for a write no caller makes over HTTP (createFromRoadmap). */
   private async openInternal(
     projectId: string,
     orgId: string,
-  ): Promise<{ org: OrgView; ledger: Ledger }> {
+  ): Promise<{ org: OrgView; store: SqliteProposalStore }> {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new ProposalError(404, "company_mode_off", "Company mode is off.");
     }
@@ -380,14 +421,12 @@ export class ProposalService {
     if (org === null) {
       throw new ProposalError(404, "org_not_found", `Organization does not exist: ${orgId}`);
     }
-    const ledger = this.ledger(projectId, orgId);
-    await ledger.load();
-    return { org, ledger };
+    return { org, store: this.storesOf(projectId, orgId).proposals };
   }
 
-  private requireProposal(ledger: Ledger, number: number): Proposal {
-    const p = ledger.get(number);
-    if (p === undefined) {
+  private requireProposal(store: SqliteProposalStore, number: number): Proposal {
+    const p = store.get(number);
+    if (p === null) {
       throw new ProposalError(404, "proposal_not_found", `Proposal #${number} does not exist.`);
     }
     return p;
@@ -399,43 +438,17 @@ export class ProposalService {
     }
   }
 
-  private isPerson(caller: Caller): boolean {
-    return caller.agentId === null;
-  }
-
-  private requirePerson(caller: Caller, what: string): void {
-    if (!this.isPerson(caller)) {
-      throw forbidden("person_required", `Only a person can ${what}.`);
-    }
-  }
-
-  private requireAuthorOrPerson(p: Proposal, caller: Caller, what: string): void {
-    if (this.isPerson(caller) || caller.agentId === p.author) return;
-    throw forbidden("not_author", `Only the author (${p.author}) or a person can ${what}.`);
-  }
-
   // ---------------------------------------------------------------------------
   // Views
   // ---------------------------------------------------------------------------
 
-  private readsKey(projectId: string, orgId: string, userId: string): string {
-    return `${PLUGIN_NAME}:reads:${projectId}/${orgId}/${userId}`;
+  private viewer(caller: Caller): Viewer {
+    return { principal: caller.principal, userId: caller.userId, person: isPerson(caller) };
   }
 
-  private readPositions(projectId: string, orgId: string, userId: string): Record<string, number> {
-    const raw = this.deps.settings.get(this.readsKey(projectId, orgId, userId));
-    if (raw === null) return {};
-    try {
-      const value = JSON.parse(raw) as unknown;
-      return typeof value === "object" && value !== null ? (value as Record<string, number>) : {};
-    } catch {
-      return {};
-    }
-  }
-
-  private unreadOf(p: Proposal, caller: Caller, reads: Record<string, number>): number {
-    if (!this.isPerson(caller)) return 0;
-    const seen = reads[String(p.number)] ?? 0;
+  private unreadOf(store: SqliteProposalStore, p: Proposal, caller: Caller): number {
+    if (!isPerson(caller)) return 0;
+    const seen = store.readSeq(caller.userId, p.number);
     return p.events.filter((e) => e.seq > seen && e.by !== caller.principal).length;
   }
 
@@ -444,7 +457,24 @@ export class ProposalService {
     return p.comments.filter((c) => c.batchId !== null || c.by === caller.principal);
   }
 
-  private item(p: Proposal, caller: Caller, reads: Record<string, number>): ProposalItem {
+  private item(
+    p: Pick<
+      Proposal,
+      | "number"
+      | "title"
+      | "status"
+      | "revision"
+      | "author"
+      | "implementer"
+      | "delegatedBy"
+      | "createdAt"
+      | "updatedAt"
+      | "materials"
+      | "impl"
+    >,
+    unread: number,
+    pendingComments: number,
+  ): ProposalItem {
     return {
       number: p.number,
       title: p.title,
@@ -455,9 +485,8 @@ export class ProposalService {
       delegatedBy: p.delegatedBy,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
-      unread: this.unreadOf(p, caller, reads),
-      pendingComments: p.comments.filter((c) => c.batchId === null && c.by === caller.principal)
-        .length,
+      unread,
+      pendingComments,
       materials: withImplPr(p.materials, implPrOf(p.impl)),
       implPr: implPrOf(p.impl),
       impl:
@@ -473,9 +502,13 @@ export class ProposalService {
     };
   }
 
-  private detail(p: Proposal, caller: Caller, reads: Record<string, number>): ProposalDetail {
+  private detail(store: SqliteProposalStore, p: Proposal, caller: Caller): ProposalDetail {
     return {
-      ...this.item(p, caller, reads),
+      ...this.item(
+        p,
+        this.unreadOf(store, p, caller),
+        p.comments.filter((c) => c.batchId === null && c.by === caller.principal).length,
+      ),
       brief: p.brief,
       root: p.root,
       scope: p.scope,
@@ -497,13 +530,15 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalRevisionsResponse> {
-    const { ledger } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    return {
-      revisions: [...p.revisions.values()]
-        .sort((a, b) => a.revision - b.revision)
-        .map((r) => ({ revision: r.revision, by: r.by, at: r.at })),
-    };
+    const { store } = await this.open(projectId, orgId, actor);
+    this.requireExists(store, number);
+    return { revisions: store.revisions(number) };
+  }
+
+  private requireExists(store: SqliteProposalStore, number: number): void {
+    if (!store.exists(number)) {
+      throw new ProposalError(404, "proposal_not_found", `Proposal #${number} does not exist.`);
+    }
   }
 
   /** One revision as it was published — what the page diffs the head against. */
@@ -514,10 +549,10 @@ export class ProposalService {
     rev: number,
     actor: OrgActor,
   ): Promise<ProposalRevision> {
-    const { ledger } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    const found = p.revisions.get(rev);
-    if (found === undefined) {
+    const { store } = await this.open(projectId, orgId, actor);
+    this.requireExists(store, number);
+    const found = store.revision(number, rev);
+    if (found === null) {
       throw new ProposalError(
         404,
         "revision_not_found",
@@ -528,13 +563,12 @@ export class ProposalService {
   }
 
   async list(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalsResponse> {
-    const { ledger, caller } = await this.open(projectId, orgId, actor);
-    const reads = this.readPositions(projectId, orgId, caller.userId);
-    const proposals = ledger
-      .proposals()
-      .sort((a, b) => b.number - a.number)
-      .map((p) => this.item(p, caller, reads));
-    return { proposals };
+    const { store, caller } = await this.open(projectId, orgId, actor);
+    return {
+      proposals: store
+        .list(this.viewer(caller))
+        .map((s) => this.item(s, s.unread, s.pendingComments)),
+    };
   }
 
   async get(
@@ -543,15 +577,12 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    const detail = await this.withScope(
-      org,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    const { org, store, stores, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
+    const detail = await this.withScope(org, this.detail(store, p, caller));
     return {
       ...detail,
-      materials: await this.withPrStatus(detail.materials),
+      materials: this.withPrStatus(`${projectId}/${orgId}`, stores, detail.materials).materials,
       testGroups: this.testGroups(),
     };
   }
@@ -567,8 +598,8 @@ export class ProposalService {
     rel: string,
     actor: OrgActor,
   ): Promise<ProposalFileResponse> {
-    const { org, ledger } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
+    const { org, store } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
     const read = await readBaseFile(scopeBase(org.workspace, p.root), rel);
     if ("code" in read) {
       const status = read.code === "bad_path" ? 400 : read.code === "path_outside" ? 403 : 404;
@@ -590,24 +621,48 @@ export class ProposalService {
     };
   }
 
-  /** The `pr` materials with GitHub's word on them, the rest as they are; nothing here fails the read. */
-  private async withPrStatus(materials: ProposalMaterial[]): Promise<ProposalMaterial[]> {
-    return Promise.all(
-      materials.map(async (m) => {
+  /**
+   * The `pr` materials with their cached status, the rest as they are. Never waits for the
+   * forge: what is missing or stale is read in the background (`refreshed`).
+   */
+  private withPrStatus(
+    orgKey: string,
+    stores: OrgStores,
+    materials: ProposalMaterial[],
+  ): { materials: ProposalMaterial[]; refreshed: Promise<void> } {
+    const urls = materials.filter((m) => m.kind === "pr").map((m) => m.url);
+    const { statuses, refreshed } = this.prStatus.read(orgKey, stores.graph, urls);
+    return {
+      materials: materials.map((m) => {
         if (m.kind !== "pr") return m;
-        const read = await this.prStatus.read(m.url);
-        return read === null ? m : { ...m, status: read.status, statusCheckedAt: read.checkedAt };
+        const read = statuses.get(m.url);
+        return read === undefined
+          ? m
+          : { ...m, status: read.status, statusCheckedAt: read.checkedAt };
       }),
-    );
+      refreshed,
+    };
+  }
+
+  /** Settles once the PR statuses a read of this proposal asked for are written (tests). */
+  async prStatusSettled(projectId: string, orgId: string, number: number): Promise<void> {
+    const stores = this.storesOf(projectId, orgId);
+    const p = stores.proposals.get(number);
+    if (p === null) return;
+    await this.withPrStatus(
+      `${projectId}/${orgId}`,
+      stores,
+      withImplPr(p.materials, implPrOf(p.impl)),
+    ).refreshed;
   }
 
   // ---------------------------------------------------------------------------
   // Desk delivery: how the plugin speaks to employees
   // ---------------------------------------------------------------------------
 
-  /** What one write's deliveries report back: the ledger a failed delivery is recorded in, and the reasons, for the answer. */
-  private delivery(ledger: Ledger): Delivery {
-    return { ledger, hints: [] };
+  /** What one write's deliveries report back: the reasons a delivery failed, for the answer. */
+  private delivery(store: SqliteProposalStore): Delivery {
+    return { store, hints: [] };
   }
 
   /** The write's answer, carrying any delivery that failed as a hint the page shows. */
@@ -615,6 +670,11 @@ export class ProposalService {
     return delivery.hints.length > 0
       ? { ...detail, hints: [...(detail.hints ?? []), ...delivery.hints] }
       : detail;
+  }
+
+  /** The answer to a write: the proposal as it stands now, as the caller sees it. */
+  private view(store: SqliteProposalStore, number: number, caller: Caller): ProposalDetail {
+    return this.detail(store, this.requireProposal(store, number), caller);
   }
 
   /**
@@ -627,7 +687,7 @@ export class ProposalService {
   private async tell(
     delivery: Delivery,
     org: OrgView,
-    p: Proposal,
+    p: Pick<Proposal, "number">,
     caller: Caller,
     agentIds: readonly string[],
     text: string,
@@ -651,7 +711,7 @@ export class ProposalService {
   private async deliveryFailed(
     delivery: Delivery,
     org: OrgView,
-    p: Proposal,
+    p: Pick<Proposal, "number">,
     caller: Caller,
     agentId: string,
     err: unknown,
@@ -661,14 +721,11 @@ export class ProposalService {
     this.deps.log.line(`[${PLUGIN_NAME}] proposal #${p.number}: ${reason}`);
     delivery.hints.push(reason);
     try {
-      const line = await delivery.ledger.append({
-        kind: "notify_failed",
-        number: p.number,
+      const written = delivery.store.notifyFailed(p.number, () => ({
         reason,
-        target: [agentPrincipal(agentId)],
         by: caller.principal,
-      });
-      this.notify(org, p.number, line.seq, "notify_failed");
+      }));
+      this.notify(org, p.number, written.seq, "notify_failed");
     } catch (recordErr) {
       this.deps.log.line(
         `[${PLUGIN_NAME}] proposal #${p.number}: the failed delivery was not recorded: ${
@@ -736,14 +793,9 @@ export class ProposalService {
     req: { author?: string; brief: string; title?: string },
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    if (!this.isPerson(caller)) {
-      throw forbidden(
-        "roadmap_only",
-        "An employee does not create a proposal. A new proposal comes from a roadmap item that a person and the moderator approved: raise it as an item in the roadmap's room. To change an existing proposal, publish a new revision of it.",
-      );
-    }
-    const delivery = this.delivery(ledger);
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    this.rules.create(caller);
+    const delivery = this.delivery(store);
     const brief = req.brief.trim();
     if (brief === "") throw badRequest("brief must not be empty.");
     const author = req.author;
@@ -751,38 +803,35 @@ export class ProposalService {
       throw badRequest("author is required: name the employee that writes it.");
     }
     this.requireEmployee(org, author, "author");
-    const number = ledger.nextNumber();
     const title = req.title?.trim() || brief.split("\n")[0]!.slice(0, 120);
-    const line = await ledger.append({
-      kind: "created",
-      number,
+    const { number, seq } = store.create(() => ({
       title,
       author,
       delegatedBy: caller.principal,
       brief,
-    });
-    const p = this.requireProposal(ledger, number);
-    this.notify(org, number, line.seq, "created");
+    }));
+    this.notify(org, number, seq, "created");
     await this.ensureSkills(projectId, author);
     await this.tell(
       delivery,
       org,
-      p,
+      { number },
       caller,
       [author],
       `${whoOf(caller)} asks you to write it: ${brief}\n\nWrite the proposal: \`penguin org proposal publish ${number} --file <markdown>\`, then \`penguin org proposal ready ${number}\` when a person can read it.`,
     );
-    return this.answer(
-      delivery,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    return this.answer(delivery, this.view(store, number, caller));
   }
 
   /**
    * The proposal of a roadmap item that has both approvals, created by company-roadmaps while
    * it records the second one — the one way an employee's proposal comes into being. It is
-   * not a route: nobody reaches it over HTTP. The `created` line names the item it came from;
-   * the author is told by the roadmap (with the number), not here, so it hears of it once.
+   * not a route: nobody reaches it over HTTP. The proposal records the item it came from; the
+   * author is told by the roadmap (with the number), not here, so it hears of it once.
+   *
+   * Idempotent: the same item with the same brief answers the proposal it created before
+   * instead of creating a second one (the default rule keys the creation by the brief's hash),
+   * so a roadmap that retries an approval after a failure in between links the same proposal.
    */
   async createFromRoadmap(
     projectId: string,
@@ -795,23 +844,25 @@ export class ProposalService {
       roadmap: { number: number; key: string };
     },
   ): Promise<number> {
-    const { org, ledger } = await this.openInternal(projectId, orgId);
+    const { org, store } = await this.openInternal(projectId, orgId);
     const brief = req.brief.trim();
     if (brief === "") throw badRequest("brief must not be empty.");
     this.requireEmployee(org, req.author, "author");
-    const number = ledger.nextNumber();
-    const line = await ledger.append({
-      kind: "created",
-      number,
+    const created = store.create(() => ({
       title: req.title.trim() || brief.split("\n")[0]!.slice(0, 120),
       author: req.author,
       delegatedBy: req.delegatedBy,
       brief,
-      roadmap: { number: req.roadmap.number, key: req.roadmap.key },
-    });
-    this.notify(org, number, line.seq, "created");
+      roadmap: {
+        number: req.roadmap.number,
+        key: req.roadmap.key,
+        createKey: this.rules.createKey(brief),
+      },
+    }));
+    if (!created.created) return created.number;
+    this.notify(org, created.number, created.seq, "created");
     await this.ensureSkills(projectId, req.author);
-    return number;
+    return created.number;
   }
 
   /**
@@ -828,21 +879,16 @@ export class ProposalService {
     text: string,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const delivery = this.delivery(ledger);
-    const p = this.requireProposal(ledger, number);
-    this.requireAuthorOrPerson(p, caller, "rewrite the brief");
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(store);
     const brief = text.trim();
-    if (brief === "") throw badRequest("brief must not be empty.");
-    if (brief === p.brief) {
-      throw new ProposalError(
-        409,
-        "brief_unchanged",
-        `Proposal #${number} already has this brief.`,
-      );
-    }
-    const line = await ledger.append({ kind: "brief", number, brief, by: caller.principal });
-    this.notify(org, number, line.seq, "brief_edited");
+    this.rules.editBrief(this.requireProposal(store, number), caller, brief);
+    const written = store.editBrief(number, (p) => {
+      this.rules.editBrief(p, caller, brief);
+      return { brief, by: caller.principal };
+    });
+    const p = written.proposal;
+    this.notify(org, number, written.seq, "brief_edited");
     if (p.status === "drafting") {
       await this.tell(
         delivery,
@@ -853,10 +899,7 @@ export class ProposalService {
         `${whoOf(caller)} rewrote the brief: ${brief}\n\nRead it with \`penguin org proposal show ${number}\` before the next revision.`,
       );
     }
-    return this.answer(
-      delivery,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    return this.answer(delivery, this.view(store, number, caller));
   }
 
   async publish(
@@ -866,21 +909,18 @@ export class ProposalService {
     markdown: string,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const delivery = this.delivery(ledger);
-    const p = this.requireProposal(ledger, number);
-    this.requireAuthorOrPerson(p, caller, "publish a revision");
-    if (p.status === "rejected") {
-      throw new ProposalError(409, "proposal_closed", `Proposal #${number} is rejected.`);
-    }
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(store);
+    const before = this.requireProposal(store, number);
+    this.rules.publish(before, caller);
     let doc;
     try {
-      doc = parseProposalDocument(markdown, { sections: p.sections });
+      doc = parseProposalDocument(markdown, { sections: before.sections });
     } catch (err) {
       if (err instanceof ProposalDocumentError) throw new ProposalError(400, err.code, err.message);
       throw err;
     }
-    // Only declared test groups. A revision already in the ledger keeps whatever group it was
+    // Only declared test groups. A revision already stored keeps whatever group it was
     // published with (the page shows it under Undeclared); it is this publish that must move it.
     const declared = this.testGroups();
     const undeclared = [...new Set(doc.tests.map((t) => t.group))].filter(
@@ -893,13 +933,10 @@ export class ProposalService {
         undeclaredGroupsMessage(undeclared, declared),
       );
     }
-    // An approval covers ONE revision. Read before the append: the fold puts an approved
-    // proposal back to ready as the line lands, and the record of which revision was
-    // approved stays for the diff the page shows.
     // The scope against the working tree: what the change edits, deletes or renames from must
     // be there. A merged proposal is history — its tree has moved on — so it is not checked.
     let hints: string[] = [];
-    if (p.status !== "merged") {
+    if (before.status !== "merged") {
       const check = await checkScope(scopeBase(org.workspace, doc.root), doc.scope);
       if (check.rootMissing) {
         throw new ProposalError(
@@ -917,68 +954,42 @@ export class ProposalService {
       }
       hints = [...check.hints, ...tests.hints];
     }
-    const approvedRevision = p.status === "approved" ? p.approvedRevision : null;
-    const line = await ledger.append({
-      kind: "revised",
-      number,
-      revision: p.revision + 1,
-      title: doc.title,
-      ...(doc.root !== "" ? { root: doc.root } : {}),
-      scope: doc.scope,
-      ...(doc.tests.length > 0 ? { tests: doc.tests } : {}),
-      sections: doc.sections,
-      by: caller.principal,
+    // The revision this publish makes is the one after what was read; a publish that landed in
+    // between makes it the wrong number, which the default rule refuses.
+    const revision = before.revision + 1;
+    let approvedRevision: number | null = null;
+    const written = store.publish(number, (p) => {
+      this.rules.publish(p, caller);
+      this.rules.revision(p, revision);
+      const next = this.rules.afterPublish(p);
+      approvedRevision = p.status === "approved" && next.status !== "approved" ? p.approvedRevision : null;
+      return {
+        revision,
+        title: doc.title,
+        root: doc.root,
+        scope: doc.scope,
+        tests: doc.tests,
+        sections: doc.sections,
+        status: next.status,
+        reason: next.reason,
+        by: caller.principal,
+      };
     });
-    this.notify(org, number, line.seq, "revised");
-    if (approvedRevision !== null) {
-      // The status line is what the timeline shows; the fold already moved the status.
-      await this.setStatus(
-        org,
-        ledger,
-        p,
-        "ready",
-        caller,
-        `revision ${p.revision} — approval of revision ${approvedRevision} no longer covers it`,
-      );
+    const p = written.proposal;
+    this.notify(org, number, written.seq, approvedRevision !== null ? "ready" : "revised");
+    if (approvedRevision !== null && p.implementer !== null) {
       // The person learns through the unread event; the one who must not merge yet is told.
-      if (p.implementer !== null) {
-        await this.tell(
-          delivery,
-          org,
-          p,
-          caller,
-          [p.implementer],
-          `revised after approval (revision ${approvedRevision} → ${p.revision}) — wait for a new approval before merging.`,
-        );
-      }
+      await this.tell(
+        delivery,
+        org,
+        p,
+        caller,
+        [p.implementer],
+        `revised after approval (revision ${approvedRevision} → ${p.revision}) — wait for a new approval before merging.`,
+      );
     }
-    const detail = await this.withScope(
-      org,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    const detail = await this.withScope(org, this.view(store, number, caller));
     return this.answer(delivery, hints.length > 0 ? { ...detail, hints } : detail);
-  }
-
-  private async setStatus(
-    org: OrgView,
-    ledger: Ledger,
-    p: Proposal,
-    status: ProposalStatus,
-    caller: Caller,
-    reason?: string,
-  ): Promise<number> {
-    const line = await ledger.append({
-      kind: "status",
-      number: p.number,
-      status,
-      by: caller.principal,
-      ...(reason !== undefined ? { reason } : {}),
-      // An approval names the revision it covers; a later publish puts the proposal back
-      // to ready and the page diffs the head against this one.
-      ...(status === "approved" ? { revision: p.revision } : {}),
-    });
-    this.notify(org, p.number, line.seq, status === "drafting" ? "revised" : status);
-    return line.seq;
   }
 
   async ready(
@@ -987,46 +998,14 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    this.requireAuthorOrPerson(p, caller, "mark a proposal ready");
-    if (p.status !== "drafting") {
-      throw new ProposalError(
-        409,
-        "proposal_status",
-        `Proposal #${number} is ${p.status}, not drafting.`,
-      );
-    }
-    if (p.revision === 0) {
-      throw new ProposalError(
-        409,
-        "proposal_empty",
-        `Proposal #${number} has no revision yet: publish it first.`,
-      );
-    }
-    // The author's ready answers the requested changes: a revision after the batch, and every
-    // comment of it resolved. A person may mark ready regardless.
-    if (!this.isPerson(caller) && p.openBatches.length > 0) {
-      const needRevision = Math.max(...p.openBatches.map((b) => b.revision));
-      const unresolved = p.openBatches
-        .flatMap((b) => b.commentIds)
-        .filter((id) => p.comments.find((c) => c.id === id)?.resolved === undefined);
-      if (p.revision <= needRevision || unresolved.length > 0) {
-        const why = [
-          ...(p.revision <= needRevision
-            ? [`no revision has been published since the request (still revision ${p.revision})`]
-            : []),
-          ...(unresolved.length > 0 ? [`unresolved comments: ${unresolved.join(", ")}`] : []),
-        ];
-        throw new ProposalError(
-          409,
-          "changes_pending",
-          `Proposal #${number} has requested changes not answered yet — ${why.join("; ")}. Read them, revise, resolve each, publish, then mark ready: \`penguin org proposal comments ${number} --pending\``,
-        );
-      }
-    }
-    await this.setStatus(org, ledger, p, "ready", caller);
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    this.requireProposal(store, number);
+    const written = store.setStatus(number, (p) => {
+      this.rules.ready(p, caller);
+      return { status: "ready", by: caller.principal };
+    });
+    this.notify(org, number, written.seq, "ready");
+    return this.view(store, number, caller);
   }
 
   async approve(
@@ -1035,17 +1014,16 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const delivery = this.delivery(ledger);
-    const p = this.requireProposal(ledger, number);
-    this.requirePerson(caller, "approve a proposal");
-    if (p.status !== "ready" && p.status !== "drafting") {
-      throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
-    }
-    if (p.revision === 0) {
-      throw new ProposalError(409, "proposal_empty", `Proposal #${number} has no revision yet.`);
-    }
-    await this.setStatus(org, ledger, p, "approved", caller);
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(store);
+    this.requireProposal(store, number);
+    const written = store.setStatus(number, (p) => ({
+      status: "approved",
+      ...this.rules.approve(p, caller),
+      by: caller.principal,
+    }));
+    this.notify(org, number, written.seq, "approved");
+    const p = written.proposal;
     const to = p.implementer ?? p.author;
     await this.tell(
       delivery,
@@ -1057,17 +1035,14 @@ export class ProposalService {
         ? `approved by ${whoOf(caller)} — merge the PR and run \`penguin org proposal merged ${number}\`.`
         : `approved by ${whoOf(caller)} with nobody building it yet — build it with \`penguin org proposal implement ${number}\` (or \`--agent <id>\` to hand it to a colleague); once ${p.impl?.pr != null ? `its impl PR ${p.impl.pr.label}` : `its impl PR (register it: \`penguin org proposal impl ${number} <url>\`)`} is merged into the default branch, run \`penguin org proposal merged ${number}\`.`,
     );
-    return this.answer(
-      delivery,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    return this.answer(delivery, this.view(store, number, caller));
   }
 
   /**
    * Anybody in the organization closes a proposal that is not closed yet, with a reason: a
    * person, or an employee — the author dropping its own, or whoever a person told to take it
-   * off the queue. The status line records who (`by`), so an employee's rejection reads apart
-   * from a person's; the author and any implementer are told, never the one who rejected.
+   * off the queue. The event records who (`by`), so an employee's rejection reads apart from a
+   * person's; the author and any implementer are told, never the one who rejected.
    */
   async reject(
     projectId: string,
@@ -1076,14 +1051,16 @@ export class ProposalService {
     reason: string,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const delivery = this.delivery(ledger);
-    const p = this.requireProposal(ledger, number);
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(store);
+    this.requireProposal(store, number);
     if (reason.trim() === "") throw badRequest("reason must not be empty.");
-    if (p.status === "merged" || p.status === "rejected") {
-      throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
-    }
-    await this.setStatus(org, ledger, p, "rejected", caller, reason.trim());
+    const written = store.setStatus(number, (p) => {
+      this.rules.reject(p, caller);
+      return { status: "rejected", reason: reason.trim(), by: caller.principal };
+    });
+    this.notify(org, number, written.seq, "rejected");
+    const p = written.proposal;
     await this.tell(
       delivery,
       org,
@@ -1092,10 +1069,7 @@ export class ProposalService {
       [p.author, ...(p.implementer !== null ? [p.implementer] : [])],
       `rejected by ${whoOf(caller)}: ${reason.trim()} — stop work on it, and close its PR if one is open.`,
     );
-    return this.answer(
-      delivery,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    return this.answer(delivery, this.view(store, number, caller));
   }
 
   async merged(
@@ -1104,26 +1078,21 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    if (p.status !== "approved") {
-      throw new ProposalError(
-        409,
-        "proposal_status",
-        `Proposal #${number} is ${p.status}, not approved.`,
-      );
-    }
+    const { org, store, stores, caller } = await this.open(projectId, orgId, actor);
+    const before = this.requireProposal(store, number);
     // A person and the implementer report on their word. Anybody else in the organization
-    // reports on GitHub's: the impl PR merged into its repository's default branch.
-    if (!this.isPerson(caller) && caller.agentId !== p.implementer) {
-      await this.requireLanded(p);
-    }
-    await this.setStatus(org, ledger, p, "merged", caller);
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    // reports on the forge's: the impl PR merged into its repository's default branch, asked now.
+    if (this.rules.merged(before, caller).confirmWithForge) await this.requireLanded(stores, before);
+    const written = store.setStatus(number, (p) => {
+      this.rules.merged(p, caller);
+      return { status: "merged", by: caller.principal };
+    });
+    this.notify(org, number, written.seq, "merged");
+    return this.view(store, number, caller);
   }
 
-  /** The proposal's impl PR merged into its repository's default branch, read from GitHub now; else 409. */
-  private async requireLanded(p: Proposal): Promise<void> {
+  /** The proposal's impl PR merged into its repository's default branch, read from the forge now; else 409. */
+  private async requireLanded(stores: OrgStores, p: Proposal): Promise<void> {
     const n = p.number;
     const implPr = p.impl?.pr ?? null;
     if (implPr === null) {
@@ -1133,7 +1102,7 @@ export class ProposalService {
         `Proposal #${n} has no impl PR to check the merge against — register the PR opened for its impl branch (\`penguin org proposal impl ${n} <url>\`), or ask the implementer (${p.implementer ?? "none yet"}) or a person to report it.`,
       );
     }
-    const read = await this.prStatus.landing(implPr.url);
+    const read = await this.prStatus.landing(stores.graph, implPr.url);
     if (read === null) {
       throw new ProposalError(
         409,
@@ -1161,23 +1130,13 @@ export class ProposalService {
     req: { agentId?: string; message?: string; workspace?: string },
     actor: OrgActor,
   ): Promise<ProposalDetail & { sessionId: string }> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const delivery = this.delivery(ledger);
-    const p = this.requireProposal(ledger, number);
-    this.requireAuthorOrPerson(p, caller, "ask for an implementation");
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(store);
+    const p = this.requireProposal(store, number);
     // Nobody is hired to build: the author builds its own proposal unless it names a colleague.
     const implementer = req.agentId ?? p.author;
+    this.rules.implement(p, caller);
     this.requireEmployee(org, implementer, "implementer");
-    if (p.status === "merged" || p.status === "rejected") {
-      throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
-    }
-    if (p.revision === 0) {
-      throw new ProposalError(
-        409,
-        "proposal_empty",
-        `Proposal #${number} has no revision yet: publish it first.`,
-      );
-    }
     const body = this.implementationBrief(org, p, req.message);
     const opened = await this.deps.gateway.openEmployeeSession({
       projectId,
@@ -1187,20 +1146,14 @@ export class ProposalService {
       body,
       ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
     });
-    const line = await ledger.append({
-      kind: "implementation",
-      number,
-      implementer,
-      sessionId: opened.sessionId,
-      by: caller.principal,
+    const written = store.startImplementation(number, (now) => {
+      this.rules.implement(now, caller);
+      return { implementer, sessionId: opened.sessionId, by: caller.principal };
     });
-    this.notify(org, number, line.seq, "implementation_started");
+    this.notify(org, number, written.seq, "implementation_started");
     await this.ensureSkills(projectId, implementer);
     return {
-      ...this.answer(
-        delivery,
-        this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-      ),
+      ...this.answer(delivery, this.view(store, number, caller)),
       sessionId: opened.sessionId,
     };
   }
@@ -1236,12 +1189,9 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalDetail & { sessionId: string }> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    this.requirePerson(caller, "open a discussion");
-    if (p.status === "merged" || p.status === "rejected") {
-      throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
-    }
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
+    this.rules.discuss(p, caller);
     // The session itself would open, but its conclusion could not reach a paused desk.
     if (org.status === "paused") {
       throw new ProposalError(
@@ -1265,18 +1215,12 @@ export class ProposalService {
       title: `Discussion: proposal #${number} — ${p.title}`,
       body: this.discussionBrief(org, p, caller),
     });
-    const line = await ledger.append({
-      kind: "discussion",
-      number,
-      agentId: owner,
-      sessionId: opened.sessionId,
-      by: caller.principal,
+    const written = store.openDiscussion(number, (now) => {
+      this.rules.discuss(now, caller);
+      return { agentId: owner, sessionId: opened.sessionId, by: caller.principal };
     });
-    this.notify(org, number, line.seq, "discussion_started");
-    return {
-      ...this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-      sessionId: opened.sessionId,
-    };
+    this.notify(org, number, written.seq, "discussion_started");
+    return { ...this.view(store, number, caller), sessionId: opened.sessionId };
   }
 
   /** The first message of a discussion: whose it is and what it is not, how it ends, the proposal. */
@@ -1301,10 +1245,10 @@ export class ProposalService {
 
   /**
    * The discussion's conclusion goes to the owner's desk, once: from a person, or from the
-   * discussion's own session — not from the owner's desk, nor a colleague. The line is
-   * written only after the desk took it, so a desk that cannot (the organization or the
-   * owner paused, no desk) is answered with its reason, recorded as `notify_failed`, and the
-   * discussion stays open to be concluded again.
+   * discussion's own session — not from the owner's desk, nor a colleague. It is recorded
+   * only after the desk took it, so a desk that cannot (the organization or the owner paused,
+   * no desk) is answered with its reason, recorded as `notify_failed`, and the discussion
+   * stays open to be concluded again.
    */
   async conclude(
     projectId: string,
@@ -1314,29 +1258,15 @@ export class ProposalService {
     text: string,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    const d = p.discussions.find((x) => x.sessionId === sessionId);
-    if (d === undefined) {
-      throw new ProposalError(
-        404,
-        "discussion_not_found",
-        `Proposal #${number} has no discussion ${sessionId}.`,
-      );
-    }
-    if (
-      !this.isPerson(caller) &&
-      !(caller.agentId === d.agentId && actor.sessionId === sessionId)
-    ) {
-      throw forbidden(
-        "not_discussion",
-        `Only a person or the discussion's own session (${sessionId}) can conclude it.`,
-      );
-    }
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
+    this.rules.conclude(p, caller, sessionId);
     const conclusion = text.trim();
     if (conclusion === "") throw badRequest("text must not be empty.");
+    this.rules.concludeOnce(p, sessionId);
+    const discussion = p.discussions.find((x) => x.sessionId === sessionId)!;
     const key = `${projectId}/${orgId}/${sessionId}`;
-    if (d.concluded !== null || this.concluding.has(key)) {
+    if (this.concluding.has(key)) {
       throw new ProposalError(
         409,
         "discussion_concluded",
@@ -1345,32 +1275,30 @@ export class ProposalService {
     }
     this.concluding.add(key);
     try {
-      const line = `[proposal #${number}] the discussion with ${d.by.replace(/^user:/, "")} concluded (session ${sessionId}):\n\n${conclusion}\n\nRead it against the proposal (\`penguin org proposal show ${number}\`); if it changes what is proposed, revise the proposal or the branch.`;
+      const line = `[proposal #${number}] the discussion with ${discussion.by.replace(/^user:/, "")} concluded (session ${sessionId}):\n\n${conclusion}\n\nRead it against the proposal (\`penguin org proposal show ${number}\`); if it changes what is proposed, revise the proposal or the branch.`;
       try {
-        await this.deps.gateway.deliverToDesk(org.projectId, org.orgId, d.agentId, line);
+        await this.deps.gateway.deliverToDesk(org.projectId, org.orgId, discussion.agentId, line);
       } catch (err) {
-        await this.deliveryFailed(this.delivery(ledger), org, p, caller, d.agentId, err);
+        await this.deliveryFailed(this.delivery(store), org, p, caller, discussion.agentId, err);
         const e = err as { status?: unknown; code?: unknown; message?: unknown };
         throw new ProposalError(
           typeof e.status === "number" ? e.status : 409,
           typeof e.code === "string" ? e.code : "notify_failed",
-          `The conclusion did not reach ${d.agentId}'s desk: ${
+          `The conclusion did not reach ${discussion.agentId}'s desk: ${
             err instanceof Error ? err.message : String(err)
           } The discussion stays open; conclude it again once that is resolved.`,
         );
       }
-      const written = await ledger.append({
-        kind: "discussion_concluded",
-        number,
-        sessionId,
-        text: conclusion,
-        by: caller.principal,
+      const written = store.concludeDiscussion(number, (now) => {
+        this.rules.conclude(now, caller, sessionId);
+        this.rules.concludeOnce(now, sessionId);
+        return { sessionId, text: conclusion, by: caller.principal };
       });
       this.notify(org, number, written.seq, "discussion_concluded");
     } finally {
       this.concluding.delete(key);
     }
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    return this.view(store, number, caller);
   }
 
   async addMaterial(
@@ -1380,26 +1308,26 @@ export class ProposalService {
     req: { kind: ProposalMaterialKind; url: string; label?: string },
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    this.requireProposal(store, number);
     if (!MATERIAL_KINDS.includes(req.kind))
       throw badRequest(`kind must be one of ${MATERIAL_KINDS.join(", ")}.`);
     const url = req.url.trim();
     if (url === "") throw badRequest("url must not be empty.");
     const label = req.label?.trim() || defaultLabel(req.kind, url);
-    const line = await ledger.append({
-      kind: "material",
-      number,
-      material: { kind: req.kind, label, url },
+    const written = store.addMaterial(number, () => ({
+      kind: req.kind,
+      label,
+      url,
       by: caller.principal,
-    });
-    this.notify(org, number, line.seq, "material_added");
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    }));
+    this.notify(org, number, written.seq, "material_added");
+    return this.view(store, number, caller);
   }
 
   /**
    * Registers the proposal's impl — anybody in the organization, a person or an employee, since
-   * a branch and a PR are facts GitHub can confirm and the line records who (`by`). One per
+   * a branch and a PR are facts the forge can confirm and the event records who (`by`). One per
    * proposal, replacing the one before:
    *
    * - `head` and `base` together declare the impl branch; each remote must name a GitHub
@@ -1408,7 +1336,9 @@ export class ProposalService {
    * - `url` registers the PR; one that is already another proposal's is refused. On a declared
    *   head (this request's or the standing one) GitHub is asked for the PR: its head must be
    *   that head, and its base becomes the impl's base — a PR is its head and its base. Without
-   *   a declared head the line names the impl branch by the PR alone.
+   *   a declared head the impl is named by the PR alone.
+   *
+   * A registration refreshes the PR graph at once.
    */
   async setImpl(
     projectId: string,
@@ -1417,8 +1347,8 @@ export class ProposalService {
     req: ProposalImplRequest,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
+    const { org, store, stores, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
     if ((req.head === undefined) !== (req.base === undefined)) {
       throw badRequest("head and base go together: name both, or neither.");
     }
@@ -1504,47 +1434,28 @@ export class ProposalService {
       head = null;
       base = null;
     }
-    const readPositions = this.readPositions(projectId, orgId, caller.userId);
-    const unchanged =
-      standing !== null &&
-      (standing.pr === null) === (pr === null) &&
-      (pr === null || pullKey(standing.pr!.url) === prKey) &&
-      sameSide(standing.head, head) &&
-      sameSide(standing.base, base);
-    if (unchanged) return this.detail(p, caller, readPositions);
-    const taken = (): void => {
-      for (const o of ledger.proposals()) {
-        if (o.number === number || o.impl === null) continue;
-        if (prKey !== null && o.impl.pr !== null && pullKey(o.impl.pr.url) === prKey) {
-          throw new ProposalError(
-            409,
-            "impl_pr_taken",
-            `${pr!.label} is already the impl PR of proposal #${o.number}.`,
-          );
-        }
-        if (
-          head !== null &&
-          o.impl.head !== null &&
-          o.status !== "rejected" &&
-          sameRef(o.impl.head, head)
-        ) {
-          throw new ProposalError(
-            409,
-            "impl_branch_taken",
-            `${refLabel(head)} is already the impl branch of proposal #${o.number}.`,
-          );
-        }
-      }
-    };
-    const line = await ledger.appendChecked(taken, {
-      kind: "impl",
-      number,
-      ...(head !== null && base !== null ? { head, base } : {}),
-      ...(pr !== null ? { url: pr.url, label: pr.label } : {}),
+    const plan = {
+      head,
+      base,
+      pr: pr === null || prKey === null ? null : { ...pr, key: prKey },
       by: caller.principal,
+    };
+    const written = store.setImpl(number, (now, tx) => {
+      const current = now.impl;
+      const unchanged =
+        current !== null &&
+        (current.pr === null) === (plan.pr === null) &&
+        (plan.pr === null || pullKey(current.pr!.url) === plan.pr.key) &&
+        sameSide(current.head, plan.head) &&
+        sameSide(current.base, plan.base);
+      if (unchanged) return null;
+      this.rules.implUnique(number, plan, tx);
+      return plan;
     });
-    this.notify(org, number, line.seq, "material_added");
-    return this.detail(p, caller, readPositions);
+    if (written === null) return this.view(store, number, caller);
+    this.notify(org, number, written.seq, "material_added");
+    void this.graphs.kick(this.graphContext(org, stores));
+    return this.view(store, number, caller);
   }
 
   /** The impl branch's patch — the merge base of base and head, up to head — read from GitHub now. */
@@ -1554,8 +1465,8 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalImplDiff> {
-    const { org, ledger } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
+    const { org, store } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
     const resolved = await this.resolvedImpl(org, p);
     if (resolved === null) throw noImpl(number);
     return liftAsync(() => compareBranches(this.gh(), resolved.base, resolved.head, resolved.pr));
@@ -1592,6 +1503,16 @@ export class ProposalService {
     };
   }
 
+  /** A directory's GitHub remotes (`git remote -v`), kept a minute; a failure is not kept. */
+  private remotesOfDir(dir: string): Promise<Array<{ name: string; repo: string }>> {
+    const cached = this.remotes.get(dir);
+    if (cached !== undefined && this.now() - cached.at < REMOTES_TTL_MS) return cached.value;
+    const value = (this.deps.git ?? gitRunner())(dir, ["remote", "-v"]).then(remotesOf);
+    this.remotes.set(dir, { at: this.now(), value });
+    value.catch(() => this.remotes.delete(dir));
+    return value;
+  }
+
   /** The GitHub remotes of the proposal's repository (its `root` in the shared workspace); none when git cannot say. */
   private async remotesFor(
     org: OrgView,
@@ -1599,7 +1520,7 @@ export class ProposalService {
   ): Promise<Array<{ name: string; repo: string }>> {
     const dir = scopeBase(org.workspace, p.root);
     try {
-      return remotesOf(await (this.deps.git ?? gitRunner())(dir, ["remote", "-v"]));
+      return await this.remotesOfDir(dir);
     } catch (err) {
       this.deps.log.line(
         `[company-proposals] remotes of ${dir} not read: ${err instanceof Error ? err.message : String(err)}`,
@@ -1613,32 +1534,29 @@ export class ProposalService {
   }
 
   /**
-   * The one-time adoption for a ledger written before impl PRs — anybody in the organization,
-   * each line recording who (`by`): each proposal without one (and not rejected) takes its
-   * latest `pr` material on the delivery repository.
-   * Backward compatibility (changelog/unreleased/2026-09-30-backward-compatibility.md).
+   * The one-time adoption for proposals with PR materials and no impl — anybody in the
+   * organization, each impl recording who (`by`): each proposal without one (and not rejected)
+   * takes its latest `pr` material on the delivery repository.
    */
   async adoptImpl(
     projectId: string,
     orgId: string,
     actor: OrgActor,
   ): Promise<ProposalAdoptImplResponse> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const { repo } = await this.deliveryRepo(org, ledger, []);
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const facts = store.facts();
+    const { repo } = await this.project(org, facts, []);
     if (repo === null) throw graphOff();
     const prefix = `${repo.toLowerCase()}#`;
     const taken = new Set(
-      ledger
-        .proposals()
+      facts
         .map((p) => (p.impl?.pr == null ? null : pullKey(p.impl.pr.url)))
         .filter((k): k is string => k !== null),
     );
     const out: ProposalAdoptImplResponse = { adopted: [], ambiguous: [], skipped: [] };
-    for (const p of ledger.proposals().sort((a, b) => a.number - b.number)) {
+    for (const p of facts) {
       if (p.impl !== null || p.status === "rejected") continue;
-      const urls = p.materials
-        .filter((m) => m.kind === "pr" && (pullKey(m.url) ?? "").startsWith(prefix))
-        .map((m) => m.url);
+      const urls = p.prMaterials.filter((u) => (pullKey(u) ?? "").startsWith(prefix));
       const url = urls.at(-1);
       if (url === undefined) {
         out.skipped.push({ number: p.number, reason: `no pr material on ${repo}` });
@@ -1651,14 +1569,19 @@ export class ProposalService {
       }
       taken.add(key);
       const ref = parsePullUrl(url)!;
-      const line = await ledger.append({
-        kind: "impl",
-        number: p.number,
-        url,
-        label: `${ref.owner}/${ref.repo}#${ref.number}`,
+      const plan = {
+        head: null,
+        base: null,
+        pr: { url, label: `${ref.owner}/${ref.repo}#${ref.number}`, key },
         by: caller.principal,
+      };
+      const written = store.setImpl(p.number, (now, tx) => {
+        if (now.impl !== null) return null;
+        this.rules.implUnique(p.number, plan, tx);
+        return plan;
       });
-      this.notify(org, p.number, line.seq, "material_added");
+      if (written === null) continue;
+      this.notify(org, p.number, written.seq, "material_added");
       out.adopted.push({ number: p.number, url });
       if (new Set(urls.map((u) => pullKey(u))).size > 1) {
         out.ambiguous.push({ number: p.number, urls });
@@ -1668,7 +1591,7 @@ export class ProposalService {
   }
 
   // ---------------------------------------------------------------------------
-  // Deployments (deployments.ts)
+  // Deployments (deployments.ts, deploy-store.ts)
   // ---------------------------------------------------------------------------
 
   private probe(): ProbeServer {
@@ -1681,8 +1604,8 @@ export class ProposalService {
     orgId: string,
     actor: OrgActor,
   ): Promise<ProposalDeploymentsResponse> {
-    const { ledger } = await this.open(projectId, orgId, actor);
-    return { deployments: registryOf(ledger.deployments()) };
+    const { stores } = await this.open(projectId, orgId, actor);
+    return { deployments: registryOf(await stores.deployments.list()) };
   }
 
   /**
@@ -1695,13 +1618,13 @@ export class ProposalService {
     req: ProposalDeploymentRegisterRequest,
     actor: OrgActor,
   ): Promise<ProposalDeploymentsResponse> {
-    const { ledger, caller } = await this.open(projectId, orgId, actor);
+    const { org, stores, caller } = await this.open(projectId, orgId, actor);
     try {
       const id = deploymentIdOf(typeof req.id === "string" ? req.id : "");
       const url =
         typeof req.url === "string" && req.url.trim() !== "" ? normalizeServerUrl(req.url) : null;
       // Id and url first: a repeat of either is refused without asking the url.
-      requireUnregistered(ledger.deployments(), { id, url, installId: null });
+      requireUnregistered(await stores.deployments.list(), { id, url, installId: null });
       let installId: string | null = null;
       if (url !== null) {
         try {
@@ -1715,13 +1638,13 @@ export class ProposalService {
         }
       }
       const candidate = { id, url, installId };
-      await ledger.appendChecked(() => requireUnregistered(ledger.deployments(), candidate), {
-        kind: "deployment",
-        id,
-        ...(url !== null && installId !== null ? { url, installId } : {}),
-        by: caller.principal,
-      });
-      return { deployments: registryOf(ledger.deployments()) };
+      const registered = await stores.deployments.append(
+        { id, url, installId, by: caller.principal },
+        (now) => requireUnregistered(now, candidate),
+      );
+      // The graph places it once its server is probed: at once, not at the next window.
+      void this.graphs.kick(this.graphContext(org, stores), false);
+      return { deployments: registryOf(registered) };
     } catch (err) {
       if (err instanceof DeploymentRegistryError) {
         throw new ProposalError(err.status, err.code, err.message);
@@ -1730,36 +1653,62 @@ export class ProposalService {
     }
   }
 
-  /**
-   * The PR graph of the delivery repository, annotated with the proposals and the origins.
-   * Always drawn: with no delivery repository at all it is the base branch alone, and
-   * `errors` says why.
-   */
-  async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
-    const { org, ledger } = await this.open(projectId, orgId, actor);
-    const errors: string[] = [];
-    const [config, deployments, heads] = await Promise.all([
-      this.deliveryRepo(org, ledger, errors),
-      readDeployments(ledger.deployments(), this.probe()),
-      this.declaredHeads(org, ledger.proposals(), errors),
-    ]);
-    const input = {
-      repo: config.repo ?? "",
-      base: config.base,
-      origins: config.origins,
-      deployments,
-      errors,
-      proposals: ledger.proposals().map((p) => ({
-        number: p.number,
-        title: p.title,
-        status: p.status,
-        implPr: p.impl?.pr?.url ?? null,
-        implBranch: heads.get(p.number) ?? null,
-      })),
+  /** What the graph refresher reads of an organization. */
+  private graphContext(org: OrgView, stores: OrgStores): GraphContext {
+    return {
+      key: `${org.projectId}/${org.orgId}`,
+      orgDir: path.join(this.deps.root, org.projectId, "organizations", org.orgId),
+      store: stores.graph,
+      deployments: stores.deployments,
+      inputs: async () => {
+        const errors: string[] = [];
+        const facts = stores.proposals.facts();
+        const [project, heads] = await Promise.all([
+          this.project(org, facts, errors),
+          this.declaredHeads(org, facts, errors),
+        ]);
+        const proposals: GraphProposal[] = facts.map((p) => ({
+          number: p.number,
+          title: p.title,
+          status: p.status,
+          implPr: p.impl?.pr?.url ?? null,
+          implBranch: heads.get(p.number) ?? null,
+        }));
+        return { project, proposals, errors };
+      },
     };
-    return this.graphCache.get(`${projectId}/${orgId}`, JSON.stringify(input), () =>
-      this.prGraph.read(input),
-    );
+  }
+
+  /**
+   * The PR graph of the delivery repository, annotated with the proposals and the origins, from
+   * the store (graph-refresh.ts). Always drawn: with no delivery repository at all it is the
+   * base branch alone, and `errors` says why. `refresh` waits for a forced refresh first.
+   */
+  async graph(
+    projectId: string,
+    orgId: string,
+    actor: OrgActor,
+    opts: { refresh?: boolean } = {},
+  ): Promise<ProposalGraphResponse> {
+    const { org, stores } = await this.open(projectId, orgId, actor);
+    return this.graphs.read(this.graphContext(org, stores), opts);
+  }
+
+  /** A deploy run ended: what the deployments run is read again, and the graph with it. */
+  deployFinished(projectId: string, orgId: string): void {
+    const key = `${projectId}/${orgId}`;
+    const stores = this.stores.get(key);
+    if (stores === undefined) return;
+    void this.deps.gateway.organization(projectId, orgId).then((org) => {
+      if (org !== null) return this.graphs.kick(this.graphContext(org, stores), false);
+    });
+  }
+
+  /** Settles once the organization's graph refresh in flight (if any) ends (tests). */
+  async graphSettled(projectId: string, orgId: string): Promise<void> {
+    while (this.graphs.refreshing(`${projectId}/${orgId}`)) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
   }
 
   /**
@@ -1769,18 +1718,14 @@ export class ProposalService {
    */
   private async declaredHeads(
     org: OrgView,
-    proposals: Proposal[],
+    proposals: ProposalFacts[],
     errors: string[],
   ): Promise<Map<number, { label: string; repo: string | null; branch: string }>> {
     const declared = proposals.filter((p) => p.status !== "rejected" && p.impl?.head != null);
-    const byRoot = new Map<string, Promise<Array<{ name: string; repo: string }>>>();
     const out = new Map<number, { label: string; repo: string | null; branch: string }>();
     for (const p of declared) {
-      if (!byRoot.has(p.root)) byRoot.set(p.root, this.remotesFor(org, p));
-    }
-    for (const p of declared) {
       const head = p.impl!.head!;
-      const remotes = await byRoot.get(p.root)!;
+      const remotes = await this.remotesFor(org, p);
       let repo: string | null = null;
       try {
         repo = resolveRef(head, remotes, "head").repo;
@@ -1797,20 +1742,20 @@ export class ProposalService {
    * other route: the organization, the caller, a proposal's impl and the delivery repository.
    */
   async deployScope(projectId: string, orgId: string, actor: OrgActor): Promise<DeployScope> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
     return {
       org,
       principal: caller.principal,
-      person: this.isPerson(caller),
+      person: isPerson(caller),
       impl: async (number) => {
-        const p = this.requireProposal(ledger, number);
+        const p = this.requireProposal(store, number);
         if (p.impl === null) return null;
         if (p.impl.head === null) return { pr: p.impl.pr!.url, head: null };
         const remotes = await this.remotesFor(org, p);
         const head = lift(() => resolveRef(p.impl!.head!, remotes, "head"));
         return { pr: p.impl.pr?.url ?? null, head: { repo: head.repo, branch: head.branch } };
       },
-      deliveryRepo: async () => (await this.deliveryRepo(org, ledger, [])).repo,
+      deliveryRepo: async () => (await this.project(org, store.facts(), [])).repo,
     };
   }
 
@@ -1821,20 +1766,15 @@ export class ProposalService {
     req: { text: string; runtime?: boolean },
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const delivery = this.delivery(ledger);
-    const p = this.requireProposal(ledger, number);
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(store);
+    this.requireProposal(store, number);
     const text = req.text.trim();
     if (text === "") throw badRequest("text must not be empty.");
     const runtime = req.runtime === true;
-    const line = await ledger.append({
-      kind: "feedback",
-      number,
-      text,
-      runtime,
-      by: caller.principal,
-    });
-    this.notify(org, number, line.seq, runtime ? "runtime_feedback" : "feedback");
+    const written = store.feedback(number, () => ({ text, runtime, by: caller.principal }));
+    this.notify(org, number, written.seq, runtime ? "runtime_feedback" : "feedback");
+    const p = written.proposal;
     const to = [p.author];
     if (runtime && p.implementer !== null) to.push(p.implementer);
     await this.tell(
@@ -1847,10 +1787,7 @@ export class ProposalService {
         ? `runtime feedback from ${whoOf(caller)}: ${text}\n\nRevise together — the author updates the proposal (\`penguin org proposal publish ${number} --file …\`), the implementer the branch.`
         : `feedback from ${whoOf(caller)}: ${text}\n\nRevise the proposal if it changes what is proposed: \`penguin org proposal publish ${number} --file …\`.`,
     );
-    return this.answer(
-      delivery,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    return this.answer(delivery, this.view(store, number, caller));
   }
 
   /**
@@ -1864,8 +1801,8 @@ export class ProposalService {
     opts: { pending: boolean },
     actor: OrgActor,
   ): Promise<ProposalCommentsResponse> {
-    const { ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
+    const { store, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
     const visible = this.visibleComments(p, caller);
     const comments = opts.pending
       ? visible.filter((c) => c.batchId !== null && c.resolved === undefined)
@@ -1887,44 +1824,45 @@ export class ProposalService {
     req: { sectionId: string; start: number; end: number; quote: string; text: string },
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    this.requirePerson(caller, "comment on a proposal");
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    this.requireProposal(store, number);
+    this.rules.comment(caller);
     const text = req.text.trim();
     if (text === "") throw badRequest("text must not be empty.");
-    const section = p.sections.find((s) => s.id === req.sectionId);
-    if (section === undefined) {
-      throw badRequest(`No section ${req.sectionId} in revision ${p.revision}.`);
-    }
-    const source = sectionSource(section);
-    const inRange =
-      Number.isInteger(req.start) &&
-      Number.isInteger(req.end) &&
-      req.start >= 0 &&
-      req.start < req.end &&
-      req.end <= source.length;
-    if (!inRange || source.slice(req.start, req.end) !== req.quote) {
-      throw new ProposalError(
-        400,
-        "comment_range",
-        `The range [${req.start}, ${req.end}) of section ${req.sectionId} does not read as quoted in revision ${p.revision}; reload the proposal and select again.`,
-      );
-    }
-    const id = `c${p.comments.length + 1}-${Math.random().toString(36).slice(2, 8)}`;
-    const line = await ledger.append({
-      kind: "comment",
-      number,
-      id,
-      sectionId: req.sectionId,
-      start: req.start,
-      end: req.end,
-      quote: req.quote,
-      revision: p.revision,
-      text,
-      by: caller.principal,
+    const written = store.addComment(number, (p) => {
+      this.rules.comment(caller);
+      const section = p.sections.find((s) => s.id === req.sectionId);
+      if (section === undefined) {
+        throw badRequest(`No section ${req.sectionId} in revision ${p.revision}.`);
+      }
+      const source = sectionSource(section);
+      const inRange =
+        Number.isInteger(req.start) &&
+        Number.isInteger(req.end) &&
+        req.start >= 0 &&
+        req.start < req.end &&
+        req.end <= source.length;
+      if (!inRange || source.slice(req.start, req.end) !== req.quote) {
+        throw new ProposalError(
+          400,
+          "comment_range",
+          `The range [${req.start}, ${req.end}) of section ${req.sectionId} does not read as quoted in revision ${p.revision}; reload the proposal and select again.`,
+        );
+      }
+      const paragraphId = paragraphAtOffset(section, req.start);
+      return {
+        id: `c${p.comments.length + 1}-${Math.random().toString(36).slice(2, 8)}`,
+        sectionId: req.sectionId,
+        range: { start: req.start, end: req.end },
+        quote: req.quote,
+        ...(paragraphId !== null ? { paragraphId } : {}),
+        revision: p.revision,
+        text,
+        by: caller.principal,
+      };
     });
-    this.notify(org, number, line.seq, "comment");
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    this.notify(org, number, written.seq, "comment");
+    return this.view(store, number, caller);
   }
 
   async requestChanges(
@@ -1933,34 +1871,32 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const delivery = this.delivery(ledger);
-    const p = this.requireProposal(ledger, number);
-    this.requirePerson(caller, "request changes");
-    const pending = p.comments.filter((c) => c.batchId === null && c.by === caller.principal);
-    if (pending.length === 0) throw badRequest("No pending comments to send.");
-    const id = `b${p.events.filter((e) => e.kind === "changes_requested").length + 1}`;
-    const line = await ledger.append({
-      kind: "batch",
-      number,
-      id,
-      commentIds: pending.map((c) => c.id),
-      by: caller.principal,
-      revision: p.revision,
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(store);
+    this.requireProposal(store, number);
+    let sent = 0;
+    const written = store.requestChanges(number, (p) => {
+      const batch = this.rules.requestChanges(p, caller);
+      sent = batch.commentIds.length;
+      return {
+        id: batch.batchId,
+        commentIds: batch.commentIds,
+        revision: p.revision,
+        status: batch.status,
+        by: caller.principal,
+      };
     });
-    this.notify(org, number, line.seq, "changes_requested");
+    this.notify(org, number, written.seq, "changes_requested");
+    const p = written.proposal;
     await this.tell(
       delivery,
       org,
       p,
       caller,
       [p.author],
-      `${whoOf(caller)} requested changes: a batch of ${pending.length} comment${pending.length === 1 ? "" : "s"} — read it with \`penguin org proposal comments ${number} --pending\`, resolve each (\`penguin org proposal resolve ${number} <commentId> -m …\`), then publish the revision and mark it ready again.`,
+      `${whoOf(caller)} requested changes: a batch of ${sent} comment${sent === 1 ? "" : "s"} — read it with \`penguin org proposal comments ${number} --pending\`, resolve each (\`penguin org proposal resolve ${number} <commentId> -m …\`), then publish the revision and mark it ready again.`,
     );
-    return this.answer(
-      delivery,
-      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
-    );
+    return this.answer(delivery, this.view(store, number, caller));
   }
 
   async resolve(
@@ -1971,64 +1907,14 @@ export class ProposalService {
     text: string | undefined,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    this.requireAuthorOrPerson(p, caller, "resolve a comment");
-    const c = p.comments.find((x) => x.id === commentId);
-    if (c === undefined || c.batchId === null) {
-      throw new ProposalError(
-        404,
-        "comment_not_found",
-        `No requested comment ${commentId} on proposal #${number}.`,
-      );
-    }
-    if (c.resolved !== undefined) {
-      throw new ProposalError(409, "comment_resolved", `Comment ${commentId} is already resolved.`);
-    }
-    const line = await ledger.append({
-      kind: "resolved",
-      number,
-      commentId,
-      text: text?.trim() ?? "",
-      by: caller.principal,
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    this.requireProposal(store, number);
+    const written = store.resolveComment(number, (p) => {
+      this.rules.resolve(p, caller, commentId);
+      return { id: commentId, text: text?.trim() ?? "", by: caller.principal };
     });
-    this.notify(org, number, line.seq, "resolved");
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
-  }
-
-  /**
-   * A pending comment is the person's own until it is sent: reworded or withdrawn by the
-   * one who wrote it, and by nobody else; once a batch names it, it stands as sent.
-   */
-  private requireOwnPending(
-    p: Proposal,
-    caller: Caller,
-    commentId: string,
-    what: string,
-  ): ProposalComment {
-    const c = p.comments.find((x) => x.id === commentId);
-    if (c === undefined) {
-      throw new ProposalError(
-        404,
-        "comment_not_found",
-        `No comment ${commentId} on proposal #${p.number}.`,
-      );
-    }
-    if (c.batchId !== null) {
-      throw new ProposalError(
-        409,
-        "comment_sent",
-        `Comment ${commentId} has been sent to the author; it can no longer be ${what}.`,
-      );
-    }
-    if (c.by !== caller.principal) {
-      throw new ProposalError(
-        403,
-        "not_commenter",
-        `Only the one who wrote comment ${commentId} can have it ${what}.`,
-      );
-    }
-    return c;
+    this.notify(org, number, written.seq, "resolved");
+    return this.view(store, number, caller);
   }
 
   async editComment(
@@ -2039,20 +1925,16 @@ export class ProposalService {
     text: string,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    this.requireOwnPending(p, caller, commentId, "reworded");
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    this.rules.editComment(this.requireProposal(store, number), caller, commentId);
     const next = text.trim();
     if (next === "") throw badRequest("text must not be empty.");
-    const line = await ledger.append({
-      kind: "comment_edited",
-      number,
-      commentId,
-      text: next,
-      by: caller.principal,
+    const written = store.editComment(number, (p) => {
+      this.rules.editComment(p, caller, commentId);
+      return { id: commentId, text: next };
     });
-    this.notify(org, number, line.seq, "comment");
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    this.notify(org, number, written.seq, "comment");
+    return this.view(store, number, caller);
   }
 
   async deleteComment(
@@ -2062,17 +1944,14 @@ export class ProposalService {
     commentId: string,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(ledger, number);
-    this.requireOwnPending(p, caller, commentId, "withdrawn");
-    const line = await ledger.append({
-      kind: "comment_deleted",
-      number,
-      commentId,
-      by: caller.principal,
+    const { org, store, caller } = await this.open(projectId, orgId, actor);
+    this.requireProposal(store, number);
+    const written = store.deleteComment(number, (p) => {
+      this.rules.deleteComment(p, caller, commentId);
+      return { id: commentId };
     });
-    this.notify(org, number, line.seq, "comment");
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    this.notify(org, number, written.seq, "comment");
+    return this.view(store, number, caller);
   }
 
   /** Moves the person's read position forward (never back); an employee's call is a no-op. */
@@ -2083,15 +1962,10 @@ export class ProposalService {
     upTo: number,
     actor: OrgActor,
   ): Promise<void> {
-    const { ledger, caller } = await this.open(projectId, orgId, actor);
-    this.requireProposal(ledger, number);
-    if (!this.isPerson(caller)) return;
-    const key = this.readsKey(projectId, orgId, caller.userId);
-    const reads = this.readPositions(projectId, orgId, caller.userId);
-    const current = reads[String(number)] ?? 0;
-    if (upTo <= current) return;
-    reads[String(number)] = upTo;
-    this.deps.settings.set(key, JSON.stringify(reads));
+    const { store, caller } = await this.open(projectId, orgId, actor);
+    this.requireExists(store, number);
+    if (!isPerson(caller)) return;
+    store.markRead(caller.userId, number, upTo);
   }
 }
 
@@ -2126,9 +2000,9 @@ export function compareDatedVersions(a: string, b: string): number {
 
 /**
  * A proposal's materials with its impl PR among them. An impl PR set directly (`setImpl`, the
- * admin's override, or a restack re-pointing one) is a ledger line of its own and not a
- * material, so the Materials list read "no materials yet" beside a proposal that has its PR.
- * When no `pr` material is that pull request, it is listed first, as the PR it is.
+ * admin's override, or a restack re-pointing one) is an impl of its own and not a material, so
+ * the Materials list read "no materials yet" beside a proposal that has its PR. When no `pr`
+ * material is that pull request, it is listed first, as the PR it is.
  */
 export function withImplPr(
   materials: readonly ProposalMaterial[],

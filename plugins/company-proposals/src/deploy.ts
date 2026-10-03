@@ -98,6 +98,8 @@ export interface DeployDeps {
   start?: StartProcess;
   now?: () => number;
   timeoutMs?: number;
+  /** A run ended, whatever its outcome: what the deployments run is read again (the PR graph's refresh). */
+  onFinished?: (projectId: string, orgId: string) => void;
 }
 
 export interface DeployRequest {
@@ -461,6 +463,7 @@ export class DeployService {
         `${label} ${run.status}${code === null ? "" : ` (exit ${code})`}${run.error === null ? "" : `: ${run.error}`}`,
       );
       this.prune(orgKey);
+      this.deps.onFinished?.(projectId, orgId);
     });
     return run;
   }

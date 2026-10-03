@@ -3028,8 +3028,15 @@ export const listOrgProposals = (projectId: string, orgId: string) =>
   apiFetch<ProposalsResponse>(proposalsBase(projectId, orgId));
 
 /** The delivery repository's open PRs as a commit graph, with each node's proposal and origins. */
-export const getOrgProposalGraph = (projectId: string, orgId: string) =>
-  apiFetch<ProposalGraphResponse>(`${proposalsBase(projectId, orgId)}/graph`);
+/** The PR graph as the server stores it; `refresh` waits for the server to read the repository again first. */
+export const getOrgProposalGraph = (
+  projectId: string,
+  orgId: string,
+  opts: { refresh?: boolean } = {},
+) =>
+  apiFetch<ProposalGraphResponse>(
+    `${proposalsBase(projectId, orgId)}/graph${opts.refresh === true ? "?refresh=1" : ""}`,
+  );
 
 /** The organization's deploy scripts: what the PR graph's node menu offers to deploy to. */
 export const getOrgDeployScripts = (projectId: string, orgId: string) =>

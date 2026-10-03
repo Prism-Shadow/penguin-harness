@@ -55,6 +55,8 @@ import { displayLayout } from "./pr-graph-segments";
 /** Reads of a graph the organization's machine is still building, and the pause between them. */
 const GRAPH_READ_TRIES = 4;
 const GRAPH_RETRY_MS = 2_000;
+/** How soon a graph answered while the server refreshes it is read again. */
+const GRAPH_REFRESHING_POLL_MS = 5_000;
 
 /** The root font-size in px, kept current: the theme's text size rewrites it on <html>. */
 function useRootFontPx(): number {
@@ -82,33 +84,49 @@ export function GraphPage() {
   const [graph, setGraph] = useState<ProposalGraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // The first read after the organization's server restarts asks GitHub for everything and
-      // can outlast the hub's wait (504 machine_not_answering); that read goes on and fills the
-      // server's cache, so asking again soon gets the graph. A few tries, then the error shows.
-      for (let attempt = 1; ; attempt++) {
-        try {
-          setGraph(await api.getOrgProposalGraph(projectId, orgId));
-          return;
-        } catch (e) {
-          const slow = e instanceof ApiError && e.code === "machine_not_answering";
-          if (!slow || attempt >= GRAPH_READ_TRIES) throw e;
-          await new Promise((r) => setTimeout(r, GRAPH_RETRY_MS));
+  // `refresh` is the button's: the server reads the repository again before it answers.
+  const load = useCallback(
+    async (refresh = false) => {
+      setLoading(true);
+      setError(null);
+      try {
+        // A read that outlasts the hub's wait (504 machine_not_answering) goes on on the server,
+        // so asking again soon gets the graph. A few tries, then the error shows.
+        for (let attempt = 1; ; attempt++) {
+          try {
+            setGraph(await api.getOrgProposalGraph(projectId, orgId, { refresh }));
+            return;
+          } catch (e) {
+            const slow = e instanceof ApiError && e.code === "machine_not_answering";
+            if (!slow || attempt >= GRAPH_READ_TRIES) throw e;
+            await new Promise((r) => setTimeout(r, GRAPH_RETRY_MS));
+          }
         }
+      } catch (e) {
+        setError(apiErrorText(e));
+      } finally {
+        setLoading(false);
       }
-    } catch (e) {
-      setError(apiErrorText(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, orgId]);
+    },
+    [projectId, orgId],
+  );
   useEffect(() => {
     setGraph(null);
     void load();
   }, [load]);
+  // The server answered its stored graph while it reads the repository again: read once more
+  // when that is likely done, quietly (the graph on screen stays until the new one arrives).
+  const refreshing = graph?.refreshing === true;
+  useEffect(() => {
+    if (!refreshing) return;
+    const timer = setTimeout(() => {
+      api
+        .getOrgProposalGraph(projectId, orgId)
+        .then(setGraph)
+        .catch(() => undefined);
+    }, GRAPH_REFRESHING_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [refreshing, projectId, orgId]);
 
   const layout = useMemo(
     () => (graph === null ? null : topDown(layoutGraph(graph.nodes, graph.top))),
@@ -221,7 +239,7 @@ export function GraphPage() {
       info={t.info}
       wide
       actions={
-        <Button size="sm" variant="secondary" disabled={loading} onClick={() => void load()}>
+        <Button size="sm" variant="secondary" disabled={loading} onClick={() => void load(true)}>
           {t.refresh}
         </Button>
       }

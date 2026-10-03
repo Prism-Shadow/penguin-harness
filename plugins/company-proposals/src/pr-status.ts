@@ -1,19 +1,16 @@
 /**
- * Where a GitHub pull request stands — the one fact about a `pr` material the page wants
- * beside the link. Read from GitHub when a proposal is read, never stored: the ledger
- * records that a PR was attached, GitHub knows whether it was merged.
+ * Where a pull request stands — the one fact about a `pr` material (and an impl PR) the page
+ * wants beside the link — kept in the organization store's `pr_status` with its age.
  *
- * GitHub is asked through the machine's own `gh` (`gh api repos/<owner>/<repo>/pulls/<n>`),
- * so the lookup runs under whatever identity `gh auth` holds there — no token of the
- * server's, and no anonymous quota to exhaust. Without `gh`, or with it logged out, the
- * lookup fails like any other failure below.
- *
- * One lookup per URL at a time, its answer kept for a minute, a failure (network, 404, a
- * rate limit) kept just as long so a broken URL is not asked about on every read; the page
- * simply shows no status then. A failure is logged at most once per URL per ten minutes.
+ * A proposal read answers at once from that table, fresh or not, with `statusCheckedAt`; the
+ * keys missing or older than STATUS_TTL_MS are read in the background in one batch through the
+ * Forge, at most one batch per organization at a time — a read never waits for `gh`. The graph
+ * refresh writes the status of every PR it reads as well. Reporting `merged` asks the forge
+ * now, past the table (a write is not decided on a five-minute-old `open`), and writes back.
  */
 import { execFile } from "node:child_process";
 import type { ProposalPrStatus } from "@prismshadow/penguin-server/api";
+import type { ChangeRequest, Forge, GraphStore, PrStatusRow } from "./ports.js";
 
 /** `https://github.com/<owner>/<repo>/pull/<n>` (or `/pulls/<n>`), with or without a trailing slash or a fragment. */
 const PR_URL =
@@ -47,11 +44,15 @@ export function statusOf(pull: {
   return "open";
 }
 
-export const STATUS_TTL_MS = 60_000;
-const FAILURE_LOG_INTERVAL_MS = 10 * 60_000;
-const TIMEOUT_MS = 3_000;
-/** A pull request's JSON is tens of KiB; anything past this is not an answer worth parsing. */
-const MAX_OUTPUT_BYTES = 1024 * 1024;
+/** The status the page names, from a change request. */
+export function statusOfChange(cr: Pick<ChangeRequest, "state" | "draft">): ProposalPrStatus {
+  if (cr.state === "merged") return "merged";
+  if (cr.state === "closed") return "closed";
+  return cr.draft ? "draft" : "open";
+}
+
+/** How long a PR's status is answered without asking again: the graph's probe window. */
+export const STATUS_TTL_MS = 5 * 60_000;
 
 /** An owner or repository name GitHub accepts; anything else is never put on a command line. */
 export const GITHUB_NAME = /^(?!\.\.?$)[A-Za-z0-9_.-]+$/;
@@ -101,42 +102,34 @@ export function ghRunner(command = "gh"): RunGh {
     });
 }
 
-/** The part of GitHub's pull-request JSON the reader looks at. */
-type PullBody = Parameters<typeof statusOf>[0] & {
-  base?: { ref?: unknown; repo?: { default_branch?: unknown } | null };
-};
-
 /** A pull request's fresh reading for a write: its status, where it points, whether it landed. */
 export interface PrLanding {
   status: ProposalPrStatus;
-  /** The branch it targets (`base.ref`), null when GitHub did not say. */
+  /** The branch it targets, null when the forge did not say. */
   base: string | null;
-  /** The target repository's default branch, null when GitHub did not say. */
+  /** The target repository's default branch, null when the forge did not say. */
   defaultBranch: string | null;
   /** Merged, into the target repository's default branch. */
   landed: boolean;
   checkedAt: string;
 }
 
-interface Cached {
-  status: ProposalPrStatus | null;
-  checkedAt: number;
+/** `owner/repo#n` lower-cased: the key of a PR in `pr_status`. */
+export function statusKey(url: string): string | null {
+  const ref = parsePullUrl(url);
+  return ref === null ? null : `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}#${ref.number}`;
 }
 
 export interface PrStatusDeps {
-  /** How `gh` is run; the machine's own by default (a test feeds answers). */
-  gh?: RunGh;
+  forge: Forge;
   log: (line: string) => void;
   now?: () => number;
 }
 
-const defaultGh = ghRunner();
-
-/** The lookup with its cache; one per service. */
+/** The cached status reader; one per service. */
 export class PrStatusReader {
-  private readonly cache = new Map<string, Cached>();
-  private readonly inFlight = new Map<string, Promise<Cached>>();
-  private readonly failureLoggedAt = new Map<string, number>();
+  /** The batch in flight per organization. */
+  private readonly inFlight = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: PrStatusDeps) {}
 
@@ -144,93 +137,108 @@ export class PrStatusReader {
     return this.deps.now?.() ?? Date.now();
   }
 
-  /** The status of a PR URL — from the cache while fresh, else from GitHub; null when unknown. */
-  async read(url: string): Promise<{ status: ProposalPrStatus; checkedAt: string } | null> {
-    const ref = parsePullUrl(url);
-    if (ref === null) return null;
-    const key = `${ref.owner}/${ref.repo}#${ref.number}`;
-    const cached = this.cache.get(key);
-    const now = this.now();
-    const entry =
-      cached !== undefined && now - cached.checkedAt < STATUS_TTL_MS
-        ? cached
-        : await this.lookup(key, ref);
-    return entry.status === null
-      ? null
-      : { status: entry.status, checkedAt: new Date(entry.checkedAt).toISOString() };
+  /**
+   * The cached status of each PR URL (by URL; absent when never read or unknown). The missing
+   * and the stale ones are read in the background, in one batch; `refreshed` settles when it is
+   * done (a test awaits it).
+   */
+  read(
+    orgKey: string,
+    store: Pick<GraphStore, "prStatuses" | "putPrStatuses">,
+    urls: readonly string[],
+  ): { statuses: Map<string, { status: ProposalPrStatus; checkedAt: string }>; refreshed: Promise<void> } {
+    const keys = new Map<string, string>();
+    for (const url of urls) {
+      const key = statusKey(url);
+      if (key !== null) keys.set(url, key);
+    }
+    const rows = store.prStatuses([...new Set(keys.values())]);
+    const statuses = new Map<string, { status: ProposalPrStatus; checkedAt: string }>();
+    const stale = new Set<string>();
+    for (const [url, key] of keys) {
+      const row = rows.get(key);
+      if (row?.status != null) statuses.set(url, { status: row.status, checkedAt: row.checkedAt });
+      if (row === undefined || this.now() - Date.parse(row.checkedAt) >= STATUS_TTL_MS) stale.add(key);
+    }
+    const refreshed =
+      stale.size === 0 ? Promise.resolve() : this.refresh(orgKey, store, [...stale]);
+    return { statuses, refreshed };
   }
 
-  private lookup(key: string, ref: PullRef): Promise<Cached> {
-    const pending = this.inFlight.get(key);
-    if (pending !== undefined) return pending;
-    const run = this.fetchStatus(key, ref)
-      .then((status): Cached => {
-        const entry = { status, checkedAt: this.now() };
-        this.cache.set(key, entry);
-        return entry;
+  /** One batch per organization at a time; a batch asked while one runs is skipped, the next read asks again. */
+  private refresh(
+    orgKey: string,
+    store: Pick<GraphStore, "putPrStatuses">,
+    keys: string[],
+  ): Promise<void> {
+    const running = this.inFlight.get(orgKey);
+    if (running !== undefined) return running;
+    const run = this.batch(store, keys)
+      .catch((err: unknown) => {
+        this.deps.log(
+          `[company-proposals] PR status not read: ${err instanceof Error ? err.message : String(err)}`,
+        );
       })
-      .finally(() => {
-        this.inFlight.delete(key);
-      });
-    this.inFlight.set(key, run);
+      .finally(() => this.inFlight.delete(orgKey));
+    this.inFlight.set(orgKey, run);
     return run;
   }
 
+  private async batch(store: Pick<GraphStore, "putPrStatuses">, keys: string[]): Promise<void> {
+    const byRepo = new Map<string, number[]>();
+    for (const key of keys) {
+      const [repo, n] = key.split("#") as [string, string];
+      byRepo.set(repo, [...(byRepo.get(repo) ?? []), Number(n)]);
+    }
+    const rows: PrStatusRow[] = [];
+    for (const [repo, numbers] of byRepo) {
+      const checkedAt = new Date(this.now()).toISOString();
+      try {
+        const found = await this.deps.forge.listChangeRequests({ repo, numbers });
+        const byNumber = new Map(found.map((cr) => [cr.number, cr]));
+        for (const n of numbers) {
+          const cr = byNumber.get(n);
+          rows.push({
+            key: `${repo}#${n}`,
+            status: cr === undefined ? null : statusOfChange(cr),
+            base: cr?.base ?? null,
+            defaultBranch: cr?.defaultBranch ?? null,
+            checkedAt,
+            error: cr === undefined ? "not found" : null,
+          });
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        // A failure is kept as long as an answer, so a broken URL is not asked on every read.
+        for (const n of numbers) {
+          rows.push({ key: `${repo}#${n}`, status: null, base: null, defaultBranch: null, checkedAt, error });
+        }
+        this.deps.log(`[company-proposals] PR status not read for ${repo}: ${error}`);
+      }
+    }
+    store.putPrStatuses(rows);
+  }
+
   /**
-   * Whether a PR URL landed: asked of GitHub now, past the cache — a write is decided on it,
-   * and a minute-old `open` would refuse a PR merged a moment ago. The answer refreshes the
-   * cache the page reads. `landed` is merged into the repository's default branch; null when
-   * the URL is not a pull request or GitHub could not be asked.
+   * Whether a PR URL landed: asked of the forge now, past the cache — a write is decided on it.
+   * The answer is written back to the cache the page reads; null when the URL is not a pull
+   * request or the forge could not say.
    */
-  async landing(url: string): Promise<PrLanding | null> {
-    const ref = parsePullUrl(url);
-    if (ref === null) return null;
-    const key = `${ref.owner}/${ref.repo}#${ref.number}`;
-    const pull = await this.fetchPull(key, ref);
-    const checkedAt = this.now();
-    this.cache.set(key, { status: pull === null ? null : statusOf(pull), checkedAt });
-    if (pull === null) return null;
-    const status = statusOf(pull);
-    const base = typeof pull.base?.ref === "string" ? pull.base.ref : null;
-    const defaultBranch =
-      typeof pull.base?.repo?.default_branch === "string" ? pull.base.repo.default_branch : null;
-    return {
-      status,
-      base,
-      defaultBranch,
-      landed: status === "merged" && base !== null && base === defaultBranch,
-      checkedAt: new Date(checkedAt).toISOString(),
-    };
-  }
-
-  private async fetchStatus(key: string, ref: PullRef): Promise<ProposalPrStatus | null> {
-    const pull = await this.fetchPull(key, ref);
-    return pull === null ? null : statusOf(pull);
-  }
-
-  private async fetchPull(key: string, ref: PullRef): Promise<PullBody | null> {
-    if (!GITHUB_NAME.test(ref.owner) || !GITHUB_NAME.test(ref.repo)) {
-      this.failed(key, "not a GitHub repository name");
-      return null;
-    }
-    const runGh = this.deps.gh ?? defaultGh;
-    try {
-      const stdout = await runGh(["api", `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`], {
-        timeoutMs: TIMEOUT_MS,
-        maxBytes: MAX_OUTPUT_BYTES,
-      });
-      return JSON.parse(stdout) as PullBody;
-    } catch (err) {
-      this.failed(key, err instanceof Error ? err.message : String(err));
-      return null;
-    }
-  }
-
-  private failed(key: string, reason: string): void {
-    const now = this.now();
-    const last = this.failureLoggedAt.get(key);
-    if (last !== undefined && now - last < FAILURE_LOG_INTERVAL_MS) return;
-    this.failureLoggedAt.set(key, now);
-    this.deps.log(`[company-proposals] PR status not read for ${key}: ${reason}`);
+  async landing(store: Pick<GraphStore, "putPrStatuses">, url: string): Promise<PrLanding | null> {
+    const key = statusKey(url);
+    if (key === null) return null;
+    const read = await this.deps.forge.isMerged(url);
+    const checkedAt = new Date(this.now()).toISOString();
+    store.putPrStatuses([
+      {
+        key,
+        status: read?.status ?? null,
+        base: read?.base ?? null,
+        defaultBranch: read?.defaultBranch ?? null,
+        checkedAt,
+        error: read === null ? "not read" : null,
+      },
+    ]);
+    return read === null ? null : { ...read, checkedAt };
   }
 }

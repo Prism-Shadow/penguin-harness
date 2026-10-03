@@ -15,6 +15,8 @@
  *   origins       other repositories to annotate the graph with, one line `name=owner/repo`
  *                 each (`origin=Prism-Shadow/penguin-harness`): their PR on a node's branch;
  *                 while it is empty, the workspace's other GitHub remotes by their names
+ *   graphRefreshMinutes  the PR graph's probe window: how stale the graph may grow before a
+ *                 read probes the delivery repository again (graph-refresh.ts); 5 by default
  */
 import type { ProposalTestGroup } from "@prismshadow/penguin-server/api";
 
@@ -74,8 +76,13 @@ export interface GraphConfig {
   /** Whether `base` was set rather than defaulted. */
   baseDeclared: boolean;
   origins: Array<{ name: string; repo: string }>;
+  /** The probe window, in milliseconds. */
+  windowMs: number;
   skipped: string[];
 }
+
+/** The probe window a fresh installation declares, in minutes. */
+export const DEFAULT_GRAPH_REFRESH_MINUTES = 5;
 
 export function graphConfigOf(values: Record<string, unknown>): GraphConfig {
   const skipped: string[] = [];
@@ -106,7 +113,14 @@ export function graphConfigOf(values: Record<string, unknown>): GraphConfig {
     }
     origins.push({ name, repo: text.slice(at + 1) });
   }
-  return { repo, base, baseDeclared, origins, skipped };
+  const minutes = values.graphRefreshMinutes;
+  let windowMs = DEFAULT_GRAPH_REFRESH_MINUTES * 60_000;
+  if (minutes !== undefined && minutes !== null && minutes !== "") {
+    const n = Number(minutes);
+    if (Number.isFinite(n) && n >= 1 && n <= 30) windowMs = Math.round(n * 60_000);
+    else skipped.push(`graphRefreshMinutes ${String(minutes)}`);
+  }
+  return { repo, base, baseDeclared, origins, windowMs, skipped };
 }
 
 /** A remote name an origin line accepts. */

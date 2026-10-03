@@ -21,7 +21,7 @@ import type {
   ProposalDeployment,
   ProposalGraphDeployment,
 } from "@prismshadow/penguin-server/api";
-import type { RegisteredDeployment } from "./ledger.js";
+import type { RegisteredDeployment } from "./domain.js";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const PROBE_TIMEOUT_MS = 5_000;

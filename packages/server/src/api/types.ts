@@ -7081,9 +7081,15 @@ export interface ProposalGraphResponse {
   unplaced: ProposalGraphUnplaced[];
   /** What could not be read from GitHub; the graph is partial when present. */
   errors: string[];
+  /** When the delivery repository was last found to be as this graph shows it. */
   checkedAt: string;
   /** Every registered deployment with the commit it runs and the layer that commit sits on. */
   deployments: ProposalGraphDeployment[];
+  /**
+   * A refresh of the graph is running: this answer is the stored one, and a later read may
+   * show more. Absent from a server older than the field.
+   */
+  refreshing?: boolean;
 }
 
 /**
