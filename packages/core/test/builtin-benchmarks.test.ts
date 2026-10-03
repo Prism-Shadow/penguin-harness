@@ -14,13 +14,20 @@
  * - A Benchmark of the user's own that took a built-in id first is never written into; the
  *   built-in is given once that directory is gone.
  * - A write that fails part-way leaves neither a directory nor a record of it.
+ * - Two processes provisioning one Project at once (the server and a CLI on one data root) keep
+ *   each other's records: a Benchmark the other one placed between this one's check and its
+ *   rename counts as given here too, so deleting it afterwards sticks.
+ * - Staging debris an hour old is cleared; a younger entry, another process's Benchmark in the
+ *   making, is left alone.
+ * - An unreadable marker gives nothing, is left as it is, and is reported once however many
+ *   loads read it.
  * - Release guard: what ships names the repository by a commit. Expected to fail until the
  *   results commit is pinned, at which point it turns into a plain test.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import {
@@ -34,6 +41,7 @@ import {
   type BuiltinBenchmark,
 } from "../src/state/index.js";
 import { BUILTIN_BENCHMARKS } from "../src/state/builtin-benchmarks-data.js";
+import { provisionSeeds, type BenchmarkSeed } from "../src/state/project-benchmarks.js";
 
 const BUILTIN_IDS = [
   "automation-bench",
@@ -110,6 +118,21 @@ async function tree(root: string): Promise<Map<string, { text: string; mtimeMs: 
 async function backdate(root: string): Promise<void> {
   const past = new Date("2001-01-01T00:00:00Z");
   for (const file of (await tree(root)).keys()) await fs.utimes(path.join(root, file), past, past);
+}
+
+/**
+ * A built-in seed writing one file that names who wrote it; `meanwhile` runs after that write and
+ * before the rename, which is where a second process provisioning the Project can cut in.
+ */
+function seed(id: string, by: string, meanwhile?: () => Promise<void>): BenchmarkSeed {
+  return {
+    id,
+    adoptExisting: false,
+    write: async (benchDir) => {
+      await fs.writeFile(path.join(benchDir, "benchmark_config.toml"), `title = "${by}"\n`);
+      await meanwhile?.();
+    },
+  };
 }
 
 /** A built-in a later release might add: the first shipped one's shape, under a new id. */
@@ -268,6 +291,68 @@ describe("built-in Harbor Benchmarks", () => {
 
     expect(await exists(path.join(dir(), "broken-bench"))).toBe(false);
     expect(await given()).not.toContain("broken-bench");
+  });
+
+  it("two processes provisioning at once keep each other's records, and what the other placed first stays deleted once deleted", async () => {
+    // The other process cuts in after this one found `raced` missing and before its rename: it
+    // places `raced` itself and records it beside `theirs`, an id only it gives.
+    const other = [seed("raced", "other"), seed("theirs", "other")];
+    const mine = [seed("raced", "mine", () => provisionSeeds(dir(), other)), seed("ours", "mine")];
+
+    await provisionSeeds(dir(), mine);
+
+    expect((await given()).sort()).toEqual(["ours", "raced", "theirs"]);
+    expect(await benchmarkDirs()).toEqual(["ours", "raced", "theirs"]);
+    // The rename that lost dropped its own copy.
+    expect(await fs.readFile(path.join(dir(), "raced", "benchmark_config.toml"), "utf8")).toBe(
+      'title = "other"\n',
+    );
+    expect(await exists(path.join(dir(), ".seeding"))).toBe(false);
+
+    await fs.rm(path.join(dir(), "raced"), { recursive: true });
+    await provisionSeeds(dir(), mine);
+
+    expect(await benchmarkDirs()).toEqual(["ours", "theirs"]);
+  });
+
+  it("clears staging debris an hour old and leaves a younger entry, another process's work in progress, alone", async () => {
+    const crashed = path.join(dir(), ".seeding", "terminal-bench-crashed");
+    const inProgress = path.join(dir(), ".seeding", "deep-swe-writing");
+    await fs.mkdir(crashed, { recursive: true });
+    await fs.mkdir(inProgress, { recursive: true });
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(crashed, twoHoursAgo, twoHoursAgo);
+
+    await loadAgentState({ init: {} });
+
+    expect(await exists(crashed)).toBe(false);
+    expect(await exists(inProgress)).toBe(true);
+    expect((await given()).sort()).toEqual([...BUILTIN_IDS, EXAMPLE_BENCHMARK_ID].sort());
+  });
+
+  it("an unreadable marker gives nothing, stays as it is, and is reported once however many loads read it", async () => {
+    await loadAgentState({ init: {} });
+    const marker = path.join(dir(), SEEDED_BENCHMARKS_FILE);
+    await fs.writeFile(marker, "{ not json");
+    await fs.rm(path.join(dir(), "deep-swe"), { recursive: true });
+    const lines: string[] = [];
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    try {
+      await loadAgentState();
+      await loadAgentState();
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(await benchmarkDirs()).not.toContain("deep-swe");
+    expect(await fs.readFile(marker, "utf8")).toBe("{ not json");
+    const reports = lines.filter(
+      (line) => line.startsWith("[benchmarks]") && line.includes(marker),
+    );
+    expect(reports).toHaveLength(1);
   });
 
   // Release guard: flip `it.fails` to `it` in the change that pins the results commit.

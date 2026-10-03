@@ -25,7 +25,11 @@ given these and `example-benchmark` once each, so a deleted one stays deleted.
   written. A directory of the user's own under a built-in Harbor id was never written into, and
   that built-in was given once the directory was gone. Removing an id from the marker gave that
   Benchmark again. `example-benchmark` moved onto the same rule with its content unchanged; it
-  had been written again on every load after a deletion.
+  had been written again on every load after a deletion. Two processes on one data root (the
+  server and a CLI) could provision at the same time: every write of the marker read it again
+  and wrote the union, a Benchmark the other process placed first counted as given, and only
+  staging entries an hour old were cleared. An unreadable marker gave nothing and was reported
+  once per process on stderr.
 - **The five.** Each shipped with `runs = 1`, `status = "published"`, no evaluations and ten
   cases: the final 50 tasks of the benchmark repository's `selection.json` files. The definitions
   were data in `packages/core/src/state/builtin-benchmarks-data.ts`, where a case's number
