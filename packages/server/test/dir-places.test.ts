@@ -4,14 +4,17 @@
  * platform call goes through a fake effects object, so each case runs wherever this suite
  * runs; the real machine is asked through the dirs route in dirs.test.ts.
  */
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  POWERSHELL_ARGS,
   conventionallyHiddenNames,
   createPlaceDiscovery,
   darwinLocations,
   discoverPlaces,
   parseMounts,
   parseWindowsReport,
+  systemEffects,
   windowsHiddenNames,
   windowsLocations,
   type ExecOutcome,
@@ -293,3 +296,26 @@ describe("createPlaceDiscovery", () => {
     expect(runs).toBe(2);
   });
 });
+
+/**
+ * The one place the Windows report script itself runs. Everything above feeds the parser text;
+ * a script that fails on a real PowerShell would fall back to the letter probe without a word,
+ * and the drive labels and the redirected folders would simply never show. The budget is the
+ * test's own, generous for a cold runner, not the route's.
+ */
+it.runIf(process.platform === "win32")(
+  "the Windows report script runs and reports the system drive and the folders line",
+  async () => {
+    const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+    const out = await systemEffects().exec(
+      path.win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      [...POWERSHELL_ARGS],
+      { timeoutMs: 60_000 },
+    );
+    const report = parseWindowsReport(out.stdout.toString("utf8"));
+    const systemDrive = `${(process.env.SystemDrive ?? "C:").toUpperCase()}\\`;
+    expect(report.drives.find((d) => d.root === systemDrive)?.type).toBe(3);
+    expect(report.folders).not.toBeNull();
+  },
+  90_000,
+);
