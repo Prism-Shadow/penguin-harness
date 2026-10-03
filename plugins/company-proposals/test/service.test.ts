@@ -1498,6 +1498,85 @@ describe("ProposalService", () => {
     expect(gateway.desks.slice(mark).map((d) => d.agentId)).toEqual(["acme_dev"]);
   });
 
+  it("an employee reports the merge once GitHub reads the impl PR as merged into its default branch", async () => {
+    const url = "https://github.com/acme/site/pull/11";
+    let answer: () => string = () => JSON.stringify({ state: "open", draft: false });
+    const asked: string[][] = [];
+    service = new ProposalService({
+      gateway,
+      agents,
+      root,
+      settings,
+      log,
+      gh: async (args) => {
+        asked.push([...args]);
+        return answer();
+      },
+    });
+    const pull = (state: string, merged: boolean, base: string) =>
+      JSON.stringify({
+        state,
+        merged,
+        merged_at: merged ? "2026-09-30T15:12:54Z" : null,
+        base: { ref: base, repo: { default_branch: "main" } },
+      });
+
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    await service.ready(PROJECT, ORG, n, author);
+    await service.setImpl(PROJECT, ORG, n, url, author);
+    // Before approval the status answers first, GitHub is not asked.
+    expect(await refused(() => service.merged(PROJECT, ORG, n, qa))).toEqual({
+      status: 409,
+      code: "proposal_status",
+    });
+    expect(asked).toEqual([]);
+
+    await service.approve(PROJECT, ORG, n, BOSS);
+    // Nobody builds it: the notice names the impl PR and the command anybody may run once it lands.
+    expect(gateway.desks.at(-1)).toEqual({
+      agentId: "acme_dev",
+      text: `[proposal #${n}] approved by boss with nobody building it yet — build it with \`penguin org proposal implement ${n}\` (or \`--agent <id>\` to hand it to a colleague); once its impl PR acme/site#11 is merged into the default branch, run \`penguin org proposal merged ${n}\`.`,
+    });
+
+    // The page read caches `open` for a minute; the merge check asks GitHub again all the same.
+    await service.addMaterial(PROJECT, ORG, n, { kind: "pr", url }, author);
+    expect((await service.get(PROJECT, ORG, n, BOSS)).materials).toMatchObject([
+      { url, status: "open" },
+    ]);
+    const refusal = async (): Promise<string> => {
+      try {
+        await service.merged(PROJECT, ORG, n, qa);
+      } catch (err) {
+        const e = err as ProposalError;
+        expect([e.status, e.code]).toEqual([409, "impl_pr_not_merged"]);
+        return e.message;
+      }
+      throw new Error("merged() was not refused");
+    };
+    expect(await refusal()).toContain("impl PR acme/site#11 is open");
+    answer = () => pull("closed", true, "dev");
+    expect(await refusal()).toContain("merged into dev, not the default branch main");
+    answer = () => {
+      throw new Error("gh: HTTP 502");
+    };
+    expect(await refusal()).toContain("could not be read from GitHub");
+    expect((await service.get(PROJECT, ORG, n, BOSS)).status).toBe("approved");
+
+    answer = () => pull("closed", true, "main");
+    const merged = await service.merged(PROJECT, ORG, n, qa);
+    expect(merged.status).toBe("merged");
+    expect(merged.events.at(-1)).toMatchObject({ kind: "merged", by: "agent:acme_qa" });
+    expect(asked.at(-1)).toEqual(["api", "repos/acme/site/pulls/11"]);
+    // Terminal: a second report is a status refusal, not another GitHub read.
+    const reads = asked.length;
+    expect(await refused(() => service.merged(PROJECT, ORG, n, author))).toEqual({
+      status: 409,
+      code: "proposal_status",
+    });
+    expect(asked.length).toBe(reads);
+  });
+
   it("approve, merge and reject: who may, from which status, and who is told", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
@@ -1507,8 +1586,8 @@ describe("ProposalService", () => {
       code: "person_required",
     });
     expect(await refused(() => service.merged(PROJECT, ORG, n, impl))).toEqual({
-      status: 403,
-      code: "not_implementer",
+      status: 409,
+      code: "proposal_status",
     });
     expect(await refused(() => service.merged(PROJECT, ORG, n, BOSS))).toEqual({
       status: 409,
@@ -1532,9 +1611,10 @@ describe("ProposalService", () => {
       agentId: "acme_impl",
       text: `[proposal #${m}] approved by boss — merge the PR and run \`penguin org proposal merged ${m}\`.`,
     });
+    // Anybody else needs the impl PR to check the merge against; m has none.
     expect(await refused(() => service.merged(PROJECT, ORG, m, author))).toEqual({
-      status: 403,
-      code: "not_implementer",
+      status: 409,
+      code: "impl_pr_missing",
     });
     const merged = await service.merged(PROJECT, ORG, m, impl);
     expect(merged.status).toBe("merged");
