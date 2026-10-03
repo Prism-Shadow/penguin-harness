@@ -2249,6 +2249,7 @@ export function ChatPage() {
               scrollRef={streamScrollRef}
               running={stream.taskState !== "idle"}
               onOpenAt={stream.openAt}
+              onCancelOpen={stream.cancelOpenAt}
             />
           )}
 
@@ -2621,6 +2622,7 @@ export function ChatPage() {
                                   running={stream.taskState !== "idle"}
                                   fit={railFit}
                                   onOpenAt={stream.openAt}
+                                  onCancelOpen={stream.cancelOpenAt}
                                 />
                               }
                             />

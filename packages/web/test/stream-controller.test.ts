@@ -78,6 +78,9 @@ interface Harness {
     page?: MessagesPageInfo,
   ) => void;
   rejectLoad: (err: Error) => void;
+  /** Settle the pending load at `index` (0 = oldest) out of order: page-envelope responses only. */
+  resolveLoadAt: (index: number, messages: OmniMessage[], page: MessagesPageInfo) => void;
+  rejectLoadAt: (index: number, err: Error) => void;
 }
 
 function createHarness(): Harness {
@@ -139,6 +142,9 @@ function createHarness(): Harness {
         ...(page !== undefined ? { page } : {}),
       }),
     rejectLoad: (err) => pendingLoads.shift()!.reject(err),
+    resolveLoadAt: (index, messages, page) =>
+      pendingLoads.splice(index, 1)[0]!.resolve({ messages, page }),
+    rejectLoadAt: (index, err) => pendingLoads.splice(index, 1)[0]!.reject(err),
   };
 }
 
@@ -1205,6 +1211,85 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(h.controller.tailAttached).toBe(true);
     expect(h.controller.windowCount).toBe(0);
     expect(h.loadCalls()).toBe(calls + 1); // only the eager backfill
+  });
+
+  it("of two overlapping opens the later one wins, whichever response lands first", async () => {
+    for (const laterFirst of [false, true]) {
+      const h = await withRun();
+      const first = h.controller.openAt("2:0");
+      const second = h.controller.openAt("3:0");
+      const firstPage = pageInfo({ before: "2:0", after: "3:0", earlierTurns: 1 });
+      const secondPage = pageInfo({ before: "3:0", after: "4:0", earlierTurns: 2 });
+      if (laterFirst) {
+        h.resolveLoadAt(1, bigTurn("B", 25), secondPage);
+        expect(await second).toBe(true);
+        h.resolveLoad(bigTurn("C", 25), undefined, null, firstPage);
+        expect(await first).toBe(false);
+      } else {
+        h.resolveLoad(bigTurn("C", 25), undefined, null, firstPage);
+        expect(await first).toBe(false);
+        // The superseded window changed nothing.
+        expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
+        h.resolveLoad(bigTurn("B", 25), undefined, null, secondPage);
+        expect(await second).toBe(true);
+      }
+      expect(userTexts(h.controller.items)).toEqual(["question B"]);
+      expect(h.controller.outlineOffset).toBe(2);
+    }
+
+    // A superseded open that FAILS resolves false instead of reporting an error.
+    const h = await withRun();
+    const failing = h.controller.openAt("2:0");
+    const later = h.controller.openAt("3:0");
+    h.rejectLoad(new Error("boom"));
+    expect(await failing).toBe(false);
+    h.resolveLoad(
+      bigTurn("B", 25),
+      undefined,
+      null,
+      pageInfo({ before: "3:0", after: "4:0", earlierTurns: 2 }),
+    );
+    expect(await later).toBe(true);
+    expect(userTexts(h.controller.items)).toEqual(["question B"]);
+  });
+
+  it("a cancelled open changes nothing, and a backfill in flight alongside it still lands", async () => {
+    for (const openFirst of [false, true]) {
+      const h = await withRun();
+      const backfill = h.controller.loadOlder();
+      const open = h.controller.openAt("2:0");
+      // The reader went to a loaded turn instead.
+      h.controller.cancelOpenAt();
+      const openPage = pageInfo({ before: "2:0", after: "3:0", earlierTurns: 1 });
+      const olderPage = pageInfo({ before: "3:0", earlierTurns: 2 });
+      if (openFirst) {
+        h.resolveLoadAt(1, bigTurn("C", 25), openPage);
+        expect(await open).toBe(false);
+        h.resolveLoad(bigTurn("B", 25), undefined, null, olderPage);
+        await backfill;
+      } else {
+        h.resolveLoad(bigTurn("B", 25), undefined, null, olderPage);
+        await backfill;
+        h.resolveLoad(bigTurn("C", 25), undefined, null, openPage);
+        expect(await open).toBe(false);
+      }
+      expect(userTexts(h.controller.items)).toEqual(["question B", "question A", "question tail"]);
+      expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
+      expect(h.controller.tailAttached).toBe(true);
+    }
+  });
+
+  it("opening at the first turn reports nothing above: no backfill of what the window already holds", async () => {
+    const h = await withRun();
+    const open = h.controller.openAt("1:0");
+    // The server omits `before` for a window that starts at the first unit.
+    h.resolveLoad(bigTurn("first", 25), undefined, null, pageInfo({ after: "2:0" }));
+    expect(await open).toBe(true);
+    expect(h.controller.older).toEqual({ hasMore: false, loading: false, error: null });
+    const calls = h.loadCalls();
+    await h.controller.loadOlder();
+    expect(h.loadCalls()).toBe(calls);
+    expect(userTexts(h.controller.items)).toEqual(["question first"]);
   });
 
   it("jumpToLatest drops the run, re-attaches the tail, and backfills one window again", async () => {

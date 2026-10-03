@@ -78,6 +78,8 @@ export interface SessionStreamState {
   jumpToLatest: () => void;
   /** Open the run at a unit cursor (the outline's jump to an unloaded turn): true once the run holds it, false when nothing was done; rejects when the window could not be fetched. */
   openAt: (cursor: string) => Promise<boolean>;
+  /** Drop an open-at still in flight (the outline jumped to a loaded turn instead). */
+  cancelOpenAt: () => void;
   version: number;
   /** True until history finishes loading. */
   loading: boolean;
@@ -334,6 +336,9 @@ export function useSessionStream(
     (cursor: string) => controllerRef.current?.openAt(cursor) ?? Promise.resolve(false),
     [],
   );
+  const cancelOpenAt = useCallback(() => {
+    controllerRef.current?.cancelOpenAt();
+  }, []);
 
   // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
   void pendingTick;
@@ -352,6 +357,7 @@ export function useSessionStream(
     loadNewer,
     jumpToLatest,
     openAt,
+    cancelOpenAt,
     version,
     loading,
     taskState,

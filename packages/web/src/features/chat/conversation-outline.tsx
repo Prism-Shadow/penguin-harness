@@ -205,48 +205,67 @@ function hiddenBefore(entries: readonly OutlineTurn[]): number {
   return entries.length > 0 ? entries[0]!.turn - 1 : 0;
 }
 
+/** A click on an unloaded turn, waiting for its window; one object per click, so a repeat click on the same turn is told apart. */
+interface PendingJump {
+  turn: number;
+  /** The entries on screen when the open landed (null while in flight): the next ones are its result. */
+  openedOn: readonly OutlineTurn[] | null;
+}
+
 /**
  * The jump both shapes share. A loaded turn scrolls to its anchor right away; an unloaded
  * one asks the owner to open the run at its cursor, then jumps on the first entries in
  * which the turn has an anchor — the commit that put its window on screen. Only the
- * latest pending turn is honoured: a second click before the first landed supersedes it.
+ * latest click is honoured: a later click, on any turn, supersedes an open still in flight.
  */
 function useOutlineJump(
   entries: readonly OutlineTurn[],
   scrollRef: RefObject<HTMLDivElement | null>,
   onOpenAt: (cursor: string) => Promise<boolean>,
+  onCancelOpen: () => void,
 ): (entry: OutlineTurn) => void {
-  const pendingRef = useRef<number | null>(null);
+  const pendingRef = useRef<PendingJump | null>(null);
+  const entriesRef = useRef(entries);
   useEffect(() => {
-    const turn = pendingRef.current;
-    if (turn === null) return;
-    const landed = entries.find((entry) => entry.turn === turn);
-    if (landed === undefined || landed.anchorId === null) return;
-    pendingRef.current = null;
-    jumpToAnchor(scrollRef.current, landed.anchorId);
+    entriesRef.current = entries;
+    const pending = pendingRef.current;
+    if (pending === null) return;
+    const landed = entries.find((entry) => entry.turn === pending.turn);
+    if (landed !== undefined && landed.anchorId !== null) {
+      pendingRef.current = null;
+      jumpToAnchor(scrollRef.current, landed.anchorId);
+      return;
+    }
+    // The open landed and its result rendered, yet the turn has no anchor (an empty
+    // window): disarm, or a scroll that loads the turn much later would jump.
+    if (pending.openedOn !== null && pending.openedOn !== entries) pendingRef.current = null;
   }, [entries, scrollRef]);
   return useCallback(
     (entry: OutlineTurn) => {
       if (entry.anchorId !== null) {
+        if (pendingRef.current !== null) onCancelOpen();
         pendingRef.current = null;
         jumpToAnchor(scrollRef.current, entry.anchorId);
         return;
       }
       if (entry.cursor === null) return;
-      pendingRef.current = entry.turn;
+      const pending: PendingJump = { turn: entry.turn, openedOn: null };
+      pendingRef.current = pending;
       void onOpenAt(entry.cursor).then(
         (opened) => {
+          if (pendingRef.current !== pending) return;
           // Nothing opened (not live yet, or a later run change won): the turn must not
           // stay armed and fire a jump minutes later when a scroll happens to load it.
-          if (!opened && pendingRef.current === entry.turn) pendingRef.current = null;
+          if (!opened) pendingRef.current = null;
+          else pending.openedOn = entriesRef.current;
         },
         () => {
-          if (pendingRef.current === entry.turn) pendingRef.current = null;
+          if (pendingRef.current === pending) pendingRef.current = null;
           toastError(S.chat.outlineOpenFailed);
         },
       );
     },
-    [scrollRef, onOpenAt],
+    [scrollRef, onOpenAt, onCancelOpen],
   );
 }
 
@@ -257,6 +276,7 @@ export function ConversationOutline({
   running,
   fit,
   onOpenAt,
+  onCancelOpen,
 }: {
   /** The whole conversation's turns (mergeOutline), loaded ones carrying their anchors. */
   entries: OutlineTurn[];
@@ -270,12 +290,14 @@ export function ConversationOutline({
   fit: OutlineRailFit;
   /** Opens the run at a turn's cursor (a click on a turn that is not loaded). */
   onOpenAt: (cursor: string) => Promise<boolean>;
+  /** Drops an open still in flight (a click on a loaded turn superseded it). */
+  onCancelOpen: () => void;
 }) {
   const [activeId, setActiveId] = useState<number | null>(null);
   /** Hovered/focused tick: which turn to preview, and the tick's center Y within the overlay (the card anchors there). */
   const [hover, setHover] = useState<{ turn: number; top: number } | null>(null);
   const navRef = useRef<HTMLElement>(null);
-  const jump = useOutlineJump(entries, scrollRef, onOpenAt);
+  const jump = useOutlineJump(entries, scrollRef, onOpenAt, onCancelOpen);
   const before = hiddenBefore(entries);
 
   // Scrollspy: recomputed on scroll (rAF-throttled) and on every version bump — streaming
@@ -442,6 +464,7 @@ export function OutlineMenuButton({
   scrollRef,
   running,
   onOpenAt,
+  onCancelOpen,
 }: {
   /** The whole conversation's turns (mergeOutline), loaded ones carrying their anchors. */
   entries: OutlineTurn[];
@@ -449,10 +472,12 @@ export function OutlineMenuButton({
   running: boolean;
   /** Opens the run at a turn's cursor (a tap on a turn that is not loaded). */
   onOpenAt: (cursor: string) => Promise<boolean>;
+  /** Drops an open still in flight (a tap on a loaded turn superseded it). */
+  onCancelOpen: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const jump = useOutlineJump(entries, scrollRef, onOpenAt);
+  const jump = useOutlineJump(entries, scrollRef, onOpenAt, onCancelOpen);
   // Same gate as the rail: with this few turns neither shape earns its place.
   if (!outlineVisible(hiddenBefore(entries), entries.length)) return null;
 

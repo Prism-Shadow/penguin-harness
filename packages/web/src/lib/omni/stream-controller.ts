@@ -245,10 +245,12 @@ export interface StreamController {
    * Open the run at a unit cursor (the outline's jump to a turn that is not loaded): the
    * window starting there replaces the run, detached unless it reaches the live tail.
    * Resolves true once the run holds that position, false when nothing was done (not
-   * live yet, or superseded by a later run change); rejects when the window could not be
-   * fetched — the run is then left as it was.
+   * live yet, or superseded by a later run change, a later open-at or cancelOpenAt);
+   * rejects when the window could not be fetched — the run is then left as it was.
    */
   openAt: (cursor: string) => Promise<boolean>;
+  /** Drop any open-at still in flight (the reader went to a loaded turn instead): it resolves false and changes nothing. */
+  cancelOpenAt: () => void;
   /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
   handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
   /** SSE server-event entry point (`eventId`: same as handleOmni). */
@@ -319,6 +321,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   let edgesVersion = 0;
   /** Bumped whenever the run is REPLACED (jump-to-latest, open-at): a frontier fetch from before it must not land on the new run. */
   let runGeneration = 0;
+  /**
+   * Bumped when an open-at is REQUESTED or cancelled: only the latest request may land.
+   * Kept apart from runGeneration so a request alone never strands a frontier fetch —
+   * the run (and its loading flags) changes only once a window is in hand.
+   */
+  let openSeq = 0;
 
   /** Cursor the next older window ends at: the run's start, or the tail's while nothing is frozen. Null = the beginning is loaded. */
   const topCursor = (): string | null => (windows.length > 0 ? windows[0]!.start : tailStart);
@@ -829,15 +837,26 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     }
     const currentEpoch = epoch;
     const currentRun = runGeneration;
-    const res = await deps.loadMessages({
-      kind: "after",
-      cursor,
-      until: tailStart,
-      messages: WINDOW_MESSAGES,
-    });
-    // Superseded — a rebuild, or a run change since (a jump, a later open-at): this
-    // window must not replace what the reader moved on to.
-    if (disposed || currentEpoch !== epoch || currentRun !== runGeneration) return false;
+    openSeq += 1;
+    const currentOpen = openSeq;
+    // Superseded — a rebuild, a run change since (a jump), a later open-at or a cancel
+    // (the reader went to a loaded turn): this window must not replace what they moved on to.
+    const superseded = (): boolean =>
+      disposed || currentEpoch !== epoch || currentRun !== runGeneration || currentOpen !== openSeq;
+    let res: Awaited<ReturnType<StreamControllerDeps["loadMessages"]>>;
+    try {
+      res = await deps.loadMessages({
+        kind: "after",
+        cursor,
+        until: tailStart,
+        messages: WINDOW_MESSAGES,
+      });
+    } catch (e) {
+      // A request nobody waits for any more fails silently.
+      if (superseded()) return false;
+      throw e;
+    }
+    if (superseded()) return false;
     if (res.page === undefined) throw new Error("windowed history not supported");
     const after = res.page.after ?? null;
     const reachedTail = after === null || after === tailStart;
@@ -847,7 +866,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         ? [
             freezeWindow(
               { messages: res.messages, page: res.page },
-              res.page.before ?? cursor,
+              // No `before`: the window starts at the beginning, as loadOlder reads it.
+              res.page.before ?? null,
               after ?? tailStart ?? cursor,
             ),
           ]
@@ -929,6 +949,9 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     loadNewer,
     jumpToLatest,
     openAt,
+    cancelOpenAt: () => {
+      openSeq += 1;
+    },
     handleOmni: (msg, eventId = null) => {
       if (disposed) return;
       if (eventId !== null) lastEventId = eventId;
