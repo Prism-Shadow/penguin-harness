@@ -1,8 +1,8 @@
 /**
  * Roadmaps in the company layout (features/company/roadmaps.ts): the sidebar's ROADMAPS section
  * shows the five most recently active roadmaps under discussion and keeps the rest behind its
- * expand; a roadmap's room shows the plugin's page in its detail view; both exist only while the
- * roadmaps page is contributed.
+ * expand; both it and a roadmap's column beside its room exist only while the roadmaps page is
+ * contributed (the column itself: roadmap-detail.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import type { OrgRoadmapItem } from "../src/api/endpoints";
@@ -13,7 +13,6 @@ import {
   roomCounts,
   roomFromRead,
   lastActivity,
-  roadmapDetailSrc,
   roadmapsPageSrc,
   sidebarRoadmaps,
 } from "../src/features/company/roadmaps";
@@ -42,13 +41,6 @@ describe("the roadmaps page, as the app finds it", () => {
     expect(roadmapsPageSrc([{ ...page, renderer: { builtin: "roadmaps" } }])).toBeNull();
     expect(roadmapsPageSrc([{ ...page, nav: "main" }])).toBeNull();
     expect(roadmapsPageSrc([{ ...page, key: "other" }])).toBeNull();
-  });
-
-  it("shows one roadmap in its detail view", () => {
-    expect(roadmapDetailSrc("/api/company-roadmaps/page", 7)).toBe(
-      "/api/company-roadmaps/page?view=detail&n=7",
-    );
-    expect(roadmapDetailSrc("/p?x=1", 2)).toBe("/p?x=1&view=detail&n=2");
   });
 });
 

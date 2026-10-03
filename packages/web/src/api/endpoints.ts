@@ -2328,6 +2328,61 @@ export interface OrgRoadmapItem {
   events?: ReadonlyArray<{ at: string }>;
 }
 
+/** One item of a roadmap's draft: a proposal it delegates, or a roadmap it derives. */
+export type OrgRoadmapDraftItem =
+  | {
+      key: string;
+      kind: "proposal";
+      title: string;
+      brief: string;
+      owner: string;
+      /** An existing proposal the roadmap took in as it is (adopted). */
+      proposal?: number;
+    }
+  | { key: string; kind: "roadmap"; title: string; brief: string; employees: string[] };
+
+/** Who gave one of a proposal item's two approvals, and when. */
+export interface OrgRoadmapApproval {
+  by: string;
+  at: string;
+}
+
+/** What an establishment did with one item (the plugin's delegation record, as far as the room's column reads it). */
+export interface OrgRoadmapDelegation {
+  key: string;
+  owner: string;
+  /** The derived roadmap's number (a roadmap item). */
+  child: number | null;
+  /** The proposal linked back (a proposal item). */
+  proposal?: number;
+  /** A brief waits for its two approvals; absent on lines written before that gate, which read as delegated. */
+  stage?: "brief" | "delegated";
+  approvals?: { person?: OrgRoadmapApproval; moderator?: OrgRoadmapApproval };
+}
+
+/** One roadmap as the room's column reads it: the list row plus its moderator, body and items. */
+export interface OrgRoadmapDetail extends OrgRoadmapItem {
+  moderator: string | null;
+  body: string;
+  items: OrgRoadmapDraftItem[];
+  delegations: Record<string, OrgRoadmapDelegation>;
+}
+
+export const getOrgRoadmap = (projectId: string, orgId: string, number: number) =>
+  apiFetch<OrgRoadmapDetail>(`${orgBase(projectId, orgId)}/roadmaps/${number}`);
+
+/** A person's approval of one proposal item's brief (the moderator approves from its room session). */
+export const approveOrgRoadmapItem = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  key: string,
+) =>
+  apiFetch<{ roadmap: OrgRoadmapDetail; hints: string[] }>(
+    `${orgBase(projectId, orgId)}/roadmaps/${number}/items/${encodeURIComponent(key)}/approve`,
+    { method: "POST", body: {} },
+  );
+
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
   apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
 

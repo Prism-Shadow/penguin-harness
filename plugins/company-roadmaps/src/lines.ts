@@ -92,6 +92,7 @@ export function cloneBrief(args: {
         "You moderate. Keep the draft as the discussion moves — your record of it, the body (the discussion written as a paper, in `## ` sections) and the items it leads to, each only a brief:",
         '  write draft.json: {"sessionId": "$PENGUIN_SESSION_ID", "agentId": "$PENGUIN_AGENT_ID", "record": "...", "body": "...", "items": [{"key": "a", "kind": "proposal", "title": "...", "brief": "...", "owner": "<agent id>", "cites": ["<body section heading>"]}, {"key": "b", "kind": "roadmap", "title": "...", "brief": "...", "employees": ["<agent id>"], "cites": ["..."]}]}',
         "  (substitute the two variables' values; any of record/body/items may be left out; a proposal item is stacked on the previous one unless it says `stackedOn`)",
+        "  The body is shown as Markdown beside the room: cite a proposal as `proposal:<n>` (it becomes a link to that proposal), and add a note as a footnote (`…[^1]` in the text, `[^1]: the note` below).",
         `  ${curlFileOf("PUT", routeOf(orgId, r.number, "/draft"), "draft.json")}`,
         'A proposal that exists already is taken in as it is, not written again: it is a proposal item with its number (`"proposal": <n>`, no cites needed) — keep such an item in the items you write. To take one in:',
         `  ${curlOf("POST", routeOf(orgId, r.number, "/adopt"), ['\\"proposal\\":<n>', '\\"title\\":\\"<its title>\\"', '\\"owner\\":\\"<agent id>\\"'])}`,
