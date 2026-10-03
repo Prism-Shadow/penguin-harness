@@ -279,7 +279,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "PenguinHarness Benchmark Sec C",
     description:
       "Sec C is AutomationBench: business workflows across simulated SaaS apps, driven through " +
-      `the \`ab\` command and graded by the upstream rubric. ${BUILT_IN}`,
+      `a command-line tool and graded by the upstream rubric. ${BUILT_IN}`,
     repoDir: "automation-bench",
     source: "AutomationBench 1.0.6 (converted to Harbor tasks)",
     upstream: { url: "https://github.com/zapier/AutomationBench", license: "MIT" },
