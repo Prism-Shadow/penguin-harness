@@ -187,6 +187,7 @@ features/company/org-dialogs.tsx -> features/chat/model-select.tsx
 features/company/org-dialogs.tsx -> features/chat/workspace-select.tsx
 features/company/org-dialogs.tsx -> features/models/model-grouping.ts
 features/company/org-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
+features/company/org-routes.tsx -> features/proposals/proposals-page.tsx
 features/company/org-session-groups.tsx -> features/messaging/messaging-binding-modal.tsx
 features/company/roadmap-detail.tsx -> features/proposals/activity-view.tsx
 features/company/roadmap-detail.tsx -> features/proposals/proposals-model.ts
