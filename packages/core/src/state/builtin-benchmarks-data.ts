@@ -3,9 +3,9 @@
  *
  * Every case is a Harbor task directory in the benchmark repository (`task` names it), seeded
  * here as text only — see builtin-benchmarks.ts for how a row becomes a statement and a rubric.
- * Each list mirrors the candidates of that benchmark's `selection.json` in the repository, in its
- * order; the pilot's cut is deleting rows, and the case numbers (`CASE-001-…`) follow the
- * remaining rows' order. Once a release has seeded a Benchmark, a Project keeps the case list it
+ * Each list is the tasks marked `final` in that benchmark's `selection.json` in the repository,
+ * in its order, and the caps are its `job.yaml`'s; a later change to the set is a row edit, and
+ * the case numbers (`CASE-001-…`) follow the rows' order. Once a release has seeded a Benchmark, a Project keeps the case list it
  * was given (project-benchmarks.ts never rewrites one). Summaries say what a task asks
  * and what it delivers, never how to solve it: they are public to every agent that reads the
  * Benchmark, an optimizer included.
@@ -22,6 +22,12 @@ export const BENCHMARK_REPO = "https://github.com/Prism-Shadow/penguin-harness-b
  * fail until the pin) says so.
  */
 export const BENCHMARK_REPO_REF = "main";
+
+/**
+ * The measured results of a PenguinHarness release on these tasks (accuracy over three attempts,
+ * cost, tokens, time), as a path in the repository. Statements link it; the numbers stay there.
+ */
+export const BENCHMARK_RESULTS = "results/v0.2.13/README.md";
 
 /** Harbor release the tasks and the adapter are checked against. */
 export const HARBOR_VERSION = "0.23.0";
@@ -72,26 +78,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         expertHours: 0.75,
       },
       {
-        task: "interleaved-vigenere",
-        title: "Break an unnamed classical cipher",
-        summary:
-          "Build a command-line tool that reads a ciphertext produced by an unspecified classical cipher, with a fresh key on every run, and prints the recovered English plaintext. Identifying the cipher is part of the task; the verifier scores recovery on new ciphertexts within a time limit.",
-        category: "Security / Cryptography",
-        cpus: 4,
-        memoryMb: 4096,
-        expertHours: 2,
-      },
-      {
-        task: "photonic-waveguide-routing",
-        title: "Route photonic waveguides under physical constraints",
-        summary:
-          "Route nine waveguide nets across a board described by a layout specification, within its bend geometry, obstacle clearance and separation rules, and write the waypoint paths as JSON. The verifier checks the routes against the specification and its cost weights.",
-        category: "Software / Algorithms",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 0.75,
-      },
-      {
         task: "bun-sourcemap-leak",
         title: "Stop a Bun release build from leaking private sources",
         summary:
@@ -120,26 +106,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         cpus: 2,
         memoryMb: 4096,
         expertHours: 1.5,
-      },
-      {
-        task: "roy-polymorph-cn",
-        title: "Relate ROY polymorph geometry to nitrile stretches",
-        summary:
-          "Fit a physically motivated model linking the conformation of twelve ROY polymorphs, given as crystal geometries, to their measured nitrile stretch frequencies, then answer six questions about extremes, predicted frequencies and a predicted colour. The answers go into one CSV file.",
-        category: "Science / Chemistry",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 3,
-      },
-      {
-        task: "sound-change-cascade",
-        title: "Recover an ordered cascade of sound changes",
-        summary:
-          "From 780 pairs of proto-forms and their modern reflexes, reconstruct the ordered sound-change rules that turn every proto-form into its reflex, in the given rule engine's JSON format. The deliverables are the rule set and its ordering.",
-        category: "Science / Linguistics",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 4,
       },
       {
         task: "protein-autointerp-disulfide",
@@ -180,16 +146,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         cpus: 2,
         memoryMb: 4096,
         expertHours: 2.5,
-      },
-      {
-        task: "production-planning",
-        title: "Plan five days of production across ERP, MES and WMS",
-        summary:
-          "Through a documented database gateway, inspect a plant's systems and produce a valid five-day rolling production plan: a planning run with work orders, a dispatch queue and material reservations. The deliverables are SQL writeback files for the three systems.",
-        category: "Operations / Supply chain",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 4,
       },
       {
         task: "freecad-platform-drawing",
@@ -395,24 +351,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 8192,
       },
       {
-        task: "tomlkit-toml-table-converters",
-        title: "Add bidirectional table converters to tomlkit",
-        summary:
-          "Add in-place conversions between standard tables, inline tables, dotted keys and super tables that keep comments and round-trip integrity. Implement them in the tomlkit repository and commit them.",
-        category: "Python / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "happy-dom-abort-pending-body-reads",
-        title: "Abort pending body reads on shutdown in happy-dom",
-        summary:
-          "Interrupted request and response body reads, formData parsing and discarded timers must abort cleanly when happy-dom shuts down. Make the fix in the happy-dom repository and commit it.",
-        category: "TypeScript / bugfix",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
         task: "ts-pattern-match-each",
         title: "Add matchEach to ts-pattern",
         summary:
@@ -521,15 +459,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 2048,
       },
       {
-        task: "support-1425-gorgias-refund-processing",
-        title: "Process a batch of refund tickets",
-        summary:
-          "Work through 16 refund tickets according to a refund-policy sheet, producing the drafts, escalations, log rows, ticket replies and summary the policy asks for (Gorgias, Google Sheets, Gmail, Jira, Slack). The task passes only when all 63 end-state assertions hold.",
-        category: "Support / Multi-app chain",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
         task: "support-1511-helpscout-customer-merge",
         title: "Decide which customer records to merge",
         summary:
@@ -539,11 +468,11 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 2048,
       },
       {
-        task: "finance-4001-invoice-email-extract",
-        title: "Log emailed invoices in a tracker",
+        task: "finance-4003-overdue-invoice-followup",
+        title: "Follow up overdue invoices by the collections process",
         summary:
-          "Extract invoices from emails into a tracking sheet, applying the corrections and policies found in the mailbox and chat, and report the logged total (Gmail, Google Sheets, Slack). The task passes only when all 9 end-state assertions hold.",
-        category: "Finance / Unstructured extraction",
+          "Check an accounts-receivable tracker for overdue invoices, act on each as the company's collections process prescribes, and update the tracker rows (Gmail, Google Sheets). The task passes only when all 8 end-state assertions hold.",
+        category: "Finance / Rule-based escalation",
         cpus: 1,
         memoryMb: 2048,
       },

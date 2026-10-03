@@ -63,6 +63,8 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。**评估**标签页会用一行字写明上面的前提。评估先取一次仓库，再为每道题的每次运行跑一次 Harbor trial：被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
+跑一次大约花多少钱、PenguinHarness 在这些题上得分如何（三次尝试的准确率、成本、Token 数与耗时），见仓库里的 [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md)。
+
 它们自带的评估记录为空。每个 Project 对它们各只得到一次：删掉的不会再出现；之后的版本若新增内置 Harbor Benchmark，只补上新增的那个。
 
 ## 让 AI 创建 Benchmark

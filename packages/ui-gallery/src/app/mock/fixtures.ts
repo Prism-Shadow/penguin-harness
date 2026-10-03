@@ -1001,6 +1001,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "",
       "The score is the verifier's reward × 100: a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r. An evaluation from the Evaluation Center keeps every trial under this Benchmark's `.jobs/` directory and records its Session id as `harbor:<trial name>`.",
       "",
+      "Measured results of PenguinHarness on these tasks — accuracy over three attempts, cost, tokens and time: https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md",
+      "",
     ].join("\n");
   const harborRubric =
     "# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (`/logs/verifier/reward.txt` or the `reward` key of `reward.json`) multiplied by 100. The task's own tests decide; there is no manual judging and no partial credit beyond what the verifier itself reports.\n";

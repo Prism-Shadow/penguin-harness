@@ -24,6 +24,7 @@ import { stringify as stringifyYaml } from "yaml";
 import {
   BENCHMARK_REPO,
   BENCHMARK_REPO_REF,
+  BENCHMARK_RESULTS,
   HARBOR_AGENT,
   HARBOR_VERSION,
 } from "./builtin-benchmarks-data.js";
@@ -162,6 +163,9 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "The score is the verifier's reward × 100: a pass (1) scores 100, a fail (0) scores 0, and a " +
       "fractional reward r scores 100·r. An evaluation from the Evaluation Center keeps every trial " +
       "under this Benchmark's `.jobs/` directory and records its Session id as `harbor:<trial name>`.",
+    "",
+    "Measured results of PenguinHarness on these tasks — accuracy over three attempts, cost, " +
+      `tokens and time: ${BENCHMARK_REPO}/blob/${BENCHMARK_REPO_REF}/${BENCHMARK_RESULTS}`,
     "",
   ].join("\n");
 }

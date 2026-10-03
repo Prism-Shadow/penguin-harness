@@ -12,7 +12,7 @@
 ## 细节
 
 - **只给一次。** default_agent 初始化与之后每次加载时，把 Project 还没得到过的 Benchmark 写入，并记在 `benchmarks/.seeded.json` 里；删掉的不再写回，之后的版本新增内置 Benchmark 时只补新增的那个。每个 Benchmark 先写进 `benchmarks/.seeding/`，改名就位后才记入标记，因此崩溃既不会留下写了一半的 Benchmark，也不会让标记记下一个从未写成的 Benchmark。用户自己的目录占用了某个内置 Harbor id 时，这个目录一概不动，等它不在了才补上那个内置 Benchmark。从标记里删掉某个 id，就会再给一次。`example-benchmark` 改按同一规则，内容不变；此前删掉后每次加载都会重新写入。
-- **五个内置。** 预置时均为 `runs = 1`、`status = "published"`，没有评估记录。定义是 `packages/core/src/state/builtin-benchmarks-data.ts` 里的数据，与基准仓库各 `selection.json` 的候选一致，题号随行序。
+- **五个内置。** 预置时均为 `runs = 1`、`status = "published"`，没有评估记录，各有十道题，即基准仓库各 `selection.json` 定稿的 50 道。定义是 `packages/core/src/state/builtin-benchmarks-data.ts` 里的数据，题号随行序。题干与文档链接仓库里的实测结果（`results/v0.2.13/README.md`），不在产品里重复这些数字。
 - **格式。** `benchmark_config.toml` 写有 `kind = "harbor"` 与 `[harbor]` 表：`repo`、`ref`、`path`、`agent`、`harbor_version`、`run_timeout`、`max_turns`、`allow_agent_hosts`，rag-bench-essential 另有 `setup`。题目目录为 `CASE-NNN-<Harbor 任务名>`。题干给出简述、任务文件夹在 `ref` 下的链接、来源、容器资源与 `harbor run` 命令；评分细则为验证器 reward × 100。一个标记为「预期失败」的测试要求 `ref` 是 40 位提交，直到结果提交固定下来。
 - **API。** `GET …/benchmarks` 为这类 Benchmark 返回 `kind: "harbor"` 与 `harbor: { repo, ref, path }`。`kind` 缺少可用的 `[harbor]` 表，或取其他值，都按普通 Benchmark 读取；手动创建接口仍只写普通 Benchmark。
 - **Web App。** Harbor Benchmark 的卡片与页面标题带一个中性的 **Harbor** 标签，页面在**题目文件**处链接仓库的 `ref`。评估标签页多一行说明运行所需：执行评估的智能体所在机器装有 Docker 与 uv，被测智能体的模型已保存 API key。记为 `harbor:<trial>` 的运行旁有一个复制 trial 名称的按钮。

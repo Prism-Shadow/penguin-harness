@@ -63,6 +63,8 @@ Their cards carry a **Harbor** tag. Each case runs as a [Harbor](https://github.
 
 You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The **Evaluate** tab names the prerequisites above in one line. The evaluation fetches the repository once, then runs one Harbor trial per case and run: the tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
 
+What a run costs and how PenguinHarness scores on these tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md).
+
 They ship with no evaluations. A Project is given each of them once: if you delete one, it stays deleted, and a later release that adds another built-in Harbor Benchmark gives you just that one.
 
 ## Create a Benchmark with AI

@@ -26,10 +26,11 @@ given these and `example-benchmark` once each, so a deleted one stays deleted.
   that built-in was given once the directory was gone. Removing an id from the marker gave that
   Benchmark again. `example-benchmark` moved onto the same rule with its content unchanged; it
   had been written again on every load after a deletion.
-- **The five.** Each shipped with `runs = 1`, `status = "published"` and no evaluations. The
-  definitions were data in `packages/core/src/state/builtin-benchmarks-data.ts`, mirroring the
-  candidates of the benchmark repository's `selection.json` files, where a case's number followed
-  its row.
+- **The five.** Each shipped with `runs = 1`, `status = "published"`, no evaluations and ten
+  cases: the final 50 tasks of the benchmark repository's `selection.json` files. The definitions
+  were data in `packages/core/src/state/builtin-benchmarks-data.ts`, where a case's number
+  followed its row. Statements and the docs linked the repository's measured results
+  (`results/v0.2.13/README.md`) rather than repeating them.
 - **Format.** `benchmark_config.toml` carried `kind = "harbor"` and a `[harbor]` table: `repo`,
   `ref`, `path`, `agent`, `harbor_version`, `run_timeout`, `max_turns`, `allow_agent_hosts` and,
   for rag-bench-essential, `setup`. A case directory was `CASE-NNN-<Harbor task>`. Its statement
