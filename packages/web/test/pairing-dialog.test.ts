@@ -60,6 +60,9 @@ describe("the pairing steps", () => {
     await ensurePairingCode();
     const html = steps();
     expect(html).toContain(`href="${EXTENSION_DOWNLOAD_URL}"`);
+    // The download opens in a new tab, so the pairing steps stay where the user left them.
+    const download = html.slice(html.lastIndexOf("<a", html.indexOf(EXTENSION_DOWNLOAD_URL)));
+    expect(download.slice(0, download.indexOf(">"))).toContain('target="_blank"');
     expect(textOf(html, "browser-pairing-server")).toBe(ORIGIN);
     expect(textOf(html, "browser-pairing-code")).toBe(CODE);
     expect(html).toContain(`aria-label="${S.common.copy}: ${S.builtinBrowser.pairServer}"`);

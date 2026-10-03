@@ -145,7 +145,7 @@ export function PairingSteps({ origin }: { origin: string }) {
     <ol className="list-decimal space-y-3 pl-5 text-sm marker:text-fg-subtle">
       <li>
         <p>{S.builtinBrowser.pairStepInstall}</p>
-        <Link href={EXTENSION_DOWNLOAD_URL} variant="standalone" className="mt-1 text-xs">
+        <Link href={EXTENSION_DOWNLOAD_URL} external variant="standalone" className="mt-1 text-xs">
           <GlyphIcon d={ICONS.download} size={ICON_SIZE.inlineGlyph} />
           {S.builtinBrowser.pairDownload}
         </Link>
