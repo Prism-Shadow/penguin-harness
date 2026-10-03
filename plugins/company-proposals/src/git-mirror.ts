@@ -23,6 +23,18 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const SHA = /^[0-9a-f]{40}$/i;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
+/**
+ * The environment of every git run: no prompt, C messages, and no lazy fetch — a question about
+ * a commit the mirror lacks must answer "missing", not quietly fetch it (git 2.45 and later;
+ * an older git fetches the one commit, which answers the same question more slowly).
+ */
+const GIT_ENV = {
+  GIT_TERMINAL_PROMPT: "0",
+  GH_PROMPT_DISABLED: "1",
+  GIT_NO_LAZY_FETCH: "1",
+  LC_ALL: "C",
+};
+
 /** Where an organization's mirror of `owner/repo` lives. */
 export function mirrorDir(orgDir: string, repo: string): string {
   const [owner, name] = repo.split("/") as [string, string];
@@ -75,7 +87,7 @@ export class LocalGitMirror implements GitMirror {
           maxBuffer: MAX_OUTPUT_BYTES,
           windowsHide: true,
           ...(signal !== undefined ? { signal } : {}),
-          env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GH_PROMPT_DISABLED: "1", LC_ALL: "C" },
+          env: { ...process.env, ...GIT_ENV },
         },
         (err, stdout, stderr) => {
           if (err === null) {
@@ -195,7 +207,7 @@ export class LocalGitMirror implements GitMirror {
       const child = spawn(this.opts.git ?? "git", this.git(["cat-file", "--batch-check"]), {
         windowsHide: true,
         stdio: ["pipe", "pipe", "ignore"],
-        env: { ...process.env, LC_ALL: "C" },
+        env: { ...process.env, ...GIT_ENV },
       });
       let stdout = "";
       const timer = setTimeout(() => child.kill(), LOCAL_TIMEOUT_MS);
