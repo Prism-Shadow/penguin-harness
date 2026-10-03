@@ -65,7 +65,8 @@ test.beforeEach(async ({ page }) => {
 
 test("contributions: a server page reaches the nav and draws its iframe", async ({ page }) => {
   await page.route("**/api/contributions", (route) => route.fulfill({ json: CONTRIBUTIONS }));
-  await page.goto(`${BASE}/chat`);
+  // Not /chat: a fresh user's chat page opens the "no model credential" dialog over the nav.
+  await page.goto(`${BASE}/agents`);
   const sidebar = page.locator("aside").first();
   const row = sidebar.locator('a[href="/plugin-hello"]');
   await expect(row).toBeVisible();
