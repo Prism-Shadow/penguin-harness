@@ -820,6 +820,13 @@ export interface MessagingTaskRunnerShape {
     opts: { queueIfBusy: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }>;
   /**
+   * Input into the Task the Session is running now, delivered between its steps
+   * (SessionManager.steer); 409 `not_running` when it runs none. The bridge never steers; a
+   * plugin whose Session may work one long Task (a roadmap's room session) does, so what it
+   * is sent does not wait for that Task to end.
+   */
+  steer(sessionId: string, input: OmniMessage[], recall: RecallStore): void;
+  /**
    * Pins the Session's runtime against idle eviction while a connection is enabled (`on`), or
    * releases the pin.
    */

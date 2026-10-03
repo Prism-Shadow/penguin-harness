@@ -3142,6 +3142,9 @@ describe("messaging binding routes and bridge", () => {
     const stillborn = restartBridge({
       statusOf: () => "idle",
       startTask: () => Promise.reject(new Error("the Session went away")),
+      steer: () => {
+        throw new Error("the Session went away");
+      },
       keepLoaded: () => {},
       preload: async () => {},
     });
@@ -3176,6 +3179,7 @@ describe("messaging binding routes and bridge", () => {
     const bridge = restartBridge({
       statusOf: (sid) => manager.statusOf(sid),
       startTask: (sid, input, opts) => manager.startTask(sid, input, opts),
+      steer: (sid, input, recall) => manager.steer(sid, input, recall),
       keepLoaded: (sid, on) => {
         calls.push(`${sid === SID ? "SID" : sid} keep ${String(on)}`);
       },

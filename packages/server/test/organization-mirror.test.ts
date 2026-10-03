@@ -268,4 +268,15 @@ describe("an organization on another machine", () => {
     const copied = await here.store.readChannel(here.store.dir(P, ORG), "roadmap_1");
     expect(copied?.parsed.ok && copied.parsed.value.unlisted).toBe(true);
   });
+
+  it("tells a plugin where the organization runs: the machine's id here, null there", async () => {
+    const { machine, here, workspace } = await twoServers();
+    await here.service.create(
+      P,
+      { orgId: ORG, mission: "Ship it", workspace, workspaceMachine: MACHINE },
+      "alice",
+    );
+    expect((await here.service.gatewayView(P, ORG))?.machineId).toBe(MACHINE);
+    expect((await machine.service.gatewayView(P, ORG))?.machineId).toBeNull();
+  });
 });

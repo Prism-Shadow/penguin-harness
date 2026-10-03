@@ -80,6 +80,7 @@ class FakeGateway implements OrgGateway {
       { agentId: "acme_qa", name: "QA", title: "Tester", reportsTo: "acme_ceo" },
     ],
     userIds: ["boss"],
+    machineId: null,
   };
   /** Every line put on a desk, in order. */
   desks: Array<{ agentId: string; text: string }> = [];

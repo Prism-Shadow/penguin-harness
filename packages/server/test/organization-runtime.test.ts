@@ -3421,6 +3421,7 @@ describe("organization runtime", () => {
         status: "active",
         language: "en",
         userIds: ["alice"],
+        machineId: null,
       });
       expect(view?.employees.map((e) => [e.agentId, e.reportsTo])).toEqual([
         [CEO, null],
