@@ -51,6 +51,7 @@ function graph(
     origins: [],
     compare: (from, to) => compares[`${from}...${to}`],
     proposals: [],
+    deployments: [],
     errors: [],
     checkedAt: "2026-10-01T00:00:00.000Z",
     ...more,

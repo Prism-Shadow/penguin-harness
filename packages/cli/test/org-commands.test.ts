@@ -1816,6 +1816,174 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     );
   });
 
+  it("deployment add registers under the caller's identity, with or without a url; a repeat fails, and deployment ls lists what was registered and nothing else", async () => {
+    server.addProposal("acme", { number: 1 });
+    // Nothing is on the registry by default: this server does not register itself.
+    expect(await cli(["org", "proposal", "deployment", "ls"])).toBe(0);
+    expect(out()).toBe("");
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "deployment",
+        "add",
+        "desk",
+        "--url",
+        "http://localhost:53531",
+      ]),
+    ).toBe(0);
+    expect(out()).toContain(t.org.deploymentRegistered("desk", "http://localhost:53531"));
+    const post = server.requests.find(
+      (r) => r.method === "POST" && r.path.endsWith("/proposals/deployments"),
+    );
+    expect(post?.body).toMatchObject({
+      id: "desk",
+      url: "http://localhost:53531",
+      agentId: "dev1",
+    });
+    stdout.length = 0;
+    // A deployment that is not a penguin server: an id and nothing else.
+    expect(await cli(["org", "proposal", "deployment", "add", "firmware"])).toBe(0);
+    expect(out()).toContain(t.org.deploymentRegistered("firmware", null));
+    const bare = server.requests.filter(
+      (r) => r.method === "POST" && r.path.endsWith("/proposals/deployments"),
+    )[1];
+    expect(bare?.body).toMatchObject({ id: "firmware", agentId: "dev1" });
+    expect(bare?.body).not.toHaveProperty("url");
+    stdout.length = 0;
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "deployment",
+        "add",
+        "desk",
+        "--url",
+        "http://127.0.0.1:53531",
+      ]),
+    ).toBe(1);
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "deployment", "ls"])).toBe(0);
+    expect(out()).toBe(
+      [
+        "desk  http://localhost:53531  desk-id  agent:dev1  2026-09-02T10:00:00.000Z",
+        "firmware  -  -  agent:dev1  2026-09-02T10:00:00.000Z",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("graph marks each deployment on its layer and lists the ones on no layer", async () => {
+    server.addProposal("acme", { number: 1 });
+    server.orgs.get("acme")!.proposalGraph = {
+      repo: "acme/site",
+      base: { branch: "dev", head: "aaaaaaaaaaaa", fork: false },
+      origins: [],
+      nodes: [
+        {
+          number: 11,
+          url: "https://github.com/acme/site/pull/11",
+          title: "PR 11",
+          draft: false,
+          branch: "feat/a",
+          head: "bbbbbbbbbbbb",
+          base: "dev",
+          parent: 0,
+          relation: "ahead",
+          ahead: 2,
+          behind: 0,
+          via: [],
+          stacked: true,
+          stale: false,
+          onChain: true,
+          off: null,
+          fork: false,
+          proposal: null,
+          origins: [],
+        },
+      ],
+      top: 11,
+      unplaced: [],
+      errors: [],
+      checkedAt: "2026-09-30T00:00:00.000Z",
+      deployments: [
+        {
+          id: "here",
+          url: "http://h:0",
+          commit: "bbbbbbbbbbbb",
+          describe: "v1-1-gbbbbbbb",
+          at: 11,
+          relation: "same",
+          ahead: 0,
+          error: null,
+        },
+        {
+          id: "old",
+          url: "http://h:1",
+          commit: "aaaaaaaaaaaa",
+          describe: "v1",
+          at: 0,
+          relation: "same",
+          ahead: 0,
+          error: null,
+        },
+        {
+          id: "late",
+          url: "http://h:2",
+          commit: "eeeeeeeeeeee",
+          describe: "v1-9-geeeeeee",
+          at: 11,
+          relation: "ahead",
+          ahead: 3,
+          error: null,
+        },
+        {
+          id: "local",
+          url: "http://h:3",
+          commit: "fffffffff",
+          describe: "v1-5-gfffffffff",
+          at: null,
+          relation: null,
+          ahead: null,
+          error: null,
+        },
+        {
+          id: "firmware",
+          url: null,
+          commit: null,
+          describe: null,
+          at: null,
+          relation: null,
+          ahead: null,
+          error: "the deployment has no url, so nothing reports the commit it runs",
+        },
+        {
+          id: "dark",
+          url: "http://h:4",
+          commit: null,
+          describe: null,
+          at: null,
+          relation: null,
+          ahead: null,
+          error: "/api/install answered 404",
+        },
+      ],
+    };
+    expect(await cli(["org", "proposal", "graph"])).toBe(0);
+    expect(out()).toBe(
+      [
+        "acme/site dev aaaaaaaaa  @old aaaaaaaaa",
+        `  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  @here bbbbbbbbb  @late eeeeeeeee +3`,
+        "",
+        t.org.graphDeploymentsOff(),
+        "  @local fffffffff  v1-5-gfffffffff  http://h:3",
+        "  @firmware ?  -  -  (the deployment has no url, so nothing reports the commit it runs)",
+        "  @dark ?  -  http://h:4  (/api/install answered 404)",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("material add, feedback and the status commands post their bodies with the caller's identity", async () => {
     server.addProposal("acme", { number: 5 });
     expect(

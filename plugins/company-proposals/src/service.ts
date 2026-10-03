@@ -35,6 +35,8 @@ import type {
   ProposalMaterial,
   ProposalRevision,
   ProposalRevisionsResponse,
+  ProposalDeploymentRegisterRequest,
+  ProposalDeploymentsResponse,
   ProposalMaterialKind,
   ProposalPluginEvent,
   ProposalStatus,
@@ -55,6 +57,16 @@ import { readBaseFile } from "./files.js";
 import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
 import { pullKey } from "./pr-chain.js";
 import { PrGraphReader } from "./pr-graph.js";
+import {
+  deploymentIdOf,
+  DeploymentRegistryError,
+  fetchProbe,
+  normalizeServerUrl,
+  readDeployments,
+  registryOf,
+  requireUnregistered,
+  type ProbeServer,
+} from "./deployments.js";
 import { gitRunner, type RunGit } from "./workspace-remotes.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import type { DeployScope } from "./deploy.js";
@@ -114,6 +126,8 @@ export interface ServiceDeps {
   gh?: RunGh;
   /** How the shared workspace's remotes are read; the machine's `git` by default (a test feeds answers). */
   git?: RunGit;
+  /** How a server deployment's `/api/install` is read (deployments.ts); the machine's `fetch` by default. */
+  probe?: ProbeServer;
 }
 
 /** One write's desk deliveries: the ledger a failed delivery is recorded in, and the reasons collected for the answer. */
@@ -1453,6 +1467,69 @@ export class ProposalService {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // Deployments (deployments.ts)
+  // ---------------------------------------------------------------------------
+
+  private probe(): ProbeServer {
+    return this.deps.probe ?? fetchProbe();
+  }
+
+  /** The registry: every registered deployment, in order; none is on it by default. */
+  async deployments(
+    projectId: string,
+    orgId: string,
+    actor: OrgActor,
+  ): Promise<ProposalDeploymentsResponse> {
+    const { ledger } = await this.open(projectId, orgId, actor);
+    return { deployments: registryOf(ledger.deployments()) };
+  }
+
+  /**
+   * Registers a deployment, anyone in the organization: refused when it repeats a registered
+   * deployment by id, by url, or by the install id a server deployment's url answers now.
+   */
+  async registerDeployment(
+    projectId: string,
+    orgId: string,
+    req: ProposalDeploymentRegisterRequest,
+    actor: OrgActor,
+  ): Promise<ProposalDeploymentsResponse> {
+    const { ledger, caller } = await this.open(projectId, orgId, actor);
+    try {
+      const id = deploymentIdOf(typeof req.id === "string" ? req.id : "");
+      const url =
+        typeof req.url === "string" && req.url.trim() !== "" ? normalizeServerUrl(req.url) : null;
+      // Id and url first: a repeat of either is refused without asking the url.
+      requireUnregistered(ledger.deployments(), { id, url, installId: null });
+      let installId: string | null = null;
+      if (url !== null) {
+        try {
+          installId = (await this.probe()(url)).installId;
+        } catch (err) {
+          throw new DeploymentRegistryError(
+            422,
+            "deployment_unreachable",
+            `${url} was not read as a penguin server: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      const candidate = { id, url, installId };
+      await ledger.appendChecked(() => requireUnregistered(ledger.deployments(), candidate), {
+        kind: "deployment",
+        id,
+        ...(url !== null && installId !== null ? { url, installId } : {}),
+        by: caller.principal,
+      });
+      return { deployments: registryOf(ledger.deployments()) };
+    } catch (err) {
+      if (err instanceof DeploymentRegistryError) {
+        throw new ProposalError(err.status, err.code, err.message);
+      }
+      throw err;
+    }
+  }
+
   /**
    * The PR graph of the delivery repository, annotated with the proposals and the origins.
    * Always drawn: with no delivery repository at all it is the base branch alone, and
@@ -1461,11 +1538,15 @@ export class ProposalService {
   async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
     const { org, ledger } = await this.open(projectId, orgId, actor);
     const errors: string[] = [];
-    const config = await this.deliveryRepo(org, ledger, errors);
+    const [config, deployments] = await Promise.all([
+      this.deliveryRepo(org, ledger, errors),
+      readDeployments(ledger.deployments(), this.probe()),
+    ]);
     return this.prGraph.read({
       repo: config.repo ?? "",
       base: config.base,
       origins: config.origins,
+      deployments,
       errors,
       proposals: ledger.proposals().map((p) => ({
         number: p.number,

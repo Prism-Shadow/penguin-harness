@@ -87,6 +87,8 @@ import type {
   ProposalDetail,
   ProposalGraphNode,
   ProposalGraphResponse,
+  ProposalGraphDeployment,
+  ProposalDeploymentsResponse,
   ProposalTestGroupsResponse,
   ProposalTestEntry,
   ProposalItem,
@@ -647,15 +649,37 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
     }
     return d;
   };
+  // Each deployment sits on a layer (0 = the base branch) or on none; a server older than the field sends none.
+  const deployments = g.deployments ?? [];
+  const deploymentMark = (d: ProposalGraphDeployment): string =>
+    `@${d.id} ${short(d.commit)}${d.relation === "ahead" ? ` +${d.ahead}` : ""}`;
+  const on = (at: number): string => {
+    const marks = deployments.filter((d) => d.at === at).map(deploymentMark);
+    return marks.length > 0 ? `  ${marks.join("  ")}` : "";
+  };
+  const offDeployments = deployments.filter((d) => d.at === null);
   const chain = g.nodes.filter((n) => n.onChain);
   const off = g.nodes.filter((n) => !n.onChain);
   const blocks = [
     [
-      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? "  [fork]" : ""}`,
-      ...chain.map((n) => indent(depth(n), line(n))),
+      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? "  [fork]" : ""}${on(0)}`,
+      ...chain.map((n) => indent(depth(n), line(n) + on(n.number))),
     ].join("\n"),
     ...(off.length > 0
-      ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n)))].join("\n")]
+      ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n) + on(n.number)))].join("\n")]
+      : []),
+    ...(offDeployments.length > 0
+      ? [
+          [
+            t.org.graphDeploymentsOff(),
+            ...offDeployments.map((d) =>
+              indent(
+                1,
+                `@${d.id} ${short(d.commit)}  ${d.describe ?? "-"}  ${d.url ?? "-"}${d.error === null ? "" : `  (${d.error})`}`,
+              ),
+            ),
+          ].join("\n"),
+        ]
       : []),
     ...(g.unplaced.length > 0
       ? [
@@ -680,6 +704,15 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
       : []),
   ];
   return `${blocks.join("\n\n")}\n`;
+}
+
+/** `proposal deployment ls`: one registered deployment per line — id, url, install id, who registered it and when. */
+function renderDeployments(res: ProposalDeploymentsResponse): string {
+  if (res.deployments.length === 0) return "";
+  const lines = res.deployments.map((d) =>
+    [d.id, d.url ?? "-", d.installId ?? "-", d.by, d.registeredAt].join("  "),
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 /** The order when the server sends no declared groups (one older than the declaration). */
@@ -2301,6 +2334,47 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     write: (text) => process.stdout.write(text),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   });
+
+  const deployment = proposal.command("deployment").description(t.org.proposalDeploymentDesc);
+  scoped(
+    deployment
+      .command("add <id>")
+      .description(t.org.proposalDeploymentAddDesc)
+      .option("--url <url>", t.org.proposalDeploymentUrlOpt),
+    t,
+  ).action(async (id: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const url = typeof opts.url === "string" ? opts.url : undefined;
+    const res = await proposalRequest<ProposalDeploymentsResponse>(
+      scope,
+      t,
+      "POST",
+      "/deployments",
+      { id, ...(url !== undefined ? { url } : {}), ...actorFields() },
+    );
+    if (res === null) return;
+    if (opts.json === true) printJson(res);
+    else {
+      const added = res.deployments.find((d) => d.id === id);
+      printLine(t.org.deploymentRegistered(id, added?.url ?? url ?? null));
+    }
+  });
+  scoped(deployment.command("ls").description(t.org.proposalDeploymentLsDesc), t).action(
+    async (opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      const res = await proposalRequest<ProposalDeploymentsResponse>(
+        scope,
+        t,
+        "GET",
+        `/deployments${query(actorQuery())}`,
+      );
+      if (res === null) return;
+      if (opts.json === true) printJson(res);
+      else process.stdout.write(renderDeployments(res));
+    },
+  );
 
   const material = proposal.command("material").description(t.org.proposalMaterialDesc);
   scoped(

@@ -19,8 +19,9 @@
  *
  * Everything here is pure: the reader (pr-graph.ts) fetches, buildGraph lays out what it read —
  * each node with its parent, edge and chain verdict, the proposal whose impl PR it is and the PR
- * every other origin has on the same branch, and each proposal whose impl PR is not on the graph
- * with the reason why.
+ * every other origin has on the same branch, each proposal whose impl PR is not on the graph
+ * with the reason why, and each registered deployment on the layer its commit sits on
+ * (deployments.ts).
  */
 import type {
   ProposalGraphNode,
@@ -33,6 +34,7 @@ import type {
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
 import { parsePullUrl } from "./pr-status.js";
+import { placeDeployment, type DeploymentReading } from "./deployments.js";
 
 /** Hops walked through merged or closed PRs, and nodes walked up a parent line, before giving up. */
 const WALK_CAP = 1000;
@@ -271,6 +273,8 @@ export interface GraphInput {
   proposals: GraphProposal[];
   /** An impl PR off the graph as GitHub answered it (by pullKey); null or absent when not read. */
   implPulls?: ReadonlyMap<string, ImplPull | null>;
+  /** The registered deployments as read just now (deployments.ts), placed on the layers by their commit. */
+  deployments: DeploymentReading[];
   errors: string[];
   checkedAt: string;
 }
@@ -393,7 +397,22 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     unplaced,
     errors: input.errors,
     checkedAt: input.checkedAt,
+    deployments: input.deployments.map((deployment) =>
+      placeDeployment(
+        deployment,
+        layersOf(
+          input.base.head,
+          [...chain.order, ...offChain].map((n) => nodes.get(n)!),
+        ),
+        input.compare,
+      ),
+    ),
   };
+}
+
+/** The layers a deployment may sit on: the base branch (0) first, then every node in graph order. */
+function layersOf(baseHead: string | null, nodes: Array<{ number: number; head: string }>) {
+  return [{ number: 0, head: baseHead }, ...nodes.map((n) => ({ number: n.number, head: n.head }))];
 }
 
 /** Each origin's open PR on the node's branch, with its head against the node's. */

@@ -1,9 +1,9 @@
 /**
  * The PR graph's GitHub side: the delivery repository's open PRs, the base branch's tip, the
  * merged or closed PRs a declared base leads through, the impl PRs that are not open there, and
- * the comparisons between heads — read through the machine's `gh`, like the PR status
- * (pr-status.ts), and handed to buildGraph (pr-chain.ts), which lays them out. The server fetches
- * nothing and writes no git ref.
+ * the comparisons between heads (a registered deployment's commit among them) — read through
+ * the machine's `gh`, like the PR status (pr-status.ts), and handed to buildGraph (pr-chain.ts),
+ * which lays them out. The server fetches nothing and writes no git ref.
  *
  * A PR list, a branch tip, a branch's closed PRs or one PR is kept for a minute; a comparison of
  * two commits never changes, so it is kept for as long as the reader lives (up to a bound). A
@@ -21,6 +21,7 @@ import {
   type ShutPull,
 } from "./pr-chain.js";
 import { ghRunner, parsePullUrl, STATUS_TTL_MS, type RunGh } from "./pr-status.js";
+import type { DeploymentReading } from "./deployments.js";
 
 const TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -80,8 +81,10 @@ export class PrGraphReader {
     base: string;
     origins: Array<{ name: string; repo: string }>;
     proposals: GraphProposal[];
+    deployments?: DeploymentReading[];
     errors?: string[];
   }): Promise<ProposalGraphResponse> {
+    const deployments = config.deployments ?? [];
     const errors: string[] = [...(config.errors ?? [])];
     if (config.repo === "") {
       return buildGraph({
@@ -91,6 +94,7 @@ export class PrGraphReader {
         origins: config.origins.map((o) => ({ ...o, pulls: null })),
         compare: () => undefined,
         proposals: config.proposals,
+        deployments,
         errors,
         checkedAt: new Date(this.now()).toISOString(),
       });
@@ -132,11 +136,17 @@ export class PrGraphReader {
 
     // buildGraph asks for the comparisons it needs — each edge, an edge that fails alone against
     // the grandparent's head (rule 2a), each origin's twin, each off-graph impl PR against the
-    // base branch — and the graph is laid out again once they are read. Within one read a pair
-    // is asked once. An impl PR's head may not be in this repository at all, so those failures
-    // are summed up in one line instead of one per PR.
+    // base branch, each deployment's commit against every layer's head unless it is one of them —
+    // and the graph is laid out again once they are read. Within one read a pair is asked once.
+    // An impl PR's head may not be in this repository at all, so those failures are summed up in
+    // one line instead of one per PR; a deployment's commit GitHub does not have fails every
+    // comparison the same way, so one line per deployment says so instead of one per layer.
     const asked = new Set<string>();
     const implFailures: string[] = [];
+    const deploymentCommits = new Set(
+      deployments.flatMap((s) => (s.commit === null ? [] : [s.commit.toLowerCase()])),
+    );
+    const deploymentFailures = new Map<string, string[]>();
     let pending: Array<[string, string]> = [];
     const layout = (): ProposalGraphResponse =>
       buildGraph({
@@ -156,12 +166,14 @@ export class PrGraphReader {
         },
         proposals: config.proposals,
         implPulls,
+        deployments,
         errors,
         checkedAt: new Date(this.now()).toISOString(),
       });
     let graph = layout();
     while (pending.length > 0) {
-      const batch = pending;
+      const batch = pending.filter(([, to]) => !deploymentCommits.has(to));
+      const ofDeployment = pending.filter(([, to]) => deploymentCommits.has(to));
       pending = [];
       const ofImpl = batch.filter(([, to]) => implHeads.has(to));
       await this.compareAll(
@@ -170,7 +182,26 @@ export class PrGraphReader {
         errors,
       );
       await this.compareAll(config.repo, ofImpl, implFailures);
+      for (const commit of new Set(ofDeployment.map(([, to]) => to))) {
+        const failed = deploymentFailures.get(commit) ?? [];
+        deploymentFailures.set(commit, failed);
+        await this.compareAll(
+          config.repo,
+          ofDeployment.filter(([, to]) => to === commit),
+          failed,
+        );
+      }
       graph = layout();
+    }
+    const heads = [head, ...list.map((p) => p.head)].filter((h): h is string => h !== null);
+    for (const deployment of deployments) {
+      const commit = deployment.commit?.toLowerCase();
+      const failed = commit === undefined ? [] : (deploymentFailures.get(commit) ?? []);
+      if (heads.length > 0 && failed.length === heads.length) {
+        errors.push(
+          `deployment ${deployment.id}: commit ${commit} not compared with any layer: ${failed[0]!.split(" not compared: ")[1] ?? failed[0]}`,
+        );
+      }
     }
     if (implFailures.length > 0) {
       errors.push(

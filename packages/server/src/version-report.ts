@@ -36,3 +36,21 @@ export async function versionReport(root: string): Promise<VersionReport> {
         : { ...harness, assets: typeof dir === "string" && dir.length > 0 ? dir : null },
   };
 }
+
+/**
+ * The commit a report says this server runs, and the describe it came from: the pushed
+ * harness's source revision when there is one (its `g<sha>`), because a hot update's code is
+ * what executes; else the build's own commit. A revision with no `g<sha>` (a tag exactly, a
+ * directory name) names no commit and falls through to the build's.
+ */
+export function runningCommit(report: VersionReport): {
+  commit: string | null;
+  describe: string | null;
+} {
+  const revision = report.harness?.source?.revision ?? null;
+  const sha = revision === null ? null : /-g([0-9a-f]{7,40})(?:-dirty)?$/i.exec(revision)?.[1];
+  if (revision !== null && sha !== undefined && sha !== null) {
+    return { commit: sha.toLowerCase(), describe: revision };
+  }
+  return { commit: report.commit, describe: report.describe };
+}

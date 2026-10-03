@@ -123,6 +123,16 @@ export interface InstallResponse {
    * nothing on it — never treat it as a new install.
    */
   installId: string | null;
+  /**
+   * The commit this server runs: the pushed harness's source revision when a hot update put
+   * one here (the sha of its `g<sha>`, as short as the pusher's describe spelt it), else the
+   * build's own commit; null when neither is known. Public with the id: it names a commit
+   * and nothing about the machine (company-proposals reads it to place a server deployment on
+   * the PR graph).
+   */
+  commit: string | null;
+  /** The describe that commit came from (the harness revision, else the build's). */
+  describe: string | null;
 }
 
 export interface MeResponse {
@@ -6990,6 +7000,50 @@ export interface ProposalGraphResponse {
   /** What could not be read from GitHub; the graph is partial when present. */
   errors: string[];
   checkedAt: string;
+  /** Every registered deployment with the commit it runs and the layer that commit sits on. */
+  deployments: ProposalGraphDeployment[];
+}
+
+/**
+ * A registered deployment as the graph places it. `at` is the node whose head the
+ * deployment's commit is (`relation: "same"`) or contains (`"ahead"`, `ahead` commits past it);
+ * 0 is the base branch; null when the commit is unknown or compares with no layer.
+ */
+export interface ProposalGraphDeployment {
+  id: string;
+  /** A penguin server deployment's url; null for any other deployment. */
+  url: string | null;
+  commit: string | null;
+  describe: string | null;
+  at: number | null;
+  relation: "same" | "ahead" | null;
+  ahead: number | null;
+  /** Why the commit could not be read, when it could not. */
+  error: string | null;
+}
+
+/**
+ * A deployment on the organization's registry: only deployments somebody registered; none
+ * registers itself. A penguin server deployment carries its `url` and the install id it
+ * answered with; any other deployment carries neither.
+ */
+export interface ProposalDeployment {
+  id: string;
+  url: string | null;
+  installId: string | null;
+  registeredAt: string;
+  by: string;
+}
+
+/** GET …/proposals/deployments, and the answer to POST …/proposals/deployments. */
+export interface ProposalDeploymentsResponse {
+  deployments: ProposalDeployment[];
+}
+
+/** POST …/proposals/deployments: register one deployment by its id; `url` makes it a penguin server deployment. */
+export interface ProposalDeploymentRegisterRequest {
+  id: string;
+  url?: string;
 }
 
 /**

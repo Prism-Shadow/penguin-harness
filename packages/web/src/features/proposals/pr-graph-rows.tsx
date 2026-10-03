@@ -1,9 +1,10 @@
 /**
  * The PR graph page's rows and the three lists under the graph. A node row carries the marks the
- * server gave it — top, fork, the merged or closed PRs its base led through, stale, and the reason
- * it is off the chain. Under the graph, three lists answer three different questions and are named
- * apart: the PRs drawn but off the chain, the PRs the graph cannot draw at all, and the proposals
- * whose impl PR is not an open PR on the delivery repository — each row with its reason.
+ * server gave it — top, fork, the merged or closed PRs its base led through, stale, the reason
+ * it is off the chain — and the registered deployments whose commit sits on it. Under the
+ * graph, three lists answer three different questions and are named apart: the PRs drawn but off
+ * the chain, the PRs the graph cannot draw at all, and the proposals whose impl PR is not an open
+ * PR on the delivery repository — each row with its reason.
  */
 import type { ReactNode } from "react";
 import type {
@@ -19,6 +20,7 @@ import type { Tone } from "../../lib/tone";
 import { Badge, ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../company/shared";
 import { PROPOSAL_STATUS_TONE } from "./proposals-model";
+import { DeploymentMarks } from "./pr-graph-deployments";
 
 /** The focused proposal's row: a background wash only, so the marks on it keep their own ink. */
 export const FOCUS_WASH = "bg-blue-50 dark:bg-blue-950/40";
@@ -138,6 +140,7 @@ export function NodeRow({
         {node.off !== null && (
           <Mark tone={OFF_TONE[node.off.reason]}>{offReasonText(graph, node)}</Mark>
         )}
+        <DeploymentMarks deployments={graph.deployments} at={node.number} />
       </div>
       <div
         className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs text-gray-500 dark:text-gray-400`}
