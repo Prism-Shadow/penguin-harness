@@ -25,11 +25,27 @@ const ORDER = "$order";
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
+/** An added row's id (server `plugin/config.ts` ROW_ID). */
+const ROW_ID = /^[a-z][a-z0-9-]*$/;
+
+type Column = NonNullable<PluginConfigField["columns"]>[number];
+
+/** Whether a stored value fits its column — the server's `cellFits`, repeated with the reading. */
+function cellFits(column: Column, value: unknown): boolean {
+  if (column.type === "boolean") return typeof value === "boolean";
+  if (column.type === "enum") {
+    return typeof value === "string" && (column.options ?? []).some((o) => o.value === value);
+  }
+  return typeof value === "string";
+}
+
 /**
  * A table's draft from its stored value. A declared row's text cell is what was saved into it,
- * empty for the declared text; every other cell is its value. Added rows are taken whole, and
- * the order is the stored one with any row it does not name after it — the server's reading
- * (`resolveTable`), repeated here because the page draws the draft, not the server's rows.
+ * empty for the declared text; every other cell is its value. A locked cell, or a stored value
+ * that does not fit its column, reads as declared. Added rows are taken whole when well formed
+ * (an id no declared row has, every column fitting) and dropped otherwise, and the order is the
+ * stored one with any row it does not name after it — the server's reading (`resolveTable`),
+ * repeated here because the page draws the draft, not the server's rows.
  */
 export function tableDraftOf(field: PluginConfigField, stored: unknown): TableDraft {
   const saved = isRecord(stored) ? stored : {};
@@ -41,9 +57,9 @@ export function tableDraftOf(field: PluginConfigField, stored: unknown): TableDr
         row.id,
         Object.fromEntries(
           columns.map((c) => {
-            const v = own[c.name];
+            const v = row.locked?.includes(c.name) === true ? undefined : own[c.name];
             if (c.type === "string") return [c.name, typeof v === "string" ? v : ""];
-            return [c.name, v !== undefined ? (v as string | boolean) : row.values[c.name]!];
+            return [c.name, cellFits(c, v) ? (v as string | boolean) : row.values[c.name]!];
           }),
         ),
       ];
@@ -51,8 +67,11 @@ export function tableDraftOf(field: PluginConfigField, stored: unknown): TableDr
   );
   const added: Record<string, Cells> = {};
   if (field.extensible !== undefined && isRecord(saved[ADDED])) {
+    const declared = new Set((field.rows ?? []).map((r) => r.id));
     for (const [id, cells] of Object.entries(saved[ADDED] as Record<string, unknown>)) {
-      if (isRecord(cells)) added[id] = { ...(cells as Cells) };
+      if (!ROW_ID.test(id) || declared.has(id) || !isRecord(cells)) continue;
+      if (!columns.every((c) => cellFits(c, cells[c.name]))) continue;
+      added[id] = Object.fromEntries(columns.map((c) => [c.name, cells[c.name] as string | boolean]));
     }
   }
   const ids = [...Object.keys(rows), ...Object.keys(added)];

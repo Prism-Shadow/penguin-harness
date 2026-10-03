@@ -234,7 +234,7 @@ function inStoredOrder(rows: PluginConfigTableRow[], raw: unknown): PluginConfig
 
 /**
  * A `table` field as read: every declared row with the stored cells laid over the declared
- * ones, then — in an `extensible` table — the rows added to it, all in the stored order. A cell
+ * ones (never a locked cell's: a hand-edited document cannot remap one), then — in an `extensible` table — the rows added to it, all in the stored order. A cell
  * a save changed drops its Chinese text — the name an administrator gave is the name in every
  * language. Stored rows the table neither declares nor added are left out.
  */
@@ -257,6 +257,7 @@ function declaredRowsOf(
     const values = { ...row.values };
     for (const column of field.columns ?? []) {
       const v = own[column.name];
+      if (row.locked?.includes(column.name)) continue;
       if (v !== undefined && cellFits(column, v)) values[column.name] = v as string | boolean;
     }
     const zh = Object.entries(row.valuesZh ?? {}).filter(
@@ -289,6 +290,8 @@ function applyTableUpdate(
     const kept = isRecord(before[row.id]) ? (before[row.id] as Record<string, unknown>) : {};
     for (const column of field.columns ?? []) {
       const v = kept[column.name];
+      // A stored locked cell (a hand-edited document) is not carried over: reads ignore it.
+      if (row.locked?.includes(column.name)) continue;
       if (v !== undefined && cellFits(column, v)) cells[column.name] = v as string | boolean;
     }
     const sent = update[row.id];

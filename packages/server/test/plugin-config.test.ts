@@ -451,6 +451,19 @@ describe("a table field", () => {
     });
   });
 
+  it("ignores a stored value for a locked cell: a hand-edited document cannot remap it", () => {
+    const stored = { fixed: { name: "Mine", level: "low" } };
+    expect(resolveTable(field, stored)[0]!.values).toEqual({
+      name: "Mine",
+      enabled: true,
+      level: "high",
+    });
+    // A save of another cell does not carry the stored locked value along.
+    expect(applyUpdate(TABLE, { presets: stored }, { presets: { free: { enabled: true } } })).toEqual(
+      { presets: { fixed: { name: "Mine" }, free: { enabled: true } } },
+    );
+  });
+
   it("stores only the cells that differ from the declaration", () => {
     const next = applyUpdate(
       TABLE,
