@@ -22,11 +22,28 @@
  *   PENGUIN_DEPLOY_BY        who started it (`user:<id>` / `agent:<id>`)
  *
  * A module imports this from `@prismshadow/penguin-plugin-company-proposals/deploy`, a bundle
- * of its own with nothing of the plugin's services in it.
+ * of its own with nothing of the plugin's services in it; the Action model's types and refusal
+ * classes are re-exported here for any company module, deploy or not.
  */
 import { ActionFailure, ActionRefusal, type Guard, type RunContext } from "./action-model.js";
 
 export { OUTPUT_LIMIT, PROCESS_TIMEOUT_MS as DEPLOY_TIMEOUT_MS } from "./action-live.js";
+// What a company module writes its contributions with, so it needs nothing else of the plugin.
+export { ActionFailure, ActionRefusal } from "./action-model.js";
+export type {
+  ActionCaller,
+  ActionCode,
+  ActionContribution,
+  Guard,
+  GuardCode,
+  GuardInput,
+  HookCode,
+  HookEvent,
+  ProcessEnd,
+  RunContext,
+  Subject,
+  SubjectCommit,
+} from "./action-model.js";
 
 /** The parameters of a deploy Action, as its contribution declares them. */
 export const DEPLOY_PARAMS: Record<string, string> = {

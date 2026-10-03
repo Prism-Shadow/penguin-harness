@@ -852,6 +852,9 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-plugin-company-proposals':
+        specifier: workspace:*
+        version: link:../company-proposals
       '@prismshadow/penguin-plugin-test':
         specifier: workspace:*
         version: link:../../packages/plugin-test

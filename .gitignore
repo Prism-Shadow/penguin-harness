@@ -53,3 +53,6 @@ plugins/*/ifaces.json
 # rendered by scripts/iface-page.mjs (pnpm ifaces:page); CI publishes it
 dist-ifaces/
 plugins/sandbox-bwrap/vendor/
+# built by company-proposals' company-module test from its source
+plugins/company-proposals/test-fixtures/*/dist/
+plugins/company-proposals/test-fixtures/*/ifaces.json

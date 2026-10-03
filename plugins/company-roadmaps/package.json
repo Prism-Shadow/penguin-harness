@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Roadmaps for PenguinHarness company mode: employees discuss in an organization channel through sessions cloned for that room, the moderator keeps a draft, and establishing a roadmap delegates each of its proposals — brief and owner — through company-proposals.",
+  "description": "Roadmaps for PenguinHarness company mode: employees discuss in an organization channel through sessions cloned for that room, the moderator keeps a draft, and establishing a roadmap delegates each of its proposals \u2014 brief and owner \u2014 through company-proposals.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -36,6 +36,7 @@
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-plugin-company-proposals": "workspace:*",
     "@prismshadow/penguin-plugin-test": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "happy-dom": "^20.14.5",
