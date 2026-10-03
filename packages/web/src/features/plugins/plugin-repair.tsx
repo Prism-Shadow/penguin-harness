@@ -9,8 +9,9 @@ import { useState, type ReactNode } from "react";
 
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, ICONS, toastError } from "@prismshadow/penguin-ui";
-import { useAiBridge, pickDefaultAgent, type AiChatRequest } from "../ai-create";
+import { useAiBridge, type AiChatRequest } from "../ai-create";
 
+import { pickDefaultAgent } from "../../lib/default-agent";
 import { S } from "../../lib/strings";
 
 /** The plugin to repair, as its row has it. */

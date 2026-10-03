@@ -11,7 +11,6 @@ cycle: features/agents -> features/skills
 cycle: features/ai-create -> features/chat
 cycle: features/builtin-browser -> features/dock
 cycle: features/chat -> features/agents
-cycle: features/chat -> features/ai-create
 cycle: features/chat -> features/builtin-browser
 cycle: features/chat -> features/company
 cycle: features/chat -> features/dock
