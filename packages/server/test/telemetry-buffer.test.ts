@@ -89,7 +89,7 @@ describe("TelemetryService", () => {
     expect(make("true").svc.on()).toBe(true);
   });
 
-  it("on: a span times its run, lends its keys to what is recorded inside, and records a throw as error", async () => {
+  it("on: a span (and time, its synchronous twin) times its run, lends its keys to what is recorded inside, and records a throw as error", async () => {
     const { svc, store } = make(null);
     svc.setEnabled(true);
     expect(store.get(TELEMETRY_ENABLED_KEY)).toBe("true");
@@ -116,6 +116,12 @@ describe("TelemetryService", () => {
         keys: { request: "r1", session: "s" },
       },
       { probe: "trace.read", status: "error" },
+    ]);
+    svc.clear();
+    svc.time("sessions.list.sql", { session: "s" }, () => svc.record({ probe: "inner" }));
+    expect(svc.samples({})).toMatchObject([
+      { probe: "inner", keys: { session: "s" } },
+      { probe: "sessions.list.sql", status: "ok", keys: { session: "s" } },
     ]);
     svc.setEnabled(false);
     expect(store.get(TELEMETRY_ENABLED_KEY)).toBe("false");

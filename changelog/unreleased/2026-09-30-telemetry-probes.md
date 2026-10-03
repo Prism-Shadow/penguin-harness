@@ -14,4 +14,4 @@ The telemetry switch from the first slice now also covers accepting a Task, load
 - Plugin loading: `plugin.load` for each plugin the platform imports and checks.
 - Hot updates, platform side: `hmr.park` and `hmr.dispose` of the outgoing App (recorded by its successor), `hmr.admit` for the admission probe, and `hmr.generation` for every App create (the boot and hot-update timings live in `telemetry/boot.ts`; the platform's boot makes one-line calls into it), with its cause (`boot`, `push`, `reassemble`).
 
-- Memory: when the buffer is read, `process.memory` records the process's and `session.memory` each loaded Session's `memoryCost` — the bytes it holds: its resumed history, the stream events kept for a page that reconnects, and the replies still streaming. `process.memory` is also recorded after each create.
+- Memory: when the buffer is read, `process.memory` records the process's and `session.memory` each loaded Session's `memoryCost` — the bytes it holds: its resumed history (estimated once per load), the stream events kept for a page that reconnects, and the replies still streaming. `process.memory` is also recorded after each create.

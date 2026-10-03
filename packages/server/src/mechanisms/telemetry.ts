@@ -40,7 +40,7 @@ export abstract class Telemetry extends Interface<{
     run: () => Promise<T>,
     describe?: (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">,
   ): Promise<T>;
-  /** `span` for synchronous work. */
+  /** `span` for synchronous work: the same sample, status and scope. */
   time<T>(
     probe: string,
     keys: TelemetryKeys,

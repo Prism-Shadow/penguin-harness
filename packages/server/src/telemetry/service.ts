@@ -135,7 +135,7 @@ export class TelemetryService implements Telemetry {
     const start = performance.now();
     let result: T;
     try {
-      result = run();
+      result = this.#scope.run({ ...this.#scope.getStore(), ...keys }, run);
     } catch (err) {
       this.record({ probe, durMs: performance.now() - start, status: "error", keys });
       throw err;

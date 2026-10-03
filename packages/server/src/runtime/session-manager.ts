@@ -109,6 +109,7 @@ import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
 import { spanIn } from "../telemetry/measure.js";
+import { estimateBytes } from "../telemetry/memory.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 
@@ -930,18 +931,25 @@ export class SessionManager {
     return this.liveTail.fragments(sessionId);
   }
 
-  /**
-   * The running Task's input messages as published at launch; empty when idle. The engine
-   * writes these exact envelopes to the Trace only after the first run's bootstrap (MCP
-   * connect + discovery), so GET /messages appends whichever of them the Trace read has
-   * not caught up to yet — without this, a client rebuilding history during the connect
-   * (the draft flow subscribes only after the input publish) loses the user's own message.
-   */
+  /** Each loaded history's estimated size, by its array (a resumed history never changes). */
+  private readonly historyCost = new WeakMap<readonly unknown[], number>();
+
+  private historyBytes(history: readonly unknown[]): number {
+    let bytes = this.historyCost.get(history);
+    if (bytes === undefined) {
+      bytes = estimateBytes(history);
+      this.historyCost.set(history, bytes);
+    }
+    return bytes;
+  }
+
   /**
    * Telemetry's `session.memory`: one sample per loaded Session with its `memoryCost`, the bytes
    * it holds in memory — its resumed history, the stream events its channel keeps for a page
    * that reconnects, and the partial replies still streaming. Taken when the buffer is read.
    * A channel or live tail an older runtime built may have no counter; that part counts zero.
+   * The history is estimated (telemetry/memory.ts) once per loaded Session: it does not
+   * change after the load, so a read never walks it again.
    */
   recordMemory(telemetry: Telemetry): void {
     for (const entry of this.entries.values()) {
@@ -949,7 +957,7 @@ export class SessionManager {
         { bufferedBytes?: number } | undefined;
       const history = entry.session.resumedHistory;
       const memoryCost =
-        (history === undefined ? 0 : JSON.stringify(history).length) +
+        (history === undefined ? 0 : this.historyBytes(history)) +
         (channel?.bufferedBytes ?? 0) +
         (this.liveTail.size?.(entry.sessionId).bytes ?? 0);
       telemetry.record({
@@ -960,6 +968,13 @@ export class SessionManager {
     }
   }
 
+  /**
+   * The running Task's input messages as published at launch; empty when idle. The engine
+   * writes these exact envelopes to the Trace only after the first run's bootstrap (MCP
+   * connect + discovery), so GET /messages appends whichever of them the Trace read has
+   * not caught up to yet — without this, a client rebuilding history during the connect
+   * (the draft flow subscribes only after the input publish) loses the user's own message.
+   */
   pendingInputs(sessionId: string): OmniMessage[] {
     return this.entries.get(sessionId)?.pendingInputs ?? [];
   }
