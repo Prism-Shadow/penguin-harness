@@ -99,6 +99,7 @@ import {
 } from "../company/shared";
 import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "./proposal-links";
 import { ProposalFilePanel, useFilePanelWidth } from "./proposal-file-panel";
+import { ImplSection } from "./proposal-impl";
 import { GraphPage } from "./pr-graph-page";
 import {
   PROPOSAL_STATUS_TONE,
@@ -1110,6 +1111,8 @@ function ProposalView({
           />
         </div>
       </RuledSection>
+
+      <ImplSection detail={detail} />
 
       <RuledSection title={t.materials} count={detail.materials.length}>
         {detail.materials.length === 0 ? (

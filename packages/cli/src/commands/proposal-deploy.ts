@@ -188,7 +188,7 @@ export function registerProposalDeploy(proposal: Command, t: Messages, kit: Depl
         t.org.proposalDeployStarted(
           res.run.id,
           res.run.script,
-          `${res.run.repo}#${res.run.pr}`,
+          targetOf(res.run),
           short(res.run.head),
         ),
       );
@@ -200,10 +200,15 @@ export function registerProposalDeploy(proposal: Command, t: Messages, kit: Depl
     });
 }
 
+/** `owner/repo#n` for a PR, `owner/repo:branch` for an impl branch with no PR. */
+function targetOf(plan: ProposalDeployPlan): string {
+  return plan.pr === null ? `${plan.repo}:${plan.branch}` : `${plan.repo}#${plan.pr}`;
+}
+
 function planLine(t: Messages, plan: ProposalDeployPlan): string {
   return t.org.proposalDeployPlanned(
     plan.script,
-    `${plan.repo}#${plan.pr}`,
+    targetOf(plan),
     short(plan.head),
     argvLine(plan.argv),
   );

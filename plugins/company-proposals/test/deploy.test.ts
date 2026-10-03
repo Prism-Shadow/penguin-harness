@@ -67,6 +67,9 @@ let ghCalls: string[][];
 let heads: Record<string, string>;
 let org: OrgView;
 let implPrs: Record<number, string | null>;
+/** Proposals whose impl is a declared head branch (resolved), with the PR on it if any. */
+let implBranches: Record<number, { head: { repo: string; branch: string }; pr: string | null }>;
+let tips: Record<string, string>;
 let deliveryRepo: string | null;
 let logs: string[];
 
@@ -78,6 +81,12 @@ const start: StartProcess = (argv, opts) => {
 
 const gh: RunGh = async (args) => {
   ghCalls.push([...args]);
+  const tip = /^repos\/([^/]+\/[^/]+)\/branches\/(.+)$/.exec(args[1] ?? "");
+  if (tip !== null) {
+    const sha = tips[`${tip[1]}:${tip[2]}`];
+    if (sha === undefined) throw new Error("HTTP 404: Branch not found");
+    return JSON.stringify(sha);
+  }
   const m = /^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(args[1] ?? "");
   const head = m === null ? undefined : heads[`${m[1]}#${m[2]}`];
   if (head === undefined) throw new Error("HTTP 404: Not Found");
@@ -92,9 +101,11 @@ function scope(_projectId: string, _orgId: string, actor: OrgActor): Promise<Dep
     org,
     principal: actor.agentId !== undefined ? `agent:${actor.agentId}` : `user:${actor.userId}`,
     person: actor.agentId === undefined,
-    implPr: (n: number) => {
+    impl: (n: number) => {
+      if (n in implBranches) return Promise.resolve(implBranches[n]!);
       if (!(n in implPrs)) throw new ProposalError(404, "proposal_not_found", `#${n}`);
-      return implPrs[n]!;
+      const pr = implPrs[n]!;
+      return Promise.resolve(pr === null ? null : { head: null, pr });
     },
     deliveryRepo: () => Promise.resolve(deliveryRepo),
   });
@@ -143,6 +154,8 @@ beforeEach(async () => {
     machineId: null,
   };
   implPrs = { 1: "https://github.com/acme/site/pull/11", 2: null };
+  implBranches = {};
+  tips = {};
   deliveryRepo = "acme/site";
   logs = [];
 });
@@ -318,10 +331,67 @@ describe("a deploy", () => {
     expect(started).toHaveLength(0);
   });
 
+  it("deploys an impl branch at its head branch's tip now, with the PR variables empty while it has no PR", async () => {
+    const d = await registered();
+    implBranches = {
+      3: { head: { repo: "me/site", branch: "feat/x" }, pr: null },
+      4: {
+        head: { repo: "acme/site", branch: "feat/y" },
+        pr: "https://github.com/acme/site/pull/12",
+      },
+      5: { head: { repo: "acme/site", branch: "gone" }, pr: null },
+    };
+    tips = { "me/site:feat/x": OTHER, "acme/site:feat/y": HEAD };
+    const run = runOf(await d.start(PROJECT, ORG, BOSS, { script: "staging", proposal: 3 }));
+    expect(ghCalls).toEqual([
+      ["api", "repos/me/site/branches/feat/x", "--jq", ".commit.sha | tojson"],
+    ]);
+    expect(run).toMatchObject({
+      repo: "me/site",
+      pr: null,
+      prUrl: null,
+      branch: "feat/x",
+      head: OTHER,
+      proposal: 3,
+    });
+    expect(started[0]!.env).toMatchObject({
+      PENGUIN_DEPLOY_REPO: "me/site",
+      PENGUIN_DEPLOY_PR: "",
+      PENGUIN_DEPLOY_PR_URL: "",
+      PENGUIN_DEPLOY_BRANCH: "feat/x",
+      PENGUIN_DEPLOY_HEAD: OTHER,
+      PENGUIN_DEPLOY_PROPOSAL: "3",
+    });
+    started[0]!.exit(0);
+    // With a PR attached, the head branch is still what is deployed; the PR rides along.
+    const plan = await d.start(PROJECT, ORG, BOSS, {
+      script: "staging",
+      proposal: 4,
+      dryRun: true,
+    });
+    expect(plan).toMatchObject({
+      plan: {
+        repo: "acme/site",
+        pr: 12,
+        prUrl: "https://github.com/acme/site/pull/12",
+        branch: "feat/y",
+        head: HEAD,
+      },
+    });
+    // A head that moved since it was looked at is refused, as for a PR.
+    expect(
+      await refusal(d.start(PROJECT, ORG, BOSS, { script: "staging", proposal: 3, head: HEAD })),
+    ).toEqual({ status: 409, code: "head_moved" });
+    expect(await refusal(d.start(PROJECT, ORG, BOSS, { script: "staging", proposal: 5 }))).toEqual({
+      status: 502,
+      code: "branch_unreadable",
+    });
+  });
+
   it("refuses what it cannot deploy, before anything starts", async () => {
     const d = await registered();
     const cases: Array<[Parameters<DeployService["start"]>[3], number, string]> = [
-      [{ script: "staging", proposal: 2 }, 409, "no_impl_pr"],
+      [{ script: "staging", proposal: 2 }, 409, "no_impl"],
       [{ script: "staging", proposal: 9 }, 404, "proposal_not_found"],
       [{ script: "nope", proposal: 1 }, 404, "deploy_script_not_found"],
       [{ script: "staging" }, 400, "bad_request"],

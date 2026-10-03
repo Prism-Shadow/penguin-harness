@@ -1414,12 +1414,29 @@ export class FakeServer {
       }
     }
     if (method === "PUT" && c === "impl" && d === undefined) {
-      if (!isNonEmptyString(body?.url)) return this.badRequest("url is required.");
-      const m = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(body.url);
-      if (m === null) return this.badRequest(`Not a GitHub pull request URL: ${body.url}`);
-      const label = `${m[1]}/${m[2]}#${m[3]}`;
-      proposal.implPr = { url: body.url, label, by: "user:admin", at: ORG_NOW };
-      return this.json(bump("material_added", { text: `impl ${label}` }));
+      const pair = body?.head !== undefined && body?.base !== undefined;
+      if (!isNonEmptyString(body?.url) && !pair)
+        return this.badRequest("Name the impl: head and base, url, or both.");
+      let label: string | null = null;
+      if (isNonEmptyString(body?.url)) {
+        const m = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(body.url);
+        if (m === null) return this.badRequest(`Not a GitHub pull request URL: ${body.url}`);
+        label = `${m[1]}/${m[2]}#${m[3]}`;
+        proposal.implPr = { url: body.url, label, by: "user:admin", at: ORG_NOW };
+      }
+      proposal.impl = {
+        head: pair ? body.head : null,
+        base: pair ? body.base : null,
+        pr: isNonEmptyString(body?.url) ? body.url : null,
+        by: "user:admin",
+        at: ORG_NOW,
+      };
+      return this.json(bump("material_added", { text: `impl ${label ?? "branch"}` }));
+    }
+    if (method === "GET" && c === "impl" && d === "diff") {
+      if (proposal.implDiff === undefined)
+        return this.error(409, "no_impl", `Proposal #${String(proposal.number)} has no impl.`);
+      return this.json(proposal.implDiff);
     }
     if (method === "PUT" && c === "brief" && d === undefined) {
       if (!isNonEmptyString(body?.brief)) return this.badRequest("brief is required.");

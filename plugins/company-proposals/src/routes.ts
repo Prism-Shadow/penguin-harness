@@ -17,7 +17,8 @@
  *   GET    /deploys/:id?from=        a run and its output from an offset
  *   POST   /adopt-impl               anybody in the organization: proposals without an impl PR take their latest delivery-repo `pr` material
  *   GET    /:number                  the proposal
- *   PUT    /:number/impl             { url } the impl PR (anybody in the organization; one per proposal)
+ *   PUT    /:number/impl             { head?, base?, url? } the impl branch and/or its PR (anybody in the organization; one per proposal)
+ *   GET    /:number/impl/diff        the impl branch's patch: merge base of base and head, up to head (read from GitHub)
  *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
  *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)
@@ -44,8 +45,9 @@
  * is honoured only behind the local API token (see callerSessionId).
  */
 import { Hono } from "hono";
-import type { ProposalMaterialKind } from "@prismshadow/penguin-server/api";
+import type { ProposalImplRequest, ProposalMaterialKind } from "@prismshadow/penguin-server/api";
 import { MATERIAL_KINDS, ProposalError, type ProposalService } from "./service.js";
+import { ImplBranchError, branchRefOf } from "./impl-branch.js";
 import type { DeployService } from "./deploy.js";
 import { deployRoutes } from "./deploy-routes.js";
 import {
@@ -64,7 +66,7 @@ export const ROUTES_ID = "company-proposals.routes";
 export function proposalRoutes(service: ProposalService, deploys: DeployService): Hono {
   const app = new Hono();
   app.onError((err, c) => {
-    if (err instanceof ProposalError) {
+    if (err instanceof ProposalError || err instanceof ImplBranchError) {
       return c.json({ error: { code: err.code, message: err.message } }, err.status as 400);
     }
     console.error(`[company-proposals] ${err.stack ?? err.message}`);
@@ -140,16 +142,33 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
 
   app.put("/:number/impl", async (c) => {
     const body = await jsonBody(c);
+    const url = optionalString(body, "url", 2000);
+    const req: ProposalImplRequest = {
+      ...(url !== undefined ? { url } : {}),
+      ...(body.head !== undefined ? { head: branchRefOf(body.head, "head") } : {}),
+      ...(body.base !== undefined ? { base: branchRefOf(body.base, "base") } : {}),
+    };
     return c.json(
       await service.setImpl(
         param(c, "projectId"),
         param(c, "orgId"),
         numberParam(c),
-        requireString(body, "url", 2000),
+        req,
         actorOf(c, body),
       ),
     );
   });
+
+  app.get("/:number/impl/diff", async (c) =>
+    c.json(
+      await service.implDiff(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        actorOfQuery(c),
+      ),
+    ),
+  );
 
   app.put("/:number", async (c) => {
     const body = await jsonBody(c);

@@ -31,7 +31,11 @@ import type {
   ProposalDetail,
   ProposalFileResponse,
   ProposalGraphResponse,
+  ProposalImplDiff,
+  ProposalImplRequest,
+  ProposalBranchRef,
   ProposalItem,
+  ProposalResolvedBranch,
   ProposalMaterial,
   ProposalRevision,
   ProposalRevisionsResponse,
@@ -54,7 +58,7 @@ import {
 } from "./config.js";
 import { renderForAgent, sectionSource } from "./comments.js";
 import { readBaseFile } from "./files.js";
-import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
+import { PrStatusReader, ghRunner, parsePullUrl, type RunGh } from "./pr-status.js";
 import { pullKey } from "./pr-chain.js";
 import { GraphCache } from "./graph-cache.js";
 import { PrGraphReader } from "./pr-graph.js";
@@ -69,7 +73,16 @@ import {
   type ProbeServer,
 } from "./deployments.js";
 import { gitRunner, type RunGit } from "./workspace-remotes.js";
-import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
+import { Ledger, ledgerPath, type Proposal, type ProposalImpl } from "./ledger.js";
+import {
+  ImplBranchError,
+  compareBranches,
+  readPullBranches,
+  refLabel,
+  remoteFor,
+  resolveRef,
+  sameRef,
+} from "./impl-branch.js";
 import type { DeployScope } from "./deploy.js";
 import {
   checkScope,
@@ -259,8 +272,9 @@ export class ProposalService {
       const prefix = `${repo.toLowerCase()}#`;
       return ledger
         .proposals()
-        .filter((p) => (p.implPr === null ? "" : (pullKey(p.implPr.url) ?? "")).startsWith(prefix))
-        .length;
+        .filter((p) =>
+          (p.impl?.pr == null ? "" : (pullKey(p.impl.pr.url) ?? "")).startsWith(prefix),
+        ).length;
     };
     let picked = remotes.find((r) => r.name === "origin") ?? remotes[0];
     for (const r of remotes)
@@ -444,8 +458,18 @@ export class ProposalService {
       unread: this.unreadOf(p, caller, reads),
       pendingComments: p.comments.filter((c) => c.batchId === null && c.by === caller.principal)
         .length,
-      materials: withImplPr(p.materials, p.implPr),
-      implPr: p.implPr,
+      materials: withImplPr(p.materials, implPrOf(p.impl)),
+      implPr: implPrOf(p.impl),
+      impl:
+        p.impl === null
+          ? null
+          : {
+              head: p.impl.head,
+              base: p.impl.base,
+              pr: p.impl.pr?.url ?? null,
+              by: p.impl.by,
+              at: p.impl.at,
+            },
     };
   }
 
@@ -1031,7 +1055,7 @@ export class ProposalService {
       [to],
       p.implementer !== null
         ? `approved by ${whoOf(caller)} — merge the PR and run \`penguin org proposal merged ${number}\`.`
-        : `approved by ${whoOf(caller)} with nobody building it yet — build it with \`penguin org proposal implement ${number}\` (or \`--agent <id>\` to hand it to a colleague); once ${p.implPr !== null ? `its impl PR ${p.implPr.label}` : `its impl PR (register it: \`penguin org proposal impl ${number} <url>\`)`} is merged into the default branch, run \`penguin org proposal merged ${number}\`.`,
+        : `approved by ${whoOf(caller)} with nobody building it yet — build it with \`penguin org proposal implement ${number}\` (or \`--agent <id>\` to hand it to a colleague); once ${p.impl?.pr != null ? `its impl PR ${p.impl.pr.label}` : `its impl PR (register it: \`penguin org proposal impl ${number} <url>\`)`} is merged into the default branch, run \`penguin org proposal merged ${number}\`.`,
     );
     return this.answer(
       delivery,
@@ -1101,19 +1125,20 @@ export class ProposalService {
   /** The proposal's impl PR merged into its repository's default branch, read from GitHub now; else 409. */
   private async requireLanded(p: Proposal): Promise<void> {
     const n = p.number;
-    if (p.implPr === null) {
+    const implPr = p.impl?.pr ?? null;
+    if (implPr === null) {
       throw new ProposalError(
         409,
         "impl_pr_missing",
-        `Proposal #${n} has no impl PR to check the merge against — register it (\`penguin org proposal impl ${n} <url>\`), or ask the implementer (${p.implementer ?? "none yet"}) or a person to report it.`,
+        `Proposal #${n} has no impl PR to check the merge against — register the PR opened for its impl branch (\`penguin org proposal impl ${n} <url>\`), or ask the implementer (${p.implementer ?? "none yet"}) or a person to report it.`,
       );
     }
-    const read = await this.prStatus.landing(p.implPr.url);
+    const read = await this.prStatus.landing(implPr.url);
     if (read === null) {
       throw new ProposalError(
         409,
         "impl_pr_not_merged",
-        `Proposal #${n}'s impl PR ${p.implPr.label} could not be read from GitHub, so its merge cannot be confirmed — try again, or ask the implementer (${p.implementer ?? "none yet"}) or a person to report it.`,
+        `Proposal #${n}'s impl PR ${implPr.label} could not be read from GitHub, so its merge cannot be confirmed — try again, or ask the implementer (${p.implementer ?? "none yet"}) or a person to report it.`,
       );
     }
     if (!read.landed) {
@@ -1124,7 +1149,7 @@ export class ProposalService {
       throw new ProposalError(
         409,
         "impl_pr_not_merged",
-        `Proposal #${n}'s impl PR ${p.implPr.label} is ${where} — report the merge once it is merged into the default branch, or ask the implementer (${p.implementer ?? "none yet"}) or a person.`,
+        `Proposal #${n}'s impl PR ${implPr.label} is ${where} — report the merge once it is merged into the default branch, or ask the implementer (${p.implementer ?? "none yet"}) or a person.`,
       );
     }
   }
@@ -1373,47 +1398,218 @@ export class ProposalService {
   }
 
   /**
-   * Registers the proposal's impl PR — anybody in the organization, a person or an employee,
-   * since the PR is a fact GitHub can confirm and the line records who (`by`): one per
-   * proposal, replacing the one before; a PR that is already another proposal's is refused.
+   * Registers the proposal's impl — anybody in the organization, a person or an employee, since
+   * a branch and a PR are facts GitHub can confirm and the line records who (`by`). One per
+   * proposal, replacing the one before:
+   *
+   * - `head` and `base` together declare the impl branch; each remote must name a GitHub
+   *   repository, and a head that is already another proposal's is refused. The PR registered
+   *   before stays only while the head is the same.
+   * - `url` registers the PR; one that is already another proposal's is refused. On a declared
+   *   head (this request's or the standing one) GitHub is asked for the PR: its head must be
+   *   that head, and its base becomes the impl's base — a PR is its head and its base. Without
+   *   a declared head the line names the impl branch by the PR alone.
    */
   async setImpl(
     projectId: string,
     orgId: string,
     number: number,
-    url: string,
+    req: ProposalImplRequest,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(ledger, number);
-    const trimmed = url.trim();
-    const ref = parsePullUrl(trimmed);
-    const key = pullKey(trimmed);
-    if (ref === null || key === null) {
-      throw badRequest(`Not a GitHub pull request URL: ${trimmed}`);
+    if ((req.head === undefined) !== (req.base === undefined)) {
+      throw badRequest("head and base go together: name both, or neither.");
     }
-    const holder = ledger
-      .proposals()
-      .find((o) => o.number !== number && o.implPr !== null && pullKey(o.implPr.url) === key);
-    if (holder !== undefined) {
-      throw new ProposalError(
-        409,
-        "impl_pr_taken",
-        `${ref.owner}/${ref.repo}#${ref.number} is already the impl PR of proposal #${holder.number}.`,
-      );
+    const url = req.url?.trim() ?? "";
+    if (req.head === undefined && url === "") {
+      throw badRequest("Name the impl: a branch pair (head and base), a PR (url), or both.");
+    }
+    let pr: { url: string; label: string } | null = null;
+    let prKey: string | null = null;
+    if (url !== "") {
+      const ref = parsePullUrl(url);
+      prKey = pullKey(url);
+      if (ref === null || prKey === null) throw badRequest(`Not a GitHub pull request URL: ${url}`);
+      pr = { url, label: `${ref.owner}/${ref.repo}#${ref.number}` };
+    }
+    const standing = p.impl;
+    let head = req.head ?? standing?.head ?? null;
+    let base = req.base ?? standing?.base ?? null;
+    // A new head drops the PR of the old one; the same head keeps it. A PR registered alone
+    // (no declared head) is kept only when GitHub confirms its head is the one declared now.
+    let confirmCarried = false;
+    if (pr === null && standing?.pr != null) {
+      if (req.head === undefined || (standing.head !== null && sameRef(standing.head, req.head))) {
+        pr = standing.pr;
+      } else if (standing.head === null) {
+        pr = standing.pr;
+        confirmCarried = true;
+      }
+      prKey = pr === null ? null : pullKey(pr.url);
+    }
+    if (head !== null && base !== null) {
+      const remotes = await this.remotesFor(org, p);
+      const resolvedHead = lift(() => resolveRef(head!, remotes, "head"));
+      lift(() => resolveRef(base!, remotes, "base"));
+      if (sameRef(head, base)) {
+        throw badRequest(`head and base are the same branch, ${refLabel(head)}.`);
+      }
+      if (confirmCarried && pr !== null) {
+        const carried = pr;
+        const pull = await readPullBranches(this.gh(), carried.url).catch(() => null);
+        const matches =
+          pull !== null &&
+          pull.head.repo.toLowerCase() === resolvedHead.repo.toLowerCase() &&
+          pull.head.branch === resolvedHead.branch;
+        if (!matches) {
+          pr = null;
+          prKey = null;
+        }
+      }
+      // A PR named in this request is checked against the head; a carried one was checked when it was named.
+      if (pr !== null && url !== "") {
+        const pull = await liftAsync(() => readPullBranches(this.gh(), pr!.url));
+        if (
+          pull.head.repo.toLowerCase() !== resolvedHead.repo.toLowerCase() ||
+          pull.head.branch !== resolvedHead.branch
+        ) {
+          throw new ProposalError(
+            409,
+            "impl_pr_mismatch",
+            `${pr.label}'s head is ${pull.head.repo}:${pull.head.branch}, not the impl branch's head ${refLabel(head)} (${resolvedHead.repo}:${resolvedHead.branch}): open the PR from that head, or register the PR's head with --head.`,
+          );
+        }
+        const prBase = {
+          remote: remoteFor(pull.base.repo, remotes, base.remote),
+          branch: pull.base.branch,
+        };
+        if (req.base !== undefined) {
+          const declared = lift(() => resolveRef(req.base!, remotes, "base"));
+          if (
+            declared.repo.toLowerCase() !== pull.base.repo.toLowerCase() ||
+            declared.branch !== pull.base.branch
+          ) {
+            throw new ProposalError(
+              409,
+              "impl_pr_mismatch",
+              `${pr.label} is based on ${pull.base.repo}:${pull.base.branch}, not ${refLabel(req.base)} (${declared.repo}:${declared.branch}): a PR registers its own base — leave --base out, or name that one.`,
+            );
+          }
+        }
+        base = req.base ?? prBase;
+      }
+    } else {
+      head = null;
+      base = null;
     }
     const readPositions = this.readPositions(projectId, orgId, caller.userId);
-    if (p.implPr !== null && pullKey(p.implPr.url) === key)
-      return this.detail(p, caller, readPositions);
-    const line = await ledger.append({
+    const unchanged =
+      standing !== null &&
+      (standing.pr === null) === (pr === null) &&
+      (pr === null || pullKey(standing.pr!.url) === prKey) &&
+      sameSide(standing.head, head) &&
+      sameSide(standing.base, base);
+    if (unchanged) return this.detail(p, caller, readPositions);
+    const taken = (): void => {
+      for (const o of ledger.proposals()) {
+        if (o.number === number || o.impl === null) continue;
+        if (prKey !== null && o.impl.pr !== null && pullKey(o.impl.pr.url) === prKey) {
+          throw new ProposalError(
+            409,
+            "impl_pr_taken",
+            `${pr!.label} is already the impl PR of proposal #${o.number}.`,
+          );
+        }
+        if (
+          head !== null &&
+          o.impl.head !== null &&
+          o.status !== "rejected" &&
+          sameRef(o.impl.head, head)
+        ) {
+          throw new ProposalError(
+            409,
+            "impl_branch_taken",
+            `${refLabel(head)} is already the impl branch of proposal #${o.number}.`,
+          );
+        }
+      }
+    };
+    const line = await ledger.appendChecked(taken, {
       kind: "impl",
       number,
-      url: trimmed,
-      label: `${ref.owner}/${ref.repo}#${ref.number}`,
+      ...(head !== null && base !== null ? { head, base } : {}),
+      ...(pr !== null ? { url: pr.url, label: pr.label } : {}),
       by: caller.principal,
     });
     this.notify(org, number, line.seq, "material_added");
     return this.detail(p, caller, readPositions);
+  }
+
+  /** The impl branch's patch — the merge base of base and head, up to head — read from GitHub now. */
+  async implDiff(
+    projectId: string,
+    orgId: string,
+    number: number,
+    actor: OrgActor,
+  ): Promise<ProposalImplDiff> {
+    const { org, ledger } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    const resolved = await this.resolvedImpl(org, p);
+    if (resolved === null) throw noImpl(number);
+    return liftAsync(() => compareBranches(this.gh(), resolved.base, resolved.head, resolved.pr));
+  }
+
+  /**
+   * The proposal's impl as GitHub names it: the declared pair resolved through the repository's
+   * remotes, or — registered as a PR alone — that PR's head and base, read from GitHub now.
+   */
+  private async resolvedImpl(
+    org: OrgView,
+    p: Proposal,
+  ): Promise<{
+    head: ProposalResolvedBranch;
+    base: ProposalResolvedBranch;
+    pr: string | null;
+  } | null> {
+    const impl = p.impl;
+    if (impl === null) return null;
+    const pr = impl.pr?.url ?? null;
+    if (impl.head !== null && impl.base !== null) {
+      const remotes = await this.remotesFor(org, p);
+      return {
+        head: lift(() => resolveRef(impl.head!, remotes, "head")),
+        base: lift(() => resolveRef(impl.base!, remotes, "base")),
+        pr,
+      };
+    }
+    const pull = await liftAsync(() => readPullBranches(this.gh(), pr!));
+    return {
+      head: { remote: null, repo: pull.head.repo, branch: pull.head.branch },
+      base: { remote: null, repo: pull.base.repo, branch: pull.base.branch },
+      pr,
+    };
+  }
+
+  /** The GitHub remotes of the proposal's repository (its `root` in the shared workspace); none when git cannot say. */
+  private async remotesFor(
+    org: OrgView,
+    p: Pick<Proposal, "root">,
+  ): Promise<Array<{ name: string; repo: string }>> {
+    const dir = scopeBase(org.workspace, p.root);
+    try {
+      return remotesOf(await (this.deps.git ?? gitRunner())(dir, ["remote", "-v"]));
+    } catch (err) {
+      this.deps.log.line(
+        `[company-proposals] remotes of ${dir} not read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [];
+    }
+  }
+
+  private gh(): RunGh {
+    return this.deps.gh ?? ghRunner();
   }
 
   /**
@@ -1434,12 +1630,12 @@ export class ProposalService {
     const taken = new Set(
       ledger
         .proposals()
-        .map((p) => (p.implPr === null ? null : pullKey(p.implPr.url)))
+        .map((p) => (p.impl?.pr == null ? null : pullKey(p.impl.pr.url)))
         .filter((k): k is string => k !== null),
     );
     const out: ProposalAdoptImplResponse = { adopted: [], ambiguous: [], skipped: [] };
     for (const p of ledger.proposals().sort((a, b) => a.number - b.number)) {
-      if (p.implPr !== null || p.status === "rejected") continue;
+      if (p.impl !== null || p.status === "rejected") continue;
       const urls = p.materials
         .filter((m) => m.kind === "pr" && (pullKey(m.url) ?? "").startsWith(prefix))
         .map((m) => m.url);
@@ -1542,9 +1738,10 @@ export class ProposalService {
   async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
     const { org, ledger } = await this.open(projectId, orgId, actor);
     const errors: string[] = [];
-    const [config, deployments] = await Promise.all([
+    const [config, deployments, heads] = await Promise.all([
       this.deliveryRepo(org, ledger, errors),
       readDeployments(ledger.deployments(), this.probe()),
+      this.declaredHeads(org, ledger.proposals(), errors),
     ]);
     const input = {
       repo: config.repo ?? "",
@@ -1556,7 +1753,8 @@ export class ProposalService {
         number: p.number,
         title: p.title,
         status: p.status,
-        implPr: p.implPr?.url ?? null,
+        implPr: p.impl?.pr?.url ?? null,
+        implBranch: heads.get(p.number) ?? null,
       })),
     };
     return this.graphCache.get(`${projectId}/${orgId}`, JSON.stringify(input), () =>
@@ -1565,8 +1763,38 @@ export class ProposalService {
   }
 
   /**
+   * Each live proposal's declared impl head, resolved through its repository's remotes — read
+   * once per repository directory; a head whose remote names no GitHub repository keeps a null
+   * `repo` and is listed in `errors`.
+   */
+  private async declaredHeads(
+    org: OrgView,
+    proposals: Proposal[],
+    errors: string[],
+  ): Promise<Map<number, { label: string; repo: string | null; branch: string }>> {
+    const declared = proposals.filter((p) => p.status !== "rejected" && p.impl?.head != null);
+    const byRoot = new Map<string, Promise<Array<{ name: string; repo: string }>>>();
+    const out = new Map<number, { label: string; repo: string | null; branch: string }>();
+    for (const p of declared) {
+      if (!byRoot.has(p.root)) byRoot.set(p.root, this.remotesFor(org, p));
+    }
+    for (const p of declared) {
+      const head = p.impl!.head!;
+      const remotes = await byRoot.get(p.root)!;
+      let repo: string | null = null;
+      try {
+        repo = resolveRef(head, remotes, "head").repo;
+      } catch (err) {
+        errors.push(`proposal #${p.number}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      out.set(p.number, { label: refLabel(head), repo, branch: head.branch });
+    }
+    return out;
+  }
+
+  /**
    * What a deploy (deploy.ts) needs of an organization, behind the same access check as every
-   * other route: the organization, the caller, a proposal's impl PR and the delivery repository.
+   * other route: the organization, the caller, a proposal's impl and the delivery repository.
    */
   async deployScope(projectId: string, orgId: string, actor: OrgActor): Promise<DeployScope> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
@@ -1574,7 +1802,14 @@ export class ProposalService {
       org,
       principal: caller.principal,
       person: this.isPerson(caller),
-      implPr: (number) => this.requireProposal(ledger, number).implPr?.url ?? null,
+      impl: async (number) => {
+        const p = this.requireProposal(ledger, number);
+        if (p.impl === null) return null;
+        if (p.impl.head === null) return { pr: p.impl.pr!.url, head: null };
+        const remotes = await this.remotesFor(org, p);
+        const head = lift(() => resolveRef(p.impl!.head!, remotes, "head"));
+        return { pr: p.impl.pr?.url ?? null, head: { repo: head.repo, branch: head.branch } };
+      },
       deliveryRepo: async () => (await this.deliveryRepo(org, ledger, [])).repo,
     };
   }
@@ -1909,4 +2144,41 @@ export function withImplPr(
     { kind: "pr", label: implPr.label, url: implPr.url, by: implPr.by, at: implPr.at },
     ...materials,
   ];
+}
+
+/** The impl PR as the API lists it: the PR on the impl branch, with who registered the impl and when. */
+function implPrOf(
+  impl: ProposalImpl | null,
+): { url: string; label: string; by: string; at: string } | null {
+  return impl?.pr == null ? null : { ...impl.pr, by: impl.by, at: impl.at };
+}
+
+function sameSide(a: ProposalBranchRef | null, b: ProposalBranchRef | null): boolean {
+  return a === null || b === null ? a === b : sameRef(a, b);
+}
+
+const noImpl = (number: number): ProposalError =>
+  new ProposalError(
+    409,
+    "no_impl",
+    `Proposal #${number} has no impl: register its branch (\`penguin org proposal impl ${number} --head <remote> <branch> --base <remote> <branch>\`) or its PR first.`,
+  );
+
+/** impl-branch.ts's refusals, as the service's own. */
+function lift<T>(f: () => T): T {
+  try {
+    return f();
+  } catch (err) {
+    if (err instanceof ImplBranchError) throw new ProposalError(err.status, err.code, err.message);
+    throw err;
+  }
+}
+
+async function liftAsync<T>(f: () => Promise<T>): Promise<T> {
+  try {
+    return await f();
+  } catch (err) {
+    if (err instanceof ImplBranchError) throw new ProposalError(err.status, err.code, err.message);
+    throw err;
+  }
 }

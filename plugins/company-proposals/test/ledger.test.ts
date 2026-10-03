@@ -561,7 +561,7 @@ describe("foldLedger", () => {
     expect(p.openBatches).toEqual([]);
   });
 
-  it("an impl line registers the impl PR, a later one replaces it, each with an event; the materials stay", () => {
+  it("an impl line with a PR alone is the impl branch that PR names; a later one replaces it, each with an event; the materials stay", () => {
     const state = foldLedger(
       lines(
         { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
@@ -592,9 +592,10 @@ describe("foldLedger", () => {
       ),
     );
     const p = state.proposals.get(1)!;
-    expect(p.implPr).toEqual({
-      url: "https://github.com/acme/site/pull/12",
-      label: "acme/site#12",
+    expect(p.impl).toEqual({
+      head: null,
+      base: null,
+      pr: { url: "https://github.com/acme/site/pull/12", label: "acme/site#12" },
       by: "user:boss",
       at,
     });
@@ -615,7 +616,63 @@ describe("foldLedger", () => {
         brief: "b",
       }),
     );
-    expect(fresh.proposals.get(2)?.implPr).toBeNull();
+    expect(fresh.proposals.get(2)?.impl).toBeNull();
+  });
+
+  it("an impl line with head and base is the impl branch, with or without its PR; the latest line wins", () => {
+    const head = { remote: "origin", branch: "feat/x" };
+    const base = { remote: "origin", branch: "main" };
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        { kind: "impl", number: 1, head, base, by: "agent:dev" },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.impl).toEqual({ head, base, pr: null, by: "agent:dev", at });
+    expect(p.events.at(-1)).toMatchObject({
+      kind: "material_added",
+      text: "impl origin/feat/x ← origin/main",
+    });
+
+    const attached = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        { kind: "impl", number: 1, head, base, by: "agent:dev" },
+        {
+          kind: "impl",
+          number: 1,
+          head,
+          base: { remote: "origin", branch: "dev" },
+          url: "https://github.com/acme/site/pull/9",
+          label: "acme/site#9",
+          by: "user:boss",
+        },
+      ),
+    );
+    expect(attached.proposals.get(1)!.impl).toEqual({
+      head,
+      base: { remote: "origin", branch: "dev" },
+      pr: { url: "https://github.com/acme/site/pull/9", label: "acme/site#9" },
+      by: "user:boss",
+      at,
+    });
+
+    // A PR line after a branch line replaces it whole: the impl is the branch that PR names.
+    const replaced = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        { kind: "impl", number: 1, head, base, by: "agent:dev" },
+        {
+          kind: "impl",
+          number: 1,
+          url: "https://github.com/acme/site/pull/9",
+          label: "acme/site#9",
+          by: "agent:dev",
+        },
+      ),
+    );
+    expect(replaced.proposals.get(1)!.impl).toMatchObject({ head: null, base: null });
   });
 
   it("skips a line about a proposal that does not exist, and keeps counting seq", () => {

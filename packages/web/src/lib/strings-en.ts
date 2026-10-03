@@ -6172,6 +6172,33 @@ Scenarios:
       briefSection: "Brief",
       materials: "Materials",
       materialsEmpty: "No materials yet — the implementer's PR lands here.",
+      /** The impl section: the branch pair the proposal is implemented on, its PR and its patch. */
+      impl: {
+        title: "Implementation",
+        info: "The head branch the proposal is implemented on and the base it is measured against. The patch is everything on the head since the two branches last met (their merge base); a PR opened for the head attaches here later.",
+        empty: "No implementation registered yet.",
+        branchOfPr: "The branches of this PR",
+        pr: "PR",
+        noPr: "No PR opened yet",
+        showFiles: "Show changed files",
+        hideFiles: "Hide changed files",
+        loading: "Reading the comparison from GitHub…",
+        loadFailed: "Could not read the comparison",
+        retry: "Retry",
+        compare: "Compare on GitHub",
+        noFiles: "The head has nothing past its base.",
+        summary: (
+          files: number,
+          additions: number,
+          deletions: number,
+          ahead: number,
+          behind: number,
+        ): string =>
+          `${files} file${files === 1 ? "" : "s"}, +${additions} −${deletions} · ${ahead} commit${ahead === 1 ? "" : "s"} ahead, ${behind} behind`,
+        truncated: (n: number): string =>
+          `GitHub lists at most ${n} files of a comparison; the rest are not shown.`,
+        renamed: (from: string): string => `renamed from ${from}`,
+      },
       materialKind: {
         pr: "PR",
         issue: "Issue",
@@ -6364,7 +6391,7 @@ Scenarios:
         detached: "PRs the graph cannot draw",
         detachedHint:
           "Their declared base leads to neither the base branch nor any open PR — not even through merged or closed PRs — or the bases form a cycle. This is not the same as off the chain.",
-        unplaced: "Proposals whose impl PR is not on the graph",
+        unplaced: "Proposals whose impl is not on the graph",
         deploymentsOff: "Deployments on no layer",
         deploymentsOffHint:
           "The commit it runs could not be read (a deployment without a url reports none), or compares with no layer on the graph (for instance a commit only on some machine's local deployment line).",
@@ -6377,7 +6404,7 @@ Scenarios:
           `Deployment ${id} runs ${describe ?? commit}${ahead !== null && ahead > 0 ? `, ${ahead} commits past this layer` : ""}`,
         deploymentUnread: "commit not read",
         unplacedHint:
-          "The impl PR is registered but is not an open PR on the delivery repository; each line says why — merged, already in the base branch, closed, open on another repository, or an open PR here carries its branch (the registration names the other one).",
+          "The impl is registered but is not an open PR on the delivery repository; each line says why — merged, already in the base branch, closed, open on another repository, an open PR here carries its branch (the registration names the other one), or an impl branch no open PR is opened from yet.",
         unplacedReason: (reason: string, at: string, into: string, base: string): string =>
           ({
             counterpart: `${at} carries its branch`,
@@ -6386,6 +6413,7 @@ Scenarios:
             closed: "closed",
             "open-elsewhere": "open on another repository",
             unread: "not read",
+            "no-pr": "no PR on its head branch",
           })[reason] ?? reason,
         empty: "No open PRs on the delivery repository; the graph is the base alone.",
         focusMissing: (n: number): string =>

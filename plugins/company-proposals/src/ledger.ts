@@ -16,10 +16,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { locateQuote, paragraphAtOffset, paragraphSpan, sectionSource } from "./comments.js";
 import type {
+  ProposalBranchRef,
   ProposalComment,
   ProposalDiscussion,
   ProposalEvent,
-  ProposalImplPr,
   ProposalMaterial,
   ProposalMaterialKind,
   ProposalRevision,
@@ -86,10 +86,26 @@ export type LedgerEntry =
       by: string;
     }
   /**
-   * The proposal's impl PR registered: the one PR it is implemented by. A later line replaces
-   * it; the service refuses a PR that is already another proposal's.
+   * The proposal's impl registered: a branch pair (`head` and `base`), the PR opened for the
+   * head (`url` and `label`), or both. A line with the PR alone — every line written before
+   * impl branches is one — names the impl branch by that PR: its head and base are the PR's,
+   * read from GitHub where they are needed. A later line replaces the one before; the service
+   * refuses a head or a PR that is already another proposal's.
+   *
+   * TODO(impl-branch-compat): the PR-only reading exists because the ledger is never rewritten;
+   * it can go once a one-time step has appended head/base lines for every proposal whose latest
+   * impl line has a PR alone, and registering a PR alone writes the PR's head and base too
+   * (changelog 2026-10-03-backward-compatibility-impl-branch.md).
    */
-  | { kind: "impl"; number: number; url: string; label: string; by: string }
+  | {
+      kind: "impl";
+      number: number;
+      head?: ProposalBranchRef;
+      base?: ProposalBranchRef;
+      url?: string;
+      label?: string;
+      by: string;
+    }
   | { kind: "feedback"; number: number; text: string; runtime: boolean; by: string }
   /**
    * A pending comment: the person's own until a `batch` line names it. Anchored to
@@ -180,8 +196,8 @@ export interface Proposal {
   tests: ProposalTestEntry[];
   sections: ProposalSection[];
   materials: ProposalMaterial[];
-  /** The impl PR, once registered; the latest `impl` line wins. */
-  implPr: ProposalImplPr | null;
+  /** The impl branch and its PR, once registered; the latest `impl` line wins. */
+  impl: ProposalImpl | null;
   sessions: string[];
   discussions: ProposalDiscussion[];
   comments: ProposalComment[];
@@ -194,6 +210,15 @@ export interface Proposal {
   revisions: Map<number, ProposalRevision>;
   /** The `seq` of the last line about this proposal. */
   seq: number;
+}
+
+/** A proposal's impl as folded: the declared branch pair (both null when only a PR was registered) and the PR. */
+export interface ProposalImpl {
+  head: ProposalBranchRef | null;
+  base: ProposalBranchRef | null;
+  pr: { url: string; label: string } | null;
+  by: string;
+  at: string;
 }
 
 /** The fold of a whole ledger: its proposals by number, and the last `seq` written. */
@@ -237,7 +262,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       tests: [],
       sections: [],
       materials: [],
-      implPr: null,
+      impl: null,
       sessions: [],
       discussions: [],
       comments: [],
@@ -308,11 +333,22 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       p.materials.push({ ...line.material, by: line.by, at: line.at });
       event("material_added", line.by, { text: line.material.label, url: line.material.url });
       return;
-    case "impl":
-      p.implPr = { url: line.url, label: line.label, by: line.by, at: line.at };
-      // The timeline names it the way a material is named, marked as the impl PR.
-      event("material_added", line.by, { text: `impl ${line.label}`, url: line.url });
+    case "impl": {
+      const pr = line.url === undefined ? null : { url: line.url, label: line.label ?? line.url };
+      const branch =
+        line.head !== undefined && line.base !== undefined
+          ? { head: line.head, base: line.base }
+          : { head: null, base: null };
+      p.impl = { ...branch, pr, by: line.by, at: line.at };
+      // The timeline names it the way a material is named, marked as the impl.
+      if (pr !== null) event("material_added", line.by, { text: `impl ${pr.label}`, url: pr.url });
+      else if (branch.head !== null) {
+        event("material_added", line.by, {
+          text: `impl ${branch.head.remote}/${branch.head.branch} ← ${branch.base!.remote}/${branch.base!.branch}`,
+        });
+      }
       return;
+    }
     case "feedback":
       event(line.runtime ? "runtime_feedback" : "feedback", line.by, { text: line.text });
       return;

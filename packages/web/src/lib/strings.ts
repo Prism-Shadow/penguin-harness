@@ -6358,6 +6358,32 @@ Benchmark：
       briefSection: "委托",
       materials: "关联材料",
       materialsEmpty: "还没有关联材料——实施者开出 PR 后挂在这里。",
+      /** The impl section: the branch pair the proposal is implemented on, its PR and its patch. */
+      impl: {
+        title: "实现",
+        info: "提案实现所在的 head 分支，以及衡量它的 base 分支。patch 是两条分支分叉（merge-base）以来 head 上的全部改动；之后为 head 开出的 PR 挂在这里。",
+        empty: "还没有登记实现。",
+        branchOfPr: "这张 PR 的分支",
+        pr: "PR",
+        noPr: "尚未开 PR",
+        showFiles: "展开改动的文件",
+        hideFiles: "收起改动的文件",
+        loading: "正在从 GitHub 读取比较结果…",
+        loadFailed: "没能读到比较结果",
+        retry: "重试",
+        compare: "在 GitHub 上比较",
+        noFiles: "head 上没有超出 base 的改动。",
+        summary: (
+          files: number,
+          additions: number,
+          deletions: number,
+          ahead: number,
+          behind: number,
+        ): string =>
+          `${files} 个文件，+${additions} −${deletions} · 领先 ${ahead} 个提交，落后 ${behind} 个`,
+        truncated: (n: number): string => `GitHub 一次比较最多列 ${n} 个文件，其余未列出。`,
+        renamed: (from: string): string => `由 ${from} 改名`,
+      },
       materialKind: {
         pr: "PR",
         issue: "Issue",
@@ -6547,7 +6573,7 @@ Benchmark：
         detached: "画不出来的 PR",
         detachedHint:
           "声明的 base 既走不到底座分支，也走不到任何一张 open PR（穿过已合并、已关闭的 PR 也不行），或者 base 互相成环。这与「不在链上」不是一回事。",
-        unplaced: "impl PR 不在图上的提案",
+        unplaced: "实现不在图上的提案",
         deploymentsOff: "不在图上的部署",
         deploymentsOffHint:
           "读不到它此刻跑的 commit（没有 url 的部署不报 commit），或这个 commit 与图上任何一层都比不出来（例如只在某台机器本地部署线上的提交）。",
@@ -6560,7 +6586,7 @@ Benchmark：
           `部署 ${id} 跑在 ${describe ?? commit}${ahead !== null && ahead > 0 ? `，比这一层多 ${ahead} 个提交` : ""}`,
         deploymentUnread: "读不到 commit",
         unplacedHint:
-          "登记了 impl PR，但它不是交付仓库上的 open PR；每行写明原因：已合并、已在底座分支里、已关闭、开在别的仓库，或者这里有一张 open PR 带着它的分支（登记的是另一张）。",
+          "登记了实现，但它不是交付仓库上的 open PR；每行写明原因：已合并、已在底座分支里、已关闭、开在别的仓库、这里有一张 open PR 带着它的分支（登记的是另一张），或者 impl branch 上还没有开出 open PR。",
         unplacedReason: (reason: string, at: string, into: string, base: string): string =>
           ({
             counterpart: `${at} 带着它的分支`,
@@ -6569,6 +6595,7 @@ Benchmark：
             closed: "已关闭",
             "open-elsewhere": "开在别的仓库",
             unread: "没读到",
+            "no-pr": "head 分支上还没有 PR",
           })[reason] ?? reason,
         empty: "交付仓库上没有 open PR，图上只有底座。",
         focusMissing: (n: number): string =>

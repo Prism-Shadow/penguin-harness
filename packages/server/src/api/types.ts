@@ -6846,8 +6846,35 @@ export interface ProposalItem {
   /** The caller's pending comments (people only; 0 for an employee). */
   pendingComments: number;
   materials: ProposalMaterial[];
-  /** The one pull request the proposal is implemented by (`penguin org proposal impl`); null until registered, absent from a server older than impl PRs. */
+  /** The one pull request the proposal is implemented by (`penguin org proposal impl`): the PR on its impl branch; null until registered, absent from a server older than impl PRs. */
   implPr?: ProposalImplPr | null;
+  /** The branch pair the proposal is implemented on; null until registered, absent from a server older than impl branches. */
+  impl?: ProposalImplBranch | null;
+}
+
+/**
+ * One side of an impl branch: a git remote of the proposal's repository that points at GitHub
+ * (`origin`), or a GitHub repository written out (`owner/repo`), and a branch on it.
+ */
+export interface ProposalBranchRef {
+  remote: string;
+  branch: string;
+}
+
+/**
+ * A proposal's implementation: a head branch and the base it is measured against — the patch
+ * is the merge base of the two up to the head — and the PR opened for the head, once one is.
+ * A registration that named only a PR has `head` and `base` null: they are that PR's, read
+ * from GitHub where they are needed.
+ */
+export interface ProposalImplBranch {
+  head: ProposalBranchRef | null;
+  base: ProposalBranchRef | null;
+  /** The PR's URL, null until one is registered. */
+  pr: string | null;
+  /** `agent:<id>` or `user:<id>`: who registered the latest of it. */
+  by: string;
+  at: string;
 }
 
 /**
@@ -6864,9 +6891,14 @@ export interface ProposalImplPr {
   at: string;
 }
 
-/** `PUT …/:number/impl`. */
+/**
+ * `PUT …/:number/impl`: a branch pair (`head` and `base` together), a PR (`url`), or both. A PR
+ * registered onto a declared head must have that head; its base replaces the declared one.
+ */
 export interface ProposalImplRequest {
-  url: string;
+  url?: string;
+  head?: ProposalBranchRef;
+  base?: ProposalBranchRef;
   sessionId?: string;
   agentId?: string;
 }
@@ -6882,6 +6914,46 @@ export interface ProposalAdoptImplResponse {
   ambiguous: Array<{ number: number; urls: string[] }>;
   /** Not adopted: no `pr` material there, or that PR is already another proposal's. */
   skipped: Array<{ number: number; reason: string }>;
+}
+
+/** One side of an impl branch as GitHub names it: the remote it was declared with (null when read off a PR), the repository, the branch. */
+export interface ProposalResolvedBranch {
+  remote: string | null;
+  /** `owner/repo`. */
+  repo: string;
+  branch: string;
+}
+
+/** One file of an impl branch's patch, as GitHub's comparison lists it. */
+export interface ProposalImplDiffFile {
+  path: string;
+  /** `added`, `removed`, `modified`, `renamed`, `copied`, `changed` or `unchanged`. */
+  status: string;
+  /** The path before a rename; null otherwise. */
+  from: string | null;
+  additions: number;
+  deletions: number;
+  /** The file's unified hunks; null when GitHub sent none (a binary file, or one too large). */
+  patch: string | null;
+}
+
+/** `GET …/:number/impl/diff`: the impl branch's patch — the merge base of base and head, up to head. */
+export interface ProposalImplDiff {
+  head: ProposalResolvedBranch;
+  base: ProposalResolvedBranch;
+  /** The head commit, full sha. */
+  headSha: string;
+  mergeBase: string | null;
+  /** Commits on head past the merge base, and on base past it. */
+  ahead: number;
+  behind: number;
+  files: ProposalImplDiffFile[];
+  /** GitHub lists at most 300 files of a comparison: true when there were more. */
+  truncated: boolean;
+  /** The comparison on GitHub. */
+  compareUrl: string;
+  /** The impl PR, null when none is registered. */
+  pr: string | null;
 }
 
 /** How one head stands against another: `ahead` = it contains the other and more. */
@@ -6966,17 +7038,21 @@ export interface ProposalGraphNode {
  * - `in-base`: not merged, but its head is already in the base branch;
  * - `closed`: closed without merging, and not in the base branch;
  * - `open-elsewhere`: open, on another repository;
- * - `unread`: GitHub could not be asked about it.
+ * - `unread`: GitHub could not be asked about it;
+ * - `no-pr`: an impl branch with no PR, whose head is no open PR's branch on the delivery repository.
  */
 export type ProposalGraphUnplacedReason =
-  "counterpart" | "merged" | "in-base" | "closed" | "open-elsewhere" | "unread";
+  "counterpart" | "merged" | "in-base" | "closed" | "open-elsewhere" | "unread" | "no-pr";
 
 /** A proposal whose impl PR is not an open PR on the delivery repository, and why. */
 export interface ProposalGraphUnplaced {
   number: number;
   title: string;
   status: ProposalStatus;
-  implPr: string;
+  /** The impl PR; null for an impl branch with no PR. */
+  implPr: string | null;
+  /** The declared head, `<remote>/<branch>`; null when the impl was registered as a PR alone. */
+  branch: string | null;
   reason: ProposalGraphUnplacedReason;
   /** The counterpart's number (`counterpart`); null otherwise. */
   at: number | null;
@@ -7075,12 +7151,14 @@ export interface ProposalDeployScriptsResponse {
 /** What a deploy runs: the script, the PR head it is given, and the full argument vector. */
 export interface ProposalDeployPlan {
   script: string;
+  /** `owner/repo` of the head. */
   repo: string;
-  pr: number;
-  prUrl: string;
+  /** The PR deployed; null for an impl branch with no PR. */
+  pr: number | null;
+  prUrl: string | null;
   branch: string;
   head: string;
-  /** The proposal whose impl PR this is; null for a PR no proposal registered. */
+  /** The proposal whose impl this is; null for a PR no proposal registered. */
   proposal: number | null;
   argv: string[];
 }
