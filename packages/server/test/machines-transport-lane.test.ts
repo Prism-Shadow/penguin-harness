@@ -17,16 +17,22 @@ describe("the per-machine lane", () => {
     // Node on a slow runner.
     await sleep("ssh:warm-up");
 
+    // Both bounds are relative to one child's measured time, so a slow runner's start-up
+    // moves them together instead of failing an absolute floor.
     let started = Date.now();
+    await sleep("ssh:nas");
+    const alone = Date.now() - started;
+
+    started = Date.now();
     await Promise.all([sleep("ssh:nas"), sleep("ssh:nas")]);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(380);
+    const serial = Date.now() - started;
+    // Serialised means a second child's time after the first: at least its 200 ms sleep on top
+    // of one child's, less scheduling noise.
+    expect(serial).toBeGreaterThanOrEqual(alone + 150);
 
     started = Date.now();
     await Promise.all([sleep("ssh:nas"), sleep("ssh:build-box")]);
     const together = Date.now() - started;
-    started = Date.now();
-    await sleep("ssh:nas");
-    const alone = Date.now() - started;
     // Together means one child's time plus scheduling noise, not two children's time.
     expect(together).toBeLessThan(alone + 180);
   });
