@@ -21,13 +21,18 @@
  * - The terminal toggle reports no tab so the caller adopts or creates one, hides and restores,
  *   and brings the terminal to the front when a panel covers it.
  * - Each scope's arrangement round-trips across a reload (sizes are one preference); a stored
- *   tab this build does not know is dropped, not the dock, and a malformed entry reads as empty
+ *   tab key that is no well-formed id is dropped, not the dock, while a well-formed id nothing
+ *   has registered (a plugin's panel not loaded yet) is kept; a malformed entry reads as empty
  *   docks.
  * - Scope switches and moves are instant (no animation); toggles animate.
  * - A detached terminal tab returns to the scope it left, unless a conversation already holds
  *   the shell again.
  * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
  *   one has none.
+ * - At most one surface covers the window (fullscreen), and only an open dock with tabs enters it.
+ *   It lasts while that dock is open and the one touched last: hiding it, closing its last tab, or
+ *   anything activating in the other dock ends it, while switching tabs within it does not. A
+ *   scope switch ends it too, and it is never stored.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "./helpers/storage";
@@ -76,15 +81,13 @@ describe("panel tabs", () => {
     expect(dock.dockActiveKey("bottom")).toBe("agents");
   });
 
-  it("lists the scheduled-tasks panel as a kind and opens it like any other", () => {
-    expect(dock.PANEL_KINDS).toContain("schedules");
+  it("opens the scheduled-tasks panel like any other", () => {
     dock.openPanel("schedules", "right");
     expect(dock.panelDock("schedules")).toBe("right");
     expect(dock.dockActiveKey("right")).toBe("schedules");
   });
 
-  it("lists the built-in browser as a kind and opens it like any other", () => {
-    expect(dock.PANEL_KINDS).toContain("builtin-browser");
+  it("opens the built-in browser like any other", () => {
     dock.openPanel("builtin-browser");
     expect(dock.panelDock("builtin-browser")).toBe("right");
     expect(dock.isTabShown("builtin-browser")).toBe(true);
@@ -314,18 +317,23 @@ describe("persistence", () => {
     expect(reloaded.dockActiveKey("bottom")).toBe("memory");
   });
 
-  it("reads a stored schedules tab back and drops a tab key it does not know", async () => {
-    // A layout written by a newer build may name a kind this build lacks; the known tab
-    // survives and the stranger is dropped, never the whole dock.
+  it("keeps a well-formed stored tab id, a plugin's namespaced one too, and drops the rest", async () => {
+    // A stored id nothing has registered (a plugin's panel not loaded yet) stays, to render a
+    // placeholder; a key that is no id at all is dropped, never the whole dock.
+    const tabs = ["schedules", "acme.kanban", "Bad Key!", "terminal:", "terminal:t1"];
     localStorage.setItem(
       "penguin.dock.layout",
-      '{"scopes": {"s": {"right": {"tabs": ["schedules", "someday"], "active": "schedules", "open": true}}}}',
+      JSON.stringify({ scopes: { s: { right: { tabs, active: "acme.kanban", open: true } } } }),
     );
     vi.resetModules();
     const reloaded = await import("../src/features/dock/dock-state");
     reloaded.setDockScope("s");
-    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["schedules"]);
-    expect(reloaded.dockActiveKey("right")).toBe("schedules");
+    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual([
+      "schedules",
+      "acme.kanban",
+      "terminal:t1",
+    ]);
+    expect(reloaded.dockActiveKey("right")).toBe("acme.kanban");
     expect(reloaded.isDockVisible("right")).toBe(true);
   });
 
@@ -427,5 +435,108 @@ describe("view models", () => {
     dock.closePanel("workspace");
     dock.closePanel("memory");
     expect(dock.closedDockView("right")).toBeNull();
+  });
+});
+
+describe("fullscreen", () => {
+  it("enters only on an open dock with tabs: closed, hidden or the picker is a no-op", () => {
+    dock.setDockFullscreen("right"); // nothing open
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.toggleDock("right"); // the picker: open, no tabs
+    dock.setDockFullscreen("right");
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.openPanel("workspace", "right");
+    dock.toggleDock("right"); // hidden, its tab kept
+    dock.setDockFullscreen("right");
+    expect(dock.fullscreenDock()).toBeNull();
+
+    dock.toggleDock("right");
+    const before = dock.dockVersion();
+    dock.setDockFullscreen("right");
+    expect(dock.fullscreenDock()).toBe("right");
+    expect(dock.dockVersion()).toBeGreaterThan(before); // subscribers re-render
+    dock.setDockFullscreen(null);
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("exits when its dock hides, and does not come back when the dock reopens", () => {
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.toggleDock("right");
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.toggleDock("right");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("outlives closing one of its tabs and exits with the last", () => {
+    dock.openPanel("workspace", "bottom");
+    dock.openPanel("memory", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.closePanel("memory");
+    expect(dock.fullscreenDock()).toBe("bottom");
+    dock.closePanel("workspace");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("keeps covering while another tab of the same dock activates or opens there", () => {
+    dock.openPanel("workspace", "right");
+    dock.openPanel("memory", "right");
+    dock.setDockFullscreen("right");
+    dock.activateTab("workspace");
+    dock.openPanel("trace"); // a new panel lands in the right dock by default
+    expect(dock.fullscreenDock()).toBe("right");
+  });
+
+  it("exits when a tab of the other dock activates", () => {
+    dock.openPanel("memory", "bottom");
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.activateTab("memory");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("exits when openPanel lands in the other dock", () => {
+    dock.openPanel("builtin-browser", "bottom");
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    // The agent opens the browser, whose tab lives at the bottom: shown, not left under the cover.
+    dock.openPanel("builtin-browser");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("exits when the other dock is toggled open", () => {
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.toggleDock("bottom");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("is cleared by a scope switch and not restored on return", () => {
+    const a = `scope-fullscreen-a-${scopeSeq}`;
+    const b = `scope-fullscreen-b-${scopeSeq}`;
+    dock.setDockScope(b);
+    dock.openPanel("workspace", "right");
+    dock.setDockScope(a);
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.setDockScope(b); // the same dock is open and touched last here too
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.setDockScope(a);
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("is never written to storage", () => {
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.openPanel("memory", "right"); // a persisted change made while it still covers
+    expect(dock.fullscreenDock()).toBe("right");
+    const stored = JSON.parse(localStorage.getItem("penguin.dock.layout")!) as {
+      scopes: Record<string, { right: object; bottom: object }>;
+    };
+    const entry = stored.scopes[dock.currentDockScope()]!;
+    expect(Object.keys(stored).sort()).toEqual(["bottomRatio", "scopes"]);
+    expect(Object.keys(entry).sort()).toEqual(["bottom", "focus", "right"]);
+    for (const area of [entry.right, entry.bottom])
+      expect(Object.keys(area).sort()).toEqual(["active", "open", "tabs"]);
   });
 });

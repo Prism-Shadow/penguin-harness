@@ -15,11 +15,13 @@
  * | hook               | the job                                                  | anatomy the recipes rely on                           |
  * | ------------------ | -------------------------------------------------------- | ----------------------------------------------------- |
  * | `ui-glass`         | a transient layer over content: menus, popovers, the     | a dialog is `[role="dialog"]`, its head, padded body and foot direct children `data-slot="head" \| "body" \| "foot"` (a caller-owned body carries no slot); a menu's rows are `[role="menu"] > [role^="menuitem"]`, a listbox panel's `[role="option"]` children; a tile carries `data-glass="tile"` and its hue as its ink |
- * |                    | modal card, the floating composer and launcher, a sticky |                                                       |
- * |                    | page header — and a plugin or skill tile, the one glass  |                                                       |
+ * |                    | modal card, the floating composer and launcher (and a    |                                                       |
+ * |                    | fullscreen dock's exit button), a sticky page header —   |                                                       |
+ * |                    | and a plugin or skill tile, the one glass                |                                                       |
  * |                    | that is not transient                                    |                                                       |
  * |                    | hosts: `ComposerCard` and its `SlashMenu`, `Modal`,      |                                                       |
  * |                    | `Dropdown`, the selects, popovers and tooltips,          |                                                       |
+ * |                    | the launcher's ball and fan, `DockFrame`'s exit button,  |                                                       |
  * |                    | `SkillTile`                                              |                                                       |
  * | `ui-eyebrow`       | a group label naming the items below it (never directly  | —                                                     |
  * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |

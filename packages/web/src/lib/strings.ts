@@ -298,9 +298,12 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
-    /** Touch-only: the bottom dock's height toggle, standing in for a boundary drag. */
-    maximize: "放大到整屏",
-    restore: "还原高度",
+    /** The dock header's fullscreen button (shown while the surface is not fullscreen). */
+    fullscreen: "全屏",
+    /** The round button floating at the window's corner while a dock surface is fullscreen. */
+    exitFullscreen: "退出全屏",
+    /** A tab whose panel has no definition registered (a plugin's panel before it loads). */
+    panelUnavailable: "此面板暂不可用",
   },
 
   /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */

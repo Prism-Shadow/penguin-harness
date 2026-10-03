@@ -103,6 +103,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     // conversation with content moving underneath.
     "LauncherBall",
     "LauncherFan",
+    // A fullscreen dock's way out: one round button floating over the panel's content, the
+    // launcher ball's sibling in look.
+    "DockFrame",
     // A plugin or skill tile (`data-glass="tile"`): the one glass that does not float.
     "SkillTile",
   ],
