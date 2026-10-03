@@ -408,9 +408,15 @@ export function orphanComments<T extends { revision: number }>(
   return comments.filter((c) => isStaleComment(c, currentRevision));
 }
 
-/** What the `proposals/:number?` page shows: the queue, or one proposal. */
-export function proposalsRoute(param: string | undefined): { queue: true } | { number: number } {
+/** The segment the PR graph takes on the proposals route, where a number would stand (`proposals/graph`). */
+export const GRAPH_SEGMENT = "graph";
+
+/** What the `proposals/:number?` page shows: the queue, the PR graph, or one proposal. */
+export function proposalsRoute(
+  param: string | undefined,
+): { queue: true } | { graph: true } | { number: number } {
   if (param === undefined) return { queue: true };
+  if (param === GRAPH_SEGMENT) return { graph: true };
   const n = Number(param);
   return Number.isSafeInteger(n) && n > 0 ? { number: n } : { queue: true };
 }

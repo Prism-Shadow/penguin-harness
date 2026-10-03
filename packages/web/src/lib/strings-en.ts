@@ -6273,6 +6273,76 @@ Scenarios:
       capsule: (n: number, title: string): string => `#${n} ${title}`,
       capsuleUnread: (n: number): string => `${n} unread`,
       openProposal: "Open the proposal",
+      /** The PR graph: the delivery repository's open PRs drawn as a commit graph, reached from the queue and from a proposal. */
+      graph: {
+        title: "PR graph",
+        open: "Graph",
+        openTitle: "Open the PR graph",
+        openForProposal: "See this proposal in the PR graph",
+        info: "Each open PR on the delivery repository is a node at its head, stacked layer by layer on the base branch by commit ancestry, newest on top. A node shows which proposal it is the impl PR of, how many commits it adds to the layer below, and the PRs the other origins have on the same branch. The chain is read as the handbook defines the one PR stack: it passes through merged and closed layers, keeps a layer that forked inside the one below as stale, and at a fork takes the branch that keeps going. Where the roadmap's order would have to decide a fork, the graph marks it and names no top.",
+        refresh: "Refresh",
+        loadFailed: "Could not read the PR graph",
+        partial: "The graph is partial; these could not be read:",
+        base: "base",
+        baseForked: "forks on the base",
+        top: "top",
+        fork: "fork",
+        offReason: (reason: string, at: string, relation: string, base: string): string =>
+          ({
+            "old-line": `old line: ${relation} against ${at}`,
+            unread: `not compared with ${at}`,
+            "no-base": `base ${base} is the branch of no open, merged or closed PR`,
+            "not-taken": `not taken at the fork at ${at}`,
+            above: `on off-chain ${at}`,
+            cycle: "declared bases form a cycle",
+          })[reason] ?? reason,
+        via: (state: string, n: number): string => `via ${state} #${n}`,
+        viaClosedTitle: (n: number): string =>
+          `The declared base is the branch of #${n}, closed without merging: this layer still carries #${n}'s commits, and a restack onto the layer below drops them.`,
+        viaMergedTitle: (n: number): string =>
+          `The declared base is the branch of #${n}, merged since: the chain goes on from #${n}'s own base.`,
+        stale: "stale",
+        staleTitle: (behind: number): string =>
+          `The layer below moved on ${behind} commits after this one forked inside it: still on the chain, waiting for a restack.`,
+        noProposal: "no proposal",
+        proposalRef: (n: number): string => `proposal #${n}`,
+        ahead: (n: number): string => `+${n}`,
+        aheadTitle: (n: number, base: string): string => `${n} commits on top of ${base}`,
+        relation: {
+          same: "same",
+          ahead: "ahead",
+          behind: "behind",
+          diverged: "diverged",
+          unknown: "unknown",
+        } as Record<string, string>,
+        originTitle: (origin: string, n: number, relation: string): string =>
+          `PR #${n} on ${origin}, same branch: ${relation}`,
+        offSection: "Off the chain",
+        offSectionHint:
+          "Drawn on the graph but not on the chain, each with the reason: an old line, a branch not taken at a fork, or a layer on one of those.",
+        detached: "PRs the graph cannot draw",
+        detachedHint:
+          "Their declared base leads to neither the base branch nor any open PR — not even through merged or closed PRs — or the bases form a cycle. This is not the same as off the chain.",
+        unplaced: "Proposals whose impl PR is not on the graph",
+        unplacedHint:
+          "The impl PR is registered but is not an open PR on the delivery repository; each line says why — merged, already in the base branch, closed, open on another repository, or an open PR here carries its branch (the registration names the other one).",
+        unplacedReason: (reason: string, at: string, into: string, base: string): string =>
+          ({
+            counterpart: `${at} carries its branch`,
+            merged: `merged into ${into}`,
+            "in-base": `already in ${base}`,
+            closed: "closed",
+            "open-elsewhere": "open on another repository",
+            unread: "not read",
+          })[reason] ?? reason,
+        empty: "No open PRs on the delivery repository; the graph is the base alone.",
+        focusMissing: (n: number): string =>
+          `Proposal #${n} has no impl PR registered, or its impl PR is not on the delivery repository.`,
+        checkedAt: (when: string): string => `read ${when}`,
+        summary: (nodes: number, onChain: number): string =>
+          `${nodes} PRs, ${onChain} on the chain`,
+        openPr: "Open on GitHub",
+      },
     },
   },
   errors: {

@@ -1,0 +1,257 @@
+/**
+ * The PR graph page's rows and the three lists under the graph. A node row carries the marks the
+ * server gave it — top, fork, the merged or closed PRs its base led through, stale, and the reason
+ * it is off the chain. Under the graph, three lists answer three different questions and are named
+ * apart: the PRs drawn but off the chain, the PRs the graph cannot draw at all, and the proposals
+ * whose impl PR is not an open PR on the delivery repository — each row with its reason.
+ */
+import type {
+  ProposalGraphNode,
+  ProposalGraphOffReason,
+  ProposalGraphRelation,
+  ProposalGraphResponse,
+  ProposalStatus,
+} from "@prismshadow/penguin-server/api";
+import { S } from "../../lib/strings";
+import { toneInk, toneSurface } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
+import { Badge, ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
+import { TitleButton } from "../company/shared";
+import { PROPOSAL_STATUS_TONE } from "./proposals-model";
+
+/** The focused proposal's row: a background wash only, so the marks on it keep their own ink. */
+export const FOCUS_WASH = "bg-blue-50 dark:bg-blue-950/40";
+
+/** How one head stands against another, as a tone: the same is settled, behind waits, diverged is the problem. */
+export const RELATION_TONE: Record<ProposalGraphRelation, Tone> = {
+  same: "success",
+  ahead: "link",
+  behind: "attention",
+  diverged: "danger",
+  unknown: "muted",
+};
+
+/** Why a node is off the chain, as a tone: a broken line is the problem, a branch the chain did not take only recedes. */
+const OFF_TONE: Record<ProposalGraphOffReason, Tone> = {
+  "old-line": "danger",
+  unread: "muted",
+  "no-base": "danger",
+  "not-taken": "muted",
+  above: "muted",
+  cycle: "danger",
+};
+
+function StatusPill({ status }: { status: ProposalStatus }) {
+  return (
+    <Badge tone={PROPOSAL_STATUS_TONE[status]}>
+      {S.company.proposals.status[status] ?? status}
+    </Badge>
+  );
+}
+
+export function Mark({ tone, children, title }: { tone: Tone; children: string; title?: string }) {
+  return (
+    <span
+      data-tooltip={title}
+      className={`shrink-0 rounded px-1 text-xs font-medium ${toneSurface[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** `#n`, or the base branch's name for 0. */
+function layerLabel(graph: ProposalGraphResponse, n: number | null): string {
+  return n === null ? "?" : n === 0 ? graph.base.branch : `#${n}`;
+}
+
+/** The sentence saying why a node is off the chain; empty when it is on it. */
+export function offReasonText(graph: ProposalGraphResponse, node: ProposalGraphNode): string {
+  if (node.off === null) return "";
+  const t = S.company.proposals.graph;
+  const own = node.off.reason === "old-line" || node.off.reason === "unread";
+  return t.offReason(
+    node.off.reason,
+    layerLabel(graph, own ? node.parent : node.off.at),
+    t.relation[node.relation] ?? node.relation,
+    node.base,
+  );
+}
+
+export function NodeRow({
+  graph,
+  node,
+  onOpenProposal,
+}: {
+  graph: ProposalGraphResponse;
+  node: ProposalGraphNode;
+  onOpenProposal: (n: number) => void;
+}) {
+  const t = S.company.proposals.graph;
+  const relationWord = (r: ProposalGraphRelation) => t.relation[r] ?? r;
+  return (
+    <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+      <div className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs`}>
+        <a
+          href={node.url}
+          target="_blank"
+          rel="noreferrer"
+          data-tooltip={t.openPr}
+          className="shrink-0 font-mono text-gray-500 hover:underline dark:text-gray-400"
+        >
+          #{node.number}
+        </a>
+        {node.proposal === null ? (
+          <Mark tone="muted">{t.noProposal}</Mark>
+        ) : (
+          <>
+            <TitleButton
+              onClick={() => onOpenProposal(node.proposal!.number)}
+              hint={`${S.company.proposals.openProposal}: ${node.proposal.title}`}
+              className="shrink-0 font-mono text-xs font-medium"
+            >
+              {t.proposalRef(node.proposal.number)}
+            </TitleButton>
+            <StatusPill status={node.proposal.status} />
+          </>
+        )}
+        <span className="min-w-0 truncate" data-tooltip={node.title}>
+          {node.title}
+        </span>
+        {graph.top === node.number && <Mark tone="success">{t.top}</Mark>}
+        {node.fork && <Mark tone="attention">{t.fork}</Mark>}
+        {node.via.map((v) => (
+          <Mark
+            key={v.number}
+            tone={v.state === "closed" ? "attention" : "muted"}
+            title={v.state === "closed" ? t.viaClosedTitle(v.number) : t.viaMergedTitle(v.number)}
+          >
+            {t.via(v.state, v.number)}
+          </Mark>
+        ))}
+        {node.stale && (
+          <Mark tone="attention" title={t.staleTitle(node.behind ?? 0)}>
+            {t.stale}
+          </Mark>
+        )}
+        {node.off !== null && (
+          <Mark tone={OFF_TONE[node.off.reason]}>{offReasonText(graph, node)}</Mark>
+        )}
+      </div>
+      <div
+        className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs text-gray-500 dark:text-gray-400`}
+      >
+        <span className="min-w-0 truncate font-mono" data-tooltip={`${node.branch} → ${node.base}`}>
+          {node.branch}
+        </span>
+        {node.ahead !== null && (
+          <span
+            className="shrink-0 font-mono tabular-nums"
+            data-tooltip={t.aheadTitle(node.ahead, node.base)}
+          >
+            {t.ahead(node.ahead)}
+          </span>
+        )}
+        {node.draft && <span className="shrink-0">{S.company.proposals.materialStatus.draft}</span>}
+        {node.origins.map((o) => (
+          <a
+            key={`${o.origin}#${o.number}`}
+            href={o.url}
+            target="_blank"
+            rel="noreferrer"
+            data-tooltip={t.originTitle(o.origin, o.number, relationWord(o.relation))}
+            className={`shrink-0 font-mono hover:underline ${toneInk[RELATION_TONE[o.relation]]}`}
+          >
+            {o.origin}#{o.number} {relationWord(o.relation)}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A list of node rows under the graph: the drawn-but-off-chain ones, or the ones it cannot draw. */
+export function NodeListSection({
+  graph,
+  title,
+  info,
+  nodes,
+  onOpenProposal,
+}: {
+  graph: ProposalGraphResponse;
+  title: string;
+  info: string;
+  nodes: readonly ProposalGraphNode[];
+  onOpenProposal: (n: number) => void;
+}) {
+  if (nodes.length === 0) return null;
+  return (
+    <RuledSection title={title} count={nodes.length} info={info}>
+      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+        {nodes.map((node) => (
+          <li key={node.number} className="flex items-center py-1.5 pr-3">
+            <NodeRow graph={graph} node={node} onOpenProposal={onOpenProposal} />
+          </li>
+        ))}
+      </ul>
+    </RuledSection>
+  );
+}
+
+/** The proposals whose impl PR is not an open PR on the delivery repository, each with why. */
+export function UnplacedSection({
+  graph,
+  focus,
+  onOpenProposal,
+}: {
+  graph: ProposalGraphResponse;
+  focus: number | null;
+  onOpenProposal: (n: number) => void;
+}) {
+  const t = S.company.proposals.graph;
+  if (graph.unplaced.length === 0) return null;
+  return (
+    <RuledSection title={t.unplaced} count={graph.unplaced.length} info={t.unplacedHint}>
+      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+        {graph.unplaced.map((u) => (
+          <li
+            key={u.number}
+            data-focus={focus === u.number ? "true" : undefined}
+            className={`flex items-center ${ICON_GAP.row} px-1 py-1.5 text-xs ${
+              focus === u.number ? FOCUS_WASH : ""
+            }`}
+          >
+            <TitleButton
+              onClick={() => onOpenProposal(u.number)}
+              hint={S.company.proposals.openProposal}
+              className="font-mono text-xs"
+            >
+              #{u.number}
+            </TitleButton>
+            <StatusPill status={u.status} />
+            <span className="min-w-0 truncate" data-tooltip={u.title}>
+              {u.title}
+            </span>
+            <Mark tone={u.reason === "counterpart" ? "attention" : "muted"}>
+              {t.unplacedReason(
+                u.reason,
+                layerLabel(graph, u.at),
+                u.into ?? "?",
+                graph.base.branch,
+              )}
+            </Mark>
+            <a
+              href={u.implPr}
+              target="_blank"
+              rel="noreferrer"
+              data-tooltip={u.implPr}
+              className="ml-auto shrink-0 truncate pl-3 text-gray-400 hover:underline dark:text-gray-500"
+            >
+              {u.implPr.replace(/^https?:\/\/github\.com\//, "")}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </RuledSection>
+  );
+}

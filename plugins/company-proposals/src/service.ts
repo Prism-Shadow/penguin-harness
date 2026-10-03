@@ -24,10 +24,12 @@ import type {
   Settings,
 } from "@prismshadow/penguin-server/plugin";
 import type {
+  ProposalAdoptImplResponse,
   ProposalComment,
   ProposalCommentsResponse,
   ProposalDetail,
   ProposalFileResponse,
+  ProposalGraphResponse,
   ProposalItem,
   ProposalMaterial,
   ProposalRevision,
@@ -39,10 +41,20 @@ import type {
   ProposalTestGroupsResponse,
   ProposalsResponse,
 } from "@prismshadow/penguin-server/api";
-import { CONFIG_GROUP, testGroupsOf, undeclaredGroupsMessage } from "./config.js";
+import {
+  CONFIG_GROUP,
+  graphConfigOf,
+  remotesOf,
+  testGroupsOf,
+  undeclaredGroupsMessage,
+  type GraphConfig,
+} from "./config.js";
 import { renderForAgent, sectionSource } from "./comments.js";
 import { readBaseFile } from "./files.js";
-import { PrStatusReader, type RunGh } from "./pr-status.js";
+import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
+import { pullKey } from "./pr-chain.js";
+import { PrGraphReader } from "./pr-graph.js";
+import { gitRunner, type RunGit } from "./workspace-remotes.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import {
   checkScope,
@@ -98,6 +110,8 @@ export interface ServiceDeps {
   now?: () => number;
   /** How the PR status lookup runs `gh`; the machine's own by default (a test feeds answers). */
   gh?: RunGh;
+  /** How the shared workspace's remotes are read; the machine's `git` by default (a test feeds answers). */
+  git?: RunGit;
 }
 
 /** One write's desk deliveries: the ledger a failed delivery is recorded in, and the reasons collected for the answer. */
@@ -117,6 +131,12 @@ const badRequest = (message: string): ProposalError =>
   new ProposalError(400, "bad_request", message);
 const forbidden = (code: string, message: string): ProposalError =>
   new ProposalError(403, code, message);
+const graphOff = (): ProposalError =>
+  new ProposalError(
+    409,
+    "graph_not_configured",
+    "No delivery repository: none is set under Settings → Plugins → Company proposals and the shared workspace has no GitHub remote.",
+  );
 
 /** Who acted, as a message names them: the employee's Agent id, else the person's user id. */
 function whoOf(caller: Caller): string {
@@ -156,12 +176,89 @@ export class ProposalService {
   /** GitHub's word on each `pr` material, read when a proposal is read (pr-status.ts). */
   private readonly prStatus: PrStatusReader;
 
+  /** The PR graph's GitHub reads, with their caches (pr-graph.ts). */
+  private readonly prGraph: PrGraphReader;
+
   constructor(private readonly deps: ServiceDeps) {
     this.prStatus = new PrStatusReader({
       ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
       log: (line) => deps.log.line(line),
       ...(deps.now !== undefined ? { now: deps.now } : {}),
     });
+    this.prGraph = new PrGraphReader({
+      ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
+      ...(deps.now !== undefined ? { now: deps.now } : {}),
+    });
+  }
+
+  /** The skipped graph settings last reported, logged once per change like the test groups'. */
+  private reportedGraphSkips = "";
+
+  /** Where the PR graph reads from — the settings group, read on every use. */
+  graphConfig(): GraphConfig {
+    const config = graphConfigOf(this.deps.pluginConfig?.get(CONFIG_GROUP) ?? {});
+    const key = config.skipped.join("\n");
+    if (key !== this.reportedGraphSkips) {
+      this.reportedGraphSkips = key;
+      if (config.skipped.length > 0) {
+        this.deps.log.line(
+          `[company-proposals] PR graph settings skipped (want deliveryRepo owner/repo, origins name=owner/repo): ${config.skipped.join(" | ")}`,
+        );
+      }
+    }
+    return config;
+  }
+
+  /**
+   * Where the PR graph reads from, settled: the settings where they are set, else the shared
+   * workspace's GitHub remotes — the delivery repository is the remote holding the most of the
+   * ledger's impl PRs (`origin` on a tie or when none does, else the first), its base the
+   * repository's default branch, the origins the other remotes. `repo` is null when neither
+   * names one; each fallback that could not be read is in `errors`.
+   */
+  private async deliveryRepo(
+    org: OrgView,
+    ledger: Ledger,
+    errors: string[],
+  ): Promise<{
+    repo: string | null;
+    base: string;
+    origins: Array<{ name: string; repo: string }>;
+  }> {
+    const config = this.graphConfig();
+    if (config.repo !== null) return config;
+    let remotes: Array<{ name: string; repo: string }> = [];
+    try {
+      remotes = remotesOf(await (this.deps.git ?? gitRunner())(org.workspace, ["remote", "-v"]));
+    } catch (err) {
+      errors.push(
+        `shared workspace ${org.workspace}: remotes not read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const held = (repo: string): number => {
+      const prefix = `${repo.toLowerCase()}#`;
+      return ledger
+        .proposals()
+        .filter((p) => (p.implPr === null ? "" : (pullKey(p.implPr.url) ?? "")).startsWith(prefix))
+        .length;
+    };
+    let picked = remotes.find((r) => r.name === "origin") ?? remotes[0];
+    for (const r of remotes)
+      if (picked !== undefined && held(r.repo) > held(picked.repo)) picked = r;
+    if (picked === undefined) {
+      errors.push(
+        `no delivery repository: none is set under Settings → Plugins → Company proposals and the shared workspace ${org.workspace} has no GitHub remote`,
+      );
+      return { repo: null, base: config.base, origins: config.origins };
+    }
+    const base = config.baseDeclared
+      ? config.base
+      : ((await this.prGraph.defaultBranch(picked.repo, errors)) ?? config.base);
+    const origins =
+      config.origins.length > 0
+        ? config.origins
+        : remotes.filter((r) => r.repo.toLowerCase() !== picked.repo.toLowerCase());
+    return { repo: picked.repo, base, origins };
   }
 
   /** The skipped lines last reported, so a bad line is logged once per change, not on every read. */
@@ -310,7 +407,8 @@ export class ProposalService {
       unread: this.unreadOf(p, caller, reads),
       pendingComments: p.comments.filter((c) => c.batchId === null && c.by === caller.principal)
         .length,
-      materials: p.materials,
+      materials: withImplPr(p.materials, p.implPr),
+      implPr: p.implPr,
     };
   }
 
@@ -1162,6 +1260,128 @@ export class ProposalService {
     return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
   }
 
+  /**
+   * Registers the proposal's impl PR — anybody in the organization, a person or an employee,
+   * since the PR is a fact GitHub can confirm and the line records who (`by`): one per
+   * proposal, replacing the one before; a PR that is already another proposal's is refused.
+   */
+  async setImpl(
+    projectId: string,
+    orgId: string,
+    number: number,
+    url: string,
+    actor: OrgActor,
+  ): Promise<ProposalDetail> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    const trimmed = url.trim();
+    const ref = parsePullUrl(trimmed);
+    const key = pullKey(trimmed);
+    if (ref === null || key === null) {
+      throw badRequest(`Not a GitHub pull request URL: ${trimmed}`);
+    }
+    const holder = ledger
+      .proposals()
+      .find((o) => o.number !== number && o.implPr !== null && pullKey(o.implPr.url) === key);
+    if (holder !== undefined) {
+      throw new ProposalError(
+        409,
+        "impl_pr_taken",
+        `${ref.owner}/${ref.repo}#${ref.number} is already the impl PR of proposal #${holder.number}.`,
+      );
+    }
+    const readPositions = this.readPositions(projectId, orgId, caller.userId);
+    if (p.implPr !== null && pullKey(p.implPr.url) === key)
+      return this.detail(p, caller, readPositions);
+    const line = await ledger.append({
+      kind: "impl",
+      number,
+      url: trimmed,
+      label: `${ref.owner}/${ref.repo}#${ref.number}`,
+      by: caller.principal,
+    });
+    this.notify(org, number, line.seq, "material_added");
+    return this.detail(p, caller, readPositions);
+  }
+
+  /**
+   * The one-time adoption for a ledger written before impl PRs — anybody in the organization,
+   * each line recording who (`by`): each proposal without one (and not rejected) takes its
+   * latest `pr` material on the delivery repository.
+   * Backward compatibility (changelog/unreleased/2026-09-30-backward-compatibility.md).
+   */
+  async adoptImpl(
+    projectId: string,
+    orgId: string,
+    actor: OrgActor,
+  ): Promise<ProposalAdoptImplResponse> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const { repo } = await this.deliveryRepo(org, ledger, []);
+    if (repo === null) throw graphOff();
+    const prefix = `${repo.toLowerCase()}#`;
+    const taken = new Set(
+      ledger
+        .proposals()
+        .map((p) => (p.implPr === null ? null : pullKey(p.implPr.url)))
+        .filter((k): k is string => k !== null),
+    );
+    const out: ProposalAdoptImplResponse = { adopted: [], ambiguous: [], skipped: [] };
+    for (const p of ledger.proposals().sort((a, b) => a.number - b.number)) {
+      if (p.implPr !== null || p.status === "rejected") continue;
+      const urls = p.materials
+        .filter((m) => m.kind === "pr" && (pullKey(m.url) ?? "").startsWith(prefix))
+        .map((m) => m.url);
+      const url = urls.at(-1);
+      if (url === undefined) {
+        out.skipped.push({ number: p.number, reason: `no pr material on ${repo}` });
+        continue;
+      }
+      const key = pullKey(url)!;
+      if (taken.has(key)) {
+        out.skipped.push({ number: p.number, reason: `${url} is already another proposal's` });
+        continue;
+      }
+      taken.add(key);
+      const ref = parsePullUrl(url)!;
+      const line = await ledger.append({
+        kind: "impl",
+        number: p.number,
+        url,
+        label: `${ref.owner}/${ref.repo}#${ref.number}`,
+        by: caller.principal,
+      });
+      this.notify(org, p.number, line.seq, "material_added");
+      out.adopted.push({ number: p.number, url });
+      if (new Set(urls.map((u) => pullKey(u))).size > 1) {
+        out.ambiguous.push({ number: p.number, urls });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The PR graph of the delivery repository, annotated with the proposals and the origins.
+   * Always drawn: with no delivery repository at all it is the base branch alone, and
+   * `errors` says why.
+   */
+  async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
+    const { org, ledger } = await this.open(projectId, orgId, actor);
+    const errors: string[] = [];
+    const config = await this.deliveryRepo(org, ledger, errors);
+    return this.prGraph.read({
+      repo: config.repo ?? "",
+      base: config.base,
+      origins: config.origins,
+      errors,
+      proposals: ledger.proposals().map((p) => ({
+        number: p.number,
+        title: p.title,
+        status: p.status,
+        implPr: p.implPr?.url ?? null,
+      })),
+    });
+  }
+
   async feedback(
     projectId: string,
     orgId: string,
@@ -1470,4 +1690,26 @@ export function compareDatedVersions(a: string, b: string): number {
   if (va === null || vb === null) return Number(va !== null) - Number(vb !== null);
   if (va[0] !== vb[0]) return va[0] < vb[0] ? -1 : 1;
   return va[1] - vb[1];
+}
+
+/**
+ * A proposal's materials with its impl PR among them. An impl PR set directly (`setImpl`, the
+ * admin's override, or a restack re-pointing one) is a ledger line of its own and not a
+ * material, so the Materials list read "no materials yet" beside a proposal that has its PR.
+ * When no `pr` material is that pull request, it is listed first, as the PR it is.
+ */
+export function withImplPr(
+  materials: readonly ProposalMaterial[],
+  implPr: { url: string; label: string; by: string; at: string } | null,
+): ProposalMaterial[] {
+  if (implPr === null) return [...materials];
+  const key = pullKey(implPr.url);
+  const held = materials.some(
+    (m) => m.kind === "pr" && (key === null ? m.url === implPr.url : pullKey(m.url) === key),
+  );
+  if (held) return [...materials];
+  return [
+    { kind: "pr", label: implPr.label, url: implPr.url, by: implPr.by, at: implPr.at },
+    ...materials,
+  ];
 }

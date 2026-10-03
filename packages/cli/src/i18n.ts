@@ -647,6 +647,11 @@ export interface Messages {
     proposalImplementDesc: string;
     proposalMaterialDesc: string;
     proposalMaterialAddDesc: string;
+    /** `proposal impl <n> <url>`: the impl PR; `--adopt`: the one-time adoption from the pr materials. */
+    proposalImplDesc: string;
+    proposalImplAdopt: string;
+    /** `proposal graph`: the delivery repository's PR graph. */
+    proposalGraphDesc: string;
     proposalFeedbackDesc: string;
     /** `proposal conclude <n>`: a discussion's conclusion, to the owner's desk. */
     proposalConcludeDesc: string;
@@ -697,6 +702,19 @@ export interface Messages {
     proposalStatusSet(number: number, status: string): string;
     proposalImplementing(number: number, implementer: string, sessionId: string): string;
     proposalMaterialAdded(number: number, kind: string): string;
+    proposalImplPr(label: string, url: string): string;
+    proposalImplSet(number: number, url: string): string;
+    proposalImplAmbiguous(number: number, urls: string): string;
+    proposalImplSkipped(number: number, reason: string): string;
+    proposalImplUsage(): string;
+    graphNoProposal(): string;
+    graphOffChain(): string;
+    /** Why a node is off the chain; `at` is `#n` or the base branch, `base` the declared base. */
+    graphOffReason(reason: string, at: string, relation: string, base: string): string;
+    graphUnplaced(): string;
+    /** Why an impl PR is not on the graph; `at` is `#n`, `into` the branch merged into, `base` the base branch. */
+    graphUnplacedReason(reason: string, at: string, into: string, base: string): string;
+    graphErrors(): string;
     proposalFeedbackRecorded(number: number): string;
     proposalConcluded(number: number, owner: string): string;
     proposalCommentResolved(number: number, commentId: string): string;
@@ -1878,6 +1896,12 @@ const en: Messages = {
     proposalMaterialDesc: "Related material: the PR, an issue, a branch, a document, a ticket",
     proposalMaterialAddDesc:
       "Attach material as <kind>=<url> (pr, issue, branch, doc, ticket, url)",
+    proposalImplDesc:
+      "Register the proposal's impl PR — one per proposal, replacing the one before (--adopt: the one-time adoption from the pr materials)",
+    proposalImplAdopt:
+      "Give every proposal without an impl PR its latest pr material on the delivery repository",
+    proposalGraphDesc:
+      "Show the delivery repository's open PRs as a commit graph, with each PR's proposal and the origins' PRs on the same branch",
     proposalFeedbackDesc:
       "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
     proposalConcludeDesc:
@@ -1926,6 +1950,34 @@ const en: Messages = {
     proposalImplementing: (number, implementer, sessionId) =>
       `Proposal #${number}: ${implementer} is implementing it in session ${sessionId}.`,
     proposalMaterialAdded: (number, kind) => `Attached ${kind} to proposal #${number}.`,
+    proposalImplPr: (label, url) => `Impl PR: ${label} ${url}`,
+    proposalImplSet: (number, url) => `Proposal #${number}'s impl PR is ${url}.`,
+    proposalImplAmbiguous: (number, urls) =>
+      `Proposal #${number} had several pr materials there (${urls}); the latest was taken.`,
+    proposalImplSkipped: (number, reason) => `Proposal #${number} skipped: ${reason}.`,
+    proposalImplUsage: () => "Give the proposal and the PR URL: impl <number> <url>, or --adopt.",
+    graphNoProposal: () => "no proposal",
+    graphOffChain: () => "Off the chain:",
+    graphOffReason: (reason, at, relation, base) =>
+      ({
+        "old-line": `old line: ${relation} against ${at}`,
+        unread: `not compared with ${at}`,
+        "no-base": `base ${base} is the branch of no open, merged or closed PR`,
+        "not-taken": `not taken at the fork at ${at}`,
+        above: `on off-chain ${at}`,
+        cycle: "its declared bases form a cycle",
+      })[reason] ?? reason,
+    graphUnplaced: () => "Proposals whose impl PR is not on the graph:",
+    graphUnplacedReason: (reason, at, into, base) =>
+      ({
+        counterpart: `${at} carries its branch`,
+        merged: `merged into ${into}`,
+        "in-base": `already in ${base}`,
+        closed: "closed",
+        "open-elsewhere": "open on another repository",
+        unread: "not read",
+      })[reason] ?? reason,
+    graphErrors: () => "Not read from GitHub:",
     proposalFeedbackRecorded: (number) => `Feedback recorded on proposal #${number}.`,
     proposalConcluded: (number, owner) =>
       `Sent the discussion's conclusion to ${owner}'s desk (proposal #${number}).`,
@@ -3077,6 +3129,11 @@ const zh: Messages = {
     proposalImplementDesc: "开一个实施会话来做这份提案——作者自己的，或指定的同事的；打印会话 id",
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
     proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
+    proposalImplDesc:
+      "登记提案的 impl PR——每份提案一条，再登记即替换（--adopt：一次性从 pr 材料里认领）",
+    proposalImplAdopt: "为每份还没有 impl PR 的提案取它在交付仓库上最新的一条 pr 材料",
+    proposalGraphDesc:
+      "把交付仓库的 open PR 排成提交关系图，标出每张 PR 的提案和各 origin 在同名分支上的 PR",
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
     proposalConcludeDesc:
       "把一次讨论的结论送到负责人的工位，只送一次（在讨论会话里执行，或由人加 --discussion 指定）",
@@ -3117,6 +3174,34 @@ const zh: Messages = {
     proposalImplementing: (number, implementer, sessionId) =>
       `提案 #${number}：${implementer} 正在会话 ${sessionId} 中实施。`,
     proposalMaterialAdded: (number, kind) => `已把 ${kind} 挂到提案 #${number}。`,
+    proposalImplPr: (label, url) => `impl PR：${label} ${url}`,
+    proposalImplSet: (number, url) => `提案 #${number} 的 impl PR 是 ${url}。`,
+    proposalImplAmbiguous: (number, urls) =>
+      `提案 #${number} 在交付仓库上有多条 pr 材料（${urls}），取了最新的一条。`,
+    proposalImplSkipped: (number, reason) => `跳过提案 #${number}：${reason}。`,
+    proposalImplUsage: () => "请给出提案号与 PR URL：impl <number> <url>，或加 --adopt。",
+    graphNoProposal: () => "无提案",
+    graphOffChain: () => "链外：",
+    graphOffReason: (reason, at, relation, base) =>
+      ({
+        "old-line": `旧线：相对 ${at} ${relation}`,
+        unread: `没能与 ${at} 比对`,
+        "no-base": `base ${base} 不是任何 open、已合并或已关闭 PR 的分支`,
+        "not-taken": `分叉点 ${at} 处没被取的一支`,
+        above: `叠在链外的 ${at} 上`,
+        cycle: "声明的 base 互相成环",
+      })[reason] ?? reason,
+    graphUnplaced: () => "impl PR 不在图上的提案：",
+    graphUnplacedReason: (reason, at, into, base) =>
+      ({
+        counterpart: `${at} 带着它的分支`,
+        merged: `已合进 ${into}`,
+        "in-base": `已在 ${base} 里`,
+        closed: "已关闭",
+        "open-elsewhere": "开在别的仓库",
+        unread: "没读到",
+      })[reason] ?? reason,
+    graphErrors: () => "没能从 GitHub 读到：",
     proposalFeedbackRecorded: (number) => `已记录对提案 #${number} 的反馈。`,
     proposalConcluded: (number, owner) => `已把讨论的结论送到 ${owner} 的工位（提案 #${number}）。`,
     proposalCommentResolved: (number, commentId) => `已解决提案 #${number} 的评论 ${commentId}。`,

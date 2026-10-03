@@ -1700,6 +1700,122 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(`${t.org.proposalImplementing(3, "dev1", sessions[0]!)}\n`);
   });
 
+  it("impl puts the PR URL with the caller's identity, and show prints the impl PR", async () => {
+    server.addProposal("acme", { number: 4 });
+    const url = "https://github.com/acme/site/pull/12";
+    expect(await cli(["org", "proposal", "impl", "4", url])).toBe(0);
+    expect(lastRequest("PUT", "/proposals/4/impl")?.body).toEqual({
+      url,
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalImplSet(4, url)}\n`);
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "show", "4"])).toBe(0);
+    expect(out()).toContain(t.org.proposalImplPr("acme/site#12", url));
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "impl", "4"])).toBe(1);
+  });
+
+  it("graph prints the chain indented by depth, each line with its PR, proposal, origins and marks, then what is off the chain and why", async () => {
+    server.addProposal("acme", { number: 1 });
+    const node = (n: Record<string, unknown>) => ({
+      url: `https://github.com/acme/site/pull/${String(n.number)}`,
+      title: `PR ${String(n.number)}`,
+      draft: false,
+      relation: "ahead",
+      behind: 0,
+      via: [],
+      stacked: true,
+      stale: false,
+      onChain: true,
+      off: null,
+      fork: false,
+      proposal: null,
+      origins: [],
+      ...n,
+    });
+    server.orgs.get("acme")!.proposalGraph = {
+      repo: "acme/site",
+      base: { branch: "dev", head: "aaaaaaaaaaaa", fork: false },
+      origins: [{ name: "origin", repo: "up/site" }],
+      nodes: [
+        node({
+          number: 11,
+          branch: "feat/a",
+          head: "bbbbbbbbbbbb",
+          base: "dev",
+          parent: 0,
+          ahead: 2,
+          proposal: { number: 1, title: "A", status: "ready" },
+          origins: [
+            {
+              origin: "origin",
+              number: 801,
+              url: "u",
+              draft: false,
+              head: "c",
+              relation: "behind",
+            },
+          ],
+        }),
+        node({
+          number: 12,
+          branch: "feat/b",
+          head: "cccccccccccc",
+          base: "feat/gone",
+          parent: 11,
+          ahead: 1,
+          behind: 2,
+          via: [{ number: 9, state: "closed" }],
+          stale: true,
+        }),
+        node({
+          number: 13,
+          branch: "feat/c",
+          head: "dddddddddddd",
+          base: "feat/a",
+          parent: 11,
+          ahead: 3,
+          behind: 4,
+          relation: "diverged",
+          stacked: false,
+          onChain: false,
+          off: { reason: "old-line", at: null },
+        }),
+      ],
+      top: 12,
+      unplaced: [
+        {
+          number: 2,
+          title: "B",
+          status: "approved",
+          implPr: "https://github.com/acme/site/pull/5",
+          reason: "merged",
+          at: null,
+          into: "feat/a",
+        },
+      ],
+      errors: [],
+      checkedAt: "2026-09-30T00:00:00.000Z",
+    };
+    expect(await cli(["org", "proposal", "graph"])).toBe(0);
+    expect(out()).toBe(
+      [
+        "acme/site dev aaaaaaaaa",
+        "  #11 feat/a bbbbbbbbb +2  proposal #1 ready  origin #801 behind",
+        `    #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
+        "",
+        t.org.graphOffChain(),
+        `  #13 feat/c ddddddddd +3 -4  [${t.org.graphOffReason("old-line", "#11", "diverged", "feat/a")}]  ${t.org.graphNoProposal()}`,
+        "",
+        t.org.graphUnplaced(),
+        `  proposal #2 approved  https://github.com/acme/site/pull/5  [${t.org.graphUnplacedReason("merged", "?", "feat/a", "dev")}]`,
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("material add, feedback and the status commands post their bodies with the caller's identity", async () => {
     server.addProposal("acme", { number: 5 });
     expect(

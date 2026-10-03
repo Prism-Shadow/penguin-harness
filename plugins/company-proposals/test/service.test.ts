@@ -32,6 +32,7 @@ import plugin, {
   testGroupsOf,
 } from "../src/index.js";
 import type { RunGh } from "../src/pr-status.js";
+import { withImplPr } from "../src/service.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = "proj";
@@ -231,6 +232,164 @@ describe("ProposalService", () => {
     );
     return created.number;
   }
+
+  it("registers one impl PR per proposal through the routes, refuses a taken PR, and the graph carries the proposal", async () => {
+    const A = "a".repeat(40);
+    const D = "0".repeat(40);
+    const gh: RunGh = async (args) => {
+      const p = args[1]!;
+      if (p.startsWith("repos/acme/site/pulls?"))
+        return JSON.stringify([
+          {
+            number: 11,
+            title: "PR 11",
+            draft: false,
+            url: "https://github.com/acme/site/pull/11",
+            branch: "feat/a",
+            head: A,
+            base: "dev",
+          },
+        ]);
+      if (p === "repos/acme/site") return JSON.stringify("main");
+      if (p === "repos/acme/site/branches/dev" || p === "repos/acme/site/branches/main")
+        return JSON.stringify(D);
+      if (p.startsWith("repos/up/site/pulls?")) return JSON.stringify([]);
+      if (p === `repos/acme/site/compare/${D}...${A}`)
+        return JSON.stringify({ status: "ahead", ahead_by: 2, behind_by: 0 });
+      return githubGh(args, { timeoutMs: 0, maxBytes: 0 });
+    };
+    let values: Record<string, unknown> = {};
+    let remotes = "";
+    const gitCalls: string[][] = [];
+    service = new ProposalService({
+      gateway,
+      agents,
+      root,
+      settings,
+      log,
+      gh,
+      git: async (cwd, args) => {
+        gitCalls.push([cwd, ...args]);
+        return remotes;
+      },
+      pluginConfig: { get: () => values },
+    });
+    const first = await delegated();
+    const second = await delegated();
+    const app = new Hono();
+    app.use(async (c, next) => {
+      c.set("user" as never, { userId: "boss" } as never);
+      c.set("sessionVia" as never, "token" as never);
+      await next();
+    });
+    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service));
+    const call = (method: string, suffix: string, body?: unknown) =>
+      app.request(`/p/${PROJECT}/o/${ORG}/proposals${suffix}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const url = "https://github.com/acme/site/pull/11";
+
+    const set = await call("PUT", `/${first}/impl`, { url, agentId: "acme_dev" });
+    expect(set.status).toBe(200);
+    expect(((await set.json()) as { implPr: unknown }).implPr).toMatchObject({
+      url,
+      label: "acme/site#11",
+      by: "agent:acme_dev",
+    });
+    const taken = await call("PUT", `/${second}/impl`, { url, agentId: "acme_dev" });
+    expect(taken.status).toBe(409);
+    expect(((await taken.json()) as { error: { code: string } }).error.code).toBe("impl_pr_taken");
+    // Any employee registers one, not only the author or the implementer; the line says who.
+    expect(
+      (await call("PUT", `/${second}/impl`, { url, agentId: "acme_qa" })).status,
+      "a taken PR stays taken whoever asks",
+    ).toBe(409);
+    const third = await delegated();
+    const byQa = await call("PUT", `/${third}/impl`, {
+      url: "https://github.com/acme/site/pull/12",
+      agentId: "acme_qa",
+    });
+    expect(byQa.status).toBe(200);
+    expect(((await byQa.json()) as { implPr: unknown }).implPr).toMatchObject({
+      by: "agent:acme_qa",
+    });
+    expect(
+      (await call("PUT", `/${second}/impl`, { url: "https://example.com/x", agentId: "acme_dev" }))
+        .status,
+    ).toBe(400);
+
+    type Graph = {
+      repo: string;
+      base: { branch: string };
+      origins: Array<{ name: string; repo: string }>;
+      nodes: Array<{ number: number; proposal: { number: number } | null }>;
+      errors: string[];
+    };
+    // With nothing set and no GitHub remote in the workspace, the graph is the base branch alone.
+    const bare = await call("GET", "/graph");
+    expect(bare.status).toBe(200);
+    const alone = (await bare.json()) as Graph;
+    expect(alone).toMatchObject({ repo: "", base: { branch: "dev" }, nodes: [] });
+    expect(alone.errors[0]).toContain("no delivery repository");
+    expect(gitCalls).toEqual([[expect.stringMatching(/workspace$/), "remote", "-v"]]);
+
+    // Nothing set: the workspace remote holding the impl PR wins over `origin`, on the repository's
+    // default branch while the stack base is empty, and the other remote annotates the graph.
+    remotes = [
+      "origin\thttps://github.com/up/site.git (fetch)",
+      "mine\tgit@github.com:acme/site.git (fetch)",
+    ].join("\n");
+    values = { deliveryBase: "" };
+    const fallback = (await (await call("GET", "/graph")).json()) as Graph;
+    expect(fallback.repo).toBe("acme/site");
+    expect(fallback.base.branch).toBe("main");
+    expect(fallback.origins).toEqual([{ name: "origin", repo: "up/site" }]);
+    expect(fallback.nodes.map((n) => [n.number, n.proposal?.number])).toEqual([[11, first]]);
+    // A declared stack base is kept.
+    values = { deliveryBase: "dev" };
+    expect(((await (await call("GET", "/graph")).json()) as Graph).base.branch).toBe("dev");
+
+    // A set delivery repository is read as it is, without the workspace.
+    remotes = "";
+    values = { deliveryRepo: "acme/site" };
+    const graph = (await (await call("GET", "/graph")).json()) as {
+      nodes: Array<{ number: number; proposal: { number: number } | null }>;
+      top: number | null;
+    };
+    expect(graph.nodes.map((n) => [n.number, n.proposal?.number])).toEqual([[11, first]]);
+    expect(graph.top).toBe(11);
+
+    // The one-time adoption: the latest pr material on the delivery repository, by anybody in the
+    // organization — here an employee, recorded as it.
+    for (const u of [
+      "https://github.com/acme/site/pull/20",
+      "https://github.com/up/site/pull/900",
+      "https://github.com/acme/site/pull/21",
+    ]) {
+      await service.addMaterial(PROJECT, ORG, second, { kind: "pr", url: u }, author);
+    }
+    const adoptedByAgent = await call("POST", "/adopt-impl", { agentId: "acme_dev" });
+    expect(adoptedByAgent.status).toBe(200);
+    const adopted = (await adoptedByAgent.json()) as Awaited<ReturnType<typeof service.adoptImpl>>;
+    expect(adopted.adopted).toEqual([
+      { number: second, url: "https://github.com/acme/site/pull/21" },
+    ]);
+    expect(adopted.ambiguous).toEqual([
+      {
+        number: second,
+        urls: ["https://github.com/acme/site/pull/20", "https://github.com/acme/site/pull/21"],
+      },
+    ]);
+    expect(adopted.skipped).toEqual([]);
+    expect((await service.get(PROJECT, ORG, second, BOSS)).implPr).toMatchObject({
+      label: "acme/site#21",
+      by: "agent:acme_dev",
+    });
+    // Run again, nothing is left to adopt.
+    expect((await service.adoptImpl(PROJECT, ORG, BOSS)).adopted).toEqual([]);
+  });
 
   it("answers 404 while company mode is off or the organization is missing, 403 to an outsider", async () => {
     gateway.enabled = false;
@@ -1860,5 +2019,40 @@ describe("the manifest", () => {
       pattern: TEST_GROUP_LINE,
       default: [...DEFAULT_TEST_GROUPS],
     });
+  });
+});
+
+describe("withImplPr", () => {
+  const impl = {
+    url: "https://github.com/acme/site/pull/7",
+    label: "acme/site#7",
+    by: "user:admin",
+    at: "2026-10-01T00:00:00.000Z",
+  };
+
+  it("lists an impl PR no material holds first, as a pr material", () => {
+    const other = {
+      kind: "doc" as const,
+      label: "spec",
+      url: "https://example.com/spec",
+      by: "user:a",
+      at: "t",
+    };
+    expect(withImplPr([other], impl)).toEqual([
+      { kind: "pr", label: "acme/site#7", url: impl.url, by: "user:admin", at: impl.at },
+      other,
+    ]);
+  });
+
+  it("adds nothing when a pr material is already that pull request, or there is no impl PR", () => {
+    const held = {
+      kind: "pr" as const,
+      label: "PR #7",
+      url: "https://github.com/acme/site/pull/7/files",
+      by: "user:a",
+      at: "t",
+    };
+    expect(withImplPr([held], impl)).toEqual([held]);
+    expect(withImplPr([], null)).toEqual([]);
   });
 });

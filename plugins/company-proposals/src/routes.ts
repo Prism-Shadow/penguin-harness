@@ -6,7 +6,10 @@
  *   GET    /                         the queue (each with the caller's unread count)
  *   POST   /                         start one: { author?, brief, title? } (author defaults to the calling employee)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
+ *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts)
+ *   POST   /adopt-impl               anybody in the organization: proposals without an impl PR take their latest delivery-repo `pr` material
  *   GET    /:number                  the proposal
+ *   PUT    /:number/impl             { url } the impl PR (anybody in the organization; one per proposal)
  *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
  *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)
@@ -180,11 +183,35 @@ export function proposalRoutes(service: ProposalService): Hono {
     c.json(await service.listTestGroups(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
   );
 
+  app.get("/graph", async (c) =>
+    c.json(await service.graph(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
+  );
+
+  app.post("/adopt-impl", async (c) => {
+    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
+    return c.json(
+      await service.adoptImpl(param(c, "projectId"), param(c, "orgId"), actorOf(c, body)),
+    );
+  });
+
   app.get("/:number", async (c) =>
     c.json(
       await service.get(param(c, "projectId"), param(c, "orgId"), numberParam(c), actorOfQuery(c)),
     ),
   );
+
+  app.put("/:number/impl", async (c) => {
+    const body = await jsonBody(c);
+    return c.json(
+      await service.setImpl(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        requireString(body, "url", 2000),
+        actorOf(c, body),
+      ),
+    );
+  });
 
   app.put("/:number", async (c) => {
     const body = await jsonBody(c);

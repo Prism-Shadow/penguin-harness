@@ -63,11 +63,18 @@ export type { ServiceDeps } from "./service.js";
 export { ROUTES_ID, proposalRoutes } from "./routes.js";
 export {
   CONFIG_GROUP,
+  DEFAULT_DELIVERY_BASE,
   DEFAULT_TEST_GROUPS,
+  ORIGIN_LINE,
   TEST_GROUP_LINE,
+  graphConfigOf,
   testGroupsOf,
   undeclaredGroupsMessage,
 } from "./config.js";
+export type { GraphConfig } from "./config.js";
+export { PrGraphReader } from "./pr-graph.js";
+export { buildGraph, pullKey } from "./pr-chain.js";
+export type { GraphInput, GraphProposal } from "./pr-chain.js";
 export { checkScope, scopeBase, scopeStates, suggestPaths } from "./scope-check.js";
 export {
   PARAGRAPH_GAP,
@@ -135,6 +142,37 @@ export const PAGE_ID = "company-proposals.page";
               "e2e: the product end to end, through its UI or CLI",
               "bench: performance measurements",
             ],
+          },
+          deliveryRepo: {
+            type: "string",
+            title: "Delivery repository",
+            titleZh: "交付仓库",
+            description:
+              "`owner/repo` the impl PRs are opened on. The PR graph reads its open PRs; while this is empty it reads the shared workspace's GitHub remote that holds the most impl PRs (`origin` otherwise), on the stack base below, or the repository's default branch when that is empty.",
+            descriptionZh:
+              "impl PR 开在哪个仓库（`owner/repo`）。PR 关系图读它的 open PR；留空时改读共享工作区里登记 impl PR 最多的那个 GitHub remote（都没有则取 `origin`），基座取下面的栈底分支，栈底分支留空时取该仓库的默认分支。",
+            placeholder: "owner/repo",
+            default: "",
+          },
+          deliveryBase: {
+            type: "string",
+            title: "Stack base branch",
+            titleZh: "栈底分支",
+            description: "The branch the bottom PR of the stack is based on.",
+            descriptionZh: "栈最底那张 PR 的 base 分支。",
+            default: "dev",
+          },
+          origins: {
+            type: "list",
+            title: "Origins",
+            titleZh: "各 origin",
+            description:
+              "Other repositories the graph annotates, one per line as `name=owner/repo`: each node shows that repository's PR on the same branch and how its head stands. While this is empty, the shared workspace's other GitHub remotes.",
+            descriptionZh:
+              "关系图要标注的其他仓库，每行一个，写作 `name=owner/repo`：每个节点标出该仓库在同名分支上的 PR 及其 head 的关系。留空时取共享工作区的其余 GitHub remote。",
+            pattern: "^[a-z0-9_-]{1,32}=[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            patternErrorMessage: "lines must read `name=owner/repo`",
+            default: [],
           },
         },
       },

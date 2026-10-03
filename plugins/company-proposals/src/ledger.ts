@@ -19,6 +19,7 @@ import type {
   ProposalComment,
   ProposalDiscussion,
   ProposalEvent,
+  ProposalImplPr,
   ProposalMaterial,
   ProposalMaterialKind,
   ProposalRevision,
@@ -82,6 +83,11 @@ export type LedgerEntry =
       material: { kind: ProposalMaterialKind; label: string; url: string };
       by: string;
     }
+  /**
+   * The proposal's impl PR registered: the one PR it is implemented by. A later line replaces
+   * it; the service refuses a PR that is already another proposal's.
+   */
+  | { kind: "impl"; number: number; url: string; label: string; by: string }
   | { kind: "feedback"; number: number; text: string; runtime: boolean; by: string }
   /**
    * A pending comment: the person's own until a `batch` line names it. Anchored to
@@ -155,6 +161,8 @@ export interface Proposal {
   tests: ProposalTestEntry[];
   sections: ProposalSection[];
   materials: ProposalMaterial[];
+  /** The impl PR, once registered; the latest `impl` line wins. */
+  implPr: ProposalImplPr | null;
   sessions: string[];
   discussions: ProposalDiscussion[];
   comments: ProposalComment[];
@@ -203,6 +211,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       tests: [],
       sections: [],
       materials: [],
+      implPr: null,
       sessions: [],
       discussions: [],
       comments: [],
@@ -221,7 +230,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
   const event = (
     kind: ProposalEvent["kind"],
     by: string,
-    extra: { text?: string; revision?: number } = {},
+    extra: { text?: string; revision?: number; url?: string } = {},
   ): void => {
     p.events.push({ seq: line.seq, at: line.at, kind, by, ...extra });
   };
@@ -271,7 +280,12 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       return;
     case "material":
       p.materials.push({ ...line.material, by: line.by, at: line.at });
-      event("material_added", line.by, { text: line.material.label });
+      event("material_added", line.by, { text: line.material.label, url: line.material.url });
+      return;
+    case "impl":
+      p.implPr = { url: line.url, label: line.label, by: line.by, at: line.at };
+      // The timeline names it the way a material is named, marked as the impl PR.
+      event("material_added", line.by, { text: `impl ${line.label}`, url: line.url });
       return;
     case "feedback":
       event(line.runtime ? "runtime_feedback" : "feedback", line.by, { text: line.text });
