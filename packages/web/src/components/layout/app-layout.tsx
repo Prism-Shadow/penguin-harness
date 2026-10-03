@@ -4,8 +4,8 @@
  *   user config), or the rail while it is folded, beside the page;
  * - <md: the phone's top bar (the drawer button + the product's name) above the page, and the
  *   sidebar in a drawer.
- * The shell owns the wallpaper and navigation's separate glass layer, so the columns make no
- * stacking context that could trap their menus.
+ * WebApp's chrome uses solid fills and makes no stacking context (a frosted glass or a
+ * transform would trap the menus it opens); the package's components say how.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
@@ -30,8 +30,8 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navKeysFor } from "../../lib/nav-group-collapse";
-import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
-import { backgroundStyle, useBackground } from "../../state/background";
+import { navPagesOf, useWebAppPages } from "../../web-app";
+import { navNoteFor, useUpdateBadges } from "../../features/todos";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -59,7 +59,7 @@ import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
 
 /**
- * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
+ * Whether the pinned sidebar (or its rail) is on screen: WebApp's navigation column is
  * `hidden md:block`, and Tailwind's `md` is 768px at the browser's default font size — a media
  * query ignores the app's 18px root. Below it the drawer's own sidebar answers the commands while
  * it is open.
@@ -86,6 +86,7 @@ function pinnedSidebarOnScreen(): boolean {
  */
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
+  const navPages = navPagesOf(useWebAppPages());
   const navigate = useNavigate();
   const { currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
@@ -133,16 +134,18 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     icon: string;
     note: string | null;
   }> = inCompany
-    ? COMPANY_NAV_KEYS.map((key) => ({
-        key,
-        // The six entries keep their places with no organization, disabled: a rail that
-        // empties itself reads as a broken shell rather than as an empty one.
-        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
-        label: S.nav.org[key],
-        icon: COMPANY_NAV_ICONS[key],
-        note: null,
-      }))
-    : navKeysFor(user?.isAdmin === true).map((key) => ({
+    ? [
+        ...COMPANY_NAV_KEYS.map((key) => ({
+          key,
+          // The six entries keep their places with no organization, disabled: a rail that
+          // empties itself reads as a broken shell rather than as an empty one.
+          to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
+          label: S.nav.org[key],
+          icon: COMPANY_NAV_ICONS[key],
+          note: null as string | null,
+        })),
+      ]
+    : navKeysFor(navPages, user?.isAdmin === true).map((key) => ({
         key,
         to: `/${key}`,
         label: S.nav[key],

@@ -100,6 +100,10 @@ function katexWoff2Only(): Plugin {
 
 export default defineConfig({
   plugins: [penguinUi(), react(), tailwindcss(), katexWoff2Only()],
+  // The module classes (`module.ts`, web-root.ts) use standard decorators, which no browser
+  // runs yet. The production build lowers them for its browser target; the dev server
+  // transforms for `esnext` by default and would pass them through as a syntax error.
+  esbuild: { target: "es2022" },
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
     // stylesheet references would then ride inside the one render-blocking CSS file for every

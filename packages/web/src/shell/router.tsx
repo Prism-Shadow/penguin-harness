@@ -8,6 +8,13 @@
  * The routes are still declared as `<Route>` elements and nothing loads data through the
  * router; the root route only puts the `NavigationGuard` above every page.
  *
+ * Every route is a page a module contributed to `WebAppModule.pages` (shell/module.ts), read
+ * from WebApp's bindings: a "shell" page goes through the guard wrapped in the layout, a
+ * "bare" page only needs the user signed in. The pages still declared in src/module.json
+ * render beside them through the builtin registry; the ones the server contributes with
+ * `nav: "org"` are company-mode pages relative to the organization layout, mounted by
+ * OrgRoutes (features/company/org-routes.tsx), so they are not flat routes here.
+ *
  * The app normally routes on the browser's address bar. A host that mounts it inside another
  * document (the component gallery frames it against a mocked API) passes `initialPath`
  * instead: the router then runs in memory from that path, so the app navigates without
@@ -33,42 +40,19 @@ import { SessionsProvider } from "../state/sessions";
 import { CompanyProvider } from "../state/company";
 import { AppLayout } from "../components/layout/app-layout";
 import { LoginPage } from "../pages/login";
-import { ChatPage } from "../features/chat/chat-page";
-import { AgentsPage } from "../features/agents/agents-page";
-import { AgentSettingsPage } from "../features/agents/agent-settings-page";
-import { PluginsPage } from "../features/plugins/plugins-page";
-import { ModelsPage } from "../features/models/models-page";
-import { UsagePage } from "../features/usage/usage-page";
-import { BenchmarkPage } from "../features/benchmark/benchmark-page";
-import { BenchmarkDetailPage } from "../features/benchmark/benchmark-detail-page";
-import { TerminalPage } from "../features/terminal/terminal-page";
-import { OrgIndexRedirect, OrgLayout } from "../features/company/org-layout";
-import { OverviewPage } from "../features/company/overview-page";
-import { OrgChartPage } from "../features/company/org-chart-page";
-import { CalendarPage } from "../features/company/calendar-page";
-import { TicketsPage } from "../features/company/tickets-page";
-import { FinancePage } from "../features/company/finance-page";
-import { ChannelView } from "../features/company/channel-view";
-import { HandbookPage } from "../features/company/handbook-page";
-import { MachinesPage } from "../features/machines/machines-page";
-import { WorkbenchAppPage } from "../features/workbenches/workbench-app-page";
-import { PAGES } from "./page-table";
-import type { PageEntry } from "./page-table";
+import { MachinePortsPage } from "../features/ports/machine-ports-page";
+import { DashboardPage } from "../features/dashboard/dashboard-page";
+import { PAGES, type PageEntry } from "./page-table";
+import type { WebAppPage } from "./page-table";
+import { webAppDeps } from "./deps";
 
 /**
  * The renderers the manifest may name. A page is a module.json entry plus one line here;
  * a server-contributed page renders only when its `builtin` is in this registry.
  */
 const BUILTIN_PAGES: Record<string, React.ComponentType> = {
-  ChatPage,
-  AgentsPage,
-  AgentSettingsPage,
-  PluginsPage,
-  ModelsPage,
-  MachinesPage,
-  UsagePage,
-  BenchmarkPage,
-  BenchmarkDetailPage,
+  MachinePortsPage,
+  DashboardPage,
 };
 
 function renderPage(page: PageEntry): React.ReactNode {
@@ -106,7 +90,8 @@ function RequireAuth() {
 /**
  * Login guard without the app shell: the terminal page is a standalone full-window surface
  * (no sidebar, no Project context), it only needs the user to be signed in — the terminal
- * WebSocket authenticates with the same session cookie.
+ * WebSocket authenticates with the same session cookie. A workflow's page as the whole app
+ * is the other one; the command palette it mounts is the way back.
  */
 function RequireAuthBare({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -143,58 +128,41 @@ function RootFrame() {
   );
 }
 
-function appRoutes() {
+/**
+ * The routes: the pages the modules contributed (WebApp's bindings), plus the pages still
+ * declared in src/module.json, which render through the builtin registry — except the
+ * `nav: "org"` ones, which OrgRoutes mounts under the organization layout.
+ */
+function appRoutes(pages: readonly WebAppPage[]) {
+  const manifestPages = PAGES.filter((page) => page.nav !== "org");
   return createRoutesFromElements(
     <Route element={<RootFrame />}>
       <Route path="/login" element={<LoginRoute />} />
-      <Route
-        path="/terminal"
-        element={
-          <RequireAuthBare>
-            <TerminalPage />
-          </RequireAuthBare>
-        }
-      />
-      {/* One workbench's page as the whole app: outside the shell, like the terminal; the
-          command palette it mounts is the way back. */}
-      {[
-        "/app/:projectId/:agentId/:workbenchId",
-        "/app/:projectId/:agentId/:workbenchId/:tabKey",
-      ].map((appPath) => (
-        <Route
-          key={appPath}
-          path={appPath}
-          element={
-            <RequireAuthBare>
-              <WorkbenchAppPage />
-            </RequireAuthBare>
-          }
-        />
-      ))}
+      {pages
+        .filter((page) => page.frame === "bare")
+        .map(({ id, path, Component }) => (
+          <Route
+            key={id}
+            path={path}
+            element={
+              <RequireAuthBare>
+                <Component />
+              </RequireAuthBare>
+            }
+          />
+        ))}
       <Route element={<RequireAuth />}>
         <Route index element={<Navigate to="/chat" replace />} />
-        {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
-            server-side (403); the sidebar hides their row, so a member only ever reaches
-            one by typing the URL. */}
-        {PAGES.map((page) => (
+        {/* Admin-only pages are refused server-side (403); the sidebar hides their row, so a
+            member only ever reaches one by typing the URL. */}
+        {pages
+          .filter((page) => page.frame === "shell")
+          .map(({ id, path, Component }) => (
+            <Route key={id} path={path} element={<Component />} />
+          ))}
+        {manifestPages.map((page) => (
           <Route key={page.id} path={page.path} element={renderPage(page)} />
         ))}
-        {/* Company mode: /org resolves to an organization (or the empty landing), and an
-            organization opens on its overview — the page that says what the whole
-            organization is doing; its channels are the sidebar's own list beside it. Both
-            fall back to /chat while company mode is unavailable (see OrgLayout). */}
-        <Route path="/org" element={<OrgIndexRedirect />} />
-        <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
-          <Route index element={<Navigate to="overview" replace />} />
-          <Route path="overview" element={<OverviewPage />} />
-          <Route path="chart" element={<OrgChartPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
-          <Route path="tickets" element={<TicketsPage />} />
-          <Route path="finance" element={<FinancePage />} />
-          <Route path="handbook" element={<HandbookPage />} />
-          <Route path="channels/:channelId" element={<ChannelView />} />
-          <Route path="*" element={<Navigate to="overview" replace />} />
-        </Route>
         {/* Settings and user management live in the settings dialog now (see
             SettingsDialog); their old routes fall through to the catch-all. */}
         <Route path="*" element={<Navigate to="/chat" replace />} />
@@ -210,11 +178,16 @@ function appRoutes() {
  */
 let browserRouter: ReturnType<typeof createBrowserRouter> | null = null;
 
-export function AppRouter({ initialPath }: { initialPath?: string } = {}) {
+export interface AppRouterProps {
+  initialPath?: string;
+}
+
+export function AppRouter({ initialPath }: AppRouterProps = {}) {
+  const { pages } = webAppDeps.useDeps();
   const [router] = useState(() =>
     initialPath === undefined
-      ? (browserRouter ??= createBrowserRouter(appRoutes()))
-      : createMemoryRouter(appRoutes(), { initialEntries: [initialPath] }),
+      ? (browserRouter ??= createBrowserRouter(appRoutes(pages)))
+      : createMemoryRouter(appRoutes(pages), { initialEntries: [initialPath] }),
   );
   return <RouterProvider router={router} />;
 }

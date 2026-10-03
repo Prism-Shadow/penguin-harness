@@ -1,11 +1,11 @@
 /**
  * The sidebar's nav entries and how they fold (pure decisions, unit tested). In development
- * mode every entry — New chat, then the page manifest below — is either PINNED, always
+ * mode every entry — New chat, then the pages below — is either PINNED, always
  * shown, or COLLAPSIBLE, inside the area a nav-row-wide chevron button under it folds away
  * (arrow up = collapse; collapsed, the button stays — arrow down — as the way back). New
  * chat, Agents, Models and Plugins are pinned by default; the user moves an entry across
  * with the row's pin button or by dragging it into or out of the collapsible area. Both
- * areas keep manifest order, and with nothing collapsible there is no chevron. Company
+ * areas keep page order, and with nothing collapsible there is no chevron. Company
  * mode's six entries stay outside the split: they fold as one group behind the same button.
  *
  * Global storage keys, not per Project: the nav is identical everywhere, so like the
@@ -16,64 +16,53 @@
  */
 
 /**
- * Page entries of the nav, in rendered order. Each key names its route (`/<key>`), its
- * S.nav label, and its NAV_ICONS glyph — the sidebar derives its nav rows from this
- * manifest, so the covered range is pinned here (and in the unit tests) rather than
- * duplicated. Some entries are admin-only (see below), so the sidebar renders
- * navKeysFor(user.isAdmin), not the raw manifest. Traces is deliberately absent: reading a
+ * Page entries of the nav, in rendered order: WebApp's main-nav pages (web-app/page-table.ts,
+ * `navPagesOf`), passed in by the caller since they are module contributions read from the
+ * booted tree. Each key names its route (`/<key>`), its S.nav label, and its NAV_ICONS glyph.
+ * Some entries are admin-only and some not yet released (see below), so the sidebar renders
+ * navKeysFor(pages, user.isAdmin), not the raw list. Traces is deliberately absent: reading a
  * Trace happens in the chat toolbar's panel switcher, which is the only place it happens.
  */
-import { NAV_PAGE_KEYS, PAGES } from "../web-app/page-table";
-
 export type NavGroupKey = "agents" | "plugins" | "models" | "machines" | "usage" | "benchmark";
-/**
- * The manifest, derived from the app's own module.json (lib/pages.ts): every page whose
- * `nav` is "main", in manifest order. The literal key type above is the set the strings
- * and icons are typed against; pages.test.ts pins that the manifest never names a key
- * outside it.
- */
-export const NAV_GROUP_KEYS = NAV_PAGE_KEYS as readonly NavGroupKey[];
 
 /**
- * Entries the server refuses to a non-admin, so the sidebar does not offer them. Machines
- * installs software on another machine over ssh with the SERVER account's keys, which
- * `/api/machines` gates on `isAdmin` — a row that always answers 403 is worse than no row.
- * On a personal or desktop server the only account IS the admin, so nothing is hidden there.
- */
-const ADMIN_ONLY_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set(
-  PAGES.filter((p) => p.nav === "main" && p.admin).map((p) => p.key as NavGroupKey),
-);
-
-/**
- * Entries built but not yet offered. They keep their place in the manifest — the page, its
- * route and its server routes all still exist and are reachable from a test — and are simply
- * not put in front of anyone, so releasing one is deleting its name from this set rather than
- * restoring code.
+ * A main-nav page as the nav reads it. The literal key type above is the set the strings and
+ * icons are typed against; web-root.test.ts pins that no main-nav page names a key outside it.
  *
- * `machines` installs this build onto another host over ssh with the server account's keys.
- * That is a capability worth shipping deliberately rather than as a row that happens to appear,
- * so it waits for a release that means to introduce it.
+ * `admin`: the server refuses the page to a non-admin, so the sidebar does not offer it.
+ * Machines installs software on another machine over ssh with the SERVER account's keys, which
+ * `/api/machines` gates on `isAdmin` — a row that always answers 403 is worse than no row. On a
+ * personal or desktop server the only account IS the admin, so nothing is hidden there.
+ *
+ * `released: false`: built but not yet offered. The page keeps its place — it, its route and
+ * its server routes all still exist and are reachable from a test — and is simply not put in
+ * front of anyone, so releasing one is flipping its contribution's flag rather than restoring
+ * code.
  */
-const UNRELEASED_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set(
-  PAGES.filter((p) => p.nav === "main" && !p.released).map((p) => p.key as NavGroupKey),
-);
+export interface NavPage {
+  key: string;
+  admin: boolean;
+  released: boolean;
+}
 
-/** The manifest as this user sees it. */
-export function navKeysFor(isAdmin: boolean): readonly NavGroupKey[] {
-  const offered = NAV_GROUP_KEYS.filter((key) => !UNRELEASED_NAV_KEYS.has(key));
-  return isAdmin ? offered : offered.filter((key) => !ADMIN_ONLY_NAV_KEYS.has(key));
+/** The nav as this user sees it. */
+export function navKeysFor(pages: readonly NavPage[], isAdmin: boolean): readonly NavGroupKey[] {
+  return pages.filter((p) => p.released && (isAdmin || !p.admin)).map((p) => p.key as NavGroupKey);
 }
 
 /**
  * A development-mode nav entry: New chat or a page. New chat opens a draft rather than a
- * route, so it is not in the manifest; it is the one entry that is always pinned (see
+ * route, so it is not a page; it is the one entry that is always pinned (see
  * isNavPinnable), while every page is pinned or collapsible at the user's choice.
  */
 export type NavEntryKey = "newChat" | NavGroupKey;
 
 /** Every entry this user sees, in rendered order: New chat first, then their pages. */
-export function navEntryKeysFor(isAdmin: boolean): readonly NavEntryKey[] {
-  return ["newChat", ...navKeysFor(isAdmin)];
+export function navEntryKeysFor(
+  pages: readonly NavPage[],
+  isAdmin: boolean,
+): readonly NavEntryKey[] {
+  return ["newChat", ...navKeysFor(pages, isAdmin)];
 }
 
 /** Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible. */
@@ -101,7 +90,7 @@ export function isNavPinned(key: NavEntryKey, overrides: NavPinOverrides): boole
   return overrides[key] ?? DEFAULT_PINNED_NAV_KEYS.has(key);
 }
 
-/** The two areas, each keeping the order `keys` has — the manifest's, whatever order the entries were moved in. */
+/** The two areas, each keeping the order `keys` has — the page table's, whatever order the entries were moved in. */
 export function splitNavEntries(
   keys: readonly NavEntryKey[],
   overrides: NavPinOverrides,
@@ -140,11 +129,12 @@ export function withNavPinned(
  * tween — but at zero height, faded out, and inert: exactly their absence from this list.
  */
 export function visibleNavKeys(
+  pages: readonly NavPage[],
   collapsed: boolean,
   isAdmin = true,
   overrides: NavPinOverrides = {},
 ): readonly NavEntryKey[] {
-  const { pinned, collapsible } = splitNavEntries(navEntryKeysFor(isAdmin), overrides);
+  const { pinned, collapsible } = splitNavEntries(navEntryKeysFor(pages, isAdmin), overrides);
   return collapsed ? pinned : [...pinned, ...collapsible];
 }
 
@@ -188,22 +178,24 @@ export function storeNavGroupCollapsed(collapsed: boolean, storage?: NavCollapse
 /** The pin choices' single global key; holds NavPinOverrides as a JSON object. */
 export const NAV_PINNED_KEY = "penguin.sidebarNavPinned";
 
-/** Keys a stored choice may name: the whole manifest, pages this user is not offered included (New chat is never a choice). */
-const NAV_ENTRY_KEYS: ReadonlySet<string> = new Set<string>(NAV_GROUP_KEYS);
-
 /**
- * Reads the stored choices. Only a boolean under a key the manifest knows is kept, so a key
- * this build does not have — a page since removed, a hand edit — is ignored rather than
- * trusted; absent, unparseable or throwing storage reads as no choices, i.e. the defaults.
- * `localStorage` is resolved inside the try for the reason initialNavGroupCollapsed gives.
+ * Reads the stored choices. Only a boolean under a key of `pages` is kept (the whole main nav,
+ * pages this user is not offered included; New chat is never a choice), so a key this build
+ * does not have — a page since removed, a hand edit — is ignored rather than trusted; absent,
+ * unparseable or throwing storage reads as no choices, i.e. the defaults. `localStorage` is
+ * resolved inside the try for the reason initialNavGroupCollapsed gives.
  */
-export function initialNavPinOverrides(storage?: NavCollapseStorage): NavPinOverrides {
+export function initialNavPinOverrides(
+  pages: readonly NavPage[],
+  storage?: NavCollapseStorage,
+): NavPinOverrides {
+  const known = new Set(pages.map((p) => p.key));
   try {
     const parsed: unknown = JSON.parse((storage ?? localStorage).getItem(NAV_PINNED_KEY) ?? "{}");
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
     const overrides: Partial<Record<NavEntryKey, boolean>> = {};
     for (const [key, value] of Object.entries(parsed)) {
-      if (NAV_ENTRY_KEYS.has(key) && typeof value === "boolean") {
+      if (known.has(key) && typeof value === "boolean") {
         overrides[key as NavEntryKey] = value;
       }
     }

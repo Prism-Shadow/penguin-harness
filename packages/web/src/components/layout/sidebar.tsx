@@ -140,6 +140,7 @@ import {
   withNavPinned,
 } from "../../lib/nav-group-collapse";
 import type { NavEntryKey, NavGroupKey } from "../../lib/nav-group-collapse";
+import { navPagesOf, useWebAppPages } from "../../web-app";
 import {
   loadPinnedSessions,
   removePinnedSession,
@@ -416,8 +417,10 @@ export function Sidebar({
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Folded collapsible nav area (company mode: the whole nav group); expanded by default, the choice persists across sessions. */
   const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
+  /** The main nav's pages, as the modules contributed them (web-app/page-table.ts). */
+  const navPages = navPagesOf(useWebAppPages());
   /** The user's changes to which nav entries are pinned (the defaults live in nav-group-collapse.ts); persisted like the fold. */
-  const [navPins, setNavPins] = useState(initialNavPinOverrides);
+  const [navPins, setNavPins] = useState(() => initialNavPinOverrides(navPages));
   /** Nav entry being dragged across the areas, and the area a drop would move it into. */
   const [navDrag, setNavDrag] = useState<NavEntryKey | null>(null);
   const [navDropArea, setNavDropArea] = useState<NavArea | null>(null);
@@ -1695,12 +1698,12 @@ export function Sidebar({
     : [];
 
   /**
-   * Development mode's entries by area (nav-group-collapse.ts): New chat, then the
-   * NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach, each pinned or
-   * collapsible, both areas in manifest order. New chat is always pinned and renders in its
+   * Development mode's entries by area (nav-group-collapse.ts): New chat, then the main
+   * nav's pages minus the entries this user's role cannot reach, each pinned or
+   * collapsible, both areas in page order. New chat is always pinned and renders in its
    * fixed slot above the scroll area, so the pinned rows here are the pages after it.
    */
-  const navSplit = splitNavEntries(navEntryKeysFor(user?.isAdmin === true), navPins);
+  const navSplit = splitNavEntries(navEntryKeysFor(navPages, user?.isAdmin === true), navPins);
   const pinnedNavPages = navSplit.pinned.filter(isNavPage);
   const collapsibleNavPages = navSplit.collapsible.filter(isNavPage);
 
