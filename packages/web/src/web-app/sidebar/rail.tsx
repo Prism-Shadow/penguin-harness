@@ -1,6 +1,6 @@
-import { useLocale } from "../../state/locale";
 import { sidebarDeps } from "./deps";
 import { currentModeIndex, sectionsIn } from "./modes";
+import { useLocale } from "../../state/locale";
 import { useMemo, useRef, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 import {
@@ -17,7 +17,7 @@ import { S } from "../../lib/strings";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
-import { navKeysFor } from "./nav-state";
+import { navChildKeysFor, navKeysFor } from "./nav-state";
 import { navPagesOf, pageTitle, useWebAppPages } from "../index";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
@@ -48,8 +48,9 @@ import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
  */
 export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
-  const { locale } = useLocale();
   const navPages = navPagesOf(useWebAppPages());
+  const { locale } = useLocale();
+  const childKeys = navChildKeysFor(navPages, user?.isAdmin === true);
   const navigate = useNavigate();
   const { currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
@@ -120,6 +121,9 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
                   label: pageTitle(page, locale),
                   icon: glyphOf(page.icon ?? key),
                   note: notes.get(key) ?? null,
+                  childPaths: (childKeys.get(key) ?? []).flatMap(
+                    (child) => navPages.find((page) => page.key === child)?.path ?? [],
+                  ),
                 },
               ];
         });

@@ -8,7 +8,8 @@
  * - The merge appends iframe pages after the compiled ones; a compiled page wins a key or
  *   path clash; a builtin page is drawn by the renderer a module contributed under its name
  *   (`WebAppModule.pageRenderers`) and skipped when there is none; an entry without a key, a
- *   path or a renderer is skipped.
+ *   path or a renderer is skipped. A page's title, Chinese title, glyph and parent are kept
+ *   when they are strings, and its frame is named by its title.
  * - A company-mode page (`nav: "org"`) keeps a path relative to the organization and clashes
  *   as the rooted one; `released` and the renderer it named are kept; `orgPagesOf` selects
  *   these pages from the table.
@@ -80,8 +81,13 @@ const NONE: ReadonlyMap<string, ComponentType> = new Map();
 
 const frame = (src: string) => ({ iframe: { src, namespace: "hello" } });
 
-function answer(pages: ContributionsResponse["pages"]): ContributionsResponse {
-  return { pages, agentTabs: [], sessionTabs: [] };
+/** An answer as the server might send it: entries the app must check, malformed ones included. */
+function answer(pages: readonly object[]): ContributionsResponse {
+  return {
+    pages: pages as ContributionsResponse["pages"],
+    agentTabs: [],
+    sessionTabs: [],
+  };
 }
 
 /** A fetch whose answers the test hands out by hand, in order. */
@@ -212,6 +218,53 @@ describe("contributedPagesOf", () => {
       released: true,
       order: 101,
     });
+  });
+
+  it("keeps a page's nav name, glyph and parent when they are strings, and names its frame by its title", () => {
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => undefined });
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+    const merged = contributedPagesOf(
+      COMPILED,
+      answer([
+        {
+          id: "a",
+          from: "x",
+          key: "a",
+          path: "/a",
+          nav: "main",
+          parent: "agents",
+          title: "Hello World",
+          titleZh: "你好世界",
+          icon: "sparkle",
+          renderer: frame("/a.html"),
+        },
+        {
+          id: "b",
+          from: "x",
+          key: "b",
+          path: "/b",
+          parent: 7,
+          title: null,
+          icon: [],
+          renderer: frame("/b.html"),
+        },
+      ]),
+      NONE,
+    );
+    expect(merged[2]).toMatchObject({
+      key: "a",
+      parent: "agents",
+      title: "Hello World",
+      titleZh: "你好世界",
+      icon: "sparkle",
+    });
+    expect(merged[3]).not.toHaveProperty("parent");
+    expect(merged[3]).not.toHaveProperty("title");
+    expect(merged[3]).not.toHaveProperty("icon");
+    const html = renderToStaticMarkup(
+      createElement(ThemeProvider, null, createElement(merged[2]!.Component)),
+    );
+    expect(html).toContain('title="Hello World"');
   });
 
   it("a compiled page wins a key or a path clash, and the first of two contributed ones wins", () => {

@@ -1,11 +1,12 @@
-import { glyphOf } from "../../lib/nav-icons";
-import { marksFor } from "../../lib/sidebar-modes";
 import {
+  NavRow,
   SidebarAccountButton,
   SidebarNavEntry,
   UpdateDot,
   UserAvatar,
 } from "@prismshadow/penguin-ui";
+import { glyphOf } from "../../lib/nav-icons";
+import { marksFor } from "../../lib/sidebar-modes";
 import { S } from "../../lib/strings";
 import {
   isNavPinned,
@@ -78,53 +79,74 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
     const label = pageTitle(page, locale);
     const note = notes.get(key) ?? null;
     const pinned = isNavPinned(key, navPins);
+    const childPages = navPages.filter(
+      (child) => child.parent === key && child.released && (!child.admin || user?.isAdmin === true),
+    );
     return (
-      <SidebarNavEntry
-        key={key}
-        label={label}
-        glyph={glyphOf(page.icon ?? key)}
-        href={to}
-        active={isCurrentPath(to, location.pathname)}
-        renderLink={renderRouterLink}
-        onClick={() => onNavigate?.()}
-        {...navEntryDragProps(key)}
-        pin={{
-          pinned,
-          label: S.nav.pinEntry,
-          tooltip: pinned ? S.nav.unpinEntry : S.nav.pinEntry,
-          onToggle: (e) => {
-            // A keyboard toggle follows its row into the other area (see pinFocusRef). A row
-            // that lands in the folded area is not on screen: the chevron that unfolds it is the
-            // nearest place to stand, read once the move has committed, since the commit may be
-            // mounting the chevron itself.
-            if (e.currentTarget.matches(":focus-visible")) {
-              if (pinned && navCollapsed) {
-                requestAnimationFrame(() => navToggleRef.current?.focus());
-              } else {
-                pinFocusRef.current = key;
+      <div key={key}>
+        <SidebarNavEntry
+          key={key}
+          label={label}
+          glyph={glyphOf(page.icon ?? key)}
+          href={to}
+          active={[to, ...childPages.map((child) => child.path)].some((path) =>
+            isCurrentPath(path, location.pathname),
+          )}
+          renderLink={renderRouterLink}
+          onClick={() => onNavigate?.()}
+          {...navEntryDragProps(key)}
+          pin={{
+            pinned,
+            label: S.nav.pinEntry,
+            tooltip: pinned ? S.nav.unpinEntry : S.nav.pinEntry,
+            onToggle: (e) => {
+              // A keyboard toggle follows its row into the other area (see pinFocusRef). A row
+              // that lands in the folded area is not on screen: the chevron that unfolds it is the
+              // nearest place to stand, read once the move has committed, since the commit may be
+              // mounting the chevron itself.
+              if (e.currentTarget.matches(":focus-visible")) {
+                if (pinned && navCollapsed) {
+                  requestAnimationFrame(() => navToggleRef.current?.focus());
+                } else {
+                  pinFocusRef.current = key;
+                }
               }
-            }
-            setNavPinned(key, !pinned);
-          },
-          buttonRef: (el) => {
-            if (el === null || pinFocusRef.current !== key) return;
-            pinFocusRef.current = null;
-            el.focus();
-            // A row that lands in an area still folding away is inert and cannot take focus:
-            // the chevron again, once this commit is done.
-            if (document.activeElement !== el) {
-              queueMicrotask(() => navToggleRef.current?.focus());
-            }
-          },
-        }}
-        {...(note !== null
-          ? {
-              ariaLabel: `${label} · ${note}`,
-              tooltip: note,
-              badge: <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />,
-            }
-          : {})}
-      />
+              setNavPinned(key, !pinned);
+            },
+            buttonRef: (el) => {
+              if (el === null || pinFocusRef.current !== key) return;
+              pinFocusRef.current = null;
+              el.focus();
+              // A row that lands in an area still folding away is inert and cannot take focus:
+              // the chevron again, once this commit is done.
+              if (document.activeElement !== el) {
+                queueMicrotask(() => navToggleRef.current?.focus());
+              }
+            },
+          }}
+          {...(note !== null
+            ? {
+                ariaLabel: `${label} · ${note}`,
+                tooltip: note,
+                badge: <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />,
+              }
+            : {})}
+        />
+        <div className="pl-4">
+          {childPages.map((child) => (
+            <NavRow
+              surface="muted"
+              key={child.key}
+              label={pageTitle(child, locale)}
+              glyph={glyphOf(child.icon ?? child.key)}
+              href={child.path}
+              active={isCurrentPath(child.path, location.pathname)}
+              renderLink={renderRouterLink}
+              onClick={() => onNavigate?.()}
+            />
+          ))}
+        </div>
+      </div>
     );
   };
 

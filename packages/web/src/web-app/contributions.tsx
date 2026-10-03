@@ -15,7 +15,7 @@ import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
 import { FramePage } from "./frame-page";
-import type { WebAppPage } from "./page-table";
+import { parentedPagesOf, type WebAppPage } from "./page-table";
 
 /** What the store holds for the current user. */
 export interface ContributionsState {
@@ -119,7 +119,8 @@ function rendererOf(raw: unknown): RendererRef | null {
  * order after the last compiled page, each keeping the renderer it named. An entry is skipped
  * when it lacks a key or a path, when a compiled page (or an earlier entry) owns its key or
  * path, or when its renderer is neither an iframe with a `src` nor a `builtin` name in
- * `renderers`.
+ * `renderers`. Its nav name, glyph and parent are kept when they are strings; whether its
+ * parent can hold it is decided over the merged table (parentedPagesOf).
  *
  * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
  * mounts it under the organization layout (features/company/org-routes.tsx) and the router
@@ -137,7 +138,7 @@ export function contributedPagesOf(
   let order = compiled.reduce((last, p) => Math.max(last, p.order), 0);
   const out = [...compiled];
   for (const entry of answer.pages) {
-    const { key, nav, admin, released } = entry;
+    const { key, nav, admin, released, parent, title, titleZh, icon } = entry;
     if (typeof key !== "string" || key === "" || keys.has(key)) continue;
     if (typeof entry.path !== "string") continue;
     const org = nav === "org";
@@ -149,7 +150,7 @@ export function contributedPagesOf(
     if (renderer === null) continue;
     const Component =
       "iframe" in renderer
-        ? framePageFor(renderer.iframe.src, key)
+        ? framePageFor(renderer.iframe.src, typeof title === "string" ? title : key)
         : renderers.get(renderer.builtin);
     if (Component === undefined) {
       console.warn(
@@ -168,6 +169,10 @@ export function contributedPagesOf(
       admin: admin === true,
       released: released !== false,
       order: ++order,
+      ...(typeof title === "string" ? { title } : {}),
+      ...(typeof titleZh === "string" ? { titleZh } : {}),
+      ...(typeof icon === "string" ? { icon } : {}),
+      ...(typeof parent === "string" ? { parent } : {}),
       renderer,
       Component,
     });
@@ -192,7 +197,7 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const pending = current ? state.pending : userId !== null;
   const value = useMemo<WebAppPagesValue>(
     () => ({
-      pages: contributedPagesOf(compiled, answer, pageRenderers),
+      pages: parentedPagesOf(contributedPagesOf(compiled, answer, pageRenderers)),
       pending,
       // A mocked or older server may leave these out.
       quickStarts: [],
