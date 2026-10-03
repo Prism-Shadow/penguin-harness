@@ -14,7 +14,7 @@
  * person and the moderator both approved its brief, by whoever the organization assigns that
  * step to, not by this plugin's words.
  */
-import type { DraftItem, Roadmap } from "./ledger.js";
+import type { DraftItem, Roadmap } from "./domain.js";
 import type { RoomMessage } from "./room.js";
 
 /** The route of a roadmap, as a session's shell spells it. */

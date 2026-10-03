@@ -33,26 +33,22 @@ import { ROUTES_ID, roadmapRoutes } from "./routes.js";
 import { PAGE_ROUTES_ID, pageRoutes } from "./page.js";
 import { claimListeners, roomClaim, type ClaimListener } from "./claim.js";
 
-export {
-  Ledger,
-  LEDGER_FILE,
-  applyLine,
-  foldLedger,
-  ledgerPath,
-  orgDirOf,
-  parseLedger,
-} from "./ledger.js";
+export { RoadmapError, orgDirOf } from "./domain.js";
 export type {
   Clone,
   Delegation,
   DraftItem,
-  LedgerEntry,
-  LedgerLine,
   ProposalItem,
   Roadmap,
   RoadmapItem,
   RoadmapStatus,
-} from "./ledger.js";
+  RoadmapWrite,
+} from "./domain.js";
+export { COMPANY_DB, ROADMAP_SCHEMA, companyDbPath, openCompanyDb } from "./schema.js";
+export { SqliteRoadmapStore, briefSha } from "./store.js";
+export type { RoadmapStore } from "./ports.js";
+export { defaultRules, moderatorOf } from "./guards.js";
+export type { Caller, RoadmapRules } from "./guards.js";
 export {
   CHANNEL_ID,
   agentMembers,
@@ -69,11 +65,9 @@ export {
   PLUGIN_NAME,
   RECENT_CONTEXT,
   RELAY_FILE,
-  RoadmapError,
   RoadmapService,
   basesOf,
   headingsOf,
-  moderatorOf,
   parseItems,
   unknownCites,
 } from "./service.js";
@@ -225,7 +219,7 @@ export class CompanyRoadmapsPlugin {
 /**
  * The channel claim, as a node of its own: it contributes to the organization module, so it
  * must not require the organization gateway that module provides (a cycle) — it answers from
- * the ledger file under the data root and hands what it claims to the service (claim.ts).
+ * the organization's store under the data root and hands what it claims to the service (claim.ts).
  */
 @Component({
   contributes: {

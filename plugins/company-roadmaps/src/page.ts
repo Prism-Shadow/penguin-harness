@@ -462,7 +462,7 @@ try {
     const num = (d && d.proposal) || i.proposal;
     return "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (num ? ' <span class="pill gray">' + esc(T.proposal) + " #" + num + "</span>" : "") + (i.proposal ? ' <span class="muted small">' + esc(T.existing) + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div>" + approvalLine(i, d, approvable) + "</li>";
   };
-  // When a roadmap last moved: its last ledger line (else its opening), as a short local time.
+  // When a roadmap last moved: its last event (else its opening), as a short local time.
   const updatedOf = (r) => {
     const at = r.events && r.events.length > 0 ? r.events[r.events.length - 1].at : r.createdAt;
     if (!at) return "";

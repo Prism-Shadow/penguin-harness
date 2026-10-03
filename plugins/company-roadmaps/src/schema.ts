@@ -1,0 +1,169 @@
+/**
+ * The roadmap tables of the organization's relational store, `company.db`
+ * (`<root>/<projectId>/organizations/<orgId>/company.db`). The file is shared with
+ * company-proposals: each plugin opens its own connection and writes only its own tables — this
+ * plugin the `roadmap*` ones. It does not read the proposals' tables; it reaches proposals only
+ * through ProposalCreator.
+ *
+ * The store guarantees the data itself — keys, types, value domains, NOT NULL — and an
+ * append-only history: a draft, an approval, an event is a new row, and the triggers refuse to
+ * rewrite or delete one. The process rules are in guards.ts. Tables are created at open with IF
+ * NOT EXISTS; there is no migration runner.
+ */
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { orgDirOf } from "./domain.js";
+
+/** The file's name inside the organization directory (the same file company-proposals opens). */
+export const COMPANY_DB = "company.db";
+
+export function companyDbPath(root: string, projectId: string, orgId: string): string {
+  return path.join(orgDirOf(root, projectId, orgId), COMPANY_DB);
+}
+
+const noRewrite = (table: string): string => `
+CREATE TRIGGER IF NOT EXISTS ${table}_no_update BEFORE UPDATE ON ${table}
+  BEGIN SELECT RAISE(ABORT, 'history_append_only'); END;
+CREATE TRIGGER IF NOT EXISTS ${table}_no_delete BEFORE DELETE ON ${table}
+  BEGIN SELECT RAISE(ABORT, 'history_append_only'); END;`;
+
+export const ROADMAP_SCHEMA = `
+CREATE TABLE IF NOT EXISTS roadmap_seq (id INTEGER PRIMARY KEY CHECK (id = 1), value INTEGER NOT NULL);
+
+CREATE TABLE IF NOT EXISTS roadmaps (
+  number      INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  status      TEXT NOT NULL CHECK (status IN ('awaiting_room','discussing','established')),
+  channel_id  TEXT,
+  parent      INTEGER REFERENCES roadmaps(number),
+  parent_item TEXT,
+  employees   TEXT NOT NULL,
+  created_by  TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  seq         INTEGER NOT NULL,
+  brief       TEXT NOT NULL,
+  record      TEXT NOT NULL DEFAULT '',
+  body        TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS roadmaps_by_channel ON roadmaps (channel_id, status, number) WHERE channel_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS roadmaps_by_status ON roadmaps (status, number);
+
+CREATE TABLE IF NOT EXISTS roadmap_drafts (
+  number  INTEGER NOT NULL REFERENCES roadmaps(number),
+  seq     INTEGER NOT NULL,
+  by      TEXT NOT NULL,
+  at      TEXT NOT NULL,
+  record  TEXT, body TEXT, items TEXT,
+  PRIMARY KEY (number, seq)
+) WITHOUT ROWID;
+${noRewrite("roadmap_drafts")}
+
+CREATE TABLE IF NOT EXISTS roadmap_items (
+  number     INTEGER NOT NULL REFERENCES roadmaps(number),
+  key        TEXT NOT NULL,
+  position   INTEGER NOT NULL,
+  kind       TEXT NOT NULL CHECK (kind IN ('proposal','roadmap')),
+  title      TEXT NOT NULL,
+  owner      TEXT,
+  employees  TEXT,
+  cites      TEXT NOT NULL DEFAULT '[]',
+  stack      TEXT NOT NULL DEFAULT 'previous' CHECK (stack IN ('previous','none','item')),
+  stacked_on TEXT,
+  proposal   INTEGER,
+  brief      TEXT NOT NULL,
+  PRIMARY KEY (number, key),
+  UNIQUE (number, position),
+  CHECK ((stack = 'item') = (stacked_on IS NOT NULL)),
+  CHECK ((kind = 'proposal') = (owner IS NOT NULL))
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS roadmap_delegations (
+  number    INTEGER NOT NULL REFERENCES roadmaps(number),
+  key       TEXT NOT NULL,
+  owner     TEXT NOT NULL,
+  stage     TEXT NOT NULL CHECK (stage IN ('brief','delegated')),
+  base      TEXT,
+  child     INTEGER REFERENCES roadmaps(number),
+  proposal  INTEGER,
+  delivered INTEGER NOT NULL DEFAULT 0 CHECK (delivered IN (0, 1)),
+  error     TEXT,
+  brief_sha TEXT NOT NULL,
+  brief     TEXT NOT NULL,
+  PRIMARY KEY (number, key)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS roadmap_delegations_by_proposal ON roadmap_delegations (proposal) WHERE proposal IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS roadmap_approvals (
+  number    INTEGER NOT NULL,
+  key       TEXT NOT NULL,
+  brief_sha TEXT NOT NULL,
+  role      TEXT NOT NULL,
+  by        TEXT NOT NULL,
+  at        TEXT NOT NULL,
+  PRIMARY KEY (number, key, brief_sha, role),
+  FOREIGN KEY (number, key) REFERENCES roadmap_delegations(number, key)
+) WITHOUT ROWID;
+${noRewrite("roadmap_approvals")}
+
+CREATE TABLE IF NOT EXISTS roadmap_clones (
+  session_id TEXT PRIMARY KEY,
+  number     INTEGER NOT NULL REFERENCES roadmaps(number),
+  agent_id   TEXT NOT NULL,
+  opened_at  TEXT NOT NULL,
+  closed_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS roadmap_clones_open ON roadmap_clones (number) WHERE closed_at IS NULL;
+CREATE INDEX IF NOT EXISTS roadmap_clones_by_number ON roadmap_clones (number, opened_at);
+
+CREATE TABLE IF NOT EXISTS roadmap_events (
+  seq    INTEGER PRIMARY KEY,
+  number INTEGER NOT NULL REFERENCES roadmaps(number),
+  at     TEXT NOT NULL,
+  by     TEXT NOT NULL,
+  kind   TEXT NOT NULL,
+  note   TEXT
+);
+CREATE INDEX IF NOT EXISTS roadmap_events_by_number ON roadmap_events (number, seq);
+${noRewrite("roadmap_events")}
+`;
+
+// Fetched through process.getBuiltinModule, like the server's web.db: some bundlers' builtin
+// lists do not know `node:sqlite` yet.
+const sqlite = process.getBuiltinModule("node:sqlite");
+
+/**
+ * Opens (creating when absent) an organization's `company.db` and this plugin's tables: WAL, a
+ * 5 s busy timeout and foreign keys, as the server's `web.db`. company-proposals opens the same
+ * file with the same settings; the two plugins share no code, so the few lines are repeated.
+ */
+export function openCompanyDb(file: string): DatabaseSync {
+  if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
+  const db = new sqlite.DatabaseSync(file);
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA busy_timeout = 5000;");
+  db.exec("PRAGMA foreign_keys = ON;");
+  db.exec(ROADMAP_SCHEMA);
+  return db;
+}
+
+/** Opens an existing `company.db` read-only (the channel claim's question); throws when there is none. */
+export function openCompanyDbReadOnly(file: string): DatabaseSync {
+  const db = new sqlite.DatabaseSync(file, { readOnly: true });
+  db.exec("PRAGMA busy_timeout = 5000;");
+  return db;
+}
+
+/** One write transaction (`BEGIN IMMEDIATE`), synchronous inside: committed on return, rolled back on a throw. */
+export function immediate<T>(db: DatabaseSync, fn: () => T): T {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const out = fn();
+    db.exec("COMMIT");
+    return out;
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}

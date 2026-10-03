@@ -31,17 +31,18 @@ import type {
 import { CONFIG_GROUP, configOf, type RoadmapConfig } from "./config.js";
 import type { ProposalCreator } from "./proposals.js";
 import {
-  Ledger,
-  LEDGER_FILE,
-  ledgerPath,
+  RoadmapError,
   orgDirOf,
-  type ApprovalRole,
   type DraftItem,
-  type LedgerEntry,
   type ProposalItem,
   type Roadmap,
   type RoadmapStatus,
-} from "./ledger.js";
+  type RoadmapWrite,
+} from "./domain.js";
+import { defaultRules, moderatorOf, type Caller, type RoadmapRules } from "./guards.js";
+import type { RoadmapStore } from "./ports.js";
+import { COMPANY_DB, companyDbPath } from "./schema.js";
+import { SqliteRoadmapStore } from "./store.js";
 import {
   baseLinkedLine,
   cloneBrief,
@@ -66,22 +67,14 @@ import {
 
 export const PLUGIN_NAME = "company-roadmaps";
 
-/** The relay's own state beside the ledger: per roadmap, the room cursor and each room session's depth. */
+/** The relay's own state beside the store (progress, not organization data): per roadmap, the room cursor and each room session's depth. */
 export const RELAY_FILE = "roadmaps-relay.json";
 
 /** How many earlier room messages a new room session starts with. */
 export const RECENT_CONTEXT = 20;
 
-export class RoadmapError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "RoadmapError";
-  }
-}
+export { RoadmapError } from "./domain.js";
+export { moderatorOf } from "./guards.js";
 
 const badRequest = (message: string): RoadmapError => new RoadmapError(400, "bad_request", message);
 
@@ -109,11 +102,8 @@ export interface ServiceDeps {
   log: Pick<Log, "line">;
   pluginConfig?: Pick<PluginConfig, "get">;
   now?: () => number;
-}
-
-interface Caller {
-  principal: string;
-  agentId: string | null;
+  /** Default rules replaced (guards.ts). */
+  rules?: Partial<RoadmapRules>;
 }
 
 interface RelayRoom {
@@ -123,7 +113,7 @@ interface RelayRoom {
 
 type RelayState = Record<string, RelayRoom>;
 
-/** A roadmap as the API answers it: the ledger's fold, its moderator and its open room sessions. */
+/** A roadmap as the API answers it: the store's roadmap, its moderator and its open room sessions. */
 export interface RoadmapView extends Roadmap {
   moderator: string | null;
   openClones: Array<{ agentId: string; sessionId: string }>;
@@ -288,19 +278,16 @@ export function basesOf(items: readonly DraftItem[]): Map<string, string | null>
   return out;
 }
 
-/** The employee who moderates: the first of the opening employees with an open room session, else the first opener, else the earliest open session. */
-export function moderatorOf(r: Roadmap): string | null {
-  const open = r.clones.filter((c) => c.closedAt === undefined).map((c) => c.agentId);
-  return r.employees.find((e) => open.includes(e)) ?? open[0] ?? r.employees[0] ?? null;
-}
-
 export class RoadmapService {
-  private readonly ledgers = new Map<string, Ledger>();
+  private readonly stores = new Map<string, RoadmapStore>();
+  private readonly rules: RoadmapRules;
   private readonly locks = new Map<string, Promise<unknown>>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private relaying: Promise<void> | null = null;
 
-  constructor(private readonly deps: ServiceDeps) {}
+  constructor(private readonly deps: ServiceDeps) {
+    this.rules = { ...defaultRules, ...deps.rules };
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -314,18 +301,17 @@ export class RoadmapService {
   // Plumbing
   // -------------------------------------------------------------------------
 
-  private ledger(projectId: string, orgId: string): Ledger {
+  /** An organization's store, opened on first use. */
+  private store(projectId: string, orgId: string): RoadmapStore {
     const key = `${projectId}/${orgId}`;
-    let ledger = this.ledgers.get(key);
-    if (ledger === undefined) {
-      ledger = new Ledger(
-        ledgerPath(this.deps.root, projectId, orgId),
-        () => this.now(),
-        (line) => this.deps.log.line(line),
+    let store = this.stores.get(key);
+    if (store === undefined) {
+      store = SqliteRoadmapStore.open(companyDbPath(this.deps.root, projectId, orgId), () =>
+        this.now(),
       );
-      this.ledgers.set(key, ledger);
+      this.stores.set(key, store);
     }
-    return ledger;
+    return store;
   }
 
   /** Runs `fn` after every earlier write of the same organization: numbers and relay state are read and written as one step. */
@@ -348,7 +334,7 @@ export class RoadmapService {
     projectId: string,
     orgId: string,
     actor: OrgActor,
-  ): Promise<{ org: OrgView; caller: Caller; ledger: Ledger }> {
+  ): Promise<{ org: OrgView; caller: Caller; store: RoadmapStore }> {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new RoadmapError(404, "not_found", "Company mode is off.");
     }
@@ -356,14 +342,12 @@ export class RoadmapService {
     if (org === null) throw new RoadmapError(404, "org_not_found", `No organization ${orgId}.`);
     const principal = await this.deps.gateway.principalOf(projectId, orgId, actor);
     const agentId = principal.startsWith("agent:") ? principal.slice("agent:".length) : null;
-    const ledger = this.ledger(projectId, orgId);
-    await ledger.load();
-    return { org, caller: { principal, agentId }, ledger };
+    return { org, caller: { principal, agentId }, store: this.store(projectId, orgId) };
   }
 
-  private require(ledger: Ledger, number: number): Roadmap {
-    const r = ledger.get(number);
-    if (r === undefined) throw new RoadmapError(404, "roadmap_not_found", `No roadmap #${number}.`);
+  private require(store: RoadmapStore, number: number): Roadmap {
+    const r = store.get(number);
+    if (r === null) throw new RoadmapError(404, "roadmap_not_found", `No roadmap #${number}.`);
     return r;
   }
 
@@ -375,22 +359,6 @@ export class RoadmapService {
         .filter((c) => c.closedAt === undefined)
         .map((c) => ({ agentId: c.agentId, sessionId: c.sessionId })),
     };
-  }
-
-  private requireStatus(r: Roadmap, status: RoadmapStatus): void {
-    if (r.status !== status) {
-      throw new RoadmapError(409, `not_${status}`, `Roadmap #${r.number} is ${r.status}.`);
-    }
-  }
-
-  /** People, or the moderator. */
-  private requireModeratorOrPerson(r: Roadmap, caller: Caller): void {
-    if (caller.agentId === null || caller.agentId === moderatorOf(r)) return;
-    throw new RoadmapError(
-      403,
-      "not_moderator",
-      `Only a person or the moderator (${moderatorOf(r)}) may do this.`,
-    );
   }
 
   /** The room, checked: it exists, is not archived, and holds every one of `employees`. */
@@ -435,7 +403,7 @@ export class RoadmapService {
   private async deliver(
     projectId: string,
     orgId: string,
-    ledger: Ledger,
+    store: RoadmapStore,
     number: number,
     agentId: string,
     line: string,
@@ -447,7 +415,7 @@ export class RoadmapService {
       return { delivered: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      await ledger.append({ kind: "notify_failed", number, agentId, error, by });
+      store.write({ kind: "notify_failed", number, agentId, error, by });
       hints.push(`${agentId} was not told: ${error}`);
       return { delivered: false, error };
     }
@@ -463,11 +431,12 @@ export class RoadmapService {
     actor: OrgActor,
     filter: { channel?: string; status?: string } = {},
   ): Promise<{ roadmaps: RoadmapView[] }> {
-    const { ledger } = await this.open(projectId, orgId, actor);
-    const roadmaps = ledger
-      .roadmaps()
-      .filter((r) => filter.channel === undefined || r.channelId === filter.channel)
-      .filter((r) => filter.status === undefined || r.status === filter.status)
+    const { store } = await this.open(projectId, orgId, actor);
+    const roadmaps = store
+      .list({
+        ...(filter.channel !== undefined ? { channel: filter.channel } : {}),
+        ...(filter.status !== undefined ? { status: filter.status as RoadmapStatus } : {}),
+      })
       .map((r) => this.view(r));
     return { roadmaps };
   }
@@ -478,8 +447,8 @@ export class RoadmapService {
     number: number,
     actor: OrgActor,
   ): Promise<RoadmapView> {
-    const { ledger } = await this.open(projectId, orgId, actor);
-    return this.view(this.require(ledger, number));
+    const { store } = await this.open(projectId, orgId, actor);
+    return this.view(this.require(store, number));
   }
 
   // -------------------------------------------------------------------------
@@ -499,13 +468,13 @@ export class RoadmapService {
     actor: OrgActor,
   ): Promise<WriteResult> {
     const result = await this.withLock(projectId, orgId, async () => {
-      const { org, caller, ledger } = await this.open(projectId, orgId, actor);
+      const { org, caller, store } = await this.open(projectId, orgId, actor);
       const name = text(req.name, "name", 120);
       const given = req.channelId === undefined ? null : text(req.channelId, "channelId", 64);
       const employees = this.employeeList(req.employees, org, "employees");
-      if (req.parent !== undefined) this.require(ledger, req.parent);
+      if (req.parent !== undefined) this.require(store, req.parent);
       if (given !== null) await this.requireRoom(projectId, orgId, given, employees);
-      const number = ledger.nextNumber();
+      const number = store.nextNumber();
       // The room: the channel named, or one this roadmap opens for itself — unlisted, reached
       // from the roadmap, with the employees in it (and the opener, when that is a person).
       const channelId =
@@ -519,7 +488,7 @@ export class RoadmapService {
           caller.principal,
           employees,
         ));
-      await ledger.append({
+      store.write({
         kind: "opened",
         number,
         name,
@@ -542,9 +511,8 @@ export class RoadmapService {
   private announce(projectId: string, orgId: string, number: number): Promise<string[]> {
     return this.withLock(projectId, orgId, async () => {
       const hints: string[] = [];
-      const ledger = this.ledger(projectId, orgId);
-      await ledger.load();
-      const r = this.require(ledger, number);
+      const store = this.store(projectId, orgId);
+      const r = this.require(store, number);
       if (r.channelId === null) return hints;
       const moderator = moderatorOf(r) ?? "";
       for (const agentId of r.employees) {
@@ -555,7 +523,7 @@ export class RoadmapService {
           moderator,
           sessionId: clone?.sessionId ?? null,
         });
-        await this.deliver(projectId, orgId, ledger, number, agentId, line, r.createdBy, hints);
+        await this.deliver(projectId, orgId, store, number, agentId, line, r.createdBy, hints);
       }
       return hints;
     });
@@ -563,7 +531,7 @@ export class RoadmapService {
 
   /**
    * Opens the room of roadmap `number` through the organization gateway: an unlisted channel
-   * `roadmap_<number>` (a suffix when that id is taken — a channel made by hand, or a ledger
+   * `roadmap_<number>` (a suffix when that id is taken — a channel made by hand, or a store
    * restored from elsewhere), named after the roadmap, with `by` and the employees in it.
    */
   private async openRoomFor(
@@ -614,11 +582,11 @@ export class RoadmapService {
     actor: OrgActor,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { org, caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      this.requireStatus(r, "discussing");
-      this.requireModeratorOrPerson(r, caller);
-      const entry: LedgerEntry & { kind: "draft" } = {
+      const { org, caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      this.rules.requireStatus(r, "discussing");
+      this.rules.moderatorOrPerson(r, caller);
+      const entry: RoadmapWrite & { kind: "draft" } = {
         kind: "draft",
         number,
         by: caller.principal,
@@ -639,8 +607,8 @@ export class RoadmapService {
       if (entry.record === undefined && entry.body === undefined && entry.items === undefined) {
         throw badRequest("Send at least one of record, body, items.");
       }
-      await ledger.append(entry);
-      return { roadmap: this.view(this.require(ledger, number)), hints: [] };
+      store.write(entry);
+      return { roadmap: this.view(this.require(store, number)), hints: [] };
     });
   }
 
@@ -661,10 +629,10 @@ export class RoadmapService {
     // The derived roadmaps that got a room: their room sessions open once the lock is let go.
     const discussing: number[] = [];
     const result = await this.withLock(projectId, orgId, async () => {
-      const { caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      this.requireStatus(r, "discussing");
-      this.requireModeratorOrPerson(r, caller);
+      const { caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      this.rules.requireStatus(r, "discussing");
+      this.rules.moderatorOrPerson(r, caller);
       if (r.body.trim() === "")
         throw new RoadmapError(
           400,
@@ -681,7 +649,7 @@ export class RoadmapService {
           `Cites naming no section of the body: ${unknown.join("; ")}`,
         );
       }
-      await ledger.append({ kind: "established", number, by: caller.principal });
+      store.write({ kind: "established", number, by: caller.principal });
       const hints: string[] = [];
       const bases = basesOf(r.items);
       const briefed: Array<DraftItem & { kind: "proposal" }> = [];
@@ -691,7 +659,7 @@ export class RoadmapService {
           // An adopted proposal exists already: nothing is created, nothing needs approving and
           // nobody is told to create it — it is delegated to its owner and linked at once.
           if (prior?.stage === "delegated" && prior.proposal === item.proposal) continue;
-          await ledger.append({
+          store.write({
             kind: "delegated",
             number,
             key: item.key,
@@ -702,7 +670,7 @@ export class RoadmapService {
             delivered: false,
             by: caller.principal,
           });
-          await ledger.append({
+          store.write({
             kind: "linked",
             number,
             key: item.key,
@@ -713,7 +681,7 @@ export class RoadmapService {
           if (prior !== undefined && prior.owner === item.owner && prior.brief === item.brief)
             continue;
           // A brief, waiting for its two approvals: nothing is created, nobody is told to create.
-          await ledger.append({
+          store.write({
             kind: "briefed",
             number,
             key: item.key,
@@ -725,7 +693,7 @@ export class RoadmapService {
           briefed.push(item);
         } else {
           if (prior !== undefined && prior.child !== null) continue;
-          const child = ledger.nextNumber();
+          const child = store.nextNumber();
           // Its room is opened at once; only when that fails does it wait for one to be bound.
           let room: string | null = null;
           try {
@@ -743,7 +711,7 @@ export class RoadmapService {
               `The room of "${item.title}" was not opened: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
-          await ledger.append({
+          store.write({
             kind: "opened",
             number: child,
             name: item.title,
@@ -756,11 +724,11 @@ export class RoadmapService {
           });
           if (room !== null) discussing.push(child);
           const moderator = item.employees[0]!;
-          const derived = this.require(ledger, child);
+          const derived = this.require(store, child);
           const res = await this.deliver(
             projectId,
             orgId,
-            ledger,
+            store,
             child,
             moderator,
             room !== null
@@ -769,7 +737,7 @@ export class RoadmapService {
             caller.principal,
             hints,
           );
-          await ledger.append({
+          store.write({
             kind: "delegated",
             number,
             key: item.key,
@@ -785,7 +753,7 @@ export class RoadmapService {
       }
       // The moderator is asked for its approvals in its room session, where it works the roadmap.
       if (briefed.length > 0) {
-        const established = this.require(ledger, number);
+        const established = this.require(store, number);
         const moderator = moderatorOf(established);
         const clone = established.clones.find(
           (c) => c.agentId === moderator && c.closedAt === undefined,
@@ -807,7 +775,7 @@ export class RoadmapService {
           }
         }
       }
-      return { roadmap: this.view(this.require(ledger, number)), hints };
+      return { roadmap: this.view(this.require(store, number)), hints };
     });
     for (const child of discussing) {
       result.hints.push(...(await this.relayRoadmap(projectId, orgId, child)));
@@ -834,41 +802,12 @@ export class RoadmapService {
     actor: OrgActor,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      this.requireStatus(r, "established");
-      const item = r.items.find((x) => x.key === key);
-      const d = r.delegations[key];
-      if (item === undefined || item.kind !== "proposal" || d === undefined) {
-        throw new RoadmapError(
-          404,
-          "item_not_found",
-          `Roadmap #${number} has established no proposal item ${key}.`,
-        );
-      }
-      if (d.stage !== "brief") {
-        throw new RoadmapError(409, "already_approved", `Item ${key} is approved already.`);
-      }
-      const moderator = moderatorOf(r);
-      const role: ApprovalRole | null =
-        caller.agentId === null ? "person" : caller.agentId === moderator ? "moderator" : null;
-      if (role === null) {
-        throw new RoadmapError(
-          403,
-          "not_approver",
-          `Only a person or the moderator (${moderator ?? "none"}) approves item ${key}.`,
-        );
-      }
-      if (d.approvals[role] !== undefined) {
-        throw new RoadmapError(
-          409,
-          "already_approved",
-          `Item ${key} has the ${role}'s approval already (${d.approvals[role]!.by}).`,
-        );
-      }
-      const other = role === "person" ? d.approvals.moderator : d.approvals.person;
+      const { caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      const { role, item, second } = this.rules.approve(r, key, caller);
+      const d = r.delegations[key]!;
       let proposal: number | null = null;
-      if (other !== undefined) {
+      if (second) {
         try {
           proposal = await this.deps.proposals.createFromRoadmap(projectId, orgId, {
             author: item.owner,
@@ -886,16 +825,44 @@ export class RoadmapService {
           );
         }
       }
-      await ledger.append({
+      // One transaction: the approval on the brief it was given on (the rules again, in the
+      // write) and, when it is the second, the delegation and the link to the proposal. A
+      // failure between the creation above and this write leaves the proposal unlinked and the
+      // approval unrecorded; approving again finds the same proposal (createFromRoadmap is
+      // idempotent on the item and its brief) and links it.
+      const approved: RoadmapWrite = {
         kind: "approved",
         number,
         key,
         role,
         brief: d.brief,
         by: caller.principal,
-      });
+      };
+      store.write(
+        proposal === null
+          ? approved
+          : [
+              approved,
+              {
+                kind: "delegated",
+                number,
+                key,
+                owner: item.owner,
+                brief: d.brief,
+                base: d.base,
+                child: null,
+                delivered: false,
+                by: caller.principal,
+              },
+              { kind: "linked", number, key, proposal, by: caller.principal },
+            ],
+        (now) => {
+          this.rules.approve(now, key, caller);
+          this.rules.approvalOnBrief(now, key, d.brief);
+        },
+      );
       const hints: string[] = [];
-      const now = this.require(ledger, number).delegations[key]!;
+      const now = this.require(store, number).delegations[key]!;
       const { person, moderator: mod } = now.approvals;
       if (proposal !== null && person !== undefined && mod !== undefined) {
         const base = now.base === null ? null : (r.items.find((x) => x.key === now.base) ?? null);
@@ -903,7 +870,7 @@ export class RoadmapService {
         const res = await this.deliver(
           projectId,
           orgId,
-          ledger,
+          store,
           number,
           item.owner,
           approvedLine({
@@ -923,22 +890,10 @@ export class RoadmapService {
           caller.principal,
           hints,
         );
-        await ledger.append({
-          kind: "delegated",
-          number,
-          key,
-          owner: item.owner,
-          brief: now.brief,
-          base: now.base,
-          child: null,
-          delivered: res.delivered,
-          ...(res.error !== undefined ? { error: res.error } : {}),
-          by: caller.principal,
-        });
-        await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
-        await this.tellStacked(projectId, orgId, ledger, r, item, proposal, caller, hints);
+        store.recordDelivery(number, key, res.delivered, res.error ?? null);
+        await this.tellStacked(projectId, orgId, store, r, item, proposal, caller, hints);
       }
-      return { roadmap: this.view(this.require(ledger, number)), hints };
+      return { roadmap: this.view(this.require(store, number)), hints };
     });
   }
 
@@ -960,36 +915,14 @@ export class RoadmapService {
     actor: OrgActor,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      const d = r.delegations[key];
-      const item = r.items.find((x) => x.key === key);
-      if (d === undefined || item === undefined || item.kind !== "proposal") {
-        throw new RoadmapError(
-          404,
-          "item_not_delegated",
-          `Roadmap #${number} has delegated no proposal item ${key}.`,
-        );
-      }
-      // A moderator who owns the item is not asked: that is the owner linking a card of its own
-      // before the approvals, which is what the gate is there to stop.
-      const existing =
-        d.stage === "brief" &&
-        (caller.agentId === null ||
-          (caller.agentId === moderatorOf(r) && caller.agentId !== d.owner));
-      if (d.stage === "brief" && !existing) {
-        throw new RoadmapError(
-          409,
-          "not_approved",
-          `Item ${key} is still a brief: it needs a person's and the moderator's approval before a proposal is linked to it (a person or the moderator links it to the proposal it already is).`,
-        );
-      }
-      if (!existing && caller.agentId !== null && caller.agentId !== d.owner) {
-        throw new RoadmapError(403, "not_owner", `Only ${d.owner} (or a person) links ${key}.`);
-      }
+      const { caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      const { existing } = this.rules.link(r, key, caller);
+      const d = r.delegations[key]!;
+      const item = r.items.find((x) => x.key === key)!;
       if (!isProposalNumber(proposal)) throw badRequest("proposal must be a proposal number.");
       if (existing) {
-        await ledger.append({
+        store.write({
           kind: "delegated",
           number,
           key,
@@ -1001,10 +934,10 @@ export class RoadmapService {
           by: caller.principal,
         });
       }
-      await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
+      store.write({ kind: "linked", number, key, proposal, by: caller.principal });
       const hints: string[] = [];
-      await this.tellStacked(projectId, orgId, ledger, r, item, proposal, caller, hints);
-      return { roadmap: this.view(this.require(ledger, number)), hints };
+      await this.tellStacked(projectId, orgId, store, r, item, proposal, caller, hints);
+      return { roadmap: this.view(this.require(store, number)), hints };
     });
   }
 
@@ -1012,7 +945,7 @@ export class RoadmapService {
   private async tellStacked(
     projectId: string,
     orgId: string,
-    ledger: Ledger,
+    store: RoadmapStore,
     r: Roadmap,
     item: DraftItem,
     proposal: number,
@@ -1027,7 +960,7 @@ export class RoadmapService {
       await this.deliver(
         projectId,
         orgId,
-        ledger,
+        store,
         r.number,
         depOwner,
         baseLinkedLine(r, dep, item, proposal),
@@ -1051,16 +984,9 @@ export class RoadmapService {
     actor: OrgActor,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { org, caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      if (r.status !== "discussing" && r.status !== "established") {
-        throw new RoadmapError(
-          409,
-          "not_adoptable",
-          `Roadmap #${number} is ${r.status}: a proposal is taken in while its room discusses it or once it is established.`,
-        );
-      }
-      this.requireModeratorOrPerson(r, caller);
+      const { org, caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      this.rules.adopt(r, caller);
       if (!isProposalNumber(req.proposal)) throw badRequest("proposal must be a proposal number.");
       const proposal = req.proposal;
       const title = text(req.title, "title", 200);
@@ -1093,9 +1019,9 @@ export class RoadmapService {
         stackedOn: null,
         proposal,
       };
-      await ledger.append({ kind: "adopted", number, item, by: caller.principal });
+      store.write({ kind: "adopted", number, item, by: caller.principal });
       if (r.status === "established") {
-        await ledger.append({
+        store.write({
           kind: "delegated",
           number,
           key,
@@ -1106,9 +1032,9 @@ export class RoadmapService {
           delivered: false,
           by: caller.principal,
         });
-        await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
+        store.write({ kind: "linked", number, key, proposal, by: caller.principal });
       }
-      return { roadmap: this.view(this.require(ledger, number)), hints: [] };
+      return { roadmap: this.view(this.require(store, number)), hints: [] };
     });
   }
 
@@ -1122,22 +1048,13 @@ export class RoadmapService {
   ): Promise<WriteResult> {
     const why = text(reason, "reason", 4000);
     const hints = await this.withLock(projectId, orgId, async () => {
-      const { caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      this.requireStatus(r, "established");
-      if (caller.agentId !== null) {
-        const owners = Object.values(r.delegations).map((d) => d.owner);
-        const room = [...r.employees, ...r.clones.map((c) => c.agentId)];
-        if (!owners.includes(caller.agentId) && !room.includes(caller.agentId)) {
-          throw new RoadmapError(
-            403,
-            "not_involved",
-            `Only an owner, an employee of the room, or a person reopens roadmap #${number}.`,
-          );
-        }
-      }
-      await ledger.append({ kind: "reopened", number, reason: why, by: caller.principal });
-      const reopened = this.require(ledger, number);
+      const { caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      this.rules.reopen(r, caller);
+      store.write({ kind: "reopened", number, reason: why, by: caller.principal }, (now) =>
+        this.rules.reopen(now, caller),
+      );
+      const reopened = this.require(store, number);
       const line = reopenLine(reopened, caller.principal, why, moderatorOf(reopened) ?? "");
       const out: string[] = [];
       const relay = await this.readRelay(projectId, orgId);
@@ -1175,13 +1092,13 @@ export class RoadmapService {
     actor: OrgActor,
   ): Promise<WriteResult> {
     await this.withLock(projectId, orgId, async () => {
-      const { caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      this.requireStatus(r, "awaiting_room");
-      this.requireModeratorOrPerson(r, caller);
+      const { caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      this.rules.requireStatus(r, "awaiting_room");
+      this.rules.moderatorOrPerson(r, caller);
       const id = text(channelId, "channelId", 64);
       await this.requireRoom(projectId, orgId, id, r.employees);
-      await ledger.append({ kind: "room", number, channelId: id, by: caller.principal });
+      store.write({ kind: "room", number, channelId: id, by: caller.principal });
     });
     const hints = await this.relayRoadmap(projectId, orgId, number);
     return { roadmap: await this.get(projectId, orgId, number, actor), hints };
@@ -1195,16 +1112,16 @@ export class RoadmapService {
     actor: OrgActor,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      this.requireModeratorOrPerson(r, caller);
-      await ledger.append({
+      const { caller, store } = await this.open(projectId, orgId, actor);
+      const r = this.require(store, number);
+      this.rules.moderatorOrPerson(r, caller);
+      store.write({
         kind: "renamed",
         number,
         name: text(name, "name", 120),
         by: caller.principal,
       });
-      return { roadmap: this.view(this.require(ledger, number)), hints: [] };
+      return { roadmap: this.view(this.require(store, number)), hints: [] };
     });
   }
 
@@ -1279,10 +1196,9 @@ export class RoadmapService {
   private async relayUnlocked(projectId: string, orgId: string, number: number): Promise<string[]> {
     const hints: string[] = [];
     if (!this.deps.gateway.companyModeEnabled()) return hints;
-    const ledger = this.ledger(projectId, orgId);
-    await ledger.load();
-    const r = ledger.get(number);
-    if (r === undefined || r.status !== "discussing" || r.channelId === null) return hints;
+    const store = this.store(projectId, orgId);
+    const r = store.get(number);
+    if (r === null || r.status !== "discussing" || r.channelId === null) return hints;
     const org = await this.deps.gateway.organization(projectId, orgId);
     if (org === null) return hints;
     // An organization that runs on another machine is relayed THERE. What this server holds of
@@ -1307,7 +1223,7 @@ export class RoadmapService {
           ? "session gone"
           : null;
       if (reason === null) continue;
-      await ledger.append({
+      store.write({
         kind: "clone_closed",
         number,
         agentId: c.agentId,
@@ -1320,7 +1236,7 @@ export class RoadmapService {
     // The room so far is the new sessions' context; the cursor starts after it.
     if (state.cursor === null) state.cursor = await endCursor(orgDir, r.channelId);
     const openNow = (): string[] =>
-      this.require(ledger, number)
+      this.require(store, number)
         .clones.filter((c) => c.closedAt === undefined)
         .map((c) => c.agentId);
     const order = [
@@ -1331,7 +1247,7 @@ export class RoadmapService {
     if (missing.length > 0 && org.status !== "paused") {
       const recent = await recentMessages(orgDir, r.channelId, RECENT_CONTEXT);
       for (const agentId of missing) {
-        const current = this.require(ledger, number);
+        const current = this.require(store, number);
         const moderator = current.employees.find((e) => inRoom.includes(e)) ?? order[0]!;
         try {
           const opened = await this.deps.gateway.openEmployeeSession({
@@ -1348,7 +1264,7 @@ export class RoadmapService {
               recent,
             }),
           });
-          await ledger.append({ kind: "clone", number, agentId, sessionId: opened.sessionId, by });
+          store.write({ kind: "clone", number, agentId, sessionId: opened.sessionId, by });
           state.depths[agentId] = 0;
         } catch (err) {
           const error = err instanceof Error ? err.message : String(err);
@@ -1365,7 +1281,7 @@ export class RoadmapService {
     // A paused organization is not relayed to; its messages are passed over, as its desks' are.
     if (org.status !== "paused") {
       const limit = this.config().relayDepth;
-      const current = this.require(ledger, number);
+      const current = this.require(store, number);
       for (const msg of messages) {
         const open = current.clones.filter((c) => c.closedAt === undefined);
         const plan = planRelay(
@@ -1381,7 +1297,7 @@ export class RoadmapService {
           } catch (err) {
             // Closed now, reopened on the next pass (with the room so far as its context).
             const error = err instanceof Error ? err.message : String(err);
-            await ledger.append({
+            store.write({
               kind: "clone_closed",
               number,
               agentId,
@@ -1401,11 +1317,11 @@ export class RoadmapService {
     return hints;
   }
 
-  /** The organizations with a roadmap ledger on disk. */
+  /** The organizations with a store on disk. */
   private async knownOrgs(): Promise<Array<{ projectId: string; orgId: string }>> {
     const out: Array<{ projectId: string; orgId: string }> = [];
     const seen = new Set<string>();
-    for (const key of this.ledgers.keys()) {
+    for (const key of this.stores.keys()) {
       const [projectId, orgId] = key.split("/") as [string, string];
       seen.add(key);
       out.push({ projectId, orgId });
@@ -1426,7 +1342,7 @@ export class RoadmapService {
       for (const orgId of orgs) {
         if (seen.has(`${projectId}/${orgId}`)) continue;
         try {
-          await fs.access(path.join(orgDirOf(this.deps.root, projectId, orgId), LEDGER_FILE));
+          await fs.access(path.join(orgDirOf(this.deps.root, projectId, orgId), COMPANY_DB));
         } catch {
           continue;
         }
@@ -1444,9 +1360,8 @@ export class RoadmapService {
       try {
         if (!this.deps.gateway.companyModeEnabled()) return;
         for (const { projectId, orgId } of await this.knownOrgs()) {
-          const ledger = this.ledger(projectId, orgId);
-          await ledger.load();
-          for (const r of ledger.roadmaps()) {
+          const store = this.store(projectId, orgId);
+          for (const r of store.list({ status: "discussing" })) {
             if (r.status !== "discussing") continue;
             await this.relayRoadmap(projectId, orgId, r.number);
           }
@@ -1479,5 +1394,7 @@ export class RoadmapService {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
     await this.relaying;
+    for (const store of this.stores.values()) store.close();
+    this.stores.clear();
   }
 }

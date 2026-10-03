@@ -1056,7 +1056,7 @@ export class ProposalService {
     this.requireProposal(store, number);
     if (reason.trim() === "") throw badRequest("reason must not be empty.");
     const written = store.setStatus(number, (p) => {
-      this.rules.reject(p, caller);
+      this.rules.reject(p);
       return { status: "rejected", reason: reason.trim(), by: caller.principal };
     });
     this.notify(org, number, written.seq, "rejected");
