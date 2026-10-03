@@ -165,10 +165,7 @@ async function sourceHash(dir, into) {
   }
 }
 
-/**
- * Every plugin package under `plugins/` with a code entry (`main` or `exports`): the packages of
- * server modules.
- */
+/** Every shipped plugin package under `plugins/`: a package.json with a code entry, not private. */
 async function pluginPackages() {
   const out = [];
   const entries = fs.existsSync(PLUGINS_SRC) ? await fsp.readdir(PLUGINS_SRC) : [];
@@ -179,6 +176,8 @@ async function pluginPackages() {
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
+    // A private package is a repository example (plugins/example-*), never shipped.
+    if (pkg.private === true) continue;
     const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
       (d) => !NATIVE_DEPENDENCIES.has(d),
     );

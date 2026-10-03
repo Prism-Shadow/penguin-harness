@@ -1,0 +1,31 @@
+{
+  "name": "@penguinharness/example-hello-page",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Example plugin: a Hello World page under the Evaluation Center, drawn from the plugin's own ui/ in an iframe. Not shipped; enabled by hand for the e2e suite.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "ui",
+    "README.md",
+    "ifaces.json"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "tsup": "^8.3.0"
+  }
+}
