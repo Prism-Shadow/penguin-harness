@@ -123,3 +123,23 @@ export function valueOf(field: PluginConfigField, draft: unknown): unknown {
 /** Whether two field values are the same (lists compared by content). */
 export const sameValue = (a: unknown, b: unknown) =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/** Whether an entry's `switch` field is off as drafted: its card then draws the switch alone. */
+export function switchedOff(entry: PluginConfigEntry, draft: Record<string, unknown> | undefined) {
+  const sw = entry.configuration.switch;
+  return sw !== undefined && draft?.[sw] !== true;
+}
+
+/**
+ * The fields a card draws, in declaration order: the switch alone while it is off, else every
+ * field but one a table's row choice stores into (drawn only as that table's marker).
+ */
+export function drawnFields(
+  entry: PluginConfigEntry,
+  draft: Record<string, unknown> | undefined,
+): Array<[string, PluginConfigField]> {
+  const all = Object.entries(entry.configuration.properties);
+  if (switchedOff(entry, draft)) return all.filter(([n]) => n === entry.configuration.switch);
+  const choices = new Set(all.flatMap(([, f]) => (f.rowChoice ? [f.rowChoice.field] : [])));
+  return all.filter(([n]) => !choices.has(n));
+}

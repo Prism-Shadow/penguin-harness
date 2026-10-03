@@ -4,8 +4,9 @@
  * schema: a string, a secret, a boolean, a number, a choice, a list of lines or a table (a
  * row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing about any
  * particular entry. Fields a group marks `advanced` sit in a fold under the others, collapsed
- * by default (advanced-fold.tsx). A group that reports a `backend` it lacks offers to install
- * it when its `enabled` switch is turned on (sandbox-backend-prompt.tsx). An entry naming a
+ * by default (advanced-fold.tsx). A group with a `switch` draws that field alone while it is
+ * off, and one that reports a `backend` it lacks offers to install it when the switch is turned
+ * on (sandbox-backend-prompt.tsx). An entry naming a
  * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
  * saved with it; notices the entry reports sit under its title. Each card saves on its own;
  * nothing is written until its Save, which sends each changed entry of the card in one PUT. A secret field always starts empty and shows
@@ -36,7 +37,14 @@ import { backendToOffer, dismissBackendPrompt } from "../../lib/sandbox-backend-
 import { dispatchPluginConfigSaved } from "../../lib/plugin-config-event";
 import { MachinePicker } from "../machines/machine-picker";
 import { AdvancedFold } from "./advanced-fold";
-import { baselineOf, draftOf, sameValue, valueOf } from "./plugin-config-draft";
+import {
+  baselineOf,
+  draftOf,
+  drawnFields,
+  sameValue,
+  switchedOff,
+  valueOf,
+} from "./plugin-config-draft";
 import type { Draft } from "./plugin-config-draft";
 import { ConfigField } from "./plugin-config-field";
 import { ConfigHeading } from "./plugin-config-heading";
@@ -53,12 +61,6 @@ import {
 
 /** The picker's value for this server; a machine id is never this short. */
 const THIS_SERVER = "*";
-
-/**
- * The boolean field that is a group's on/off switch. Turning it on in a group that reports a
- * `backend` it lacks (the sandbox) offers to install that backend.
- */
-const SWITCH_FIELD = "enabled";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the
@@ -420,7 +422,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
           patch(entry.name, name, value);
           // Typing a new secret is not also clearing it.
           if (field.type === "secret") setClearingKey(key, false);
-          if (field.type === "boolean" && value === true && name === SWITCH_FIELD) {
+          if (value === true && name === entry.configuration.switch) {
             offerBackend(entry);
           }
         }}
@@ -440,15 +442,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
 
   /** An entry's fields in declaration order: the basic ones, then the Advanced fold, if any. */
   const fields = (entry: PluginConfigEntry) => {
-    // A field a table's single-choice column stores into is drawn only as that column.
-    const drawnByTable = new Set(
-      Object.values(entry.configuration.properties).flatMap((f) =>
-        f.rowChoice !== undefined ? [f.rowChoice.field] : [],
-      ),
-    );
-    const all = Object.entries(entry.configuration.properties).filter(
-      ([n]) => !drawnByTable.has(n),
-    );
+    const all = drawnFields(entry, drafts[entry.name]);
     const advanced = all.filter(([, field]) => field.advanced === true);
     return (
       <>
@@ -490,7 +484,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
               locale={locale}
             />
             {fields(card)}
-            {children.map((child) => (
+            {(switchedOff(card, drafts[card.name]) ? [] : children).map((child) => (
               <div
                 key={child.name}
                 className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"

@@ -9,35 +9,13 @@
  * and after every save. The service stays on the capability-free floor (a bare kernel boots
  * it with no database), and its parked context still carries the settings across a hot swap:
  * on boot a saved document wins, and with none saved the service keeps what the swap carried.
- * `SandboxSettingsStatus` reports, as live notices, whether the saved policy can be enforced,
- * which backends are in use, and why each other one is not — a backend that failed to load,
- * failed its check or runs on another platform is named with its reason, never left out. It is
- * a code contribution, so it must not require plugin configuration itself.
+ * The card's live status (whether the saved policy can be enforced, which backends are in use
+ * and why each other one is not) is `SandboxSettingsStatus`, in settings-status.ts.
  */
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { PluginConfigNotice } from "../api/types.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { PluginConfig } from "../plugin/config.js";
-import type { SettingsGroupStatus } from "../plugin/config-page.js";
 import { Sandbox, SandboxModule } from "./service.js";
-import { requestedDimensions } from "./dimensions.js";
-import {
-  DEFAULT_PRESET,
-  prePresetNotice,
-  prePresetStartOf,
-  sandboxEnabledOf,
-  sandboxStartOf,
-} from "./settings-policy.js";
-
-/**
- * The backend package each OS defaults to: what the card offers to install when the switch is
- * turned on and no backend for this OS is installed. sandbox-dsh serves every OS but is never
- * the default, because it confines the file system only.
- */
-const DEFAULT_BACKEND: Partial<Record<NodeJS.Platform, string>> = {
-  linux: "@penguinharness/sandbox-bwrap",
-  darwin: "@penguinharness/sandbox-seatbelt",
-  win32: "@penguinharness/sandbox-wsl",
-};
+import { sandboxStartOf } from "./settings-policy.js";
 
 /** The sandbox's group name (its contribution id), and the parent a backend's group names. */
 export const SANDBOX_GROUP = "sandbox";
@@ -54,6 +32,9 @@ export const SANDBOX_GROUP = "sandbox";
           "The confinement new sessions start with, enforced by a sandbox backend plugin. A session keeps the policy it started with; change it from that session's permission button.",
         descriptionZh:
           "新建会话的初始封禁策略，由沙盒后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
+        // Off, the card shows the switch alone: the presets, notices and backends' own settings
+        // matter only to a confined Session.
+        switch: "enabled",
         properties: {
           // No default: a document saved before the switch derives it (sandboxEnabledOf), and
           // with nothing saved that reads as off, the default mode being Off.
@@ -66,8 +47,8 @@ export const SANDBOX_GROUP = "sandbox";
             descriptionZh:
               "新会话是否进入沙盒。打开：从默认预设开始。关闭：拥有完全的文件与网络访问，只受审批模式约束。已有会话保留各自的策略。",
           },
-          // The composer's menu: each preset a named mode, network level and approval mode,
-          // and the Default column: the row a new Session starts from while the switch is on.
+          // The composer's menu: each preset a named mode, network level and approval mode, and
+          // the default (marked after its name): the row a new Session starts from while on.
           // Full Access keeps its promise (nothing confined, everything approved): only its
           // name, whether the menu lists it and whether it is the default can change.
           presets: {
@@ -75,27 +56,18 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Presets",
             titleZh: "预设",
             description:
-              "Named combinations of file access, network and approval mode. The pinned ones are what the composer's permission menu offers, and the default is what a new session starts from while the sandbox is on. A session keeps its own three values, and the menu names it by the first row that matches.",
+              "Named combinations of file access, network and approval mode. The pinned ones are what the composer's permission menu offers, and the one marked (Default) is what a new session starts from while the sandbox is on; changing it reaches new sessions only. A session keeps its own three values, and the menu names it by the first row that matches. Each name's \"?\" says what the row is for.",
             descriptionZh:
-              "文件访问、网络与审批方式的命名组合。固定的行出现在输入框的权限菜单里；沙盒打开时，新会话从默认行开始。会话只保存自己的三项取值，菜单按第一个匹配的行为它命名。",
-            rowChoice: {
-              field: "defaultPreset",
-              title: "Default",
-              titleZh: "默认",
-              description:
-                "The row a new session starts from while the sandbox is on: its file access, network and approval mode. Changing it reaches new sessions only.",
-              descriptionZh:
-                "沙盒打开时新会话的起点：取该行的文件访问、网络与审批方式。改动只影响此后新建的会话。",
-              before: "enabled",
-            },
+              "文件访问、网络与审批方式的命名组合。固定的行出现在输入框的权限菜单里；沙盒打开时，新会话从标有（默认）的行开始，改动只影响此后新建的会话。会话只保存自己的三项取值，菜单按第一个匹配的行为它命名。每个名称旁的「?」说明这一行的用途。",
+            rowChoice: { field: "defaultPreset", title: "Default", titleZh: "默认" },
             columnGroup: {
               title: "Action",
               titleZh: "操作",
               description:
-                "Star: the default — the row a new session starts from while the sandbox is on. Pin: listed in the composer's permission menu. Handle: drag to reorder (or focus it and use the arrow keys); the order is the menu's. Trash: delete a preset you added (built-in ones can only be unpinned).",
+                "Pin: listed in the composer's permission menu. Handle: drag to reorder (or focus it and use the arrow keys); the order is the menu's. …: set the row as the default, or delete a preset you added (built-in ones can only be unpinned).",
               descriptionZh:
-                "星标：默认——沙盒打开时新会话从这一行开始。图钉：列在输入框的权限菜单里。手柄：拖动调整顺序（或聚焦后按上下方向键），菜单按此顺序列出。垃圾桶：删除你新增的预设（内置预设只能取消固定）。",
-              columns: ["defaultPreset", "enabled"],
+                "图钉：列在输入框的权限菜单里。手柄：拖动调整顺序（或聚焦后按上下方向键），菜单按此顺序列出。…：设为默认，或删除你新增的预设（内置预设只能取消固定）。",
+              columns: ["enabled"],
             },
             // Presets an administrator adds: only those can be deleted; every row can be moved,
             // and the order is the composer's menu order.
@@ -143,13 +115,24 @@ export const SANDBOX_GROUP = "sandbox";
                     value: "danger-full-access",
                     title: "Off (full access)",
                     titleZh: "关闭（完全访问）",
+                    description: "Commands and file tools may write anywhere.",
+                    descriptionZh: "命令与文件工具可以写任何位置。",
                   },
                   {
                     value: "workspace-write",
                     title: "Workspace write only",
                     titleZh: "仅工作区可写",
+                    description:
+                      "Commands and file tools may write only the workspace, the session's scratchpad and the temp directory.",
+                    descriptionZh: "命令与文件工具只能写工作区、会话的 scratchpad 与临时目录。",
                   },
-                  { value: "read-only", title: "Read-only", titleZh: "只读" },
+                  {
+                    value: "read-only",
+                    title: "Read-only",
+                    titleZh: "只读",
+                    description: "Commands and file tools may write nothing but the temp directory.",
+                    descriptionZh: "命令与文件工具除临时目录外什么都不能写。",
+                  },
                 ],
               },
               {
@@ -162,9 +145,27 @@ export const SANDBOX_GROUP = "sandbox";
                 descriptionZh:
                   "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。仅本机只允许访问本机，需要能实施它的后端。",
                 options: [
-                  { value: "open", title: "Full access", titleZh: "完全访问" },
-                  { value: "local", title: "Localhost only", titleZh: "仅本机" },
-                  { value: "none", title: "No network", titleZh: "无网络" },
+                  {
+                    value: "open",
+                    title: "Full access",
+                    titleZh: "完全访问",
+                    description: "Any address can be reached.",
+                    descriptionZh: "可以访问任何地址。",
+                  },
+                  {
+                    value: "local",
+                    title: "Localhost only",
+                    titleZh: "仅本机",
+                    description: "Only this machine can be reached.",
+                    descriptionZh: "只能访问本机。",
+                  },
+                  {
+                    value: "none",
+                    title: "No network",
+                    titleZh: "无网络",
+                    description: "Nothing can be reached.",
+                    descriptionZh: "无法访问任何网络。",
+                  },
                 ],
               },
               {
@@ -177,10 +178,34 @@ export const SANDBOX_GROUP = "sandbox";
                 descriptionZh:
                   "哪些工具调用无需询问即可执行：全部、仅读取类、都要先询问，或全部拒绝。",
                 options: [
-                  { value: "allow-all", title: "Approve everything", titleZh: "全部批准" },
-                  { value: "read-only", title: "Approve read-only", titleZh: "批准只读" },
-                  { value: "always-ask", title: "Ask every time", titleZh: "每次询问" },
-                  { value: "deny-all", title: "Deny everything", titleZh: "全部拒绝" },
+                  {
+                    value: "allow-all",
+                    title: "Approve everything",
+                    titleZh: "全部批准",
+                    description: "Every tool call runs without asking.",
+                    descriptionZh: "每个工具调用都直接执行，不询问。",
+                  },
+                  {
+                    value: "read-only",
+                    title: "Approve read-only",
+                    titleZh: "批准只读",
+                    description: "Calls that only read run; every other call asks you first.",
+                    descriptionZh: "只读的调用直接执行，其余调用先询问你。",
+                  },
+                  {
+                    value: "always-ask",
+                    title: "Ask every time",
+                    titleZh: "每次询问",
+                    description: "Every tool call asks you first.",
+                    descriptionZh: "每个工具调用都先询问你。",
+                  },
+                  {
+                    value: "deny-all",
+                    title: "Deny everything",
+                    titleZh: "全部拒绝",
+                    description: "Every tool call is refused.",
+                    descriptionZh: "每个工具调用都被拒绝。",
+                  },
                 ],
               },
               {
@@ -204,6 +229,9 @@ export const SANDBOX_GROUP = "sandbox";
                   approvalMode: "allow-all",
                 },
                 valuesZh: { name: "完全访问" },
+                description:
+                  "No sandbox and nothing asked: the agent writes files, runs commands and uses the network freely. For work you trust and watch.",
+                descriptionZh: "不进沙盒，也不询问：Agent 可以随意写文件、执行命令、联网。适合你信任并在旁照看的工作。",
                 locked: ["mode", "network", "approvalMode"],
               },
               {
@@ -216,6 +244,9 @@ export const SANDBOX_GROUP = "sandbox";
                   approvalMode: "always-ask",
                 },
                 valuesZh: { name: "每次询问" },
+                description:
+                  "No sandbox, but every tool call waits for your approval. For approving the work step by step.",
+                descriptionZh: "不进沙盒，但每个工具调用都要等你批准。适合一步步审批。",
               },
               {
                 id: "workspace-write",
@@ -227,6 +258,9 @@ export const SANDBOX_GROUP = "sandbox";
                   approvalMode: "allow-all",
                 },
                 valuesZh: { name: "仅工作区可写" },
+                description:
+                  "Commands and file tools change files only inside the workspace; the network is open and calls run without asking. For everyday coding.",
+                descriptionZh: "命令与文件工具只能改工作区内的文件；网络不受限，调用无需询问。适合日常编码。",
               },
               {
                 id: "read-only",
@@ -238,6 +272,9 @@ export const SANDBOX_GROUP = "sandbox";
                   approvalMode: "allow-all",
                 },
                 valuesZh: { name: "只读" },
+                description:
+                  "Nothing can be written but the temp directory; the network is open and calls run without asking. For exploring, reviewing and answering questions.",
+                descriptionZh: "除临时目录外什么都不能写；网络不受限，调用无需询问。适合浏览代码、审阅与答疑。",
               },
               {
                 id: "workspace-write-ask",
@@ -249,6 +286,9 @@ export const SANDBOX_GROUP = "sandbox";
                   approvalMode: "always-ask",
                 },
                 valuesZh: { name: "仅工作区可写并询问" },
+                description:
+                  "Like Workspace Write, but every tool call asks you first. For careful edits.",
+                descriptionZh: "与「仅工作区可写」相同，但每个工具调用都先询问你。适合谨慎的修改。",
               },
               {
                 id: "denied-all",
@@ -260,11 +300,14 @@ export const SANDBOX_GROUP = "sandbox";
                   approvalMode: "deny-all",
                 },
                 valuesZh: { name: "全部拒绝" },
+                description:
+                  "Every tool call is refused, so the agent can only talk. For a conversation with no tool use.",
+                descriptionZh: "每个工具调用都被拒绝，Agent 只能对话。适合不使用工具的纯对话。",
               },
             ],
           },
           // The row a new Session starts from while the switch is on, drawn only as the table's
-          // Default column. No declared default: the derive hook shows DEFAULT_PRESET, or for a
+          // "(Default)" marker. No declared default: the derive hook shows DEFAULT_PRESET, or for a
           // document stored before it the row giving that document's start, else none
           // (settings-policy.ts, prePresetStartOf).
           defaultPreset: {
@@ -329,120 +372,5 @@ export class SandboxSettings {
     pluginConfig.watch(SANDBOX_GROUP, (doc) =>
       sandbox.configure(sandboxStartOf(schema(), doc).policy),
     );
-  }
-}
-
-/**
- * The sandbox card's live notices: a warning when the saved mode needs isolation no usable
- * backend implements (every command would be refused), the backends in use, and each backend
- * that failed to load, with its reason. A backend that declined because this host is not its
- * platform is no fault of the deployment — it is named only when nothing else serves, where
- * it explains why.
- */
-@Component({
-  contributes: {
-    "PluginConfigPage.status": [{ id: "sandbox.status", group: "sandbox" }],
-  },
-})
-export class SandboxSettingsStatus {
-  @Use(SandboxModule) private readonly sandbox!: Sandbox;
-  @Bind("sandbox.status") status!: SettingsGroupStatus;
-  setup() {
-    const sandbox = this.sandbox;
-    this.status = {
-      // The switch and the default as the card shows them, for a document saved before they
-      // existed: the switch off its old policy; the default the row that gives that document's
-      // start, or none when no row does.
-      derive: (values, stored, configuration) => {
-        // Read off the whole document: a pre-switch one's mode and network are not fields.
-        const prePreset = prePresetStartOf(configuration, stored);
-        const { defaultPreset: chosen, ...rest } = values;
-        const defaultPreset = prePreset !== undefined ? prePreset.row : (chosen ?? DEFAULT_PRESET);
-        return {
-          ...rest,
-          enabled: sandboxEnabledOf(stored),
-          ...(defaultPreset !== undefined ? { defaultPreset } : {}),
-        };
-      },
-      // A save pins the default the card shows, so what new Sessions start from changes only
-      // when an administrator picks a row. A document saved before the default preset that no
-      // row matches shows none: the save writes none, and its own start stays (settings-policy.ts).
-      saving: (update, current) =>
-        update.defaultPreset !== undefined || current.defaultPreset === undefined
-          ? update
-          : { ...update, defaultPreset: current.defaultPreset },
-      // A backend for this OS is installed when it is in use or failed (to load, or its check):
-      // one that declined is for another OS. Installing the default would not fix a failure.
-      backend: () => {
-        const recommended = DEFAULT_BACKEND[process.platform];
-        return {
-          installed: sandbox.backends().length > 0 || sandbox.failures().length > 0,
-          ...(recommended !== undefined ? { recommended } : {}),
-        };
-      },
-      // A backend reads its own group (drawn inside this card) at load: after a save of the
-      // card, one that failed its check — a wrong program path — loads again, no restart.
-      saved: () => sandbox.retryFailed(),
-      // The local level needs a backend that declares it; where none does, the option is
-      // shown greyed out and a save choosing it is refused.
-      unavailable: () => {
-        if (sandbox.backends().some((b) => b.dimensions.includes("network-local"))) return [];
-        const why = {
-          value: "local",
-          reason: "no sandbox backend on this host supports it",
-          reasonZh: "本机的沙盒后端不支持",
-        };
-        return [{ field: "presets", column: "network", ...why }];
-      },
-      notices: (stored, configuration): PluginConfigNotice[] => {
-        const notices: PluginConfigNotice[] = [];
-        const prePreset = prePresetNotice(stored, configuration);
-        if (prePreset !== undefined) notices.push(prePreset);
-        const backends = sandbox.backends();
-        const settings = sandbox.currentSettings();
-        if (settings.mode !== "danger-full-access") {
-          const required = requestedDimensions(settings);
-          const served = backends.some((b) => required.every((d) => b.dimensions.includes(d)));
-          if (!served) {
-            const needs = required.join(" + ");
-            notices.push({
-              tone: "attention",
-              text: `The saved mode needs ${needs}, and no usable backend implements it: every agent command and hook script is refused until one does.`,
-              textZh: `当前保存的模式需要 ${needs}，但没有可用的后端实现它：在有后端能实施之前，Agent 的每条命令与钩子脚本都会被拒绝。`,
-            });
-          }
-        }
-        if (backends.length === 0) {
-          const declined = sandbox.declined();
-          const elsewhere =
-            declined.length === 0
-              ? ""
-              : ` ${declined.join(", ")} ${declined.length === 1 ? "is" : "are"} installed, but for another platform.`;
-          const elsewhereZh =
-            declined.length === 0 ? "" : `已安装 ${declined.join("、")}，但它们适用于其他平台。`;
-          notices.push({
-            tone: "attention",
-            // Only confinement needs a backend: with the switch off nothing is refused.
-            onlyWhen: "enabled",
-            text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command and hook script.${elsewhere}`,
-            textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「关闭」外的任何模式都会拒绝 Agent 的每条命令与钩子脚本。${elsewhereZh}`,
-          });
-        } else {
-          const list = backends.map((b) => `${b.name} (${b.dimensions.join(", ")})`).join(" · ");
-          notices.push({ tone: "muted", text: `Backends: ${list}`, textZh: `后端：${list}` });
-        }
-        // A failure while another backend serves is worth saying, but it is not the card's
-        // headline — confinement works. With nothing serving it is the headline.
-        const tone = backends.length === 0 ? "attention" : "muted";
-        for (const { name, reason } of sandbox.failures()) {
-          notices.push({
-            tone,
-            text: `${name} is not in use: ${reason}`,
-            textZh: `${name} 未启用：${reason}`,
-          });
-        }
-        return notices;
-      },
-    };
   }
 }

@@ -548,9 +548,60 @@ describe("a table's row choice", () => {
       /rowChoice\.field must name an enum/,
     );
     expect(() => table({ field: "pick" }, ["a", "b"])).toThrow(/needs a field and a title/);
-    expect(() => table({ field: "pick", title: "Default", before: "nope" }, ["a", "b"])).toThrow(
-      /rowChoice\.before must name a column/,
+  });
+
+  it("keeps only the field and the title: the choice is a marker, not a column", () => {
+    const parsed = table(
+      { field: "pick", title: "Default", titleZh: "默认", description: "x", before: "name" },
+      ["a", "b"],
     );
+    expect(parsed!.properties.rows!.rowChoice).toEqual({
+      field: "pick",
+      title: "Default",
+      titleZh: "默认",
+    });
+  });
+
+  it("keeps a row's and an option's description, for the row's \"?\"", () => {
+    const parsed = parsePluginConfiguration(
+      {
+        properties: {
+          rows: {
+            type: "table",
+            title: "Rows",
+            columns: [
+              { name: "name", type: "string", title: "Name" },
+              {
+                name: "level",
+                type: "enum",
+                title: "Level",
+                options: [{ value: "low", title: "Low", description: "Quiet", descriptionZh: "安静" }],
+              },
+            ],
+            rows: [
+              {
+                id: "a",
+                values: { name: "A", level: "low" },
+                description: "For quiet work",
+                descriptionZh: "适合安静的工作",
+              },
+            ],
+          },
+        },
+      },
+      "acme/package.json",
+    )!;
+    const rows = parsed.properties.rows!;
+    expect(rows.rows![0]).toMatchObject({
+      description: "For quiet work",
+      descriptionZh: "适合安静的工作",
+    });
+    expect(rows.columns![1]!.options![0]).toEqual({
+      value: "low",
+      title: "Low",
+      description: "Quiet",
+      descriptionZh: "安静",
+    });
   });
 
   it("draws a pin only over a boolean column of the table", () => {
@@ -579,6 +630,25 @@ describe("a table's row choice", () => {
       /pin\.column must name a boolean column/,
     );
     expect(() => pinned({ column: "on", on: "Pinned" })).toThrow(/needs an on and an off text/);
+  });
+});
+
+describe("a group's switch", () => {
+  const group = (sw: unknown, on: unknown = { type: "boolean", title: "Enable" }) =>
+    parsePluginConfiguration(
+      { switch: sw, properties: { on, note: { type: "string", title: "Note" } } },
+      "acme/package.json",
+    );
+
+  it("names a boolean field of the group", () => {
+    expect(group("on")!.switch).toBe("on");
+    expect(group(undefined)!.switch).toBeUndefined();
+  });
+
+  it("refuses a switch that is not a boolean field of the group", () => {
+    expect(() => group("note")).toThrow(/switch must name a boolean field/);
+    expect(() => group("nope")).toThrow(/switch must name a boolean field/);
+    expect(() => group(1)).toThrow(/switch must be a string/);
   });
 });
 

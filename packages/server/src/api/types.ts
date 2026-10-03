@@ -5486,14 +5486,16 @@ export interface PluginConfigField {
   columns?: PluginConfigTableColumn[];
   rows?: PluginConfigTableRow[];
   /**
-   * `table` only: a single-choice column picking one row — the sandbox's default preset. The
-   * choice is stored in `field`, an `enum` field of the same group whose options are the row
-   * ids (plus, in an `extensible` table, the ids of the rows added to it); the page draws that
-   * field only as this column, one marker per row.
+   * `table` only: a single choice of one row — the sandbox's default preset. The choice is
+   * stored in `field`, an `enum` field of the same group whose options are the row ids (plus,
+   * in an `extensible` table, the ids of the rows added to it); the page draws that field only
+   * as its title in brackets after the chosen row's name ("(Default)"), and picks it from a
+   * row's "…" menu.
    */
   rowChoice?: PluginConfigRowChoice;
   /**
-   * `table` only: rows may be added (and only those deleted) and every row reordered. A new row
+   * `table` only: rows may be added (and only those deleted, from the row's "…" menu) and every
+   * row reordered. A new row
    * starts from these values. What is stored, beside the declared rows' changed cells, is the
    * added rows under `"$added"` (`{ [row id]: { [column]: value } }`, every column present) and
    * the row order under `"$order"` (row ids); neither key can be a row id. A save sends either
@@ -5502,8 +5504,8 @@ export interface PluginConfigField {
   extensible?: PluginConfigNewRow;
   /**
    * `table` only: a header drawn over adjacent columns that belong together (the sandbox's
-   * Default and Pin, under "Menu"). `columns` names them: column names, or the row choice's
-   * `field` for its column.
+   * Pin, under "Action"). `columns` names them. When the group ends the columns, the row's drag
+   * handle and "…" menu join it.
    */
   columnGroup?: PluginConfigColumnGroup;
   /**
@@ -5524,20 +5526,15 @@ export interface PluginConfigPinColumn {
 }
 
 /**
- * A table's single-choice column: the `enum` field it stores into, and its header. The choice
- * may name no row (nothing stored, and the group's `derive` gives none): the column is drawn
- * with no row chosen and a save is not refused for it. A save that leaves it naming a row the
- * table no longer has is refused.
+ * A table's single choice of a row: the `enum` field it stores into, and its title, drawn in
+ * brackets after the chosen row's name. The choice may name no row (nothing stored, and the
+ * group's `derive` gives none): no row is marked and a save is not refused for it. A save that
+ * leaves it naming a row the table no longer has is refused.
  */
 export interface PluginConfigRowChoice {
   field: string;
   title: string;
   titleZh?: string;
-  /** What the column means: disclosed behind a "?" beside its header. */
-  description?: string;
-  descriptionZh?: string;
-  /** The column it is drawn before (a column name); absent, it is drawn last. */
-  before?: string;
 }
 
 /** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
@@ -5563,6 +5560,13 @@ export interface PluginConfigTableRow {
   locked?: string[];
   /** A row added to an `extensible` table (not declared): the only kind that may be deleted. */
   added?: boolean;
+  /**
+   * What the row is for, disclosed behind a "?" beside its name while its `enum` cells hold
+   * their declared values. A row without one, or whose choices changed, gets a "?" listing its
+   * `enum` cells' values and what each does (the options' `description`s).
+   */
+  description?: string;
+  descriptionZh?: string;
 }
 
 /** A header over adjacent table columns, with its own "?". */
@@ -5589,6 +5593,9 @@ export interface PluginConfigOption {
   value: string;
   title: string;
   titleZh?: string;
+  /** What picking it does: listed, for a table column's option, in a row's "?" (see the row's `description`). */
+  description?: string;
+  descriptionZh?: string;
 }
 
 /** A declared configuration: a titled group of fields, in declaration order. */
@@ -5597,6 +5604,13 @@ export interface PluginConfiguration {
   titleZh?: string;
   description?: string;
   descriptionZh?: string;
+  /**
+   * A `boolean` field that turns the group on (the sandbox's `enabled`). While it is off, as
+   * drafted, the card draws that field alone: no other field, notice or action, and none of the
+   * groups drawn inside it. Turning it on in a group that reports a `backend` it lacks offers
+   * to install one.
+   */
+  switch?: string;
   properties: Record<string, PluginConfigField>;
 }
 
@@ -5610,12 +5624,6 @@ export interface PluginConfigNotice {
   tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
-  /**
-   * A boolean field of the same group: the notice matters only while it is on, so the page
-   * shows it only while that field — as drafted, before Save — is on (the sandbox's backend
-   * warning, under its `enabled` switch).
-   */
-  onlyWhen?: string;
 }
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */

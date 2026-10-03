@@ -1,60 +1,57 @@
 /**
  * A settings group's `table` field (the Sandbox card's presets), drawn inside a rounded,
  * hairline-bordered box. The layout is fixed: every `enum` column gets the same width, the
- * small columns (a pin, a row choice, the handle) get just their control, and the text column
+ * small columns (a pin, the handle, the "…" menu) get just their control, and the text column
  * takes the rest and wraps. On a screen too narrow for that the box scrolls sideways.
  *
  * The table's title, every column header and a column group's header carry a "?" disclosing
  * what they mean (the schema's `description`s), never a paragraph on screen.
  *
- * Cells by column type: a `string` cell is a box holding the effective text (an empty override
- * shows the declared text, in the page's language; clearing it or typing the declared text back
- * restores it), which wraps; a `boolean` cell is a switch, or a pin toggle for the column the
- * table's `pin` names; an `enum` cell is its value's full title as text, which opens a menu of
- * the options (plugin-config-enum-cell.tsx). A cell the row locks is the value's text alone,
- * with "locked" in its name and tooltip. A `rowChoice` column is a star toggle per row, filled
- * on the chosen one.
+ * Cells by column type are plugin-config-field-cell.tsx's. The row's name (its `name` column)
+ * is followed by the chosen row's marker ("(Default)", the `rowChoice`'s title) and a "?" saying
+ * what the row is for: its declared `description` while its choices are the declared ones, else
+ * each choice's value and what that option does.
  *
- * An `extensible` table ends every row with a drag handle (the arrow keys move a focused one)
- * and, on an added row, a delete button — inside the column group when it ends the columns —
+ * An `extensible` table ends every row with a drag handle (the arrow keys move a focused one),
  * and has an add button under it. A drag lifts the row and moves it with the pointer, shows a
- * line where it will land, and reorders once, on the drop; Esc puts it back. Every control is
- * named "<row> · <column>" (or after its action) for a screen reader, the row's name in the
- * page's language.
+ * line where it will land, and reorders once, on the drop; Esc puts it back. A row's "…" menu
+ * (plugin-config-row-menu.tsx) holds what is used less often: Set as default, and Delete on an
+ * added row. The handle and the menu join the column group when it ends the columns. Every
+ * control is named "<row> · <column>" (or after its action) for a screen reader, the row's name
+ * in the page's language.
  */
 import { useEffect, useRef, useState } from "react";
 import type {
   PluginConfigEntry,
   PluginConfigField,
   PluginConfigTableColumn,
-  PluginConfigTableRow,
 } from "@prismshadow/penguin-server/api";
-import { Button, GlyphIcon, ICONS, ICON_SIZE, InfoPopover, Switch } from "@prismshadow/penguin-ui";
+import { Button, InfoPopover } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Locale } from "../../state/locale";
 import { localizedText } from "../chat/skill-use";
 import type { TableDraft } from "./plugin-config-draft";
-import { EnumCell } from "./plugin-config-enum-cell";
-import {
-  ICON_BUTTON,
-  IconToggle,
-  PinToggle,
-  RowGrip,
-  WrappingNameBox,
-} from "./plugin-config-table-cells";
+import { Cell, rowHelp } from "./plugin-config-field-cell";
+import type { DrawnRow } from "./plugin-config-field-cell";
+import { RowMenu, rowActions } from "./plugin-config-row-menu";
+import { RowGrip } from "./plugin-config-table-cells";
+
+/** The column a row is named by: its text is the row's name, followed by the row's marks. */
+const NAME_COLUMN = "name";
 
 /**
  * Column widths, in the table's fixed layout. Equal for every choice column so none reads wider
  * than its siblings, one width for every icon column (the action group), and a floor under the
- * name: below the table's minimum width its box scrolls sideways rather than crushing names.
+ * name (and its marks): below the table's minimum width its box scrolls sideways rather than
+ * crushing names.
  */
 const WIDTH = {
   enum: "w-[6.25rem]",
   icon: "w-7",
   boolean: "w-[3.25rem]",
 } as const;
-/** Name floor (6rem) + three choice columns + four icon columns. */
+/** Name floor (7.75rem) + three choice columns + three icon columns. */
 const TABLE_MIN = "min-w-[31.75rem]";
 
 const TH = "px-1 py-2 text-left text-xs font-medium text-fg-muted";
@@ -69,19 +66,8 @@ function HeaderTitle({ title, info }: { title: string; info: string | undefined 
   );
 }
 
-/** One drawn column: a field column, the row choice's, or an extensible table's move/delete. */
-type Slot =
-  | { kind: "column"; column: PluginConfigTableColumn }
-  | { kind: "choice" }
-  | { kind: "move" }
-  | { kind: "remove" };
-
-/** A row as drawn: its declared form (absent for an added row) and its cells. */
-interface DrawnRow {
-  id: string;
-  declared?: PluginConfigTableRow;
-  cells: Record<string, string | boolean>;
-}
+/** One drawn column: a field column, an extensible table's handle, or the row's "…" menu. */
+type Slot = { kind: "column"; column: PluginConfigTableColumn } | { kind: "move" } | { kind: "more" };
 
 /**
  * A drag in progress: the row, how far the pointer has moved, and where the row would land
@@ -119,7 +105,7 @@ export function ConfigTable({
   field: PluginConfigField;
   table: TableDraft;
   onChange: (next: TableDraft) => void;
-  /** The row the table's single-choice column (`rowChoice`) holds, as drafted. */
+  /** The row the table's single choice (`rowChoice`) holds, as drafted. */
   choice?: unknown;
   onChoice?: (row: string) => void;
   /** The refused cells' messages, listed under the table. */
@@ -134,31 +120,17 @@ export function ConfigTable({
   const info = described(field);
   const { rowChoice, pin, columnGroup, extensible } = field;
 
-  // The columns in drawing order: the row choice slots in before the column it names, and an
-  // extensible table's move and delete come last — inside the column group when it ends there.
-  const slots: Slot[] = [];
-  for (const column of field.columns ?? []) {
-    if (rowChoice !== undefined && rowChoice.before === column.name) slots.push({ kind: "choice" });
-    slots.push({ kind: "column", column });
-  }
-  if (rowChoice !== undefined && !slots.some((s) => s.kind === "choice")) {
-    slots.push({ kind: "choice" });
-  }
-  if (extensible !== undefined) slots.push({ kind: "move" }, { kind: "remove" });
-  const slotKey = (slot: Slot) =>
-    slot.kind === "choice"
-      ? rowChoice!.field
-      : slot.kind === "column"
-        ? slot.column.name
-        : slot.kind;
+  // The columns in drawing order: an extensible table's handle and the "…" menu come last —
+  // inside the column group when it ends there.
+  const slots = (field.columns ?? []).map((column): Slot => ({ kind: "column", column }));
+  const lastField = slots.length - 1;
+  if (extensible !== undefined) slots.push({ kind: "move" });
+  if (extensible !== undefined || rowChoice !== undefined) slots.push({ kind: "more" });
+  const slotKey = (slot: Slot) => (slot.kind === "column" ? slot.column.name : slot.kind);
   const isIcon = (slot: Slot) => slot.kind !== "column" || pin?.column === slot.column.name;
-  let lastField = -1;
-  slots.forEach((s, i) => {
-    if (s.kind === "column" || s.kind === "choice") lastField = i;
-  });
   const grouped = (slot: Slot, i: number) => {
     if (columnGroup === undefined) return false;
-    if (slot.kind === "move" || slot.kind === "remove") {
+    if (slot.kind !== "column") {
       // The row controls join the group when the group is what the field columns end with.
       const last = slots[lastField];
       return last !== undefined && columnGroup.columns.includes(slotKey(last)) && i > lastField;
@@ -174,17 +146,8 @@ export function ConfigTable({
           ? WIDTH.boolean
           : "";
   const slotTitle = (slot: Slot) =>
-    slot.kind === "choice"
-      ? localized(rowChoice!.title, rowChoice!.titleZh)
-      : slot.kind === "column"
-        ? localized(slot.column.title, slot.column.titleZh)
-        : "";
-  const slotInfo = (slot: Slot) =>
-    slot.kind === "choice"
-      ? described(rowChoice!)
-      : slot.kind === "column"
-        ? described(slot.column)
-        : undefined;
+    slot.kind === "column" ? localized(slot.column.title, slot.column.titleZh) : "";
+  const slotInfo = (slot: Slot) => (slot.kind === "column" ? described(slot.column) : undefined);
 
   const declared = new Map((field.rows ?? []).map((r) => [r.id, r]));
   const rows: DrawnRow[] = table.order.flatMap((id): DrawnRow[] => {
@@ -194,11 +157,25 @@ export function ConfigTable({
     return added !== undefined ? [{ id, cells: added }] : [];
   });
   const rowName = (row: DrawnRow) => {
-    const typed = row.cells.name;
+    const typed = row.cells[NAME_COLUMN];
     if (typeof typed === "string" && typed !== "") return typed;
     return row.declared !== undefined
-      ? localized(String(row.declared.values.name ?? row.id), row.declared.valuesZh?.name)
+      ? localized(
+          String(row.declared.values[NAME_COLUMN] ?? row.id),
+          row.declared.valuesZh?.[NAME_COLUMN],
+        )
       : row.id;
+  };
+  /** What a row is for, behind the "?" after its name: one line, or a line per choice. */
+  const helpOf = (row: DrawnRow) => {
+    const help = rowHelp(field.columns ?? [], row, localized);
+    return Array.isArray(help)
+      ? help.map((line, i) => (
+          <span key={i} className="block">
+            {line}
+          </span>
+        ))
+      : help;
   };
 
   const setCell = (row: DrawnRow, column: string, value: string | boolean) =>
@@ -330,9 +307,7 @@ export function ConfigTable({
                     </th>
                   );
                 }
-                if (slot.kind === "move" || slot.kind === "remove") {
-                  return <th key={slot.kind} aria-hidden />;
-                }
+                if (slot.kind !== "column") return <th key={slot.kind} aria-hidden />;
                 return (
                   <th
                     key={slotKey(slot)}
@@ -352,6 +327,7 @@ export function ConfigTable({
               const dragging = dy !== null;
               const lineAbove = dropBefore === row.id;
               const lineBelow = dropAfterLast && row.id === others[others.length - 1];
+              const chosen = choice === row.id;
               return (
                 <tr
                   key={row.id}
@@ -368,25 +344,6 @@ export function ConfigTable({
                   className={`border-t border-line-muted ${dragging ? "bg-surface shadow-lg" : "transition-colors duration-150 hover:bg-surface-muted/60"} ${lineAbove ? "[&>td]:border-t-2 [&>td]:border-t-accent" : ""} ${lineBelow ? "[&>td]:border-b-2 [&>td]:border-b-accent" : ""}`}
                 >
                   {slots.map((slot) => {
-                    if (slot.kind === "choice") {
-                      const chosen = choice === row.id;
-                      return (
-                        <td key="choice" className="px-0.5 py-1.5 text-center align-middle">
-                          <IconToggle
-                            label={`${rowLabel} · ${slotTitle(slot)}`}
-                            pressed={chosen}
-                            glyph={ICONS.star}
-                            tooltip={
-                              chosen ? S.settings.pluginTableChosen : S.settings.pluginTableChoose
-                            }
-                            disabled={disabled}
-                            onPress={() => {
-                              if (!chosen) onChoice?.(row.id);
-                            }}
-                          />
-                        </td>
-                      );
-                    }
                     if (slot.kind === "move") {
                       return (
                         <td key="move" className="px-0.5 py-1.5 text-center align-middle">
@@ -408,22 +365,21 @@ export function ConfigTable({
                         </td>
                       );
                     }
-                    if (slot.kind === "remove") {
-                      // The cell stays on declared rows, empty, so the icons line up.
+                    if (slot.kind === "more") {
+                      // The cell stays on a row with nothing to offer, empty, so the icons line up.
                       return (
-                        <td key="remove" className="px-0.5 py-1.5 text-center align-middle">
-                          {row.declared === undefined && (
-                            <button
-                              type="button"
-                              aria-label={S.settings.pluginTableDelete(rowLabel)}
-                              data-tooltip={S.settings.pluginTableDelete(rowLabel)}
-                              disabled={disabled}
-                              onClick={() => remove(row)}
-                              className={ICON_BUTTON}
-                            >
-                              <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-                            </button>
-                          )}
+                        <td key="more" className="px-0.5 py-1.5 text-center align-middle">
+                          <RowMenu
+                            row={rowLabel}
+                            disabled={disabled}
+                            actions={rowActions({
+                              chosen,
+                              canChoose: rowChoice !== undefined,
+                              added: extensible !== undefined && row.declared === undefined,
+                              onChoose: () => onChoice?.(row.id),
+                              onDelete: () => remove(row),
+                            })}
+                          />
                         </td>
                       );
                     }
@@ -436,6 +392,20 @@ export function ConfigTable({
                         row={row}
                         rowName={rowLabel}
                         pinned={pin?.column === slot.column.name ? pin : undefined}
+                        {...(slot.column.name === NAME_COLUMN
+                          ? {
+                              marks: {
+                                ...(chosen && rowChoice !== undefined
+                                  ? {
+                                      marker: S.settings.pluginTableChosenMarker(
+                                        localized(rowChoice.title, rowChoice.titleZh),
+                                      ),
+                                    }
+                                  : {}),
+                                help: helpOf(row),
+                              },
+                            }
+                          : {})}
                         localized={localized}
                         disabled={disabled}
                         onCell={(value) => setCell(row, slot.column.name, value)}
@@ -461,115 +431,5 @@ export function ConfigTable({
         </p>
       ))}
     </div>
-  );
-}
-
-/** One field cell of a row, by its column's type (see the module's header). */
-function Cell({
-  entry,
-  name,
-  column: c,
-  row,
-  rowName,
-  pinned,
-  localized,
-  disabled,
-  onCell,
-}: {
-  entry: PluginConfigEntry;
-  name: string;
-  column: PluginConfigTableColumn;
-  row: DrawnRow;
-  rowName: string;
-  pinned: PluginConfigField["pin"];
-  localized: (en: string, zh: string | undefined) => string;
-  disabled: boolean;
-  onCell: (value: string | boolean) => void;
-}) {
-  const cell = row.cells[c.name];
-  const locked = row.declared?.locked?.includes(c.name) === true;
-  // The declared text, in the page's language; an added row has none (its text is its own).
-  const declared =
-    row.declared !== undefined
-      ? localized(String(row.declared.values[c.name] ?? ""), row.declared.valuesZh?.[c.name])
-      : "";
-  const cellLabel = `${rowName} · ${localized(c.title, c.titleZh)}`;
-  const optionTitle = (value: unknown) => {
-    const option = c.options?.find((o) => o.value === value);
-    return option !== undefined ? localized(option.title, option.titleZh) : String(value);
-  };
-  const shown =
-    c.type === "enum"
-      ? optionTitle(cell)
-      : c.type === "string"
-        ? cell === ""
-          ? declared
-          : String(cell)
-        : cell === true
-          ? S.settings.pluginCellOn
-          : S.settings.pluginCellOff;
-  return (
-    <td className={`px-1 py-1.5 align-middle ${c.type === "boolean" ? "text-center" : ""}`}>
-      {locked ? (
-        // The value alone: no control to suggest it could change. "Locked" is in the name and
-        // the tooltip.
-        <span
-          aria-label={`${cellLabel}: ${shown} (${S.settings.pluginCellLocked})`}
-          data-tooltip={S.settings.pluginCellLocked}
-          className="block px-1.5 text-xs break-words text-fg-muted"
-        >
-          <span aria-hidden>{shown}</span>
-        </span>
-      ) : c.type === "boolean" ? (
-        pinned !== undefined ? (
-          <PinToggle
-            label={cellLabel}
-            pinned={cell === true}
-            tooltip={
-              cell === true
-                ? localized(pinned.on, pinned.onZh)
-                : localized(pinned.off, pinned.offZh)
-            }
-            disabled={disabled}
-            onChange={onCell}
-          />
-        ) : (
-          <Switch
-            aria-label={cellLabel}
-            checked={cell === true}
-            disabled={disabled}
-            onChange={onCell}
-          />
-        )
-      ) : c.type === "enum" ? (
-        <EnumCell
-          label={cellLabel}
-          value={typeof cell === "string" ? cell : ""}
-          disabled={disabled}
-          onChange={onCell}
-          options={(c.options ?? []).map((option) => {
-            const off = entry.unavailable?.find(
-              (u) => u.field === name && u.column === c.name && u.value === option.value,
-            );
-            return {
-              value: option.value,
-              title: localized(option.title, option.titleZh),
-              ...(off !== undefined ? { unavailable: localized(off.reason, off.reasonZh) } : {}),
-            };
-          })}
-        />
-      ) : (
-        <WrappingNameBox
-          label={cellLabel}
-          // The effective text: an empty override is the declared text, in the page's language.
-          // Typing it back, or clearing the box, restores it.
-          value={typeof cell === "string" && cell !== "" ? cell : declared}
-          disabled={disabled}
-          onChange={(value) =>
-            onCell(row.declared !== undefined && value === declared ? "" : value)
-          }
-        />
-      )}
-    </td>
   );
 }

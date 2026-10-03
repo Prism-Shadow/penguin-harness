@@ -1,21 +1,34 @@
 /**
- * Two things the Sandbox card draws from its entry and draft.
+ * What the Sandbox card draws from its entry and draft.
  *
- * - Given a notice tied to a switch (`onlyWhen`), the heading shows it only while that field's
- *   draft is on; a notice tied to nothing always shows.
+ * - Given a group with a `switch`, while the switch is off as drafted the card draws that field
+ *   alone (no table, no Advanced field, no row-choice field) and the heading no notice or
+ *   action; on, it draws them all but the field a row choice stores into.
  * - Given a table row whose name was never changed, the name box holds the declared name as
  *   its value (normal ink, not a placeholder); a renamed row holds the new name.
  * - Given described columns and a described group, every header and the card title carry a "?"
  *   and no description is a paragraph on screen.
  * - Given a pin column, each cell is a toggle button whose pressed state is the row's value, and
  *   pressing it reports the flip; a locked cell is the value's text, with no control and no mark.
+ * - Given a row choice, the chosen row's name is followed by "(Default)" and no other's is; there
+ *   is no Default column and no star.
+ * - Every row's name has a "?" named after the row: a declared row's text while its choices are
+ *   the declared ones, otherwise a line per choice with its value and what that option does.
+ * - Every row has a "…" menu button (a real button, so Tab reaches it, announcing a menu): Set as
+ *   default on every row, Delete only on an added row; on the chosen row both are disabled,
+ *   saying why; running them picks the row and deletes it.
  */
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ReactElement } from "react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
+import { setActiveStrings, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
+import { drawnFields } from "../src/features/settings/plugin-config-draft";
+import { rowHelp } from "../src/features/settings/plugin-config-field-cell";
 import { ConfigHeading } from "../src/features/settings/plugin-config-heading";
+import { rowActions } from "../src/features/settings/plugin-config-row-menu";
 import { ConfigTable } from "../src/features/settings/plugin-config-table";
 import { PinToggle } from "../src/features/settings/plugin-config-table-cells";
 
@@ -31,12 +44,22 @@ const TABLE: PluginConfigField = {
 
 const ENTRY: PluginConfigEntry = {
   name: "sandbox",
-  configuration: { title: "Sandbox", properties: { presets: TABLE } },
+  configuration: {
+    title: "Sandbox",
+    switch: "enabled",
+    properties: {
+      enabled: { type: "boolean", title: "Enable" },
+      presets: { ...TABLE, rowChoice: { field: "pick", title: "Default" } },
+      pick: { type: "enum", title: "Default", options: [{ value: "a", title: "A" }] },
+      masks: { type: "list", title: "Masked paths", advanced: true },
+    },
+  },
   values: {},
   notices: [
-    { tone: "attention", text: "No usable backend", onlyWhen: "enabled" },
+    { tone: "attention", text: "No usable backend" },
     { tone: "muted", text: "Backends: none" },
   ],
+  actions: [{ id: "setup", title: "Set up" }],
 };
 
 const heading = (draft: Record<string, unknown>) =>
@@ -52,10 +75,21 @@ const heading = (draft: Record<string, unknown>) =>
   );
 
 describe("the settings card", () => {
-  it("shows a switch's notice only while the drafted switch is on", () => {
-    expect(heading({ enabled: false })).not.toContain("No usable backend");
-    expect(heading({ enabled: true })).toContain("No usable backend");
-    expect(heading({ enabled: false })).toContain("Backends: none");
+  beforeAll(() => setActiveStrings(en));
+  afterAll(() => setActiveStrings(zh));
+
+  it("draws the switch alone while it is off, and everything else once it is on", () => {
+    const names = (draft: Record<string, unknown>) => drawnFields(ENTRY, draft).map(([n]) => n);
+    expect(names({ enabled: false })).toEqual(["enabled"]);
+    expect(names({})).toEqual(["enabled"]);
+    // The row choice's field is drawn only as the table's marker.
+    expect(names({ enabled: true })).toEqual(["enabled", "presets", "masks"]);
+    for (const text of ["No usable backend", "Backends: none", "Set up"]) {
+      expect(heading({ enabled: false })).not.toContain(text);
+      expect(heading({ enabled: true })).toContain(text);
+    }
+    // The title and its "?" stay either way.
+    expect(heading({ enabled: false })).toContain("Sandbox");
   });
 
   it("holds the effective name in the name box, the declared one when not renamed", () => {
@@ -100,18 +134,104 @@ describe("the settings card", () => {
     expect(html).toContain('aria-label="More info: Sandbox"');
     expect(html).not.toContain("Card meaning");
     const table = renderTable(PRESETS);
-    for (const title of ["Presets", "Name", "Files", "Default", "Pin"]) {
+    for (const title of ["Presets", "Name", "Files", "Pin"]) {
       expect(table).toContain(`aria-label="More info: ${title}"`);
     }
-    for (const text of [
-      "Table meaning",
-      "Name meaning",
-      "Files meaning",
-      "Default meaning",
-      "Pin meaning",
-    ]) {
+    for (const text of ["Table meaning", "Name meaning", "Files meaning", "Pin meaning"]) {
       expect(table).not.toContain(text);
     }
+  });
+
+  it('marks the chosen row "(Default)" after its name, with no Default column or star', () => {
+    const html = renderTable(PRESETS);
+    expect(html.match(/\(Default\)/g)).toHaveLength(1);
+    // Right after the chosen row's name box, before the next row starts.
+    const at = html.indexOf('aria-label="Full Access · Name"');
+    expect(html.indexOf("(Default)", at)).toBeLessThan(html.indexOf("Read Only", at));
+    expect(html).not.toContain(">Default<");
+    expect(html).not.toContain("aria-pressed=\"true\" data-tooltip=\"Already");
+    // In Chinese, with the title's Chinese and full-width brackets.
+    setActiveStrings(zh);
+    try {
+      const zhHtml = renderToStaticMarkup(
+        createElement(ConfigTable, {
+          ...tableElement(PRESETS).props,
+          field: { ...PRESETS, rowChoice: { field: "pick", title: "Default", titleZh: "默认" } },
+          locale: "zh",
+        }),
+      );
+      expect(zhHtml).toContain("（默认）");
+    } finally {
+      setActiveStrings(en);
+    }
+  });
+
+  it('gives every row a "?" after its name, saying what the row is for', () => {
+    const html = renderTable(PRESETS);
+    for (const row of ["Full Access", "Read Only"]) {
+      expect(html).toContain(`aria-label="More info: ${row}"`);
+    }
+    const localized = (en: string) => en;
+    const files = PRESETS.columns![1]!;
+    const declared = PRESETS.rows![1]!;
+    const drawn = (mode: string) => ({ id: "b", declared, cells: { name: "", mode, enabled: false } });
+    // A declared row keeping its choices: its own text.
+    expect(rowHelp(PRESETS.columns!, drawn("ro"), localized)).toBe("For looking around");
+    // Its choices changed, or a row with no text of its own: a line per choice, with what it does.
+    expect(rowHelp(PRESETS.columns!, drawn("off"), localized)).toEqual([
+      "Files: Off. Writes anywhere.",
+    ]);
+    expect(rowHelp([files], { id: "x", cells: { mode: "ro" } }, localized)).toEqual([
+      "Files: Read-only",
+    ]);
+  });
+
+  it('gives every row a "…" menu button that announces a menu', () => {
+    const html = renderTable(PRESETS);
+    for (const row of ["Full Access", "Read Only"]) {
+      const button = html.match(
+        new RegExp(`<button[^>]*aria-label="More actions: ${row}"[^>]*>`),
+      )?.[0];
+      expect(button).toContain('aria-haspopup="menu"');
+      expect(button).toContain('type="button"');
+      expect(button).not.toContain("tabindex");
+    }
+    // No star toggle and no trash button left in the row.
+    expect(html).not.toContain("Delete ");
+  });
+
+  it("offers Set as default on every row and Delete on an added row, both run", () => {
+    const ran: string[] = [];
+    const actions = (chosen: boolean, added: boolean) =>
+      rowActions({
+        chosen,
+        canChoose: true,
+        added,
+        onChoose: () => ran.push("choose"),
+        onDelete: () => ran.push("delete"),
+      });
+    expect(actions(false, false).map((a) => a.id)).toEqual(["choose"]);
+    const added = actions(false, true);
+    expect(added.map((a) => [a.id, a.label, a.blocked])).toEqual([
+      ["choose", "Set as default", undefined],
+      ["delete", "Delete", undefined],
+    ]);
+    for (const a of added) a.run();
+    expect(ran).toEqual(["choose", "delete"]);
+    // The chosen row is already the default, and cannot be deleted until another row is.
+    expect(actions(true, true).map((a) => a.blocked)).toEqual([
+      "Already the default",
+      "Set another row as default first",
+    ]);
+    expect(
+      rowActions({
+        chosen: false,
+        canChoose: false,
+        added: false,
+        onChoose: () => {},
+        onDelete: () => {},
+      }),
+    ).toEqual([]);
   });
 
   it("draws a pin column as a pressed or unpressed toggle, and reports the flip", () => {
@@ -152,7 +272,7 @@ const PRESETS: PluginConfigField = {
   type: "table",
   title: "Presets",
   description: "Table meaning",
-  rowChoice: { field: "pick", title: "Default", description: "Default meaning", before: "enabled" },
+  rowChoice: { field: "pick", title: "Default" },
   columns: [
     { name: "name", type: "string", title: "Name", description: "Name meaning" },
     {
@@ -161,7 +281,7 @@ const PRESETS: PluginConfigField = {
       title: "Files",
       description: "Files meaning",
       options: [
-        { value: "off", title: "Off" },
+        { value: "off", title: "Off", description: "Writes anywhere." },
         { value: "ro", title: "Read-only" },
       ],
     },
@@ -175,7 +295,11 @@ const PRESETS: PluginConfigField = {
   pin: { column: "enabled", on: "Pinned to the menu", off: "Not in the menu" },
   rows: [
     { id: "a", values: { name: "Full Access", mode: "off", enabled: true }, locked: ["mode"] },
-    { id: "b", values: { name: "Read Only", mode: "ro", enabled: false } },
+    {
+      id: "b",
+      values: { name: "Read Only", mode: "ro", enabled: false },
+      description: "For looking around",
+    },
   ],
 };
 

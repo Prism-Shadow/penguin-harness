@@ -15,7 +15,9 @@
  *   presets; a Session created while it was on keeps its own policy.
  * - The card reports whether a sandbox backend for this OS is installed — in use, or installed
  *   and failing — and which package this OS defaults to; a backend that declined (another
- *   OS's) does not count.
+ *   OS's) does not count. The card names `enabled` as its switch.
+ * - Every preset row, and every value a row's choice can take, carries a description in both
+ *   languages, for the row's "?".
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -194,9 +196,9 @@ describe("the sandbox switch", () => {
     store({ mode: "read-only", network: "none" });
     expect(prePresetNotice(await card())).toEqual({
       tone: "attention",
-      text: "While the sandbox is on, new sessions start from the settings saved before the presets: files Read-only, network No network, ask mode Approve everything. No preset has these values, so no row is the default, and saving the card keeps them. To change that, star a row, or add a preset with these values and star it.",
+      text: "While the sandbox is on, new sessions start from the settings saved before the presets: files Read-only, network No network, ask mode Approve everything. No preset has these values, so no row is the default, and saving the card keeps them. To change that, set a row as the default from its \"…\" menu, or add a preset with these values and set it.",
       textZh:
-        "沙盒打开时，新会话从预设出现之前保存的设置开始：文件「只读」、网络「无网络」、询问模式「全部批准」。没有预设与之相同，因此没有一行是默认，保存卡片也会保留这些值。要改变它，给一行标星，或先添加一条同值的预设再给它标星。",
+        "沙盒打开时，新会话从预设出现之前保存的设置开始：文件「只读」、网络「无网络」、询问模式「全部批准」。没有预设与之相同，因此没有一行是默认，保存卡片也会保留这些值。要改变它，在一行的「…」菜单里把它设为默认，或先添加一条同值的预设再设为默认。",
     });
   });
 
@@ -397,10 +399,31 @@ describe("the sandbox switch", () => {
       installed: false,
       ...(recommended !== undefined ? { recommended } : {}),
     });
-    // The missing-backend warning matters only while the switch is on: the page hides it otherwise.
     expect(
       entry.notices?.find((n) => n.text.startsWith("This deployment has no usable")),
-    ).toMatchObject({ tone: "attention", onlyWhen: "enabled" });
+    ).toMatchObject({ tone: "attention" });
+    // The card names its switch: off, the page draws it alone, the warning included.
+    expect(entry.configuration.switch).toBe("enabled");
+  });
+
+  it("explains every preset row and every value a row's choice can take, in both languages", async () => {
+    const { t, card } = await boot();
+    apps.push(t);
+    const presets = (await card()).configuration.properties.presets!;
+    for (const row of presets.rows!) {
+      expect(row, row.id).toMatchObject({
+        description: expect.any(String),
+        descriptionZh: expect.any(String),
+      });
+    }
+    for (const column of presets.columns!.filter((c) => c.type === "enum")) {
+      for (const option of column.options!) {
+        expect(option, `${column.name}.${option.value}`).toMatchObject({
+          description: expect.any(String),
+          descriptionZh: expect.any(String),
+        });
+      }
+    }
   });
 
   it("counts a backend in use, or one installed and failing, but not one that declined", async () => {

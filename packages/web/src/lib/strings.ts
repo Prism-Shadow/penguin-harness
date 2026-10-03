@@ -631,13 +631,21 @@ export const zh = {
     /** A table row's drag handle: what it moves, and how. */
     pluginTableMove: (row: string) => `移动 ${row}`,
     pluginTableMoveHint: "拖动，或按上下方向键",
-    /** The delete button on a row an administrator added. */
-    pluginTableDelete: (row: string) => `删除 ${row}`,
     /** The add button under an extensible table that names none of its own. */
     pluginTableAdd: "添加一行",
-    /** The star on a table's chosen row (the sandbox's default preset), and on the others. */
-    pluginTableChosen: "新会话的默认预设",
-    pluginTableChoose: "设为新会话的默认预设",
+    /** After the chosen row's name (the sandbox's default preset): the row choice's title. */
+    pluginTableChosenMarker: (title: string) => `（${title}）`,
+    /** A table row's "…" button: its accessible name and tooltip. */
+    pluginTableRowMenu: (row: string) => `更多操作：${row}`,
+    pluginTableRowMenuHint: "更多操作",
+    /** The row menu's items: make the row the chosen one, and delete a row an administrator added. */
+    pluginTableChoose: "设为默认",
+    pluginTableChosen: "已是默认",
+    pluginTableDelete: "删除",
+    pluginTableDeleteChosen: "请先把其他行设为默认",
+    /** One line of a row's "?" that lists its values: a choice column's value, and what it does. */
+    pluginTableRowValue: (column: string, value: string, does: string | undefined) =>
+      does === undefined ? `${column}：${value}` : `${column}：${value}。${does}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "安装沙盒后端",

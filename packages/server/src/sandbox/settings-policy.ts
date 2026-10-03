@@ -54,7 +54,7 @@ export interface SandboxStart {
 /**
  * What a new Session starts with under a stored document. A document stored before the card had
  * a default preset keeps starting Sessions by its own `mode` and `network` (`prePresetStartOf`)
- * until an administrator picks a row in the Default column.
+ * until an administrator sets a row as the default.
  * TODO(sandbox-switch-compat): the pre-preset reading stays while documents saved before the
  * default preset can be on disk; it goes with the switch's fallback above, by the same
  * decision (see the 2026-10-02 backward-compatibility changelog entry).
@@ -175,7 +175,7 @@ function legacyPolicyOf(doc: Record<string, unknown>): Policy {
 
 /**
  * The card's notice for a document saved before the default preset whose start no row gives:
- * the Default column marks none, so the card says what new Sessions start from and how to
+ * no row is marked as the default, so the card says what new Sessions start from and how to
  * choose a default. Values are named by the presets table's own option titles.
  * TODO(sandbox-switch-compat): goes with the pre-preset reading above.
  */
@@ -198,8 +198,8 @@ export function prePresetNotice(
   const approval = named("approvalMode", "allow-all");
   return {
     tone: "attention",
-    text: `While the sandbox is on, new sessions start from the settings saved before the presets: files ${mode.en}, network ${network.en}, ask mode ${approval.en}. No preset has these values, so no row is the default, and saving the card keeps them. To change that, star a row, or add a preset with these values and star it.`,
-    textZh: `沙盒打开时，新会话从预设出现之前保存的设置开始：文件「${mode.zh}」、网络「${network.zh}」、询问模式「${approval.zh}」。没有预设与之相同，因此没有一行是默认，保存卡片也会保留这些值。要改变它，给一行标星，或先添加一条同值的预设再给它标星。`,
+    text: `While the sandbox is on, new sessions start from the settings saved before the presets: files ${mode.en}, network ${network.en}, ask mode ${approval.en}. No preset has these values, so no row is the default, and saving the card keeps them. To change that, set a row as the default from its "…" menu, or add a preset with these values and set it.`,
+    textZh: `沙盒打开时，新会话从预设出现之前保存的设置开始：文件「${mode.zh}」、网络「${network.zh}」、询问模式「${approval.zh}」。没有预设与之相同，因此没有一行是默认，保存卡片也会保留这些值。要改变它，在一行的「…」菜单里把它设为默认，或先添加一条同值的预设再设为默认。`,
   };
 }
 

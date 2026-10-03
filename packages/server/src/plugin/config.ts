@@ -80,6 +80,7 @@ function parseOptions(options: unknown, where: string): PluginConfigOption[] {
       value: opt.value,
       title: opt.title,
       ...(typeof opt.titleZh === "string" ? { titleZh: opt.titleZh } : {}),
+      ...describedBy(opt),
     };
   });
 }
@@ -87,7 +88,7 @@ function parseOptions(options: unknown, where: string): PluginConfigOption[] {
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
-/** A column's (or row choice's) description, in both languages, where declared as text. */
+/** A column's (or row's, or option's) description, in both languages, where declared as text. */
 function describedBy(c: Record<string, unknown>): { description?: string; descriptionZh?: string } {
   return {
     ...(typeof c.description === "string" ? { description: c.description } : {}),
@@ -176,6 +177,7 @@ function parseTable(
     const row: PluginConfigTableRow = {
       id: r.id,
       values: Object.fromEntries(columns.map((c) => [c.name, values[c.name] as string | boolean])),
+      ...describedBy(r),
     };
     if (r.valuesZh !== undefined) {
       if (!isRecord(r.valuesZh)) throw new Error(`${at}.valuesZh must be an object`);
@@ -478,12 +480,7 @@ export function parsePluginConfiguration(
       if (f.columnGroup !== undefined) {
         const g = (f.columnGroup ?? {}) as Record<string, unknown>;
         const at = `${where}: configuration.properties.${name}.columnGroup`;
-        const known = new Set([
-          ...(field.columns ?? []).map((c) => c.name),
-          ...(isRecord(f.rowChoice) && typeof f.rowChoice.field === "string"
-            ? [f.rowChoice.field]
-            : []),
-        ]);
+        const known = new Set((field.columns ?? []).map((c) => c.name));
         if (
           typeof g.title !== "string" ||
           !Array.isArray(g.columns) ||
@@ -517,8 +514,6 @@ export function parsePluginConfiguration(
           field: c.field,
           title: c.title,
           ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
-          ...describedBy(c),
-          ...(typeof c.before === "string" ? { before: c.before } : {}),
         };
       }
       if (f.default !== undefined) {
@@ -588,16 +583,15 @@ export function parsePluginConfiguration(
     }
     properties[name] = field;
   }
-  // A row choice stores into an enum of the same group whose options are exactly the row ids,
-  // and is drawn before a column the table has.
+  const switchOf = (sw: string) => {
+    if (properties[sw]?.type !== "boolean") {
+      throw new Error(`${where}: configuration.switch must name a boolean field`);
+    }
+    return sw;
+  };
+  // A row choice stores into an enum of the same group whose options are exactly the row ids.
   for (const [name, field] of Object.entries(properties)) {
     if (field.rowChoice === undefined) continue;
-    const before = field.rowChoice.before;
-    if (before !== undefined && !(field.columns ?? []).some((c) => c.name === before)) {
-      throw new Error(
-        `${where}: configuration.properties.${name}.rowChoice.before must name a column`,
-      );
-    }
     const target = properties[field.rowChoice.field];
     const ids = (field.rows ?? []).map((r) => r.id);
     const values = (target?.options ?? []).map((o) => o.value);
@@ -616,6 +610,7 @@ export function parsePluginConfiguration(
     ...(str("titleZh") !== undefined ? { titleZh: str("titleZh")! } : {}),
     ...(str("description") !== undefined ? { description: str("description")! } : {}),
     ...(str("descriptionZh") !== undefined ? { descriptionZh: str("descriptionZh")! } : {}),
+    ...(str("switch") !== undefined ? { switch: switchOf(str("switch")!) } : {}),
     properties,
   };
 }

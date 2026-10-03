@@ -559,13 +559,21 @@ export const en: Strings = {
     /** A table row's drag handle: what it moves, and how. */
     pluginTableMove: (row: string) => `Move ${row}`,
     pluginTableMoveHint: "Drag, or press the up and down arrow keys",
-    /** The delete button on a row an administrator added. */
-    pluginTableDelete: (row: string) => `Delete ${row}`,
     /** The add button under an extensible table that names none of its own. */
     pluginTableAdd: "Add a row",
-    /** The star on a table's chosen row (the sandbox's default preset), and on the others. */
-    pluginTableChosen: "Default for new sessions",
-    pluginTableChoose: "Make this the default for new sessions",
+    /** After the chosen row's name (the sandbox's default preset): the row choice's title. */
+    pluginTableChosenMarker: (title: string) => `(${title})`,
+    /** A table row's "…" button: its accessible name and tooltip. */
+    pluginTableRowMenu: (row: string) => `More actions: ${row}`,
+    pluginTableRowMenuHint: "More actions",
+    /** The row menu's items: make the row the chosen one, and delete a row an administrator added. */
+    pluginTableChoose: "Set as default",
+    pluginTableChosen: "Already the default",
+    pluginTableDelete: "Delete",
+    pluginTableDeleteChosen: "Set another row as default first",
+    /** One line of a row's "?" that lists its values: a choice column's value, and what it does. */
+    pluginTableRowValue: (column: string, value: string, does: string | undefined) =>
+      does === undefined ? `${column}: ${value}` : `${column}: ${value}. ${does}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "Install a sandbox backend",

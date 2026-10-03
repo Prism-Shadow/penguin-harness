@@ -120,7 +120,9 @@ export function WrappingNameBox({
       disabled={disabled}
       autoComplete="off"
       spellCheck={false}
-      className="!w-full resize-none overflow-hidden !px-1 !py-1 !leading-snug break-words whitespace-pre-wrap !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted"
+      // As wide as the name, so a mark after it (the default's) sits right beside it; never wider
+      // than the cell, where it wraps. A browser without `field-sizing` gives it the whole cell.
+      className="!w-auto max-w-full min-w-16 resize-none overflow-hidden ![field-sizing:content] !px-1 !py-1 !leading-snug break-words whitespace-pre-wrap !border-transparent !bg-transparent hover:!border-line focus:!border-fg-muted supports-[not(field-sizing:content)]:!w-full"
       onKeyDown={(e) => {
         if (e.key === "Enter") e.preventDefault();
       }}
