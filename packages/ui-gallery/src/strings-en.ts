@@ -1075,6 +1075,15 @@ export const en: GalleryStrings = {
           lead: "One more thing:",
           spec: { type: "callout", tone: "tip", text: "Run `pnpm test` before you push." },
         },
+        {
+          lead: "Before you start:",
+          spec: {
+            type: "callout",
+            tone: "warning",
+            title: "Stop point",
+            text: "If you have no first numbers within two days, change the plan. This step decides whether the rest is worth the time; stopping early costs less than giving up at the end.",
+          },
+        },
       ],
       a2uiDiagramLead: "A request checks the cache first:",
       a2uiDiagram:

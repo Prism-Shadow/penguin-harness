@@ -162,9 +162,9 @@ describe("StepsBlock", () => {
     expect(at("Deleted keys")).toBeLessThan(at("Delete the old key."));
     expect(at("Running jobs")).toBeLessThan(at("Delete the old key."));
     expect(at("The new key works")).toBeGreaterThan(at("Delete the old key."));
-    expect(html).toContain('data-tone="danger"');
     expect(html).toContain('data-tone="warning"');
-    expect(html).toContain('data-tone="info"');
+    expect(html).toContain('data-tone="caution"');
+    expect(html).toContain('data-tone="note"');
     expect(html).toContain("code-block");
     expect(html).toContain("penguin keys rotate");
     expect(html).toMatch(/<ol role="list"/);
@@ -172,22 +172,29 @@ describe("StepsBlock", () => {
 });
 
 describe("CalloutBlock", () => {
-  it("is the package's callout notice in its tone, titled by the tone's name", () => {
-    const strings = {
-      ...DEFAULT_UI_STRINGS,
-      a2ui: { ...DEFAULT_UI_STRINGS.a2ui, tip: "Hint" },
-    };
-    const html = renderStatic(
+  const callout = (spec: Record<string, unknown>) =>
+    renderStatic(
       createElement(UiStringsProvider, {
-        strings,
+        strings: { ...DEFAULT_UI_STRINGS, a2ui: { ...DEFAULT_UI_STRINGS.a2ui, tip: "Hint" } },
         children: createElement(A2uiBlock, {
-          source: JSON.stringify({ type: "callout", tone: "tip", text: "Run `pnpm test` first." }),
+          source: JSON.stringify({ type: "callout", ...spec }),
         }),
       }),
     );
-    expect(html).toContain('data-tone="success"');
-    expect(html).toContain(">Hint</p>");
+
+  it("is one row: the tone's mark says the tone, no title line names it", () => {
+    const html = callout({ tone: "tip", text: "Run `pnpm test` first." });
+    expect(html).toContain('data-tone="tip"');
+    expect(html).toContain('data-tooltip="Hint"');
+    expect(html).toContain('<span class="sr-only">Hint: </span>');
     expect(html).toContain("<code>pnpm test</code>");
+    expect(html).not.toContain("ui-notice");
+    expect(html).not.toContain('data-slot="title"');
+  });
+
+  it("leads the text with the model's title in the same line", () => {
+    const html = callout({ tone: "tip", title: "Faster", text: "Cache the build." });
+    expect(html).toMatch(/<span class="font-semibold">Faster <\/span>Cache the build\./);
   });
 });
 

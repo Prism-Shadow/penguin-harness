@@ -225,7 +225,7 @@ A reply can hold blocks that the chat draws as components instead of plain text:
 - **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** moves you to the composer to write your own answer. The option the agent recommends is marked **Recommended**.
 - **Form**: several questions at once. Answer them and select the form's button; the answers go into the composer one per line.
 - **Steps**: a numbered procedure. A warning or caution appears above the step it applies to.
-- **Callout**: a short note, tip, caution or warning.
+- **Callout**: a short note, tip, caution or warning on one line, its icon saying which (point at the icon to see the name). A step's warnings, cautions and notes look the same.
 - **Diagram**: a Mermaid diagram, such as a flowchart or a sequence diagram. **Show source** shows the text it is drawn from.
 
 Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.

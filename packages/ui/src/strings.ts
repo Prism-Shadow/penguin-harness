@@ -29,7 +29,7 @@ export interface A2uiStrings {
   other: string;
   /** The mark on the option the model recommends. */
   recommended: string;
-  /** The tone names, a callout's title when it has none of its own and a step notice's title. */
+  /** The tone names: a tone note's mark tooltip, read out before the note's text. */
   note: string;
   tip: string;
   caution: string;

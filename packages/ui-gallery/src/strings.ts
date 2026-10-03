@@ -1037,6 +1037,15 @@ export const zh = {
           lead: "最后一点：",
           spec: { type: "callout", tone: "tip", text: "推送前先运行 `pnpm test`。" },
         },
+        {
+          lead: "开始之前：",
+          spec: {
+            type: "callout",
+            tone: "warning",
+            title: "止损点",
+            text: "两天内拿不到第一组数据就换方案，不要硬撑。这一步决定后面的投入值不值得，宁可早停也不要拖到最后才放弃。",
+          },
+        },
       ] as A2uiSample[],
       a2uiDiagramLead: "请求先查缓存：",
       a2uiDiagram:
