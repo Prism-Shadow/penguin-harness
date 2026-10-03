@@ -267,6 +267,7 @@ export class DemoStore {
     this.userChannel.event({
       type: "session_state",
       sessionId,
+      projectId: row.projectId,
       state,
       lastActiveAt: row.lastActiveAt,
       hasTrace: true,

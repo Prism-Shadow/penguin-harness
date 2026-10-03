@@ -2504,6 +2504,19 @@ export const zh = {
       quickAccess: "常用",
       /** Windows only: the section listing the drives. */
       thisPc: "此电脑",
+      /** The same section on a Mac (its volumes) or a Linux machine (the root and the mounted devices). */
+      locations: "位置",
+      /** A Windows drive with no label of its own, by its type, as Explorer names it; the letter follows. */
+      drives: {
+        drive: "本地磁盘",
+        removable: "U 盘",
+        network: "网络驱动器",
+        optical: "CD 驱动器",
+      },
+      /** A Linux machine's root directory, as its file managers name it. */
+      fileSystem: "文件系统",
+      /** The caret before the path that lists the machine's drives or volumes: its accessible name and hint. */
+      switchLocation: "切换位置",
       recent: "最近使用",
       machines: "机器",
       places: {
@@ -3814,8 +3827,10 @@ Benchmark：
     globalSummary: "全局统计",
     tasksLabel: "轮次",
     messages: "消息",
-    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
-    loadingNote: (shown: number, total: number) => `已载入 ${shown} / ${total} 条消息…`,
+    /** The control above the drawn round cards: how many earlier rounds are not drawn yet; a click draws the next page of them. */
+    earlierRounds: (n: number) => `更早的 ${n} 轮`,
+    /** Spoken by an open round's placeholder while its messages are being read. */
+    roundLoading: "正在读取本轮消息",
     zoom: "缩放",
     zoomReset: "双击复位缩放",
     zoomOut: "缩小",

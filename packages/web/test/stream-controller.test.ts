@@ -5,6 +5,11 @@
  * keeps localDecisions), approval re-delivery keyed by origin composite key + missing
  * card backfill, the local answer time an optimistic resolveApproval stamps, and history
  * load failure/retry.
+ *
+ * Windowed history: a conversation opens on its newest 20 Q&A pairs and each scroll to the top
+ * asks for 20 more; a page the server cut short at its byte budget still offers the history
+ * before it; a user image the page carries by reference and the stream's inline copy of it
+ * draw one picture.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -12,6 +17,7 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  imageUrlMessage,
   partialText,
   partialToolCallOutput,
   sessionMeta,
@@ -32,7 +38,12 @@ import type {
 import { OLDER_UNITS, TAIL_UNITS, createStreamController } from "../src/lib/omni/stream-controller";
 import type { MessagesPageQuery, StreamController } from "../src/lib/omni/stream-controller";
 import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
-import type { AssistantTextItem, TaskStatsItem, ToolCallItem } from "../src/lib/omni/stream-model";
+import type {
+  AssistantTextItem,
+  TaskStatsItem,
+  ToolCallItem,
+  UserImageItem,
+} from "../src/lib/omni/stream-model";
 
 /** Override a message timestamp (constructor defaults to the current time). */
 function at<M extends OmniMessage>(msg: M, ts: string): M {
@@ -555,6 +566,73 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     at(assistantText("old answer"), "2026-07-04T00:00:02.000Z"),
     at(tokenUsage(counts(400), counts(400)), "2026-07-04T00:00:04.000Z"),
   ];
+
+  it("a conversation opens on its newest 20 Q&A pairs, and each scroll to the top asks for 20 more", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 40 }));
+    await p;
+    const first = h.controller.loadOlder();
+    h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ before: "1:30", earlierTurns: 20 }));
+    await first;
+    const second = h.controller.loadOlder();
+    h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ earlierTurns: 0 }));
+    await second;
+    // The Q&A-pair counts the server is asked for: what the person sees first and per scroll.
+    expect(h.pageArgs).toEqual([
+      { kind: "tail", limit: 20 },
+      { kind: "before", cursor: "2:10", limit: 20 },
+      { kind: "before", cursor: "1:30", limit: 20 },
+    ]);
+    expect(h.controller.older.hasMore).toBe(false);
+  });
+
+  it("a page the server cut short of its limit still offers the history before it, on both ends", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    // One unit where twenty were asked for: the byte budget cut the tail, and its cursor says so.
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:40", earlierTurns: 30 }));
+    await p;
+    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
+    // A backfill cut short the same way keeps the way back open at its own cursor.
+    const first = h.controller.loadOlder();
+    h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ before: "2:12", earlierTurns: 29 }));
+    await first;
+    expect(h.controller.older.hasMore).toBe(true);
+    expect(h.controller.outlineOffset).toBe(29);
+    const second = h.controller.loadOlder();
+    expect(h.pageArgs[2]).toEqual({ kind: "before", cursor: "2:12", limit: OLDER_UNITS });
+    h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ earlierTurns: 0 }));
+    await second;
+    expect(h.controller.older.hasMore).toBe(false);
+  });
+
+  it("a user image the page carries by reference and the stream's inline copy of it draw one picture", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    const bytes = "data:image/png;base64,iVBORw0KGgo=";
+    const ref = "/api/sessions/s1/trace-image?file=2&ordinal=8";
+    const prompt = at(userText("what is this?"), "2026-07-05T00:00:00.000Z");
+    const sent = at(imageUrlMessage(bytes), "2026-07-05T00:00:00.000Z");
+    // The stream delivered the image while the page was being read: the buffered copy has its bytes.
+    h.controller.handleOmni(prompt, "e1-1");
+    h.controller.handleOmni(sent, "e1-2");
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    // The page's copies: positioned Trace records, the image's bytes replaced by its route URL.
+    const pagePrompt = { ...prompt, tracePosition: { fileIndex: 2, ordinal: 7 } };
+    const pageImage = {
+      ...sent,
+      payload: { ...sent.payload, image_url: ref },
+      tracePosition: { fileIndex: 2, ordinal: 8 },
+    };
+    h.resolveLoad([pagePrompt, pageImage, ...HISTORY_TASK.slice(1)], undefined, null, pageInfo());
+    await p;
+    const images = h.controller.model.items.filter((i) => i.kind === "user_image");
+    expect(images.map((i) => (i as UserImageItem).imageUrl)).toEqual([ref]);
+    expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(1);
+  });
 
   it("initial load requests the TAIL window and seeds the prior stats into the tracker", async () => {
     const h = createHarness();

@@ -1711,6 +1711,23 @@ export type SessionCategory = "active" | SessionSource | "archived";
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
 export type SessionCategoryCounts = Record<SessionCategory, number>;
 
+/**
+ * GET /api/projects/:projectId/agents/:agentId/sessions. Every query parameter is optional:
+ *
+ * - `order`: `created` (the default) lists newest creation first; `activity` lists most recent
+ *   `lastActiveAt` first, ties broken by `sessionId` descending, both compared as plain strings
+ *   (code points, never locale collation) so a client can compute the same order.
+ * - `limit` (1–1000) with `offset` (≥ 0): an offset page, in either order. Offsets suit only the
+ *   `created` order, which activity never reshuffles.
+ * - `before=<lastActiveAt>,<sessionId>` with `limit`: under `order=activity` only, the rows
+ *   strictly below that cursor — the key of the last row the client holds. A row that becomes
+ *   active between pages moves above the cursor and is not served again, and no other row is
+ *   skipped (`session_state` tells the client about the moved one). 400 without
+ *   `order=activity`, beside `offset`, without `limit`, or when not a parseable stamp and a
+ *   valid id split at the first comma.
+ * - `category`, `workspaceGroup`, `excludeOrg=1` filter before paging; `counts=1` adds the
+ *   whole-list totals below, which no cursor or offset narrows.
+ */
 export interface SessionsResponse {
   /**
    * The page. With `excludeOrg=1` on the request, the rows an organization owns — its desk
@@ -1750,6 +1767,23 @@ export interface DirEntryInfo {
   kind?: "dir" | "file";
   /** Last modification, epoch milliseconds; absent when unknown (listings over ssh, an entry stat could not reach). */
   mtime?: number;
+  /** Hidden by the machine's own rules beyond the dot-name convention (Windows hidden/system attribute). */
+  hidden?: true;
+}
+/** A storage location the machine offers beside its folders: a Windows drive, a macOS volume, a Linux root or mount. */
+export interface DirLocation {
+  /** Absolute path it opens (`C:\`, `/`, `/Volumes/USB`, `/media/me/USB`, `/mnt/c`). */
+  path: string;
+  kind: "drive" | "removable" | "network" | "optical" | "volume" | "root";
+  /** The machine's own name for it (volume label, volume name, share `\\nas\media`, WSL `C:`); absent when none. */
+  label?: string;
+}
+/** The platform's standard folders as that machine resolves them; only those that exist. */
+export interface DirStandardFolders {
+  desktop?: string;
+  documents?: string;
+  downloads?: string;
+  pictures?: string;
 }
 export interface DirListResponse {
   /** Absolute path of the current directory (realpath). */
@@ -1760,8 +1794,10 @@ export interface DirListResponse {
   entries: DirEntryInfo[];
   /** The listed machine's `process.platform`; absent for a machine listed over ssh. */
   platform?: string;
-  /** Windows only, on the home request (no `path`): the drive roots that exist. */
-  roots?: string[];
+  /** Home request with `places=1` only. */
+  standardFolders?: DirStandardFolders;
+  /** Home request with `places=1` only, in the order the sidebar lists them. */
+  locations?: DirLocation[];
 }
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
@@ -1896,7 +1932,10 @@ export interface MessagesLiveTail {
  * only; the parameterless full read never carries it). A window is a run of whole
  * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
  * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
- * or steering group ever splits across windows.
+ * or steering group ever splits across windows. Besides the unit count, a window stops
+ * before the unit that would take its serialized messages past 4 MiB, but always holds at
+ * least one unit; such a window carries `before` like any other, with fewer units than
+ * asked for.
  */
 export interface MessagesPageInfo {
   /**
@@ -1944,6 +1983,15 @@ export interface MessagesPageInfo {
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
+  /**
+   * On windowed requests, images are served by reference: in every record that carries a
+   * `tracePosition`, an inline PNG / JPEG / GIF / WebP `data:` URL — a user `image_url`, or
+   * an entry of a tool output's `images` — is replaced by
+   * `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
+   * (`i` = the index into `images`), an immutable, access-checked image response. Expanded
+   * subagent messages, held inputs not yet in the Trace, other image types and the
+   * parameterless full read keep their data URLs.
+   */
   messages: HistoryMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
@@ -2791,11 +2839,17 @@ export type ServerEvent =
    * that has now run from one that never has — a first run would otherwise settle back into the
    * blank "never ran" row the client still believes in.
    *
+   * `projectId` names the Session's Project: a list showing one Project ignores another's flips
+   * without a request, and a flip for a Session of its own Project that it holds no row for is a
+   * row it is missing — one that became active below its activity cursor (see SessionsResponse) —
+   * which it fetches by id.
+   *
    * Published only to the user channels of the Project's owner and members.
    */
   | {
       type: "session_state";
       sessionId: string;
+      projectId: string;
       state: SessionStatus;
       lastActiveAt: string;
       hasTrace: boolean;
@@ -2959,7 +3013,10 @@ export interface TraceEventsResponse {
   events: OmniMessage[];
   offset: number;
   limit: number;
-  /** Total line count of the file (basis for pagination). */
+  /**
+   * Record count of the file (basis for pagination), in the ordinals `tracePosition` and the
+   * analysis' `messageFrom` / `messageTo` use: malformed lines are not records.
+   */
   total: number;
 }
 
@@ -3279,6 +3336,13 @@ export interface TraceAnalysisResponse {
    * scope every total here shares). Absent exactly when the turns carry no `cost`.
    */
   cost?: number;
+  /**
+   * The model's context window as the file's head `session_meta` records it
+   * (`model_context_window`), for the context ring. The panel no longer reads every event, so the
+   * analysis carries it; absent when the head records none (an older server, or a file without
+   * one), and the panel then falls back as it always has.
+   */
+  modelContextWindow?: number | string;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];
