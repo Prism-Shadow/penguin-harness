@@ -501,14 +501,15 @@ describe("applyUserEvent forwarding", () => {
     const stop = subscribeCompanyResync(() => company.getState().resync());
     try {
       applyUserEvent(sessions, { type: "resync_required" }, () => undefined);
-      // `runs` re-reads the sessions route; `orgs` the organization list and the open chart.
+      // `runs` re-reads the sessions route; `orgs` the organization list and the open chart;
+      // `proposals` the index a lost proposal event would have moved.
       expect(company.getState().versions).toEqual({
         orgs: 1,
         messages: 0,
         tickets: 0,
         runs: 1,
         budget: 0,
-        proposals: 0,
+        proposals: 1,
       });
     } finally {
       stop();
