@@ -1,4 +1,4 @@
-/** The chat page. */
+/** The chat page: the conversation, its draft and Session views. */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { ChatPage } from "./chat-page";
 
