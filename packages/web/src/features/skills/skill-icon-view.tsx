@@ -14,7 +14,7 @@
  */
 import { useMemo } from "react";
 import { GlyphIcon } from "@prismshadow/penguin-ui";
-import { BOOK_ICON } from "../../lib/skill-use";
+import { BOOK_ICON } from "../chat";
 import { sanitizeSkillIcon } from "./skill-icon";
 
 /**

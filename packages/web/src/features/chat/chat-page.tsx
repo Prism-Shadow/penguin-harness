@@ -110,6 +110,7 @@ import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./body/draft-view";
 import { prepareNewChatDraft } from "./new-chat";
+import { DRAFT_SESSION_ID, parkedDraftIdOf } from "./draft-sessions";
 import {
   heldRouteSession,
   resolveRoutedSession,
