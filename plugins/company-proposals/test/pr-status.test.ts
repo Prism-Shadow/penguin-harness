@@ -1,19 +1,14 @@
 /**
- * The GitHub pull-request status a `pr` material carries: which URLs are looked up, how
- * GitHub's answer maps to the four states, what the reader asks `gh` and does with its
- * cache and a failure, and how the default runner starts a process. No test reaches
- * GitHub or needs a logged-in `gh`: the reader gets a scripted runner, and the runner's
- * own tests start node in place of `gh`.
+ * The pull-request status a `pr` material carries: which URLs are looked up, how GitHub's
+ * answer maps to the four states, how the reader answers from the store at once and refreshes
+ * in the background through the Forge, and how the default runner starts a process. No test
+ * reaches GitHub or needs a logged-in `gh`: the reader gets a fake forge, and the runner's own
+ * tests start node in place of `gh`.
  */
 import { describe, expect, it } from "vitest";
-import {
-  PrStatusReader,
-  STATUS_TTL_MS,
-  ghRunner,
-  parsePullUrl,
-  statusOf,
-  type RunGh,
-} from "../src/pr-status.js";
+import { PrStatusReader, STATUS_TTL_MS, ghRunner, parsePullUrl, statusOf } from "../src/pr-status.js";
+import { GithubForge, SqliteGraphStore, SqliteProposalStore } from "../src/index.js";
+import { FakeForge, cr } from "./graph-fakes.js";
 
 describe("parsePullUrl", () => {
   it("names the pull request of a GitHub URL, /pull or /pulls, with or without a tail", () => {
@@ -55,117 +50,93 @@ describe("statusOf", () => {
 describe("PrStatusReader", () => {
   const URL = "https://github.com/o/r/pull/7";
 
-  function reader(opts: { answers: Array<() => string | Promise<string>>; now?: () => number }) {
-    const calls: Array<{ args: string[]; limits: { timeoutMs: number; maxBytes: number } }> = [];
+  function reader(opts: { now?: () => number } = {}) {
     const lines: string[] = [];
-    const gh: RunGh = async (args, limits) => {
-      calls.push({ args: [...args], limits });
-      const next = opts.answers.shift();
-      if (next === undefined) throw new Error("no answer left");
-      return next();
-    };
+    const forge = new FakeForge([cr("o/r", 7, { head: "a".repeat(40), branch: "x", draft: true })]);
+    const store = new SqliteGraphStore(SqliteProposalStore.open(":memory:").db);
     const r = new PrStatusReader({
-      gh,
+      forge,
       log: (l) => lines.push(l),
       ...(opts.now !== undefined ? { now: opts.now } : {}),
     });
-    return { r, calls, lines };
+    return { r, forge, store, lines };
   }
-  const json = (body: unknown) => () => JSON.stringify(body);
 
-  it("asks gh for the pull request by its owner, repo and number, never the URL", async () => {
-    const { r, calls } = reader({ answers: [json({ state: "open", draft: true })] });
-    const read = await r.read("https://www.github.com/o/r.git/pull/7#discussion_r1");
-    expect(read?.status).toBe("draft");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.args).toEqual(["api", "repos/o/r/pulls/7"]);
-    expect(calls[0]!.limits.timeoutMs).toBeGreaterThan(0);
-    expect(calls[0]!.limits.maxBytes).toBeGreaterThan(0);
+  it("answers at once from the table, and reads what is missing in the background, by owner, repo and number", async () => {
+    const { r, forge, store } = reader();
+    const first = r.read("acme", store, ["https://www.github.com/o/r.git/pull/7#discussion_r1"]);
+    // Nothing cached yet: no status, and the read did not wait for the forge.
+    expect(first.statuses.size).toBe(0);
+    await first.refreshed;
+    expect(forge.queries).toEqual([{ repo: "o/r", numbers: [7] }]);
+    const second = r.read("acme", store, [URL]);
+    expect(second.statuses.get(URL)?.status).toBe("draft");
+    await second.refreshed;
+    expect(forge.queries).toHaveLength(1);
   });
 
-  it("keeps an answer for a minute, then asks again", async () => {
-    let t = 1_000_000;
-    const { r, calls } = reader({
-      answers: [json({ state: "open" }), json({ merged: true, state: "closed" })],
-      now: () => t,
-    });
-    expect((await r.read(URL))?.status).toBe("open");
-    t += STATUS_TTL_MS - 1;
-    expect((await r.read(URL))?.status).toBe("open");
-    expect(calls).toHaveLength(1);
-    t += 2;
-    expect((await r.read(URL))?.status).toBe("merged");
-    expect(calls).toHaveLength(2);
+  it("keeps an answer for five minutes, then reads it again", async () => {
+    let now = 0;
+    const { r, forge, store } = reader({ now: () => now });
+    await r.read("acme", store, [URL]).refreshed;
+    now = STATUS_TTL_MS - 1;
+    await r.read("acme", store, [URL]).refreshed;
+    expect(forge.queries).toHaveLength(1);
+    now = STATUS_TTL_MS;
+    const stale = r.read("acme", store, [URL]);
+    // The stale answer is still what the read gets while the new one is fetched.
+    expect(stale.statuses.get(URL)?.status).toBe("draft");
+    await stale.refreshed;
+    expect(forge.queries).toHaveLength(2);
   });
 
-  it("shares one request between concurrent reads", async () => {
-    const { r, calls } = reader({ answers: [json({ state: "closed" })] });
-    const [a, b] = await Promise.all([r.read(URL), r.read(URL)]);
-    expect(a?.status).toBe("closed");
-    expect(b?.status).toBe("closed");
-    expect(calls).toHaveLength(1);
+  it("reads several PRs of one repository in one batch, one batch per organization at a time", async () => {
+    const { r, forge, store } = reader();
+    forge.pulls.push(cr("o/r", 8, { head: "b".repeat(40), branch: "y", state: "merged" }));
+    const a = r.read("acme", store, [URL, "https://github.com/o/r/pull/8"]);
+    const b = r.read("acme", store, [URL]);
+    await Promise.all([a.refreshed, b.refreshed]);
+    expect(forge.queries).toEqual([{ repo: "o/r", numbers: [7, 8] }]);
+    expect(r.read("acme", store, ["https://github.com/o/r/pull/8"]).statuses.get("https://github.com/o/r/pull/8")?.status).toBe("merged");
   });
 
-  it("answers nothing on a failure, logs it once, and does not ask again within the minute", async () => {
-    const { r, calls, lines } = reader({
-      answers: [
-        () => Promise.reject(new Error("gh: API rate limit exceeded (HTTP 403)")),
-        json({ state: "open" }),
-      ],
-    });
-    expect(await r.read(URL)).toBeNull();
-    expect(await r.read(URL)).toBeNull();
-    expect(calls).toHaveLength(1);
-    const logged = lines.filter((l) => l.includes("PR status not read for o/r#7"));
-    expect(logged).toHaveLength(1);
-    expect(logged[0]).toContain("HTTP 403");
-    const garbled = reader({ answers: [() => "not json"] });
-    expect(await garbled.r.read(URL)).toBeNull();
-    expect(garbled.lines).toHaveLength(1);
-  });
-
-  it("does not hand gh a name GitHub would not accept", async () => {
-    const { r, calls, lines } = reader({ answers: [json({ state: "open" })] });
-    expect(await r.read("https://github.com/../r/pull/7")).toBeNull();
-    expect(calls).toHaveLength(0);
-    expect(lines[0]).toContain("not a GitHub repository name");
+  it("keeps a failure as long as an answer and logs it, the last status standing", async () => {
+    let now = 0;
+    const { r, forge, store, lines } = reader({ now: () => now });
+    await r.read("acme", store, [URL]).refreshed;
+    now = STATUS_TTL_MS;
+    forge.failWith = "HTTP 502";
+    await r.read("acme", store, [URL]).refreshed;
+    expect(lines).toEqual(["[company-proposals] PR status not read for o/r: HTTP 502"]);
+    const after = r.read("acme", store, [URL]);
+    expect(after.statuses.get(URL)?.status).toBe("draft");
+    await after.refreshed;
+    expect(forge.queries).toHaveLength(2);
   });
 
   it("does not look up a URL that names no pull request", async () => {
-    const { r, calls } = reader({ answers: [] });
-    expect(await r.read("https://github.com/o/r/issues/7")).toBeNull();
-    expect(await r.landing("https://github.com/o/r/issues/7")).toBeNull();
-    expect(calls).toHaveLength(0);
+    const { r, forge, store } = reader();
+    await r.read("acme", store, ["https://github.com/o/r/issues/7", "x"]).refreshed;
+    expect(forge.queries).toEqual([]);
   });
 
-  it("landing asks GitHub past the cache, and lands only a merge into the default branch", async () => {
-    const pull = (merged: boolean, base: string) =>
-      json({
-        state: merged ? "closed" : "open",
-        merged,
-        base: { ref: base, repo: { default_branch: "main" } },
-      });
-    const { r, calls } = reader({
-      answers: [
-        json({ state: "open" }),
-        pull(true, "dev"),
-        pull(true, "main"),
-        () => Promise.reject(new Error("gh: HTTP 502")),
-      ],
-    });
-    expect((await r.read(URL))?.status).toBe("open");
-    expect(await r.landing(URL)).toMatchObject({
+  it("landing asks the forge past the cache, lands only a merge into the default branch, and writes back", async () => {
+    const { r, forge, store } = reader();
+    await r.read("acme", store, [URL]).refreshed;
+    forge.pulls = [cr("o/r", 7, { head: "a".repeat(40), branch: "x", state: "merged", base: "dev" })];
+    expect(await r.landing(store, URL)).toMatchObject({
       status: "merged",
       base: "dev",
       defaultBranch: "main",
       landed: false,
     });
-    expect(await r.landing(URL)).toMatchObject({ status: "merged", base: "main", landed: true });
-    // The fresh answer is what the page reads next, within the minute.
-    expect((await r.read(URL))?.status).toBe("merged");
-    expect(calls).toHaveLength(3);
-    expect(await r.landing(URL)).toBeNull();
-    expect(calls).toHaveLength(4);
+    forge.pulls = [cr("o/r", 7, { head: "a".repeat(40), branch: "x", state: "merged", base: "main" })];
+    expect(await r.landing(store, URL)).toMatchObject({ status: "merged", landed: true });
+    // The fresh answer is what the page reads next.
+    expect(r.read("acme", store, [URL]).statuses.get(URL)?.status).toBe("merged");
+    forge.failWith = "HTTP 502";
+    expect(await r.landing(store, URL)).toBeNull();
+    expect(await r.landing(store, "https://example.com/x")).toBeNull();
   });
 });
 
@@ -203,12 +174,11 @@ describe("ghRunner", () => {
     ).rejects.toThrow("wrote more than 1024 bytes");
   });
 
-  it("leaves a reader without gh with no status and one log line", async () => {
-    const lines: string[] = [];
-    const r = new PrStatusReader({ gh: ghRunner("penguin-no-such-gh"), log: (l) => lines.push(l) });
-    expect(await r.read("https://github.com/o/r/pull/7")).toBeNull();
-    expect(lines).toEqual([
-      "[company-proposals] PR status not read for o/r#7: penguin-no-such-gh not found",
-    ]);
+  it("leaves a forge without gh failing with the reason", async () => {
+    const forge = new GithubForge(ghRunner("penguin-no-such-gh"));
+    await expect(forge.listChangeRequests({ repo: "o/r", numbers: [7] })).rejects.toThrow(
+      "penguin-no-such-gh not found",
+    );
+    expect(await forge.isMerged("https://github.com/o/r/pull/7")).toBeNull();
   });
 });

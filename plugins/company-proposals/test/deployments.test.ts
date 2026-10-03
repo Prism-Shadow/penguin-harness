@@ -2,8 +2,8 @@
  * The deployment registry (deployments.ts): nothing on it by default — no server registers
  * itself; a deployment is an id, and a penguin server deployment also has a url; a repeat
  * refused by id, by normalised url, or by the install id the url answers with; a registration
- * written as one `deployment` line under the caller's name — and a check that no concurrent
- * registration can slip between.
+ * written as one `deployment` line of the organization's deployments.jsonl under the caller's
+ * name — and a check that no concurrent registration can slip between.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -11,7 +11,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
-import { Ledger, ledgerPath } from "../src/ledger.js";
+import { DeploymentStore, deploymentsPath } from "../src/deploy-store.js";
 import { DeployService, ProposalService, proposalRoutes } from "../src/index.js";
 import {
   deploymentIdOf,
@@ -223,7 +223,6 @@ describe("registering over the routes", () => {
       gateway,
       agents: { pluginVersion: async () => null, updatePlugin: async () => {} } as never,
       root,
-      settings: { get: () => undefined, set: () => {} } as never,
       log: { line: () => {} },
       probe,
     });
@@ -255,7 +254,7 @@ describe("registering over the routes", () => {
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
   const lines = async () =>
-    (await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8").catch(() => ""))
+    (await fs.readFile(deploymentsPath(root, PROJECT, ORG), "utf8").catch(() => ""))
       .split("\n")
       .filter((l) => l !== "")
       .map((l) => JSON.parse(l) as Record<string, unknown>);
@@ -353,16 +352,18 @@ describe("registering over the routes", () => {
     expect((await lines()).filter((l) => l.kind === "deployment")).toHaveLength(1);
   });
 
-  it("keeps the registry across a restart: the fold of the ledger file", async () => {
+  it("keeps the registry across a restart: its own deployments.jsonl, apart from the proposals", async () => {
     await call("POST", "/deployments", { id: "desk", url: "http://localhost:53531" });
     await call("POST", "/deployments", { id: "firmware" });
-    const again = new Ledger(ledgerPath(root, PROJECT, ORG));
-    await again.load();
-    expect(again.deployments().map((d) => [d.id, d.url, d.installId])).toEqual([
+    const again = new DeploymentStore(deploymentsPath(root, PROJECT, ORG));
+    expect((await again.list()).map((d) => [d.id, d.url, d.installId])).toEqual([
       ["desk", "http://localhost:53531", "desk-id"],
       ["firmware", null, null],
     ]);
-    // A line about no proposal leaves the proposals alone.
-    expect(again.proposals()).toEqual([]);
+    // The lines keep their shape: a seq, the time, the kind, who.
+    expect((await lines()).map((l) => [l.seq, l.kind, typeof l.at, l.by])).toEqual([
+      [1, "deployment", "string", "user:boss"],
+      [2, "deployment", "string", "user:boss"],
+    ]);
   });
 });
