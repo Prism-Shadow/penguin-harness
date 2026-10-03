@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 import {
   PLUGIN_CATEGORIES,
   PLUGIN_VERSION_PATTERN,
@@ -24,6 +25,7 @@ import {
   type LibraryPlugin,
   type PluginCategory,
 } from "../src/plugins/index.js";
+import { formatFrontmatter } from "@prismshadow/skills";
 
 const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 
@@ -254,6 +256,91 @@ describe("parseSkillFrontmatter", () => {
     });
     expect(parseSkillFrontmatter("no frontmatter")).toBeNull();
     expect(parseSkillFrontmatter("---\ndescription: d\n---\n")).toBeNull();
+  });
+
+  it("reads frontmatter as YAML: a quoted value is read without its quotes", () => {
+    expect(
+      parseSkillFrontmatter(
+        "---\nname: x\ndescription: \"Use it when: the user asks\"\nshort_description: 's: t'\nversion: 2026.08.29.3\n---\nbody",
+      ),
+    ).toEqual({
+      name: "x",
+      description: "Use it when: the user asks",
+      shortDescription: "s: t",
+      version: "2026.08.29.3",
+    });
+    // A multi-line YAML value is read whole, not cut at its first line.
+    expect(
+      parseSkillFrontmatter(
+        "---\nname: x\ndescription: >-\n  first line\n  second line\nshort_description: |-\n  a\n  b\n---\nbody",
+      ),
+    ).toEqual({
+      name: "x",
+      description: "first line second line",
+      shortDescription: "a\nb",
+      version: "",
+    });
+    // A block that is not a mapping is no frontmatter.
+    expect(parseSkillFrontmatter("---\n- name\n---\nbody")).toBeNull();
+  });
+
+  it("still reads an older installed copy whose unquoted value is not valid YAML", () => {
+    // Written by the line-based stamper before frontmatter was YAML: the unquoted ": " is a
+    // YAML error, so the block is read line by line as before.
+    const old =
+      "---\nname: penguin-sdk\ndescription: Build agents: the SDK, its hooks: and more\nshort_description: SDK\nversion: 2026.09.20.2\n---\n\n# Body\n";
+    expect(() => parseYaml(/^---\n([\s\S]*?)\n---/.exec(old)![1]!)).toThrow();
+    expect(parseSkillFrontmatter(old)).toEqual({
+      name: "penguin-sdk",
+      description: "Build agents: the SDK, its hooks: and more",
+      shortDescription: "SDK",
+      version: "2026.09.20.2",
+    });
+  });
+
+  it("stamps the installed copy's frontmatter as YAML that reads back to the same metadata", () => {
+    const fields = {
+      name: "x",
+      description: `Use it when: the user says "go" and 'stop' — ${"a long description ".repeat(12)}`,
+      short_description: "- starts with a dash",
+      short_description_zh: "中文：说明 #1",
+      version: "2026.08.29.3",
+    };
+    const front = formatFrontmatter(fields);
+    expect(front.startsWith("---\n")).toBe(true);
+    expect(front.endsWith("\n---")).toBe(true);
+    // One line per field, in order: a long description is not folded.
+    expect(front.split("\n").map((line) => line.split(":")[0])).toEqual([
+      "---",
+      "name",
+      "description",
+      "short_description",
+      "short_description_zh",
+      "version",
+      "---",
+    ]);
+    expect(parseYaml(front.slice(4, -3))).toEqual(fields);
+    expect(parseSkillFrontmatter(`${front}\n\n# Body\n`)).toEqual({
+      name: "x",
+      description: fields.description,
+      shortDescription: fields.short_description,
+      shortDescriptionZh: fields.short_description_zh,
+      version: "2026.08.29.3",
+    });
+    // An absent optional field is left out.
+    expect(formatFrontmatter({ name: "x", description: "d", short_description: undefined })).toBe(
+      "---\nname: x\ndescription: d\n---",
+    );
+    // Every built-in skill's installable content carries a valid YAML block that reads back
+    // to the stamped metadata.
+    for (const plugin of loadLibraryPlugins()) {
+      for (const skill of plugin.skills) {
+        const block = /^---\n([\s\S]*?)\n---/.exec(skill.content)![1]!;
+        const parsed = parseYaml(block, { schema: "failsafe" }) as Record<string, string>;
+        expect(parsed["description"], `${skill.name} description`).toBe(skill.description);
+        expect(parsed["version"]).toBe(plugin.version);
+      }
+    }
   });
 });
 
