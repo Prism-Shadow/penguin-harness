@@ -155,7 +155,7 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 
 初始化 Project 的 `default_agent` 时，会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`）。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
 
-判断只看示例自己的目录 `benchmarks/example-benchmark/`：只要它不存在，初始化或加载 `default_agent` 时就会写入示例，不管 `benchmarks/` 里已经有什么，也不管旧的数据根在已退役的按 Agent 存放位置 `agents/<agent>/benchmarks/` 下还留着什么（没有任何代码读取那里）。已经存在的示例一概不动，删掉的示例会在下次加载时回来。
+每个 Project 只会得到示例一次，内置 Harbor Benchmark 也一样（`packages/core/src/state/project-benchmarks.ts`）。`benchmarks/.seeded.json` 记录这个 Project 已经得到过哪些：初始化或加载 `default_agent` 时，尚未记录的会先写入、再记下，不管 `benchmarks/` 里已经有什么，也不管旧的数据根在已退役的按 Agent 存放位置 `agents/<agent>/benchmarks/` 下还留着什么（没有任何代码读取那里）。已经存在的示例一概不动，删掉的示例不会再出现。在有这份记录之前的数据根上，已经存在的示例记为已得到；早先删掉的示例会再写入一次。
 
 ## 快照与版本
 

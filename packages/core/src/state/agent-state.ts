@@ -66,8 +66,7 @@ import {
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
-import { provisionBuiltinBenchmarks } from "./builtin-benchmarks.js";
-import { provisionExampleBenchmark } from "./example-benchmark.js";
+import { provisionProjectBenchmarks } from "./project-benchmarks.js";
 import {
   agentsMdPath,
   agentStateDir,
@@ -185,24 +184,16 @@ export async function loadAgentState(opts?: {
         `Invalid Agent State config: ${configPath} is empty, corrupted, or missing the system_prompt field.`,
       );
     }
-    // The example Benchmark is provisioned on this path too, not only at initialization: a
-    // Project without benchmarks/example-benchmark/ gets it the first time its default_agent
-    // is loaded, whatever else benchmarks/ holds — which is what gives a data root created
-    // before this provisioning existed, or one that made Benchmarks of its own first, the same
-    // example a fresh one has. Best effort — opening a model context must not fail because a
-    // directory could not be written.
+    // The Project's Benchmarks (the example and the built-in Harbor ones) are provisioned on
+    // this path too, not only at initialization: a data root created before one of them
+    // existed, or before the marker that records them, is given it on its default_agent's
+    // first load, whatever else benchmarks/ holds — once, since the marker remembers it. Best
+    // effort — opening a model context must not fail because a directory could not be written.
     if (agentId === DEFAULT_AGENT_ID) {
       try {
-        await provisionExampleBenchmark(root, projectId);
+        await provisionProjectBenchmarks(root, projectId);
       } catch {
-        // Nothing to do: the evaluation center simply starts out empty.
-      }
-      // The built-in Harbor Benchmarks follow the example's rule, each on its own directory;
-      // one that cannot be written is simply not listed.
-      try {
-        await provisionBuiltinBenchmarks(root, projectId);
-      } catch {
-        // Nothing to do, as above.
+        // Nothing to do: the evaluation center simply lists what is there.
       }
     }
     return {
@@ -253,13 +244,11 @@ export async function loadAgentState(opts?: {
     ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
     // The example Benchmark and the built-in Harbor Benchmarks are only provisioned alongside
     // default_agent (so the evaluation center has data out of the box). They land in the
-    // Project's benchmarks/, a sibling of agents/: each skipped when its directory is already
-    // there, and never written for a plain Agent, whose creation is not a Project's first day.
-    // Awaited here, unlike on the load path — a Project's first day is the one moment a
-    // failure is worth reporting.
-    ...(agentId === DEFAULT_AGENT_ID
-      ? [provisionExampleBenchmark(root, projectId), provisionBuiltinBenchmarks(root, projectId)]
-      : []),
+    // Project's benchmarks/, a sibling of agents/, each given once (project-benchmarks.ts), and
+    // are never written for a plain Agent, whose creation is not a Project's first day. Awaited
+    // here, unlike on the load path — a Project's first day is the one moment a failure is
+    // worth reporting.
+    ...(agentId === DEFAULT_AGENT_ID ? [provisionProjectBenchmarks(root, projectId)] : []),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run

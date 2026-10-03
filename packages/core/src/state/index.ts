@@ -18,3 +18,4 @@ export * from "./agent-vault.js";
 export * from "./memory.js";
 export * from "./example-benchmark.js";
 export * from "./builtin-benchmarks.js";
+export * from "./project-benchmarks.js";

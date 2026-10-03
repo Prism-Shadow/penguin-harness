@@ -1,22 +1,18 @@
 /**
- * Provisioning of the example Benchmark.
+ * The example Benchmark: its content, and the writer that puts it on disk.
  *
- * A Project without `benchmarks/example-benchmark/` gets it, at the Project level: two sample cases (each with statement/ and rubric/ indexed
- * by a README.md), benchmark_config.toml (runs = 2, status = published — the example is a
- * finished Benchmark, not one a Skill is still writing), and a scoreboard.yaml with three sample
- * evaluations, each labelled with default_agent as the Agent it tested — so the evaluation
- * center has data out of the box. Its description states plainly that this is a built-in
- * example and the whole directory can be deleted or replaced. Provisioning rides on
- * default_agent alone, on both its initialization and every later load; creating or loading an
- * ordinary Agent provisions nothing.
+ * At the Project level, `benchmarks/example-benchmark/` holds two sample cases (each with
+ * statement/ and rubric/ indexed by a README.md), benchmark_config.toml (runs = 2, status =
+ * published — the example is a finished Benchmark, not one a Skill is still writing), and a
+ * scoreboard.yaml with three sample evaluations, each labelled with default_agent as the Agent it
+ * tested — so the evaluation center has data out of the box. Its description states plainly that
+ * this is a built-in example and the whole directory can be deleted or replaced.
  *
- * The check is on the example's own directory, nothing else: whatever else `benchmarks/`
- * holds — the user's own Benchmarks, created before the example was ever seeded (creating one
- * makes the directory, and an older build seeded only on initialization) — and whatever an
- * older data root keeps at the retired per-agent location `agents/<agent>/benchmarks/`, which
- * this code never reads, the Project-level example is written when it is missing. That also
- * means deleting the example lasts until the next load of default_agent; an example that is
- * present is never touched, evaluations appended to it included.
+ * When it is written is project-benchmarks.ts's decision, not this module's: a Project is given
+ * the example once, on default_agent's initialization or a later load, and a deleted example
+ * stays deleted. Whatever else `benchmarks/` holds plays no part — the user's own Benchmarks, or
+ * the retired per-agent location `agents/<agent>/benchmarks/` an older data root may keep, which
+ * this code never reads.
  *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
  * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
@@ -28,7 +24,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { stringify as stringifyYaml } from "yaml";
-import { DEFAULT_AGENT_ID, benchmarksDir } from "./paths.js";
+import { DEFAULT_AGENT_ID } from "./paths.js";
 
 /** Directory name of the example Benchmark (the directory name is also its identifier). */
 export const EXAMPLE_BENCHMARK_ID = "example-benchmark";
@@ -333,28 +329,13 @@ export function buildExampleScoreboard(): {
 }
 
 /**
- * Provisions the example Benchmark into the Project's `benchmarks/`: when
- * `benchmarks/example-benchmark/` does not exist, creates it (config, the two sample cases, and
- * the scoreboard), making `benchmarks/` on the way if needed; when it does, does nothing. The
- * user's own Benchmarks beside it, and anything at the retired per-agent location, play no
- * part. Callers are restricted to default_agent's initialization and load paths (see
- * agent-state.ts).
+ * Writes the example Benchmark — config, the two sample cases, and the scoreboard — into
+ * `benchDir`, an existing empty directory. project-benchmarks.ts calls it on a staging
+ * directory that it renames into place. Every write settles before a failure is reported, so
+ * nothing is still writing into the directory once the caller removes it.
  */
-export async function provisionExampleBenchmark(root: string, projectId: string): Promise<void> {
-  const benchDir = path.join(benchmarksDir(root, projectId), EXAMPLE_BENCHMARK_ID);
-  try {
-    await fs.access(benchDir);
-    return;
-  } catch {
-    // The Project has no example: proceed with provisioning.
-  }
-  await Promise.all(
-    EXAMPLE_CASES.flatMap((c) => [
-      fs.mkdir(path.join(benchDir, c.id, "statement"), { recursive: true }),
-      fs.mkdir(path.join(benchDir, c.id, "rubric"), { recursive: true }),
-    ]),
-  );
-  await Promise.all([
+export async function writeExampleBenchmark(benchDir: string): Promise<void> {
+  const results = await Promise.allSettled([
     fs.writeFile(
       path.join(benchDir, "benchmark_config.toml"),
       `${stringifyToml(EXAMPLE_BENCHMARK_CONFIG)}\n`,
@@ -365,9 +346,13 @@ export async function provisionExampleBenchmark(root: string, projectId: string)
       stringifyYaml(buildExampleScoreboard()),
       "utf8",
     ),
-    ...EXAMPLE_CASES.flatMap((c) => [
-      fs.writeFile(path.join(benchDir, c.id, "statement", "README.md"), c.statement, "utf8"),
-      fs.writeFile(path.join(benchDir, c.id, "rubric", "README.md"), c.rubric, "utf8"),
-    ]),
+    ...EXAMPLE_CASES.map(async (c) => {
+      await fs.mkdir(path.join(benchDir, c.id, "statement"), { recursive: true });
+      await fs.mkdir(path.join(benchDir, c.id, "rubric"), { recursive: true });
+      await fs.writeFile(path.join(benchDir, c.id, "statement", "README.md"), c.statement, "utf8");
+      await fs.writeFile(path.join(benchDir, c.id, "rubric", "README.md"), c.rubric, "utf8");
+    }),
   ]);
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failed !== undefined) throw failed.reason;
 }

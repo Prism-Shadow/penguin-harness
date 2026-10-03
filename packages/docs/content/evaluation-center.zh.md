@@ -39,7 +39,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 ### 示例 Benchmark
 
-每个 Project 都自带 `example-benchmark`，其中的示例评估测的是 `default_agent`，所以页面一开始就有数据。删掉之后，下次加载 `default_agent` 时它又会回来。
+每个 Project 都自带 `example-benchmark`，其中的示例评估测的是 `default_agent`，所以页面一开始就有数据。每个 Project 只会得到它一次：删掉之后就不会再出现。
 
 ### 内置 Harbor Benchmark
 
@@ -63,7 +63,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。**评估**标签页会用一行字写明上面的前提。评估先取一次仓库，再为每道题的每次运行跑一次 Harbor trial：被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
-它们自带的评估记录为空。删掉之后，下次加载 `default_agent` 时它又会回来。
+它们自带的评估记录为空。每个 Project 对它们各只得到一次：删掉的不会再出现；之后的版本若新增内置 Harbor Benchmark，只补上新增的那个。
 
 ## 让 AI 创建 Benchmark
 
@@ -207,7 +207,7 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 3. 选择**删除**。
 
 > [!NOTE]
-> 删掉 `example-benchmark` 或[内置 Harbor Benchmark](#内置-harbor-benchmark) 只是暂时的：下次加载 `default_agent` 时，它会重新写入。
+> 删掉 `example-benchmark` 或[内置 Harbor Benchmark](#内置-harbor-benchmark) 同样是最终的：每个 Project 对它们各只得到一次。想让某一个重新写入，就从 `benchmarks/.seeded.json` 里删掉它的 id，下次加载 `default_agent` 时它会被写入。
 
 ## 工作原理
 
@@ -217,5 +217,5 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent 跑完完整的 Case × runs 矩阵。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
 - **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark_config.toml`，不会出现在列表里，可以手动删除。
-- **示例 Benchmark。** 只要 `benchmarks/example-benchmark/` 不存在，加载 `default_agent` 时就会写入 `example-benchmark`。
-- **内置 Harbor Benchmark。** 它们的 `benchmark_config.toml` 写着 `kind = "harbor"`，并在 `[harbor]` 表里写明仓库、所用的 ref 和任务目录。`agent-evaluation` Skill 读到这些后，每个格子跑一次 Harbor trial，不再开 Workspace 会话；具体步骤见它的 `reference/harbor.md`。与示例相同，各自的目录不存在时，加载 `default_agent` 就会写入；已经存在的目录一概不动。
+- **示例与内置 Benchmark。** `default_agent` 初始化以及之后每次加载时，会把这个 Project 还没得到过的示例或内置 Benchmark 写入，并记在 `benchmarks/.seeded.json` 里；删掉的不会再写回。你自己的目录占用了某个内置 Harbor id 时，这个目录一概不动，等它不在了才补上那个内置 Benchmark。早先版本留下的 `example-benchmark` 记为已得到、原样保留；升级前已经删掉的示例会再写入一次。
+- **内置 Harbor Benchmark。** 它们的 `benchmark_config.toml` 写着 `kind = "harbor"`，并在 `[harbor]` 表里写明仓库、所用的 ref 和任务目录。`agent-evaluation` Skill 读到这些后，每个格子跑一次 Harbor trial，不再开 Workspace 会话；具体步骤见它的 `reference/harbor.md`。

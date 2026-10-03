@@ -3,8 +3,10 @@
  *
  * Every case is a Harbor task directory in the benchmark repository (`task` names it), seeded
  * here as text only — see builtin-benchmarks.ts for how a row becomes a statement and a rubric.
- * The lists hold every candidate the selection kept; the final cut is deleting rows, and the
- * case numbers (`CASE-001-…`) follow the remaining rows' order. Summaries say what a task asks
+ * Each list mirrors the candidates of that benchmark's `selection.json` in the repository, in its
+ * order; the pilot's cut is deleting rows, and the case numbers (`CASE-001-…`) follow the
+ * remaining rows' order. Once a release has seeded a Benchmark, a Project keeps the case list it
+ * was given (project-benchmarks.ts never rewrites one). Summaries say what a task asks
  * and what it delivers, never how to solve it: they are public to every agent that reads the
  * Benchmark, an optimizer included.
  */
@@ -14,8 +16,10 @@ import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
 export const BENCHMARK_REPO = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
 
 /**
- * The revision of that repository every statement links and every evaluation fetches. A branch
- * until the commit that carries the measured results is pinned here.
+ * The revision of that repository every statement links and every evaluation fetches. What ships
+ * is a 40-character commit id, the one that carries the measured results; until that commit
+ * exists this is a branch, and the release guard in test/builtin-benchmarks.test.ts (expected to
+ * fail until the pin) says so.
  */
 export const BENCHMARK_REPO_REF = "main";
 
@@ -28,8 +32,8 @@ export const HARBOR_AGENT = "penguin_agent:PenguinAgent";
 const IN_REPO =
   "A built-in Harbor benchmark: each task runs in Docker through the Harbor framework and is " +
   "scored by its own verifier, and the task files are in the public repository " +
-  "Prism-Shadow/penguin-harness-benchmark. If deleted, it is written again the next time " +
-  "default_agent loads.";
+  "Prism-Shadow/penguin-harness-benchmark. Each Project is given it once; a deleted one stays " +
+  "deleted.";
 
 export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
   {
@@ -318,16 +322,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 4096,
         expertHours: 18,
       },
-      {
-        task: "hysteretic-aquifer-control",
-        title: "Calibrate an aquifer model and design a remediation",
-        summary:
-          "Learn a local exchange closure, calibrate a four-state aquifer model across several contamination incidents, identify persistently miscalibrated sensors, forecast every state and design a pump-and-treat intervention. The model, forecasts and control plan go into a submission folder.",
-        category: "Earth sciences / Environmental sciences",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 12,
-      },
     ],
   },
   {
@@ -461,8 +455,8 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "AutomationBench (subset)",
     description:
       "Business workflows across simulated SaaS apps (CRM, email, spreadsheets, chat and help " +
-      "desks), two tasks per domain, each passed only when every end-state check on the apps " +
-      `holds. ${IN_REPO}`,
+      "desks) in sales, marketing, operations, support, finance and HR, each passed only when " +
+      `every end-state check on the apps holds. ${IN_REPO}`,
     source: "AutomationBench 1.0.6 (converted to Harbor tasks)",
     upstream: { url: "https://github.com/zapier/AutomationBench", license: "MIT" },
     agentNetwork: "public",
@@ -541,15 +535,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Decide which of six look-alike customer pairs are the same person, leave merge notes on the matching help-desk conversations and post a summary (Google Sheets, Help Scout, Slack). The task passes only when all 30 end-state assertions hold.",
         category: "Support / Fuzzy matching",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "finance-4027-duplicate-payment-detection",
-        title: "Flag duplicate vendor payments",
-        summary:
-          "Apply the duplicate-payment criteria to a vendor payment sheet, flag the suspected pairs in place, alert the team and email the controller (Google Sheets, Slack, Gmail). The task passes only when all 7 end-state assertions hold.",
-        category: "Finance / Duplicate detection",
         cpus: 1,
         memoryMb: 2048,
       },

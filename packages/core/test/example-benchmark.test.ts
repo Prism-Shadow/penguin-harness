@@ -1,10 +1,15 @@
 /**
- * Example Benchmark provisioning tests:
- * default_agent initialization pre-seeds the Project-level benchmarks/example-benchmark/ (a
- * parseable config, runs=2, a scoreboard with three self-consistent evaluations labelled with
- * the Agent they tested); an ordinary Agent's creation seeds nothing; the decision is made on
- * the benchmarks/ DIRECTORY, so a Project that already holds Benchmarks of its own gets no
- * example, and loading default_agent re-creates one only when that directory is gone.
+ * The example Benchmark, as default_agent provisions it into a Project.
+ *
+ * - default_agent's initialization writes the Project-level benchmarks/example-benchmark/: a
+ *   parseable config (runs = 2), and a scoreboard with three self-consistent evaluations
+ *   labelled with the Agent they tested. An ordinary Agent's creation writes no Benchmark.
+ * - Benchmarks of the user's own, and a copy at the retired per-agent location, do not stand in
+ *   for it, and are left as they are.
+ * - A Project is given it once: deleting it sticks across later loads, while a Project whose
+ *   benchmarks/ is gone altogether, marker included, starts over and is given it again.
+ * - A Project from before the marker: an example already there is recorded as given and kept as
+ *   it is; one the user had deleted is given once more, then never again.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -16,6 +21,7 @@ import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   EXAMPLE_BENCHMARK_ID,
+  SEEDED_BENCHMARKS_FILE,
   agentStateDir,
   benchmarksDir,
   buildExampleScoreboard,
@@ -174,8 +180,8 @@ describe("example benchmark provisioning", () => {
   it("seeds the example beside Benchmarks the user already keeps, touching none of them", async () => {
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
     // Creating a Benchmark makes benchmarks/ on its own, and an older build seeded only on
-    // initialization — so a Project can hold its own Benchmarks and no example. The example's
-    // own directory is the check, not the directory around it.
+    // initialization — so a Project can hold its own Benchmarks and no example. What the
+    // Project was given is the marker's record, not the directory around it.
     await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
     await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
     await loadAgentState({ init: {} });
@@ -207,22 +213,53 @@ describe("example benchmark provisioning", () => {
     );
   });
 
-  it("loading default_agent re-creates the example when benchmarks/ is gone", async () => {
+  it("a Project whose benchmarks/ is gone, marker and all, is given the example again", async () => {
     await loadAgentState({ init: {} });
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
     await fs.rm(dir, { recursive: true, force: true });
-    // The load path, not the init path: an existing Agent is only read, and a data root that
-    // predates this provisioning gets its example on that first load.
+    // The load path, not the init path: an existing Agent is only read, and a data root with
+    // no record of what it was given gets the example on that first load.
     await loadAgentState();
     expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
   });
 
-  it("loading default_agent writes the example back once it alone was deleted", async () => {
+  it("is given once: deleting the example sticks across later loads", async () => {
     await loadAgentState({ init: {} });
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
     await fs.rm(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true, force: true });
     await loadAgentState();
-    // The example's own directory is the check, so a deletion lasts until the next load.
+    await loadAgentState();
+    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID))).toBe(false);
+  });
+
+  it("from before the marker: an example already there is kept as it is, and deleting it then sticks", async () => {
+    await loadAgentState({ init: {} });
+    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
+    // An earlier release wrote the example on every load and kept no record of it; the user
+    // has since evaluated on it.
+    await fs.rm(path.join(dir, SEEDED_BENCHMARKS_FILE));
+    const scoreboard = path.join(dir, EXAMPLE_BENCHMARK_ID, "scoreboard.yaml");
+    await fs.writeFile(scoreboard, "evaluations:\n  - time: the user's own\n");
+
+    await loadAgentState();
+
+    expect(await fs.readFile(scoreboard, "utf8")).toBe("evaluations:\n  - time: the user's own\n");
+    await fs.rm(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true, force: true });
+    await loadAgentState();
+    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID))).toBe(false);
+  });
+
+  it("from before the marker: an example the user had deleted is given once more, then never again", async () => {
+    await loadAgentState({ init: {} });
+    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.rm(path.join(dir, SEEDED_BENCHMARKS_FILE));
+    await fs.rm(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true, force: true });
+
+    await loadAgentState();
     expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
+
+    await fs.rm(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true, force: true });
+    await loadAgentState();
+    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID))).toBe(false);
   });
 });

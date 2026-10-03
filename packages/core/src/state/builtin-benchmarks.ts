@@ -1,5 +1,5 @@
 /**
- * Provisioning of the built-in Harbor Benchmarks.
+ * The built-in Harbor Benchmarks: what one is, and the writer that puts it on disk.
  *
  * Five Benchmarks ship with every Project beside the example: subsets of Terminal-Bench 4.0,
  * Terminal-Bench-Science 0.1, DeepSWE v1.1, AutomationBench and rag-bench-essential, each
@@ -12,25 +12,18 @@
  * agent-evaluation Skill's Harbor branch runs from. Case directories are `CASE-NNN-<task>`, so
  * the Harbor task name is the case id without its `CASE-NNN-` prefix.
  *
- * The trigger and the check are the example's: provisioning rides on default_agent's
- * initialization and every later load, and looks at each Benchmark's own directory and nothing
- * else. A missing directory is written; an existing one is never touched — evaluations appended
- * to it, or a user's own Benchmark that happens to use a built-in id, stay exactly as they are.
- * So deleting a built-in Benchmark lasts until the next load of default_agent, and a change to
- * the definitions below reaches only Projects that do not have that directory yet.
- *
- * The cases themselves are data (builtin-benchmarks-data.ts): cutting a Benchmark down to its
- * final task list is deleting rows there, and the case numbers follow the rows' order.
+ * When one is written is project-benchmarks.ts's decision: a Project is given each built-in
+ * once, and a deleted one stays deleted. The cases themselves are data
+ * (builtin-benchmarks-data.ts): cutting a Benchmark down to its final task list is deleting rows
+ * there, and the case numbers follow the rows' order.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { stringify as stringifyYaml } from "yaml";
-import { benchmarksDir } from "./paths.js";
 import {
   BENCHMARK_REPO,
   BENCHMARK_REPO_REF,
-  BUILTIN_BENCHMARKS,
   HARBOR_AGENT,
   HARBOR_VERSION,
 } from "./builtin-benchmarks-data.js";
@@ -178,18 +171,28 @@ const RUBRIC = `# Scoring rubric (max 100 points)
 - 100 pts: the Harbor verifier's reward for this trial (\`/logs/verifier/reward.txt\` or the \`reward\` key of \`reward.json\`) multiplied by 100. The task's own tests decide; there is no manual judging and no partial credit beyond what the verifier itself reports.
 `;
 
-async function provisionOne(dir: string, bench: BuiltinBenchmark): Promise<void> {
-  const benchDir = path.join(dir, bench.id);
-  try {
-    // A non-recursive mkdir is the existence check: it fails on a directory that is already
-    // there, whoever made it, and of two loads racing for a missing one only one proceeds.
-    await fs.mkdir(benchDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return;
-    throw error;
-  }
-  await Promise.all(
-    bench.cases.map(async (item, i) => {
+/**
+ * Writes one built-in Harbor Benchmark — config, an empty scoreboard, and every case's statement
+ * and rubric — into `benchDir`, an existing empty directory. project-benchmarks.ts calls it on a
+ * staging directory that it renames into place. Every write settles before a failure is
+ * reported, so nothing is still writing into the directory once the caller removes it.
+ */
+export async function writeBuiltinBenchmark(
+  benchDir: string,
+  bench: BuiltinBenchmark,
+): Promise<void> {
+  const results = await Promise.allSettled([
+    fs.writeFile(
+      path.join(benchDir, "benchmark_config.toml"),
+      `${stringifyToml(benchmarkConfig(bench))}\n`,
+      "utf8",
+    ),
+    fs.writeFile(
+      path.join(benchDir, "scoreboard.yaml"),
+      stringifyYaml({ evaluations: [] }),
+      "utf8",
+    ),
+    ...bench.cases.map(async (item, i) => {
       const caseDir = path.join(benchDir, builtinCaseId(i + 1, item.task));
       await fs.mkdir(path.join(caseDir, "statement"), { recursive: true });
       await fs.mkdir(path.join(caseDir, "rubric"), { recursive: true });
@@ -200,28 +203,7 @@ async function provisionOne(dir: string, bench: BuiltinBenchmark): Promise<void>
       );
       await fs.writeFile(path.join(caseDir, "rubric", "README.md"), RUBRIC, "utf8");
     }),
-  );
-  await fs.writeFile(
-    path.join(benchDir, "scoreboard.yaml"),
-    stringifyYaml({ evaluations: [] }),
-    "utf8",
-  );
-  // Written last: the config is what makes the directory a Benchmark to every reader.
-  await fs.writeFile(
-    path.join(benchDir, "benchmark_config.toml"),
-    `${stringifyToml(benchmarkConfig(bench))}\n`,
-    "utf8",
-  );
-}
-
-/**
- * Provisions the built-in Harbor Benchmarks into the Project's `benchmarks/`: every one whose
- * directory is missing is written whole (config, empty scoreboard, every case's statement and
- * rubric), making `benchmarks/` on the way if needed; one whose directory exists is left alone.
- * Callers are restricted to default_agent's initialization and load paths (see agent-state.ts).
- */
-export async function provisionBuiltinBenchmarks(root: string, projectId: string): Promise<void> {
-  const dir = benchmarksDir(root, projectId);
-  await fs.mkdir(dir, { recursive: true });
-  await Promise.all(BUILTIN_BENCHMARKS.map((bench) => provisionOne(dir, bench)));
+  ]);
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failed !== undefined) throw failed.reason;
 }
