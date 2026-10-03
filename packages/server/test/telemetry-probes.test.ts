@@ -1,6 +1,6 @@
 /**
  * Telemetry's second batch of probes on a test App (PRFC-0008): a turn's server-side segments,
- * the session list, a generation's going recorded by its successor, the 内存 snapshot — and
+ * the session list, a generation's going recorded by its successor, the memory snapshot — and
  * none of it while the switch is off.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -177,7 +177,7 @@ describe("telemetry probes", () => {
     });
   });
 
-  it("records the process's and each loaded Session's 内存 when read — only while on", async () => {
+  it("records the process's and each loaded Session's memory when read — only while on", async () => {
     await runTask();
     expect(await read("?view=samples")).toMatchObject({ enabled: false, samples: [] });
     await turn(true);

@@ -48,7 +48,7 @@ export function telemetryRoutes(telemetry: Telemetry): Hono<AppEnv> {
       query.limit = limit;
     }
     const enabled = telemetry.on();
-    // The current state (process and Session 内存) joins the buffer as of this read.
+    // The current state (process and Session memory) joins the buffer as of this read.
     telemetry.snapshot();
     const buffered = enabled ? telemetry.samples({}).length : 0;
     const body: TelemetryResponse = { enabled, view, buffered };

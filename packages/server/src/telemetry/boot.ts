@@ -76,7 +76,7 @@ export class BootTimings {
   /**
    * Hands everything to the generation's Telemetry: the kept samples, the whole create() as
    * `boot.create`, the predecessor's park and dispose (only when it is the generation this one
-   * follows — a create that failed leaves no dispose behind), why this generation started, and the process's 内存.
+   * follows — a create that failed leaves no dispose behind), why this generation started, and the process's memory.
    */
   flush(telemetry: Telemetry | null): void {
     if (telemetry?.on() !== true) return;

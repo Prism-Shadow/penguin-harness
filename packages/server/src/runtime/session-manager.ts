@@ -940,7 +940,7 @@ export class SessionManager {
    */
   /**
    * Telemetry's `session.memory`: one sample per loaded Session with its `memoryCost`, the bytes
-   * it holds in 内存 — its resumed history, the stream events its channel keeps for a page
+   * it holds in memory — its resumed history, the stream events its channel keeps for a page
    * that reconnects, and the partial replies still streaming. Taken when the buffer is read.
    * A channel or live tail an older runtime built may have no counter; that part counts zero.
    */
