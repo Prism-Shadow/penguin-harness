@@ -81,6 +81,7 @@ penguin org proposal ready <n>                                 # tell the person
 penguin org proposal comments <n> --pending                    # the text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id
 penguin org proposal resolve <n> <comment_id> -m "what changed"
 penguin org proposal material <n> add doc=<url> --label "RFC"
+penguin org proposal reject <n> --reason "…"                   # close it; the reason and your name are recorded
 ```
 
 Every write is attributed to you from your environment; there is nothing to pass.
@@ -94,6 +95,7 @@ Every write is attributed to you from your environment; there is nothing to pass
 5. **A batch of comments** (`[proposal #<n>] … requested changes: a batch of <k> comments`) is one revision, not `k`: `comments <n> --pending` prints the proposal with every commented passage wrapped in `⟦<id>⟧…⟦/<id>⟧` and the comments listed by that id under it — the marks say exactly which words the person means; read the passage, not the id. Then, in this order: revise the file for all of them; `resolve <n> <id>` each with one line saying what changed (or why nothing did); `publish` once (a comment whose passage you kept follows it; one whose passage you rewrote is listed as a comment on the earlier revision — that is fine, it is answered by your `resolve` note); then `ready <n>`. The server refuses `ready` until a revision was published after the batch and every comment in it is resolved, and says which comments are still open. A person may send several batches; each is handled the same way.
 6. **Runtime feedback** (`--runtime`, from the test team) on a proposal that is not yet approved is yours and the implementer's together: agree with the implementer through `feedback` who changes what, revise the text where the behaviour changed, and let the implementer fix the branch.
 7. **Approval** is the person's: they approve and request the merge, the implementer merges and reports `merged`. Your part ends when the text matches what was merged; if the merge diverged from the text, publish one last revision.
+8. **Rejecting** is open to you: when a person tells you to take a proposal off the queue, or your own should not go on, `reject <n> --reason "…"` closes it — the author and the implementer are told to stop and close the PR. Do it; do not answer that only a person can. Closing a colleague's proposal on your own judgement is not yours: say why with `feedback <n> -m` and let a person decide.
 
 ## Cautions
 

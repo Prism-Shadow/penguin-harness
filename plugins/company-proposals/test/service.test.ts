@@ -1403,6 +1403,96 @@ describe("ProposalService", () => {
     });
   });
 
+  it("an employee rejects as a person does: any open proposal, with a reason, under its own name; the author and implementer are told, never the one who rejected", async () => {
+    const ceo: OrgActor = { userId: "boss", agentId: "acme_ceo", sessionId: "desk-ceo" };
+    // A colleague's ready proposal with an implementer, taken off the queue by another employee.
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    await service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author);
+    await service.ready(PROJECT, ORG, n, author);
+    expect(await refused(() => service.reject(PROJECT, ORG, n, "  ", ceo))).toEqual({
+      status: 400,
+      code: "bad_request",
+    });
+    const mark = gateway.desks.length;
+    const rejected = await service.reject(PROJECT, ORG, n, "The board withdrew it.", ceo);
+    expect(rejected.status).toBe("rejected");
+    expect(rejected.events.at(-1)).toMatchObject({
+      kind: "rejected",
+      by: "agent:acme_ceo",
+      text: "The board withdrew it.",
+    });
+    const told = `[proposal #${n}] rejected by acme_ceo: The board withdrew it. — stop work on it, and close its PR if one is open.`;
+    expect(gateway.desks.slice(mark)).toEqual([
+      { agentId: "acme_dev", text: told },
+      { agentId: "acme_impl", text: told },
+    ]);
+    // Closed for everyone after that, whoever rejected it.
+    expect(await refused(() => service.reject(PROJECT, ORG, n, "again", qa))).toEqual({
+      status: 409,
+      code: "proposal_status",
+    });
+    expect(await refused(() => service.publish(PROJECT, ORG, n, DOC, author))).toEqual({
+      status: 409,
+      code: "proposal_closed",
+    });
+
+    // The author drops its own empty draft: nobody else is on it, so nobody is told.
+    const own = (await service.create(PROJECT, ORG, { brief: "Folded into #1" }, author)).number;
+    const before = gateway.desks.length;
+    const dropped = await service.reject(PROJECT, ORG, own, "Folded into #1.", author);
+    expect(dropped).toMatchObject({ status: "rejected", revision: 0 });
+    expect(dropped.events.at(-1)).toMatchObject({ kind: "rejected", by: "agent:acme_dev" });
+    expect(gateway.desks).toHaveLength(before);
+
+    // An approved proposal too: the person's approval does not lock it against an employee.
+    const k = await delegated();
+    await service.publish(PROJECT, ORG, k, DOC, author);
+    await service.approve(PROJECT, ORG, k, BOSS);
+    expect((await service.reject(PROJECT, ORG, k, "Superseded.", qa)).status).toBe("rejected");
+
+    // Someone outside the organization still cannot.
+    const m = await delegated();
+    expect(await refused(() => service.reject(PROJECT, ORG, m, "no", OUTSIDER))).toEqual({
+      status: 403,
+      code: "project_access",
+    });
+
+    // The ledger replays to the same record.
+    const again = new ProposalService({ gateway, agents, root, settings, log });
+    expect((await again.get(PROJECT, ORG, n, BOSS)).events.at(-1)).toMatchObject({
+      kind: "rejected",
+      by: "agent:acme_ceo",
+    });
+  });
+
+  it("POST /:number/reject carries an employee's identity; the reason is required", async () => {
+    const n = await delegated();
+    const app = new Hono();
+    app.use(async (c, next) => {
+      c.set("user" as never, { userId: "boss" } as never);
+      c.set("sessionVia" as never, "token" as never);
+      await next();
+    });
+    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service));
+    const post = (body: unknown) =>
+      app.request(`/p/${PROJECT}/o/${ORG}/proposals/${n}/reject`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const missing = await post({ agentId: "acme_qa" });
+    expect(missing.status).toBe(400);
+    const ok = await post({ reason: "Not this quarter.", agentId: "acme_qa" });
+    expect(ok.status).toBe(200);
+    const detail = (await ok.json()) as {
+      status: string;
+      events: Array<{ kind: string; by: string }>;
+    };
+    expect(detail.status).toBe("rejected");
+    expect(detail.events.at(-1)).toMatchObject({ kind: "rejected", by: "agent:acme_qa" });
+  });
+
   it("an approval covers one revision: a later publish puts the proposal back to ready, keeps the approved revision, tells the implementer, and the revisions can be read back", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);

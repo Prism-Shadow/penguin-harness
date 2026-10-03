@@ -1872,7 +1872,7 @@ const en: Messages = {
     proposalReadyDesc: "Mark a proposal ready for reading (the author or a person)",
     proposalApproveDesc: "Approve a proposal and request its merge (a person)",
     proposalMergedDesc: "Report the implementation merged (the implementer or a person)",
-    proposalRejectDesc: "Reject a proposal with a reason (a person)",
+    proposalRejectDesc: "Reject a proposal with a reason (a person or any employee)",
     proposalImplementDesc:
       "Open an implementation session for an employee on the proposal; prints the session id",
     proposalMaterialDesc: "Related material: the PR, an issue, a branch, a document, a ticket",
@@ -3073,7 +3073,7 @@ const zh: Messages = {
     proposalReadyDesc: "标记提案可以读了（作者或人）",
     proposalApproveDesc: "认可提案并请求合并（人）",
     proposalMergedDesc: "报告实施已合并（实施者或人）",
-    proposalRejectDesc: "拒绝提案并给出理由（人）",
+    proposalRejectDesc: "拒绝提案并给出理由（人或任一员工）",
     proposalImplementDesc: "开一个实施会话来做这份提案——作者自己的，或指定的同事的；打印会话 id",
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
     proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
