@@ -20,7 +20,7 @@ It depends on [company-proposals](../company-proposals/README.md), and must be i
 
 - **A room session's cost is not in the organization's budget**, as with any session opened through the gateway (the organization counts desks and ticket sessions), and a budget-paused employee is not known to the plugin; a paused organization is not relayed to.
 - **A room session hears the room while it works.** A room message goes into the Task a room session is running, between its steps (`MessagingTaskRunner.steer`), and starts its next Task only when it is running none — a message queued behind a long Task would wait for that Task to end. The room session's first input also tells it not to wait for the room (no polling of the channel's files, no sleep loops) but to end its turn.
-- **Relayed only where the organization runs.** A server that holds an organization as a mirror (it runs on another machine, `OrgView.machineId`) relays nothing of it: the room sessions are that machine's, and the mirror's ledger is overwritten by the next copy.
+- **Relayed only where the organization runs.** A server that holds an organization as a mirror (it runs on another machine, `OrgView.machineId`) relays nothing of it: the room sessions are that machine's, and the mirror's store is overwritten by the next copy.
 - **On an older server the relay works as it did before.** Only a machine named in `OrgView.machineId` stops the relay. A server too old to have the field relays as it always did, and a runner without `steer` has every line started as a Task.
 - **The relay keeps its own depth.** A room session always sends at the organization's hop 1, so the chain limit does not stop two room sessions answering each other; the plugin's `relayDepth` does (a person's message is 0, a reply one more than what it answers).
 - The desk line at the opening asks the desk not to speak in the room; nothing stops it.
@@ -57,7 +57,7 @@ curl -X POST "$API/api/projects/<project>/organizations/<org>/roadmaps" \
 
 ## Where things live
 
-`<root>/<project>/organizations/<org>/roadmaps.jsonl` is the append-only ledger, written only by this plugin; `roadmaps-relay.json` beside it holds each room's cursor and the relay depths.
+The roadmaps are this plugin's tables in the organization's SQLite store, `<root>/<project>/organizations/<org>/company.db` (shared with company-proposals, which writes only its own tables): a roadmap's header with the current record and body, its items, delegations, approvals (each kept with the hash of the brief it was given on), room sessions and events; drafts, approvals and events are only ever appended. The channel claim answers with one query on a read-only connection. `roadmaps-relay.json` beside the store holds each room's cursor and the relay depths.
 
 ## Development
 

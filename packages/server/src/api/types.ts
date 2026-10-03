@@ -6677,7 +6677,7 @@ export type CompanyServerEvent =
 // ---------------------------------------------------------------------------
 // Company proposals (the company-proposals plugin: /api/projects/:p/organizations/:o/proposals)
 //
-// The plugin owns the ledger and the routes; the page that draws a proposal is one of the
+// The plugin owns the store and the routes; the page that draws a proposal is one of the
 // web app's builtin renderers, so the data contract lives here beside the other DTOs the
 // web build compiles against. Absent the plugin, none of these routes exist.
 // ---------------------------------------------------------------------------
@@ -6812,7 +6812,7 @@ export type ProposalEventKind =
   /** A discussion's conclusion reached the owner's desk (the text is the conclusion). */
   | "discussion_concluded";
 
-/** One thing that happened to a proposal; `seq` orders the whole ledger and is what a read position points at. */
+/** One thing that happened to a proposal; `seq` orders every write of the organization and is what a read position points at. */
 export interface ProposalEvent {
   seq: number;
   at: string;
@@ -6905,8 +6905,8 @@ export interface ProposalImplRequest {
 
 /**
  * `POST …/proposals/adopt-impl` (anybody in the organization): every proposal without an impl PR takes the
- * latest `pr` material on the delivery repository as one. A one-time migration for ledgers
- * written before impl PRs; see changelog/unreleased/2026-09-30-backward-compatibility.md.
+ * latest `pr` material on the delivery repository as one: for proposals whose PR was attached
+ * as a material and never registered as the impl.
  */
 export interface ProposalAdoptImplResponse {
   adopted: Array<{ number: number; url: string }>;
@@ -7222,7 +7222,7 @@ export interface ProposalDetail extends ProposalItem {
    * the page can show what changed since.
    */
   approvedRevision: number | null;
-  /** The ledger's latest `seq`: what `POST …/read` should carry to mark everything read. */
+  /** The proposal's latest `seq`: what `POST …/read` should carry to mark everything read. */
   seq: number;
   /** The test groups the proposals plugin's configuration declares, in display order — on a read. */
   testGroups?: ProposalTestGroup[];
