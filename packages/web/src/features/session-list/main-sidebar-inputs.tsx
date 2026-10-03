@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -13,7 +12,7 @@ import type {
   SidebarPagesReader,
 } from "../../lib/main-sidebar-bindings";
 
-/** Consecutive live main statements 0..14, called once in original hook order. */
+/** Consecutive live main statements 0..11, called once in original hook order. */
 export function useMainSidebarInputs(
   props: MainSidebarProps,
   navPagesOf: SidebarNavSelector,
@@ -25,14 +24,7 @@ export function useMainSidebarInputs(
   const location = useLocation();
   const { user, sessionVia } = useAuth();
   const { locale } = useLocale();
-  const {
-    projects,
-    currentProject,
-    setCurrentProjectId,
-    reloadProjects,
-    agents,
-    setCurrentAgentId,
-  } = useProject();
+  const { currentProject, agents, setCurrentAgentId } = useProject();
   const {
     sessions: allSessions,
     byAgent: allByAgent,
@@ -52,9 +44,6 @@ export function useMainSidebarInputs(
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
 
-  const [projectOpen, setProjectOpen] = useState(false);
-  const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   /** The badges over the update and to-do trails (use-update-badges.ts); the avatar's dot follows the update flow's offer / restart states. */
   const badges = useUpdateBadges();
   const company = useCompany();
@@ -73,10 +62,7 @@ export function useMainSidebarInputs(
     user,
     sessionVia,
     locale,
-    projects,
     currentProject,
-    setCurrentProjectId,
-    reloadProjects,
     agents,
     setCurrentAgentId,
     allSessions,
@@ -95,12 +81,6 @@ export function useMainSidebarInputs(
     replace,
     chatMatch,
     activeSessionId,
-    projectOpen,
-    setProjectOpen,
-    createProjectOpen,
-    setCreateProjectOpen,
-    projectSettingsOpen,
-    setProjectSettingsOpen,
     badges,
     company,
     inCompany,

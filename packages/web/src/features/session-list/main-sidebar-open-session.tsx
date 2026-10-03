@@ -4,7 +4,7 @@ import { isOrgRoute, type WorkMode } from "../company";
 
 import type { useMainSidebarApplyRegistryChange } from "./main-sidebar-apply-registry-change";
 
-/** Consecutive live main statements 128..129, called once in original hook order. */
+/** Consecutive live main statements 125..126, called once in original hook order. */
 export function useMainSidebarOpenSession(
   scope: ReturnType<typeof useMainSidebarApplyRegistryChange>,
 ) {

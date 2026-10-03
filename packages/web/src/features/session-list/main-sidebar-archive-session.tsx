@@ -15,7 +15,7 @@ import {
 import { docksOnScreen, openPanel, dockWorkspace } from "../dock";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
 
-/** Consecutive live main statements 112..118, called once in original hook order. */
+/** Consecutive live main statements 109..115, called once in original hook order. */
 export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSidebarFetchScope>) {
   const {
     navigate,

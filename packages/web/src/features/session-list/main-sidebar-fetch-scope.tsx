@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { SIDEBAR_PAGE_SIZE, cutAtWatermark, groupPageSlice } from "../../lib/session-grouping";
 import type { useMainSidebarShownDrafts } from "./main-sidebar-shown-drafts";
 
-/** Consecutive live main statements 109..111, called once in original hook order. */
+/** Consecutive live main statements 106..108, called once in original hook order. */
 export function useMainSidebarFetchScope(scope: ReturnType<typeof useMainSidebarShownDrafts>) {
   const {
     isLoadedFor,

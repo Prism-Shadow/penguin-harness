@@ -1,24 +1,16 @@
 import {
-  Badge,
-  Dropdown,
-  ICONS,
-  MenuItem,
-  MenuRadioItem,
-  MenuSeparator,
   NavRow,
   Segmented,
   SidebarFrame,
   SidebarNavArea,
   SidebarNavGroup,
-  SidebarSwitcherButton,
 } from "@prismshadow/penguin-ui";
 
 import { S } from "../../lib/strings";
 
-import { projectDisplayName } from "../../state/project";
-
 import { DRAFT_SESSION_ID } from "../../features/chat";
 
+import { ProjectSwitcher } from "../../features/projects";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import {
   NoOrganizationsSidebar,
@@ -36,17 +28,10 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
   const {
     navigate,
     location,
-    projects,
-    currentProject,
-    setCurrentProjectId,
     agents,
     countsByAgent,
     loading,
     activeSessionId,
-    projectOpen,
-    setProjectOpen,
-    setCreateProjectOpen,
-    setProjectSettingsOpen,
     company,
     inCompany,
     navOrg,
@@ -159,56 +144,7 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
         : {})}
       switcher={
         // The Project switcher; the organization switcher in company mode.
-        inCompany ? (
-          <OrgSwitcher {...(onNavigate ? { onNavigate } : {})} />
-        ) : (
-          <Dropdown
-            open={projectOpen}
-            setOpen={setProjectOpen}
-            className="min-w-0 flex-1"
-            menuClass="left-0 right-0 top-full mt-1 origin-top"
-            button={
-              <SidebarSwitcherButton
-                label={currentProject ? projectDisplayName(currentProject) : S.common.loading}
-                onClick={() => setProjectOpen(!projectOpen)}
-              />
-            }
-          >
-            {/* Plain rows rather than a role="menu": the switcher's Project rows are named
-                like its trigger, and both are reached as buttons. */}
-            {projects.map((p) => (
-              <MenuRadioItem
-                key={p.projectId}
-                label={<span className="font-sans">{projectDisplayName(p)}</span>}
-                trailing={<Badge>{p.role}</Badge>}
-                checked={p.projectId === currentProject?.projectId}
-                onSelect={() => {
-                  setCurrentProjectId(p.projectId);
-                  setProjectOpen(false);
-                }}
-              />
-            ))}
-            <MenuSeparator />
-            <MenuItem
-              glyph={ICONS.plus}
-              label={S.project.create}
-              onSelect={() => {
-                setProjectOpen(false);
-                setCreateProjectOpen(true);
-              }}
-            />
-            {currentProject && (
-              <MenuItem
-                glyph={ICONS.gear}
-                label={S.project.settings}
-                onSelect={() => {
-                  setProjectOpen(false);
-                  setProjectSettingsOpen(true);
-                }}
-              />
-            )}
-          </Dropdown>
-        )
+        inCompany ? <OrgSwitcher {...(onNavigate ? { onNavigate } : {})} /> : <ProjectSwitcher />
       }
       // New chat: always pinned, in the one slot between the switcher above and the scroll area
       // below; it has no pin button and cannot be dragged. A page row like the nav's (no fill at

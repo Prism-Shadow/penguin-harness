@@ -3,19 +3,11 @@ import { S } from "../../lib/strings";
 import { workspaceLabel } from "../../lib/session-grouping";
 import { MessagingBindingModal } from "../messaging";
 import { draftSessionTitle } from "../chat";
-import { CreateProjectDialog, ProjectSettingsDialog } from "../projects";
 import type { MainSidebarState } from "./main-sidebar-controller";
 
 export function renderMainSessionDialogs(scope: MainSidebarState) {
   const {
-    currentProject,
-    setCurrentProjectId,
-    reloadProjects,
     replace,
-    createProjectOpen,
-    setCreateProjectOpen,
-    projectSettingsOpen,
-    setProjectSettingsOpen,
     sessions,
     renamingWorkspace,
     setRenamingWorkspace,
@@ -45,20 +37,6 @@ export function renderMainSessionDialogs(scope: MainSidebarState) {
   } = scope;
   return (
     <>
-      <CreateProjectDialog
-        open={createProjectOpen}
-        onClose={() => setCreateProjectOpen(false)}
-        onCreated={(projectId) => {
-          setCreateProjectOpen(false);
-          void reloadProjects().then(() => setCurrentProjectId(projectId));
-        }}
-      />
-      {currentProject && (
-        <ProjectSettingsDialog
-          open={projectSettingsOpen}
-          onClose={() => setProjectSettingsOpen(false)}
-        />
-      )}
       {/* Rename chat */}
       <Modal
         open={renamingSession !== null}

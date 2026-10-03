@@ -9,7 +9,7 @@ import { useDraftSessions, type DraftSessionEntry } from "../chat";
 import { DRAG_POINTER_QUERY, loadGroupSet } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarSearchOpen } from "./main-sidebar-search-open";
 
-/** Consecutive live main statements 54..72, called once in original hook order. */
+/** Consecutive live main statements 51..69, called once in original hook order. */
 export function useMainSidebarCanDrag(scope: ReturnType<typeof useMainSidebarSearchOpen>) {
   const {
     user,

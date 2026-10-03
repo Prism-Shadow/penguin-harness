@@ -15,7 +15,7 @@ import { initialGroupMode, type GroupMode } from "../../components/ui/group-list
 import { loadGroupSet } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarNavCollapsed } from "./main-sidebar-nav-collapsed";
 
-/** Consecutive live main statements 33..44, called once in original hook order. */
+/** Consecutive live main statements 30..41, called once in original hook order. */
 export function useMainSidebarGroupMode(scope: ReturnType<typeof useMainSidebarNavCollapsed>) {
   const { currentProjectId, collapseStoreKey, pinStoreKey } = scope;
 

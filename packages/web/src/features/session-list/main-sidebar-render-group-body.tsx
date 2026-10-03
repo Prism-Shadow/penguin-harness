@@ -5,7 +5,7 @@ import { SIDEBAR_PAGE_SIZE, cutAtWatermark, revealPlan } from "../../lib/session
 import { orderSessionRows } from "../../lib/session-order";
 import type { useMainSidebarShowMore } from "./main-sidebar-show-more";
 
-/** Consecutive live main statements 134..134, called once in original hook order. */
+/** Consecutive live main statements 131..131, called once in original hook order. */
 export function useMainSidebarRenderGroupBody(scope: ReturnType<typeof useMainSidebarShowMore>) {
   const {
     hasMoreFor,

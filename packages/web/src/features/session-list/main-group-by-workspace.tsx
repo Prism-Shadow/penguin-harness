@@ -2,10 +2,10 @@ import { Fold, GroupHeader, ICONS, ICON_SIZE, SkeletonList } from "@prismshadow/
 import { S } from "../../lib/strings";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { Icon } from "../../components/ui/group-list";
-import { GroupBlock } from "./main-group-block";
-import { GroupOverflowMenu } from "./main-group-overflow-menu";
-import { GroupPinButton } from "./main-group-pin-button";
 import { GROUP_ACTION_CLASS } from "../../lib/main-sidebar-persistence";
+import { GroupBlock } from "./main-group-block";
+import { GroupPinButton } from "./main-group-pin-button";
+import { GroupOverflowMenu } from "./main-group-overflow-menu";
 import type { MainSidebarState } from "./main-sidebar-controller";
 
 export function renderMainGroupByWorkspace(scope: MainSidebarState) {

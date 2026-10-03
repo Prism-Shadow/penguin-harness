@@ -1,3 +1,9 @@
+export { WorkspaceSelect } from "./workspace-select";
+export { SELECTABLE_THINKING_LEVELS } from "./thinking-level";
+export { ModelCatalogSelect, modelLabel } from "./model-select";
+export { dispatchChatDefaultsChanged, type ChatDefaultsChangedDetail } from "./chat-defaults-event";
+export { clearDraftChatDefaults, clearDraftModelRef } from "./draft-cache";
+
 export { draftSessionTitle } from "./draft-sessions";
 
 export type { DraftSessionEntry } from "./draft-sessions";
@@ -13,22 +19,6 @@ export { sessionDraftKey } from "./draft-cache";
 export { removeDraftSession } from "./draft-sessions";
 
 export { prepareNewChatDraft } from "./new-chat";
-
-export { WorkspaceSelect } from "./workspace-select";
-
-export { clearDraftChatDefaults } from "./draft-cache";
-
-export { clearDraftModelRef } from "./draft-cache";
-
-export { dispatchChatDefaultsChanged } from "./chat-defaults-event";
-
-export type { ChatDefaultsChangedDetail } from "./chat-defaults-event";
-
-export { ModelCatalogSelect } from "./model-select";
-
-export { modelLabel } from "./model-select";
-
-export { SELECTABLE_THINKING_LEVELS } from "./thinking-level";
 
 export { APPROVAL_MODES } from "./approval-mode";
 

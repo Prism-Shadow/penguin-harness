@@ -10,7 +10,7 @@ import {
 
 import type { useMainSidebarNewEntity } from "./main-sidebar-new-entity";
 
-/** Consecutive live main statements 121..127, called once in original hook order. */
+/** Consecutive live main statements 118..124, called once in original hook order. */
 export function useMainSidebarApplyRegistryChange(
   scope: ReturnType<typeof useMainSidebarNewEntity>,
 ) {

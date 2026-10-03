@@ -11,7 +11,7 @@ import { orderGroups } from "./group-order";
 import { dropsEmployeeGroup } from "../agents";
 import type { useMainSidebarSetGroupMode } from "./main-sidebar-set-group-mode";
 
-/** Consecutive live main statements 78..85, called once in original hook order. */
+/** Consecutive live main statements 75..82, called once in original hook order. */
 export function useMainSidebarWorkspaceGroupCounts(
   scope: ReturnType<typeof useMainSidebarSetGroupMode>,
 ) {

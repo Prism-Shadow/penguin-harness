@@ -15,7 +15,7 @@ import { storeGroupMode, type GroupMode } from "../../components/ui/group-list";
 import { NAV_DRAG_MIME, isNavDrag, NavArea } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarCanDrag } from "./main-sidebar-can-drag";
 
-/** Consecutive live main statements 73..77, called once in original hook order. */
+/** Consecutive live main statements 70..74, called once in original hook order. */
 export function useMainSidebarSetGroupMode(scope: ReturnType<typeof useMainSidebarCanDrag>) {
   const {
     currentProjectId,
