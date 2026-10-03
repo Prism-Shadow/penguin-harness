@@ -1717,6 +1717,151 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "impl", "4"])).toBe(1);
   });
 
+  it("impl --head/--base send the branch pair, each exactly a remote and a branch; show prints the impl branch", async () => {
+    server.addProposal("acme", { number: 5 });
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "impl",
+        "5",
+        "--head",
+        "origin",
+        "feat/x",
+        "--base",
+        "origin",
+        "main",
+      ]),
+    ).toBe(0);
+    expect(lastRequest("PUT", "/proposals/5/impl")?.body).toEqual({
+      head: { remote: "origin", branch: "feat/x" },
+      base: { remote: "origin", branch: "main" },
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalImplBranchSet(5, "origin/feat/x", "origin/main", null)}\n`);
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "show", "5"])).toBe(0);
+    expect(out()).toContain(t.org.proposalImplBranch("origin/feat/x", "origin/main", null));
+    // The PR with the pair, in one request.
+    const url = "https://github.com/acme/site/pull/13";
+    stdout.length = 0;
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "impl",
+        "5",
+        url,
+        "--head",
+        "origin",
+        "feat/x",
+        "--base",
+        "origin",
+        "main",
+      ]),
+    ).toBe(0);
+    expect(lastRequest("PUT", "/proposals/5/impl")?.body).toMatchObject({
+      url,
+      head: { branch: "feat/x" },
+    });
+    expect(out()).toBe(`${t.org.proposalImplBranchSet(5, "origin/feat/x", "origin/main", url)}\n`);
+    // One without the other, or the wrong number of values, is refused before any request.
+    const before = server.requests.length;
+    expect(await cli(["org", "proposal", "impl", "5", "--head", "origin", "feat/x"])).toBe(1);
+    expect(
+      await cli(["org", "proposal", "impl", "5", "--head", "origin", "--base", "origin", "main"]),
+    ).toBe(1);
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "impl",
+        "5",
+        "--head",
+        "origin",
+        "feat/x",
+        "extra",
+        "--base",
+        "origin",
+        "main",
+      ]),
+    ).toBe(1);
+    expect(server.requests.length).toBe(before);
+  });
+
+  it("diff prints the impl branch's patch, or with --stat its files and the total", async () => {
+    server.addProposal("acme", {
+      number: 6,
+      implDiff: {
+        head: { remote: "origin", repo: "acme/site", branch: "feat/x" },
+        base: { remote: "origin", repo: "acme/site", branch: "main" },
+        headSha: "a".repeat(40),
+        mergeBase: "b".repeat(40),
+        ahead: 2,
+        behind: 0,
+        files: [
+          {
+            path: "a.ts",
+            status: "modified",
+            from: null,
+            additions: 3,
+            deletions: 1,
+            patch: "@@ -1 +1 @@\n-x\n+y",
+          },
+          {
+            path: "new.ts",
+            status: "renamed",
+            from: "old.ts",
+            additions: 0,
+            deletions: 0,
+            patch: null,
+          },
+        ],
+        truncated: false,
+        compareUrl: "https://github.com/acme/site/compare/main...feat/x",
+        pr: null,
+      },
+    });
+    const header = t.org.proposalDiffHead(
+      "origin/feat/x",
+      "origin/main",
+      2,
+      0,
+      "https://github.com/acme/site/compare/main...feat/x",
+    );
+    expect(await cli(["org", "proposal", "diff", "6"])).toBe(0);
+    expect(lastRequest("GET", "/proposals/6/impl/diff")).toBeDefined();
+    expect(out()).toBe(
+      [
+        header,
+        "diff --git a/a.ts b/a.ts",
+        "--- a/a.ts",
+        "+++ b/a.ts",
+        "@@ -1 +1 @@",
+        "-x",
+        "+y",
+        "diff --git a/old.ts b/new.ts",
+        "Binary or large file not shown (+0 −0)",
+        "",
+      ].join("\n"),
+    );
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "diff", "6", "--stat"])).toBe(0);
+    expect(out()).toBe(
+      [
+        header,
+        "  +3 −1  a.ts",
+        "  +0 −0  old.ts → new.ts",
+        t.org.proposalDiffStat(2, 3, 1),
+        "",
+      ].join("\n"),
+    );
+    // No impl: the server's 409.
+    server.addProposal("acme", { number: 7 });
+    expect(await cli(["org", "proposal", "diff", "7"])).toBe(1);
+  });
+
   it("graph prints the chain indented by depth, each line with its PR, proposal, origins and marks, then what is off the chain and why", async () => {
     server.addProposal("acme", { number: 1 });
     const node = (n: Record<string, unknown>) => ({

@@ -216,6 +216,7 @@ describe("PrGraphReader", () => {
         title: "Gone",
         status: "approved",
         implPr: "https://github.com/acme/site/pull/99",
+        branch: null,
         reason: "merged",
         at: null,
         into: "dev",

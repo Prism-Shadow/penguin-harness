@@ -650,6 +650,10 @@ export interface Messages {
     /** `proposal impl <n> <url>`: the impl PR; `--adopt`: the one-time adoption from the pr materials. */
     proposalImplDesc: string;
     proposalImplAdopt: string;
+    proposalImplHeadOpt: string;
+    proposalImplBaseOpt: string;
+    proposalDiffDesc: string;
+    proposalDiffStatOpt: string;
     /** `proposal graph`: the delivery repository's PR graph. */
     proposalGraphDesc: string;
     /** `proposal deploy <n> --to <id>`: run a registered deploy script on the impl PR head. */
@@ -732,6 +736,18 @@ export interface Messages {
     proposalMaterialAdded(number: number, kind: string): string;
     proposalImplPr(label: string, url: string): string;
     proposalImplSet(number: number, url: string): string;
+    proposalImplBranch(head: string, base: string, pr: string | null): string;
+    proposalImplBranchSet(number: number, head: string, base: string, pr: string | null): string;
+    proposalImplPairUsage(): string;
+    proposalDiffHead(
+      head: string,
+      base: string,
+      ahead: number,
+      behind: number,
+      url: string,
+    ): string;
+    proposalDiffStat(files: number, additions: number, deletions: number): string;
+    proposalDiffTruncated(limit: number): string;
     proposalImplAmbiguous(number: number, urls: string): string;
     proposalImplSkipped(number: number, reason: string): string;
     proposalImplUsage(): string;
@@ -1928,9 +1944,16 @@ const en: Messages = {
     proposalMaterialAddDesc:
       "Attach material as <kind>=<url> (pr, issue, branch, doc, ticket, url)",
     proposalImplDesc:
-      "Register the proposal's impl PR — one per proposal, replacing the one before (--adopt: the one-time adoption from the pr materials)",
+      "Register the proposal's impl — a branch pair (--head and --base), its PR, or both; one per proposal, replacing the one before (--adopt: the one-time adoption from the pr materials)",
     proposalImplAdopt:
       "Give every proposal without an impl PR its latest pr material on the delivery repository",
+    proposalImplHeadOpt:
+      "The impl branch's head: a git remote of the proposal's repository (or owner/repo) and a branch",
+    proposalImplBaseOpt:
+      "The base the head is measured against: a remote (or owner/repo) and a branch; required with --head",
+    proposalDiffDesc:
+      "Print the impl branch's patch: the merge base of base and head, up to head (read from GitHub)",
+    proposalDiffStatOpt: "Only the changed files with their added and deleted lines",
     proposalGraphDesc:
       "Show the delivery repository's open PRs as a commit graph, with each PR's proposal and the origins' PRs on the same branch",
     proposalDeployDesc:
@@ -2012,10 +2035,23 @@ const en: Messages = {
     proposalMaterialAdded: (number, kind) => `Attached ${kind} to proposal #${number}.`,
     proposalImplPr: (label, url) => `Impl PR: ${label} ${url}`,
     proposalImplSet: (number, url) => `Proposal #${number}'s impl PR is ${url}.`,
+    proposalImplBranch: (head, base, pr) =>
+      `Impl branch: ${head} ← ${base}${pr === null ? " (no PR yet)" : `  PR ${pr}`}`,
+    proposalImplBranchSet: (number, head, base, pr) =>
+      `Proposal #${number}'s impl branch is ${head} ← ${base}${pr === null ? "" : `, with PR ${pr}`}.`,
+    proposalImplPairUsage: () =>
+      "--head and --base each take two values, a remote and a branch: --head origin feat/x --base origin main.",
+    proposalDiffHead: (head, base, ahead, behind, url) =>
+      `${head} ← ${base}: ${ahead} commit${ahead === 1 ? "" : "s"} ahead, ${behind} behind  ${url}`,
+    proposalDiffStat: (files, additions, deletions) =>
+      `${files} file${files === 1 ? "" : "s"} changed, +${additions} −${deletions}`,
+    proposalDiffTruncated: (limit) =>
+      `GitHub lists at most ${limit} files of a comparison; the rest are not shown.`,
     proposalImplAmbiguous: (number, urls) =>
       `Proposal #${number} had several pr materials there (${urls}); the latest was taken.`,
     proposalImplSkipped: (number, reason) => `Proposal #${number} skipped: ${reason}.`,
-    proposalImplUsage: () => "Give the proposal and the PR URL: impl <number> <url>, or --adopt.",
+    proposalImplUsage: () =>
+      "Give the proposal and its impl: impl <number> <url>, impl <number> --head <remote> <branch> --base <remote> <branch> (with or without the url), or --adopt.",
     graphNoProposal: () => "no proposal",
     graphOffChain: () => "Off the chain:",
     graphOffReason: (reason, at, relation, base) =>
@@ -2027,7 +2063,7 @@ const en: Messages = {
         above: `on off-chain ${at}`,
         cycle: "its declared bases form a cycle",
       })[reason] ?? reason,
-    graphUnplaced: () => "Proposals whose impl PR is not on the graph:",
+    graphUnplaced: () => "Proposals whose impl is not on the graph:",
     graphUnplacedReason: (reason, at, into, base) =>
       ({
         counterpart: `${at} carries its branch`,
@@ -2036,6 +2072,7 @@ const en: Messages = {
         closed: "closed",
         "open-elsewhere": "open on another repository",
         unread: "not read",
+        "no-pr": "no PR on its head branch",
       })[reason] ?? reason,
     graphErrors: () => "Not read from GitHub:",
     graphDeploymentsOff: () => "Deployments on no layer:",
@@ -3196,8 +3233,15 @@ const zh: Messages = {
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
     proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
     proposalImplDesc:
-      "登记提案的 impl PR——每份提案一条，再登记即替换（--adopt：一次性从 pr 材料里认领）",
+      "登记提案的实现——一对分支（--head 与 --base）、它的 PR，或两者；每份提案一条，再登记即替换（--adopt：一次性从 pr 材料里认领）",
     proposalImplAdopt: "为每份还没有 impl PR 的提案取它在交付仓库上最新的一条 pr 材料",
+    proposalImplHeadOpt:
+      "impl branch 的 head：提案仓库的一个 git remote（或 owner/repo）与一个分支",
+    proposalImplBaseOpt:
+      "衡量 head 的 base：一个 remote（或 owner/repo）与一个分支；与 --head 同时给出",
+    proposalDiffDesc:
+      "打印 impl branch 的 patch：base 与 head 的 merge-base 到 head（从 GitHub 读取）",
+    proposalDiffStatOpt: "只列改动的文件及其增删行数",
     proposalGraphDesc:
       "把交付仓库的 open PR 排成提交关系图，标出每张 PR 的提案和各 origin 在同名分支上的 PR",
     proposalDeployDesc:
@@ -3269,10 +3313,22 @@ const zh: Messages = {
     proposalMaterialAdded: (number, kind) => `已把 ${kind} 挂到提案 #${number}。`,
     proposalImplPr: (label, url) => `impl PR：${label} ${url}`,
     proposalImplSet: (number, url) => `提案 #${number} 的 impl PR 是 ${url}。`,
+    proposalImplBranch: (head, base, pr) =>
+      `impl branch：${head} ← ${base}${pr === null ? "（尚未开 PR）" : `  PR ${pr}`}`,
+    proposalImplBranchSet: (number, head, base, pr) =>
+      `提案 #${number} 的 impl branch 是 ${head} ← ${base}${pr === null ? "" : `，PR 为 ${pr}`}。`,
+    proposalImplPairUsage: () =>
+      "--head 与 --base 各取两个值，remote 与分支：--head origin feat/x --base origin main。",
+    proposalDiffHead: (head, base, ahead, behind, url) =>
+      `${head} ← ${base}：领先 ${ahead} 个提交，落后 ${behind} 个  ${url}`,
+    proposalDiffStat: (files, additions, deletions) =>
+      `改动 ${files} 个文件，+${additions} −${deletions}`,
+    proposalDiffTruncated: (limit) => `GitHub 一次比较最多列 ${limit} 个文件，其余未列出。`,
     proposalImplAmbiguous: (number, urls) =>
       `提案 #${number} 在交付仓库上有多条 pr 材料（${urls}），取了最新的一条。`,
     proposalImplSkipped: (number, reason) => `跳过提案 #${number}：${reason}。`,
-    proposalImplUsage: () => "请给出提案号与 PR URL：impl <number> <url>，或加 --adopt。",
+    proposalImplUsage: () =>
+      "请给出提案号与它的实现：impl <number> <url>、impl <number> --head <remote> <branch> --base <remote> <branch>（可同时带 url），或加 --adopt。",
     graphNoProposal: () => "无提案",
     graphOffChain: () => "链外：",
     graphOffReason: (reason, at, relation, base) =>
@@ -3284,7 +3340,7 @@ const zh: Messages = {
         above: `叠在链外的 ${at} 上`,
         cycle: "声明的 base 互相成环",
       })[reason] ?? reason,
-    graphUnplaced: () => "impl PR 不在图上的提案：",
+    graphUnplaced: () => "实现不在图上的提案：",
     graphUnplacedReason: (reason, at, into, base) =>
       ({
         counterpart: `${at} 带着它的分支`,
@@ -3293,6 +3349,7 @@ const zh: Messages = {
         closed: "已关闭",
         "open-elsewhere": "开在别的仓库",
         unread: "没读到",
+        "no-pr": "head 分支上还没有 PR",
       })[reason] ?? reason,
     graphErrors: () => "没能从 GitHub 读到：",
     graphDeploymentsOff: () => "不在图上的部署：",

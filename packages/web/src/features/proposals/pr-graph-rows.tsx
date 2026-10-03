@@ -255,15 +255,22 @@ export function UnplacedSection({
                 graph.base.branch,
               )}
             </Mark>
-            <a
-              href={u.implPr}
-              target="_blank"
-              rel="noreferrer"
-              data-tooltip={u.implPr}
-              className="ml-auto shrink-0 truncate pl-3 text-gray-400 hover:underline dark:text-gray-500"
-            >
-              {u.implPr.replace(/^https?:\/\/github\.com\//, "")}
-            </a>
+            {u.implPr !== null ? (
+              <a
+                href={u.implPr}
+                target="_blank"
+                rel="noreferrer"
+                data-tooltip={u.implPr}
+                className="ml-auto shrink-0 truncate pl-3 text-gray-400 hover:underline dark:text-gray-500"
+              >
+                {u.implPr.replace(/^https?:\/\/github\.com\//, "")}
+              </a>
+            ) : (
+              // An impl branch with no PR: its declared head, `<remote>/<branch>`.
+              <span className="ml-auto shrink-0 truncate pl-3 font-mono text-gray-400 dark:text-gray-500">
+                {u.branch ?? ""}
+              </span>
+            )}
           </li>
         ))}
       </ul>

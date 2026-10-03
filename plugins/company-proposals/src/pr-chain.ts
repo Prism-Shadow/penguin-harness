@@ -19,10 +19,10 @@
  *    each starting on it and keeping going; every branch walked has its own last layer (`tops`).
  *
  * Everything here is pure: the reader (pr-graph.ts) fetches, buildGraph lays out what it read —
- * each node with its parent, edge and chain verdict, the proposal whose impl PR it is and the PR
- * every other origin has on the same branch, each proposal whose impl PR is not on the graph
- * with the reason why, and each registered deployment on the layer its commit sits on
- * (deployments.ts).
+ * each node with its parent, edge and chain verdict, the proposal whose impl it is (by its impl
+ * PR, or — an impl branch with no PR — by its head branch) and the PR every other origin has on
+ * the same branch, each proposal whose impl is not on the graph with the reason why, and each
+ * registered deployment on the layer its commit sits on (deployments.ts).
  */
 import type {
   ProposalGraphNode,
@@ -262,6 +262,12 @@ export interface GraphProposal {
   title: string;
   status: ProposalStatus;
   implPr: string | null;
+  /**
+   * The declared head of its impl branch: `label` as declared (`<remote>/<branch>`), `repo` the
+   * GitHub repository it resolved to (null when it did not). Absent or null for an impl
+   * registered as a PR alone.
+   */
+  implBranch?: { label: string; repo: string | null; branch: string } | null;
 }
 
 /** Everything read from GitHub and the ledger, as plain data: what buildGraph lays out. */
@@ -285,12 +291,18 @@ export interface GraphInput {
 
 /** The layout: parents through the declared bases, the chain from the base branch, forks, the top, the annotations. */
 export function buildGraph(input: GraphInput): ProposalGraphResponse {
-  const byKey = new Map<string, GraphProposal>();
-  for (const p of input.proposals) {
-    const key = p.implPr === null ? null : pullKey(p.implPr);
-    if (key !== null && p.status !== "rejected") byKey.set(key, p);
-  }
   const repoKey = input.repo.toLowerCase();
+  const byKey = new Map<string, GraphProposal>();
+  // An impl branch with no PR claims the open PR whose head branch it is on the delivery repository.
+  const byHead = new Map<string, GraphProposal>();
+  for (const p of input.proposals) {
+    if (p.status === "rejected") continue;
+    const key = p.implPr === null ? null : pullKey(p.implPr);
+    if (key !== null) byKey.set(key, p);
+    else if (p.implBranch?.repo != null && p.implBranch.repo.toLowerCase() === repoKey) {
+      byHead.set(p.implBranch.branch, p);
+    }
+  }
   const parents = parentsOf(input.pulls, input.shut ?? new Map(), input.base.branch);
   const byNumber = new Map(input.pulls.map((p) => [p.number, p]));
   const headOf = (n: number | null): string | null =>
@@ -310,7 +322,7 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
               ? undefined
               : input.compare(grand, cmp.mergeBase);
           });
-    const proposal = byKey.get(`${repoKey}#${pull.number}`) ?? null;
+    const proposal = byKey.get(`${repoKey}#${pull.number}`) ?? byHead.get(pull.branch) ?? null;
     nodes.set(pull.number, {
       number: pull.number,
       url: pull.url,
@@ -358,11 +370,26 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
   const offChain = [...nodes.keys()].filter((n) => chain.off.has(n)).sort((a, b) => a - b);
 
   const placed = new Set([...nodes.keys()].map((n) => `${repoKey}#${n}`));
+  const claimed = new Set(
+    [...nodes.values()].flatMap((n) => (n.proposal === null ? [] : [n.proposal.number])),
+  );
   const byBranch = new Map(input.pulls.map((p) => [p.branch, p.number]));
+  const branchOnly = input.proposals
+    .filter((p) => p.status !== "rejected" && p.implPr === null && p.implBranch != null)
+    .filter((p) => !claimed.has(p.number))
+    .map((p) => ({
+      number: p.number,
+      title: p.title,
+      status: p.status,
+      implPr: null,
+      branch: p.implBranch!.label,
+      reason: (p.implBranch!.repo === null ? "unread" : "no-pr") as ProposalGraphUnplacedReason,
+      at: null,
+      into: null,
+    }));
   const unplaced = input.proposals
     .filter((p) => p.status !== "rejected" && p.implPr !== null)
     .filter((p) => !placed.has(pullKey(p.implPr!) ?? ""))
-    .sort((a, b) => a.number - b.number)
     .map((p) => {
       const key = pullKey(p.implPr!) ?? "";
       const pull = input.implPulls?.get(key) ?? null;
@@ -378,6 +405,7 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
         title: p.title,
         status: p.status,
         implPr: p.implPr!,
+        branch: p.implBranch?.label ?? null,
         ...unplacedReason({
           pull,
           onDelivery: key.startsWith(`${repoKey}#`),
@@ -399,7 +427,7 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     nodes: [...chain.order, ...offChain].map((n) => nodes.get(n)!),
     top: chain.top,
     tops: chain.tops,
-    unplaced,
+    unplaced: [...unplaced, ...branchOnly].sort((a, b) => a.number - b.number),
     errors: input.errors,
     checkedAt: input.checkedAt,
     deployments: input.deployments.map((deployment) =>

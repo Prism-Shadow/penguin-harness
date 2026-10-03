@@ -282,3 +282,71 @@ describe("buildGraph: why an impl PR is not on the graph", () => {
     ]);
   });
 });
+
+describe("buildGraph: an impl branch with no PR", () => {
+  it("claims the open PR on the delivery repository whose head branch it is, else is listed as no-pr", () => {
+    const branch = (label: string, repo: string | null, name: string) => ({
+      label,
+      repo,
+      branch: name,
+    });
+    const proposals = [
+      // Claims PR 1 (branch b1) on acme/site.
+      { n: 1, implBranch: branch("origin/b1", "acme/site", "b1") },
+      // The same branch name on another repository claims nothing.
+      { n: 2, implBranch: branch("fork/b2", "me/site", "b2") },
+      // No open PR on that branch yet.
+      { n: 3, implBranch: branch("origin/later", "acme/site", "later") },
+      // A remote that resolved to no repository.
+      { n: 4, implBranch: branch("ghost/b2", null, "b2") },
+      // A rejected proposal claims nothing and is not listed.
+      { n: 5, implBranch: branch("origin/b2", "acme/site", "b2"), status: "rejected" as const },
+    ].map((p) => ({
+      number: p.n,
+      title: `P${p.n}`,
+      status: p.status ?? ("ready" as const),
+      implPr: null,
+      implBranch: p.implBranch,
+    }));
+    const g = graph(
+      [pull(1, "dev"), pull(2, "b1")],
+      { [`${DEV}...${sha("1")}`]: ahead(), [`${sha("1")}...${sha("2")}`]: ahead() },
+      { proposals },
+    );
+    expect(g.nodes.map((n) => [n.number, n.proposal?.number ?? null])).toEqual([
+      [1, 1],
+      [2, null],
+    ]);
+    expect(g.unplaced.map((u) => [u.number, u.reason, u.implPr, u.branch])).toEqual([
+      [2, "no-pr", null, "fork/b2"],
+      [3, "no-pr", null, "origin/later"],
+      [4, "unread", null, "ghost/b2"],
+    ]);
+  });
+
+  it("an impl PR wins over a branch name: a proposal with a PR is placed by it", () => {
+    const g = graph(
+      [pull(1, "dev")],
+      { [`${DEV}...${sha("1")}`]: ahead() },
+      {
+        proposals: [
+          {
+            number: 7,
+            title: "P7",
+            status: "ready",
+            implPr: "https://github.com/acme/site/pull/1",
+            implBranch: { label: "origin/b1", repo: "acme/site", branch: "b1" },
+          },
+          {
+            number: 8,
+            title: "P8",
+            status: "ready",
+            implPr: null,
+            implBranch: { label: "origin/b1", repo: "acme/site", branch: "b1" },
+          },
+        ],
+      },
+    );
+    expect(g.nodes[0]!.proposal?.number).toBe(7);
+  });
+});

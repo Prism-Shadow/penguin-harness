@@ -34,6 +34,8 @@
  *                    | conclude <n> -m <text> [--discussion <session_id>]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
  *                    | approve <n> | reject <n> --reason <s> | groups
+ *                    | impl <n> [url] [--head <remote> <branch> --base <remote> <branch>] | impl --adopt
+ *                    | diff <n> [--stat]
  *                    | deploy <n> --to <id> [--dry-run] [-- <args...>]
  *                    | deploy-script add <id> [--description <s>] -- <command...> | ls | rm <id>
  *                    (the company-proposals plugin's routes: without the plugin, every one is a 404)
@@ -82,7 +84,6 @@ import type {
   OrgTicketsResponse,
   OrganizationDetail,
   OrganizationsResponse,
-  ProposalAdoptImplResponse,
   ProposalCommentsResponse,
   ProposalDetail,
   ProposalGraphNode,
@@ -105,7 +106,8 @@ import {
   ServerClient,
 } from "../client.js";
 import { getSessionInfo } from "../server-session.js";
-import { registerProposalDeploy } from "./proposal-deploy.js";
+import { registerProposalDeploy, type DeployKit } from "./proposal-deploy.js";
+import { implLine, registerProposalImpl } from "./proposal-impl.js";
 import { dim } from "../render.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -598,7 +600,7 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
 
 /**
  * `proposal graph`: the chain from the base branch, one PR per line indented by its depth,
- * then the PRs off the chain with the reason each is off, and the proposals whose impl PR is not
+ * then the PRs off the chain with the reason each is off, and the proposals whose impl is not
  * on the graph with the reason why. Each line: the PR, its branch and head, the layer's size,
  * the marks, the proposal, the origins' twins. Relations, statuses and marks stay in English:
  * they are field values; the reasons are sentences and follow the locale.
@@ -692,7 +694,7 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
             ...g.unplaced.map((p) =>
               indent(
                 1,
-                `proposal #${p.number} ${p.status}  ${p.implPr}  [${t.org.graphUnplacedReason(
+                `proposal #${p.number} ${p.status}  ${p.implPr ?? p.branch ?? "?"}  [${t.org.graphUnplacedReason(
                   p.reason,
                   label(p.at),
                   p.into ?? "?",
@@ -755,10 +757,7 @@ function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): 
       ? [t.org.proposalRevisedAfterApproval(d.approvedRevision, d.revision)]
       : []),
     t.org.proposalPeople(d.author, d.implementer, d.delegatedBy),
-    // A server older than impl PRs sends no field.
-    ...(d.implPr !== undefined && d.implPr !== null
-      ? [t.org.proposalImplPr(d.implPr.label, d.implPr.url)]
-      : []),
+    ...(implLine(d, t) !== null ? [implLine(d, t)!] : []),
     ...(d.brief.trim() !== "" ? [t.org.proposalBrief(d.brief)] : []),
     ...(d.sessions.length > 0 ? [t.org.proposalSessions(d.sessions.join(", "))] : []),
   ];
@@ -2264,50 +2263,6 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     }
   });
 
-  scoped(
-    proposal
-      .command("impl [number] [url]")
-      .description(t.org.proposalImplDesc)
-      .option("--adopt", t.org.proposalImplAdopt),
-    t,
-  ).action(async (rawNumber: string | undefined, rawUrl: string | undefined, opts) => {
-    if (opts.adopt === true) {
-      const scope = await orgScope(opts, t);
-      if (scope === null) return;
-      const res = await proposalRequest<ProposalAdoptImplResponse>(
-        scope,
-        t,
-        "POST",
-        "/adopt-impl",
-        { ...actorFields() },
-      );
-      if (res === null) return;
-      if (opts.json === true) printJson(res);
-      else {
-        for (const a of res.adopted) printLine(t.org.proposalImplSet(a.number, a.url));
-        for (const a of res.ambiguous)
-          printLine(t.org.proposalImplAmbiguous(a.number, a.urls.join(", ")));
-        for (const s of res.skipped) printLine(t.org.proposalImplSkipped(s.number, s.reason));
-      }
-      return;
-    }
-    if (rawNumber === undefined || rawUrl === undefined) {
-      fail(t, t.org.proposalImplUsage());
-      return;
-    }
-    const number = parseProposalNumber(rawNumber, t);
-    if (number === null) return;
-    const scope = await orgScope(opts, t);
-    if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "PUT", `/${number}/impl`, {
-      url: rawUrl,
-      ...actorFields(),
-    });
-    if (detail === null) return;
-    if (opts.json === true) printJson(detail);
-    else printLine(t.org.proposalImplSet(detail.number, detail.implPr?.url ?? rawUrl));
-  });
-
   scoped(proposal.command("graph").description(t.org.proposalGraphDesc), t).action(async (opts) => {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
@@ -2322,7 +2277,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     else process.stdout.write(renderGraph(graph, t));
   });
 
-  registerProposalDeploy(proposal, t, {
+  const kit: DeployKit = {
     scoped: (cmd) => scoped(cmd, t),
     open: async (opts) => {
       const scope = await orgScope(opts, t);
@@ -2337,7 +2292,9 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     printJson,
     write: (text) => process.stdout.write(text),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  });
+  };
+  registerProposalImpl(proposal, t, kit);
+  registerProposalDeploy(proposal, t, kit);
 
   const deployment = proposal.command("deployment").description(t.org.proposalDeploymentDesc);
   scoped(

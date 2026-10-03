@@ -400,6 +400,180 @@ describe("ProposalService", () => {
     expect((await service.adoptImpl(PROJECT, ORG, BOSS)).adopted).toEqual([]);
   });
 
+  it("registers an impl branch through the routes, attaches the PR opened for its head, and answers its patch", async () => {
+    const pulls: Record<string, unknown> = {
+      "repos/acme/site/pulls/9": {
+        head_repo: "me/site",
+        head: "feat/x",
+        sha: "a".repeat(40),
+        base_repo: "acme/site",
+        base: "dev",
+      },
+      "repos/acme/site/pulls/10": {
+        head_repo: "acme/site",
+        head: "other",
+        sha: "b".repeat(40),
+        base_repo: "acme/site",
+        base: "dev",
+      },
+      "repos/me/site/branches/feat/x": "a".repeat(40),
+      "repos/acme/site/branches/other": "b".repeat(40),
+      "repos/acme/site/compare/dev...other": {
+        merge_base: "c".repeat(40),
+        ahead: 1,
+        behind: 0,
+        files: [],
+      },
+      "repos/acme/site/compare/dev...me:feat/x": {
+        merge_base: "c".repeat(40),
+        ahead: 1,
+        behind: 0,
+        url: "https://github.com/acme/site/compare/dev...me:feat/x",
+        files: [{ filename: "a.ts", status: "added", additions: 2, deletions: 0, patch: "@@" }],
+      },
+    };
+    const gh: RunGh = async (args) => {
+      const p = args[1]!;
+      if (p in pulls) return JSON.stringify(pulls[p]);
+      throw new Error(`HTTP 404: ${p}`);
+    };
+    service = new ProposalService({
+      gateway,
+      agents,
+      root,
+      settings,
+      log,
+      gh,
+      git: async () =>
+        [
+          "origin\thttps://github.com/acme/site.git (fetch)",
+          "fork\tgit@github.com:me/site.git (fetch)",
+        ].join("\n"),
+    });
+    const first = await delegated();
+    const second = await delegated();
+    const app = new Hono();
+    app.use(async (c, next) => {
+      c.set("user" as never, { userId: "boss" } as never);
+      c.set("sessionVia" as never, "token" as never);
+      await next();
+    });
+    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service, deploysFor(service)));
+    const call = (method: string, suffix: string, body?: unknown) =>
+      app.request(`/p/${PROJECT}/o/${ORG}/proposals${suffix}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const codeOf = async (res: Response) =>
+      ((await res.json()) as { error: { code: string } }).error.code;
+    const head = { remote: "fork", branch: "feat/x" };
+    const base = { remote: "origin", branch: "main" };
+
+    // No impl yet: no patch.
+    const none = await call("GET", `/${first}/impl/diff`);
+    expect(none.status).toBe(409);
+    expect(await codeOf(none)).toBe("no_impl");
+
+    // Head and base go together, and each remote must name a GitHub repository.
+    expect((await call("PUT", `/${first}/impl`, { head, agentId: "acme_dev" })).status).toBe(400);
+    const unknown = await call("PUT", `/${first}/impl`, {
+      head: { remote: "nowhere", branch: "feat/x" },
+      base,
+      agentId: "acme_dev",
+    });
+    expect(unknown.status).toBe(400);
+    expect(await codeOf(unknown)).toBe("impl_remote_unknown");
+    expect(
+      (await call("PUT", `/${first}/impl`, { head: { remote: "origin", branch: "a b" }, base }))
+        .status,
+    ).toBe(400);
+
+    // The branch pair alone: no PR needed.
+    const set = await call("PUT", `/${first}/impl`, { head, base, agentId: "acme_dev" });
+    expect(set.status).toBe(200);
+    const detail = (await set.json()) as { impl: unknown; implPr: unknown };
+    expect(detail.impl).toMatchObject({ head, base, pr: null, by: "agent:acme_dev" });
+    expect(detail.implPr).toBeNull();
+    expect((await service.get(PROJECT, ORG, first, BOSS)).impl).toMatchObject({ head, base });
+
+    // The same head for a second proposal is taken.
+    const taken = await call("PUT", `/${second}/impl`, { head, base, agentId: "acme_qa" });
+    expect(taken.status).toBe(409);
+    expect(await codeOf(taken)).toBe("impl_branch_taken");
+
+    // A PR whose head is another branch does not attach.
+    const mismatch = await call("PUT", `/${first}/impl`, {
+      url: "https://github.com/acme/site/pull/10",
+      agentId: "acme_dev",
+    });
+    expect(mismatch.status).toBe(409);
+    expect(await codeOf(mismatch)).toBe("impl_pr_mismatch");
+
+    // The PR opened from the head attaches, and its base replaces the declared one.
+    const attached = await call("PUT", `/${first}/impl`, {
+      url: "https://github.com/acme/site/pull/9",
+      agentId: "acme_dev",
+    });
+    expect(attached.status).toBe(200);
+    const withPr = (await attached.json()) as { impl: unknown; implPr: unknown };
+    expect(withPr.impl).toMatchObject({
+      head,
+      base: { remote: "origin", branch: "dev" },
+      pr: "https://github.com/acme/site/pull/9",
+    });
+    expect(withPr.implPr).toMatchObject({ label: "acme/site#9" });
+
+    // The patch: the merge base of base and head, up to head.
+    const diff = await call("GET", `/${first}/impl/diff`);
+    expect(diff.status).toBe(200);
+    expect(await diff.json()).toMatchObject({
+      head: { remote: "fork", repo: "me/site", branch: "feat/x" },
+      base: { remote: "origin", repo: "acme/site", branch: "dev" },
+      headSha: "a".repeat(40),
+      mergeBase: "c".repeat(40),
+      files: [{ path: "a.ts", additions: 2 }],
+      pr: "https://github.com/acme/site/pull/9",
+    });
+
+    // A PR registered alone (as every impl line written before impl branches is) has its head and
+    // base read off the PR; declaring that same head later keeps the PR.
+    await service.setImpl(
+      PROJECT,
+      ORG,
+      second,
+      { url: "https://github.com/acme/site/pull/10" },
+      author,
+    );
+    const fromPr = (await (await call("GET", `/${second}/impl/diff`)).json()) as {
+      head: unknown;
+      base: unknown;
+    };
+    expect(fromPr.head).toEqual({ remote: null, repo: "acme/site", branch: "other" });
+    expect(fromPr.base).toEqual({ remote: null, repo: "acme/site", branch: "dev" });
+    const declared = await service.setImpl(
+      PROJECT,
+      ORG,
+      second,
+      { head: { remote: "origin", branch: "other" }, base: { remote: "origin", branch: "dev" } },
+      author,
+    );
+    expect(declared.impl).toMatchObject({
+      head: { remote: "origin", branch: "other" },
+      pr: "https://github.com/acme/site/pull/10",
+    });
+    // A different head drops the PR.
+    const moved = await service.setImpl(
+      PROJECT,
+      ORG,
+      second,
+      { head: { remote: "origin", branch: "moved" }, base: { remote: "origin", branch: "dev" } },
+      author,
+    );
+    expect(moved.impl).toMatchObject({ pr: null });
+    expect(moved.implPr).toBeNull();
+  });
+
   it("answers 404 while company mode is off or the organization is missing, 403 to an outsider", async () => {
     gateway.enabled = false;
     expect(await refused(() => service.list(PROJECT, ORG, BOSS))).toEqual({
@@ -1579,7 +1753,7 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
-    await service.setImpl(PROJECT, ORG, n, url, author);
+    await service.setImpl(PROJECT, ORG, n, { url }, author);
     // Before approval the status answers first, GitHub is not asked.
     expect(await refused(() => service.merged(PROJECT, ORG, n, qa))).toEqual({
       status: 409,

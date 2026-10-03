@@ -1,6 +1,7 @@
 /**
  * Deploys: an organization registers its own deploy scripts, and a deploy runs one of them
- * against a pull request's head — a proposal's impl PR, or any open PR of the PR graph.
+ * against a head — a proposal's impl (its declared head branch, else its impl PR), or any open
+ * PR of the PR graph.
  *
  * How a project is built and where it ships differs from one company to the next (a
  * TypeScript monorepo pushed to a server, a C++ build uploaded somewhere, a release with no
@@ -21,8 +22,8 @@
  *
  * The script's environment is the server's plus:
  *   PENGUIN_DEPLOY_ID        the script id          PENGUIN_DEPLOY_RUN       the run id
- *   PENGUIN_DEPLOY_REPO      owner/repo of the PR   PENGUIN_DEPLOY_PR        the PR number
- *   PENGUIN_DEPLOY_PR_URL    the PR's URL           PENGUIN_DEPLOY_BRANCH    the PR's head branch
+ *   PENGUIN_DEPLOY_REPO      owner/repo of the head PENGUIN_DEPLOY_PR        the PR number (empty: no PR)
+ *   PENGUIN_DEPLOY_PR_URL    the PR's URL (empty)   PENGUIN_DEPLOY_BRANCH    the head branch
  *   PENGUIN_DEPLOY_HEAD      the head commit (full sha) — what to deploy
  *   PENGUIN_DEPLOY_PROPOSAL  the proposal number, empty for a PR no proposal registered
  *   PENGUIN_DEPLOY_BY        who started it (`user:<id>` / `agent:<id>`)
@@ -40,6 +41,7 @@ import type {
   ProposalDeployStartResponse,
 } from "@prismshadow/penguin-server/api";
 import { GITHUB_NAME, ghRunner, parsePullUrl, type RunGh } from "./pr-status.js";
+import { ImplBranchError, branchTip } from "./impl-branch.js";
 import { ProposalError } from "./service.js";
 import { startProcess, type StartProcess } from "./deploy-process.js";
 
@@ -58,13 +60,20 @@ const MAX_ARGS = 64;
 const MAX_ARG_LENGTH = 4096;
 const MAX_DESCRIPTION = 500;
 
-/** A PR's head, as GitHub reports it. */
+/** The head to deploy, as GitHub reports it; `number` and `url` are null for an impl branch with no PR. */
 interface PullHead {
   repo: string;
-  number: number;
-  url: string;
+  number: number | null;
+  url: string | null;
   branch: string;
   head: string;
+}
+
+/** A proposal's impl as a deploy reads it: its declared head (resolved to a repository), and its PR. */
+export interface DeployImpl {
+  /** null when the impl was registered as a PR alone: the PR's head is deployed. */
+  head: { repo: string; branch: string } | null;
+  pr: string | null;
 }
 
 /** What a deploy needs of the organization, behind the service's access check (ProposalService.deployScope). */
@@ -74,8 +83,8 @@ export interface DeployScope {
   principal: string;
   /** The caller is a person, not an employee. */
   person: boolean;
-  /** A proposal's impl PR URL, null when it has none; throws 404 for a proposal that does not exist. */
-  implPr(number: number): string | null;
+  /** A proposal's impl, null when it has none; throws 404 for a proposal that does not exist. */
+  impl(number: number): Promise<DeployImpl | null>;
   /** The PR graph's repository (`owner/repo`), null when none is configured or found. */
   deliveryRepo(): Promise<string | null>;
 }
@@ -93,7 +102,7 @@ export interface DeployDeps {
 
 export interface DeployRequest {
   script: string;
-  /** Deploy this proposal's impl PR … */
+  /** Deploy this proposal's impl … */
   proposal?: number;
   /** … or this PR of the delivery repository (the PR graph's nodes). */
   pr?: number;
@@ -256,19 +265,20 @@ export class DeployService {
     });
   }
 
-  /** The PR to deploy and where its head stands now. */
+  /** The head to deploy and where it stands now: an impl's declared head branch, else a PR's head. */
   private async pullHead(scope: DeployScope, req: DeployRequest): Promise<PullHead> {
     let url: string;
     if (req.proposal !== undefined) {
-      const impl = scope.implPr(req.proposal);
+      const impl = await scope.impl(req.proposal);
       if (impl === null) {
         throw new ProposalError(
           409,
-          "no_impl_pr",
-          `Proposal #${req.proposal} has no impl PR: register one with \`penguin org proposal impl\` first.`,
+          "no_impl",
+          `Proposal #${req.proposal} has no impl: register its branch or its PR with \`penguin org proposal impl\` first.`,
         );
       }
-      url = impl;
+      if (impl.head !== null) return this.branchHead(impl.head, impl.pr);
+      url = impl.pr!;
     } else {
       const repo = await scope.deliveryRepo();
       if (repo === null) {
@@ -316,6 +326,29 @@ export class DeployService {
     };
   }
 
+  /** A declared head branch's tip, with the PR on it when one is registered. */
+  private async branchHead(
+    head: { repo: string; branch: string },
+    pr: string | null,
+  ): Promise<PullHead> {
+    let sha: string;
+    try {
+      sha = await branchTip(this.deps.gh ?? ghRunner(), head.repo, head.branch);
+    } catch (err) {
+      if (err instanceof ImplBranchError)
+        throw new ProposalError(err.status, err.code, err.message);
+      throw err;
+    }
+    const ref = pr === null ? null : parsePullUrl(pr);
+    return {
+      repo: head.repo,
+      number: ref?.number ?? null,
+      url: ref === null ? null : pr,
+      branch: head.branch,
+      head: sha,
+    };
+  }
+
   async start(
     projectId: string,
     orgId: string,
@@ -343,7 +376,7 @@ export class DeployService {
       throw new ProposalError(
         409,
         "head_moved",
-        `${pull.repo}#${pull.number} is at ${pull.head.slice(0, 12)} now, not ${req.head.slice(0, 12)}: look again before deploying.`,
+        `${headLabel(pull)} is at ${pull.head.slice(0, 12)} now, not ${req.head.slice(0, 12)}: look again before deploying.`,
       );
     }
     const plan: ProposalDeployPlan = {
@@ -385,7 +418,7 @@ export class DeployService {
     const live: LiveRun = { run, output: "", dropped: 0, orgKey };
     this.runs.set(run.id, live);
     this.prune(orgKey);
-    const label = `[company-proposals] deploy ${run.id} ${plan.script} ${plan.repo}#${plan.pr}@${plan.head.slice(0, 12)}`;
+    const label = `[company-proposals] deploy ${run.id} ${plan.script} ${headLabel(plan)}@${plan.head.slice(0, 12)}`;
     this.deps.log(`${label} started by ${run.by}`);
     const proc = (this.deps.start ?? startProcess)(plan.argv, {
       cwd: scope.org.workspace,
@@ -394,8 +427,8 @@ export class DeployService {
         PENGUIN_DEPLOY_ID: plan.script,
         PENGUIN_DEPLOY_RUN: run.id,
         PENGUIN_DEPLOY_REPO: plan.repo,
-        PENGUIN_DEPLOY_PR: String(plan.pr),
-        PENGUIN_DEPLOY_PR_URL: plan.prUrl,
+        PENGUIN_DEPLOY_PR: plan.pr === null ? "" : String(plan.pr),
+        PENGUIN_DEPLOY_PR_URL: plan.prUrl ?? "",
         PENGUIN_DEPLOY_BRANCH: plan.branch,
         PENGUIN_DEPLOY_HEAD: plan.head,
         PENGUIN_DEPLOY_PROPOSAL: plan.proposal === null ? "" : String(plan.proposal),
@@ -475,3 +508,14 @@ const scriptMissing = (id: string): ProposalError =>
     "deploy_script_not_found",
     `No deploy script ${id}: \`penguin org proposal deploy-script ls\` lists the registered ones.`,
   );
+
+/** `owner/repo#n` for a PR, `owner/repo:branch` for a head branch with none. */
+function headLabel(h: {
+  repo: string;
+  branch: string;
+  pr?: number | null;
+  number?: number | null;
+}): string {
+  const n = h.pr ?? h.number ?? null;
+  return n === null ? `${h.repo}:${h.branch}` : `${h.repo}#${n}`;
+}
