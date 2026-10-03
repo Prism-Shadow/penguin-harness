@@ -209,6 +209,9 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       shell: shellPath,
       env,
       pathFirst: first,
+      // Wide enough that no echoed path wraps onto a second screen line: macOS's temp dirs
+      // (/var/folders/…/T/…) run past the default 80 columns, and the assertions read whole lines.
+      cols: 400,
     });
     await waitUntil(
       () => screen(session).some((line) => line.startsWith(PROMPT)),
