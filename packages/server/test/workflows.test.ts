@@ -7,7 +7,8 @@
  *   under ui/ (no default document, nothing outside it) and dispatches to its handler, and its
  *   state persists on disk across a reload.
  * - Its own state write is not an edit: the revision holds and nothing is left staged.
- * - It opens and runs Sessions the SDK's way, inside its own Project only.
+ * - It opens and runs Sessions the SDK's way, inside its own Project only, with allow-all:
+ *   nobody is there to answer an ask.
  * - A handler takes any body (a form only from the app's own pages) and sends back any
  *   content type, a stream as it is produced and a redirect relative to its mount, never the
  *   app's cookies; JSON stays the default.
@@ -30,7 +31,7 @@
  * compile; each editing case needs a folder of its own to break, which it gets in an Agent of
  * its own within the editing group's one app.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
@@ -265,10 +266,19 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
       ran: "run: this Project has no Session 'not-a-session'",
       agents: [AGENT],
     });
-    const own = await (await owner.get(`${BASE}/demo/api/open`)).json();
-    // Its own Agent passes the Project check and reaches the session runtime, which in this
-    // fixture has no model key to open a Session with.
-    expect(own).toMatchObject({ opened: expect.stringContaining("API key") });
+    const create = vi.spyOn(t.deps.sessionService, "createSession");
+    try {
+      const own = await (await owner.get(`${BASE}/demo/api/open`)).json();
+      // Its own Agent passes the Project check and reaches the session runtime, which in this
+      // fixture has no model key to open a Session with.
+      expect(own).toMatchObject({ opened: expect.stringContaining("API key") });
+      // Unattended: allow-all, whatever approval mode the Sandbox card's default preset gives.
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: AGENT, approvalMode: "allow-all" }),
+      );
+    } finally {
+      create.mockRestore();
+    }
   });
 
   it("hands a handler any body and sends back any content type; JSON stays the default", async () => {

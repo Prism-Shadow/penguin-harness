@@ -305,7 +305,8 @@ export class SessionService {
   /**
    * The approval mode a Session created without one starts with. An organization's Session
    * keeps `allow-all`: its runtime names the mode it wants, and nobody is there to answer an
-   * ask a preset might bring.
+   * ask a preset might bring. The other unattended creators — a scheduled run, a workflow —
+   * pass `allow-all` themselves (scheduler.ts, workflows/service.ts).
    */
   private startApproval(requested: ApprovalMode | undefined, client?: string): ApprovalMode {
     if (requested !== undefined) return requested;

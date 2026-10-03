@@ -64,6 +64,11 @@ export interface ScheduleSessionCreatorShape {
     workspace?: string;
     modelId?: string;
     provider?: string;
+    /**
+     * Unattended creators pass `allow-all`: nobody is there to answer an ask the default
+     * preset's approval mode would bring.
+     */
+    approvalMode?: "allow-all";
     source?: "schedule";
   }): Promise<{ sessionId: string }>;
 }
@@ -441,6 +446,8 @@ export class Scheduler implements Scheduling {
         ...(def.workspace !== undefined ? { workspace: def.workspace } : {}),
         ...(def.modelId !== undefined ? { modelId: def.modelId } : {}),
         ...(def.provider !== undefined ? { provider: def.provider } : {}),
+        // Unattended: the Sandbox card's default preset may ask, and nobody would answer.
+        approvalMode: "allow-all",
         source: "schedule",
       });
       await this.send(projectId, agentId, def, state, info.sessionId);
