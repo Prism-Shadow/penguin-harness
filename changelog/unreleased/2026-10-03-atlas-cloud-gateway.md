@@ -3,7 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** feature
 - **Scope:** `model-catalog`, `ui`, `web`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#959](https://github.com/Prism-Shadow/penguin-harness/pull/959)
 
 [中文版](2026-10-03-atlas-cloud-gateway.zh.md)
 
