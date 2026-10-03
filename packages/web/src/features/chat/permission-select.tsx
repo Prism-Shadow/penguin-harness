@@ -43,12 +43,14 @@ import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
   PERMISSION_LEVEL_TONE,
+  approvalModePick,
   firstUnavailableBackend,
   matchPreset,
   permissionLevel,
   permissionMenu,
   presetBlock,
   presetEffects,
+  presetPick,
   presetsOf,
   sandboxSwitchOff,
 } from "../../lib/permission-level";
@@ -175,15 +177,15 @@ export function PermissionSelect({
       setOpen(false);
       return;
     }
-    save({ approvalMode: p.approvalMode, sandbox: { mode: p.mode, network: p.network } });
+    save(presetPick(p));
   };
-  // Switch off: only the approval mode changes; the Session keeps its own policy.
+  // Switch off: only the approval mode changes; the pick carries no policy (see PermissionPick).
   const pickMode = (mode: ApprovalMode) => {
     if (mode === approvalMode) {
       setOpen(false);
       return;
     }
-    save({ approvalMode: mode, sandbox: { mode: sandbox.mode, network: sandbox.network } });
+    save(approvalModePick(mode));
   };
   const save = (next: PermissionPick) => {
     setOpen(false);

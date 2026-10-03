@@ -102,10 +102,34 @@ export function networkBlock(
 /** What a Session starts from when the server has not said: confinement off, network open. */
 export const UNCONFINED: SessionSandbox = { mode: "danger-full-access", network: "open" };
 
-/** One pick from the composer's menu: a preset's three values, saved together. */
+/**
+ * One pick from the composer's menu: a preset's three values, saved together — or, with the
+ * Sandbox switch off, the approval mode alone (`sandbox` absent). An approval-mode pick never
+ * carries the policy: echoing the current one back would pin it in a draft (a later switch-on
+ * then sends an unconfined level a member may not have) and re-check it on a Session (one
+ * holding `local` on a server that cannot enforce it could not change its mode at all).
+ */
 export interface PermissionPick {
   approvalMode: ApprovalMode;
-  sandbox: Pick<SessionSandbox, "mode" | "network">;
+  sandbox?: Pick<SessionSandbox, "mode" | "network">;
+}
+
+/** A preset's pick: its approval mode and its policy together. */
+export function presetPick(p: SessionSandboxPreset): PermissionPick {
+  return { approvalMode: p.approvalMode, sandbox: { mode: p.mode, network: p.network } };
+}
+
+/** An approval-mode pick (switch off): the mode alone, the policy untouched. */
+export function approvalModePick(mode: ApprovalMode): PermissionPick {
+  return { approvalMode: mode };
+}
+
+/** A draft's sandbox pick after `pick`: only a preset pick changes it. */
+export function draftSandboxAfter(
+  prev: Partial<SessionSandbox>,
+  pick: PermissionPick,
+): Partial<SessionSandbox> {
+  return pick.sandbox === undefined ? prev : { ...prev, ...pick.sandbox };
 }
 
 /**

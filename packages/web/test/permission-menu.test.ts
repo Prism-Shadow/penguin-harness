@@ -5,10 +5,18 @@
  *   picker's order, and no preset — an organization's Session still does not get always-ask.
  * - Given the switch on, or a server that does not report it, the menu lists the presets in
  *   the menu, as before.
+ * - An approval-mode pick (switch off) carries no policy: a draft keeps its sandbox unpicked,
+ *   so the server's settings still decide it at creation; a preset pick sets both halves.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionSandbox } from "@prismshadow/penguin-server/api";
-import { BUILTIN_PRESETS, permissionMenu } from "../src/lib/permission-level";
+import {
+  BUILTIN_PRESETS,
+  approvalModePick,
+  draftSandboxAfter,
+  permissionMenu,
+  presetPick,
+} from "../src/lib/permission-level";
 import { APPROVAL_MODES, approvalModeChoices } from "../src/features/chat/approval-mode";
 
 const UNCONFINED: SessionSandbox = { mode: "danger-full-access", network: "open" };
@@ -57,5 +65,26 @@ describe("the permission menu by the Sandbox switch", () => {
       "mine",
       "read-only",
     ]);
+  });
+});
+
+describe("what a pick from the menu carries", () => {
+  it("an approval-mode pick sends the mode alone and leaves a draft's sandbox unpicked", () => {
+    const pick = approvalModePick("always-ask");
+    expect(pick).toEqual({ approvalMode: "always-ask" });
+    expect("sandbox" in pick).toBe(false);
+    expect(draftSandboxAfter({}, pick)).toEqual({});
+    // An earlier preset pick stays what it was.
+    expect(draftSandboxAfter({ mode: "read-only" }, pick)).toEqual({ mode: "read-only" });
+  });
+
+  it("a preset pick sends its approval mode and its policy together", () => {
+    const readOnly = BUILTIN_PRESETS.find((p) => p.id === "read-only")!;
+    const pick = presetPick(readOnly);
+    expect(pick).toEqual({
+      approvalMode: readOnly.approvalMode,
+      sandbox: { mode: readOnly.mode, network: readOnly.network },
+    });
+    expect(draftSandboxAfter({}, pick)).toEqual({ mode: readOnly.mode, network: readOnly.network });
   });
 });

@@ -1625,7 +1625,8 @@ export function ChatPage() {
       return api
         .patchSession(selected.sessionId, {
           approvalMode: pick.approvalMode,
-          sandbox: pick.sandbox,
+          // Absent for an approval-mode pick: the Session's policy is left as it is.
+          ...(pick.sandbox !== undefined ? { sandbox: pick.sandbox } : {}),
         })
         .then((res) => replace(res.session))
         .catch((e: unknown) => toastError(apiErrorText(e)))

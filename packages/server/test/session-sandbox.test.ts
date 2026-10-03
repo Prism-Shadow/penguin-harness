@@ -449,6 +449,29 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
     }
   });
 
+  it("an approval-mode change alone leaves the policy unchecked and untouched", async () => {
+    const { t, owner, projectId } = await ownerProject("owner-mode-only");
+    try {
+      type Read = { session: { sessionId: string; approvalMode: string; sandbox: SessionSandbox } };
+      const id = (
+        (await (
+          await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
+        ).json()) as Read
+      ).session.sessionId;
+      // The Session holds localhost-only networking, which no backend here can enforce (an
+      // admin picked it while one was installed): its approval mode must still change.
+      const held = { ...t.deps.sessionService.sandboxOf(t.deps.sessionsRepo.findById(id)!) };
+      t.deps.sessionService.updateSandbox(id, { ...held, network: "local" });
+      const res = await owner.patch(`/api/sessions/${id}`, { approvalMode: "read-only" });
+      expect(res.status, await res.clone().text()).toBe(200);
+      const after = ((await res.json()) as Read).session;
+      expect(after).toMatchObject({ approvalMode: "read-only", sandbox: { network: "local" } });
+      expect(t.deps.sessionsRepo.findById(id)!.sandbox).toEqual({ ...held, network: "local" });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("marks the presets wider than the server's settings as above the ceiling", async () => {
     const { t, admin, owner, projectId } = await ownerProject("owner-ceiling");
     try {

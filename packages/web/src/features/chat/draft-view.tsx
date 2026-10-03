@@ -63,7 +63,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { UNCONFINED } from "../../lib/permission-level";
+import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
 import type { PermissionPick } from "../../lib/permission-level";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
@@ -756,11 +756,12 @@ export function DraftView({
     // home, or the next Session would be created on the machine the previous pick named.
     setWorkspaceMachine(machineId ?? null);
   }, []);
-  // A preset sets both halves of the draft's level at once, as it does on a Session.
+  // A preset sets both halves of the draft's level at once, as it does on a Session; an
+  // approval-mode pick (switch off) leaves the sandbox half unpicked, so the settings decide it.
   const changePermission = useCallback((pick: PermissionPick) => {
     touchedRef.current.approval = true;
     setApprovalMode(pick.approvalMode);
-    setSandboxPick((prev) => ({ ...prev, ...pick.sandbox }));
+    setSandboxPick((prev) => draftSandboxAfter(prev, pick));
   }, []);
 
   // Synchronous in-flight guard for the one send entry point (the composer): a second
