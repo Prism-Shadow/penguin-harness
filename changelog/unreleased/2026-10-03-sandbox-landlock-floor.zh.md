@@ -15,21 +15,25 @@
 
 ## 沙盒卡片
 
-- 沙盒条目的 `backend.recommended` 改为列表：Linux 上是 `@penguinharness/sandbox-bwrap` 与 `@penguinharness/sandbox-dsh`，macOS 与 Windows 各一个包。没有安装后端时打开开关，会提示安装整个列表，并依次安装。
-- 卡片的「Backends:」一行改为写明本机实施什么、由什么实施，例如 `本机实施：文件写入，由 Landlock (dsh-local) 实施。本机不实施：网络隔离、仅本机网络、屏蔽路径。`每个已安装但未启用的后端移到这一行下方折叠的**更多信息**里，附原因，并说明保存卡片会重新检查。设置提示为此可以带 `details` / `detailsZh`。
+- 沙盒条目的 `backend.recommended` 改为列表：Linux 上是 `@penguinharness/sandbox-bwrap` 与 `@penguinharness/sandbox-dsh`，macOS 与 Windows 各一个包。没有安装后端时打开开关，会提示安装整个列表，并依次安装；其中一个安装失败时，提示框关闭，报告失败，并重新读取卡片。Web App 仍能读取较旧服务端报告的单个字符串（见[向后兼容](2026-10-03-backward-compatibility-sandbox-recommended.zh.md)）。
+- 卡片的「Backends:」一行改为写明本机实施什么、由什么实施，例如 `本机实施：文件写入，由 Landlock (dsh-local) 实施。本机不实施：网络隔离、仅本机网络、屏蔽路径、关闭临时目录。`它列出每个补上了前面后端所缺维度的后端。这一行下方折叠的**更多信息**先列出在用后端在本机留下的缺口，再列出每个已安装但未启用的后端，附原因，并说明保存卡片会重新检查。设置提示为此可以带 `details` / `detailsZh`。
+- 沙盒后端可以声明 `limits`（core 的 `SandboxProvider`），每条带中英文。DSH 适配器声明：无论哪一级，仅工作区可写下 Session scratchpad 都不可写。在 Landlock 下还说明临时目录就是宿主共享的 `/tmp`；在 Landlock ABI 低于 5 的内核上解释 `(partial)`：工作区外设备文件上的 ioctl 不受限制，ABI 低于 3 时截断文件也不受限制。
 - 有后端在用、但没有后端能隔离网络时，预设表里的「无网络」显示为灰色并写明在用的后端，保存时选择它会被拒绝，与「仅本机」一致。
+- 关闭临时目录成为一个维度 `closed-temp`：bubblewrap、Seatbelt 与 WSL 声明它，DSH 适配器不声明，因为 DSH 的每一级在仅工作区可写下都会放开一个临时目录。关闭了**临时目录可写**的封禁策略只路由给声明 `closed-temp` 的后端；一个都没挂载时按 fail-closed 拒绝，而不是在临时目录可写的情况下运行。只有适配器在用时，该开关保持开启并在下方写明原因，保存时关闭它会被拒绝；已经处于关闭的开关仍可拨动。设置分组的 `unavailable` 可以指明布尔字段的一个取值，`"true"` 或 `"false"`。
 - 「已保存的策略无法实施」的警告也覆盖断开网络或带屏蔽路径的完全访问（在预设之前保存的设置）。
 - 沙盒后端可以声明 `mechanism`（core 的 `SandboxProvider`）：bubblewrap 声明 `bubblewrap`，DSH 适配器声明其链条选中的一级（`Landlock`、`bubblewrap`、`Seatbelt` 或 Windows ACL 运行器，部分实施时带 `(partial)`）。
 
 ## 后端
 
-- DSH 适配器在加载时运行其链条的探测，因此在没有任何一级可用的主机上，加载会带着 DSH 的原因失败，而不是挂载一个拒绝每条命令的后端。
+- DSH 适配器在加载时选定所用的一级。在 Linux 上这会运行链条的探测，因此在 bubblewrap 与 Landlock 都不可用的主机上，加载会带着 DSH 的原因失败，而不是挂载一个拒绝每条命令的后端。macOS 与 Windows 各只有一级，DSH 不经探测直接选用。
+- 在 Landlock ABI 低于 5 的内核上（Ubuntu 24.04 的 6.8 为 ABI 4），Landlock 启动器每次运行都会打印 `landlock-run: partial enforcement (older Landlock ABI)`。现在 spawn 会从命令与钩子脚本 stderr 的开头去掉后端报告为提示性的行（core 的 `ConfinedSpawn.runnerLines`），之后的输出不做检查。
+- `@penguinharness/sandbox-dsh`、`sandbox-bwrap`、`sandbox-seatbelt` 与 `sandbox-wsl` 升为 0.2.3。随构建发布它们的机器，同一版本下优先加载构建自带的副本；但下载它们的机器（npm 全局安装）只下载自己没有的版本，而 npm 上每个版本只能发布一次：若版本仍是 0.2.2，已把 0.2.2 下载到 `<数据根>/plugins/` 的机器会继续运行旧内容，拿不到 `closed-temp` 声明。
 - bubblewrap 的拒绝原因带上 bwrap 的输出（`setting up uid map: Permission denied`，或启动错误），并说明 Ubuntu 上的 root 操作是可选的，只增加网络隔离与屏蔽路径。
 
 ## 输入框
 
 - 会话的沙盒视图报告 `maskPathsSupported`，策略带屏蔽路径时还报告 `masksPaths`。没有后端能屏蔽路径时，每个预设都显示为灰色，说明屏蔽路径会让每条命令被拒绝。
-- 「无网络」的原因改为说明本机的沙盒只封禁文件。
+- 「无网络」的原因改为说明本机的沙盒只封禁文件。它与屏蔽路径的原因都会点名在用的后端，会话的沙盒视图以 `backendsInUse` 报告它们。
 
 ## 文档
 
