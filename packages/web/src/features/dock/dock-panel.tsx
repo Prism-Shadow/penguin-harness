@@ -28,14 +28,15 @@
  * way. The boundary with the chat content resizes the dock — the right dock through the shared
  * side-panel width, the bottom dock through its height ratio.
  *
- * FULLSCREEN lays the surface over the whole window (the store says which surface, if any; the
- * frame draws it, keeping the dock's own box in the flow so nothing underneath reflows). The
- * strip, the "+" menu and the detach button keep working; what has no meaning with the surface
- * covering everything is put away — the move button, the header drag, dragging a tab out to the
- * other edge, the resize handle. The header's toggle (now corners in) and a round button floating
- * at the window's corner are the ways back, and the store drops fullscreen by itself when the surface stops qualifying (hidden, emptied, or
- * the other dock brought forward). Esc is left alone: the terminal, the editor and web pages each
- * own it.
+ * FULLSCREEN lays the surface over the chat page's column — the conversation, its toolbar and
+ * the other dock; the navigation beside it stays, with its own fold (the store says which
+ * surface, if any; the frame draws it, keeping the dock's own box in the flow so nothing
+ * underneath reflows, and animates the flip with the theme's layout motion). The strip, the "+"
+ * menu and the detach button keep working; what has no meaning with the surface covering the
+ * page is put away — the move button, the header drag, dragging a tab out to the other edge, the
+ * resize handle. The header's toggle (now corners in) is the one way back, and the store drops
+ * fullscreen by itself when the surface stops qualifying (hidden, emptied, or the other dock
+ * brought forward). Esc is left alone: the terminal, the editor and web pages each own it.
  */
 import {
   useCallback,
@@ -84,6 +85,7 @@ import {
   subscribeTerminalCloseRequests,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
+import { invalidateSlotClips } from "../builtin-browser/slot-registry";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
@@ -463,25 +465,22 @@ export function DockPanel({
 
   // ------------------------------------------------------------------------------ fullscreen
 
-  // The header's button toggles in place (corners out ↔ corners in), so a flip made there keeps
-  // the focus where it is, and a quick second click lands on the same button rather than on
-  // whatever slid into its slot. Leaving from the floating corner button unmounts that button,
-  // which would drop the focus on the body; the focus moves to the header's toggle instead. An
-  // exit the store forces (the agent opened a panel in the other dock) leaves the focus where the
-  // user had it. Programmatic focus after a click draws no ring; after a keypress it does, which
-  // is when it matters.
+  // The header's button toggles in place (corners out ↔ corners in): a flip made there keeps the
+  // focus where it is, and a quick second click lands on the same button rather than on whatever
+  // slid into its slot. It is the only control — the surface covers the page column, not the
+  // window, so nothing needs to float over it as a way out.
   const coarsePointer = useCoarsePointer();
-  const focusToggleAfterExit = useRef(false);
   const toggleFullscreen = () => setDockFullscreen(fullscreen ? null : position);
-  const exitFromCorner = () => {
-    focusToggleAfterExit.current = true;
-    setDockFullscreen(null);
-  };
-  useLayoutEffect(() => {
-    if (fullscreen || !focusToggleAfterExit.current) return;
-    focusToggleAfterExit.current = false;
-    rootRef.current?.querySelector<HTMLElement>("[data-testid='dock-fullscreen']")?.focus();
-  }, [fullscreen]);
+  // What the surface covers: the chat page column ([data-dock-host]) — the same box the bottom
+  // dock's height ratio and the drop preview measure. Read when the surface lifts and followed
+  // while it is full, so the frame need not know the page.
+  const dockHost = () => document.querySelector<HTMLElement>("[data-dock-host]");
+  // The built-in browser lays its page over the panel's slot by coordinates and caches, per slot,
+  // which ancestors clip it and whether it sits in a lifted surface. The frame's phase — not the
+  // store's flag — is what changes both: the box is lifted, and clipping, through its enter and
+  // exit animations, and back in the flow only once the exit has ended. Each step drops the
+  // caches once it is in the DOM; the layer's frame loop re-reads them on its next tick.
+  const onFullscreenPhase = () => invalidateSlotClips();
 
   // ------------------------------------------------------------------------------ add menu
 
@@ -761,7 +760,8 @@ export function DockPanel({
       headerProps={headerDragProps}
       movable={!merged && !fullscreen}
       fullscreen={fullscreen}
-      exitFullscreen={{ label: S.dock.exitFullscreen, onExit: exitFromCorner }}
+      fullscreenHost={dockHost}
+      onFullscreenPhase={onFullscreenPhase}
       tabs={
         // Drag sideways to reorder, drag out to move onto the other edge.
         <DockTabs
@@ -801,7 +801,7 @@ export function DockPanel({
             </DockHeaderButton>
           )}
           {/* Not in the picker state: with no tab there is nothing to show full screen. While
-              fullscreen it stays where it was, as the way back beside the floating one. */}
+              fullscreen it stays where it was, as the one way back. */}
           {tabs.length > 0 && (
             <DockHeaderButton
               label={fullscreen ? S.dock.exitFullscreen : S.dock.fullscreen}

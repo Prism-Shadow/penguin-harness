@@ -13,8 +13,8 @@
  * because the dock resizes, slides and moves with the layout around it and nothing announces
  * all of those. The pages have no stacking order of their own, except while the slot sits in a
  * dock surface gone fullscreen: that surface paints on a layer above the page, so the page on
- * screen (and the agent ring over it) steps up one layer with it, and back down when the
- * surface returns to the flow.
+ * screen (and the agent ring over it) steps up one layer with it — for as long as the surface is
+ * lifted, its enter and exit animations included — and back down once it is back in the flow.
  *
  * It also runs the lifecycle the server asks for over the user channel: `builtin_browser_open`
  * creates a page; as soon as the page's element knows its webContents id, the id claims the
@@ -43,13 +43,7 @@ import type { CSSProperties } from "react";
 import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
 import { DOCK_FULLSCREEN_Z, toastAttention } from "@prismshadow/penguin-ui";
 import { toneInk } from "../../lib/tone";
-import {
-  currentDockScope,
-  fullscreenDock,
-  isTabShown,
-  openPanel,
-  subscribeDock,
-} from "../dock/dock-state";
+import { currentDockScope, isTabShown, openPanel } from "../dock/dock-state";
 import { isBlankUrl } from "./address";
 import {
   claimGuest,
@@ -81,13 +75,7 @@ import {
 import { watchGuestId } from "./guest-id";
 import { loadWarningText, newWarnings } from "./load";
 import { forgetOnScreenReport, reportOnScreenTab } from "./on-screen-report";
-import {
-  hasVisibleSlot,
-  invalidateSlotClips,
-  slotsVersion,
-  subscribeSlots,
-  visibleSlot,
-} from "./slot-registry";
+import { hasVisibleSlot, slotsVersion, subscribeSlots, visibleSlot } from "./slot-registry";
 import {
   BROWSER_PARTITION,
   registerWebview,
@@ -354,16 +342,12 @@ function LayerHost() {
     };
   }, [available]);
 
-  // A dock surface going fullscreen or back is the one change to the boxes around a slot while
-  // it stays mounted: the dock's content box becomes fixed (its placeholder stops clipping it)
-  // and the page must step above the surface's layer. Both are cached per slot, so the caches are
-  // dropped — here, after the commit, when the attribute and the fixed box exist to be read; at
-  // the store's notification they do not yet, and a read then would cache the old layout — and
-  // the placement below, and the frame loop after it, read them afresh.
-  const fullscreen = useSyncExternalStore(subscribeDock, fullscreenDock);
-  useLayoutEffect(() => {
-    invalidateSlotClips();
-  }, [fullscreen]);
+  // A dock surface lifting off to cover the page, or returning, is the one change to the boxes
+  // around a slot while it stays mounted: the dock's content box becomes fixed (its placeholder
+  // stops clipping it) and the page must step above the surface's layer. Both are cached per slot
+  // (slot-registry.ts), and the dock drops the caches itself at each step of its fullscreen phase,
+  // once the step is in the DOM — not the store's flag, which flips before the exit animation has
+  // run and says nothing when it ends; the frame loop below reads them afresh on its next tick.
 
   // After every render: a new page gets its boxes, and a switched tab moves at once.
   useLayoutEffect(() => placePages(ringRef.current));

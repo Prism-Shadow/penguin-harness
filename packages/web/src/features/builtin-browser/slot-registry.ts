@@ -8,9 +8,9 @@
  * With the slot comes what the layer needs to place a page over it: the ancestors that clip it,
  * and whether it sits inside a fullscreen dock surface, in which case the page must float above
  * the surface's layer rather than under it. Both are read from the DOM once per slot and cached;
- * the one thing that changes them while a slot stays mounted is the surface going fullscreen or
- * back (the dock's content box becomes `fixed` and its placeholder stops clipping it), and the
- * layer drops the caches on that flip (`invalidateSlotClips`).
+ * the one thing that changes them while a slot stays mounted is the surface lifting off to cover
+ * the page or returning (the dock's content box becomes `fixed` and its placeholder stops
+ * clipping it), and the dock drops the caches at each step of that flip (`invalidateSlotClips`).
  */
 
 interface SlotGeometry {
@@ -80,9 +80,11 @@ export function hasVisibleSlot(): boolean {
 
 /**
  * Drops every slot's cached clip chain and lift flag, to be re-read from the DOM on next use.
- * Called after the DOM has changed around the slots — once the fullscreen flip has been committed,
- * not when the store announces it, since the attribute and the fixed box exist only from the
- * commit on and a read before it would cache the old layout.
+ * Called by the dock surface after the DOM has changed around the slots — at each step of its
+ * fullscreen phase (lifting, full, returning, back in the flow), once that step has been
+ * committed: the attribute and the fixed box exist only from the commit on, and the box stays
+ * lifted, and clipping, through the whole exit animation — a read at the store's flip, or one
+ * cached from before it, would place the page against the wrong boxes.
  */
 export function invalidateSlotClips(): void {
   for (const entry of slots.values()) entry.geometry = null;

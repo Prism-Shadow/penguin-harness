@@ -32,11 +32,11 @@
  * (a plugin's, stored before the plugin loads) is kept as it is and rendered as a placeholder
  * until its definition arrives; only a key that cannot be a panel id at all is dropped.
  *
- * One surface at a time can be FULLSCREEN, covering the whole window; that is the one piece of
- * state here that is transient — in memory, never stored, cleared by a scope switch and by the
- * breakpoint flipping — and it holds only while its surface is on screen and is the dock touched
- * last (checked after every mutation, in commit()). Anything that brings the OTHER dock forward
- * drops it, so what was asked for is seen rather than opening under the cover.
+ * One surface at a time can be FULLSCREEN, covering the chat page's column; that is the one
+ * piece of state here that is transient — in memory, never stored, cleared by a scope switch and
+ * by the breakpoint flipping — and it holds only while its surface is on screen and is the dock
+ * touched last (checked after every mutation, in commit()). Anything that brings the OTHER dock
+ * forward drops it, so what was asked for is seen rather than opening under the cover.
  *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar toggles the docks, the global hotkey flips the terminal, AppLayout points the
@@ -215,7 +215,7 @@ let scope = NO_SCOPE;
 // are on every render path, and one live object per scope keeps switching cheap.
 let layout: ScopeLayout = scopes[scope] ?? emptyScope();
 /**
- * The surface covering the whole window, by the position it renders at ("bottom" for the
+ * The surface covering the chat page's column, by the position it renders at ("bottom" for the
  * narrow merged view), or null. In memory only: a reload, a scope switch and the breakpoint
  * flipping all start in the normal layout. The rules live in the fullscreen section below.
  */
@@ -622,7 +622,7 @@ export function hideView(view: DockView): void {
 
 // --------------------------------------------------------------------------- fullscreen
 
-/** The surface covering the whole window ("bottom" for the narrow merged view), or null. */
+/** The surface covering the chat page's column ("bottom" for the narrow merged view), or null. */
 export function fullscreenDock(): DockPosition | null {
   return fullscreen;
 }
