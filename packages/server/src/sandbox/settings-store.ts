@@ -43,9 +43,9 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Enable",
             titleZh: "启用",
             description:
-              "Whether new sessions start in the sandbox. On: from the default preset. Off: with full file and network access, held only by their approval mode. Sessions that already exist keep their own policy.",
+              "Whether new sessions start in the sandbox. On: from the default preset. Off: with full file and network access, held only by their ask mode. Sessions that already exist keep their own policy.",
             descriptionZh:
-              "新会话是否进入沙盒。打开：从默认预设开始。关闭：拥有完全的文件与网络访问，只受审批模式约束。已有会话保留各自的策略。",
+              "新会话是否进入沙盒。打开：从默认预设开始。关闭：拥有完全的文件与网络访问，只受询问模式约束。已有会话保留各自的策略。",
           },
           // The composer's menu: each preset a named mode, network level and approval mode, and
           // the default (marked after its name): the row a new Session starts from while on.
@@ -56,9 +56,9 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Presets",
             titleZh: "预设",
             description:
-              "Named combinations of file access, network and approval mode. The pinned ones are what the composer's permission menu offers, and the one marked (Default) is what a new session starts from while the sandbox is on; changing it reaches new sessions only. A session keeps its own three values, and the menu names it by the first row that matches. Each name's \"?\" says what the row is for.",
+              "Named combinations of file access, network and ask mode. The pinned ones are what the composer's permission menu offers, and the one marked (Default) is what a new session starts from while the sandbox is on; changing it reaches new sessions only. A session keeps its own three values, and the menu names it by the first row that matches. Each name's \"?\" says what the row is for.",
             descriptionZh:
-              "文件访问、网络与审批方式的命名组合。固定的行出现在输入框的权限菜单里；沙盒打开时，新会话从标有（默认）的行开始，改动只影响此后新建的会话。会话只保存自己的三项取值，菜单按第一个匹配的行为它命名。每个名称旁的「?」说明这一行的用途。",
+              "文件访问、网络与询问模式的命名组合。固定的行出现在输入框的权限菜单里；沙盒打开时，新会话从标有（默认）的行开始，改动只影响此后新建的会话。会话只保存自己的三项取值，菜单按第一个匹配的行为它命名。每个名称旁的「?」说明这一行的用途。",
             rowChoice: { field: "defaultPreset", title: "Default", titleZh: "默认" },
             columnGroup: {
               title: "Action",

@@ -4,7 +4,8 @@
  * language; clearing it or typing the declared text back restores it), which wraps; a `boolean`
  * cell is a switch, or a pin toggle for the column the table's `pin` names; an `enum` cell is its
  * value's full title as text, which opens a menu of the options (plugin-config-enum-cell.tsx). A
- * cell the row locks is the value's text alone, with "locked" in its name and tooltip.
+ * cell the row locks is the value's text alone, with "locked" in its tooltip and in visually
+ * hidden text.
  *
  * The row's name cell also carries the row's marks after the name: the chosen row's marker
  * ("(Default)") and the "?" saying what the row is for.
@@ -112,14 +113,15 @@ export function Cell({
           ? S.settings.pluginCellOn
           : S.settings.pluginCellOff;
   const body = locked ? (
-    // The value alone: no control to suggest it could change. "Locked" is in the name and the
-    // tooltip.
+    // The value alone: no control to suggest it could change. "Locked" is in the tooltip and,
+    // for a screen reader, in visually hidden text after the value — an aria-label on a span
+    // without a role is not announced.
     <span
-      aria-label={`${cellLabel}: ${shown} (${S.settings.pluginCellLocked})`}
       data-tooltip={S.settings.pluginCellLocked}
       className="block px-1.5 text-xs break-words text-fg-muted"
     >
-      <span aria-hidden>{shown}</span>
+      {shown}
+      <span className="sr-only"> ({S.settings.pluginCellLocked})</span>
     </span>
   ) : c.type === "boolean" ? (
     pinned !== undefined ? (
