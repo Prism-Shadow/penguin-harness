@@ -325,8 +325,6 @@ export interface ServerSettingsUpdateRequest {
 export interface TelemetryKeys {
   request?: string;
   session?: string;
-  /** One run of a Session (a Task, a compaction, a goal loop), minted while the switch is on. */
-  task?: string;
   generation?: number;
 }
 

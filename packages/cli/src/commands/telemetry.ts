@@ -54,7 +54,6 @@ function detail(s: TelemetrySample): string {
   }
   if (s.keys.generation !== undefined) parts.push(`gen=${s.keys.generation}`);
   if (s.keys.session !== undefined) parts.push(`session=${s.keys.session}`);
-  if (s.keys.task !== undefined) parts.push(`task=${s.keys.task.slice(0, 8)}`);
   if (s.keys.request !== undefined) parts.push(`req=${s.keys.request.slice(0, 8)}`);
   return parts.join(" ");
 }

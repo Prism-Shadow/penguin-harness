@@ -250,12 +250,7 @@ export class FakeServer {
    * What GET /api/telemetry answers: every view is served from these fixed lists (the fake
    * does not summarize); `enabled` also backs the admin setting that PUT /api/admin/settings flips.
    */
-  telemetry: {
-    enabled: boolean;
-    probes: Json[];
-    sessions: Json[];
-    samples: Json[];
-  } = {
+  telemetry: { enabled: boolean; probes: Json[]; sessions: Json[]; samples: Json[] } = {
     enabled: true,
     probes: [],
     sessions: [],

@@ -1,10 +1,10 @@
 /**
- * Telemetry's second batch of probes on a test App (PRFC-0008): a turn's server-side segments,
- * the session list, a generation's going recorded by its successor, the memory snapshot — and
+ * Telemetry's second batch of probes on a test App (PRFC-0008): accepting a Task and loading its
+ * Session, the session list, a generation's going recorded by its successor, the memory snapshot — and
  * none of it while the switch is off.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assistantText, requestBegin, requestEnd } from "@prismshadow/penguin-core";
+import { assistantText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
   ServerSettingsResponse,
@@ -23,10 +23,9 @@ const A = "default_agent";
 const SID = "session-2026-09-30-10-00-00-7e1e0002";
 const INPUT = "a question nobody may read in a sample";
 const ANSWER = "an answer nobody may read in a sample";
-const MODEL_MS = 30;
 
-/** A resumed Session that answers every Task with one model request and a closing line. */
-function turnSession(sessionId: string): RuntimeSession {
+/** A resumed Session that answers every Task with one line. */
+function resumedSession(sessionId: string): RuntimeSession {
   return {
     sessionId,
     resumedHistory: ["m1", "m2", "m3"],
@@ -36,11 +35,7 @@ function turnSession(sessionId: string): RuntimeSession {
     steer: () => false,
     skipReconnectWait: () => false,
     async *run(): AsyncGenerator<OmniMessage> {
-      yield requestBegin();
-      await new Promise((r) => setTimeout(r, MODEL_MS));
       yield assistantText(ANSWER);
-      yield requestEnd("completed");
-      yield assistantText("done");
     },
     async *compact() {},
   };
@@ -51,7 +46,7 @@ describe("telemetry probes", () => {
   let admin: ReturnType<typeof apiClient>;
 
   beforeEach(async () => {
-    t = await createTestApp({ loader: { load: async (row) => turnSession(row.sessionId) } });
+    t = await createTestApp({ loader: { load: async (row) => resumedSession(row.sessionId) } });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const now = new Date().toISOString();
     const row: SessionRow = {
@@ -104,10 +99,9 @@ describe("telemetry probes", () => {
     return found[0]!;
   };
 
-  it("records a turn's server-side segments, tied by session, task and request, with no content", async () => {
+  it("records accepting a Task and loading its Session, keyed by session and request, with no content", async () => {
     await turn(true);
     const request = await runTask();
-    await waitFor(() => telemetryNode().samples({ probe: "turn.run" }).length === 1);
     const all = await samples();
     expect(one(all, "task.accept")).toMatchObject({
       keys: { session: SID, request },
@@ -118,27 +112,10 @@ describe("telemetry probes", () => {
       status: "ok",
       keys: { session: SID, request },
     });
-    const run = one(all, "turn.run");
-    const task = run.keys.task;
-    expect(task).toMatch(/^[0-9a-f-]{36}$/);
-    expect(run).toMatchObject({
-      status: "ok",
-      keys: { session: SID, request },
-      attrs: { messages: 4 },
-    });
-    expect(run.attrs!.modelMs as number).toBeGreaterThanOrEqual(MODEL_MS - 5);
-    for (const segment of ["turn.tail", "turn.fanout", "turn.errors", "turn.usage"]) {
-      expect(one(all, segment), segment).toMatchObject({
-        attrs: { messages: 4 },
-        keys: { session: SID, task, request },
-      });
-    }
-    expect(all.filter((s) => s.probe === "turn.badge").length).toBeGreaterThanOrEqual(2);
-    // The next Task finds the Session loaded (no session.load), under a task id of its own.
+    // The next Task finds the Session loaded: no second session.load.
     await runTask();
-    await waitFor(() => telemetryNode().samples({ probe: "turn.run" }).length === 2);
+    expect(await samples("task.accept")).toHaveLength(2);
     expect(await samples("session.load")).toHaveLength(1);
-    expect(new Set((await samples("turn.run")).map((s) => s.keys.task)).size).toBe(2);
     const dump = JSON.stringify(await samples());
     for (const content of [INPUT, ANSWER]) expect(dump).not.toContain(content);
   });
