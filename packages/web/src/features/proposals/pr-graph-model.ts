@@ -3,10 +3,11 @@
  *
  * The server answers with a flat list of nodes, each naming the open PR its declared base leads to
  * (`parent`: a PR number, 0 for the base branch, null for neither — the server walks through
- * merged and closed PRs on the way) and whether that edge holds (`stacked`). The page draws it the way
- * `git log --graph` draws history — newest at the top, the base branch at the bottom, one lane
+ * merged and closed PRs on the way) and whether that edge holds (`stacked`). `layoutGraph` lays it out
+ * the way `git log --graph` draws history — newest at the top, the base branch at the bottom, one lane
  * per branch that is still open at that height — so a straight chain is one vertical line and a
- * fork is a second lane leaving the line where it forks.
+ * fork is a second lane leaving the line where it forks. The page shows it turned over
+ * (`topDown`): the base first and each stack's top last, the order a stack is built in.
  *
  * Which child continues its parent's lane: the one that leads to the chain's top when the server
  * named one, else a child on the chain, else a stacked one, else the taller subtree, else the
@@ -18,7 +19,7 @@
  * that is not reached from the base at all (a cycle of declarations), cannot be drawn; the page
  * lists it apart — which is not the same as off the chain.
  */
-import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
+import type { ProposalGraphNode, ProposalGraphResponse } from "@prismshadow/penguin-server/api";
 
 /** One row of the drawn graph, top to bottom. `node` is null for the base branch (the last row). */
 export interface GraphRow {
@@ -128,6 +129,24 @@ export function layoutGraph(nodes: readonly ProposalGraphNode[], top: number | n
   return { rows, lanes: widest + 1, detached };
 }
 
+/**
+ * Every stack's top: the server's `tops`, or its single `top` from a server older than that field.
+ * Several stacks on the base branch each have one, so each is marked.
+ */
+export function graphTops(graph: Pick<ProposalGraphResponse, "top" | "tops">): number[] {
+  if (graph.tops !== undefined) return graph.tops;
+  return graph.top === null ? [] : [graph.top];
+}
+
+/**
+ * How many stacks start on the base branch: its children that are on the chain. More than one is a
+ * fork the graph keeps (several stacks side by side); one, with the base still forked, means a
+ * branch at the base was not taken.
+ */
+export function baseStacks(nodes: readonly ProposalGraphNode[]): number {
+  return nodes.filter((n) => n.parent === 0 && n.onChain).length;
+}
+
 /** The row showing a proposal's impl PR, or -1 when that proposal has no node on the graph. */
 export function rowOfProposal(rows: readonly GraphRow[], proposal: number): number {
   return rows.findIndex((r) => r.node?.proposal?.number === proposal);
@@ -144,4 +163,92 @@ export function focusedProposal(params: URLSearchParams): number | null {
 /** A deploy's extra arguments as typed in the graph's deploy dialog: split at whitespace, nothing empty. */
 export function splitArgs(text: string): string[] {
   return text.split(/\s+/).filter((a) => a !== "");
+}
+
+/**
+ * How many lanes each row actually crosses — its own dot's, and every edge passing through it
+ * (an edge runs down the child's lane to the row above its parent, then bends into the parent's
+ * lane). A row's text starts after its own lanes, the way `git log --graph` indents: a short
+ * stack forking near the base no longer pushes every row above it to the right.
+ */
+export function rowWidths(rows: readonly GraphRow[]): number[] {
+  const widest = rows.map((r) => r.lane);
+  rows.forEach((row, child) => {
+    if (row.parentRow === null) return;
+    // Either direction: the edge runs the child's lane on every row between the two, and its
+    // bend into the parent's lane sits in the parent's own row — so the parent's text starts
+    // after that lane too, or it is drawn across the curve.
+    const lo = Math.min(child, row.parentRow);
+    const hi = Math.max(child, row.parentRow);
+    for (let i = lo + 1; i < hi; i++) {
+      widest[i] = Math.max(widest[i]!, row.lane);
+    }
+    widest[row.parentRow] = Math.max(widest[row.parentRow]!, row.lane);
+  });
+  return widest.map((w) => w + 1);
+}
+
+/**
+ * The layout turned over for reading top-down: the base branch first, each stack below it, its
+ * top last — the order a stack is built in. Parent rows are renumbered to match; lanes stay.
+ */
+export function topDown(layout: GraphLayout): GraphLayout {
+  const last = layout.rows.length - 1;
+  return {
+    ...layout,
+    rows: layout.rows
+      .map((r) => ({ ...r, parentRow: r.parentRow === null ? null : last - r.parentRow }))
+      .reverse(),
+  };
+}
+
+/**
+ * The drawn graph's measures, in rem: the theme's text size sets the root font-size, so the
+ * rows, lanes and dots grow and shrink with the text they sit beside. `graphGeometry` turns
+ * them into the px the SVG needs for one root font-size.
+ */
+const ROW_REM = 3.75;
+const LANE_REM = 1;
+const DOT_REM = 0.28;
+const TEXT_GAP_REM = 0.625;
+
+export interface GraphGeometry {
+  row: number;
+  lane: number;
+  dot: number;
+  textGap: number;
+  laneX: (lane: number) => number;
+  rowY: (row: number) => number;
+  /**
+   * One edge, drawn from the child's dot to its parent's: straight when they share a lane,
+   * otherwise along the child's lane and bending into the parent's lane right beside the parent.
+   */
+  edgePath: (child: number, childLane: number, parent: number, parentLane: number) => string;
+}
+
+export function graphGeometry(remPx: number): GraphGeometry {
+  const row = ROW_REM * remPx;
+  const lane = LANE_REM * remPx;
+  const laneX = (l: number): number => l * lane + lane / 2 + 2;
+  const rowY = (r: number): number => r * row + row / 2;
+  return {
+    row,
+    lane,
+    dot: DOT_REM * remPx,
+    textGap: TEXT_GAP_REM * remPx,
+    laneX,
+    rowY,
+    edgePath: (child, childLane, parent, parentLane) => {
+      const x1 = laneX(childLane);
+      const y1 = rowY(child);
+      const x2 = laneX(parentLane);
+      const y2 = rowY(parent);
+      if (x1 === x2) return `M${x1} ${y1}V${y2}`;
+      // The bend sits beside the parent, on the child's side: above it when the child is drawn
+      // above (bottom-up), below it when the child is drawn below (top-down).
+      const dir = child < parent ? -1 : 1;
+      const bend = y2 + (dir * row) / 2;
+      return `M${x1} ${y1}V${bend}C${x1} ${y2 + (dir * row) / 6} ${x2} ${bend - (dir * row) / 6} ${x2} ${y2}`;
+    },
+  };
 }

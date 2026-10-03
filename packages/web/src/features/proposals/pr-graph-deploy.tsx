@@ -25,11 +25,12 @@ import {
   Dropdown,
   GlyphIcon,
   ICONS,
-  ICON_GAP,
   ICON_SIZE,
   Input,
+  Menu,
+  MenuItem,
+  MenuLabel,
   Modal,
-  menuRowClass,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import { splitArgs } from "./pr-graph-model";
@@ -121,37 +122,32 @@ export function DeployableRow({
           </button>
         }
       >
-        <span className="block px-2.5 pt-1.5 pb-1 text-xs font-medium text-gray-400 dark:text-gray-500">
-          {t.menu} · <span className="font-mono">{node.head.slice(0, 9)}</span>
-        </span>
-        {scripts === null ? (
-          <span className="block px-2.5 py-1.5 text-xs text-gray-400">…</span>
-        ) : scripts.length === 0 ? (
-          <span className="block px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400">
-            {scriptsError !== null ? `${t.loadFailed}: ${scriptsError}` : t.none}
-          </span>
-        ) : (
-          scripts.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              role="menuitem"
-              data-tooltip={s.description || s.command.join(" ")}
-              className={`flex items-center ${ICON_GAP.menu} ${menuRowClass} text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800`}
-              onClick={() => {
-                close();
-                onPick(s);
-              }}
-            >
-              <span className="min-w-0 truncate">{t.to(s.id)}</span>
-              {s.description !== "" && (
-                <span className="ml-auto min-w-0 truncate pl-2 text-xs text-gray-400 dark:text-gray-500">
-                  {s.description}
-                </span>
-              )}
-            </button>
-          ))
-        )}
+        <Menu label={t.menuTitle} density="sm">
+          <MenuLabel>
+            {t.menu} · <span className="font-mono">{node.head.slice(0, 9)}</span>
+          </MenuLabel>
+          {scripts === null ? (
+            <MenuItem label="…" disabled />
+          ) : scripts.length === 0 ? (
+            <MenuItem
+              label={scriptsError !== null ? `${t.loadFailed}: ${scriptsError}` : t.none}
+              disabled
+            />
+          ) : (
+            scripts.map((s) => (
+              <MenuItem
+                key={s.id}
+                label={t.to(s.id)}
+                description={s.description !== "" ? s.description : undefined}
+                data-tooltip={s.description || s.command.join(" ")}
+                onSelect={() => {
+                  close();
+                  onPick(s);
+                }}
+              />
+            ))
+          )}
+        </Menu>
       </Dropdown>
     </div>
   );

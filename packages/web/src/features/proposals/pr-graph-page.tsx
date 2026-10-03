@@ -29,6 +29,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { Button, ICON_GAP, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
@@ -38,7 +39,16 @@ import { useLocale } from "../../state/locale";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
 import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, TitleButton } from "../company/shared";
-import { focusedProposal, layoutGraph, rowOfProposal } from "./pr-graph-model";
+import {
+  baseStacks,
+  focusedProposal,
+  layoutGraph,
+  rowOfProposal,
+  graphGeometry,
+  rowWidths,
+  topDown,
+} from "./pr-graph-model";
+import type { GraphGeometry } from "./pr-graph-model";
 import type { GraphRow } from "./pr-graph-model";
 import {
   FOCUS_WASH,
@@ -51,26 +61,22 @@ import {
 import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy";
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
 
-/** Row height and lane pitch of the drawn graph, in px. */
-const ROW = 44;
-const LANE = 16;
-const DOT = 4.5;
+/** Reads of a graph the organization's machine is still building, and the pause between them. */
+const GRAPH_READ_TRIES = 4;
+const GRAPH_RETRY_MS = 2_000;
 
-const laneX = (lane: number): number => lane * LANE + LANE / 2 + 2;
-const rowY = (row: number): number => row * ROW + ROW / 2;
-
-/**
- * One edge, drawn from the child's dot down to its parent's: straight when they share a lane,
- * otherwise down the child's lane and bending into the parent's lane just above the parent.
- */
-function edgePath(child: number, childLane: number, parent: number, parentLane: number): string {
-  const x1 = laneX(childLane);
-  const y1 = rowY(child);
-  const x2 = laneX(parentLane);
-  const y2 = rowY(parent);
-  if (x1 === x2) return `M${x1} ${y1}V${y2}`;
-  const bend = y2 - ROW / 2;
-  return `M${x1} ${y1}V${bend}C${x1} ${y2 - ROW / 6} ${x2} ${bend + ROW / 6} ${x2} ${y2}`;
+/** The root font-size in px, kept current: the theme's text size rewrites it on <html>. */
+function useRootFontPx(): number {
+  const read = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const [px, setPx] = useState(read);
+  useEffect(() => {
+    const update = () => setPx(read());
+    const watch = new MutationObserver(update);
+    watch.observe(document.documentElement, { attributes: true });
+    update();
+    return () => watch.disconnect();
+  }, []);
+  return px;
 }
 
 export function GraphPage() {
@@ -89,7 +95,19 @@ export function GraphPage() {
     setLoading(true);
     setError(null);
     try {
-      setGraph(await api.getOrgProposalGraph(projectId, orgId));
+      // The first read after the organization's server restarts asks GitHub for everything and
+      // can outlast the hub's wait (504 machine_not_answering); that read goes on and fills the
+      // server's cache, so asking again soon gets the graph. A few tries, then the error shows.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          setGraph(await api.getOrgProposalGraph(projectId, orgId));
+          return;
+        } catch (e) {
+          const slow = e instanceof ApiError && e.code === "machine_not_answering";
+          if (!slow || attempt >= GRAPH_READ_TRIES) throw e;
+          await new Promise((r) => setTimeout(r, GRAPH_RETRY_MS));
+        }
+      }
     } catch (e) {
       setError(apiErrorText(e));
     } finally {
@@ -102,9 +120,14 @@ export function GraphPage() {
   }, [load]);
 
   const layout = useMemo(
-    () => (graph === null ? null : layoutGraph(graph.nodes, graph.top)),
+    () => (graph === null ? null : topDown(layoutGraph(graph.nodes, graph.top))),
     [graph],
   );
+  const widths = useMemo(() => (layout === null ? [] : rowWidths(layout.rows)), [layout]);
+  const remPx = useRootFontPx();
+  const geo = useMemo(() => graphGeometry(remPx), [remPx]);
+  // The row under the pointer; its lanes' dot and edge light up with it.
+  const [hovered, setHovered] = useState<number | null>(null);
   const focusRow = layout === null || focus === null ? -1 : rowOfProposal(layout.rows, focus);
   const focusUnplaced =
     graph !== null && focus !== null && graph.unplaced.some((u) => u.number === focus);
@@ -215,19 +238,21 @@ export function GraphPage() {
 
           {graph.nodes.length === 0 && <OrgEmptyLine>{t.empty}</OrgEmptyLine>}
 
-          <div
-            ref={listRef}
-            className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800"
-          >
-            <div className="relative" style={{ height: layout.rows.length * ROW }}>
-              <Lanes rows={layout.rows} lanes={layout.lanes} />
-              <ol className="absolute inset-y-0 right-0" style={{ left: layout.lanes * LANE + 8 }}>
+          <div ref={listRef} className="overflow-x-auto">
+            <div className="relative" style={{ height: layout.rows.length * geo.row }}>
+              <ol className="absolute inset-0">
                 {layout.rows.map((row, i) => (
                   <li
                     key={row.node === null ? "base" : row.node.number}
                     data-focus={i === focusRow ? "true" : undefined}
-                    style={{ height: ROW }}
-                    className={`flex items-center pr-3 ${i === focusRow ? FOCUS_WASH : ""}`}
+                    style={{ height: geo.row, paddingLeft: widths[i]! * geo.lane + geo.textGap }}
+                    onMouseEnter={() => setHovered(i)}
+                    onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
+                    // A hairline between rows: a node's two lines read as one block, apart from
+                    // the next node's. Hover washes the whole row, lanes included.
+                    className={`flex items-center border-b border-line-muted pr-3 transition-colors duration-150 last:border-b-0 ${
+                      i === focusRow ? FOCUS_WASH : i === hovered ? "bg-surface-muted" : ""
+                    }`}
                   >
                     {row.node === null ? (
                       <BaseRow graph={graph} />
@@ -240,6 +265,8 @@ export function GraphPage() {
                   </li>
                 ))}
               </ol>
+              {/* Over the rows (a focused row's wash stays under the dots), never taking a click. */}
+              <Lanes rows={layout.rows} lanes={layout.lanes} hovered={hovered} geo={geo} />
             </div>
           </div>
 
@@ -277,22 +304,33 @@ export function GraphPage() {
 }
 
 /** The lanes: every edge, then every dot over them. Stacked edges are solid, the rest dashed in their relation's tone. */
-function Lanes({ rows, lanes }: { rows: readonly GraphRow[]; lanes: number }) {
+function Lanes({
+  rows,
+  lanes,
+  hovered,
+  geo,
+}: {
+  rows: readonly GraphRow[];
+  lanes: number;
+  geo: GraphGeometry;
+  /** The row under the pointer: its dot and its edge to its parent are drawn heavier. */
+  hovered: number | null;
+}) {
   return (
     <svg
       aria-hidden="true"
-      width={lanes * LANE + 4}
-      height={rows.length * ROW}
-      className="absolute top-0 left-0"
+      width={lanes * geo.lane + 4}
+      height={rows.length * geo.row}
+      className="pointer-events-none absolute top-0 left-0"
     >
       {rows.map((row, i) =>
         row.parentRow === null ? null : (
           <path
             key={`e${i}`}
-            d={edgePath(i, row.lane, row.parentRow, rows[row.parentRow]!.lane)}
+            d={geo.edgePath(i, row.lane, row.parentRow, rows[row.parentRow]!.lane)}
             fill="none"
             stroke="currentColor"
-            strokeWidth={1.7}
+            strokeWidth={i === hovered ? 2.6 : 1.7}
             strokeDasharray={row.stacked ? undefined : "3 3"}
             className={
               row.stacked
@@ -307,11 +345,11 @@ function Lanes({ rows, lanes }: { rows: readonly GraphRow[]; lanes: number }) {
         return (
           <circle
             key={`d${i}`}
-            cx={laneX(row.lane)}
-            cy={rowY(i)}
-            r={row.node === null ? DOT + 1 : DOT}
+            cx={geo.laneX(row.lane)}
+            cy={geo.rowY(i)}
+            r={(row.node === null ? geo.dot + 1 : geo.dot) + (i === hovered ? 1.5 : 0)}
             stroke="currentColor"
-            strokeWidth={1.7}
+            strokeWidth={i === hovered ? 2.6 : 1.7}
             className={`${
               proposal !== null || row.node === null
                 ? "fill-current"
@@ -341,7 +379,12 @@ function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
           {graph.base.head.slice(0, 9)}
         </span>
       )}
-      {graph.base.fork && <Mark tone="attention">{t.baseForked}</Mark>}
+      {graph.base.fork &&
+        (baseStacks(graph.nodes) > 1 ? (
+          <Mark tone="muted">{t.baseStacks(baseStacks(graph.nodes))}</Mark>
+        ) : (
+          <Mark tone="attention">{t.baseForked}</Mark>
+        ))}
       <DeploymentMarks deployments={graph.deployments} at={0} />
     </div>
   );

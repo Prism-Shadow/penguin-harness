@@ -56,6 +56,7 @@ import { renderForAgent, sectionSource } from "./comments.js";
 import { readBaseFile } from "./files.js";
 import { PrStatusReader, parsePullUrl, type RunGh } from "./pr-status.js";
 import { pullKey } from "./pr-chain.js";
+import { GraphCache } from "./graph-cache.js";
 import { PrGraphReader } from "./pr-graph.js";
 import {
   deploymentIdOf,
@@ -194,6 +195,8 @@ export class ProposalService {
 
   /** The PR graph's GitHub reads, with their caches (pr-graph.ts). */
   private readonly prGraph: PrGraphReader;
+  /** The last graph per organization, answered while a refresh runs (graph-cache.ts). */
+  private readonly graphCache: GraphCache;
 
   constructor(private readonly deps: ServiceDeps) {
     this.prStatus = new PrStatusReader({
@@ -205,6 +208,7 @@ export class ProposalService {
       ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
       ...(deps.now !== undefined ? { now: deps.now } : {}),
     });
+    this.graphCache = new GraphCache(deps.now ?? Date.now);
   }
 
   /** The skipped graph settings last reported, logged once per change like the test groups'. */
@@ -1542,7 +1546,7 @@ export class ProposalService {
       this.deliveryRepo(org, ledger, errors),
       readDeployments(ledger.deployments(), this.probe()),
     ]);
-    return this.prGraph.read({
+    const input = {
       repo: config.repo ?? "",
       base: config.base,
       origins: config.origins,
@@ -1554,7 +1558,10 @@ export class ProposalService {
         status: p.status,
         implPr: p.implPr?.url ?? null,
       })),
-    });
+    };
+    return this.graphCache.get(`${projectId}/${orgId}`, JSON.stringify(input), () =>
+      this.prGraph.read(input),
+    );
   }
 
   /**

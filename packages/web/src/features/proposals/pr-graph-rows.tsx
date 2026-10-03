@@ -21,6 +21,7 @@ import { Badge, ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../company/shared";
 import { PROPOSAL_STATUS_TONE } from "./proposals-model";
 import { DeploymentMarks } from "./pr-graph-deployments";
+import { graphTops } from "./pr-graph-model";
 
 /** The focused proposal's row: a background wash only, so the marks on it keep their own ink. */
 export const FOCUS_WASH = "bg-blue-50 dark:bg-blue-950/40";
@@ -93,7 +94,7 @@ export function NodeRow({
   const t = S.company.proposals.graph;
   const relationWord = (r: ProposalGraphRelation) => t.relation[r] ?? r;
   return (
-    <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+    <div className="flex min-w-0 flex-1 flex-col justify-center gap-0">
       <div className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs`}>
         <a
           href={node.url}
@@ -118,10 +119,10 @@ export function NodeRow({
             <StatusPill status={node.proposal.status} />
           </>
         )}
-        <span className="min-w-0 truncate" data-tooltip={node.title}>
+        <span className="min-w-0 flex-1 truncate" data-tooltip={node.title}>
           {node.title}
         </span>
-        {graph.top === node.number && <Mark tone="success">{t.top}</Mark>}
+        {graphTops(graph).includes(node.number) && <Mark tone="success">{t.top}</Mark>}
         {node.fork && <Mark tone="attention">{t.fork}</Mark>}
         {node.via.map((v) => (
           <Mark
@@ -142,8 +143,9 @@ export function NodeRow({
         )}
         <DeploymentMarks deployments={graph.deployments} at={node.number} />
       </div>
+      {/* The branch line sits under the first, indented: it belongs to that node. */}
       <div
-        className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs text-gray-500 dark:text-gray-400`}
+        className={`flex min-w-0 items-center pl-4 ${ICON_GAP.row} text-xs text-gray-500 dark:text-gray-400`}
       >
         <span className="min-w-0 truncate font-mono" data-tooltip={`${node.branch} → ${node.base}`}>
           {node.branch}

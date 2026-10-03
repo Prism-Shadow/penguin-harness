@@ -10,11 +10,17 @@
 import { describe, expect, it } from "vitest";
 import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
 import {
+  baseStacks,
   focusedProposal,
+  graphGeometry,
+  graphTops,
   layoutGraph,
   rowOfProposal,
+  rowWidths,
   splitArgs,
+  topDown,
 } from "../src/features/proposals/pr-graph-model";
+import type { GraphRow } from "../src/features/proposals/pr-graph-model";
 
 const node = (number: number, parent: number | null, over: Partial<ProposalGraphNode> = {}) =>
   ({
@@ -143,6 +149,30 @@ describe("layoutGraph", () => {
   });
 });
 
+describe("several stacks on the base", () => {
+  it("draws each stack as its own line and counts the stacks on the base", () => {
+    // Three stacks on dev: 1→2, 3→4, 5→6.
+    const nodes = [node(1, 0), node(2, 1), node(3, 0), node(4, 3), node(5, 0), node(6, 5)];
+    const { rows, lanes } = layoutGraph(nodes, null);
+    expect(lanes).toBe(3);
+    // Every stack keeps one lane from its bottom to its top.
+    const laneOf = new Map(rows.filter((r) => r.node).map((r) => [r.node!.number, r.lane]));
+    expect(laneOf.get(1)).toBe(laneOf.get(2));
+    expect(laneOf.get(3)).toBe(laneOf.get(4));
+    expect(laneOf.get(5)).toBe(laneOf.get(6));
+    expect(new Set([laneOf.get(1), laneOf.get(3), laneOf.get(5)]).size).toBe(3);
+    expect(baseStacks(nodes)).toBe(3);
+    // A branch on the base that is off the chain does not count as a stack.
+    expect(baseStacks([...nodes, node(7, 0, { onChain: false })])).toBe(3);
+  });
+
+  it("marks every stack's top, and reads a single top from a server older than the field", () => {
+    expect(graphTops({ top: null, tops: [2, 4, 6] })).toEqual([2, 4, 6]);
+    expect(graphTops({ top: 6 })).toEqual([6]);
+    expect(graphTops({ top: null })).toEqual([]);
+  });
+});
+
 describe("the proposal focus", () => {
   it("finds the row of a proposal's impl PR, and -1 without one", () => {
     const layout = layoutGraph(
@@ -165,5 +195,56 @@ describe("splitArgs", () => {
   it("splits a deploy's extra arguments at whitespace and drops the empty ones", () => {
     expect(splitArgs("  --extra-args   x\ty \n")).toEqual(["--extra-args", "x", "y"]);
     expect(splitArgs("")).toEqual([]);
+  });
+});
+
+describe("rowWidths", () => {
+  const row = (lane: number, parentRow: number | null): GraphRow => ({
+    node: null,
+    lane,
+    parentRow,
+    stacked: true,
+  });
+
+  it("gives each row only the lanes it crosses, so a stack forking near the base indents only there", () => {
+    // 0, 1: the main stack (lane 0); 2: a side stack (lane 1) hanging from the fork at 3; 4: base.
+    const rows = [row(0, 1), row(0, 3), row(1, 3), row(0, 4), row(0, null)];
+    // Row 3 is the fork: the side stack's edge bends into it there.
+    expect(rowWidths(rows)).toEqual([1, 1, 2, 2, 1]);
+  });
+
+  it("counts an edge's lane on every row it passes", () => {
+    // 0: lane 1, hanging from row 3; rows 1 and 2 sit on lane 0 but the edge passes them.
+    const rows = [row(1, 3), row(0, 2), row(0, 3), row(0, null)];
+    expect(rowWidths(rows)).toEqual([2, 2, 2, 2]);
+  });
+});
+
+describe("topDown", () => {
+  it("puts the base first and the top last, and renumbers every parent row", () => {
+    const layout = layoutGraph([node(1, 0), node(2, 1), node(3, 2)], 3);
+    const down = topDown(layout);
+    expect(down.rows.map((r) => r.node?.number ?? 0)).toEqual([0, 1, 2, 3]);
+    expect(down.rows.map((r) => r.parentRow)).toEqual([null, 0, 1, 2]);
+    expect(down.lanes).toBe(layout.lanes);
+  });
+
+  it("keeps the widths a row crosses when the edges run downward", () => {
+    const layout = topDown(layoutGraph([node(1, 0), node(2, 1), node(5, 1), node(3, 2)], 3));
+    const widths = rowWidths(layout.rows);
+    expect(widths[0]).toBe(1); // the base
+    expect(Math.max(...widths)).toBe(layout.lanes);
+  });
+});
+
+describe("graphGeometry", () => {
+  it("scales every measure with the root font-size the theme's text size sets", () => {
+    const base = graphGeometry(16);
+    const large = graphGeometry(20);
+    expect(base.row).toBe(60);
+    expect(base.lane).toBe(16);
+    expect(large.row / base.row).toBe(20 / 16);
+    expect(large.lane / base.lane).toBe(20 / 16);
+    expect(large.rowY(2)).toBeCloseTo(2.5 * large.row);
   });
 });
