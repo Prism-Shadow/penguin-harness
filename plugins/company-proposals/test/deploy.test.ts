@@ -87,13 +87,13 @@ function context(
   const started: Array<{ argv: readonly string[]; opts?: ProcessOptions }> = [];
   const ctx: RunContext = {
     runId: "run1",
+    key: "deploy.desktop",
     org: ORG,
     actor: { userId: "boss", agentId: "acme_dev" },
     caller: { principal: "agent:acme_dev", agentId: "acme_dev", userId: "boss" },
     subject: { kind: "proposal", id: "3", text: "proposal:3" },
     params: {},
     commit: COMMIT,
-    config: {},
     act: { guard: () => undefined },
     process: async (argv, opts) => {
       started.push({ argv, ...(opts !== undefined ? { opts } : {}) });
@@ -147,7 +147,6 @@ describe("a deploy Action", () => {
       subject: { kind: "proposal" as const, id: "3", text: "proposal:3" },
       state: null,
       params: {},
-      config: {},
     };
     expect(refusal(() => deployGuard({ ...input, running: 0 }))).toBeNull();
     expect(refusal(() => deployGuard({ ...input, running: 1 }))).toEqual({

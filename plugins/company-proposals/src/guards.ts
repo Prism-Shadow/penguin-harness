@@ -354,7 +354,6 @@ export function defaultAct(
         subject,
         state,
         params: { ...params, ...opts?.params },
-        config: {},
         running: 0,
         ...(opts?.tx !== undefined ? { tx: opts.tx } : {}),
       }),

@@ -162,7 +162,9 @@ describe("latency at the scale of the largest organization", () => {
     const warm = service();
     await warm.graph(PROJECT, ORG, BOSS, { refresh: true });
     warm.close();
-  });
+    // Seeding is not what is measured, and it shares the machine with the other files' workers —
+    // company-workflow.test.ts runs the TypeScript compiler — so it gets more than the default 10 s.
+  }, 60_000);
   afterAll(async () => {
     await fs.rm(root, { recursive: true, force: true });
   });

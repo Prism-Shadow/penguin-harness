@@ -1,8 +1,8 @@
 /**
  * The built-in roadmap Actions: each default guard answers a person and an employee alike for
- * the same state; the roles an item's brief is approved in follow the organization's binding of
- * `roadmap.item.approve` (written by `action.bind`); an approval counts only on the brief it was
- * read on; and the manifest declares exactly the Actions builtin-actions.ts implements.
+ * the same state; the roles an item's brief is approved in are the default ones until a company
+ * workflow replaces the guard of `roadmap.item.approve` and hands the default other roles; an
+ * approval counts only on the brief it was read on; and the manifest declares exactly the Actions builtin-actions.ts implements.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -11,6 +11,7 @@ import {
   ROADMAP_ACTION_IDS,
   ROADMAP_SUBJECTS_ID,
   roadmapGuards,
+  withApprovalRoles,
   type Roadmap,
   type RoadmapService,
 } from "../src/index.js";
@@ -64,7 +65,6 @@ function answer(key: string, state: Roadmap, subject: string, agentId: string | 
       subject: { kind, id, text: subject },
       state,
       params: {},
-      config: {},
       running: 0,
     });
     return "allowed";
@@ -126,7 +126,6 @@ describe("the default guards", () => {
       caller: { principal: "user:boss", agentId: null, userId: "boss" },
       subject: { kind: "item", id: `${est.number}/ledger`, text: `item:${est.number}/ledger` },
       state: est,
-      config: {},
       running: 0,
     };
     expect(() => guard({ ...input, params: { brief: ITEMS[0]!.brief } })).not.toThrow();
@@ -158,14 +157,22 @@ describe("the approval roles", () => {
     expect(Object.keys(r.delegations.ledger!.approvals).sort()).toEqual(["member", "moderator"]);
   });
 
-  it("follow the organization's binding: bound to a moderator and a person, an employee member is refused", async () => {
+  it("follow a company workflow's replacement guard: a moderator and a person, an employee member is refused", async () => {
     const est = await established();
-    const bound = await a.run("action.bind", "organization", {
-      contribution: ROADMAP_ACTION_IDS["roadmap.item.approve"],
-      enabled: true,
-      config: { roles: ["moderator", "person"] },
+    a = actionApp({
+      gateway: w.gateway,
+      root: w.root,
+      service,
+      company: [
+        {
+          id: "acme.item-approve-roles",
+          from: "Workflow",
+          data: { kind: "guard", key: "roadmap.item.approve" },
+          code: withApprovalRoles(["moderator", "person"]),
+          workflow: "acme",
+        },
+      ],
     });
-    expect(bound.status).toBe(200);
     const subject = `item:${est.number}/ledger`;
     const employee = await a.run("roadmap.item.approve", subject, {}, asAgent("acme_web"));
     expect([employee.status, codeOf(employee)]).toEqual([403, "not_approver"]);

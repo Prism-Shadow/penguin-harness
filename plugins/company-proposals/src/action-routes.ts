@@ -3,10 +3,10 @@
  * `/api/projects/:projectId/organizations/:orgId/actions` behind its cookie gate: every write to
  * the organization's proposals and roadmaps, and the Activity.
  *
- *   GET    /[?subject=]                     the bound Actions; with a subject, those acting on
- *                                           it, each with whether the caller may run it now
- *   GET    /contributions                   every contribution and the organization's binding
- *   GET    /check                           the keys two bound contributions answer
+ *   GET    /[?subject=]                     the Actions in force; with a subject, those acting
+ *                                           on it, each with whether the caller may run it now
+ *   GET    /contributions                   every contribution, built in or a company workflow's
+ *   GET    /check                           the keys two contributions of one standing answer
  *   GET    /runs[?subject=&by=&key=&before=&limit=]  the Activity, newest first
  *   GET    /runs/:id[?from=]                one run, and its process output from an offset
  *   POST   /:key/runs                       { subject, params?, requestId?, via? } run the Action
@@ -35,19 +35,22 @@ import { actorOf, actorOfQuery, jsonBody, param } from "./route-input.js";
 /** The slot's contribution id, as the manifest names it. */
 export const ACTION_ROUTES_ID = "company-proposals.action-routes";
 
+/** A refusal answers its status, code and details; anything else is a 500. */
+export function refusalHandler(err: Error, c: Context): Response {
+  const e = err as Partial<ActionRefusal>;
+  if (typeof e.status === "number" && typeof e.code === "string") {
+    return c.json(
+      { error: { code: e.code, message: err.message, ...(e.details ?? {}) } },
+      e.status as 400,
+    );
+  }
+  console.error(`[company-actions] ${err.stack ?? err.message}`);
+  return c.json({ error: { code: "internal", message: "Internal server error." } }, 500);
+}
+
 export function actionRoutes(registry: ActionRegistry): Hono {
   const app = new Hono();
-  app.onError((err, c) => {
-    const e = err as Partial<ActionRefusal>;
-    if (typeof e.status === "number" && typeof e.code === "string") {
-      return c.json(
-        { error: { code: e.code, message: err.message, ...(e.details ?? {}) } },
-        e.status as 400,
-      );
-    }
-    console.error(`[company-actions] ${err.stack ?? err.message}`);
-    return c.json({ error: { code: "internal", message: "Internal server error." } }, 500);
-  });
+  app.onError(refusalHandler);
 
   app.get("/", async (c) =>
     c.json(

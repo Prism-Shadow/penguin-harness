@@ -44,7 +44,7 @@ import {
   approvalRole,
   defaultAct,
   moderatorOf,
-  rolesOf,
+  verdictRoles,
   type Caller,
   type WriteAct,
 } from "./guards.js";
@@ -834,8 +834,8 @@ export class RoadmapService {
       const { caller, store } = await this.open(projectId, orgId, actor, act);
       const a = act ?? defaultAct("roadmap.item.approve", caller, itemSubject(number, key));
       const r = this.require(store, number);
-      a.check(r);
-      const { role, item, last } = approvalRole(r, key, caller, rolesOf(a.config));
+      const verdict = a.check(r);
+      const { role, item, last } = approvalRole(r, key, caller, verdictRoles(verdict));
       const d = r.delegations[key]!;
       let made: { number: number; rebriefed: boolean } | null = null;
       if (last) {

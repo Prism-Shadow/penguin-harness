@@ -40,6 +40,7 @@ export function harness(
     scoped: (cmd) => cmd.option("--org-id <id>").option("--json"),
     open: async () => request,
     openActions: async () => request,
+    openWorkflows: async () => request,
     actorFields: () => ({ agentId: "dev1" }),
     actorQuery: () => "?agentId=dev1",
     fail: (m) => h.errors.push(m),

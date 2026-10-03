@@ -13,7 +13,8 @@ import {
   RoadmapError,
   SqliteRoadmapStore,
   companyDbPath,
-  defaultAct,
+  roadmapGuards,
+  withApprovalRoles,
   type RoadmapService,
   type WriteAct,
 } from "../src/index.js";
@@ -835,12 +836,22 @@ describe("the approvals", () => {
     });
   });
 
-  it("follows the roles the binding names: a person's role refuses an employee member and takes a person", async () => {
+  it("follows the roles the guard's verdict carries: a person's role refuses an employee member and takes a person", async () => {
     const n = await established();
     const subject = { kind: "item", id: `${n}/ledger`, text: `item:${n}/ledger` };
+    // The guard a company workflow's replacement makes: the default, handed other roles.
+    const guard = withApprovalRoles(["moderator", "person"])(
+      roadmapGuards["roadmap.item.approve"]!,
+    );
     const act = (principal: string, agentId: string | null): WriteAct => ({
-      ...defaultAct("roadmap.item.approve", { principal, agentId }, subject),
-      config: { roles: ["moderator", "person"] },
+      check: (state, opts) =>
+        guard({
+          caller: { principal, agentId, userId: "" },
+          subject,
+          state,
+          params: opts?.params ?? {},
+          running: 0,
+        }),
     });
     expect(
       await refusal(

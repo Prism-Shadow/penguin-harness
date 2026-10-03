@@ -64,6 +64,8 @@ export {
   requireStatus,
   roadmapGuards,
   rolesOf,
+  verdictRoles,
+  withApprovalRoles,
 } from "./guards.js";
 export type { Caller, WriteAct } from "./guards.js";
 export {

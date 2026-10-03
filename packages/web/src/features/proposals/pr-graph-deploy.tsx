@@ -1,11 +1,11 @@
 /**
  * Deploying from the PR graph: a node's menu — a right-click on the row, the keyboard's
- * context-menu chord, or the row's ellipsis — lists the organization's bound `deploy.*` Actions
+ * context-menu chord, or the row's ellipsis — lists the organization's `deploy.*` Actions
  * for that PR, and picking one opens a dialog that runs it on the PR's head and shows the output
  * as it comes.
  *
- * A deploy Action is contributed by a company module and bound by the organization
- * (`penguin org action bind`); the server runs it. The page names the subject and the head it
+ * A deploy Action is contributed by a company workflow of the organization (`penguin org
+ * workflow put`); the server runs it. The page names the subject and the head it
  * showed (`expectedHead`), and the server refuses a head that moved, so what runs is the commit
  * the person right-clicked. Closing the dialog stops following the run, not the run.
  */
@@ -41,7 +41,7 @@ export function deployName(key: string): string {
   return key.startsWith("deploy.") ? key.slice("deploy.".length) : key;
 }
 
-/** The bound deploy Actions of a subject, as the guard answers for the caller. */
+/** The deploy Actions of a subject, as the guard answers for the caller. */
 export function deployActions(actions: readonly ActionView[]): ActionView[] {
   return actions.filter((a) => a.key.startsWith("deploy."));
 }
@@ -72,7 +72,7 @@ export function DeployableRow({
   const ctx = useRowContextMenu();
   const [actions, setActions] = useState<ActionView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Read when the menu opens: what is bound, and whether the guard lets the caller run it now.
+  // Read when the menu opens: which there are, and whether the guard lets the caller run it now.
   useEffect(() => {
     if (!ctx.open) return;
     let alive = true;
@@ -133,7 +133,7 @@ export function DeployableRow({
           </button>
         }
       >
-        {/* One "Deploy to …" per bound deploy Action; one the guard refuses is shown disabled with its reason. */}
+        {/* One "Deploy to …" per deploy Action; one the guard refuses is shown disabled with its reason. */}
         <Menu label={t.menuTitle} density="sm">
           {actions === null ? (
             <MenuItem label="…" disabled />

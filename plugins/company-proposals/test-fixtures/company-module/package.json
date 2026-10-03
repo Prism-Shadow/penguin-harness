@@ -1,8 +1,0 @@
-{
-  "name": "@fixture/company-module",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "description": "A company module for company-proposals' tests: a deploy Action, a guard replacing proposal.approve, an after hook.",
-  "main": "./dist/index.js"
-}

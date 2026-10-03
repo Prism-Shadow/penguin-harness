@@ -699,14 +699,6 @@ export interface Messages {
     actionRunsLimit: string;
     actionLimitInvalid: (value: string) => string;
     actionCheckDesc: string;
-    actionBindDesc: string;
-    actionBindOn: string;
-    actionBindOff: string;
-    actionBindPosition: string;
-    actionBindConfig: string;
-    actionBindOneOf: string;
-    actionPositionInvalid: (value: string) => string;
-    actionConfigInvalid: (value: string) => string;
     actionsNone: string;
     actionsHeader: string[];
     contributionsHeader: string[];
@@ -715,11 +707,28 @@ export interface Messages {
     actionRunsNext: (cursor: string) => string;
     actionCheckNone: string;
     actionConflict: (key: string, kind: string, contributions: string) => string;
-    actionBound: (contribution: string, enabled: boolean, position: number) => string;
     actionRunStarted: (run: string, key: string, subject: string) => string;
     actionRunEnded: (run: string, outcome: string, message: string | null) => string;
     /** An ambiguous key's answer: each contribution's exact invocation. */
     actionExecForm: (cli: string) => string;
+    /** `org workflow`: the organization's company workflows. */
+    workflowDesc: string;
+    workflowLsDesc: string;
+    workflowPutDesc: string;
+    workflowPutKeep: string;
+    workflowRmDesc: string;
+    workflowReloadDesc: string;
+    workflowHistoryDesc: string;
+    workflowRollbackDesc: string;
+    workflowsNone: string;
+    workflowsHeader: string[];
+    workflowVersionsNone: string;
+    workflowVersionsHeader: string[];
+    workflowDirInvalid: (dir: string, why: string) => string;
+    workflowLoaded: (id: string, revision: string) => string;
+    workflowNotLoaded: (id: string, error: string) => string;
+    workflowSkipped: (id: string, reason: string) => string;
+    workflowRemoved: (id: string) => string;
     /** `proposal deployment add|ls`: the registry of deployments the graph places. */
     proposalDeploymentDesc: string;
     proposalDeploymentAddDesc: string;
@@ -2011,18 +2020,19 @@ const en: Messages = {
       "Print which Action would run on which subject and whether you may run it, without running it",
     proposalDeployUsage: "Name a proposal number or --pr <n>, one of the two.",
     proposalDeployPlanned: (key, subject, allowed, why) =>
-      `${key} would run on ${subject} (dry run): ${allowed === null ? "not bound in this organization" : allowed ? "allowed" : `refused — ${why}`}`,
+      `${key} would run on ${subject} (dry run): ${allowed === null ? "not in this organization" : allowed ? "allowed" : `refused — ${why}`}`,
     proposalDeployStarted: (run, key, subject, head) =>
       `Deploy ${run}: ${key} on ${subject} at ${head}. Ctrl-C stops following; the run goes on.`,
     proposalDeploySucceeded: (run, head) => `Deploy ${run} succeeded (${head}).`,
     proposalDeployFailed: (run, outcome, exitCode, message) =>
       `Deploy ${run} ${outcome}${exitCode === null ? "" : ` (exit ${exitCode})`}${message === null || message === "" ? "" : `: ${message}`}.`,
     actionDesc:
-      "The organization's Actions: every write to its proposals and roadmaps, their runs (the Activity) and bindings",
-    actionLsDesc: "List the Actions bound in the organization (--all: every contribution)",
+      "The organization's Actions: every write to its proposals and roadmaps, and their runs (the Activity)",
+    actionLsDesc: "List the Actions in force in the organization (--all: every contribution)",
     actionLsSubject:
       "Only the Actions acting on this subject, each with whether you may run it now",
-    actionLsAll: "Every contribution — actions, guards, hooks, subject resolvers — bound or not",
+    actionLsAll:
+      "Every contribution — actions, guards, hooks, subject resolvers — built in or a company workflow's",
     actionRunDesc: "Run the Action a key names on a subject (e.g. proposal:12)",
     actionExecDesc: "Run one contribution exactly, by its id (what an ambiguous key asks for)",
     actionParam:
@@ -2037,31 +2047,40 @@ const en: Messages = {
     actionRunsBefore: "The page before this cursor (what the last page printed as next)",
     actionRunsLimit: "At most this many runs (1–200, default 50)",
     actionLimitInvalid: (value) => `--limit must be 1–200: ${value}`,
-    actionCheckDesc: "List the keys two bound contributions answer (ambiguous when run)",
-    actionBindDesc:
-      "Bind a contribution in the organization: on or off, a hook's position, its config",
-    actionBindOn: "Bind it (it takes effect)",
-    actionBindOff: "Unbind it",
-    actionBindPosition: "A hook's place among the hooks of its key (lower first)",
-    actionBindConfig: "The contribution's config, a JSON object",
-    actionBindOneOf: "Name exactly one of --on and --off.",
-    actionPositionInvalid: (value) => `--position must be an integer: ${value}`,
-    actionConfigInvalid: (value) => `--config must be a JSON object: ${value}`,
-    actionsNone: "No Actions are bound in this organization.",
+    actionCheckDesc: "List the keys two contributions of one standing answer (ambiguous when run)",
+    actionsNone: "This organization has no Actions.",
     actionsHeader: ["KEY", "CONTRIBUTION", "SUBJECTS", "ALLOWED"],
-    contributionsHeader: ["ID", "KIND", "KEY", "ENABLED", "POSITION", "FROM"],
+    contributionsHeader: ["ID", "KIND", "KEY", "WORKFLOW", "REPLACED", "FROM"],
     actionRunsNone: "No runs.",
     actionRunsHeader: ["STARTED", "KEY", "SUBJECT", "BY", "VIA", "OUTCOME"],
     actionRunsNext: (cursor) => `More: --before '${cursor}'`,
     actionCheckNone: "No conflicts.",
     actionConflict: (key, kind, contributions) => `${key} (${kind}): ${contributions}`,
-    actionBound: (contribution, enabled, position) =>
-      `${contribution} ${enabled ? "bound" : "unbound"} (position ${position}).`,
     actionRunStarted: (run, key, subject) =>
       `Run ${run}: ${key} on ${subject}. Ctrl-C stops following; the run goes on.`,
     actionRunEnded: (run, outcome, message) =>
       `Run ${run} ${outcome}${message === null || message === "" ? "" : `: ${message}`}.`,
     actionExecForm: (cli) => `  ${cli}`,
+    workflowDesc:
+      "The organization's company workflows: packages whose Actions, guards and hooks take effect in it once loaded",
+    workflowLsDesc: "List the company workflows, the revision serving and whether the files load",
+    workflowPutDesc:
+      "Write a local directory as company workflow <id> and load it (the workflow.write Action)",
+    workflowPutKeep: "Keep the workflow's files the directory lacks (default: delete them)",
+    workflowRmDesc: "Delete a company workflow and its versions",
+    workflowReloadDesc: "Load a company workflow again after its files were changed in place",
+    workflowHistoryDesc: "List a company workflow's recorded versions, newest first",
+    workflowRollbackDesc: "Restore a recorded version of a company workflow and load it",
+    workflowsNone: "This organization has no company workflows.",
+    workflowsHeader: ["ID", "SERVING", "ON DISK", "CONTRIBUTIONS", "STATE"],
+    workflowVersionsNone: "No versions recorded.",
+    workflowVersionsHeader: ["REVISION", "SAVED", "FILES"],
+    workflowDirInvalid: (dir, why) => `Cannot send ${dir} as a workflow: ${why}.`,
+    workflowLoaded: (id, revision) => `Workflow ${id} loaded (revision ${revision}).`,
+    workflowNotLoaded: (id, error) =>
+      `Workflow ${id} did not load; what served before keeps serving:\n${error}`,
+    workflowSkipped: (id, reason) => `  left out: ${id} — ${reason}`,
+    workflowRemoved: (id) => `Workflow ${id} removed.`,
     proposalDeploymentDesc:
       "The deployments somebody registered, which the PR graph places at the commit each one runs",
     proposalDeploymentAddDesc:
@@ -3337,16 +3356,16 @@ const zh: Messages = {
     proposalDeployDryRun: "只打印将在哪个对象上运行哪个 Action、你能否运行，不运行",
     proposalDeployUsage: "提案编号与 --pr <n> 二选一。",
     proposalDeployPlanned: (key, subject, allowed, why) =>
-      `${key} 将在 ${subject} 上运行（演练）：${allowed === null ? "本组织未绑定" : allowed ? "允许" : `拒绝——${why}`}`,
+      `${key} 将在 ${subject} 上运行（演练）：${allowed === null ? "本组织没有该 Action" : allowed ? "允许" : `拒绝——${why}`}`,
     proposalDeployStarted: (run, key, subject, head) =>
       `部署 ${run}：${key}，${subject} 的 ${head}。Ctrl-C 只停止跟随，部署照常进行。`,
     proposalDeploySucceeded: (run, head) => `部署 ${run} 成功（${head}）。`,
     proposalDeployFailed: (run, outcome, exitCode, message) =>
       `部署 ${run} 未成功（${outcome}）${exitCode === null ? "" : `（退出码 ${exitCode}）`}${message === null || message === "" ? "" : `：${message}`}。`,
-    actionDesc: "组织的 Action：对提案与 roadmap 的每一项写操作，及其运行记录（Activity）与绑定",
-    actionLsDesc: "列出本组织已绑定的 Action（--all：全部贡献）",
+    actionDesc: "组织的 Action：对提案与 roadmap 的每一项写操作，及其运行记录（Activity）",
+    actionLsDesc: "列出本组织生效的 Action（--all：全部贡献）",
     actionLsSubject: "只列作用于该对象的 Action，并标出你此刻能否运行",
-    actionLsAll: "全部贡献（action、guard、挂钩、对象解析），无论是否绑定",
+    actionLsAll: "全部贡献（action、guard、挂钩、对象解析），内置的与 company workflow 的",
     actionRunDesc: "在一个对象（如 proposal:12）上运行某个键对应的 Action",
     actionExecDesc: "按贡献 id 精确运行一份贡献（键有歧义时用它）",
     actionParam: "一个参数，写作 name=value（能按 JSON 解析则按 JSON，否则为字符串）；可重复",
@@ -3360,30 +3379,37 @@ const zh: Messages = {
     actionRunsBefore: "这个游标之前的一页（上一页打印的 next）",
     actionRunsLimit: "最多列出多少条（1–200，缺省 50）",
     actionLimitInvalid: (value) => `--limit 须为 1–200：${value}`,
-    actionCheckDesc: "列出被两份及以上已绑定贡献应答的键（运行时会报歧义）",
-    actionBindDesc: "在本组织绑定一份贡献：启用或停用、挂钩的顺序、它的配置",
-    actionBindOn: "绑定（生效）",
-    actionBindOff: "解绑",
-    actionBindPosition: "挂钩在同一个键的挂钩中的顺序（小的在前）",
-    actionBindConfig: "该贡献的配置，一个 JSON 对象",
-    actionBindOneOf: "--on 与 --off 须恰好给出一个。",
-    actionPositionInvalid: (value) => `--position 须为整数：${value}`,
-    actionConfigInvalid: (value) => `--config 须为 JSON 对象：${value}`,
-    actionsNone: "本组织没有已绑定的 Action。",
+    actionCheckDesc: "列出被两份及以上同级贡献应答的键（运行时会报歧义）",
+    actionsNone: "本组织没有 Action。",
     actionsHeader: ["键", "贡献", "对象", "允许"],
-    contributionsHeader: ["ID", "种类", "键", "启用", "顺序", "来自"],
+    contributionsHeader: ["ID", "种类", "键", "WORKFLOW", "被取代", "来自"],
     actionRunsNone: "没有运行记录。",
     actionRunsHeader: ["开始", "键", "对象", "执行者", "入口", "结局"],
     actionRunsNext: (cursor) => `更多：--before '${cursor}'`,
     actionCheckNone: "没有冲突。",
     actionConflict: (key, kind, contributions) => `${key}（${kind}）：${contributions}`,
-    actionBound: (contribution, enabled, position) =>
-      `${contribution} 已${enabled ? "绑定" : "解绑"}（顺序 ${position}）。`,
     actionRunStarted: (run, key, subject) =>
       `运行 ${run}：${key}，对象 ${subject}。Ctrl-C 只停止跟随，运行照常进行。`,
     actionRunEnded: (run, outcome, message) =>
       `运行 ${run} ${outcome}${message === null || message === "" ? "" : `：${message}`}。`,
     actionExecForm: (cli) => `  ${cli}`,
+    workflowDesc: "组织的 company workflow：其 Action、guard 与挂钩加载后即在本组织生效",
+    workflowLsDesc: "列出 company workflow、正在生效的版本以及文件能否加载",
+    workflowPutDesc: "把本地目录写成 company workflow <id> 并加载（workflow.write Action）",
+    workflowPutKeep: "保留目录中没有的文件（缺省删除）",
+    workflowRmDesc: "删除一个 company workflow 及其历史版本",
+    workflowReloadDesc: "在服务器上直接改了文件之后重新加载 company workflow",
+    workflowHistoryDesc: "列出 company workflow 记下的版本，新的在前",
+    workflowRollbackDesc: "恢复 company workflow 记下的某个版本并加载",
+    workflowsNone: "本组织没有 company workflow。",
+    workflowsHeader: ["ID", "生效版本", "磁盘版本", "贡献", "状态"],
+    workflowVersionsNone: "没有记下的版本。",
+    workflowVersionsHeader: ["版本", "保存于", "文件数"],
+    workflowDirInvalid: (dir, why) => `无法把 ${dir} 作为 workflow 发送：${why}。`,
+    workflowLoaded: (id, revision) => `Workflow ${id} 已加载（版本 ${revision}）。`,
+    workflowNotLoaded: (id, error) => `Workflow ${id} 未能加载，之前的版本照常生效：\n${error}`,
+    workflowSkipped: (id, reason) => `  未采用：${id}——${reason}`,
+    workflowRemoved: (id) => `Workflow ${id} 已删除。`,
     proposalDeploymentDesc: "员工登记的部署（deployment），关系图按各自所跑的 commit 标出它们",
     proposalDeploymentAddDesc: "按 id 登记一个部署；已在名单上的会被挡住",
     proposalDeploymentUrlOpt:

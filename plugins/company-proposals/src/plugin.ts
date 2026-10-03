@@ -1,9 +1,9 @@
 /**
- * The plugin's two modules. CompanyProposalsPlugin holds the proposal service and contributes
- * the built-in proposal Actions; CompanyActionRegistry declares the Action slot, owns every write
- * route, and runs what the plugins and the company modules contribute to it. The slot owner is
- * created after its contributors (a code-half contribution orders it), so it depends on them
- * and never the reverse.
+ * The proposals module. It holds the proposal service and contributes the built-in proposal
+ * Actions; CompanyActionRegistry (registry-module.ts) declares the Action slot, owns every write
+ * route, and runs what the plugins and the organizations' company workflows contribute to it.
+ * The slot owner is created after its contributors (a code-half contribution orders it), so it
+ * depends on them and never the reverse.
  */
 import type { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
@@ -19,10 +19,6 @@ import { ProposalService } from "./service.js";
 import { ROUTES_ID, proposalRoutes } from "./routes.js";
 import { proposalCode } from "./builtin-actions.js";
 import { retireListeners, type RetireListener } from "./org-retire.js";
-import { CompanyActions } from "./action-model.js";
-import { ActionRegistry } from "./action-registry.js";
-import { ACTION_ROUTES_ID, actionRoutes } from "./action-routes.js";
-import type { Contributed } from "./action-index.js";
 
 /** The page contribution's id, as the manifest names it. */
 export const PAGE_ID = "company-proposals.page";
@@ -469,49 +465,5 @@ export class CompanyProposalsPlugin {
     },
   ): Promise<boolean> {
     return this.service.rebriefFromRoadmap(projectId, orgId, number, req);
-  }
-}
-
-/** The modules whose contributions to the registry are built in: bound unless unbound. */
-export const BUILTIN_MODULES: ReadonlySet<string> = new Set([
-  "CompanyProposalsPlugin",
-  "CompanyRoadmapsPlugin",
-]);
-
-/**
- * The Action registry of every organization: the slot `CompanyActionRegistry.actions`
- * (action-model.ts), the write routes, and the Activity.
- */
-@Component({
-  contributes: {
-    "HttpModule.routes": [
-      {
-        id: "company-proposals.action-routes",
-        prefix: "/api/projects/:projectId/organizations/:orgId/actions",
-        auth: "user",
-        order: 139,
-      },
-    ],
-  },
-})
-export class CompanyActionRegistry implements CompanyActions {
-  @Use("CompanyModule") private readonly gateway!: OrgGateway;
-  @Use("RuntimeModule") private readonly paths!: Paths;
-  @Use("RuntimeModule") private readonly log!: Log;
-  @Bind(ACTION_ROUTES_ID) routes!: Hono;
-
-  setup({ contributions, effect }: ClassCtx) {
-    // Built anew on every App: a hot update indexes what it contributes now.
-    const registry = new ActionRegistry({
-      gateway: this.gateway,
-      root: this.paths.root,
-      log: (line) => this.log.line(line),
-      contributions: (contributions.actions ?? []) as Contributed[],
-      builtin: BUILTIN_MODULES,
-    });
-    effect(() => {
-      registry.stop();
-    });
-    this.routes = actionRoutes(registry);
   }
 }

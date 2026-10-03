@@ -1,7 +1,7 @@
 /**
- * The registry's reads: the Actions bound in an organization (with the guard's answer for the
- * caller on a subject), every contribution with its binding, the conflicts, and the Activity —
- * the ActionRuns, newest first, one page at a time.
+ * The registry's reads: the Actions in force in an organization (with the guard's answer for
+ * the caller on a subject), every contribution — built in, or a company workflow's — the
+ * conflicts, and the Activity — the ActionRuns, newest first, one page at a time.
  */
 import type { OrgActor } from "@prismshadow/penguin-server/plugin";
 import type {
@@ -43,7 +43,7 @@ export function viewOf(r: StoredRun): ActionRunView {
 }
 
 /**
- * The bound Actions; with a subject, those acting on its kind, each with the guard's answer for
+ * The Actions in force; with a subject, those acting on its kind, each with the guard's answer for
  * the caller as the subject stands now (no parameters: a guard that reads one only checks it
  * when it is given). This is what a page shows a button for — it does not repeat the rules.
  */
@@ -55,14 +55,14 @@ export async function listActions(
   subjectText: string | undefined,
 ): Promise<ActionsResponse> {
   const scope = await registry.scope(projectId, orgId, actor);
-  const bindings = registry.bindingsOf(scope.store);
+  const index = scope.index;
   const subject = subjectText === undefined ? null : parseSubject(subjectText);
-  const actions = registry.index
-    .actions(bindings)
+  const actions = index
+    .actions()
     .filter((a) => subject === null || a.subjects.includes(subject.kind));
   let state: unknown = null;
   if (subject !== null) {
-    const resolver = registry.index.subjectOf(subject.kind, bindings);
+    const resolver = index.subjectOf(subject.kind);
     if (resolver !== undefined) {
       state = await resolver.code.state({ org: scope.org, caller: scope.caller }, subject);
     }
@@ -79,15 +79,11 @@ export async function listActions(
     };
     if (subject !== null) {
       try {
-        registry.index.guardOf(
-          a,
-          bindings,
-        )({
+        index.guardOf(a)({
           caller: scope.caller,
           subject,
           state,
           params: {},
-          config: bindings(a).config,
           running: runningCount(scope.orgKey, a.key),
         });
         view.allowed = true;
@@ -113,25 +109,23 @@ export async function listContributions(
   actor: OrgActor,
 ): Promise<ActionContributionsResponse> {
   const scope = await registry.scope(projectId, orgId, actor);
-  const bindings = registry.bindingsOf(scope.store);
+  const index = scope.index;
   return {
-    contributions: registry.index.entries.map((e) => {
-      const b = bindings(e);
+    contributions: index.entries.map((e) => {
       return {
         id: e.id,
         kind: e.kind,
         key: e.kind === "subject" ? null : e.key,
         from: e.from,
         builtin: e.builtin,
-        enabled: b.enabled,
-        position: b.position,
-        config: b.config,
+        workflow: e.workflow,
+        replaced: index.replaced(e),
         subjects: e.kind === "action" || e.kind === "subject" ? e.subjects : [],
         when: e.kind === "hook" ? e.when : null,
         description: e.kind === "action" ? e.description : "",
       };
     }),
-    skipped: [...registry.index.skipped],
+    skipped: [...index.skipped],
   };
 }
 
@@ -142,10 +136,7 @@ export async function checkConflicts(
   actor: OrgActor,
 ): Promise<ActionCheckResponse> {
   const scope = await registry.scope(projectId, orgId, actor);
-  return {
-    conflicts: registry.index.conflicts(registry.bindingsOf(scope.store)),
-    skipped: [...registry.index.skipped],
-  };
+  return { conflicts: scope.index.conflicts(), skipped: [...scope.index.skipped] };
 }
 
 const MAX_PAGE = 200;

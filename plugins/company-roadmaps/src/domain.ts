@@ -74,8 +74,8 @@ export interface Approval {
 }
 
 /**
- * The role an approval was given in: one of the roles the organization's binding of
- * `roadmap.item.approve` names (guards.ts; `moderator` and `member` by default). The approval
+ * The role an approval was given in: one of the roles the guard of `roadmap.item.approve` in
+ * force judges by (guards.ts; `moderator` and `member` by default). The approval
  * that fills the last of them creates the item's proposal.
  */
 export type ApprovalRole = string;

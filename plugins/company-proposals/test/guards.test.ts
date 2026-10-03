@@ -102,7 +102,6 @@ function ask(
     subject: subjectOf(opts.subject ?? `proposal:${state?.number ?? 7}`),
     state,
     params: opts.params ?? {},
-    config: {},
     running: 0,
     ...(opts.tx !== undefined ? { tx: opts.tx } : {}),
   });
@@ -283,7 +282,6 @@ describe("a guard replaced", () => {
           subject: subjectOf(`proposal:${number}`),
           state: p,
           params: {},
-          config: {},
           running: 0,
         });
         return { status: "approved", approvedRevision: p.revision, by: authorAgent.principal };

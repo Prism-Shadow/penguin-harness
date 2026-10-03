@@ -1,8 +1,8 @@
 /**
  * The built-in roadmap Actions: the code halves of this plugin's contributions to
  * company-proposals' `CompanyActionRegistry.actions` (their data halves are the manifest,
- * index.ts). Each runs one use case of RoadmapService under the Action's guard as the
- * organization binds it; the defaults are guards.ts's. The plugin also contributes the subject
+ * index.ts). Each runs one use case of RoadmapService under the Action's guard in force in the
+ * organization (a company workflow may replace it); the defaults are guards.ts's. The plugin also contributes the subject
  * resolver of roadmaps and their items.
  */
 import {
@@ -36,7 +36,6 @@ export const ROADMAP_SUBJECTS_ID = "company-roadmaps.subjects";
 /** The Act a use case runs under, from the run's. */
 export function writeActOf(ctx: RunContext): WriteAct {
   return {
-    config: ctx.config,
     check: (state, opts) =>
       ctx.act.guard({
         caller: ctx.caller,

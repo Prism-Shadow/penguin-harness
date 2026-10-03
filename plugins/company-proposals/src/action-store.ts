@@ -1,5 +1,5 @@
 /**
- * ActionStore: the ActionRuns and the bindings of one organization, in its `company.db`
+ * ActionStore: the ActionRuns of one organization, in its `company.db`
  * beside the proposals' and the roadmaps' tables (schema.ts). A run is two rows, each only ever
  * inserted: `action_runs` when it starts, `action_run_ends` when it ends — the triggers refuse
  * to rewrite or delete either, so the Activity is history no Action can bypass. A run without
@@ -23,15 +23,6 @@ CREATE TRIGGER IF NOT EXISTS ${table}_no_delete BEFORE DELETE ON ${table}
 
 /** The registry's tables. */
 export const ACTION_SCHEMA = `
-CREATE TABLE IF NOT EXISTS action_bindings (
-  contribution TEXT PRIMARY KEY,
-  enabled      INTEGER NOT NULL,
-  position     INTEGER NOT NULL DEFAULT 0,
-  config       TEXT NOT NULL DEFAULT '{}',
-  by           TEXT NOT NULL,
-  at           TEXT NOT NULL
-) WITHOUT ROWID;
-
 CREATE TABLE IF NOT EXISTS action_runs (
   id           TEXT PRIMARY KEY,
   key          TEXT NOT NULL,
@@ -98,16 +89,6 @@ export interface RunEnd {
 /** A run as the Activity reads it: its start, and its end once it has one. */
 export interface StoredRun extends RunStart {
   end: RunEnd | null;
-}
-
-/** One organization's binding of one contribution. */
-export interface Binding {
-  contribution: string;
-  enabled: boolean;
-  position: number;
-  config: Record<string, unknown>;
-  by: string;
-  at: string;
 }
 
 /** What the Activity is filtered by; `before` is the cursor of the page before (`<startedAt>|<id>`). */
@@ -321,36 +302,5 @@ export class ActionStore {
       ORDER BY r.started_at DESC, r.id DESC LIMIT ?`;
     args.push(filter.limit);
     return (this.q(sql).all(...args) as Row[]).map(runOf);
-  }
-
-  bindings(): Binding[] {
-    return (this.q(`SELECT * FROM action_bindings ORDER BY contribution`).all() as Row[]).map(
-      (row) => ({
-        contribution: String(row.contribution),
-        enabled: Number(row.enabled) === 1,
-        position: Number(row.position),
-        config: json(row.config, {}) as Record<string, unknown>,
-        by: String(row.by),
-        at: String(row.at),
-      }),
-    );
-  }
-
-  /**
-   * The current binding of a contribution, replaced, with the run that changed it — one
-   * transaction, so the binding and its history commit together.
-   */
-  bind(b: Omit<Binding, "at">, run: RunStart, end: Omit<RunEnd, "endedAt">): void {
-    immediate(this.db, () => {
-      const at = this.at();
-      this.q(
-        `INSERT INTO action_bindings (contribution, enabled, position, config, by, at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (contribution) DO UPDATE SET enabled = excluded.enabled,
-           position = excluded.position, config = excluded.config, by = excluded.by, at = excluded.at`,
-      ).run(b.contribution, b.enabled ? 1 : 0, b.position, JSON.stringify(b.config), b.by, at);
-      writeStart(this.db, run);
-      this.insertEnd(run.id, { ...end, endedAt: at });
-    });
   }
 }

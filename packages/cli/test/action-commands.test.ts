@@ -1,11 +1,17 @@
 /**
- * `penguin org action` over a stub transport: each command is one route of the Action
- * registry, sent with the caller's identity, and prints what that route answered.
+ * `penguin org action` and `penguin org workflow` over a stub transport: each command is one
+ * route — of the Action registry, or of the organization's company workflows — sent with the
+ * caller's identity, and prints what that route answered; a workflow put sends a local
+ * directory's files as one `workflow.write` run.
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ActionRunView } from "@prismshadow/penguin-server/api";
 import { getMessages } from "../src/i18n.js";
 import { registerOrgAction } from "../src/commands/action.js";
+import { readWorkflowDir, registerOrgWorkflow } from "../src/commands/workflow.js";
 import { parseParams } from "../src/commands/action-client.js";
 import { harness as mount } from "./action-kit.js";
 
@@ -35,10 +41,14 @@ const run = (over: Partial<ActionRunView> = {}): ActionRunView => ({
 });
 
 const harness = (answer: (method: string, suffix: string, body?: unknown) => unknown) =>
-  mount((program, kit) => registerOrgAction(program.command("org"), t, kit), answer);
+  mount((program, kit) => {
+    const org = program.command("org");
+    registerOrgAction(org, t, kit);
+    registerOrgWorkflow(org, t, kit);
+  }, answer);
 
 describe("penguin org action", () => {
-  it("ls lists the bound Actions, with the guard's answer for a subject; --all lists every contribution", async () => {
+  it("ls lists the Actions in force, with the guard's answer for a subject; --all lists every contribution", async () => {
     const h = harness((_m, suffix) =>
       suffix.startsWith("/contributions")
         ? {
@@ -47,11 +57,10 @@ describe("penguin org action", () => {
                 id: "acme.guard.approve",
                 kind: "guard",
                 key: "proposal.approve",
-                from: "AcmeModule",
+                from: "Workflow",
                 builtin: false,
-                enabled: false,
-                position: 0,
-                config: {},
+                workflow: "acme",
+                replaced: false,
                 subjects: [],
                 when: null,
                 description: "",
@@ -164,36 +173,97 @@ describe("penguin org action", () => {
     await h.exec(["org", "action", "check"]);
     expect(h.out[1]).toBe(`${t.org.actionCheckNone}\n`);
   });
+});
 
-  it("bind runs action.bind on the organization with the contribution, on or off, position and config", async () => {
-    const h = harness(() => ({
-      run: run({ key: "action.bind" }),
-      result: { contribution: "acme.deploy", enabled: true, position: 2, config: { a: 1 } },
-    }));
-    await h.exec([
-      "org",
-      "action",
-      "bind",
-      "acme.deploy",
-      "--on",
-      "--position",
-      "2",
-      "--config",
-      '{"a":1}',
+const view = (over: Record<string, unknown> = {}) => ({
+  id: "deploy",
+  name: "@acme/deploy",
+  version: "0.1.0",
+  revision: "aaaaaaaaaaaa",
+  serving: "aaaaaaaaaaaa",
+  loadedAt: "2026-10-03T00:00:00.000Z",
+  error: null,
+  contributions: ["acme.deploy.desktop"],
+  skipped: [],
+  files: ["index.ts", "package.json"],
+  ...over,
+});
+
+describe("penguin org workflow", () => {
+  it("ls and history read the workflow routes", async () => {
+    const h = harness((_m, suffix) =>
+      suffix.includes("/history")
+        ? { versions: [{ revision: "aaaaaaaaaaaa", savedAt: "2026-10-03", files: ["a", "b"] }] }
+        : { workflows: [view(), view({ id: "broken", serving: null, error: "TS2322 no\nmore" })] },
+    );
+    await h.exec(["org", "workflow", "ls"]);
+    expect(h.calls[0]).toEqual({ method: "GET", suffix: "?agentId=dev1" });
+    const out = h.out.join("");
+    expect(out).toContain("deploy");
+    expect(out).toContain("TS2322 no");
+    await h.exec(["org", "workflow", "history", "deploy"]);
+    expect(h.calls[1]).toEqual({ method: "GET", suffix: "/deploy/history?agentId=dev1" });
+    expect(h.out.join("")).toContain("aaaaaaaaaaaa");
+  });
+
+  it("put sends a local directory as one workflow.write run, and reports whether it loaded", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-put-"));
+    try {
+      fs.writeFileSync(path.join(dir, "package.json"), "{}");
+      fs.mkdirSync(path.join(dir, "src"));
+      fs.writeFileSync(path.join(dir, "src", "a.ts"), "export {};");
+      fs.mkdirSync(path.join(dir, ".harness"));
+      fs.writeFileSync(path.join(dir, ".harness", "plugin.d.ts"), "");
+      fs.mkdirSync(path.join(dir, "node_modules"));
+      expect(readWorkflowDir(dir)).toEqual({
+        files: { "package.json": "{}", "src/a.ts": "export {};" },
+      });
+      let loaded = true;
+      const h = harness(() => ({
+        run: run({ key: "workflow.write", subject: "workflow:deploy" }),
+        result: loaded
+          ? { workflow: view(), loaded: true, error: null }
+          : { workflow: view({ error: "TS2322 nope" }), loaded: false, error: "TS2322 nope" },
+      }));
+      await h.exec(["org", "workflow", "put", "deploy", dir]);
+      expect(h.calls[0]).toEqual({
+        method: "POST",
+        suffix: "/workflow.write/runs",
+        body: {
+          subject: "workflow:deploy",
+          params: { files: { "package.json": "{}", "src/a.ts": "export {};" }, replace: true },
+          via: "cli",
+          agentId: "dev1",
+        },
+      });
+      expect(h.out[0]).toBe(`${t.org.workflowLoaded("deploy", "aaaaaaaaaaaa")}\n`);
+      loaded = false;
+      await h.exec(["org", "workflow", "put", "deploy", dir, "--keep"]);
+      expect((h.calls[1]?.body as { params: Record<string, unknown> }).params.replace).toBe(
+        undefined,
+      );
+      expect(h.errors).toEqual([t.org.workflowNotLoaded("deploy", "TS2322 nope")]);
+      expect(h.exits).toEqual([1]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rm, reload and rollback each run their workflow.* Action on the workflow", async () => {
+    const h = harness((_m, suffix) =>
+      suffix.startsWith("/workflow.remove")
+        ? { run: run({ key: "workflow.remove" }), result: { removed: "deploy" } }
+        : { run: run(), result: { workflow: view(), loaded: true, error: null } },
+    );
+    await h.exec(["org", "workflow", "rm", "deploy"]);
+    await h.exec(["org", "workflow", "reload", "deploy"]);
+    await h.exec(["org", "workflow", "rollback", "deploy", "aaaaaaaaaaaa"]);
+    expect(h.calls.map((c) => [c.suffix, (c.body as { params: unknown }).params])).toEqual([
+      ["/workflow.remove/runs", {}],
+      ["/workflow.reload/runs", {}],
+      ["/workflow.rollback/runs", { revision: "aaaaaaaaaaaa" }],
     ]);
-    expect(h.calls[0]).toEqual({
-      method: "POST",
-      suffix: "/action.bind/runs",
-      body: {
-        subject: "organization",
-        params: { contribution: "acme.deploy", enabled: true, position: 2, config: { a: 1 } },
-        via: "cli",
-        agentId: "dev1",
-      },
-    });
-    expect(h.out[0]).toBe(`${t.org.actionBound("acme.deploy", true, 2)}\n`);
-    await h.exec(["org", "action", "bind", "acme.deploy"]);
-    expect(h.errors).toEqual([t.org.actionBindOneOf]);
+    expect(h.out[0]).toBe(`${t.org.workflowRemoved("deploy")}\n`);
   });
 });
 

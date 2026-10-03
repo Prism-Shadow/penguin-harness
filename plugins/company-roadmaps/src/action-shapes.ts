@@ -26,23 +26,29 @@ export interface GuardInput {
   subject: Subject;
   state: unknown;
   params: Record<string, unknown>;
-  config: Record<string, unknown>;
   running: number;
   tx?: unknown;
 }
 
-export type Guard = (input: GuardInput) => void;
+/**
+ * A guard returns to allow (what it returns is its verdict, which the write may read) and throws
+ * to refuse; `options` is what a replacing guard hands the default it wraps.
+ */
+export type Guard = (input: GuardInput, options?: Record<string, unknown>) => unknown;
+
+/** A guard replacement: handed the guard it replaces. */
+export type GuardCode = (defaults: Guard) => Guard;
 
 export interface RunContext {
   runId: string;
+  key: string;
   org: OrgView;
   actor: OrgActor;
   caller: ActionCaller;
   subject: Subject;
   params: Record<string, unknown>;
-  config: Record<string, unknown>;
   act: {
-    guard(input: Omit<GuardInput, "config" | "running">): void;
+    guard(input: Omit<GuardInput, "running">): unknown;
     inTx?: (db: DatabaseSync) => void;
   };
 }

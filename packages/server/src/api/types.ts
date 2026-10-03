@@ -27,7 +27,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { WorkflowInfo } from "../mechanisms/workflows.js";
+import type { WorkflowInfo, WorkflowVersion } from "../mechanisms/workflows.js";
 import type {
   PackageManifest as PackageManifestType,
   PublishedGist as PublishedGistType,
@@ -7273,19 +7273,23 @@ export interface ActionView {
   /** Parameter name (`?`: optional) to its type. */
   params: Record<string, string>;
   description: string;
-  /** A plugin's own Action rather than a company module's. */
+  /** A plugin's own Action rather than a company workflow's. */
   builtin: boolean;
   /** With `?subject=`: the guard's answer for the caller now (parameters not considered). */
   allowed?: boolean;
   refusal?: { status: number; code: string; message: string };
 }
 
-/** `GET …/actions[?subject=]`: the bound Actions (those acting on that subject's kind). */
+/** `GET …/actions[?subject=]`: the organization's Actions (those acting on that subject's kind). */
 export interface ActionsResponse {
   actions: ActionView[];
 }
 
-/** One contribution to the Action registry and the organization's binding of it. */
+/**
+ * One contribution to the organization's Action registry: a plugin's own (built in), or one of
+ * the organization's company workflows'. A company workflow's `action` or `guard` takes the
+ * place of the built-in one on its key.
+ */
 export interface ActionContributionView {
   id: string;
   kind: "action" | "guard" | "hook" | "subject";
@@ -7293,22 +7297,23 @@ export interface ActionContributionView {
   /** The contributing module. */
   from: string;
   builtin: boolean;
-  enabled: boolean;
-  position: number;
-  config: Record<string, unknown>;
+  /** The company workflow that contributes it; null for a built-in one. */
+  workflow: string | null;
+  /** A built-in `action` or `guard` a company workflow's contribution replaces on its key. */
+  replaced: boolean;
   subjects: string[];
   when: "before" | "after" | null;
   description: string;
 }
 
-/** A key two or more bound contributions answer: ambiguous when invoked. */
+/** A key two or more contributions of the same standing answer: ambiguous when invoked. */
 export interface ActionConflict {
   key: string;
   kind: "action" | "guard";
   contributions: string[];
 }
 
-/** `GET …/actions/contributions`: every contribution, bound or not, and those the registry left out. */
+/** `GET …/actions/contributions`: every contribution, and those the registry left out. */
 export interface ActionContributionsResponse {
   contributions: ActionContributionView[];
   skipped: Array<{ id: string; reason: string }>;
@@ -7318,6 +7323,45 @@ export interface ActionContributionsResponse {
 export interface ActionCheckResponse {
   conflicts: ActionConflict[];
   skipped: Array<{ id: string; reason: string }>;
+}
+
+/**
+ * A company workflow of an organization (company-proposals): `<org dir>/workflows/<id>/`, an
+ * Agent workflow's package scoped to the organization, whose contributions to the Action
+ * registry take effect there as soon as it loads.
+ */
+export interface CompanyWorkflowView {
+  id: string;
+  name: string;
+  version: string | null;
+  /** The content revision of the folder on disk. */
+  revision: string;
+  /** The revision serving: the last one that loaded; null while none has. */
+  serving: string | null;
+  loadedAt: string | null;
+  /** Why the files on disk did not load; the previous instance, if any, keeps serving. */
+  error: string | null;
+  /** The ids of the contributions the serving instance gives the organization's registry. */
+  contributions: string[];
+  /** Its contributions the registry left out, and why (a `workflow.*` key, a clashing id). */
+  skipped: Array<{ id: string; reason: string }>;
+  files: string[];
+}
+
+/** `GET …/organizations/:orgId/workflows`. */
+export interface CompanyWorkflowsResponse {
+  workflows: CompanyWorkflowView[];
+}
+
+/** `GET …/organizations/:orgId/workflows/:id/history`: the recorded versions, newest first. */
+export interface CompanyWorkflowHistoryResponse {
+  versions: WorkflowVersion[];
+}
+
+/** `GET …/organizations/:orgId/workflows/:id/files/<path>`. */
+export interface CompanyWorkflowFileResponse {
+  path: string;
+  content: string;
 }
 
 export interface ProposalDetail extends ProposalItem {

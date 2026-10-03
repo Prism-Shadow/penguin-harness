@@ -6474,7 +6474,7 @@ Scenarios:
           dockOpen: (pr: string, name: string): string => `Show the deploy of ${pr} to ${name}`,
           dockDismiss: "Dismiss",
           dockTitle: "Deploys",
-          none: "No deploy Action is bound: a company module contributes one, and penguin org action bind turns it on",
+          none: "This organization has no deploy Action yet: a company workflow contributes one (penguin org workflow put)",
           loadFailed: "Deploy Actions could not be read",
           title: (name: string): string => `Deploy to ${name}`,
           what: (pr: string, head: string): string =>

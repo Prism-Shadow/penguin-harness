@@ -1,14 +1,13 @@
 /**
  * `penguin org action`: the organization's Actions (company-proposals' Action registry) —
- * every write to its proposals and roadmaps, the runs each one left (the Activity), and the
- * bindings that say which contributions take effect in the organization.
+ * every write to its proposals and roadmaps, built in or contributed by the organization's
+ * company workflows (`penguin org workflow`), and the runs each one left (the Activity).
  *
  *   action ls [--subject <subject>] [--all]
  *   action run <key> <subject> [--param name=value ...] [--params <json>] [--request-id <id>]
  *   action exec <contribution> <subject> [same options]
  *   action runs [--subject S] [--by P] [--key K] [--before <cursor>] [--limit N]
  *   action check
- *   action bind <contribution> (--on | --off) [--position N] [--config <json>]
  *
  * Each command is one route; nothing is decided here. A run that starts a process (a deploy)
  * is followed until it ends, the way `proposal deploy` follows one.
@@ -65,8 +64,8 @@ export function registerOrgAction(org: Command, t: Messages, kit: DeployKit): vo
                 c.id,
                 c.kind === "hook" && c.when !== null ? `hook:${c.when}` : c.kind,
                 c.key ?? c.subjects.join(","),
-                c.enabled ? "yes" : "no",
-                String(c.position),
+                c.workflow ?? "-",
+                c.replaced ? "yes" : "",
                 c.from,
               ]),
             ),
@@ -221,61 +220,5 @@ export function registerOrgAction(org: Command, t: Messages, kit: DeployKit): vo
       for (const c of res.conflicts) {
         kit.print(t.org.actionConflict(c.key, c.kind, c.contributions.join(", ")));
       }
-    });
-
-  kit
-    .scoped(
-      action
-        .command("bind <contribution>")
-        .description(t.org.actionBindDesc)
-        .option("--on", t.org.actionBindOn)
-        .option("--off", t.org.actionBindOff)
-        .option("--position <n>", t.org.actionBindPosition)
-        .option("--config <json>", t.org.actionBindConfig),
-    )
-    .action(async (contribution: string, opts: Record<string, unknown>) => {
-      if ((opts.on === true) === (opts.off === true)) {
-        kit.fail(t.org.actionBindOneOf);
-        return;
-      }
-      const rawPosition = str(opts.position);
-      const position = rawPosition === undefined ? undefined : Number(rawPosition);
-      if (position !== undefined && !Number.isInteger(position)) {
-        kit.fail(t.org.actionPositionInvalid(rawPosition!));
-        return;
-      }
-      let config: Record<string, unknown> | undefined;
-      const rawConfig = str(opts.config);
-      if (rawConfig !== undefined) {
-        const parsed = parseParams([], rawConfig);
-        if ("error" in parsed) {
-          kit.fail(t.org.actionConfigInvalid(rawConfig));
-          return;
-        }
-        config = parsed.params;
-      }
-      const request = await kit.openActions(opts);
-      if (request === null) return;
-      const res = await startRun(
-        request,
-        { key: "action.bind" },
-        "organization",
-        {
-          contribution,
-          enabled: opts.on === true,
-          ...(position !== undefined ? { position } : {}),
-          ...(config !== undefined ? { config } : {}),
-        },
-        kit.actorFields(),
-      );
-      if (res === null) return;
-      if (opts.json === true) {
-        kit.printJson(res);
-        return;
-      }
-      const bound = res.result as { enabled?: boolean; position?: number } | null;
-      kit.print(
-        t.org.actionBound(contribution, bound?.enabled ?? opts.on === true, bound?.position ?? 0),
-      );
     });
 }

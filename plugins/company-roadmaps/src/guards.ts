@@ -1,14 +1,15 @@
 /**
  * The default guards of the roadmap Actions, and the approval rule they share with the write.
- * A guard answers whether a run may go ahead, in which state; a company module may replace any
+ * A guard answers whether a run may go ahead, in which state; a company workflow may replace any
  * of them. The store guarantees only the data and an append-only history, so the rules here —
  * which status takes which step, which roles approve an item's brief, that an approval counts
  * only for the brief it was given on — are defaults.
  *
- * The defaults do not tell a person from an employee. An item's brief is approved in the roles
- * the organization's binding of `roadmap.item.approve` names (`config.roles`), by default the
- * moderator's and any other member's; the approval that fills the last role creates the item's
- * proposal.
+ * The defaults do not tell a person from an employee. An item's brief is approved in the
+ * moderator's role and any other member's; a company workflow that replaces the guard of
+ * `roadmap.item.approve` names other roles by handing them to the default it wraps
+ * ({@link withApprovalRoles}), and the guard's verdict carries the roles to the write. The
+ * approval that fills the last role creates the item's proposal.
  *
  * Each guard is synchronous and pure over the roadmap it is given; a write asks it again inside
  * its transaction, so nothing slips between a check and its write.
@@ -21,7 +22,7 @@ import {
   type Roadmap,
   type RoadmapStatus,
 } from "./domain.js";
-import type { ActionCaller, Guard, GuardInput, Subject } from "./action-shapes.js";
+import type { ActionCaller, Guard, GuardCode, GuardInput, Subject } from "./action-shapes.js";
 
 /** The caller, resolved: the principal a write is recorded under, and the employee it is, if one. */
 export interface Caller {
@@ -45,13 +46,13 @@ export function requireStatus(r: Roadmap, status: RoadmapStatus): void {
 export const DEFAULT_APPROVAL_ROLES: readonly string[] = ["moderator", "member"];
 
 /**
- * The roles a binding names, checked: `moderator` (the roadmap's moderator), `member` (anyone
- * but the moderator), `person`, `employee`, `any`. Unknown names are dropped; none left is the
- * default.
+ * The approval roles `options.roles` names, checked: `moderator` (the roadmap's moderator),
+ * `member` (anyone but the moderator), `person`, `employee`, `any`. Unknown names are dropped;
+ * none left is the default.
  */
-export function rolesOf(config: Record<string, unknown>): string[] {
+export function rolesOf(options: Record<string, unknown> | undefined): string[] {
   const known = new Set(["moderator", "member", "person", "employee", "any"]);
-  const raw = Array.isArray(config.roles) ? config.roles : [];
+  const raw = Array.isArray(options?.roles) ? options.roles : [];
   const roles = raw.filter((x): x is string => typeof x === "string" && known.has(x));
   return roles.length > 0 ? [...new Set(roles)] : [...DEFAULT_APPROVAL_ROLES];
 }
@@ -137,10 +138,12 @@ function roadmapOf(input: GuardInput): Roadmap | null {
   return (input.state as Roadmap | null) ?? null;
 }
 
-function onRoadmap(check: (r: Roadmap, input: GuardInput) => void): Guard {
-  return (input) => {
+function onRoadmap(
+  check: (r: Roadmap, input: GuardInput, options?: Record<string, unknown>) => unknown,
+): Guard {
+  return (input, options) => {
     const r = roadmapOf(input);
-    if (r !== null) check(r, input);
+    return r === null ? undefined : check(r, input, options);
   };
 }
 
@@ -158,12 +161,15 @@ export const roadmapGuards: Record<string, Guard> = {
   "roadmap.establish": onRoadmap((r) => requireStatus(r, "discussing")),
 
   /**
-   * One of an item's approvals, in a role the binding names; inside the write, only on the brief
-   * the approval was read on (`params.brief`).
+   * One of an item's approvals, in one of the roles handed in `options.roles` (the default
+   * ones without); inside the write, only on the brief the approval was read on
+   * (`params.brief`). Its verdict is the roles it judged by: the write records the approval in
+   * one of them.
    */
-  "roadmap.item.approve": onRoadmap((r, { caller, subject, config, params }) => {
+  "roadmap.item.approve": onRoadmap((r, { caller, subject, params }, options) => {
     const key = itemKey(subject);
-    approvalRole(r, key, caller, rolesOf(config));
+    const roles = rolesOf(options);
+    approvalRole(r, key, caller, roles);
     if (typeof params.brief === "string" && r.delegations[key]?.brief !== params.brief) {
       throw new RoadmapError(
         409,
@@ -171,6 +177,7 @@ export const roadmapGuards: Record<string, Guard> = {
         `Item ${key}'s brief changed while it was being approved; read it again and approve that one.`,
       );
     }
+    return { roles };
   }),
 
   /**
@@ -213,31 +220,37 @@ export const roadmapGuards: Record<string, Guard> = {
 };
 
 /**
- * What a write runs under: the guard of its Action, asked with the roadmap as it stands —
- * before the write, and again inside it — and the run's transaction hook.
+ * A guard replacement that keeps the default rules of `roadmap.item.approve` and approves in
+ * `roles` instead of the default ones. A company workflow writes the same thing inline —
+ * `(defaults) => (input, options) => defaults(input, { ...options, roles: [...] })` — since its
+ * code imports nothing at run time.
  */
-export interface WriteAct {
-  check(state: Roadmap | null, opts?: { params?: Record<string, unknown> }): void;
-  /** The binding's config of the Action (the approval roles). */
-  config: Record<string, unknown>;
-  inTx?: (db: DatabaseSync) => void;
+export function withApprovalRoles(roles: readonly string[]): GuardCode {
+  return (defaults) => (input, options) => defaults(input, { ...options, roles: [...roles] });
+}
+
+/** The approval roles a guard's verdict carries; the default ones when it carries none. */
+export function verdictRoles(verdict: unknown): string[] {
+  const roles = (verdict as { roles?: unknown } | null | undefined)?.roles;
+  return rolesOf(Array.isArray(roles) ? { roles } : undefined);
 }
 
 /**
- * The default guard of `key`, for `caller` on `subject` (a use case called directly), under a
- * binding's `config`.
+ * What a write runs under: the guard of its Action, asked with the roadmap as it stands —
+ * before the write, and again inside it — and the run's transaction hook. `check` answers the
+ * guard's verdict.
  */
-export function defaultAct(
-  key: string,
-  caller: Caller,
-  subject: Subject,
-  config: Record<string, unknown> = {},
-): WriteAct {
+export interface WriteAct {
+  check(state: Roadmap | null, opts?: { params?: Record<string, unknown> }): unknown;
+  inTx?: (db: DatabaseSync) => void;
+}
+
+/** The default guard of `key`, for `caller` on `subject` (a use case called directly). */
+export function defaultAct(key: string, caller: Caller, subject: Subject): WriteAct {
   const guard = roadmapGuards[key] ?? allow;
   const full: ActionCaller = { principal: caller.principal, agentId: caller.agentId, userId: "" };
   return {
-    config,
     check: (state, opts) =>
-      guard({ caller: full, subject, state, params: opts?.params ?? {}, config, running: 0 }),
+      guard({ caller: full, subject, state, params: opts?.params ?? {}, running: 0 }),
   };
 }

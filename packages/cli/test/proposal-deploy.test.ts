@@ -112,7 +112,7 @@ describe("penguin org proposal deploy", () => {
     expect(h.exits).toEqual([2]);
   });
 
-  it("a dry run asks whether the Action is bound and allowed on the subject, running nothing; --json prints the answer and does not follow", async () => {
+  it("a dry run asks whether the organization has the Action and allows it on the subject, running nothing; --json prints the answer and does not follow", async () => {
     const dry = harness(() => ({
       actions: [
         {

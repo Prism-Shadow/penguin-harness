@@ -1,9 +1,9 @@
 /**
- * Deploys, for the company modules that contribute them. A deploy is an Action like any other —
- * `deploy.<id>`, contributed by a company module and bound by the organization — whose subject
- * is a proposal (its impl's head), a change request or a branch, and whose run starts a process
- * on that subject's commit. How a project is built and where it ships differs from one company
- * to the next, so the plugin decides none of it; this module is what it lends a deploy:
+ * Deploys. A deploy is an Action like any other — `deploy.<id>`, contributed by a company
+ * workflow of the organization — whose subject is a proposal (its impl's head), a change
+ * request or a branch, and whose run starts a process on that subject's commit. How a project
+ * is built and where it ships differs from one company to the next, so the plugin decides none
+ * of it; this module is what it lends a deploy:
  *
  *   DEPLOY_PARAMS   the parameters a deploy takes: `expectedHead` (the registry refuses the run
  *                   when the subject has moved past it) and extra `args`
@@ -11,6 +11,11 @@
  *   deployProcess   the run's effect: the argument vector (no shell) started in the
  *                   organization's shared workspace with the commit in its environment, its
  *                   output kept (the last OUTPUT_LIMIT characters), stopped after an hour
+ *
+ * A company workflow reaches `deployProcess` through its host (`CompanyHost.deploy`,
+ * company-workflows.ts): its code is loaded with nothing installed beside it. What it imports
+ * from this entry, `@prismshadow/penguin-plugin-company-proposals/deploy`, is TYPES — the
+ * Action model's, re-exported below — and the loader resolves the entry to its declarations.
  *
  * The process's environment is the server's plus:
  *   PENGUIN_DEPLOY_ID        the deploy's id (`desktop` of `deploy.desktop`)
@@ -20,20 +25,19 @@
  *   PENGUIN_DEPLOY_HEAD      the head commit (full sha) — what to deploy
  *   PENGUIN_DEPLOY_PROPOSAL  the proposal number, empty for a head no proposal registered
  *   PENGUIN_DEPLOY_BY        who started it (`user:<id>` / `agent:<id>`)
- *
- * A module imports this from `@prismshadow/penguin-plugin-company-proposals/deploy`, a bundle
- * of its own with nothing of the plugin's services in it; the Action model's types and refusal
- * classes are re-exported here for any company module, deploy or not.
  */
 import { ActionFailure, ActionRefusal, type Guard, type RunContext } from "./action-model.js";
 
 export { OUTPUT_LIMIT, PROCESS_TIMEOUT_MS as DEPLOY_TIMEOUT_MS } from "./action-live.js";
-// What a company module writes its contributions with, so it needs nothing else of the plugin.
+// What a company workflow writes its contributions against (as types: see above).
 export { ActionFailure, ActionRefusal } from "./action-model.js";
 export type {
   ActionCaller,
   ActionCode,
   ActionContribution,
+  CompanyDeployResult,
+  CompanyHost,
+  CompanyOrganization,
   Guard,
   GuardCode,
   GuardInput,

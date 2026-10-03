@@ -3,8 +3,8 @@
  * a contribution with a dotted key (`proposal.approve`, `roadmap.item.approve`,
  * `deploy.desktop`), the kinds of subject it acts on, a parameter schema, a guard and a run.
  * Each execution is an ActionRun (action-store.ts), recorded whether it succeeded, was
- * refused or failed. The registry (action-registry.ts) resolves a key to one bound
- * contribution and runs it; the routes (action-routes.ts) are the one way in.
+ * refused or failed. The registry (action-registry.ts) resolves a key to one contribution and
+ * runs it; the routes (action-routes.ts) are the one way in.
  *
  * The contributions arrive on one slot, `CompanyActionRegistry.actions`, declared here beside
  * the interface the registry implements. A contribution is one of four kinds:
@@ -17,8 +17,10 @@
  *   subject  reads the subject kinds it names: its code is a {@link SubjectCode} — the state a
  *            guard is asked about, and the commit of a subject that has one
  *
- * The plugins' own contributions are bound in every organization; a company module's take
- * effect only once the organization binds them (`action.bind`, action_bindings).
+ * The plugins' own contributions are the built-in Actions of every organization. An
+ * organization's company workflows (company-workflows.ts) contribute to the same slot, for that
+ * organization only, and take effect as soon as they load: a company workflow's `action` or
+ * `guard` takes the place of the built-in one on its key.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { Interface } from "@prismshadow/penguin-core/plugin";
@@ -36,13 +38,15 @@ export const SUBJECT_KINDS = [
   "branch",
   "change_request",
   "target",
+  "workflow",
 ] as const;
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
 
 /**
  * A subject as a caller names it: `organization`, `proposal:12`, `comment:12/c3-ab12cd`,
  * `discussion:12/<sessionId>`, `roadmap:3`, `item:3/<key>`, `branch:origin/dev`,
- * `pr:owner/repo#5` (or `pr:5`, the delivery repository's), `target:<deployment id>`.
+ * `pr:owner/repo#5` (or `pr:5`, the delivery repository's), `target:<deployment id>`,
+ * `workflow:<company workflow id>`.
  */
 export interface Subject {
   kind: SubjectKind;
@@ -72,8 +76,9 @@ export interface ActionCaller {
 
 /**
  * A refusal: a guard, a before hook or a check of the registry answers it, and the run is
- * recorded as `refused` with this status and code. The plugins' own domain errors carry the
- * same two fields and are read the same way.
+ * recorded as `refused` with this status and code. Any error a run throws with a 4xx `status`
+ * and a `code` — the plugins' own domain errors, an error a company workflow builds — is read
+ * the same way; anything else is a failure.
  */
 export class ActionRefusal extends Error {
   constructor(
@@ -110,24 +115,28 @@ export interface GuardInput {
    */
   state: unknown;
   params: Record<string, unknown>;
-  /** The organization's binding of the Action's contribution: its `config`. */
-  config: Record<string, unknown>;
   /** Runs of this Action in the organization that have not ended. */
   running: number;
   /** Lookups only the write transaction offers (the plugin's own type); absent before it. */
   tx?: unknown;
 }
 
-/** A guard: synchronous and pure, it returns to allow and throws an {@link ActionRefusal} to refuse. */
-export type Guard = (input: GuardInput) => void;
+/**
+ * A guard: synchronous and pure, it returns to allow and throws an {@link ActionRefusal} to
+ * refuse. What it returns is its verdict, which the write may read (an item approval answers the
+ * roles it approved under). `options` is what a replacing guard hands the default it wraps — the
+ * default reads what it knows of them (an item approval: `roles`); the registry passes none.
+ */
+export type Guard = (input: GuardInput, options?: Record<string, unknown>) => unknown;
 
 /**
- * What one write of a run carries into the use case: the guard as the organization binds it
- * (the use case asks it again inside its transaction) and the run's transaction hook — called
- * inside each write transaction the run makes, so the run's start row commits with the write.
+ * What one write of a run carries into the use case: the guard in force in the organization
+ * (the use case asks it again inside its transaction, and gets its verdict) and the run's
+ * transaction hook — called inside each write transaction the run makes, so the run's start
+ * row commits with the write.
  */
 export interface Act {
-  guard(input: Omit<GuardInput, "config" | "running">): void;
+  guard(input: Omit<GuardInput, "running">): unknown;
   inTx?: (db: DatabaseSync) => void;
 }
 
@@ -164,6 +173,8 @@ export interface ProcessOptions {
 /** What a run is handed. */
 export interface RunContext {
   runId: string;
+  /** The Action's key (`deploy.desktop`). */
+  key: string;
   org: OrgView;
   actor: OrgActor;
   caller: ActionCaller;
@@ -171,7 +182,6 @@ export interface RunContext {
   params: Record<string, unknown>;
   /** The subject's commit, resolved when the run started; null for a subject without one. */
   commit: SubjectCommit | null;
-  config: Record<string, unknown>;
   act: Act;
   /**
    * Starts a process for this run: the argument vector as is (no shell), stdout and stderr kept
@@ -202,8 +212,6 @@ export interface HookEvent {
   subject: Subject;
   params: Record<string, unknown>;
   commit: SubjectCommit | null;
-  /** The hook's own binding config. */
-  config: Record<string, unknown>;
   /** After: how the run ended, and its result. */
   outcome?: ActionOutcome;
   result?: unknown;
@@ -254,7 +262,7 @@ export interface CompanyActionsSlots {
   /**
    * The Actions, their guards, hooks and subject resolvers. A contribution's code half is the
    * code of its kind (action-model.ts). Ids are unique across the tree; keys may repeat, and a
-   * key two bound contributions answer is ambiguous only when it is invoked.
+   * key two contributions of the same standing answer is ambiguous only when it is invoked.
    */
   actions: Slot<ActionContribution, Opaque<"CompanyActionCode">>;
 }
@@ -268,6 +276,7 @@ const PREFIX: Record<string, SubjectKind> = {
   branch: "branch",
   pr: "change_request",
   target: "target",
+  workflow: "workflow",
 };
 
 const SHAPE: Record<SubjectKind, RegExp> = {
@@ -280,6 +289,8 @@ const SHAPE: Record<SubjectKind, RegExp> = {
   branch: /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)?\/[^\s]{1,255}$/,
   change_request: /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#?[1-9]\d{0,8}$/,
   target: /^[a-z0-9][a-z0-9_.-]{0,63}$/,
+  // A company workflow's folder name (the server's isWorkflowId).
+  workflow: /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/,
 };
 
 /** A subject as written, checked: a 400 refusal for one that is not. */
@@ -295,7 +306,7 @@ export function parseSubject(text: unknown): Subject {
     throw new ActionRefusal(
       400,
       "bad_subject",
-      `Not a subject: ${text} (organization, proposal:<n>, comment:<n>/<id>, discussion:<n>/<session>, roadmap:<n>, item:<n>/<key>, branch:<remote>/<branch>, pr:<owner>/<repo>#<n>, target:<id>).`,
+      `Not a subject: ${text} (organization, proposal:<n>, comment:<n>/<id>, discussion:<n>/<session>, roadmap:<n>, item:<n>/<key>, branch:<remote>/<branch>, pr:<owner>/<repo>#<n>, target:<id>, workflow:<id>).`,
     );
   }
   return { kind, id, text };
@@ -311,3 +322,39 @@ export function subjectRest(subject: Subject): string {
   const at = subject.id.indexOf("/");
   return at < 0 ? "" : subject.id.slice(at + 1);
 }
+
+/** The organization a company workflow belongs to, as its host tells it. */
+export interface CompanyOrganization {
+  projectId: string;
+  orgId: string;
+  name: string;
+  /** The organization's shared workspace (absolute). */
+  workspace: string;
+}
+
+/** How a deploy run's process ended, once it exited 0. */
+export interface CompanyDeployResult {
+  exitCode: number;
+  /** The commit it deployed. */
+  head: string;
+}
+
+/**
+ * CompanyHost: what company-proposals publishes into a company workflow's tree as module `Host`
+ * (company-workflows.ts) — the organization it belongs to, and the deploy helper. A company
+ * workflow's code is loaded with nothing installed beside it, so this is how it reaches what
+ * this plugin does at run time; its types — the Action model's — come from the `deploy` entry,
+ * imported as types only.
+ */
+export abstract class CompanyHost extends Interface<{
+  organization(): CompanyOrganization;
+  /**
+   * Runs run `runId`'s process — its argument vector as is (no shell), in the organization's
+   * shared workspace, with the subject's commit in its `PENGUIN_DEPLOY_*` environment, its output
+   * kept, stopped after an hour; the run's extra `args` appended — and resolves once it exited 0; otherwise the run fails with
+   * the reason. `runId` is the run the workflow's Action was handed (`ctx.runId`), of this
+   * organization and still going.
+   */
+  deploy(runId: string, argv: string[]): Promise<CompanyDeployResult>;
+  log(message: string): void;
+}>() {}

@@ -17,13 +17,15 @@
  * document form, service.ts the state machine and the desk deliveries that drive the
  * employees, routes.ts the reads. Every write is an Action: action-model.ts the model and the
  * slot, action-registry.ts the registry that runs them and records each run (action-store.ts),
- * builtin-actions.ts the proposal Actions, deploy.ts what a company module's deploy Action is
- * lent. The modules are plugin.ts's. The page is the web app's own `OrgProposalsPage` renderer,
+ * builtin-actions.ts the proposal Actions, company-workflows.ts the organizations' company
+ * workflows that customize them, deploy.ts what a deploy Action is lent. The modules are
+ * plugin.ts's and registry-module.ts's. The page is the web app's own `OrgProposalsPage` renderer,
  * declared as a company-mode page so it appears — with its nav row — only while the plugin is
  * installed.
  */
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
-import { CompanyActionRegistry, CompanyProposalsPlugin } from "./plugin.js";
+import { CompanyProposalsPlugin } from "./plugin.js";
+import { CompanyActionRegistry } from "./registry-module.js";
 import { ProposalsRetirement } from "./retirement-module.js";
 
 export {
@@ -50,13 +52,20 @@ export {
 } from "./guards.js";
 export type { Caller, PlannedImpl, WriteAct } from "./guards.js";
 export * from "./action-model.js";
-export { ActionIndex, execForms, hookCovers } from "./action-index.js";
-export type { Bindings, Conflict, Contributed, Indexed } from "./action-index.js";
+export { ActionIndex, WORKFLOW_KEYS, execForms, hookCovers } from "./action-index.js";
+export type { Conflict, Contributed, Indexed } from "./action-index.js";
 export { compileParams, compileType } from "./action-params.js";
 export { ACTION_SCHEMA, ActionStore, writeStart } from "./action-store.js";
-export type { Binding, RunEnd, RunFilter, RunStart, StoredRun } from "./action-store.js";
+export type { RunEnd, RunFilter, RunStart, StoredRun } from "./action-store.js";
 export { ActionRegistry } from "./action-registry.js";
-export type { OrgScope, RegistryDeps, RunAnswer, RunRequest } from "./action-registry.js";
+export type {
+  CompanySource,
+  OrgScope,
+  RegistryDeps,
+  RunAnswer,
+  RunRequest,
+} from "./action-registry.js";
+export { classify } from "./action-prepare.js";
 export {
   OUTPUT_LIMIT,
   PROCESS_TIMEOUT_MS,
@@ -64,8 +73,22 @@ export {
   outputFrom,
   runningCount,
 } from "./action-live.js";
-export { BIND_ID, BIND_KEY, BIND_PARAMS } from "./action-bind.js";
-export { ACTION_ROUTES_ID, actionRoutes } from "./action-routes.js";
+export { ACTION_ROUTES_ID, actionRoutes, refusalHandler } from "./action-routes.js";
+export { CompanyWorkflows, WORKFLOW_ID, isWorkflowPath } from "./company-workflows.js";
+export type { CompanyWorkflowsDeps } from "./company-workflows.js";
+export {
+  COMPANY_ACTIONS_IFACE,
+  COMPANY_HOST_IFACE,
+  COMPANY_PACKAGE_TYPES,
+  COMPANY_README,
+  DEPLOY_TYPES_MODULE,
+  SLOT_KEY,
+  companyHost,
+  companyKind,
+  packageDir,
+} from "./company-host.js";
+export type { CompanyKind } from "./company-host.js";
+export { WORKFLOW_ROUTES_ID, workflowContributions, workflowRoutes } from "./workflow-actions.js";
 export { viewOf } from "./action-views.js";
 export {
   DEPLOY_REFRESH_ID,
@@ -136,12 +159,8 @@ export {
   sectionSource,
 } from "./comments.js";
 
-export {
-  CompanyActionRegistry,
-  CompanyProposalsPlugin,
-  PAGE_ID,
-  BUILTIN_MODULES,
-} from "./plugin.js";
+export { CompanyProposalsPlugin, PAGE_ID } from "./plugin.js";
+export { CompanyActionRegistry } from "./registry-module.js";
 
 export { ProposalsRetirement, RETIRE_ID } from "./retirement-module.js";
 

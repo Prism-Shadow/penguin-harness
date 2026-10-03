@@ -1,0 +1,51 @@
+{
+  "name": "@fixture/company-workflow",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A company workflow for company-proposals' tests: a deploy Action, a guard replacing proposal.approve's, an after hook.",
+  "penguin": {
+    "modules": [
+      {
+        "name": "Workflow",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-plugin-company-proposals#CompanyHost",
+            "from": "Host"
+          }
+        },
+        "contributes": {
+          "CompanyActionRegistry.actions": [
+            {
+              "id": "fixture.deploy",
+              "kind": "action",
+              "key": "deploy.fixture",
+              "subjects": [
+                "proposal",
+                "change_request",
+                "branch"
+              ],
+              "params": {
+                "expectedHead?": "string",
+                "args?": "string[]"
+              },
+              "commit": true,
+              "description": "Deploy the subject's commit with a no-op process."
+            },
+            {
+              "id": "fixture.approve-guard",
+              "kind": "guard",
+              "key": "proposal.approve"
+            },
+            {
+              "id": "fixture.approve-hook",
+              "kind": "hook",
+              "key": "proposal.approve",
+              "when": "after"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

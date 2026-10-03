@@ -11,7 +11,6 @@ import { Hono } from "hono";
 import type { OrgActor, OrgGateway } from "@prismshadow/penguin-server/plugin";
 import {
   ActionRegistry,
-  BUILTIN_MODULES,
   actionRoutes,
   proposalCode,
   proposalRoutes,
@@ -81,7 +80,6 @@ export function actionApp(opts: {
     root: opts.root,
     log: () => undefined,
     contributions: opts.contributions,
-    builtin: BUILTIN_MODULES,
     now: () => tick++,
     ...opts.deps,
   });

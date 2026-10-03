@@ -4,8 +4,8 @@
  *   deploy <number> --to <id> [--head <sha>] [--dry-run] [-- <extra args...>]
  *   deploy --pr <n> --to <id> [--head <sha>] [--dry-run] [-- <extra args...>]
  *
- * A deploy is an Action, `deploy.<id>`, that a company module contributes and the organization
- * binds: it runs on the server that holds the organization, on the subject's commit — the
+ * A deploy is an Action, `deploy.<id>`, that a company workflow of the organization
+ * contributes: it runs on the server that holds the organization, on the subject's commit — the
  * proposal's impl head, or the PR's — with the commit in its environment and the arguments after
  * `--` appended. `--head` is the commit the caller looked at: the server refuses the run when
  * the subject has moved past it.
@@ -13,7 +13,7 @@
  * `deploy` starts the run and follows its output until it ends, exiting 0 only when it
  * succeeded and otherwise with its process's exit code; Ctrl-C stops following, not the run.
  * With `--json` it prints the start answer and does not follow. `--dry-run` runs nothing: it
- * says whether the organization binds the Action and whether the caller may run it now.
+ * says whether the organization has the Action and whether the caller may run it now.
  *
  * org.ts hands these commands its scope and transport as a {@link DeployKit}, so they can be
  * driven in a test without a server.
@@ -39,6 +39,8 @@ export interface DeployKit {
   open(opts: Record<string, unknown>): Promise<ProposalRequester | null>;
   /** The same, for its `…/actions` routes (every write). */
   openActions(opts: Record<string, unknown>): Promise<ActionRequester | null>;
+  /** The same, for its `…/workflows` routes (the company workflows' reads). */
+  openWorkflows(opts: Record<string, unknown>): Promise<ProposalRequester | null>;
   /** The caller's identity for a body (the control environment's session and Agent). */
   actorFields(): Record<string, string>;
   /** The same identity as a `?…` query for the reads. */

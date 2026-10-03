@@ -1,9 +1,10 @@
 /**
- * The registry over contributions of the test's own: a key resolved to one bound contribution,
- * an ambiguous key answered only when invoked (with each contribution's exact invocation),
- * `exec` by id, a company contribution invisible until bound, a guard replacement handed the
- * default, hooks in their binding order, and how each refusal and failure ends — and a retry
- * with the same request id answered with the first run.
+ * The registry over contributions of the test's own: a key resolved to one contribution, a
+ * company workflow's taking the place of the built-in one on its key, an ambiguous key answered
+ * only when invoked (with each contribution's exact invocation), `exec` by id, the `workflow.*`
+ * Actions out of a company workflow's reach, a guard replacement handed the default, hooks in
+ * their order (built-in first, then by workflow and id), and how each refusal and failure ends —
+ * and a retry with the same request id answered with the first run.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -47,14 +48,11 @@ function noteAction(
   };
 }
 
-const action = (
-  id: string,
-  key: string,
-  from = "CompanyProposalsPlugin",
-): Omit<Contributed, "code"> => ({
+const action = (id: string, key: string, workflow?: string): Omit<Contributed, "code"> => ({
   id,
-  from,
+  from: workflow === undefined ? "CompanyProposalsPlugin" : "Workflow",
   data: { kind: "action", key, subjects: ["organization"], params: { "text?": "string" } },
+  ...(workflow !== undefined ? { workflow } : {}),
 });
 
 describe("the Action registry", () => {
@@ -130,41 +128,61 @@ describe("the Action registry", () => {
     ]);
   });
 
-  it("a company module's contribution is invisible until the organization binds it, and gone again once unbound", async () => {
-    const a = appOf([
-      { ...action("co.note", "company.note", "SomeCompanyModule"), code: noteAction(() => db) },
-    ]);
-    expect((await a.run("company.note", "organization")).status).toBe(404);
-    expect((await a.get("/")).body.actions).toEqual([]);
-    const bound = await a.run("action.bind", "organization", {
-      contribution: "co.note",
-      enabled: true,
-    });
-    expect(bound.status).toBe(200);
-    expect((await a.run("company.note", "organization", { text: "now" })).status).toBe(200);
-    await a.run("action.bind", "organization", { contribution: "co.note", enabled: false });
-    expect((await a.run("company.note", "organization")).status).toBe(404);
-    // The bindings' history is the action.bind runs.
-    const runs = (await a.get("/runs?key=action.bind")).body.runs as Array<{
-      params: { enabled: boolean };
+  it("a company workflow's action takes the place of the built-in one on its key; two of them are ambiguous", async () => {
+    const builtin = { ...action("t.note", "test.note"), code: noteAction(() => db) };
+    const mine = { ...action("co.note", "test.note", "acme"), code: noteAction(() => db) };
+    const a = appOf([builtin, mine]);
+    const ran = await a.run("test.note", "organization", { text: "company" });
+    expect(ran.body.run).toMatchObject({ contribution: "co.note", outcome: "succeeded" });
+    // The built-in one is still there to be run by its id, and listed as replaced.
+    const listed = (await a.get("/contributions")).body.contributions as Array<{
+      id: string;
+      workflow: string | null;
+      replaced: boolean;
     }>;
-    expect(runs.map((r) => r.params.enabled)).toEqual([false, true]);
+    expect(listed.find((c) => c.id === "t.note")).toMatchObject({ workflow: null, replaced: true });
+    expect(listed.find((c) => c.id === "co.note")).toMatchObject({
+      workflow: "acme",
+      replaced: false,
+    });
+    expect(
+      ((await a.get("/")).body.actions as Array<{ contribution: string }>).map(
+        (x) => x.contribution,
+      ),
+    ).toEqual(["co.note"]);
+    const two = appOf([
+      builtin,
+      mine,
+      { ...action("co.other", "test.note", "zeta"), code: noteAction(() => db) },
+    ]);
+    const amb = await two.run("test.note", "organization", { text: "x" });
+    expect(amb.status).toBe(409);
+    expect(amb.body.error).toMatchObject({ code: "action_ambiguous" });
+    expect((await two.get("/check")).body.conflicts).toEqual([
+      { key: "test.note", kind: "action", contributions: ["co.note", "co.other"] },
+    ]);
   });
 
-  it("action.bind is not replaced, hooked or unbound by a contribution", async () => {
+  it("leaves out a company workflow's contribution that would replace or hook the workflow.* Actions", async () => {
     const a = appOf([
+      { ...action("t.note", "test.note"), code: noteAction(() => db) },
       {
-        id: "co.bind-guard",
-        from: "Co",
-        data: { kind: "guard", key: "action.bind" },
+        id: "co.lock",
+        from: "Workflow",
+        data: { kind: "guard", key: "workflow.write" },
         code: (() => () => undefined) as GuardCode,
+        workflow: "acme",
+      },
+      {
+        id: "co.watch",
+        from: "Workflow",
+        data: { kind: "hook", key: "workflow.*", when: "before" },
+        code: (() => undefined) as HookCode,
+        workflow: "acme",
       },
     ]);
-    const refused = await a.run("action.bind", "organization", {
-      contribution: "co.bind-guard",
-      enabled: true,
-    });
-    expect(refused.body).toMatchObject({ error: { code: "bind_protected" } });
+    const skipped = (await a.get("/contributions")).body.skipped as Array<{ id: string }>;
+    expect(skipped.map((x) => x.id).sort()).toEqual(["co.lock", "co.watch"]);
   });
 
   it("a guard replacement is handed the default guard; it may tighten or loosen it", async () => {
@@ -176,19 +194,28 @@ describe("the Action registry", () => {
       handed = defaults;
       return () => undefined;
     };
-    const a = appOf([
-      { ...action("t.note", "test.note"), code: noteAction(() => db, { guard: strict }) },
-      { id: "co.loose", from: "Co", data: { kind: "guard", key: "test.note" }, code: replace },
-    ]);
-    expect((await a.run("test.note", "organization", {}, DEV)).body).toMatchObject({
+    const note = {
+      ...action("t.note", "test.note"),
+      code: noteAction(() => db, { guard: strict }),
+    };
+    expect((await appOf([note]).run("test.note", "organization", {}, DEV)).body).toMatchObject({
       error: { code: "people_only" },
     });
-    await a.run("action.bind", "organization", { contribution: "co.loose", enabled: true });
+    const a = appOf([
+      note,
+      {
+        id: "co.loose",
+        from: "Workflow",
+        data: { kind: "guard", key: "test.note" },
+        code: replace,
+        workflow: "acme",
+      },
+    ]);
     expect((await a.run("test.note", "organization", { text: "loose" }, DEV)).status).toBe(200);
     expect(handed).toBe(strict);
   });
 
-  it("runs the before and after hooks in their binding's position, then by id", async () => {
+  it("runs the built-in hooks first, by id, then the company workflows', by workflow and id", async () => {
     const order: string[] = [];
     const hook =
       (name: string): HookCode =>
@@ -219,9 +246,27 @@ describe("the Action registry", () => {
     await a.run("test.note", "organization", { text: "1" });
     expect(order).toEqual(["a:before", "b:before", "z:after:succeeded"]);
     order.length = 0;
-    await a.run("action.bind", "organization", { contribution: "h.a", enabled: true, position: 5 });
-    await a.run("test.note", "organization", { text: "2" });
-    expect(order).toEqual(["b:before", "a:before", "z:after:succeeded"]);
+    const company = (id: string, workflow: string, name: string): Contributed => ({
+      id,
+      from: "Workflow",
+      data: { kind: "hook", key: "test.note", when: "before" },
+      code: hook(name),
+      workflow,
+    });
+    const b = appOf([
+      { ...action("t.note", "test.note"), code: noteAction(() => db) },
+      company("w2.a", "w2", "w2a"),
+      company("w1.b", "w1", "w1b"),
+      company("w1.a", "w1", "w1a"),
+      {
+        id: "h.z",
+        from: "CompanyProposalsPlugin",
+        data: { kind: "hook", key: "test.note", when: "before" },
+        code: hook("builtin"),
+      },
+    ]);
+    await b.run("test.note", "organization", { text: "2" });
+    expect(order).toEqual(["builtin:before", "w1a:before", "w1b:before", "w2a:before"]);
   });
 
   it("ends each way as it should: a guard or before hook refuses and nothing is written; a failed write rolls back; a failed after hook leaves the write", async () => {
@@ -240,6 +285,17 @@ describe("the Action registry", () => {
         }) as HookCode,
       },
       { ...action("t.broken", "test.broken"), code: noteAction(() => db, { fail: true }) },
+      {
+        ...action("t.domain", "test.domain"),
+        code: {
+          run: async () => {
+            throw Object.assign(new Error("Register the impl PR first."), {
+              status: 409,
+              code: "impl_pr_missing",
+            });
+          },
+        } satisfies ActionCode,
+      },
       { ...action("t.after", "test.after"), code: noteAction(() => db) },
       {
         id: "h.bad",
@@ -256,6 +312,9 @@ describe("the Action registry", () => {
     expect(hooked.body).toMatchObject({ error: { code: "hook_refused" } });
     const broken = await a.run("test.broken", "organization", { text: "b" });
     expect(broken.status).toBe(500);
+    // A domain error with a 4xx status the run throws is a refusal, with its status and code.
+    const domain = await a.run("test.domain", "organization", { text: "d" });
+    expect([domain.status, domain.body.error]).toMatchObject([409, { code: "impl_pr_missing" }]);
     const after = await a.run("test.after", "organization", { text: "a" });
     expect(after.status).toBe(200);
     expect(notes()).toEqual(["a"]);
@@ -269,6 +328,11 @@ describe("the Action registry", () => {
     expect(byKey["test.refused"]).toMatchObject({ outcome: "refused", code: "not_now" });
     expect(byKey["test.hooked"]).toMatchObject({ outcome: "refused", code: "hook_refused" });
     expect(byKey["test.broken"]).toMatchObject({ outcome: "failed", code: "internal" });
+    expect(byKey["test.domain"]).toMatchObject({
+      outcome: "refused",
+      status: 409,
+      code: "impl_pr_missing",
+    });
     expect(byKey["test.after"]).toMatchObject({
       outcome: "succeeded",
       hookErrors: ["h.bad: mail down"],

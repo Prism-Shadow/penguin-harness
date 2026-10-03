@@ -1,8 +1,8 @@
 /**
  * The built-in proposal Actions: the code halves of this plugin's contributions to
  * `CompanyActionRegistry.actions` (their data halves are the manifest, plugin.ts). Each runs
- * one use case of ProposalService under the Action's guard as the organization binds it; the
- * guard defaults are guards.ts's.
+ * one use case of ProposalService under the Action's guard in force in the organization (a
+ * company workflow may replace it); the guard defaults are guards.ts's.
  *
  * Besides the Actions, the plugin contributes the subject resolver of the kinds it owns —
  * the organization, proposals, comments, discussions, branches, change requests and deploy

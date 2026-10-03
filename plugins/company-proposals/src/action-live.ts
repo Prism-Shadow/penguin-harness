@@ -7,7 +7,7 @@
  * reads the same table, so "one run of an Action at a time" and the live output of
  * `GET …/actions/runs/:id` hold across the update. Nothing else is shared between instances.
  */
-import type { ProcessEnd } from "./action-model.js";
+import type { ProcessEnd, RunContext } from "./action-model.js";
 import type { RunStart } from "./action-store.js";
 import { startProcess, type StartProcess } from "./deploy-process.js";
 
@@ -26,6 +26,8 @@ export interface LiveRun {
   output: string;
   dropped: number;
   hasProcess: boolean;
+  /** What the run was handed: a company workflow's deploy reaches its process through it (CompanyHost.deploy). */
+  ctx?: RunContext;
 }
 
 const LIVE = Symbol.for("penguin.company-proposals.live-action-runs");

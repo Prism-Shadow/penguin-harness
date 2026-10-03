@@ -11,7 +11,6 @@ import { Hono } from "hono";
 import type { OrgActor } from "@prismshadow/penguin-server/plugin";
 import {
   ActionRegistry,
-  BUILTIN_MODULES,
   actionRoutes,
   type Contributed,
 } from "@prismshadow/penguin-plugin-company-proposals";
@@ -68,13 +67,15 @@ export function actionApp(opts: {
   gateway: FakeGateway;
   root: string;
   service: RoadmapService;
+  /** A company workflow's contributions besides the built-in ones (each with its `workflow`). */
+  company?: Contributed[];
 }): ActionApp {
   const registry = new ActionRegistry({
     gateway: opts.gateway,
     root: opts.root,
     log: () => undefined,
     contributions: roadmapContributions(opts.service),
-    builtin: BUILTIN_MODULES,
+    company: { contributions: async () => opts.company ?? [] },
   });
   const app = new Hono();
   app.use("*", async (c, next) => {

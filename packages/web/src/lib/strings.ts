@@ -6649,7 +6649,7 @@ Benchmark：
           dockOpen: (pr: string, name: string): string => `查看 ${pr} 部署到 ${name} 的过程`,
           dockDismiss: "移除",
           dockTitle: "部署",
-          none: "还没有绑定部署 Action：由公司模块贡献，用 penguin org action bind 启用",
+          none: "本组织还没有部署 Action：由 company workflow 贡献（penguin org workflow put）",
           loadFailed: "部署 Action 读取失败",
           title: (name: string): string => `部署到 ${name}`,
           what: (pr: string, head: string): string =>

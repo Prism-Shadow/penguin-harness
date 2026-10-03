@@ -110,6 +110,7 @@ import { getSessionInfo } from "../server-session.js";
 import { registerProposalDeploy, type DeployKit } from "./proposal-deploy.js";
 import { actionRequester, runAction, type ActionRequester } from "./action-client.js";
 import { registerOrgAction } from "./action.js";
+import { registerOrgWorkflow } from "./workflow.js";
 import { implLine, registerProposalImpl } from "./proposal-impl.js";
 import { dim } from "../render.js";
 import { renderTable } from "../table.js";
@@ -169,6 +170,9 @@ const ORG_404_CODES: ReadonlySet<string> = new Set([
   "roadmap_not_found",
   "item_not_found",
   "item_not_delegated",
+  "workflow_not_found",
+  "version_not_found",
+  "file_not_found",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -423,9 +427,10 @@ async function proposalRequest<T>(
   method: string,
   suffix: string,
   body?: unknown,
+  group: "proposals" | "workflows" = "proposals",
 ): Promise<T | null> {
   try {
-    return await scope.client.request<T>(method, `${scope.base}/proposals${suffix}`, body);
+    return await scope.client.request<T>(method, `${scope.base}/${group}${suffix}`, body);
   } catch (err) {
     if (err instanceof ApiError && err.status === 404 && !ORG_404_CODES.has(err.code)) {
       fail(t, t.org.proposalsPluginMissing());
@@ -2317,6 +2322,12 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       if (scope === null) return null;
       return actionsOf(scope, t);
     },
+    openWorkflows: async (opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return null;
+      return <T>(method: string, suffix: string, body?: unknown) =>
+        proposalRequest<T>(scope, t, method, suffix, body, "workflows");
+    },
     actorFields,
     actorQuery: () => query(actorQuery()),
     fail: (message) => fail(t, message),
@@ -2331,6 +2342,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
   registerProposalImpl(proposal, t, kit);
   registerProposalDeploy(proposal, t, kit);
   registerOrgAction(org, t, kit);
+  registerOrgWorkflow(org, t, kit);
 
   const deployment = proposal.command("deployment").description(t.org.proposalDeploymentDesc);
   scoped(

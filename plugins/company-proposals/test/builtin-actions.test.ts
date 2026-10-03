@@ -2,7 +2,8 @@
  * The built-in proposal Actions as the registry runs them: the manifest declares exactly the
  * contributions builtin-actions.ts binds; every default guard answers a person and an employee
  * alike; the defaults hold through the Action routes with their codes; and a guard replaced by a
- * bound company contribution lets the same write through while the history stays append-only.
+ * company workflow's contribution lets the same write through while the history stays
+ * append-only.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -177,7 +178,6 @@ function answer(
       subject: subjectOf(subject),
       state,
       params,
-      config: {},
       running: 0,
       ...(tx !== undefined ? { tx } : {}),
     });
@@ -390,22 +390,16 @@ describe("through the Action routes", () => {
       defaults(input);
     };
     const company: Contributed = {
-      id: "acme-module.guard.approve-empty",
-      from: "AcmeModule",
+      id: "acme.guard.approve-empty",
+      from: "Workflow",
       data: { kind: "guard", key: "proposal.approve" },
       code: allowEmpty,
+      workflow: "acme",
     };
-    const h = app([company]);
-    expect((await h.run("proposal.approve", subject, {}, qa)).body.error).toMatchObject({
-      code: "proposal_empty",
-    });
-    // … and by the default still while the company's guard is unbound; bound, it lets it through.
-    const bind = await h.run("action.bind", "organization", {
-      contribution: company.id,
-      enabled: true,
-    });
-    expect(bind.status).toBe(200);
-    const approved = await h.run("proposal.approve", subject, {}, qa);
+    const refused = await app().run("proposal.approve", subject, {}, qa);
+    expect(refused.body.error).toMatchObject({ code: "proposal_empty" });
+    // … and let through once a company workflow's guard takes the default's place.
+    const approved = await app([company]).run("proposal.approve", subject, {}, qa);
     expect(approved.status).toBe(200);
     expect(approved.body.result).toMatchObject({ status: "approved", approvedRevision: 0 });
     const store = SqliteProposalStore.open(companyDbPath(root, PROJECT, ORG));
