@@ -88,7 +88,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 | 分类        | 插件                                                                            |
 | ----------- | ------------------------------------------------------------------------------- |
-| 办公效率    | `data-analysis`、`use-firecrawl`、`browser-automation`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
+| 办公效率    | `a2ui`、`data-analysis`、`use-firecrawl`、`browser-automation`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
 | 软件开发    | `software-development`、`use-claude-code`                                |
 | AI 应用开发 | `agent-development`、`model-development`、`skill-porting`、`agent-tuning`       |
 | Agent 公司  | `agent-company`                                                                 |

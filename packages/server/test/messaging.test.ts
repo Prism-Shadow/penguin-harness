@@ -35,7 +35,7 @@
  *   behind the lines, notices never split, threading once); finalReplyOnly relays the run's last
  *   message alone at its end (files following it); renderMarkdown sends a card, falls back to a
  *   plain bubble on a refusal and never retries a card that may have landed; each option is
- *   saved, defaulted and kept by an omitted field.
+ *   saved, defaulted and kept by an omitted field. An a2ui block leaves as its text fallback.
  * - A streamed compaction summary never reaches the chat; anything neither text, image nor
  *   file gets the bilingual notice and starts nothing.
  * - An inbound image becomes an image_url part; a refused download names the channel's reason,
@@ -74,6 +74,7 @@ import {
   toolCall,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import { ProjectsRepo } from "../src/db/repos/projects.js";
@@ -1555,6 +1556,30 @@ describe("messaging binding routes and bridge", () => {
     expect(t.deps.messagingRepo.find(SID, "feishu")?.renderMarkdown).toBe(false);
     await api.put(BASE(SID), { ...PUT_BODY, renderMarkdown: true });
     expect(t.deps.messagingRepo.find(SID, "feishu")?.renderMarkdown).toBe(true);
+  });
+
+  it("an a2ui choice in a reply reaches the chat as numbered options, never as its JSON", async () => {
+    const reply = [
+      "Two databases fit this service.",
+      "",
+      "```a2ui",
+      JSON.stringify({
+        type: "choice",
+        question: "Which database should the service use?",
+        options: [{ label: "Postgres", recommended: true }, { label: "SQLite" }],
+      }),
+      "```",
+    ].join("\n");
+    await bindReplying(reply, { appId: "cli_a2ui" });
+    await messageBot("oc_a2ui");
+    await waitFor(() => fake.allSends().length > 0);
+    const sent = fake.allTexts().map((s) => s.text);
+    // The one fallback every surface without the renderer shares, so the chat can answer by number.
+    expect(sent).toEqual([toFallbackMarkdown(reply).trim()]);
+    expect(sent[0]).toMatch(/^1\. .*Postgres/m);
+    expect(sent[0]).toMatch(/^2\. .*SQLite/m);
+    expect(sent[0]).not.toContain("```a2ui");
+    expect(sent[0]).not.toContain('"options"');
   });
 
   it("the streamed compaction summary is not a reply and never reaches the chat", async () => {

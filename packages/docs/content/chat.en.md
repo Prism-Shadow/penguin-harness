@@ -218,6 +218,20 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 - **MCP connect**, the first connection to the agent's MCP servers, leaves a row with the number of tools found and the names of unavailable servers. It expands into one group per server, with its status, tool count and connect time, and each group opens to its tool list or the error.
 - **Subagents** each leave a row with their avatar, name, short Session id, a spinner while running, and an amber dot while one of their tool calls awaits approval. Selecting the row opens the **Agents panel**: a call graph of that Task at the top, with each node's elapsed time, and the selected subagent's live conversation below. Nested tool cards and approvals work as in the main chat, the subagent has a composer of its own, and **Jump to this session** opens it as a full conversation. When the current Task starts a subagent, the Agents panel opens by itself, once per Task.
 
+### Rich output blocks
+
+A reply can hold blocks that the chat draws as components instead of plain text:
+
+- **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** moves you to the composer to write your own answer. The option the agent recommends is marked **Recommended**.
+- **Form**: several questions at once. Answer them and select the form's button; the answers go into the composer one per line.
+- **Steps**: a numbered procedure. A warning or caution appears above the step it applies to.
+- **Callout**: a short note, tip, caution or warning on one line, its icon saying which (point at the icon to see the name). A step's warnings, cautions and notes look the same.
+- **Diagram**: a Mermaid diagram, such as a flowchart or a sequence diagram. **Show source** shows the text it is drawn from.
+
+Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
+
+Outside the Web App the blocks arrive as plain text. In `penguin chat`, `penguin run` and [remote control](/remote-control) chats, a choice reads as numbered options that you answer with a number or in your own words.
+
 ### Older messages
 
 A conversation opens on its latest 20 turns. Scroll near the top to load 20 more; your reading position stays in place. A turn with a very large output can make one load hold fewer turns. Pictures load as they scroll into view. If loading fails, select "Failed to load earlier messages — click to retry". Once nothing older remains, "Beginning of conversation" marks the start. Turn numbers and header statistics count from the start of the conversation, so they match a full load.

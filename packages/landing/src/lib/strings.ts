@@ -444,7 +444,14 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     groups: [
       {
         title: "办公效率",
-        skills: ["data-analysis", "firecrawl", "browser-automation", "bento-slides", "humanizer"],
+        skills: [
+          "data-analysis",
+          "firecrawl",
+          "browser-automation",
+          "bento-slides",
+          "humanizer",
+          "a2ui",
+        ],
       },
       {
         title: "软件开发",

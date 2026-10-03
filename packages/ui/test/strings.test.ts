@@ -1,6 +1,7 @@
 /**
  * The package's own words (src/strings.ts): English fallbacks when no provider is mounted, the
- * app's words once it injects them, and nothing but accessibility strings in the interface.
+ * app's words once it injects them, and nothing but accessibility strings in the interface — plus
+ * the one group of chrome words the A2UI blocks need (`a2ui`).
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -23,6 +24,7 @@ function Probe() {
 describe("UiStrings", () => {
   it("holds the accessibility fallbacks, in English", () => {
     expect(Object.keys(DEFAULT_UI_STRINGS).sort()).toEqual([
+      "a2ui",
       "clearSearch",
       "close",
       "collapse",

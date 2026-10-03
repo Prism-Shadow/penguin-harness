@@ -3318,6 +3318,32 @@ Benchmark：
     approvalWaiting: "待审批",
     copyCode: "复制代码",
     copyReply: "复制回复",
+    /**
+     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram),
+     * handed to the UI package that draws them (lib/ui-strings.ts). Of the four tone names, a
+     * warning is about loss or harm and a caution about something recoverable breaking, so the
+     * two must not read as the same level.
+     */
+    a2ui: {
+      /** The button that puts a multi-select pick, or a form's answers, in the composer. */
+      fill: "填入输入框",
+      /** A choice's own-answer control: focuses the composer. */
+      other: "其他…",
+      /** The mark on the option the model recommends. */
+      recommended: "推荐",
+      note: "说明",
+      tip: "提示",
+      caution: "注意",
+      warning: "警告",
+      /** Stands in for a block while the reply is still streaming. */
+      composing: "正在生成组件…",
+      /** Over a block that cannot be drawn; its source follows. */
+      cannotShow: (reason: string) => `无法显示此组件：${reason}`,
+      /** A rendered Mermaid diagram's accessible name. */
+      diagram: "图表",
+      /** The toggle that shows a diagram's source. */
+      showSource: "查看源码",
+    },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
     forkSessionConfirmAction: "分叉",

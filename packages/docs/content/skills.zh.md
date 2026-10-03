@@ -195,7 +195,8 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| 办公效率 | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
+| 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框和 Mermaid 图，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则和一个发送前校验、打分的检查脚本（预装） |
+| | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
 | | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
 | | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |

@@ -557,9 +557,9 @@ function withReferences(references: readonly ComposerReference[], typed: string)
 
 /**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
- * Two entries: a surface that composes a whole prompt puts it in this composer instead of
- * submitting it on its own, and a surface that contributes one reference stages it beside
- * whatever is already being typed.
+ * Three entries: a surface that composes a whole prompt puts it in this composer instead of
+ * submitting it on its own, a surface that contributes one reference stages it beside
+ * whatever is already being typed, and a surface that only asks for an answer sends focus here.
  */
 export interface ComposerControl {
   /**
@@ -569,6 +569,11 @@ export interface ComposerControl {
    * leave the composer's own Skill selection untouched. Replacing text the user typed asks first.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
+  /**
+   * Move focus to the text body and leave everything in it as it is: a reply's choice offers
+   * "Other…", and the answer it asks for is the one the user types here.
+   */
+  focus: () => void;
   /**
    * Stage a contribution as a chip rather than typing it into the draft — a file, a directory
    * or a quoted range from the Files panel, or an excerpt selected in the conversation. The
@@ -1316,7 +1321,12 @@ export function ChatInput({
     // gesture back to the composer, which is where the sentence about it gets typed.
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
-  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference }), [fillPrompt, addReference]);
+  const focusBody = useCallback(() => textareaRef.current?.focus(), []);
+  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference, focus: focusBody }), [
+    fillPrompt,
+    addReference,
+    focusBody,
+  ]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);

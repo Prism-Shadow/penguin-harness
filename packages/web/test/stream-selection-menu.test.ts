@@ -131,6 +131,7 @@ describe("Add to conversation", () => {
     const fillPrompt = vi.fn();
     const control: ComposerControl = {
       fillPrompt,
+      focus: () => {},
       addReference: (reference) => {
         staged.push(reference);
       },

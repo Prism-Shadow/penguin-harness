@@ -90,12 +90,13 @@ import {
 } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Truncated } from "../../components/ui/truncated";
 import { MessageStream } from "./message-stream";
-import type { StreamRenderContext } from "./message-stream";
+import type { A2uiActions, StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
@@ -1489,6 +1490,19 @@ export function ChatPage() {
     composerRef.current?.fillPrompt(text, []);
   }, []);
   /**
+   * A reply's choice or form block answers through the same exit: the picked text lands in the
+   * composer (replacing typed text only after the user confirms) and Send stays the user's move;
+   * its "Other…" only sends focus there. The transcript decides which reply may use these (see
+   * MessageItems); memoized because the blocks read them through context, past the memoized
+   * Markdown.
+   */
+  const focusComposer = useCallback(() => composerRef.current?.focus(), []);
+  const { locale } = useLocale();
+  const a2uiActions = useMemo<A2uiActions>(
+    () => ({ interactive: true, fill: prefillComposer, focus: focusComposer, lang: locale }),
+    [prefillComposer, focusComposer, locale],
+  );
+  /**
    * The Files panel's exit into the conversation — a `@path` reference, or a fenced block
    * around what was selected in a preview — and the message stream's, an excerpt of the
    * conversation selected in it. Nothing is sent and nothing already typed is disturbed: the
@@ -1932,6 +1946,7 @@ export function ChatPage() {
     workspace: selected?.workspace ?? null,
     statFiles,
     onFork,
+    a2uiActions,
   };
 
   // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";
