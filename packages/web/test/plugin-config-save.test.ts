@@ -31,8 +31,8 @@ import {
   unparsedNumbers,
 } from "../src/features/settings/plugin-config-card";
 import { ConfigMachinePicker } from "../src/features/settings/plugins-section";
-import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
-
+import { apiError, json, stubFetch } from "./helpers/fetch";
+import type { FakeFetch } from "./helpers/fetch";
 import { button, click, field, mount, run, switchNamed, type, unmountAll } from "./helpers/dom";
 
 const ENTRY: PluginConfigEntry = {

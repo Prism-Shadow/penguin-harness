@@ -28,8 +28,8 @@
  * - New conversation forgets the Session and the output and keeps the input.
  */
 import { describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AmspRecord, TokenCounts } from "@prismshadow/amsp";
 import { ApprovalButtons } from "@prismshadow/penguin-ui";
@@ -42,13 +42,10 @@ import {
   runTry,
   stopTry,
   tryBody,
-  type TryAction,
-  type TryRow,
-  type TryState,
 } from "../src/features/agents/api-try-log";
-
-import { ApiTryView, type ApiTryViewProps } from "../src/features/agents/api-try-panel";
-
+import type { TryAction, TryRow, TryState } from "../src/features/agents/api-try-log";
+import { ApiTryView } from "../src/features/agents/api-try-panel";
+import type { ApiTryViewProps } from "../src/features/agents/api-try-panel";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 

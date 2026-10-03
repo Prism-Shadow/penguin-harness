@@ -9,8 +9,8 @@
  * handle with `useDockPanel()`, which throws outside a dock — a panel component rendered
  * anywhere else has no tab to describe, and a silent default would hide that mistake.
  */
-import { createContext, useContext, type ReactNode } from "react";
-
+import { createContext, useContext } from "react";
+import type { ReactNode } from "react";
 import type { DockPosition } from "./dock-state";
 import type { PanelId } from "./panel-registry";
 

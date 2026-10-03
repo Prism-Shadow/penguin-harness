@@ -33,11 +33,8 @@ import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../.
 import type { Currency } from "../../state/theme";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
-import {
-  askEvaluationExamples,
-  askEvaluationTail,
-  type AskEvaluationParams,
-} from "./benchmark-prompts";
+import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
+import type { AskEvaluationParams } from "./benchmark-prompts";
 
 /** How agent-evaluation records a Harbor trial in a run's `session_id`: it is no Session. */
 const TRIAL_PREFIX = "harbor:";

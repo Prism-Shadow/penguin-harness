@@ -5,8 +5,8 @@
  * keyboard asked for it, and what an excerpt becomes once it is added to the conversation.
  * Kept free of the DOM so they can be tested in this package's node-only vitest environment.
  */
-import { isLongPressPointer, type AnchorRect } from "@prismshadow/penguin-ui";
-
+import { isLongPressPointer } from "@prismshadow/penguin-ui";
+import type { AnchorRect } from "@prismshadow/penguin-ui";
 import type { ExcerptReference } from "./workspace-tree";
 import { takesSelectionCopy } from "./selection-copy";
 import type { SelectionCopyRequest } from "./selection-copy";

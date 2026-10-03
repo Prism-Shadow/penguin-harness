@@ -24,16 +24,13 @@
  * Copy writes what ⌘C writes from the same selection: its text as plain text, and nothing else
  * (lib/selection-copy.ts holds that rule for both).
  */
-import {
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
+import { useRef, useState, useSyncExternalStore } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
 } from "react";
-
 import {
   Dropdown,
   ICONS,
@@ -44,10 +41,8 @@ import {
   isContextMenuKey,
   toastSuccess,
   useRowContextMenu,
-  type AnchorRect,
-  type ContextMenuEventLike,
 } from "@prismshadow/penguin-ui";
-
+import type { AnchorRect, ContextMenuEventLike } from "@prismshadow/penguin-ui";
 import type { BrowserBackend } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";

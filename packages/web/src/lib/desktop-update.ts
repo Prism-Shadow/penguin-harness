@@ -5,7 +5,8 @@
  * pure (vitest runs node-only here, so nothing renders — same split as account-menu.ts).
  */
 import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
-import { isDesktopShellWindow, type AccountMenuSession } from "./account-menu";
+import { isDesktopShellWindow } from "./account-menu";
+import type { AccountMenuSession } from "./account-menu";
 
 /**
  * Whether to offer the client-update row at all: only the shell's own window, because

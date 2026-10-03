@@ -32,10 +32,8 @@ import {
   promotedPricing,
   turnPricing,
   visibleChatModels,
-  type ModelCredentialRowLike,
-  type ModelRowLike,
 } from "../src/features/models/model-grouping";
-
+import type { ModelCredentialRowLike, ModelRowLike } from "../src/features/models/model-grouping";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

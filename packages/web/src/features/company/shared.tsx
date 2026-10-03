@@ -8,8 +8,8 @@
  * KPI tile is the shared UI package's `StatTile`. Every status colour here is a tone from
  * lib/tone.ts, picked by meaning.
  */
-import { useId, type ReactNode } from "react";
-
+import { useId } from "react";
+import type { ReactNode } from "react";
 import type {
   OrgStatus,
   OrgTicketPriority,
@@ -28,20 +28,19 @@ import {
   Pill,
   ProgressBar,
   Ring,
-  type BadgeStyle,
-  type ToneName,
 } from "@prismshadow/penguin-ui";
-
+import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { EmployeeAvatar } from "./employee-avatar";
 import { toStoredUsd, unitLabel } from "./budget-input";
-import { budgetTone, type BudgetTone } from "./finance-tree";
-
+import { budgetTone } from "./finance-tree";
+import type { BudgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
-import { ORG_STATUS_TONE, orgStatusKind, type OrgStatusKind } from "./shell-org-status";
+import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
+import type { OrgStatusKind } from "./shell-org-status";
 
 /** Circled exclamation: the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
 export const INVALID_ICON = ICONS.alertCircle;

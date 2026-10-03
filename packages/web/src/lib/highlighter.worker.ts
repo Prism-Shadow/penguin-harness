@@ -10,11 +10,8 @@
  * The protocol is one message each way, correlated by an id the caller mints, because several
  * blocks can settle at once and their answers come back in whatever order they finish.
  */
-import {
-  highlight,
-  type HighlightOptions,
-  type RuntimeGrammar,
-} from "@prismshadow/penguin-ui/highlighter";
+import { highlight } from "@prismshadow/penguin-ui/highlighter";
+import type { HighlightOptions, RuntimeGrammar } from "@prismshadow/penguin-ui/highlighter";
 
 export interface HighlightRequest {
   id: number;

@@ -28,12 +28,10 @@ import {
   setWorkspaceAlias,
   unregisterWorkspace,
   workspaceRegistryKey,
-  type WorkspaceEntry,
-  type WorkspaceRegistryStorage,
 } from "../src/lib/workspace-registry";
-
-import { TEMP_WORKSPACE_GROUP_KEY, type WorkspaceGroup } from "../src/lib/session-grouping";
-
+import type { WorkspaceEntry, WorkspaceRegistryStorage } from "../src/lib/workspace-registry";
+import { TEMP_WORKSPACE_GROUP_KEY } from "../src/lib/session-grouping";
+import type { WorkspaceGroup } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** Minimal session-derived group (only the fields the merge reads matter). */

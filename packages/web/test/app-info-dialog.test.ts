@@ -15,8 +15,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { nextFocusIndex } from "@prismshadow/penguin-ui";
-import { AppInfoBody, type AppInfoBodyProps } from "../src/components/account/app-info-dialog";
-
+import { AppInfoBody } from "../src/components/account/app-info-dialog";
+import type { AppInfoBodyProps } from "../src/components/account/app-info-dialog";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 
 const CLOSE = "<the header's close button>";

@@ -5,8 +5,8 @@
  * `aria-controls`, and a panel that stays in the DOM, `hidden` while collapsed, so the
  * reference always resolves. Inline flow, so no portal.
  */
-import { useId, useState, type ReactNode } from "react";
-
+import { useId, useState } from "react";
+import type { ReactNode } from "react";
 import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 

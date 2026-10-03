@@ -5,8 +5,8 @@
  * directory uploads land in standing in for a selection while no file is open, and the three
  * things an empty row list can mean.
  */
-import { FileTree, type TreeToggle } from "@prismshadow/penguin-ui";
-
+import { FileTree } from "@prismshadow/penguin-ui";
+import type { TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import type { TreeRow } from "../../lib/workspace-tree";

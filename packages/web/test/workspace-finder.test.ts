@@ -58,10 +58,8 @@ import {
   tempWorkspacePath,
   typeSelectIndex,
   visibleEntries,
-  type AccessAsk,
-  type DeniedBox,
 } from "../src/features/chat/workspace-finder-model";
-
+import type { AccessAsk, DeniedBox } from "../src/features/chat/workspace-finder-model";
 import { memoryStorage } from "./helpers/storage";
 
 const dir = (name: string, kind: "dir" | "file" = "dir"): DirEntryInfo => ({

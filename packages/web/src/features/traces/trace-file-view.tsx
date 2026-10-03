@@ -37,16 +37,8 @@
  * message lights up at a time); clicking a bar scrolls to the corresponding message and pins the
  * highlight for PIN_MS.
  */
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
-
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { AmspRecord } from "@prismshadow/amsp";
 import type {
   TraceAnalysisResponse,
@@ -80,8 +72,8 @@ import {
 } from "../../lib/format";
 import { resolveContextWindow } from "../../lib/context";
 import { toneInk } from "../../lib/tone";
-import { useTheme, type Currency } from "../../state/theme";
-
+import { useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import {
   TRACE_ROUNDS_PAGE,
   expandedAfterAnalysis,
@@ -90,12 +82,10 @@ import {
   roundSpan,
   roundsToRead,
   visibleRounds,
-  type RoundRange,
-  type TraceEventsSignal,
 } from "./trace-rounds";
-
-import { TimelineChart, type TraceHighlight } from "./timeline-chart";
-
+import type { RoundRange, TraceEventsSignal } from "./trace-rounds";
+import { TimelineChart } from "./timeline-chart";
+import type { TraceHighlight } from "./timeline-chart";
 import { EventRow } from "./trace-event-row";
 import { RoundFacts, hitRateOf, inputOf, roundFactsOf } from "./round-facts";
 import type { Buckets } from "./round-facts";

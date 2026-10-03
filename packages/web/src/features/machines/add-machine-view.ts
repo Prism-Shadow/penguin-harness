@@ -13,8 +13,8 @@ import type {
   MachinesResponse,
   SshHostSummary,
 } from "@prismshadow/penguin-server/api";
-import { matchMachines, type MachineMatch } from "./machines-match";
-
+import { matchMachines } from "./machines-match";
+import type { MachineMatch } from "./machines-match";
 import { machinesInUse } from "./machines-view";
 
 /** The dialog's tabs, in order; it opens on the first. */

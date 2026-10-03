@@ -50,9 +50,8 @@ import {
   Skeleton,
   toastError,
   toastSuccess,
-  type ChannelSender,
 } from "@prismshadow/penguin-ui";
-
+import type { ChannelSender } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -96,10 +95,8 @@ import {
   joinedElsewhere,
   lastMessageId,
   messageCount,
-  type ChannelDay,
-  type StreamItem,
 } from "./channel-stream";
-
+import type { ChannelDay, StreamItem } from "./channel-stream";
 import { parsePrincipal } from "./principals";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */

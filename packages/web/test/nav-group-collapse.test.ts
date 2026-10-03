@@ -36,11 +36,8 @@ import {
   storeNavPinOverrides,
   visibleNavKeys,
   withNavPinned,
-  type NavCollapseStorage,
-  type NavPage,
-  type NavPinOverrides,
 } from "../src/lib/nav-group-collapse";
-
+import type { NavCollapseStorage, NavPage, NavPinOverrides } from "../src/lib/nav-group-collapse";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { blockedStorage, memoryStorage } from "./helpers/storage";

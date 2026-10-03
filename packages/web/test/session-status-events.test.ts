@@ -114,7 +114,7 @@ const neverReload = () => {
 describe("session_state on the user channel", () => {
   it("moves the named row and leaves every other row alone", () => {
     const store = storeWith(session("a"), session("b"));
-    applyUserEvent(store, stateEvent("b", "running", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("b", "running", STARTED), neverReload);
     expect(rowOf(store, "b").status).toBe("running");
     expect(rowOf(store, "b").lastActiveAt).toBe(STARTED);
     // The untouched row keeps both fields AND its object identity (no needless re-render).
@@ -125,13 +125,13 @@ describe("session_state on the user channel", () => {
   it("carries a stamp change through even when the state itself did not change", () => {
     // Run start and run end both stamp the row; a goal loop's rounds keep it "running".
     const store = storeWith(session("a", { status: "running" }));
-    applyUserEvent(store, stateEvent("a", "running", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "running", FINISHED), neverReload);
     expect(rowOf(store, "a").lastActiveAt).toBe(FINISHED);
   });
 
   it("compaction reaches the list as its own state, not as plain running", () => {
     const store = storeWith(session("a"));
-    applyUserEvent(store, stateEvent("a", "compacting", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "compacting", STARTED), neverReload);
     expect(rowOf(store, "a").status).toBe("compacting");
   });
 });
@@ -145,7 +145,7 @@ describe("session_background on the user channel", () => {
 
   it("sets the named row's counts and leaves every other row alone", () => {
     const store = storeWith(session("a"), session("b"));
-    applyUserEvent(store, backgroundEvent("b", 1, 2), neverReload);
+    applyUserEvent(store, [], backgroundEvent("b", 1, 2), neverReload);
     expect(rowOf(store, "b").backgroundTasks).toEqual({ processes: 1, subagents: 2 });
     expect(sessionBackgroundTasks(rowOf(store, "b"))).toBe(3);
     expect("backgroundTasks" in rowOf(store, "a")).toBe(false);
@@ -153,7 +153,7 @@ describe("session_background on the user channel", () => {
 
   it("clears the field at zero, the shape a list fetch returns", () => {
     const store = storeWith(session("a", { backgroundTasks: { processes: 1, subagents: 0 } }));
-    applyUserEvent(store, backgroundEvent("a", 0, 0), neverReload);
+    applyUserEvent(store, [], backgroundEvent("a", 0, 0), neverReload);
     // Absent, not present-and-empty: every "has background work" check is one key test.
     expect("backgroundTasks" in rowOf(store, "a")).toBe(false);
     expect(sessionBackgroundTasks(rowOf(store, "a"))).toBe(0);
@@ -162,13 +162,13 @@ describe("session_background on the user channel", () => {
   it("moves neither the glyph nor the status: an idle, read row keeps its blank glyph and gains the mark", () => {
     const store = storeWith(session("a"));
     const seen = seenAt("a", LOOKED);
-    applyUserEvent(store, backgroundEvent("a", 1, 0), neverReload);
+    applyUserEvent(store, [], backgroundEvent("a", 1, 0), neverReload);
     expect(glyph(store, "a", seen)).toBeNull();
     expect(rowOf(store, "a").status).toBe("idle");
     expect(sessionBackgroundTasks(rowOf(store, "a"))).toBe(1);
     // A run ending does not touch the count either: the mark outlives the hourglass.
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED), neverReload);
     expect(sessionBackgroundTasks(rowOf(store, "a"))).toBe(1);
   });
 });
@@ -182,10 +182,10 @@ describe("session_approvals on the user channel", () => {
 
   it("sets the named row's count and leaves every other row alone, then clears it at zero", () => {
     const store = storeWith(session("a"), session("b"));
-    applyUserEvent(store, approvalsEvent("b", 2), neverReload);
+    applyUserEvent(store, [], approvalsEvent("b", 2), neverReload);
     expect(rowOf(store, "b").pendingApprovalCount).toBe(2);
     expect(rowOf(store, "a").pendingApprovalCount).toBe(0);
-    applyUserEvent(store, approvalsEvent("b", 0), neverReload);
+    applyUserEvent(store, [], approvalsEvent("b", 0), neverReload);
     expect(rowOf(store, "b").pendingApprovalCount).toBe(0);
   });
 });
@@ -201,7 +201,7 @@ describe("session_title on the user channel", () => {
     // Titles land at Task start — before the tab watching the brand-new conversation has
     // subscribed to its Session channel — so the list depends on this delivery.
     const store = storeWith(session("a"), session("b"));
-    applyUserEvent(store, titleEvent("b", "Login page bug"), neverReload);
+    applyUserEvent(store, [], titleEvent("b", "Login page bug"), neverReload);
     expect(rowOf(store, "b").title).toBe("Login page bug");
     expect(rowOf(store, "a").title).toBeUndefined();
   });
@@ -220,7 +220,7 @@ describe("events that need no change", () => {
     // this list: an unlisted id must not churn the array and re-render every row.
     const store = storeWith(session("a"));
     const before = store.getState().sessions;
-    for (const event of events) applyUserEvent(store, event, neverReload);
+    for (const event of events) applyUserEvent(store, [], event, neverReload);
     expect(store.getState().sessions).toBe(before);
   });
 
@@ -235,22 +235,22 @@ describe("events that need no change", () => {
       session("b"),
     );
     const before = store.getState().sessions;
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload);
     applyUserEvent(
       store,
-      { type: "session_background", sessionId: "a", processes: 2, subagents: 1 },
+      [], { type: "session_background", sessionId: "a", processes: 2, subagents: 1 },
       neverReload,
     );
     applyUserEvent(
       store,
-      { type: "session_title", sessionId: "a", title: "Login page bug" },
+      [], { type: "session_title", sessionId: "a", title: "Login page bug" },
       neverReload,
     );
-    applyUserEvent(store, { type: "session_approvals", sessionId: "a", count: 0 }, neverReload);
+    applyUserEvent(store, [], { type: "session_approvals", sessionId: "a", count: 0 }, neverReload);
     // Zero onto an already-clear row is the same non-event.
     applyUserEvent(
       store,
-      { type: "session_background", sessionId: "b", processes: 0, subagents: 0 },
+      [], { type: "session_background", sessionId: "b", processes: 0, subagents: 0 },
       neverReload,
     );
     expect(store.getState().sessions).toBe(before);
@@ -266,10 +266,10 @@ describe("hasTrace across a status flip", () => {
     const store = storeWith(freshSession("a"));
     expect(glyph(store, "a", neverSeen)).toBeNull();
 
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload);
     expect(glyph(store, "a", neverSeen)).toBe("running");
 
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED), neverReload);
     expect(rowOf(store, "a").hasTrace).toBe(true);
     expect(glyph(store, "a", neverSeen)).toBe("completedUnread");
   });
@@ -277,7 +277,7 @@ describe("hasTrace across a status flip", () => {
   it("the server's flag alone settles a first run seen only at its end", () => {
     // This tab connected mid-run, so the only event it gets is the settle.
     const store = storeWith(freshSession("a"));
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED, true), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED, true), neverReload);
     expect(glyph(store, "a", neverSeen)).toBe("completedUnread");
   });
 
@@ -297,7 +297,7 @@ describe("hasTrace across a status flip", () => {
   it("never regresses to blank once the Session has run", () => {
     const store = storeWith(session("a", { hasTrace: true }));
     // A stale or conservative flag must not un-run a Session: has_trace is a one-way cache.
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED, false), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED, false), neverReload);
     expect(rowOf(store, "a").hasTrace).toBe(true);
   });
 
@@ -314,7 +314,7 @@ describe("hasTrace across a status flip", () => {
     expect(glyph(store, "new-one", neverSeen)).toBeNull();
 
     // The moment it actually runs, that same row earns the dot.
-    applyUserEvent(store, stateEvent("new-one", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("new-one", "idle", FINISHED), neverReload);
     expect(glyph(store, "new-one", neverSeen)).toBe("completedUnread");
   });
 
@@ -322,7 +322,7 @@ describe("hasTrace across a status flip", () => {
     const store = storeWith(freshSession("a"));
     // An idle republish for a Session with no Trace (e.g. an approval resolution on a row that
     // never started a Task) must not invent a completion.
-    applyUserEvent(store, stateEvent("a", "idle", CREATED, false), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", CREATED, false), neverReload);
     expect(glyph(store, "a", neverSeen)).toBeNull();
   });
 });
@@ -334,10 +334,10 @@ describe("the full sequence, for a Session the user is not looking at", () => {
     let seen = neverSeen;
     expect(glyph(store, "a", seen)).toBeNull();
 
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload);
     expect(glyph(store, "a", seen)).toBe("running");
 
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED), neverReload);
     expect(glyph(store, "a", seen)).toBe("completedUnread");
 
     // Opening it is what marks it read (sidebar's openSession -> noteSessionSeen), and a read
@@ -349,9 +349,9 @@ describe("the full sequence, for a Session the user is not looking at", () => {
   it("a background Session shows the hourglass while it runs but never the unread dot", () => {
     for (const source of ["api", "schedule", "subagent", "cli"] as const) {
       const store = storeWith({ ...freshSession("bg"), source });
-      applyUserEvent(store, stateEvent("bg", "running", STARTED), neverReload);
+      applyUserEvent(store, [], stateEvent("bg", "running", STARTED), neverReload);
       expect(glyph(store, "bg", neverSeen)).toBe("running");
-      applyUserEvent(store, stateEvent("bg", "idle", FINISHED), neverReload);
+      applyUserEvent(store, [], stateEvent("bg", "idle", FINISHED), neverReload);
       expect(glyph(store, "bg", neverSeen)).toBeNull();
     }
   });
@@ -359,8 +359,8 @@ describe("the full sequence, for a Session the user is not looking at", () => {
   it("a person's conversation, marked or not yet known, still settles to the unread dot", () => {
     for (const over of [{ source: "user" as const }, {}]) {
       const store = storeWith({ ...freshSession("p"), ...over });
-      applyUserEvent(store, stateEvent("p", "running", STARTED), neverReload);
-      applyUserEvent(store, stateEvent("p", "idle", FINISHED), neverReload);
+      applyUserEvent(store, [], stateEvent("p", "running", STARTED), neverReload);
+      applyUserEvent(store, [], stateEvent("p", "idle", FINISHED), neverReload);
       expect(glyph(store, "p", neverSeen)).toBe("completedUnread");
     }
   });
@@ -370,18 +370,18 @@ describe("the full sequence, for a Session the user is not looking at", () => {
     const seen = seenAt("a", LOOKED);
     expect(glyph(store, "a", seen)).toBeNull();
 
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload);
     expect(glyph(store, "a", seen)).toBe("running");
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED), neverReload);
     expect(glyph(store, "a", seen)).toBe("completedUnread");
   });
 
   it("compaction shows the hourglass too, and settles to the unread dot", () => {
     const store = storeWith(session("a"));
     const seen = seenAt("a", LOOKED);
-    applyUserEvent(store, stateEvent("a", "compacting", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "compacting", STARTED), neverReload);
     expect(glyph(store, "a", seen)).toBe("compacting");
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED), neverReload);
     expect(glyph(store, "a", seen)).toBe("completedUnread");
   });
 
@@ -392,9 +392,9 @@ describe("the full sequence, for a Session the user is not looking at", () => {
     const open = "elsewhere";
     const seen = neverSeen;
     expect(glyph(store, "a", seen, open)).toBeNull();
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload);
     expect(glyph(store, "a", seen, open)).toBe("running");
-    applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("a", "idle", FINISHED), neverReload);
     expect(glyph(store, "a", seen, open)).toBe("completedUnread");
     // And the conversation this tab IS looking at was never touched: read, so nothing.
     expect(glyph(store, "elsewhere", seen, open)).toBeNull();
@@ -412,7 +412,7 @@ describe("the open Session", () => {
     expect(glyph(store, "open", seen, "open")).toBe("running");
 
     // The user channel settles the row first, moving lastActiveAt past the marker.
-    applyUserEvent(store, stateEvent("open", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("open", "idle", FINISHED), neverReload);
     expect(glyph(store, "open", seen, "open")).toBeNull();
     // Then this tab's own stream reports the same flip: still no dot.
     store.getState().setStatus("open", "idle");
@@ -428,7 +428,7 @@ describe("the open Session", () => {
 
   it("the two sources converge on the same row rather than overwriting each other", () => {
     const store = storeWith(session("open", { status: "running" }));
-    applyUserEvent(store, stateEvent("open", "idle", FINISHED), neverReload);
+    applyUserEvent(store, [], stateEvent("open", "idle", FINISHED), neverReload);
     store.getState().setStatus("open", "idle");
     expect(rowOf(store, "open").status).toBe("idle");
     expect(rowOf(store, "open").lastActiveAt).toBe(FINISHED);
@@ -446,7 +446,7 @@ describe("other user-channel events keep their behaviour", () => {
   it("web_updated reloads the window and touches no row", () => {
     const store = storeWith(session("a"));
     let reloaded = 0;
-    applyUserEvent(store, { type: "web_updated", rev: "abc" }, () => (reloaded += 1));
+    applyUserEvent(store, [], { type: "web_updated", rev: "abc" }, () => (reloaded += 1));
     expect(reloaded).toBe(1);
     expect(rowOf(store, "a").status).toBe("idle");
   });
@@ -454,10 +454,10 @@ describe("other user-channel events keep their behaviour", () => {
   it("an event this list has no use for is ignored", () => {
     const store = storeWith(session("a"));
     const before = store.getState().sessions;
-    applyUserEvent(store, { type: "hello" }, neverReload);
+    applyUserEvent(store, [], { type: "hello" }, neverReload);
     applyUserEvent(
       store,
-      {
+      [], {
         type: "schedule_queued",
         projectId: "proj",
         agentId: "default_agent",
@@ -477,7 +477,7 @@ describe("other user-channel events keep their behaviour", () => {
         reloads += 1;
       },
     });
-    applyUserEvent(store, { type: "resync_required" }, neverReload);
+    applyUserEvent(store, [], { type: "resync_required" }, neverReload);
     expect(reloads).toBe(1);
   });
 
@@ -496,9 +496,9 @@ describe("other user-channel events keep their behaviour", () => {
       name: "nightly",
       sessionId: "a",
     });
-    applyUserEvent(store, fired("another-project"), neverReload);
+    applyUserEvent(store, [], fired("another-project"), neverReload);
     expect(reloads).toBe(0);
-    applyUserEvent(store, fired("proj"), neverReload);
+    applyUserEvent(store, [], fired("proj"), neverReload);
     expect(reloads).toBe(1);
   });
 });
@@ -506,7 +506,7 @@ describe("other user-channel events keep their behaviour", () => {
 describe("a machine's events, delivered on the aggregate", () => {
   it("move the machine's Session like its own stream did", () => {
     const store = storeWith(session("a"), session("b"));
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload, "gpu-box");
+    applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload, "gpu-box");
     expect(rowOf(store, "a")).toMatchObject({ status: "running", lastActiveAt: STARTED });
     expect(rowOf(store, "b").status).toBe("idle");
   });
@@ -519,13 +519,13 @@ describe("a machine's events, delivered on the aggregate", () => {
         adopted.push([sessionId, source]);
       },
     });
-    applyUserEvent(store, stateEvent("new", "running", STARTED), neverReload, "gpu-box");
+    applyUserEvent(store, [], stateEvent("new", "running", STARTED), neverReload, "gpu-box");
     expect(adopted).toEqual([["new", "gpu-box"]]);
   });
 
   it("reload nothing here when the machine's own web is pushed", () => {
     const store = storeWith(session("a"));
-    applyUserEvent(store, { type: "web_updated", rev: "x" }, neverReload, "gpu-box");
+    applyUserEvent(store, [], { type: "web_updated", rev: "x" }, neverReload, "gpu-box");
   });
 
   it("a change to the machines list tells every reader of it, once, and moves no row", () => {
@@ -536,9 +536,9 @@ describe("a machine's events, delivered on the aggregate", () => {
     const stop = subscribeMachinesChanged(() => {
       told += 1;
     });
-    applyUserEvent(store, { type: "machines_changed" }, neverReload);
+    applyUserEvent(store, [], { type: "machines_changed" }, neverReload);
     // Only this server speaks for the machines list: a machine's word about its own is not it.
-    applyUserEvent(store, { type: "machines_changed" }, neverReload, "gpu-box");
+    applyUserEvent(store, [], { type: "machines_changed" }, neverReload, "gpu-box");
     stop();
     expect(told).toBe(1);
     expect(store.getState().sessions).toBe(before);

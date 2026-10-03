@@ -16,8 +16,8 @@
  *   stored; a failed write is handed on as the failure.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BrowserExtensionRecord, ServerSettings } from "@prismshadow/penguin-server/api";
 import { Button } from "@prismshadow/penguin-ui";

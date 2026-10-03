@@ -5,7 +5,8 @@
  * the app only through a component it binds (a page, a section, a panel, a layer), so each of
  * its components renders under one of its roots, and none can reach past its module.
  */
-import { createContext, useContext, type ComponentType } from "react";
+import { createContext, useContext } from "react";
+import type { ComponentType } from "react";
 
 export function createDeps<D>() {
   const Ctx = createContext<D | null>(null);

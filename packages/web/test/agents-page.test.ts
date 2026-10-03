@@ -19,8 +19,8 @@
  * clicks as a browser delivers them, landing on stand-in elements (test/helpers/fake-dom.ts); the
  * name's link is rendered to static markup inside a router.
  */
-import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";

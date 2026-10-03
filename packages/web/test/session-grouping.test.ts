@@ -44,9 +44,8 @@ import type {
   SessionInfo,
   SessionSource,
 } from "@prismshadow/penguin-server/api";
+import type { ActivityKey, StreamPosition } from "../src/lib/session-grouping";
 import {
-  type ActivityKey,
-  type StreamPosition,
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
   TIME_BUCKETS,

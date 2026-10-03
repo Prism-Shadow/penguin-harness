@@ -17,7 +17,7 @@ import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import { TicketDialogHost } from "../src/features/company/ticket-dialog";
 import { AuthProvider } from "../src/state/auth";
-import { CompanyProvider, useCompany } from "../src/state/company";
+import { CompanyProvider, useCompany } from "../src/features/company/company-state";
 import { ProjectProvider } from "../src/state/project";
 import { ThemeProvider } from "../src/state/theme";
 import { ADMIN_ME } from "./helpers/admin-settings";

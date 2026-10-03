@@ -6,10 +6,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
-import {
-  caseTreeRows,
-  type CaseMaterialSpec,
-} from "../src/features/benchmark/benchmark-case-browser";
+import { caseTreeRows } from "../src/features/benchmark/benchmark-case-browser";
+import type { CaseMaterialSpec } from "../src/features/benchmark/benchmark-case-browser";
 
 const MTIME = "2026-09-12T00:00:00.000Z";
 

@@ -90,16 +90,10 @@ import {
   resetTaskCounters,
   trackMainUsage,
   trackSubagentUsage,
-  type TaskStats,
-  type TaskStatsTracker,
 } from "./task-stats";
-
-import {
-  classifyMemoryPath,
-  mergeMemoryChanges,
-  type MemoryChangeEntry,
-  type MemoryChangeRow,
-} from "./memory-changes";
+import type { TaskStats, TaskStatsTracker } from "./task-stats";
+import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
+import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types

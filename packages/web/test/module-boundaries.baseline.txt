@@ -83,8 +83,5 @@ features/terminal/terminal-panel.tsx -> features/dock/panel-registry.ts
 lib/account-sync/prefs.ts -> features/chat/steer-mode.ts
 lib/account-sync/prefs.ts -> features/dock/dock-launcher-state.ts
 lib/strings.ts -> features/models/model-sort.ts
-state/company.tsx -> features/company/channel-list.ts
-state/company.tsx -> features/company/company-beta.tsx
-state/company.tsx -> features/company/org-sessions.ts
 state/sessions.tsx -> features/builtin-browser/browser-events.ts
 state/sessions.tsx -> features/schedules/schedule-store.ts

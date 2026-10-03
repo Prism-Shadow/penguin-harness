@@ -14,8 +14,8 @@ import {
   sessionActivity,
   sessionActivityLabel,
   sessionBackgroundTasks,
-  type SessionActivity,
 } from "../src/lib/session-activity";
+import type { SessionActivity } from "../src/lib/session-activity";
 
 type Activity = Exclude<SessionActivity, null>;
 const ACTIVITIES: readonly Activity[] = ["running", "compacting", "completedUnread"];

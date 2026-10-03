@@ -76,7 +76,6 @@ import {
   createStreamModel,
   finalizeHistory,
   pushMessage,
-  type StreamModel,
 } from "../../lib/amsp/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/amsp/memory-changes";
 import type { MemoryLocateTarget } from "../../lib/amsp/memory-changes";
@@ -92,8 +91,8 @@ import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
-import { ChatInput, type ComposerControl } from "./chat-input";
-
+import { ChatInput } from "./chat-input";
+import type { ComposerControl } from "./chat-input";
 import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { approvalModeChoices } from "./approval-mode";
 import type { ComposerReference } from "../../lib/workspace-tree";
@@ -103,9 +102,8 @@ import {
   needsThinkingSwitchConfirm,
   sessionThinkingLevel,
   thinkingLevelLabel,
-  type StagedThinkingSwitch,
 } from "./thinking-level";
-
+import type { StagedThinkingSwitch } from "./thinking-level";
 import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
@@ -124,13 +122,8 @@ import { HistoryLoadFailed } from "./history-load-failed";
 import { MachineRestartNotice } from "./machine-restart-notice";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
-import {
-  advanceCostStat,
-  applyUsageFetch,
-  createCostStatHold,
-  type CostStatDisplay,
-} from "./header-stats";
-
+import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
+import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
@@ -166,13 +159,11 @@ import {
   panelDock,
   subscribeDock,
 } from "../dock";
-
 // importing it registers the built-in panels (their definitions and bodies) with the dock
 import "./builtin-dock-panels";
-import { ChatDockProvider, type ChatDockState } from "./chat-dock-context";
-
+import { ChatDockProvider } from "./chat-dock-context";
+import type { ChatDockState } from "./chat-dock-context";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
-
 import { terminalApiSupported, subscribeTerminals } from "../terminal";
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";

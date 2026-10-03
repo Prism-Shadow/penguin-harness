@@ -17,15 +17,8 @@
  *
  * Width is a layout preference, not session data: it is never reset on a Session switch.
  */
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-  type RefObject,
-} from "react";
-
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 

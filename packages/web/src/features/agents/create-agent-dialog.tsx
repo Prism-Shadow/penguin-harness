@@ -19,8 +19,8 @@
  * the snapshot goes to it, and it decides whether the id is free. A new location drops the plugins
  * and the directory picked for the old one, which would name things the new one may not have.
  */
-import { useEffect, useState, type ChangeEvent } from "react";
-
+import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import type {
   AgentCreateRequest,
   PluginItem,
@@ -58,9 +58,7 @@ import {
   removeSkillNames,
   toggleSkillName,
 } from "../skills";
-
 import { StdioDisclosure, stdioServers } from "../plugins";
-
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,

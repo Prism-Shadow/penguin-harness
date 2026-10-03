@@ -86,20 +86,22 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
-  type AssistantTextItem,
-  type BackgroundNoticeItem,
-  type CompactionItem,
-  type McpConnectItem,
-  type ReconnectItem,
-  type StreamModel,
-  type SubagentItem,
-  type TaskStatsItem,
-  type ThinkingItem,
-  type ToolCallItem,
-  type UserSteeringItem,
-  type UserTextItem,
 } from "../src/lib/amsp/stream-model";
 import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
+import type {
+  AssistantTextItem,
+  BackgroundNoticeItem,
+  CompactionItem,
+  McpConnectItem,
+  ReconnectItem,
+  StreamModel,
+  SubagentItem,
+  TaskStatsItem,
+  ThinkingItem,
+  ToolCallItem,
+  UserSteeringItem,
+  UserTextItem,
+} from "../src/lib/amsp/stream-model";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
 function noticeText(delivery?: "steering"): string {

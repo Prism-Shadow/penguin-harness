@@ -39,9 +39,8 @@ import {
   TableRow,
   toastError,
   toastSuccess,
-  type BadgeStyle,
 } from "@prismshadow/penguin-ui";
-
+import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";

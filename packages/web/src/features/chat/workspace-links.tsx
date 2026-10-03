@@ -9,10 +9,10 @@
  * two inputs: a context change re-renders every link in the transcript, memoized message bodies
  * included, so `onOpenFile` has to be a stable callback.
  */
-import { useMemo, type ReactNode } from "react";
-
-import { ProseLinksProvider, type ProseLinkResolver } from "@prismshadow/penguin-ui";
-
+import { useMemo } from "react";
+import type { ReactNode } from "react";
+import { ProseLinksProvider } from "@prismshadow/penguin-ui";
+import type { ProseLinkResolver } from "@prismshadow/penguin-ui";
 import { replyLinkBehavior } from "../../lib/reply-link";
 
 export function WorkspaceLinksProvider({

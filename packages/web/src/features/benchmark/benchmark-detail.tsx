@@ -34,17 +34,16 @@ import {
   makeRangeGeom,
   segmentPoints,
   useChartWidth,
-  type ChartPaint,
 } from "@prismshadow/penguin-ui";
-
+import type { ChartPaint } from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
-import { useTheme, type Currency } from "../../state/theme";
-
+import { useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
@@ -56,11 +55,10 @@ import {
   scoreScale,
   scoreValues,
   seriesPoints,
-  type EvaluationSeries,
 } from "./benchmark-metrics";
-
-import { askCaseExamples, askCaseTail, type AskCaseParams } from "./benchmark-prompts";
-
+import type { EvaluationSeries } from "./benchmark-metrics";
+import { askCaseExamples, askCaseTail } from "./benchmark-prompts";
+import type { AskCaseParams } from "./benchmark-prompts";
 import { EvaluationDetailModal } from "./evaluation-detail-modal";
 
 /** A score series' paint: palette slot i, or the neutral for the evaluations with no label. */

@@ -9,9 +9,10 @@
  * work in `act`, so effects have run and state has settled by the time it returns. A node suite
  * that only asks where a click landed uses the stand-in elements of `fake-dom.ts`.
  */
-import { act, type ReactElement } from "react";
-
-import { createRoot, type Root } from "react-dom/client";
+import { act } from "react";
+import type { ReactElement } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 import { resetReadStores } from "../../src/lib/read-store";
 
 // React only flushes effects inside `act` when told it is running under a test.

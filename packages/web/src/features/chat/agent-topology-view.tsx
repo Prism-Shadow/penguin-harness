@@ -11,7 +11,8 @@
  */
 import { AgentAvatar, DurationSlot, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { layoutTopology, NODE_H, NODE_W, type TopologyNode } from "./agent-topology";
+import { layoutTopology, NODE_H, NODE_W } from "./agent-topology";
+import type { TopologyNode } from "./agent-topology";
 
 /** A layout length (CSS pixels at the default 16px root) as the rem the canvas renders it in. */
 const rem = (px: number): string => `${px / 16}rem`;

@@ -21,7 +21,8 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { useAuth } from "../../state/auth";
-import { clearDraft, loadDraft, saveDraft, sessionDraftKey, type DraftCache } from "./draft-cache";
+import { clearDraft, loadDraft, saveDraft, sessionDraftKey } from "./draft-cache";
+import type { DraftCache } from "./draft-cache";
 
 const SAVE_DEBOUNCE_MS = 300;
 

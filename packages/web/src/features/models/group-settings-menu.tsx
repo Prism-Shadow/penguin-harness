@@ -29,7 +29,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { HEADER_SQUARE } from "./group-header";
-import { MODEL_GROUP_SORTS, type ModelGroupSort } from "./model-sort";
+import { MODEL_GROUP_SORTS } from "./model-sort";
+import type { ModelGroupSort } from "./model-sort";
 
 /** What the gear's name is: the action and the group, the same words the gear always carried. */
 const gearName = (provider: ModelProviderInfo): string =>

@@ -13,8 +13,8 @@
  * so connecting another Chrome while one is connected waits for the new one — then says so and
  * closes itself.
  */
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { ReactNode } from "react";
 import {
   Button,
   CopyButton,

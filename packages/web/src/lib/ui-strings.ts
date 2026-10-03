@@ -9,8 +9,8 @@
  * are built once and keep their identity across renders.
  */
 import type { UiStrings } from "@prismshadow/penguin-ui";
-import { zh, type Strings } from "./strings";
-
+import { zh } from "./strings";
+import type { Strings } from "./strings";
 import { en } from "./strings-en";
 
 /** One dictionary's words for every `UiStrings` key. */

@@ -10,8 +10,8 @@
  *   another user's draft alone; a storage that throws costs the dialog nothing.
  */
 import { describe, expect, it } from "vitest";
+import type { OrgCreateDraft } from "../src/features/company/org-draft";
 import {
-  type OrgCreateDraft,
   EMPTY_ORG_DRAFT,
   clearOrgDraft,
   hasContent,
@@ -21,7 +21,6 @@ import {
   saveOrgDraft,
   serializeOrgDraft,
 } from "../src/features/company/org-draft";
-
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const draft = (over: Partial<OrgCreateDraft> = {}): OrgCreateDraft => ({

@@ -13,8 +13,8 @@
  * The guard is deliberately silent: no overlay, no attachment, no toast. It does not make a
  * drop on the sidebar do something; it makes it do nothing.
  */
-import { useEffect, type ComponentType } from "react";
-
+import { useEffect } from "react";
+import type { ComponentType } from "react";
 import {
   ClipboardWriterProvider,
   CodeHighlighterProvider,

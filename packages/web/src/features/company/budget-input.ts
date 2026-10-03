@@ -11,8 +11,8 @@
  * so an amount typed in CNY and read back can land a fraction of a fen away from what was
  * typed. That is why a box in CNY says underneath it what it is actually going to store.
  */
-import { USD_TO_CNY, type Currency } from "../../state/theme";
-
+import { USD_TO_CNY } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import type { Strings } from "../../lib/strings";
 
 /** The symbol each currency writes its amounts with (the same two lib/format spells). */

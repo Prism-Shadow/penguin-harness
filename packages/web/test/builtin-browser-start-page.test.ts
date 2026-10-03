@@ -14,8 +14,8 @@
  *   load as it is.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BuiltinBrowserServerEvent, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { normalizeAddress } from "../src/features/builtin-browser/address";

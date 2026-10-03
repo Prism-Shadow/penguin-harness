@@ -33,17 +33,15 @@ import {
   writeLauncherHidden,
 } from "../dock";
 import { useAuth } from "../../state/auth";
-import {
-  accentSwatches,
-  useTheme,
-  type FontCjk,
-  type FontLatin,
-  type TerminalThemeMode,
-  type TextSize,
-  type ThemeId,
-  type ThemeMode,
+import { accentSwatches, useTheme } from "../../state/theme";
+import type {
+  FontCjk,
+  FontLatin,
+  TerminalThemeMode,
+  TextSize,
+  ThemeId,
+  ThemeMode,
 } from "../../state/theme";
-
 import { FONT_FOLLOWS_THEME, effectiveAccent } from "../../state/theme-prefs";
 import { BackgroundControls } from "./background-controls";
 

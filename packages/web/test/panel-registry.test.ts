@@ -20,8 +20,8 @@ import {
   panelLabel,
   registerDockPanel,
   subscribeDockPanels,
-  type DockPanelDefinition,
 } from "../src/features/dock/panel-registry";
+import type { DockPanelDefinition } from "../src/features/dock/panel-registry";
 
 /** The registry is module-level: each test takes back everything it registered. */
 const cleanups: (() => void)[] = [];

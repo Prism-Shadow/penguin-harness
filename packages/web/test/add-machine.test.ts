@@ -26,13 +26,11 @@ import type {
   MachinesResponse,
   SshHostSummary,
 } from "@prismshadow/penguin-server/api";
-import {
-  AddMachineBody,
-  AddMachineFooter,
-  type AddMachineBodyProps,
-  type AddMachineFooterProps,
+import { AddMachineBody, AddMachineFooter } from "../src/features/machines/add-machine-dialog";
+import type {
+  AddMachineBodyProps,
+  AddMachineFooterProps,
 } from "../src/features/machines/add-machine-dialog";
-
 import { addPlan, hostRows, reachLine } from "../src/features/machines/add-machine-view";
 import {
   NEW_HOST_FORM,

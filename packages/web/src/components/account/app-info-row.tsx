@@ -10,8 +10,8 @@
  */
 import { MenuItem, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { updateRowModel, type UpdateFlow } from "../../lib/update-flow";
-
+import { updateRowModel } from "../../lib/update-flow";
+import type { UpdateFlow } from "../../lib/update-flow";
 import { useUpdateFlow } from "../../lib/use-update-flow";
 
 export function AppInfoRow({

@@ -32,9 +32,8 @@ import {
   saveSessionOrder,
   sessionOrderKey,
   storeSessionSortMode,
-  type SessionOrderStorage,
 } from "../src/lib/session-order";
-
+import type { SessionOrderStorage } from "../src/lib/session-order";
 import { cutAtWatermark } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 

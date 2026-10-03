@@ -19,8 +19,8 @@ import {
   scoreValues,
   seriesPoints,
   sparklineSeries,
-  type EvaluationLabelLike,
 } from "../src/features/benchmark/benchmark-metrics";
+import type { EvaluationLabelLike } from "../src/features/benchmark/benchmark-metrics";
 
 const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
 

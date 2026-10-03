@@ -38,8 +38,8 @@
  * `MachineDetailBody` is a pure function of its props. The dialog around it adds the one read the
  * machines list does not carry: the host block (the list is the ssh config's aliases only).
  */
-import { useEffect, useId, useState, type ReactNode } from "react";
-
+import { useEffect, useId, useState } from "react";
+import type { ReactNode } from "react";
 import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -82,16 +82,17 @@ import {
   machineToolbar,
   reconnectView,
   skippedItems,
-  type CheckLine,
-  type ConfigSyncView,
-  type Fact,
-  type JobStep,
-  type MachineChip,
-  type StepState,
-  type ToolbarItem,
-  type ToolbarVerb,
 } from "./machine-detail-view";
-
+import type {
+  CheckLine,
+  ConfigSyncView,
+  Fact,
+  JobStep,
+  MachineChip,
+  StepState,
+  ToolbarItem,
+  ToolbarVerb,
+} from "./machine-detail-view";
 import { outOfDate, readMachine, socketReading } from "./machines-view";
 import { retryStatus } from "./machine-card";
 

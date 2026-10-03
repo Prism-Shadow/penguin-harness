@@ -29,13 +29,8 @@
  *   the buffer replays on top — so the in-progress message survives a refresh
  *   with its streamed prefix intact and keeps streaming.
  */
-import {
-  isEventMessage,
-  isPartialPayload,
-  type AmspRecord,
-  type ToolCallPayload,
-} from "@prismshadow/amsp";
-
+import { isEventMessage, isPartialPayload } from "@prismshadow/amsp";
+import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   GoalServerEvent,
   MessagesLiveTail,
@@ -58,10 +53,8 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
-  type ChatItem,
-  type StreamModel,
 } from "./stream-model";
-
+import type { ChatItem, StreamModel } from "./stream-model";
 import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */

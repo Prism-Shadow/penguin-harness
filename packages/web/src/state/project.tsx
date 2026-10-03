@@ -13,8 +13,8 @@
  * for, an answer is applied only while that Project is still current (a late list of the
  * Project just left is dropped), and the context publishes only the current Project's list.
  */
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";

@@ -12,12 +12,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BenchmarkCaseSummary, BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import {
-  mergeBenchmarkCases,
-  mergeBenchmarks,
-  type MergedBenchmark,
-  type MergedCase,
-} from "../../lib/benchmark-merge";
+import { mergeBenchmarkCases, mergeBenchmarks } from "../../lib/benchmark-merge";
+import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 
 /** The Project's Benchmarks as far as the sources have answered. */
 export interface BenchmarksView {

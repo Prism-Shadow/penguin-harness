@@ -49,9 +49,8 @@ import {
   orderWithinPinPartitions,
   readStringArray,
   writeStringArray,
-  type SessionOrderStorage,
 } from "./session-order";
-
+import type { SessionOrderStorage } from "./session-order";
 import type { GroupMode } from "../components/ui/group-list";
 
 /**

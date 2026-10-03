@@ -10,8 +10,8 @@
  *   Modal of its own and stacks above the host dialog;
  * - `trigger`: a caller-rendered button (the sidebar's new-workspace header button).
  */
-import { useState, type ReactNode } from "react";
-
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { Chevron, FormPickerTrigger, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { WorkspaceFinder } from "./workspace-finder";

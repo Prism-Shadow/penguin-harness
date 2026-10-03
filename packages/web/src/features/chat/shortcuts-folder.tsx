@@ -57,9 +57,8 @@ import {
   removeShortcut,
   shortcutDraftError,
   upsertShortcut,
-  type ShortcutDraft,
-  type UserShortcut,
 } from "./user-shortcuts";
+import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
 
 /**
  * Folder id for the user's shortcuts. Not a member of EXAMPLE_FOLDERS: that registry is the

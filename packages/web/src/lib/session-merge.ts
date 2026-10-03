@@ -7,7 +7,8 @@
  * across the sources that answered; a source that could not answer contributes no count,
  * which is the truth — a count is a claim about what a server holds now.
  */
-import { compareActivityDesc, type ActivityKey } from "./session-grouping";
+import { compareActivityDesc } from "./session-grouping";
+import type { ActivityKey } from "./session-grouping";
 
 /**
  * Most recently active first: the order the sidebar displays its rows in and the order every

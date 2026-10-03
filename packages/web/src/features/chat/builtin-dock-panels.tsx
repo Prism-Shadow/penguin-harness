@@ -20,13 +20,9 @@ import {
   registerDockPanel,
   subscribeTerminalPanelOffered,
   terminalPanelOffered,
-  type DockPanelBodyProps,
-  type DockPanelDefinition,
-  type PanelId,
 } from "../dock";
-
+import type { DockPanelBodyProps, DockPanelDefinition, PanelId } from "../dock";
 import { isBrowserOffered, subscribeBrowser, BuiltinBrowserPanel } from "../builtin-browser";
-
 import { TerminalPanel } from "../terminal";
 import { TracePanel } from "../traces";
 import { MessagingPanel } from "../messaging";

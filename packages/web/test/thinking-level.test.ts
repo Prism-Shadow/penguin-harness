@@ -1,4 +1,3 @@
-import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
 /**
  * The thinking-level pickers (features/chat/thinking-level.ts) and the tier names in both
  * dictionaries.
@@ -36,6 +35,7 @@ import {
   sessionThinkingLevel,
   thinkingLevelLabel,
 } from "../src/features/chat/thinking-level";
+import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
 
 /** Mirrors the shape of S.chat.thinkingLevelNames. */
 const NAMES: Readonly<Record<string, string>> = {

@@ -17,8 +17,8 @@
  */
 import { useId, useState } from "react";
 import { FONT_CREDITS, ICON_CREDITS } from "@prismshadow/penguin-ui/fonts-credits";
-import { type ThemeId, Chevron, ICON_GAP, Text } from "@prismshadow/penguin-ui";
-
+import type { ThemeId } from "@prismshadow/penguin-ui";
+import { Chevron, ICON_GAP, Text } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
 /** A theme id in the reader's words. */

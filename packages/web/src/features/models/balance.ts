@@ -24,7 +24,8 @@ import type {
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { formatMoney } from "../../lib/format";
-import { USD_TO_CNY, type Currency } from "../../state/theme";
+import { USD_TO_CNY } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 
 // —— Formatting (pure) ——
 

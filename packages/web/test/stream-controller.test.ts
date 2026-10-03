@@ -32,10 +32,8 @@ import {
   toolCallOutput,
   userText,
   withOrigin,
-  type AmspRecord,
-  type TokenCounts,
 } from "@prismshadow/amsp";
-
+import type { AmspRecord, TokenCounts } from "@prismshadow/amsp";
 import type {
   MessagesLiveTail,
   MessagesPageInfo,

@@ -44,7 +44,7 @@ import { CalendarEventDialog } from "../src/features/company/calendar-page";
 import { CreateTicketDialog } from "../src/features/company/tickets-page";
 import { ThemeProvider } from "../src/state/theme";
 import { AuthProvider } from "../src/state/auth";
-import { CompanyProvider } from "../src/state/company";
+import { CompanyProvider } from "../src/features/company/company-state";
 import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";
 import { SessionsProvider } from "../src/state/sessions";

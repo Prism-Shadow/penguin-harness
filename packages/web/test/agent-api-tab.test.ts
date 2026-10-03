@@ -29,8 +29,8 @@
  *   the reason.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
   AgentApiKeyInfo,
@@ -46,9 +46,8 @@ import {
   OneTimeKey,
   agentApiBaseUrl,
   agentApiExamples,
-  type ApiTabViewProps,
 } from "../src/features/agents/api-tab";
-
+import type { ApiTabViewProps } from "../src/features/agents/api-tab";
 import { AgentApiMark } from "../src/features/agents/agents-page";
 import { AgentApiServerOffConfirm } from "../src/features/settings/agent-api-section";
 import { S } from "../src/lib/strings";

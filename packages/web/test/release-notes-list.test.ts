@@ -10,8 +10,8 @@
  *   fold opens.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ReleaseNotesList } from "../src/components/account/release-notes-list";
 import type { ReleaseNote } from "../src/lib/release-notes";

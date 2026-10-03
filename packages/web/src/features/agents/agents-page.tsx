@@ -35,8 +35,8 @@
  * Agent has left every list; its files are removed in the background, on a progress card that
  * appears when that takes a while (agent-deletion-progress.ts).
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import {

@@ -24,9 +24,8 @@ import {
   mentionDeletedByKey,
   parseClip,
   serializeClip,
-  type DraftHistory,
-  type MentionDraft,
 } from "../src/features/company/mention-draft";
+import type { DraftHistory, MentionDraft } from "../src/features/company/mention-draft";
 
 /** Types `value` at the end of the draft, the way a keystroke or a paste reports it. */
 const typeAtEnd = (d: MentionDraft, value: string): MentionDraft =>

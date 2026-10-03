@@ -25,9 +25,8 @@ import {
   storeModelGroupPins,
   storeModelGroupsFolded,
   withModelGroupPinned,
-  type ModelGroupPins,
 } from "../src/features/models/model-group-pins";
-
+import type { ModelGroupPins } from "../src/features/models/model-group-pins";
 import { memoryStorage, blockedStorage } from "./helpers/storage";
 
 /** Every built-in group in the catalog's order, then a user-defined one. */

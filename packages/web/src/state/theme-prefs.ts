@@ -12,19 +12,20 @@ import {
   INITIAL_THEME_ID,
   THEME_IDS,
   resolveAccent,
-  type ThemeId,
 } from "@prismshadow/penguin-ui";
-
+import type { ThemeId } from "@prismshadow/penguin-ui";
 import {
   FONT_CJK_OPTIONS,
   FONT_LATIN_OPTIONS,
   THEME_STORAGE_KEYS,
   readTextSize,
-  type AccentChoice,
-  type FontCjk,
-  type FontLatin,
-  type TextSize,
-  type ThemeAttributes,
+} from "@prismshadow/penguin-ui/boot";
+import type {
+  AccentChoice,
+  FontCjk,
+  FontLatin,
+  TextSize,
+  ThemeAttributes,
 } from "@prismshadow/penguin-ui/boot";
 
 export type { FontCjk, FontLatin, TextSize };

@@ -13,8 +13,8 @@
  * disabled while a field is wrong, so a wrong field inside the closed fold opens it: Save is never
  * held back by an error the reader cannot see.
  */
-import { useId, type ReactNode } from "react";
-
+import { useId } from "react";
+import type { ReactNode } from "react";
 import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 

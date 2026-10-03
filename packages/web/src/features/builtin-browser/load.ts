@@ -7,7 +7,8 @@ import type {
   BuiltinBrowserLoadWarning,
   BuiltinBrowserMetrics,
 } from "@prismshadow/penguin-server/api";
-import { S, type Strings } from "../../lib/strings";
+import { S } from "../../lib/strings";
+import type { Strings } from "../../lib/strings";
 
 const MB_KB = 1024;
 const GB_KB = 1024 * 1024;

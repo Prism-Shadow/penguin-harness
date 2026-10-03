@@ -20,7 +20,8 @@
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { expectEveryRootScanned, scanSources, type SourceFile } from "./helpers/roots";
+import { expectEveryRootScanned, scanSources } from "./helpers/roots";
+import type { SourceFile } from "./helpers/roots";
 
 /** Intrinsic elements whose `title` the platform needs. */
 const TITLE_ALLOWED_ON = new Set(["iframe"]);

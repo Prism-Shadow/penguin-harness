@@ -27,9 +27,8 @@ import {
   makeGeom,
   seriesPoints,
   useChartWidth,
-  type ChartPaint,
 } from "@prismshadow/penguin-ui";
-
+import type { ChartPaint } from "@prismshadow/penguin-ui";
 import { formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
 import { bucketAxisLabel, bucketFullLabel } from "../../lib/usage-controls";

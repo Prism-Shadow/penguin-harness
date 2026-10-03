@@ -28,7 +28,7 @@
  * A session's live status is not drawn: a ticket reports its own work, not what a session is
  * doing this second.
  */
-import { Fragment, useCallback, useEffect, useId, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router";
 import type {
   OrgEmployeeItem,
@@ -38,7 +38,7 @@ import type {
   OrgTicketStatus,
   OrgTicketUpdateRequest,
 } from "@prismshadow/penguin-server/api";
-
+import type { ReactNode } from "react";
 import {
   Button,
   Chevron,

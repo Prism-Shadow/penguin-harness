@@ -9,8 +9,8 @@ import {
   classifyMemoryPath,
   mergeMemoryChanges,
   sameMemoryChanges,
-  type MemoryChangeEntry,
 } from "../src/lib/amsp/memory-changes";
+import type { MemoryChangeEntry } from "../src/lib/amsp/memory-changes";
 
 const STATE = "/root/proj/agents/a1/agent_state";
 

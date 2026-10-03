@@ -12,8 +12,8 @@ import {
   advanceCostStat,
   applyUsageFetch,
   createCostStatHold,
-  type CostStatObservation,
 } from "../src/features/chat/header-stats";
+import type { CostStatObservation } from "../src/features/chat/header-stats";
 
 const obs = (over: Partial<CostStatObservation> = {}): CostStatObservation => ({
   sessionId: "s1",

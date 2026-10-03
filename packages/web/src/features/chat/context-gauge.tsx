@@ -66,8 +66,8 @@
  * streaming reply leaves it open. It opens upward on its own: the composer sits at the bottom of
  * the page, so there is never room below.
  */
-import { useEffect, useId, useRef, useState, type RefObject } from "react";
-
+import { useEffect, useId, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -91,7 +91,8 @@ import {
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { contextComposition, type ContextPartKey } from "./context-parts";
+import { contextComposition } from "./context-parts";
+import type { ContextPartKey } from "./context-parts";
 
 /**
  * Panel geometry. The width is applied inline rather than as a `w-*` class because the same

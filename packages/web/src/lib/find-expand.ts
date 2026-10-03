@@ -19,7 +19,8 @@
  * The other thing a transcript withholds, history beyond the loaded window, is not hidden but
  * absent; the region says so with `data-find-more` (lib/find-dom.ts).
  */
-import { createContext, useSyncExternalStore, type RefObject } from "react";
+import { createContext, useSyncExternalStore } from "react";
+import type { RefObject } from "react";
 
 let revealed: ReadonlySet<Element> = new Set();
 const listeners = new Set<() => void>();

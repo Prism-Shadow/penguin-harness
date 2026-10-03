@@ -12,9 +12,9 @@
  * CSP that forbids it, a construction that throws — the work falls back to this thread, which is
  * exactly the old behaviour and still correct, only blocking.
  */
-import { type HighlightOptions, isRuntimeLanguage, resolveLanguage } from "@prismshadow/penguin-ui";
+import type { HighlightOptions } from "@prismshadow/penguin-ui";
 import type { HighlightRequest, HighlightResponse } from "./highlighter.worker";
-
+import { isRuntimeLanguage, resolveLanguage } from "@prismshadow/penguin-ui";
 import type { RuntimeGrammar } from "@prismshadow/penguin-ui/highlighter";
 
 /** undefined: not tried yet. null: unavailable here, use the main thread. */

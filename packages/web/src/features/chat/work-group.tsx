@@ -15,12 +15,12 @@
  * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
  */
 import { useContext } from "react";
-import { ActivityGroup, type ActivityGroupProps } from "@prismshadow/penguin-ui";
-
+import { ActivityGroup } from "@prismshadow/penguin-ui";
+import type { ActivityGroupProps } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { FindRevealContext } from "../../lib/find-expand";
-import { approvalKey, type ChatItem } from "../../lib/amsp/stream-model";
-
+import { approvalKey } from "../../lib/amsp/stream-model";
+import type { ChatItem } from "../../lib/amsp/stream-model";
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";
 import { summarizeWork } from "./work-summary";

@@ -14,8 +14,8 @@
  * proceeds, so nothing asks twice; on "keep editing" the address stays where it was.
  */
 import { useEffect } from "react";
-import { useBlocker, type BlockerFunction } from "react-router";
-
+import { useBlocker } from "react-router";
+import type { BlockerFunction } from "react-router";
 import { confirmDiscard, discardUnsaved, hasUnsaved } from "@prismshadow/penguin-ui";
 
 /** Whether this navigation leaves the page while a form holds unsaved edits. */

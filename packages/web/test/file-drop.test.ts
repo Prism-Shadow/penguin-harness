@@ -17,9 +17,8 @@ import {
   guardWindowDrop,
   isFileDrag,
   splitDroppedFiles,
-  type DragGuardEvent,
-  type DragSignal,
 } from "../src/lib/file-drop";
+import type { DragGuardEvent, DragSignal } from "../src/lib/file-drop";
 
 describe("isFileDrag", () => {
   it("recognizes an OS file drag by the Files type, alone or among others", () => {

@@ -21,9 +21,8 @@ import {
   loadGroupOrder,
   orderGroups,
   saveGroupOrder,
-  type GroupOrderStorage,
 } from "../src/lib/group-order";
-
+import type { GroupOrderStorage } from "../src/lib/group-order";
 import { TEMP_WORKSPACE_GROUP_KEY, groupSessionsByWorkspace } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 

@@ -4,8 +4,8 @@
  * toggles and locked cells.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type ReactElement, createElement } from "react";
-
+import type { ReactElement } from "react";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";

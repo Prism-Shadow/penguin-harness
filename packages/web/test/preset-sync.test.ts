@@ -12,8 +12,8 @@
  *   run.
  * - The confirmation names, in both languages, the API keys it keeps.
  */
-import { createElement, type ReactElement } from "react";
-
+import { createElement } from "react";
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ModelsResponse, PresetSyncResponse } from "@prismshadow/penguin-server/api";
@@ -22,9 +22,8 @@ import {
   AddNewModelsConfirm,
   RestoreDefaultsBody,
   RestoreDefaultsConfirm,
-  type PresetSyncHost,
 } from "../src/features/models/preset-sync";
-
+import type { PresetSyncHost } from "../src/features/models/preset-sync";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { apiError, json, stubFetch } from "./helpers/fetch";

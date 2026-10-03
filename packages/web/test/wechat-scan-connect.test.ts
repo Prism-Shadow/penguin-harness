@@ -16,12 +16,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { WeChatBindingInfo, WeChatScanPollResponse } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../src/api/client";
-import {
-  WeChatScanConnect,
-  wechatScanStep,
-  type WeChatScanTally,
-} from "../src/features/messaging/wechat-scan-connect";
-
+import { WeChatScanConnect, wechatScanStep } from "../src/features/messaging/wechat-scan-connect";
+import type { WeChatScanTally } from "../src/features/messaging/wechat-scan-connect";
 import { S } from "../src/lib/strings";
 
 describe("WeChatScanConnect", () => {

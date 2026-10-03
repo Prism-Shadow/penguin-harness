@@ -31,8 +31,8 @@ import {
   removeShortcut,
   shortcutDraftError,
   upsertShortcut,
-  type UserShortcut,
 } from "../src/features/chat/user-shortcuts";
+import type { UserShortcut } from "../src/features/chat/user-shortcuts";
 
 const shortcut = (id: string, title = `title ${id}`, prompt = `prompt ${id}`): UserShortcut => ({
   id,

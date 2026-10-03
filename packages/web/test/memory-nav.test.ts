@@ -11,8 +11,8 @@ import {
   deletedChangeKeys,
   memoryNavBack,
   memoryNavForRequest,
-  type ScopeFiles,
 } from "../src/features/chat/memory-nav";
+import type { ScopeFiles } from "../src/features/chat/memory-nav";
 
 describe("memoryNavForRequest / memoryNavBack", () => {
   it("no request, and a request without a target (panel or card-header entry), land on the list", () => {

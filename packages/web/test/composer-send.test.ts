@@ -8,11 +8,8 @@
  * to delete what you had typed.
  */
 import { describe, expect, it } from "vitest";
-import {
-  isStopAction,
-  midRunAction,
-  type MidRunComposerState,
-} from "../src/features/chat/composer-send";
+import { isStopAction, midRunAction } from "../src/features/chat/composer-send";
+import type { MidRunComposerState } from "../src/features/chat/composer-send";
 
 /** An active session with both channels wired, steer mode, and a one-line text draft. */
 const BASE: MidRunComposerState = {

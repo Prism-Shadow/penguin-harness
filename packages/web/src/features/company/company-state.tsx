@@ -37,24 +37,16 @@
  * dialog's back control pops.
  *
  * Company events ride the same user-level event stream the session list consumes
- * (state/sessions.tsx forwards them through `publishCompanyEvent`): the store keeps the
- * channel counters of the open organization in step and bumps a version per event family,
- * which the pages watch to refetch — the query routes carry the durable state, the events only say
+ * (state/sessions.tsx hands them to `companyUserEvents`, company's contribution to
+ * `SessionsModule.userEvents`): the store keeps the channel counters of the open organization
+ * in step and bumps a version per event family, which the pages watch to refetch — the query routes carry the durable state, the events only say
  * that it moved.
  *
  * State lives in a zustand vanilla store (one instance per Provider mount) like the Project
  * and Session stores; the Provider is the lifecycle component that hydrates it.
  */
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type {
   CompanyServerEvent,
   MessagingChannel,
@@ -68,24 +60,25 @@ import type {
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { toastAttention } from "@prismshadow/penguin-ui";
-import * as api from "../api/endpoints";
-import { apiErrorText } from "../lib/api-error";
-import { isCurrentProject } from "../lib/project-scope";
-import { S } from "../lib/strings";
-import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/company-beta";
-import { channelBadgeCounts } from "../features/company/channel-list";
-import { homePath, orgKey, parseOrgKey, type WorkMode } from "../lib/company-nav";
-
-import { withDeskMessagingChannel } from "../features/company/org-sessions";
+import * as api from "../../api/endpoints";
+import { isCurrentProject } from "../../lib/project-scope";
+import { apiErrorText } from "../../lib/api-error";
+import { S } from "../../lib/strings";
+import { markBetaNoticeShown, shouldShowBetaNotice } from "./company-beta";
+import { channelBadgeCounts } from "./channel-list";
+import { homePath, orgKey, parseOrgKey } from "../../lib/company-nav";
+import type { WorkMode } from "../../lib/company-nav";
+import { withDeskMessagingChannel } from "./org-sessions";
 import {
   clearLastOrgKey,
   initialLastOrgKey,
   initialWorkMode,
   storeLastOrgKey,
   storeWorkMode,
-} from "../lib/work-mode";
-import { useAuth } from "./auth";
-import { useProject } from "./project";
+} from "../../lib/work-mode";
+import { useAuth } from "../../state/auth";
+import { useProject } from "../../state/project";
+import type { UserEventHandler } from "../../state/user-events";
 
 /** The event families the organization scheduler publishes on the user channel. */
 export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
@@ -98,8 +91,8 @@ export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Event fan-out: the one SSE connection (state/sessions.tsx) publishes here, and the store
-// plus any mounted page subscribe. Module level, because the connection outlives every page.
+// Event fan-out: the one SSE connection (state/sessions.tsx) publishes here through
+// `companyUserEvents`, and the store plus any mounted page subscribe. Module level, because the connection outlives every page.
 // ---------------------------------------------------------------------------
 
 type CompanyEventListener = (ev: CompanyServerEvent) => void;
@@ -124,9 +117,22 @@ export function subscribeCompanyEvents(listener: CompanyEventListener): () => vo
  */
 const resyncListeners = new Set<() => void>();
 
-export function publishCompanyResync(): void {
+function publishCompanyResync(): void {
   for (const listener of resyncListeners) listener();
 }
+
+/**
+ * Company's handler on the user event stream: the scheduler's notifications, and what a plugin
+ * publishes about its own organization surfaces, fan out to the company store and any mounted
+ * organization page, from whichever source; a resync from any source has them re-read their
+ * snapshots.
+ */
+export const companyUserEvents: UserEventHandler = {
+  event: (ev) => {
+    if (isCompanyEvent(ev)) publishCompanyEvent(ev);
+  },
+  resync: () => publishCompanyResync(),
+};
 
 export function subscribeCompanyResync(listener: () => void): () => void {
   resyncListeners.add(listener);

@@ -37,8 +37,8 @@
  * reaches the menu through the kebab, which is drawn on every card rather than revealed on
  * hover for exactly this reason.
  */
-import { useEffect, type ReactNode } from "react";
-
+import { useEffect } from "react";
+import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
 import {
   Dot,
@@ -48,13 +48,12 @@ import {
   ICON_SIZE,
   Legend,
   useRowContextMenu,
-  type ToneName,
 } from "@prismshadow/penguin-ui";
-
+import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { toneDot, toneInk, type Tone } from "../../lib/tone";
-
+import { toneDot, toneInk } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { EmployeeAvatar } from "./employee-avatar";
 import { budgetTone } from "./finance-tree";

@@ -19,8 +19,8 @@
  * session pins only that session, which then no longer follows the config; the dialog says so
  * when the current desk is pinned.
  */
-import { useEffect, useState, type ChangeEvent } from "react";
-
+import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import type {
   AgentModelConfigDto,
   OrgEmployeeItem,
@@ -57,9 +57,8 @@ import {
   avatarDataUrlFromImage,
   loadAvatarImage,
   releaseAvatarImage,
-  type AvatarCrop,
 } from "../../lib/avatar-image";
-
+import type { AvatarCrop } from "../../lib/avatar-image";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
@@ -73,9 +72,7 @@ import {
   removeSkillNames,
   toggleSkillName,
 } from "../skills";
-
 import { StdioDisclosure, stdioServers } from "../plugins";
-
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";

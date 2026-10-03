@@ -32,8 +32,8 @@
  * command runs long, and reads whole only in monospace with its own line breaks. The same
  * rule decides whether the panel may open: it is held shut while the text fits.
  */
-import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-
+import { useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { Tooltip, usePrefersReducedMotion } from "@prismshadow/penguin-ui";
 import { revealDistancePx, revealDurationMs, titleDisclosure } from "../../lib/title-reveal";
 

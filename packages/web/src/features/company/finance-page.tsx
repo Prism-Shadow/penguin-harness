@@ -25,8 +25,8 @@
  * neither can hold the page: the employees' live states come from the org chart, the ticket
  * owners from the board.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import type {
   OrgBudgetAlert,
@@ -66,11 +66,11 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatPercent } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, type Tone } from "../../lib/tone";
-
+import { toneDot, toneInk } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
-import { useTheme, type Currency } from "../../state/theme";
-
+import { useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { EmployeeAvatar } from "./employee-avatar";
 import { TrendChart } from "../usage";
@@ -100,9 +100,8 @@ import {
   ticketRowTooltip,
   ticketTreeRows,
   visibleLedgerRows,
-  type SpendStateKey,
 } from "./finance-tree";
-
+import type { SpendStateKey } from "./finance-tree";
 import { agentPrincipal } from "./principals";
 
 const iconButtonClass =

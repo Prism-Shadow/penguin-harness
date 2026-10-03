@@ -11,16 +11,12 @@
  * environment cannot run; the rules deciding them are pinned in selection-menu.test.ts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-
+import { createElement, isValidElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ICONS } from "@prismshadow/penguin-ui";
-import {
-  LinkMenuRows,
-  SelectionMenuRows,
-  type CapturedSelection,
-} from "../src/features/chat/stream-selection-menu";
-
+import { LinkMenuRows, SelectionMenuRows } from "../src/features/chat/stream-selection-menu";
+import type { CapturedSelection } from "../src/features/chat/stream-selection-menu";
 import type { ComposerControl } from "../src/features/chat/chat-input";
 import { ReferenceChip } from "../src/features/chat/reference-chip";
 import { excerptLabel } from "../src/lib/selection-menu";

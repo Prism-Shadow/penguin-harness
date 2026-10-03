@@ -20,9 +20,8 @@ import {
   managerCandidates,
   subtreeIds,
   workspaceTail,
-  type OrgTreeLayout,
-  type OrgTreeNode,
 } from "../src/features/company/org-chart-tree";
+import type { OrgTreeLayout, OrgTreeNode } from "../src/features/company/org-chart-tree";
 
 const employees = [
   { agentId: "ceo", reportsTo: null },

@@ -9,8 +9,8 @@
  * The Trace view's overview and the chat's details card both draw their breakdowns from here, so
  * the two cannot name, order or format the parts differently.
  */
-import { Fragment, type ReactNode } from "react";
-
+import { Fragment } from "react";
+import type { ReactNode } from "react";
 import type { CostParts } from "@prismshadow/penguin-server/api";
 import { InfoPopover } from "@prismshadow/penguin-ui";
 import { formatMoney, formatPercent, humanizeDuration, humanizeTokens } from "../../lib/format";

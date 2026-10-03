@@ -21,8 +21,8 @@
  *   question.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createElement as h, Fragment, type ReactElement } from "react";
-
+import { createElement as h, Fragment } from "react";
+import type { ReactElement } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";

@@ -29,8 +29,8 @@
  * A write that fails therefore leaves the screen agreeing with the server and says so inline,
  * rather than showing a picture that silently disappears on the next load.
  */
-import { useState, type ChangeEvent } from "react";
-
+import { useState } from "react";
+import type { ChangeEvent } from "react";
 import type { UpdateProfileRequest, UserInfo } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -53,9 +53,8 @@ import {
   avatarDataUrlFromImage,
   loadAvatarImage,
   releaseAvatarImage,
-  type AvatarCrop,
 } from "../../lib/avatar-image";
-
+import type { AvatarCrop } from "../../lib/avatar-image";
 import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
 import { profileControls } from "../../lib/profile-form";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";

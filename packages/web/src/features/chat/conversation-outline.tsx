@@ -34,19 +34,12 @@
  * fragments and later goal rounds carry anchors too, and crossing one of those must
  * highlight the entry that covers it rather than nothing.
  */
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FocusEvent,
-  type MouseEvent,
-  type RefObject,
-} from "react";
-
+import { useEffect, useRef, useState } from "react";
+import type { FocusEvent, MouseEvent, RefObject } from "react";
 import { Dot, Dropdown, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import type { OutlineEntry } from "./outline-model";
 import {
-  type OutlineEntry,
   globalTurnNumber,
   outlineVisible,
   previewText,

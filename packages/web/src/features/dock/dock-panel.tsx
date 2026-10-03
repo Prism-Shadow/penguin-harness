@@ -67,10 +67,8 @@ import {
   MenuItem,
   ResizeHandle,
   usePointerDrag,
-  type DockPickerChoice,
-  type DockTabItem,
 } from "@prismshadow/penguin-ui";
-
+import type { DockPickerChoice, DockTabItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { chordKeys } from "../../components/ui/chord-kbd";
 import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
@@ -79,18 +77,13 @@ import { invalidateSlotClips } from "../builtin-browser";
 import { confirmClose } from "../../lib/dock-close-guard";
 import { TERMINAL_PANEL } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
-import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
-
+import { DockPanelProvider } from "./panel-context";
+import type { DockPanelHandle } from "./panel-context";
 import { panelGlyph, panelLabel } from "./panel-meta";
-import {
-  dockPanelDefinition,
-  useDockPanels,
-  type DockPanelDefinition,
-  type PanelId,
-} from "./panel-registry";
+import { dockPanelDefinition, useDockPanels } from "./panel-registry";
+import type { DockPanelDefinition, PanelId } from "./panel-registry";
 import { bottomDockHeight, bottomDockMaxHeight } from "./bottom-dock-size";
 import { composerHeight, useComposerHeight } from "./composer-height";
-
 import {
   activateTab,
   bottomRatio,

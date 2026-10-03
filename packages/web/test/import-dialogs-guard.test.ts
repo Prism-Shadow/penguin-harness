@@ -16,8 +16,8 @@
  *   carries the edited source and the instructions for copying files.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createElement as h, useState, type ReactElement } from "react";
-
+import { createElement as h, useState } from "react";
+import type { ReactElement } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
@@ -36,9 +36,8 @@ import {
   mountAgentApp,
   topDialog,
   whereIs,
-  type AgentServer,
 } from "./helpers/agent-app";
-
+import type { AgentServer } from "./helpers/agent-app";
 import {
   button,
   click,

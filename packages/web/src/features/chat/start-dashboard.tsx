@@ -30,8 +30,8 @@
  * themes restyle the page through them: the counts' `Card` is squared and unfilled in Console and
  * softened in Frost, the section title is the theme's eyebrow, the h1 is its display title.
  */
-import { Fragment, useState, type ReactNode } from "react";
-
+import { Fragment, useState } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 import {
   Card,
@@ -53,8 +53,8 @@ import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { EXAMPLE_FOLDERS, type ExampleFolderId, type ExampleTaskId } from "./example-tasks";
-
+import { EXAMPLE_FOLDERS } from "./example-tasks";
+import type { ExampleFolderId, ExampleTaskId } from "./example-tasks";
 import {
   ExampleFolderRow,
   ExampleRowGlyph,

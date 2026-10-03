@@ -13,8 +13,8 @@ import {
   PRESS_SLOP_PX,
   createTicketPress,
   edgeScrollStep,
-  type PressStart,
 } from "../src/features/company/ticket-press";
+import type { PressStart } from "../src/features/company/ticket-press";
 
 function setup(pointerType = "mouse") {
   const calls: string[] = [];

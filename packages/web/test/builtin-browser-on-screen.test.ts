@@ -15,7 +15,8 @@ import {
   forgetOnScreenReport,
   reportOnScreenTab,
 } from "../src/features/builtin-browser/on-screen-report";
-import { json, stubFetch, type FakeFetch } from "./helpers/fetch";
+import { json, stubFetch } from "./helpers/fetch";
+import type { FakeFetch } from "./helpers/fetch";
 
 let fetch: FakeFetch;
 

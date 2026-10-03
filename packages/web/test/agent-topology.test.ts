@@ -48,10 +48,8 @@ import {
   createStreamModel,
   hasPendingWithinOrigin,
   pushMessage,
-  type StreamModel,
-  type SubagentItem,
 } from "../src/lib/amsp/stream-model";
-
+import type { StreamModel, SubagentItem } from "../src/lib/amsp/stream-model";
 import {
   agentIdFromRunSubagentArgs,
   extractTopology,

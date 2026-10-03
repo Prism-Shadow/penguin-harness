@@ -15,12 +15,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
-import {
-  ErrorsPanel,
-  errorsClearScopeText,
-  type ErrorsFilters,
-} from "../src/features/usage/errors-panel";
-
+import { ErrorsPanel, errorsClearScopeText } from "../src/features/usage/errors-panel";
+import type { ErrorsFilters } from "../src/features/usage/errors-panel";
 import { formatDateTime } from "../src/lib/format";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

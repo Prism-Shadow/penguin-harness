@@ -46,10 +46,8 @@ import {
   EMPTY_FILE,
   TraceFileBody,
   fileAfterAnalysis,
-  type FileState,
-  type RoundEntry,
 } from "../src/features/traces/trace-file-view";
-
+import type { FileState, RoundEntry } from "../src/features/traces/trace-file-view";
 import { TRACE_ROUNDS_PAGE } from "../src/features/traces/trace-rounds";
 import { S } from "../src/lib/strings";
 

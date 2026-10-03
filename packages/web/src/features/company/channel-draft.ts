@@ -13,7 +13,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../../state/auth";
-import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "../chat";
+import { clearDraft, loadDraft, saveDraft } from "../chat";
+import type { DraftStorage } from "../chat";
 
 const SAVE_DEBOUNCE_MS = 300;
 

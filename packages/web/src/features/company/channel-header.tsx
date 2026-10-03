@@ -37,9 +37,8 @@ import {
   toastError,
   toastSuccess,
   usePortalPanel,
-  type AvatarStackItem,
 } from "@prismshadow/penguin-ui";
-
+import type { AvatarStackItem } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -48,8 +47,8 @@ import { Truncated } from "../../components/ui/truncated";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
-import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
-
+import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
+import type { InviteCandidate } from "./channel-list";
 import { parsePrincipal } from "./principals";
 
 /** Opening a desk session (the open door): the member popover's employee rows, and the org chart's node menu. */

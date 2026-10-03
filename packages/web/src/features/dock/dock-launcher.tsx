@@ -32,11 +32,12 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type FocusEvent as ReactFocusEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
 } from "react";
-
+import type {
+  FocusEvent as ReactFocusEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from "react";
 import {
   GlyphIcon,
   ICONS,
@@ -50,9 +51,8 @@ import {
   toastInfo,
   usePointerDrag,
   usePrefersReducedMotion,
-  type SpringDriver,
 } from "@prismshadow/penguin-ui";
-
+import type { SpringDriver } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useDockPanels } from "./panel-registry";

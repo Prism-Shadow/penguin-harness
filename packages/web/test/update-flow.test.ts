@@ -23,9 +23,8 @@ import {
   updateModeFor,
   updateRowModel,
   versionBadgeFor,
-  type FlowLocal,
-  type UpdateFlow,
 } from "../src/lib/update-flow";
+import type { FlowLocal, UpdateFlow } from "../src/lib/update-flow";
 
 const check = (over: Partial<UpdateCheckResponse> = {}): UpdateCheckResponse => ({
   currentVersion: "0.2.9",

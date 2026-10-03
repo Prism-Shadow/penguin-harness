@@ -1,6 +1,6 @@
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { isSessionUnread, type SessionSeenState } from "./session-seen";
-
+import { isSessionUnread } from "./session-seen";
+import type { SessionSeenState } from "./session-seen";
 import { S } from "./strings";
 
 /**

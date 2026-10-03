@@ -15,9 +15,8 @@ import {
   CONTEXT_MENU_ACTIONS,
   HOVER_ROW_ACTIONS,
   sessionRowMenuItem,
-  type SessionRowAction,
 } from "../src/components/ui/session-row-menu";
-
+import type { SessionRowAction } from "../src/components/ui/session-row-menu";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
