@@ -6370,6 +6370,29 @@ Scenarios:
         summary: (nodes: number, onChain: number): string =>
           `${nodes} PRs, ${onChain} on the chain`,
         openPr: "Open on GitHub",
+        deploy: {
+          menu: "Deploy",
+          menuTitle: "Deploy this PR's head",
+          to: (id: string): string => `Deploy to ${id}`,
+          none: "No deploy scripts: a server admin registers one with penguin org proposal deploy-script add",
+          loadFailed: "Deploy scripts could not be read",
+          title: (id: string): string => `Deploy to ${id}`,
+          what: (pr: string, head: string): string =>
+            `Runs the deploy script on the server, for ${pr} at ${head}.`,
+          command: "Runs",
+          args: "Extra arguments",
+          argsHint: "Split at spaces, appended to the registered command",
+          start: "Deploy",
+          cancel: "Cancel",
+          close: "Close",
+          running: "Deploying…",
+          succeeded: "Deployed",
+          failed: (exit: number | null, error: string | null): string =>
+            `Deploy failed${exit === null ? "" : ` (exit ${exit})`}${error === null ? "" : `: ${error}`}`,
+          timedOut: "Deploy ran too long and was stopped",
+          noOutput: "(no output yet)",
+          keepsRunning: "Closing this dialog does not stop the deploy.",
+        },
       },
     },
   },
@@ -6388,6 +6411,8 @@ Scenarios:
     noDefaultModel: "This project has no default model yet — add one on the Models page first",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
+      head_moved: "This PR's head has moved: refresh the graph before deploying.",
+      deploy_busy: "This deploy script is already running: wait for it to finish.",
       invalid_credentials: "Incorrect username or password.",
       too_many_attempts: "Too many failed sign-in attempts. Try again shortly.",
       password_mismatch: "The current password is incorrect.",

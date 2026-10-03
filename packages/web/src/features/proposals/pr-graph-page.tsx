@@ -6,6 +6,9 @@
  * gave it (top, fork, the closed PRs its base led through, stale, off the chain and why) and the PRs
  * the other origins have on the same branch.
  *
+ * A node's menu (a right-click on its row, or its ellipsis) deploys that PR's head with one of
+ * the organization's deploy scripts (pr-graph-deploy.tsx).
+ *
  * It is reached from the queue's header and from a proposal's header; the latter opens it with
  * `?proposal=<n>`, and the page scrolls to that proposal's row and tints it, or says in one line
  * why the proposal has no row. Under the graph, pr-graph-rows.tsx lists apart the PRs off the chain,
@@ -15,8 +18,13 @@
  * its text wraps: the text truncates and carries the full value in its tooltip.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
+import type {
+  ProposalDeployScript,
+  ProposalGraphNode,
+  ProposalGraphResponse,
+} from "@prismshadow/penguin-server/api";
 import { Button, ICON_GAP, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -38,6 +46,7 @@ import {
   RELATION_TONE,
   UnplacedSection,
 } from "./pr-graph-rows";
+import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy";
 
 /** Row height and lane pitch of the drawn graph, in px. */
 const ROW = 44;
@@ -110,6 +119,21 @@ export function GraphPage() {
   }, [graph, focus]);
 
   const openProposal = (n: number) => navigate(orgProposalPath(projectId, orgId, n));
+  const deployScripts = useDeployScripts(projectId, orgId);
+  const [deploying, setDeploying] = useState<{
+    node: ProposalGraphNode;
+    script: ProposalDeployScript;
+  } | null>(null);
+  const deployable = (node: ProposalGraphNode, row: ReactNode) => (
+    <DeployableRow
+      node={node}
+      scripts={deployScripts.scripts}
+      scriptsError={deployScripts.error}
+      onPick={(script) => setDeploying({ node, script })}
+    >
+      {row}
+    </DeployableRow>
+  );
   const onChain = graph?.nodes.filter((n) => n.onChain).length ?? 0;
   const drawnOff = useMemo(() => {
     const undrawn = new Set(layout?.detached.map((n) => n.number));
@@ -205,7 +229,10 @@ export function GraphPage() {
                     {row.node === null ? (
                       <BaseRow graph={graph} />
                     ) : (
-                      <NodeRow graph={graph} node={row.node} onOpenProposal={openProposal} />
+                      deployable(
+                        row.node,
+                        <NodeRow graph={graph} node={row.node} onOpenProposal={openProposal} />,
+                      )
                     )}
                   </li>
                 ))}
@@ -219,6 +246,7 @@ export function GraphPage() {
             info={t.offSectionHint}
             nodes={drawnOff}
             onOpenProposal={openProposal}
+            wrapRow={deployable}
           />
           <NodeListSection
             graph={graph}
@@ -226,9 +254,19 @@ export function GraphPage() {
             info={t.detachedHint}
             nodes={layout.detached}
             onOpenProposal={openProposal}
+            wrapRow={deployable}
           />
           <UnplacedSection graph={graph} focus={focus} onOpenProposal={openProposal} />
         </div>
+      )}
+      {deploying !== null && (
+        <DeployDialog
+          projectId={projectId}
+          orgId={orgId}
+          node={deploying.node}
+          script={deploying.script}
+          onClose={() => setDeploying(null)}
+        />
       )}
     </OrgPage>
   );

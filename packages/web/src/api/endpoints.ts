@@ -149,6 +149,9 @@ import type {
   ProposalFileResponse,
   ProposalFeedbackRequest,
   ProposalGraphResponse,
+  ProposalDeployRunResponse,
+  ProposalDeployScriptsResponse,
+  ProposalDeployStartResponse,
   ProposalImplementRequest,
   ProposalItem,
   ProposalMaterialRequest,
@@ -3025,6 +3028,27 @@ export const listOrgProposals = (projectId: string, orgId: string) =>
 /** The delivery repository's open PRs as a commit graph, with each node's proposal and origins. */
 export const getOrgProposalGraph = (projectId: string, orgId: string) =>
   apiFetch<ProposalGraphResponse>(`${proposalsBase(projectId, orgId)}/graph`);
+
+/** The organization's deploy scripts: what the PR graph's node menu offers to deploy to. */
+export const getOrgDeployScripts = (projectId: string, orgId: string) =>
+  apiFetch<ProposalDeployScriptsResponse>(`${proposalsBase(projectId, orgId)}/deploy-scripts`);
+
+/** Run a deploy script on a PR head: the graph sends the PR and the head it showed, and the server refuses a head that moved. */
+export const startOrgDeploy = (
+  projectId: string,
+  orgId: string,
+  body: { script: string; pr: number; head: string; args: string[] },
+) =>
+  apiFetch<ProposalDeployStartResponse>(`${proposalsBase(projectId, orgId)}/deploys`, {
+    method: "POST",
+    body,
+  });
+
+/** A deploy run and its output from `from`. */
+export const getOrgDeployRun = (projectId: string, orgId: string, id: string, from: number) =>
+  apiFetch<ProposalDeployRunResponse>(
+    `${proposalsBase(projectId, orgId)}/deploys/${encodeURIComponent(id)}?from=${from}`,
+  );
 
 export const createOrgProposal = (projectId: string, orgId: string, body: ProposalCreateRequest) =>
   apiFetch<ProposalItem>(proposalsBase(projectId, orgId), { method: "POST", body });

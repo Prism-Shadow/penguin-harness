@@ -5,6 +5,7 @@
  * apart: the PRs drawn but off the chain, the PRs the graph cannot draw at all, and the proposals
  * whose impl PR is not an open PR on the delivery repository — each row with its reason.
  */
+import type { ReactNode } from "react";
 import type {
   ProposalGraphNode,
   ProposalGraphOffReason,
@@ -170,19 +171,25 @@ export function NodeRow({
   );
 }
 
-/** A list of node rows under the graph: the drawn-but-off-chain ones, or the ones it cannot draw. */
+/**
+ * A list of node rows under the graph: the drawn-but-off-chain ones, or the ones it cannot draw.
+ * `wrapRow` wraps each row the way the page wraps the graph's own rows (the deploy menu), so a PR
+ * offers the same menu wherever it is listed.
+ */
 export function NodeListSection({
   graph,
   title,
   info,
   nodes,
   onOpenProposal,
+  wrapRow = (_node, row) => row,
 }: {
   graph: ProposalGraphResponse;
   title: string;
   info: string;
   nodes: readonly ProposalGraphNode[];
   onOpenProposal: (n: number) => void;
+  wrapRow?: (node: ProposalGraphNode, row: ReactNode) => ReactNode;
 }) {
   if (nodes.length === 0) return null;
   return (
@@ -190,7 +197,7 @@ export function NodeListSection({
       <ul className="divide-y divide-gray-100 dark:divide-gray-800">
         {nodes.map((node) => (
           <li key={node.number} className="flex items-center py-1.5 pr-3">
-            <NodeRow graph={graph} node={node} onOpenProposal={onOpenProposal} />
+            {wrapRow(node, <NodeRow graph={graph} node={node} onOpenProposal={onOpenProposal} />)}
           </li>
         ))}
       </ul>

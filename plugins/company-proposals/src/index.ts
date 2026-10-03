@@ -15,7 +15,7 @@
  * stream), the settings store, the data root — through the organization gateway; what
  * makes those a proposal lives here: ledger.ts is the append-only record, markdown.ts the
  * document form, service.ts the state machine and the desk deliveries that drive the
- * employees, routes.ts the API. The page is the web app's own `OrgProposalsPage` renderer,
+ * employees, routes.ts the API, deploy.ts the organization's deploy scripts and their runs. The page is the web app's own `OrgProposalsPage` renderer,
  * declared here as a company-mode page so it appears — with its nav row — only while the
  * plugin is installed.
  */
@@ -31,6 +31,7 @@ import type {
   Settings,
 } from "@prismshadow/penguin-server/plugin";
 import { ProposalService } from "./service.js";
+import { DeployService } from "./deploy.js";
 import { ROUTES_ID, proposalRoutes } from "./routes.js";
 
 export {
@@ -61,6 +62,17 @@ export {
 } from "./service.js";
 export type { ServiceDeps } from "./service.js";
 export { ROUTES_ID, proposalRoutes } from "./routes.js";
+export {
+  DEPLOY_SCRIPTS_FILE,
+  DEPLOY_TIMEOUT_MS,
+  DeployService,
+  OUTPUT_LIMIT,
+  RUNS_KEPT,
+  SCRIPT_ID,
+} from "./deploy.js";
+export type { DeployDeps, DeployRequest, DeployScope } from "./deploy.js";
+export { startProcess } from "./deploy-process.js";
+export type { DeployProcess, StartProcess } from "./deploy-process.js";
 export {
   CONFIG_GROUP,
   DEFAULT_DELIVERY_BASE,
@@ -209,7 +221,12 @@ export class CompanyProposalsPlugin {
       pluginConfig: this.pluginConfig,
     });
     this.service = service;
-    this.routes = proposalRoutes(service);
+    const deploys = new DeployService({
+      scope: (projectId, orgId, actor) => service.deployScope(projectId, orgId, actor),
+      root: this.paths.root,
+      log: (line) => this.log.line(line),
+    });
+    this.routes = proposalRoutes(service, deploys);
   }
 
   /**

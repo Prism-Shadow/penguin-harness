@@ -13,6 +13,7 @@ import {
   focusedProposal,
   layoutGraph,
   rowOfProposal,
+  splitArgs,
 } from "../src/features/proposals/pr-graph-model";
 
 const node = (number: number, parent: number | null, over: Partial<ProposalGraphNode> = {}) =>
@@ -157,5 +158,12 @@ describe("the proposal focus", () => {
     expect(focusedProposal(new URLSearchParams("proposal=0"))).toBeNull();
     expect(focusedProposal(new URLSearchParams("proposal=x"))).toBeNull();
     expect(focusedProposal(new URLSearchParams(""))).toBeNull();
+  });
+});
+
+describe("splitArgs", () => {
+  it("splits a deploy's extra arguments at whitespace and drops the empty ones", () => {
+    expect(splitArgs("  --extra-args   x\ty \n")).toEqual(["--extra-args", "x", "y"]);
+    expect(splitArgs("")).toEqual([]);
   });
 });

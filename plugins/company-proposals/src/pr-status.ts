@@ -54,7 +54,7 @@ const TIMEOUT_MS = 3_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 /** An owner or repository name GitHub accepts; anything else is never put on a command line. */
-const GITHUB_NAME = /^(?!\.\.?$)[A-Za-z0-9_.-]+$/;
+export const GITHUB_NAME = /^(?!\.\.?$)[A-Za-z0-9_.-]+$/;
 
 /** Runs `gh` with these arguments and answers its stdout; rejects when it cannot run, fails or times out. */
 export type RunGh = (

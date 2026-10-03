@@ -46,6 +46,17 @@ penguin org proposal merged <n>                         # the implementer or a p
 penguin org proposal reject <n> --reason <text>         # any employee, as a person may: the reason and who are recorded
 ```
 
+An organization deploys with its own scripts. A server admin registers each one under an id, with the command it runs (an argument vector, no shell):
+
+```text
+penguin org proposal deploy-script add <id> [--description <text>] -- <command> [args...]
+penguin org proposal deploy-script ls
+penguin org proposal deploy-script rm <id>
+penguin org proposal deploy <n> --to <id> [--dry-run] [-- <extra args...>]
+```
+
+`deploy` resolves the head of proposal `n`'s impl PR and runs the script on the server that holds the organization, in its shared workspace, with the extra arguments appended to the registered command. The PR graph page does the same for any node: right-click the row (or use its ellipsis) and pick a script. The script receives the PR in its environment — `PENGUIN_DEPLOY_HEAD` (the head commit), `PENGUIN_DEPLOY_REPO`, `PENGUIN_DEPLOY_PR`, `PENGUIN_DEPLOY_PR_URL`, `PENGUIN_DEPLOY_BRANCH`, `PENGUIN_DEPLOY_PROPOSAL` (empty for a PR no proposal registered), `PENGUIN_DEPLOY_ID`, `PENGUIN_DEPLOY_RUN` and `PENGUIN_DEPLOY_BY` — and does the rest: checking the commit out, building, shipping, holding its own credentials. A run succeeds when the script exits 0. One run per script at a time, stopped after an hour; runs and their output (the last MiB) are kept in memory, so a restart forgets them. The registry is `deploy-scripts.json` in the organization's directory.
+
 The document a revision sends:
 
 ```markdown

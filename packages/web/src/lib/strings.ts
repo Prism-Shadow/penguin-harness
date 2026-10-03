@@ -6555,6 +6555,29 @@ Benchmark：
         checkedAt: (when: string): string => `读取于 ${when}`,
         summary: (nodes: number, onChain: number): string => `${nodes} 张 PR，${onChain} 张在链上`,
         openPr: "在 GitHub 上打开",
+        deploy: {
+          menu: "部署",
+          menuTitle: "部署这张 PR 的 head",
+          to: (id: string): string => `部署到 ${id}`,
+          none: "还没有部署脚本：服务器管理员用 penguin org proposal deploy-script add 登记",
+          loadFailed: "部署脚本读取失败",
+          title: (id: string): string => `部署到 ${id}`,
+          what: (pr: string, head: string): string =>
+            `在服务器上运行部署脚本，部署 ${pr} 的 ${head}。`,
+          command: "将运行",
+          args: "额外参数",
+          argsHint: "按空格切分，接在登记的命令之后",
+          start: "部署",
+          cancel: "取消",
+          close: "关闭",
+          running: "部署中…",
+          succeeded: "部署成功",
+          failed: (exit: number | null, error: string | null): string =>
+            `部署失败${exit === null ? "" : `（退出码 ${exit}）`}${error === null ? "" : `：${error}`}`,
+          timedOut: "部署超时，已停止",
+          noOutput: "（还没有输出）",
+          keepsRunning: "关闭对话框不会停止部署。",
+        },
       },
     },
   },
@@ -6579,6 +6602,8 @@ Benchmark：
     noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
+      head_moved: "这张 PR 的 head 已经变了：刷新关系图再部署。",
+      deploy_busy: "这个部署脚本正在运行，等它结束再部署。",
       invalid_credentials: "用户名或密码错误。",
       too_many_attempts: "登录失败次数过多，请稍后重试。",
       password_mismatch: "当前密码不正确。",

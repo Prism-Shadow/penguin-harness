@@ -34,6 +34,8 @@
  *                    | conclude <n> -m <text> [--discussion <session_id>]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
  *                    | approve <n> | reject <n> --reason <s> | groups
+ *                    | deploy <n> --to <id> [--dry-run] [-- <args...>]
+ *                    | deploy-script add <id> [--description <s>] -- <command...> | ls | rm <id>
  *                    (the company-proposals plugin's routes: without the plugin, every one is a 404)
  *
  * Every subcommand takes `--org-id` (default: PENGUIN_ORG_ID, the variable company mode
@@ -101,6 +103,7 @@ import {
   ServerClient,
 } from "../client.js";
 import { getSessionInfo } from "../server-session.js";
+import { registerProposalDeploy } from "./proposal-deploy.js";
 import { dim } from "../render.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -153,6 +156,8 @@ const ORG_404_CODES: ReadonlySet<string> = new Set([
   "proposal_not_found",
   "comment_not_found",
   "discussion_not_found",
+  "deploy_script_not_found",
+  "deploy_not_found",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -2278,6 +2283,23 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (graph === null) return;
     if (opts.json === true) printJson(graph);
     else process.stdout.write(renderGraph(graph, t));
+  });
+
+  registerProposalDeploy(proposal, t, {
+    scoped: (cmd) => scoped(cmd, t),
+    open: async (opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return null;
+      return <T>(method: string, suffix: string, body?: unknown) =>
+        proposalRequest<T>(scope, t, method, suffix, body);
+    },
+    actorFields,
+    actorQuery: () => query(actorQuery()),
+    fail: (message) => fail(t, message),
+    print: printLine,
+    printJson,
+    write: (text) => process.stdout.write(text),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   });
 
   const material = proposal.command("material").description(t.org.proposalMaterialDesc);
