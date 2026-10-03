@@ -150,6 +150,7 @@ import type {
   ProposalFeedbackRequest,
   ProposalGraphResponse,
   ProposalDeployRunResponse,
+  ProposalDeployScript,
   ProposalDeployScriptsResponse,
   ProposalDeployStartResponse,
   ProposalImplementRequest,
@@ -3032,6 +3033,17 @@ export const getOrgProposalGraph = (projectId: string, orgId: string) =>
 /** The organization's deploy scripts: what the PR graph's node menu offers to deploy to. */
 export const getOrgDeployScripts = (projectId: string, orgId: string) =>
   apiFetch<ProposalDeployScriptsResponse>(`${proposalsBase(projectId, orgId)}/deploy-scripts`);
+
+/** Registers a deploy script (a server admin's): the menu's "Associate …" action. */
+export const createOrgDeployScript = (
+  projectId: string,
+  orgId: string,
+  body: { id: string; command: string[]; description?: string },
+) =>
+  apiFetch<ProposalDeployScript>(`${proposalsBase(projectId, orgId)}/deploy-scripts`, {
+    method: "POST",
+    body,
+  });
 
 /** Run a deploy script on a PR head: the graph sends the PR and the head it showed, and the server refuses a head that moved. */
 export const startOrgDeploy = (
