@@ -218,11 +218,15 @@ export class SandboxService {
       // short-circuit is "no confinement dimension beyond fs-write", not "mode is full".
       if (settings.mode === "danger-full-access" && required.length === 1) return { argv };
       const provider = this.pick(required, settings.mode);
-      // The Session's scratchpad is created lazily (on the first thing written into it) and
-      // can be deleted while the Session lives, but a backend binding it needs it on disk:
-      // bubblewrap refuses to start on a missing bind source. Ensured on every spawn, here,
-      // where every confined spawn meets — see SandboxPolicy.writableRoots.
-      if (opts.scratchpadDir !== undefined) ensureScratchpad(opts.scratchpadDir);
+      // Only workspace-write binds further writable roots; under read-only (or full access
+      // with a network cut) every backend ignores them, so neither the field nor the
+      // directory is made there.
+      const scratchpadDir = settings.mode === "workspace-write" ? opts.scratchpadDir : undefined;
+      // The Session's scratchpad is created lazily (on the first thing written into it), and a
+      // command, an agent or the user can remove it mid-Session, but a backend binding it needs
+      // it on disk: bubblewrap refuses to start on a missing bind source. Ensured on every
+      // spawn, here, where every confined spawn meets — see SandboxPolicy.writableRoots.
+      if (scratchpadDir !== undefined) ensureScratchpad(scratchpadDir);
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
       const policy: SandboxPolicy = {
@@ -230,7 +234,7 @@ export class SandboxService {
         workspaceRoot: opts.workspaceDir,
         // The Session's scratchpad is writable beside the Workspace: the plan file, a goal's
         // state file and the attachments live there, and hooks and commands both write it.
-        ...(opts.scratchpadDir !== undefined ? { writableRoots: [opts.scratchpadDir] } : {}),
+        ...(scratchpadDir !== undefined ? { writableRoots: [scratchpadDir] } : {}),
         ...(settings.network !== undefined ? { network: settings.network } : {}),
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
@@ -278,6 +282,11 @@ export class SandboxService {
  * Creates the Session's scratchpad if it is missing (a no-op when it exists). A failure
  * throws, fail-closed: dropping the root and confining without it would start the command
  * but leave it unable to write the directory it was told it may write.
+ *
+ * Known race, left as is: deleting a Session removes its scratchpad, and a run that outlives
+ * the delete (a command still being spawned for it) recreates the directory here. The cost is
+ * an empty, orphaned directory under the Agent's scratchpad that nothing cleans up; it holds
+ * only what that last run writes, and no access outlives the Session.
  */
 function ensureScratchpad(dir: string): void {
   try {

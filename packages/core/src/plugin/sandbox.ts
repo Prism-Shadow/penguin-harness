@@ -63,12 +63,12 @@ export interface SandboxPolicy {
   /**
    * Further absolute directories `workspace-write` may write under, beside the workspace:
    * the Session's scratchpad, where the plan file, a goal's state file and the
-   * attachments live. Meaningless under `read-only`. A backend that does not implement
-   * the field confines more narrowly than asked, never more widely, so no dimension
-   * guards it.
+   * attachments live. The service sets it only under `workspace-write`. A backend that
+   * does not implement the field confines more narrowly than asked, never more widely, so
+   * no dimension guards it.
    *
    * Each root EXISTS on the host by the time a backend is handed the policy: the service
-   * creates it first (the scratchpad is made lazily, and can be deleted mid-Session), and
+   * creates it first (the scratchpad is made lazily, and can be removed mid-Session), and
    * refuses the spawn when it cannot. A backend neither creates a root nor skips a missing
    * one. `workspaceRoot` is not covered: a missing Workspace is a different error, and
    * surfaces as such.

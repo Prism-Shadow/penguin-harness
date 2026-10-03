@@ -187,8 +187,8 @@ describe("sandbox service — the built-in interface and its optional dimensions
   });
 
   it("a scratchpad not on disk yet is created before the backend sees it, and an existing one is left as it is", async () => {
-    // Created lazily by the Session, deleted by the scratchpad-delete route: a backend that
-    // binds it (bwrap) refuses to start on a missing bind source.
+    // Created lazily by the Session, and removable mid-Session by a command, an agent or the
+    // user: a backend that binds it (bwrap) refuses to start on a missing bind source.
     const scratchpad = path.join(tmp(), "scratchpad", "session-1");
     const existedWhenConfined: boolean[] = [];
     const svc = await service([
@@ -235,6 +235,23 @@ describe("sandbox service — the built-in interface and its optional dimensions
       confine([...ARGV], { ...OPTS, scratchpadDir: path.join(blocker, "session-1") }),
     ).toThrow(/cannot prepare the Session scratchpad .*session-1 for the sandbox \(E[A-Z]+:/);
     expect(dsh.calls).toHaveLength(0);
+  });
+
+  it("outside workspace-write the scratchpad is neither bound nor created, since no backend writes it there", async () => {
+    const scratchpad = path.join(tmp(), "scratchpad", "session-1");
+    const bwrap = fake("bwrap", ["fs-write", "network"]);
+    const svc = await service([["penguin-bwrap", bwrap.provider]]);
+    svc.confinerFor(() => ({ mode: "read-only" }))([...ARGV], {
+      ...OPTS,
+      scratchpadDir: scratchpad,
+    });
+    svc.confinerFor(() => ({ mode: "danger-full-access", network: "none" }))([...ARGV], {
+      ...OPTS,
+      scratchpadDir: scratchpad,
+    });
+    expect(bwrap.calls).toHaveLength(2);
+    for (const call of bwrap.calls) expect(call).not.toHaveProperty("writableRoots");
+    expect(fs.existsSync(scratchpad)).toBe(false);
   });
 
   it("requiring a dimension nothing implements is refused, naming what each backend does", async () => {
