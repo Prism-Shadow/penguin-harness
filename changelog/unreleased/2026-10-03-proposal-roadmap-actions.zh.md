@@ -52,6 +52,7 @@
 - 部署是 company workflow 贡献的 `deploy.<id>` Action，对象为提案（取其 impl 的 head）、PR 或分支。注册表在运行开始时解析提交；提交不是调用者看到的 `expectedHead` 时，以 409 `head_moved` 拒绝。
 - company workflow 的部署以 `CompanyHost.deploy(runId, argv)` 启动进程，Action 模型的类型取自 company-proposals 的 `deploy` 入口 `@prismshadow/penguin-plugin-company-proposals/deploy`。部署保留 `PENGUIN_DEPLOY_*` 环境变量、同时一次的缺省、一小时上限与输出末尾 1 MiB，输出现在随运行一起保存。
 - 部署运行结束后，内置的 `deploy.*` after 挂钩刷新 PR 关系图。
+- 删除组织时先停止它的 Action 运行：运行启动的每个进程（包括部署的进程）先收到 SIGTERM，10 秒后收到 SIGKILL，该运行记为 `failed`；随后注册表关闭它的 `company.db` 连接并释放该组织的 company workflow 树，提案服务最后才关闭自己的连接。热更新之前的实例启动的运行同样会被停止。[删除组织](2026-10-03-proposals-relational-store.zh.md)中针对部署脚本的部分随部署脚本一并移除。
 
 ## CLI
 

@@ -18,6 +18,7 @@ import { ACTION_ROUTES_ID, actionRoutes } from "./action-routes.js";
 import type { Contributed } from "./action-index.js";
 import { CompanyWorkflows } from "./company-workflows.js";
 import { WORKFLOW_ROUTES_ID, workflowContributions, workflowRoutes } from "./workflow-actions.js";
+import { runRetireListeners, type RetireListener } from "./org-retire.js";
 
 @Component({
   contributes: {
@@ -61,6 +62,16 @@ export class CompanyActionRegistry implements CompanyActions {
     effect(() => {
       registry.stop();
       workflows.stop();
+    });
+    // An organization being deleted: its runs stopped and its store closed, then its company
+    // workflow trees dropped — before the proposal service closes its own (org-retire.ts).
+    const retire: RetireListener = async (org) => {
+      await registry.retire(org.projectId, org.orgId);
+      await workflows.retire(org.projectId, org.orgId);
+    };
+    runRetireListeners.add(retire);
+    effect(() => {
+      runRetireListeners.delete(retire);
     });
     this.routes = actionRoutes(registry);
     this.workflowRoutes = workflowRoutes(registry, workflows);

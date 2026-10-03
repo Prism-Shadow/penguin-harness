@@ -68,7 +68,7 @@ describe("the company-roadmaps plugin on a real server", () => {
     );
     expect(proposals).toMatchObject({
       active: true,
-      modules: ["CompanyProposalsPlugin", "CompanyActionRegistry"],
+      modules: ["CompanyProposalsPlugin", "CompanyActionRegistry", "ProposalsRetirement"],
     });
   });
 

@@ -1,11 +1,15 @@
 /**
  * Deleting an organization, as this plugin takes part in it (the host's
- * `OrganizationModule.retirements`, contributed by index.ts's retirement node). The plugin keeps
- * per organization what it opened on first use: the `company.db` connection (proposals, the PR
- * graph and the PR status cache share it), the deployment registry's append chain, the graph
- * refresher's state with any refresh in flight (git and gh children) and the PR status batch in
- * flight. A retirement stops and awaits that organization's work, closes its connection and
- * drops what is kept of it; other organizations are not touched.
+ * `OrganizationModule.retirements`, contributed by retirement-module.ts's node). The plugin keeps
+ * per organization what it opened on first use. The Action registry (registry-module.ts): its
+ * runs, with the processes they started (a deploy), its own `company.db` connection, and the
+ * organization's company workflow trees. The proposals module (plugin.ts): the `company.db`
+ * connection (proposals, the PR graph and the PR status cache share it), the deployment
+ * registry's append chain, the graph refresher's state with any refresh in flight (git and gh
+ * children) and the PR status batch in flight. A retirement stops and awaits that
+ * organization's work, closes its connections and drops what is kept of it; other organizations
+ * are not touched. The registry goes first: a run still going may write through the proposal
+ * service, so the service closes only after the runs have ended.
  *
  * Until the host has moved the directory, nothing may open the organization's stores again —
  * a new connection would hold the file open (Windows refuses the move) or write into the trashed
@@ -89,14 +93,18 @@ export interface OrgRef {
 export type RetireListener = (org: OrgRef) => Promise<void>;
 
 /**
- * The plugin's retirements, registered by its module at setup and removed when its App stops.
- * The retirement node reaches them through this module's scope, which the two nodes of one
+ * The plugin's retirements, registered by its modules at setup and removed when their App
+ * stops. The retirement node reaches them through this module's scope, which the nodes of one
  * bundle share: it contributes to the organization module, so it cannot require the gateway
  * that module provides, nor the module that does (the same reason as company-roadmaps' claim).
+ * `runRetireListeners` stop the work that may still write — the Action registry's runs — and
+ * are awaited before `retireListeners`, which close what holds the stores.
  */
+export const runRetireListeners = new Set<RetireListener>();
 export const retireListeners = new Set<RetireListener>();
 
-/** What the retirement node binds: every registered retirement of the organization, awaited. */
+/** What the retirement node binds: every registered retirement of the organization, runs first, awaited. */
 export async function retireRegistered(org: OrgRef): Promise<void> {
+  await Promise.all([...runRetireListeners].map((listener) => listener(org)));
   await Promise.all([...retireListeners].map((listener) => listener(org)));
 }

@@ -15,7 +15,7 @@ export const RETIRE_ID = "company-proposals.retirement";
       {
         id: "company-proposals.retirement",
         description:
-          "Stops the organization's PR graph refresh and deploy runs and closes its proposals database.",
+          "Stops the organization's Action runs (deploys among them), PR graph refresh and PR status reads, drops its company workflows, and closes its databases.",
       },
     ],
   },

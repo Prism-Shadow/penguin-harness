@@ -57,6 +57,8 @@ interface OrgState {
   /** Every instance's contributions, by workflow id: a new array whenever one changes. */
   contributions: readonly Contributed[];
   ready: Promise<void>;
+  /** The organization is being deleted: a load that ends now disposes its tree at once. */
+  retired: boolean;
 }
 
 /** A company workflow's id: one path segment, the server's rule for a workflow folder. */
@@ -119,10 +121,16 @@ export class CompanyWorkflows implements CompanySource {
     const key = `${org.projectId}/${org.orgId}`;
     let st = this.orgs.get(key);
     if (st === undefined) {
-      const fresh: OrgState = { instances: new Map(), contributions: [], ready: Promise.resolve() };
+      const fresh: OrgState = {
+        instances: new Map(),
+        contributions: [],
+        ready: Promise.resolve(),
+        retired: false,
+      };
       fresh.ready = (async () => {
         if (this.stopped) return;
         for (const folder of await this.deps.loader.folders(this.dir(org))) {
+          if (fresh.retired) return;
           await this.serial(org, folder.id, () => this.loadNow(org, fresh, folder));
         }
       })().catch((err: unknown) =>
@@ -209,7 +217,7 @@ export class CompanyWorkflows implements CompanySource {
         error: outcome.error,
       };
     }
-    if (this.stopped) {
+    if (this.stopped || st.retired) {
       next.tree?.dispose();
       return next;
     }
@@ -386,6 +394,25 @@ export class CompanyWorkflows implements CompanySource {
   private forget(st: OrgState, id: string): void {
     st.instances.get(id)?.tree?.dispose();
     if (st.instances.delete(id)) this.collect(st);
+  }
+
+  /**
+   * The organization is being deleted (org-retire.ts): its loads and writes in flight are
+   * awaited, its trees disposed and what is kept of it dropped. Asked about again — an
+   * organization created later under the same id — it loads from its folders anew.
+   */
+  async retire(projectId: string, orgId: string): Promise<void> {
+    const key = `${projectId}/${orgId}`;
+    const st = this.orgs.get(key);
+    if (st === undefined) return;
+    this.orgs.delete(key);
+    st.retired = true;
+    await st.ready;
+    const pending = [...this.queues].filter(([k]) => k.startsWith(`${key}/`)).map(([, q]) => q);
+    await Promise.all(pending.map((q) => q.catch(() => undefined)));
+    for (const i of st.instances.values()) i.tree?.dispose();
+    st.instances.clear();
+    st.contributions = [];
   }
 
   /** The plugin is stopping: every tree goes, and nothing loads any more. */

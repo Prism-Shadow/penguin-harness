@@ -52,6 +52,7 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
 - A deploy is a `deploy.<id>` Action a company workflow contributes, on a proposal (its impl's head), a PR or a branch. The registry resolves the commit when the run starts and refuses it with 409 `head_moved` when it is not the `expectedHead` the caller saw.
 - A company workflow's deploy runs its process with `CompanyHost.deploy(runId, argv)`, and takes the Action model's types from company-proposals' `deploy` entry, `@prismshadow/penguin-plugin-company-proposals/deploy`. A deploy keeps the `PENGUIN_DEPLOY_*` environment, the one-run-at-a-time default, the one-hour limit and the last MiB of output, which is now stored with the run.
 - A finished deploy run refreshes the PR graph through a built-in after hook on `deploy.*`.
+- Deleting an organization stops its Action runs first: each process a run started — a deploy's among them — gets SIGTERM, then SIGKILL after 10 s, and the run is recorded `failed`; then the registry closes its `company.db` connection and disposes the organization's company workflow trees, and only then does the proposal service close its own. A run an instance before a hot update started is stopped too. The deploy-script part of [the organization delete](2026-10-03-proposals-relational-store.md) went with the deploy scripts.
 
 ## CLI
 

@@ -37,7 +37,8 @@ import {
 } from "./action-model.js";
 import { ActionIndex, type Contributed, type IndexedAction } from "./action-index.js";
 import { ActionStore, writeStart, type RunStart } from "./action-store.js";
-import { liveRuns, runProcess, runningCount, type LiveRun } from "./action-live.js";
+import { liveRuns, runProcess, runningCount, stopRuns, type LiveRun } from "./action-live.js";
+import { RetiredOrgs } from "./org-retire.js";
 import { viewOf } from "./action-views.js";
 import {
   classify,
@@ -112,6 +113,8 @@ export class ActionRegistry {
   /** The runs this instance started and has not ended, by id: their organization. */
   private readonly mine = new Map<string, string>();
   private stopped = false;
+  /** Organizations being (or already) deleted, whose store may not open again (org-retire.ts). */
+  private readonly retired = new RetiredOrgs();
 
   constructor(private readonly deps: RegistryDeps) {
     this.index = ActionIndex.build(deps.contributions);
@@ -155,8 +158,11 @@ export class ActionRegistry {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new ActionRefusal(404, "company_mode_off", "Company mode is off.");
     }
+    const orgKey = `${projectId}/${orgId}`;
+    const seen = this.retired.stamp();
     const org = await this.deps.gateway.organization(projectId, orgId);
-    if (org === null) {
+    // A retired organization opens again only for a read that found it after its retirement began.
+    if (org === null || !this.retired.admit(orgKey, seen)) {
       throw new ActionRefusal(404, "org_not_found", `Organization does not exist: ${orgId}`);
     }
     const principal = await this.deps.gateway.principalOf(projectId, orgId, actor);
@@ -164,7 +170,6 @@ export class ActionRegistry {
     if (agentId === null && !org.userIds.includes(actor.userId)) {
       throw new ActionRefusal(403, "project_access", "Not a member of this Project.");
     }
-    const orgKey = `${projectId}/${orgId}`;
     return {
       org,
       caller: {
@@ -356,6 +361,7 @@ export class ActionRegistry {
       if (live.hasProcess) this.deps.log(`${label} ${ended.outcome}`);
       return ended;
     })();
+    live.done = completion;
     const first = await Promise.race([completion, started]);
     if (first === "process") {
       completion.catch((err: unknown) => this.deps.log(`${label}: ${String(err)}`));
@@ -404,6 +410,21 @@ export class ActionRegistry {
     for (const org of this.mine.values()) if (org === orgKey) return;
     this.stores.get(orgKey)?.close();
     this.stores.delete(orgKey);
+  }
+
+  /**
+   * The organization is being deleted (org-retire.ts): no new runs of it; its live runs — this
+   * instance's and any an instance before a hot update started — have their processes stopped
+   * and are awaited until their ends are recorded (action-live.ts); then its connection closes
+   * and its index is dropped.
+   */
+  async retire(projectId: string, orgId: string): Promise<void> {
+    const orgKey = `${projectId}/${orgId}`;
+    this.retired.retire(orgKey);
+    await stopRuns(orgKey);
+    this.stores.get(orgKey)?.close();
+    this.stores.delete(orgKey);
+    this.indexes.delete(orgKey);
   }
 
   /**

@@ -69,9 +69,11 @@ export { classify } from "./action-prepare.js";
 export {
   OUTPUT_LIMIT,
   PROCESS_TIMEOUT_MS,
+  KILL_GRACE_MS,
   liveRuns,
   outputFrom,
   runningCount,
+  stopRuns,
 } from "./action-live.js";
 export { ACTION_ROUTES_ID, actionRoutes, refusalHandler } from "./action-routes.js";
 export { CompanyWorkflows, WORKFLOW_ID, isWorkflowPath } from "./company-workflows.js";
@@ -129,7 +131,13 @@ export {
   deployProcess,
 } from "./deploy.js";
 export { startProcess } from "./deploy-process.js";
-export { RetiredOrgs, retireListeners, retireOrg, retireRegistered } from "./org-retire.js";
+export {
+  RetiredOrgs,
+  retireListeners,
+  retireOrg,
+  retireRegistered,
+  runRetireListeners,
+} from "./org-retire.js";
 export type { OrgRef, RetireListener } from "./org-retire.js";
 export type { DeployProcess, StartProcess } from "./deploy-process.js";
 export {
