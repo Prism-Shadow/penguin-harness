@@ -4,6 +4,10 @@
   "type": "module",
   "description": "macOS Seatbelt sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
   "license": "Apache-2.0",
+  "author": "Prism Shadow",
+  "categories": [
+    "sandbox"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",

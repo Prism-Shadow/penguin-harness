@@ -28,7 +28,11 @@
  *   re-invocation (from packages/server's dev script) is a no-op. The window is
  *   deliberately tiny so a human edit-then-restart cycle always rebuilds.
  *
- * Usage: `node scripts/dev-prebuild.mjs` (install + build core/cli) or
+ * After core and the CLI, it stages the builtin plugins this checkout just built where the dev
+ * server and the built CLI look for their bundled plugin directory (packages/server/plugins/,
+ * packages/cli/plugins/): a source checkout runs what the CLI bundle runs, by the same path.
+ *
+ * Usage: `node scripts/dev-prebuild.mjs` (install + build core/cli/plugins) or
  * `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
  * deps to build, but installs must still be current).
  */
@@ -223,11 +227,31 @@ try {
         // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
         { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" },
       );
-      if (res.status === 0) {
+      let status = res.status ?? 1;
+      // A source checkout is the CLI bundle's channel: the plugins it carries are the ones it
+      // just built, staged where the program finds its bundled plugin directory — one level
+      // above its entry. `tsx watch src/index.ts` puts the dev server's under packages/server/;
+      // the built CLI (packages/cli/dist/penguin.js) finds packages/cli/plugins/. Cached by
+      // content in scripts/build-plugins.mjs: an unchanged plugin set costs nothing here.
+      for (const pkg of ["server", "cli"]) {
+        if (status !== 0) break;
+        console.log(`[dev-prebuild] staging the builtin plugins into packages/${pkg}/plugins...`);
+        status =
+          spawnSync(
+            process.execPath,
+            [
+              path.join(ROOT, "scripts", "build-plugins.mjs"),
+              "--out",
+              path.join(ROOT, "packages", pkg, "plugins"),
+            ],
+            { cwd: ROOT, stdio: "inherit" },
+          ).status ?? 1;
+      }
+      if (status === 0) {
         writeFileSync(BUILD_STAMP, String(Date.now()));
         refreshViteCache();
       }
-      exitCode = res.status ?? 1;
+      exitCode = status;
     }
   }
 } finally {

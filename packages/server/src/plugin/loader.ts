@@ -11,9 +11,12 @@
  * The closure is read from the FILES, without the database: this runs at boot, before the
  * platform exists, and a Project is a directory holding a `.project_config.toml`.
  *
- * Resolution is anchored at `process.argv[1]`, for the same reason the packaged
- * bundle's own resolver is: a bundle running from `hmr/store` has no node_modules of
- * its own, so anchoring at the bundle would find nothing.
+ * A name resolves among the packages this machine holds under that name — the data root's
+ * prefix and the running build's (plugin/prefix.ts) — by what the Projects ask of it
+ * (`pickLocal`). A plugin is named by its package, never by a path: a source checkout gets its
+ * plugins the way the CLI bundle does, through its bundled plugin directory
+ * (scripts/dev-prebuild.mjs). Before anything resolves, the data root's prefix is recovered and
+ * a plugin only a retained push still holds is kept (plugin/install.ts).
  *
  * Failure is per-entry and non-fatal: an unresolvable or malformed plugin is reported
  * and skipped, leaving its capability unavailable rather than failing the boot. A
@@ -27,8 +30,8 @@ import {
   effectivePluginTable,
   parsePluginTables,
   projectConfigPath,
+  type PluginTable,
 } from "@prismshadow/penguin-core";
-import { findPackageJSON } from "node:module";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -40,8 +43,15 @@ import type {
   Resources,
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
-import { pluginsPrefix } from "./install.js";
-import { unpackedAssetsDir } from "../hmr/asset-archives.js";
+import { adoptRetained, recoverPrefix } from "./install.js";
+import {
+  lendHostPackages,
+  PACKAGE_NAME,
+  pickLocal,
+  pluginBases,
+  type PluginBase,
+} from "./prefix.js";
+import type { PluginAsk } from "../api/plugin-pick.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -97,11 +107,20 @@ export async function readProjectPluginList(
   projectId: string,
   machineId: string | null = null,
 ): Promise<string[]> {
+  return Object.keys(await readProjectPluginTable(root, projectId, machineId));
+}
+
+/** What one Project asks `machineId` to run, name → requirement, in the order it wrote them. */
+async function readProjectPluginTable(
+  root: string,
+  projectId: string,
+  machineId: string | null,
+): Promise<PluginTable> {
   let text: string;
   try {
     text = await fs.readFile(projectConfigPath(root, projectId), "utf8");
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
     // A Project whose config cannot be read (permissions, a directory in its place) is a
     // configuration fault, but not this one's to fail the boot over: its models are just as
     // unreadable, and the deployment must still come up for every other Project. The list
@@ -109,7 +128,7 @@ export async function readProjectPluginList(
     console.warn(
       `[plugins] ${projectId}: .project_config.toml could not be read, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return [];
+    return {};
   }
   let parsed: unknown;
   try {
@@ -119,10 +138,26 @@ export async function readProjectPluginList(
     console.warn(
       `[plugins] ${projectId}: .project_config.toml is not valid TOML, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return [];
+    return {};
   }
   const tables = parsePluginTables((parsed as { plugins?: unknown }).plugins);
-  return tables === undefined ? [] : Object.keys(effectivePluginTable(tables, machineId));
+  return tables === undefined ? {} : effectivePluginTable(tables, machineId);
+}
+
+/** The closure with what each Project asks of every name in it, first-asked order. */
+export async function readPluginAsks(
+  root: string,
+  machineId: string | null = null,
+): Promise<Map<string, PluginAsk[]>> {
+  const out = new Map<string, PluginAsk[]>();
+  for (const projectId of await listProjectIds(root)) {
+    for (const [name, ask] of Object.entries(
+      await readProjectPluginTable(root, projectId, machineId),
+    )) {
+      out.set(name, [...(out.get(name) ?? []), ask]);
+    }
+  }
+  return out;
 }
 
 /**
@@ -135,71 +170,19 @@ export async function readPluginClosure(
   root: string,
   machineId: string | null = null,
 ): Promise<string[]> {
-  const out: string[] = [];
-  for (const projectId of await listProjectIds(root)) {
-    for (const specifier of await readProjectPluginList(root, projectId, machineId)) {
-      if (!out.includes(specifier)) out.push(specifier);
-    }
-  }
-  return out;
+  return [...(await readPluginAsks(root, machineId)).keys()];
 }
 
-/**
- * Where plugins are looked for, in order. Each is an npm prefix (`<dir>/package.json` +
- * `<dir>/node_modules/…`) except the installation entry, which resolves as the running
- * program does:
- *
- *   1. `<root>/plugins` — what the Plugins page installs; the operator's explicit choice.
- *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
- *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
- *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
- *      stages them beside `skills/`), for a deployment nothing was ever pushed to.
- *   4. the installation entry — a plugin installed globally beside the program.
- *
- * A prefix marked `builtin` is one the harness ships, not one the operator installed.
- */
-export interface PluginBase {
-  file: string;
-  builtin: boolean;
-  /**
-   * The running program's entry rather than an npm prefix: a specifier resolves from it the
-   * way the program's own imports do, `node_modules` upward. A prefix answers only for what
-   * is under its OWN `node_modules` — the walk upward would otherwise find a package beside
-   * the program from the builtin prefix and label it built in.
-   */
-  program?: true;
-}
+export type { PluginBase };
+export { PACKAGE_NAME, pluginBases };
 
-/** A bare package name, scoped or not — never a subpath, a path, a URL or a version range. */
-export const PACKAGE_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
-
-/** Why a specifier cannot name a plugin, or null when it is a package name or a path. */
+/** Why a specifier cannot name a plugin, or null when it is a package name. */
 export function specifierFault(specifier: string): string | null {
-  if (path.isAbsolute(specifier) || PACKAGE_NAME.test(specifier)) return null;
+  if (PACKAGE_NAME.test(specifier)) return null;
+  if (path.isAbsolute(specifier)) {
+    return `'${specifier}' is a path: a plugin is named by its package — build it into the bundled plugin directory of a dev build`;
+  }
   return `'${specifier}' is not a package name: a plugin is named by its package, never by a subpath, a URL or a version range`;
-}
-
-export function pluginBases(root: string | undefined, assetsDir: string | null): PluginBase[] {
-  const bases: PluginBase[] = [];
-  if (root !== undefined && root !== "") {
-    bases.push({ file: path.join(pluginsPrefix(root), "package.json"), builtin: false });
-  }
-  if (assetsDir !== null) {
-    // A push carries the prefix as archives; they are unpacked before anything resolves.
-    bases.push({
-      file: path.join(unpackedAssetsDir(assetsDir), "plugins", "package.json"),
-      builtin: true,
-    });
-  }
-  const entry = process.argv[1];
-  if (typeof entry === "string" && entry.length > 0) {
-    bases.push({
-      file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
-      builtin: true,
-    });
-    bases.push({ file: entry, builtin: false, program: true });
-  }
-  return bases;
 }
 
 /** The assets directory of the committed version, read from harness.json without a host. */
@@ -210,35 +193,23 @@ export async function committedAssetsDir(root: string): Promise<string | null> {
 }
 
 /**
- * The package a bare specifier names, looked up from a base the way Node looks up any
- * package (`node_modules` upward from the base): its directory, its manifest, and the base
- * that found it — or null. Nothing about the package is assumed: it is whatever npm put there.
+ * The package `asks` resolve a bare name to on this machine (`pickLocal`): its directory, its
+ * manifest, and the base that holds it — or why none.
  */
 export function resolvePluginPackage(
   specifier: string,
   bases: readonly PluginBase[],
-): { dir: string; manifest: string; base: PluginBase } | null {
-  // A path names a file, not a package: the nearest package.json above it is the
-  // package (a dev checkout's plugin, written beside its manifest). As a URL, so that a
-  // Windows drive letter is not read as a URL scheme.
-  const lookup = path.isAbsolute(specifier) ? pathToFileURL(specifier).href : specifier;
-  for (const base of bases) {
-    let manifest: string | undefined;
-    try {
-      manifest = findPackageJSON(lookup, base.file);
-    } catch {
-      manifest = undefined;
-    }
-    if (manifest === undefined) continue;
-    // findPackageJSON walks `node_modules` upward from the base; a prefix speaks only for
-    // its own (see PluginBase.program).
-    if (base.program !== true) {
-      const own = path.join(path.dirname(base.file), "node_modules") + path.sep;
-      if (!manifest.startsWith(own)) continue;
-    }
-    return { dir: path.dirname(manifest), manifest, base };
-  }
-  return null;
+  asks: readonly PluginAsk[] = [],
+): { dir: string; manifest: string; base: PluginBase; integrity?: string } | { refused: string } {
+  if (!PACKAGE_NAME.test(specifier)) return { refused: `'${specifier}' is not a package name` };
+  const pick = pickLocal(bases, specifier, asks);
+  if ("refused" in pick) return pick;
+  return {
+    dir: pick.dir,
+    manifest: path.join(pick.dir, "package.json"),
+    base: pick.base,
+    ...(pick.integrity !== undefined ? { integrity: pick.integrity } : {}),
+  };
 }
 
 /**
@@ -275,85 +246,51 @@ function packageEntry(dir: string, manifest: string): string | null {
   return file;
 }
 
-/** Where a specifier resolves from — the entry file and the base that found it — or null. */
+/**
+ * Where a specifier resolves from — the entry file, the base that holds it and the content's
+ * stamp (`contentStamp`) — or why not.
+ */
 function resolvePlugin(
   specifier: string,
   bases: readonly PluginBase[],
-): { file: string; base: PluginBase } | null {
-  // A path IS the entry: what the operator named is the file to import, whatever the
-  // package above it declares (the dev-checkout path).
-  if (path.isAbsolute(specifier)) {
-    return existsSync(specifier)
-      ? { file: specifier, base: { file: specifier, builtin: false } }
-      : null;
-  }
-  // A subpath would resolve to the PACKAGE (findPackageJSON finds its manifest) and load its
-  // root entry — the wrong module, silently. Refused up front, by name.
-  if (!PACKAGE_NAME.test(specifier)) return null;
-  const found = resolvePluginPackage(specifier, bases);
-  if (found === null) return null;
+  asks: readonly PluginAsk[] = [],
+): { file: string; base: PluginBase; stamp: string | null } | { refused: string } {
+  const found = resolvePluginPackage(specifier, bases, asks);
+  if ("refused" in found) return found;
   const file = packageEntry(found.dir, found.manifest);
-  return file === null ? null : { file, base: found.base };
+  if (file === null) return { refused: `${found.manifest} cannot be read` };
+  return { file, base: found.base, stamp: contentStamp(found.integrity, file) };
 }
 
 /**
- * The plugins a set of bases SHIPS: every package under a builtin prefix's node_modules
- * (scoped or not) whose package.json declares `penguin`. Being shipped means installing one
- * needs no download — it does not mean it is installed. Nothing here loads; the list is what
- * marks a catalogue row as available offline and lets an install skip npm.
+ * Which content is behind a path: the package's integrity (its `.integrity`), so a package
+ * replaced in place — same path, other content — is a different stamp, and the same content is
+ * the same stamp wherever it was unpacked from. A package without one (put there by an earlier
+ * `npm install`) has no content identity; its entry file's mtime stands in. Null when neither
+ * can be read (the import then says why).
  */
-export async function discoverBuiltinPlugins(bases: readonly PluginBase[]): Promise<string[]> {
-  const names: string[] = [];
-  for (const base of bases) {
-    if (!base.builtin) continue;
-    // The prefix's own manifest names what the build shipped; what npm installed beside
-    // them (their dependencies) is not offered.
-    let manifest: { dependencies?: unknown };
-    try {
-      manifest = JSON.parse(await fs.readFile(base.file, "utf8")) as { dependencies?: unknown };
-    } catch {
-      continue;
-    }
-    const deps = manifest.dependencies;
-    if (typeof deps !== "object" || deps === null) continue;
-    for (const name of Object.keys(deps)) if (!names.includes(name)) names.push(name);
-  }
-  return names.sort();
-}
-
-/**
- * The entry file's modification time, the part of its identity a path alone misses: a
- * package updated in place keeps its path, and Node's module cache would keep serving the
- * code it loaded first. Null when the file cannot be stat'ed (the import then says why).
- */
-function entryStamp(file: string): number | null {
+function contentStamp(integrity: string | undefined, file: string): string | null {
+  if (integrity !== undefined) return integrity;
   try {
-    return statSync(file).mtimeMs;
+    return `mtime:${statSync(file).mtimeMs}`;
   } catch {
     return null;
   }
 }
 
 /**
- * Resolved against the data root and the installation, never the bundle's location. The
- * import URL carries the entry's stamp, so a file rewritten in place is evaluated again
- * rather than answered from the module cache. (Only the entry: what it imports by relative
- * path stays cached, which a bundled plugin — one file — does not notice.)
+ * Resolved against this machine's prefixes, never the bundle's location. The import URL
+ * carries the content's stamp, so a package replaced in place is evaluated again rather than
+ * answered from the module cache. (Only the entry: what it imports by relative path stays
+ * cached, which a bundled plugin — one file — does not notice.)
  */
 async function importPlugin(
-  specifier: string,
-  bases: readonly PluginBase[],
-): Promise<{ module: unknown; file: string | null; stamp: number | null }> {
-  const resolved = resolvePlugin(specifier, bases);
-  if (resolved !== null) {
-    if (!existsSync(resolved.file)) {
-      throw new Error(`the package's entry file does not exist: ${resolved.file}`);
-    }
-    const stamp = entryStamp(resolved.file);
-    const url = pathToFileURL(resolved.file).href + (stamp === null ? "" : `?v=${stamp}`);
-    return { module: await import(url), file: resolved.file, stamp };
-  }
-  return { module: await import(specifier), file: null, stamp: null };
+  file: string,
+  stamp: string | null,
+): Promise<{ module: unknown; file: string; stamp: string | null }> {
+  if (!existsSync(file)) throw new Error(`the package's entry file does not exist: ${file}`);
+  const url = pathToFileURL(file).href + (stamp === null ? "" : `?v=${encodeURIComponent(stamp)}`);
+  return { module: await import(url), file, stamp };
 }
 
 /** The generated table a plugin package ships beside its package.json. */
@@ -374,15 +311,12 @@ export interface PluginDeclaration {
 export async function readPluginDeclaration(
   specifier: string,
   bases: readonly PluginBase[],
+  asks: readonly PluginAsk[] = [],
 ): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
   const fault = specifierFault(specifier);
   if (fault !== null) return { error: fault };
-  const resolved = resolvePlugin(specifier, bases);
-  if (resolved === null) {
-    return {
-      error: `'${specifier}' is not installed on this machine (nothing under <root>/plugins, the shipped plugins or the installation resolves it)`,
-    };
-  }
+  const resolved = resolvePlugin(specifier, bases, asks);
+  if ("refused" in resolved) return { error: resolved.refused };
   if (!existsSync(resolved.file)) {
     return { error: `the package's entry file does not exist: ${resolved.file}` };
   }
@@ -553,8 +487,8 @@ export async function loadPlugins(
    * Entries an earlier App already imported, by specifier. Reused when the specifier still
    * resolves to the FILE that entry came from, unchanged since — the objects then keep their
    * identity across a swap, which is what the plugin host is parked for. A different file
-   * (a push moves the builtin plugins to a new assets directory) or a file rewritten in
-   * place (a package updated under `<root>/plugins`) means different code, and that is imported.
+   * (a push moves the builtin plugins to a new assets directory, a download replaces a package
+   * under `<root>/plugins`) means different code, and that is imported.
    */
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
   /** This server's own machine id, which selects its `[plugins.<id>]` tables; null reads the shared tables alone. */
@@ -562,13 +496,20 @@ export async function loadPlugins(
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
   const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
-  const bases = pluginBases(root, pushedAssets);
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
   // available without a download — that is what `builtin` means — but availability is not
   // consent: it loads when a Project asks for it, like every other plugin.
-  const specifiers = await readPluginClosure(root, machineId);
+  const asks = await readPluginAsks(root, machineId);
+  // What a crash left in the data root's prefix first, then what only a retained push still
+  // holds: both before anything resolves, neither needing the network.
+  await recoverPrefix(root).catch((err: unknown) => {
+    console.warn(`[plugins] recovering ${root}/plugins: ${String(err)}`);
+  });
+  await adoptRetained(root, asks, pushedAssets);
+  lendHostPackages(root);
+  const bases = pluginBases(root, pushedAssets);
   const loaded: LoadedPlugin[] = [];
-  for (const specifier of specifiers) {
+  for (const [specifier, list] of asks) {
     // Reused only when the SAME FILE is behind the name. A push writes the builtin plugins to
     // a new assets directory, so keeping an entry by specifier alone would run the previous
     // build's plugin code forever — the push would land everywhere except the plugins.
@@ -577,19 +518,18 @@ export async function loadPlugins(
       failed.set(specifier, fault);
       continue;
     }
+    const resolved = resolvePlugin(specifier, bases, list);
+    if ("refused" in resolved) {
+      failed.set(specifier, resolved.refused);
+      continue;
+    }
     const held = reuse.get(specifier);
-    const heldFile = held?.file;
-    if (
-      held !== undefined &&
-      heldFile != null &&
-      heldFile === resolvePlugin(specifier, bases)?.file &&
-      held.stamp === entryStamp(heldFile)
-    ) {
+    if (held !== undefined && held.file === resolved.file && held.stamp === resolved.stamp) {
       loaded.push(held);
       continue;
     }
     try {
-      const { module, file, stamp } = await importPlugin(specifier, bases);
+      const { module, file, stamp } = await importPlugin(resolved.file, resolved.stamp);
       const read = await readPackageTable(file);
       if (read === null) {
         failed.set(specifier, `no package.json above ${file}`);

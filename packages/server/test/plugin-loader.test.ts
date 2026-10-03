@@ -13,23 +13,17 @@ import {
   IFACES_FILE,
   PLUGINS_FILE,
   committedAssetsDir,
-  discoverBuiltinPlugins,
   loadPlugins,
   pluginBases,
   readPluginClosure,
   readProjectPluginList,
   listProjectIds,
 } from "../src/plugin/loader.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { shippedNames } from "../src/plugin/prefix.js";
+import { useScratch, writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 
 let root: string;
-
-beforeEach(async () => {
-  root = await mkdtemp(path.join(tmpdir(), "penguin-plugins-"));
-});
-afterEach(async () => {
-  await rm(root, { recursive: true, force: true });
-});
+useScratch("penguin-plugins-", (at) => ({ root } = at));
 
 /** A Project asking for these plugins: its `[plugins]` table is what the closure is read from. */
 async function writeConfig(value: { plugins?: string[] }, projectId = "p1"): Promise<void> {
@@ -41,15 +35,6 @@ async function writeConfig(value: { plugins?: string[] }, projectId = "p1"): Pro
 async function writeProject(projectId: string, text: string): Promise<void> {
   await mkdir(path.join(root, projectId), { recursive: true });
   await writeFile(path.join(root, projectId, PLUGINS_FILE), text, "utf8");
-}
-
-/** A plugin module on disk, imported by absolute specifier (the dev-checkout path). */
-async function writePluginModule(name: string, body: string): Promise<string> {
-  const dir = path.join(root, "mods");
-  await mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${name}.mjs`);
-  await writeFile(file, body, "utf8");
-  return file;
 }
 
 /**
@@ -68,7 +53,7 @@ function lower(source: string): string {
 describe("plugin list", () => {
   it("no Project means no plugins — the default deployment shape, not an error", async () => {
     expect(await readPluginClosure(root)).toEqual([]);
-    expect(await loadPlugins(root)).toEqual({ loaded: [], failed: new Map() });
+    expect(await loadPlugins(root)).toMatchObject({ loaded: [], failed: new Map() });
   });
 
   it("reads the configured specifiers in order", async () => {
@@ -176,21 +161,41 @@ describe("plugin loading", () => {
     }`;
 
   /**
-   * A package on disk: its package.json, the generated table beside it, and an index.mjs
-   * default export (`null` table = a package that ships no modules, or was never built).
+   * A package as a hot push brings it: its package.json, the generated table beside it, and an
+   * index.mjs default export (`null` table = a package that ships no modules, or was never
+   * built), installed in the push assets' bundled plugin directory, which that directory's
+   * index lists and `hmr/harness.json` names. Answers the package name, which a Project lists.
    */
   async function writePackage(name: string, table: unknown | null, index: string): Promise<string> {
-    const dir = path.join(root, "node_modules", ...name.split("/"));
+    const assetsRel = "test-assets";
+    const prefix = path.join(root, "hmr", assetsRel, "plugins");
+    const dir = path.join(prefix, "node_modules", ...name.split("/"));
     await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({ name, main: "./index.mjs" }),
+      JSON.stringify({ name, version: "1.0.0", main: "./index.mjs" }),
       "utf8",
     );
     if (table !== null) await writeFile(path.join(dir, IFACES_FILE), JSON.stringify(table), "utf8");
     await writeFile(path.join(dir, "index.mjs"), lower(index), "utf8");
-    return path.join(dir, "index.mjs");
+    await writeShippedIndex(prefix);
+    await writeFile(
+      path.join(root, "hmr", "harness.json"),
+      JSON.stringify({ assets: { dir: assetsRel } }),
+      "utf8",
+    );
+    return name;
   }
+
+  it("a path in the table names no plugin: it is not loaded, and the reason says so", async () => {
+    const file = path.join(root, "mods", "thing.mjs");
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, "export default { modules: [] };", "utf8");
+    await writeConfig({ plugins: [file] });
+    const result = await loadPlugins(root);
+    expect(result.loaded).toEqual([]);
+    expect(result.failed.get(file)).toMatch(/is a path: a plugin is named by its package/);
+  });
 
   it("boots the classes the default export names, each against its manifest in the package's table", async () => {
     const file = await writePackage(
@@ -322,19 +327,17 @@ describe("plugin loading", () => {
 
 describe("builtin plugins", () => {
   /** A plugin package under a prefix's node_modules, the shape scripts/build-plugins.mjs ships. */
-  async function writeBuiltin(prefix: string, name: string, moduleName: string): Promise<void> {
+  async function writeBuiltin(
+    prefix: string,
+    name: string,
+    moduleName: string,
+    version = "1.0.0",
+  ): Promise<void> {
     const dir = path.join(prefix, "node_modules", ...name.split("/"));
     await mkdir(dir, { recursive: true });
-    // The prefix manifest names what was shipped, the way build-plugins writes it.
-    const manifestFile = path.join(prefix, "package.json");
-    const manifest = JSON.parse(
-      await readFile(manifestFile, "utf8").catch(() => '{"name":"prefix","private":true}'),
-    ) as { dependencies?: Record<string, string> };
-    manifest.dependencies = { ...manifest.dependencies, [name]: "0.0.0" };
-    await writeFile(manifestFile, JSON.stringify(manifest), "utf8");
     await writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({ name, main: "./index.js", type: "module" }),
+      JSON.stringify({ name, version, main: "./index.js", type: "module" }),
       "utf8",
     );
     await writeFile(
@@ -362,21 +365,39 @@ describe("builtin plugins", () => {
              export default { modules: [${moduleName}] };`),
       "utf8",
     );
+    await writeShippedIndex(prefix);
   }
 
-  it("lists what the build ships, scoped and unscoped, and not what the root's own prefix holds", async () => {
+  it("lists what the build ships, scoped and unscoped, and looks in the root's prefix and the build's", async () => {
     const assets = path.join(root, "hmr", "store", "assets", "abc");
     await writeBuiltin(path.join(assets, "plugins"), "@acme/penguin-plugin-one", "One");
     await writeBuiltin(path.join(assets, "plugins"), "plain-plugin", "Plain");
-    // The operator's own prefix is not builtin: what it holds loads only when listed.
+    // What the root's prefix holds is not shipped, but it is on this machine.
     await writeBuiltin(path.join(root, "plugins"), "@acme/installed", "Installed");
-    const bases = pluginBases(root, assets);
-    expect(bases[0]).toMatchObject({ builtin: false });
-    expect(bases[1]).toMatchObject({ builtin: true });
-    expect(await discoverBuiltinPlugins(bases)).toEqual([
-      "@acme/penguin-plugin-one",
-      "plain-plugin",
+    expect(shippedNames(assets)).toEqual(["@acme/penguin-plugin-one", "plain-plugin"]);
+    expect(pluginBases(root, assets)).toEqual([
+      { dir: path.join(root, "plugins"), builtin: false },
+      { dir: path.join(assets, "plugins"), builtin: true },
     ]);
+    await writeConfig({ plugins: ["@acme/penguin-plugin-one", "@acme/installed"] });
+    const result = await loadPlugins(root, assets);
+    expect([...result.failed.entries()]).toEqual([]);
+    expect(result.loaded.map((p) => p.specifier)).toEqual([
+      "@acme/penguin-plugin-one",
+      "@acme/installed",
+    ]);
+  });
+
+  it("takes the highest version on the machine, the build's within one version", async () => {
+    const assets = path.join(root, "hmr", "store", "assets", "abc");
+    const both = async (rootVersion: string) => {
+      await writeBuiltin(path.join(assets, "plugins"), "@acme/x", "Built");
+      await writeBuiltin(path.join(root, "plugins"), "@acme/x", "Downloaded", rootVersion);
+      await writeConfig({ plugins: ["@acme/x"] });
+      return (await loadPlugins(root, assets)).loaded[0]!.file;
+    };
+    expect(await both("1.0.0")).toContain(assets);
+    expect(await both("2.0.0")).toContain(path.join(root, "plugins"));
   });
 
   it("does not load a shipped plugin until it is listed, and then loads it from the shipped prefix", async () => {
@@ -394,13 +415,13 @@ describe("builtin plugins", () => {
     await writeConfig({ plugins: [] });
     expect((await loadPlugins(root)).loaded).toEqual([]);
 
-    // Listed: it loads, resolved from the assets the push carried — no npm, nothing under
-    // <root>/plugins.
+    // Listed: it loads from the prefix the push carried — no npm, nothing under <root>/plugins.
     await writeConfig({ plugins: ["@acme/penguin-plugin-one"] });
     const result = await loadPlugins(root);
     expect([...result.failed.entries()]).toEqual([]);
     expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-one"]);
     expect(result.loaded[0]!.modules.map((m) => m.manifest.name)).toEqual(["One"]);
+    expect(result.loaded[0]!.file).toContain(path.join(root, "hmr", "store", "assets"));
   });
 
   it("resolves a package through its exports' import condition, as npm shipped it", async () => {
@@ -410,16 +431,13 @@ describe("builtin plugins", () => {
     const assets = path.join(root, "hmr", "store", "assets", "abc");
     const dir = path.join(assets, "plugins", "node_modules", "@acme", "exported");
     await mkdir(path.join(assets, "plugins"), { recursive: true });
-    await writeFile(
-      path.join(assets, "plugins", "package.json"),
-      '{"name":"prefix","private":true}',
-    );
     await writeClassPackage(dir, {
       name: "@acme/exported",
       module: "Exported",
       main: "./dist/index.js",
       exports: { ".": { types: "./dist/index.d.ts", import: "./dist/index.js" } },
     });
+    await writeShippedIndex(path.join(assets, "plugins"));
     await writeConfig({ plugins: ["@acme/exported"] });
     const result = await loadPlugins(root, assets);
     expect([...result.failed.entries()]).toEqual([]);

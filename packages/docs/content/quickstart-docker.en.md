@@ -132,6 +132,33 @@ Everything the agent's `exec_command` runs happens inside this container, on its
 
 To give the agent a Workspace, mount a directory, for example `-v /srv/project:/srv/project`. The mount must be writable by uid 1000.
 
+### Sandbox the agent inside the container
+
+The image ships the sandbox backends: the same builtin plugins prefix as the CLI package, at `/opt/penguin/lib/plugins`, which the server loads them from. Shipping one is not enabling it. No backend loads until a Project installs it from the **Plugins** page — on Linux that is `@penguinharness/sandbox-bwrap` — and the sandbox mode starts at Off. Installing it downloads nothing.
+
+bubblewrap confines a command by creating unprivileged user namespaces, and Docker's defaults refuse that. The default seccomp profile blocks creating the namespace, the default AppArmor profile does too on hosts that apply one, and the paths Docker masks under `/proc` stop bubblewrap mounting a fresh `/proc`. To let the backend run, start the container with these options:
+
+```yaml tab="compose.yaml"
+services:
+  penguin:
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+```
+
+```bash tab="docker run"
+docker run -d --name penguin \
+  --security-opt seccomp=unconfined \
+  --security-opt apparmor=unconfined \
+  --security-opt systempaths=unconfined \
+  ...
+```
+
+These options lift restrictions on everything in the container, not only on bubblewrap. The host kernel must also allow unprivileged user namespaces; check `kernel.unprivileged_userns_clone` on Debian and `kernel.apparmor_restrict_unprivileged_userns` on Ubuntu 23.10 and later.
+
+If the container does not grant them, the sandbox fails closed. The backend's startup probe fails, and the [Sandbox](/settings#sandbox) card shows `@penguinharness/sandbox-bwrap is not in use:` followed by the reason (bwrap is missing or refuses the base profile). Every mode except Off then refuses every agent command rather than running it unconfined. Off still runs commands, with the container as the only boundary.
+
 ### Add tools to the image
 
 The image carries no compiler and no language runtime besides Node. `apt-get install` inside the container works for a one-off, but the package is gone after the next `docker pull`. For anything you depend on, build a derived image:

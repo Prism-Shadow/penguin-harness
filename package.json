@@ -16,7 +16,7 @@
     "typecheck": "pnpm gen:ifaces && pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @prismshadow/penguin-core test:e2e",
-    "build": "pnpm -r build && pnpm link:cli",
+    "build": "pnpm -r build && node scripts/build-plugins.mjs --out packages/cli/plugins && pnpm link:cli",
     "link:cli": "pnpm --dir packages/cli link --global || echo '[link:cli] pnpm global directory not configured; skipping the global penguin link (run pnpm setup once first)'",
     "penguin": "node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx packages/cli/src/penguin.ts",
     "dev": "concurrently -n server,web -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:web\"",

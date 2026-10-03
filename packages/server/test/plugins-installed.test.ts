@@ -6,8 +6,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parse as parseToml } from "smol-toml";
 import type { InstalledPluginsResponse } from "../src/api/types.js";
-import { decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
+import { decorators, lower, writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 import type { ClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -21,8 +22,8 @@ describe("installed plugins", () => {
 
   /**
    * Ships a package the way the build does: under the installation's `plugins/` prefix,
-   * named in that prefix's manifest. The installation is what `process.argv[1]` points
-   * into (plugin/loader.ts pluginBases), so the test app's program entry is pointed at a
+   * listed in its index. The installation is what `process.argv[1]` points into
+   * (plugin/prefix.ts buildPrefix), so the test app's program entry is pointed at a
    * directory of the temp root for the file's duration.
    */
   const ship = async (pkg: ClassPackage) => {
@@ -36,6 +37,7 @@ describe("installed plugins", () => {
     await fs.mkdir(prefix, { recursive: true });
     await fs.writeFile(manifestFile, JSON.stringify(manifest));
     await writeClassPackage(path.join(prefix, "node_modules", ...pkg.name.split("/")), pkg);
+    await writeShippedIndex(prefix);
   };
 
   beforeEach(async () => {
@@ -75,7 +77,7 @@ describe("installed plugins", () => {
     expect(res.plugins).toHaveLength(1);
     expect(res.plugins[0]).toMatchObject({ specifier: "@acme/not-installed", active: false });
     // A specifier with no package on the machine is a configuration error, not a pending restart.
-    expect(res.plugins[0]!.error).toMatch(/not installed on this machine/);
+    expect(res.plugins[0]!.error).toMatch(/is not in this machine's plugins/);
     expect(res.restartPending).toBe(false);
   });
 
@@ -150,6 +152,55 @@ describe("installed plugins", () => {
       ).toBe(400);
     }
     expect(await view()).toMatchObject({ plugins: [] });
+  });
+
+  it("downloads only what the index lists with an integrity, and writes nothing when it cannot", async () => {
+    // The test app reads no published index and ships nothing: a package that is not on the
+    // machine has no index entry to be checked against, so npm is never asked for it.
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/unlisted@^1",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: {
+        code: "plugin_not_installable",
+        message: expect.stringMatching(/is not in the plugin index's sources/),
+      },
+    });
+    expect(await view()).toMatchObject({ plugins: [] });
+  });
+
+  it("pins a content: the table names its integrity, and a load takes that package or none", async () => {
+    await ship({ name: "@acme/pinned", module: "Pinned" });
+    const shipped = JSON.parse(
+      await fs.readFile(path.join(t.root, "install", "plugins", "index.json"), "utf8"),
+    ) as { name: string; integrity: string }[];
+    const integrity = shipped.find((e) => e.name === "@acme/pinned")!.integrity;
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/pinned",
+      integrity,
+    });
+    expect(res.status).toBe(200);
+    const written = parseToml(await fs.readFile(listFile(), "utf8")) as {
+      plugins: Record<string, unknown>;
+    };
+    expect(written.plugins["@acme/pinned"]).toEqual({ integrity });
+    expect((await view()).plugins[0]).toMatchObject({ specifier: "@acme/pinned", active: true });
+
+    // A pin nothing on the machine has is not quietly run as whatever version fits. (Another
+    // name joins the list so the rewrite re-assembles, which is when a load reads the pin.)
+    const other = `sha512-${Buffer.alloc(64).toString("base64")}`;
+    await ship({ name: "@acme/beside", module: "Beside" });
+    await fs.writeFile(
+      listFile(),
+      `models = []\n[plugins]\n"@acme/pinned" = { integrity = "${other}" }\n`,
+    );
+    await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/pinned", "@acme/beside"],
+    });
+    const after = (await view()).plugins.find((p) => p.specifier === "@acme/pinned")!;
+    expect(after.active).toBe(false);
+    expect(after.error).toContain(`no '@acme/pinned' in this machine's plugins satisfies ${other}`);
   });
 
   it("drops a specifier from the list on delete", async () => {

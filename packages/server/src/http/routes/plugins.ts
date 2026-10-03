@@ -3,7 +3,7 @@
  * Agent has installed.
  *   GET    /api/plugins                                   # the built-in library by category (any logged-in user)
  *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
- *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries and the published ones
+ *   GET    /api/plugins/registry                          # the merged plugin index: the build's, the downloaded and the published entries
  *   GET    /api/plugins/registry/readme?name=…            # one indexed entry's long-form readme
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/ and its hook
@@ -15,10 +15,9 @@
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  *
- * The registry merges two sources: the index embedded in this package (the sandbox backends
- * the workspace ships) and the one published by the index repository. The published document
- * is cached, and a failure to reach it is reported alongside the entries rather than emptying
- * the page — see plugin/registry.ts for both rules.
+ * The registry merges three sources: the one published by the index repository, the index the
+ * running build carries, and what this machine downloaded. The published document is cached, and
+ * a failure to reach a source is reported alongside the entries — see plugin/registry.ts.
  */
 import { Hono } from "hono";
 import {
@@ -45,12 +44,12 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import { agentHooksRoutes } from "./hooks.js";
 import {
-  BUILTIN_REGISTRY_SOURCE,
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
   mergeIndexes,
   NIGHTLY_INDEX_URL,
+  downloadedPluginRegistry,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
 import { pluginBases } from "../../plugin/loader.js";
@@ -186,8 +185,12 @@ export interface PluginRoutesOptions {
    * Undefined = unset, which reads the index repository's published document.
    */
   indexUrl?: string | null;
-  /** Where the builtin packages are on this machine, for their readmes (plugin/loader.ts's pluginBases). */
+  /** Where the packages are on this machine, for their readmes (plugin/prefix.ts's pluginBases). */
   bases?: () => readonly PluginBase[];
+  /** The data root, whose downloads are a source; absent lists none. */
+  root?: string;
+  /** The running build's assets, whose prefix carries the build's index; read per request. */
+  assetsDir?: () => string | null;
   /** Overrides the resolved source list entirely; tests pass registries directly. */
   registries?: readonly PluginRegistry[];
   fetchImpl?: typeof fetch;
@@ -233,17 +236,22 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   return app;
 }
 
-function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
-  const builtin = builtinPluginRegistry(options.bases);
+/** The index's sources, in precedence order: the published index, the build, the downloads. */
+export function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
+  // The published index first (PRFC-0006); the merge keeps one row per content.
+  const local = [
+    builtinPluginRegistry(options.bases, options.assetsDir),
+    ...(options.root !== undefined ? [downloadedPluginRegistry(options.root, options.bases)] : []),
+  ];
   // Undefined and null part ways here: a runtime that predates the setting publishes nothing
-  // and gets the default index, while `off` resolves to null and means builtin entries only.
+  // and gets the default index, while `off` resolves to null and means this machine only.
   const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
-  if (url === null) return [builtin];
+  if (url === null) return local;
   const cache = cachedRegistry(httpPluginRegistry(url, { fetchImpl: options.fetchImpl ?? fetch }), {
     seed: options.seed ?? null,
   });
   options.onCache?.(cache);
-  return [builtin, cache];
+  return [cache, ...local];
 }
 
 /**
@@ -277,8 +285,10 @@ export class PluginRegistryRoutes {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
       indexUrl: this.config.pluginIndexUrl,
-      // Read per request: a push moves the shipped prefix to a new assets directory.
+      // Read per request: a push moves the shipped prefix.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
+      root: this.config.root,
+      assetsDir: () => this.hmr.assetsDir(),
       seed: parked ?? null,
       onCache: (cache) => {
         this.cache = cache;

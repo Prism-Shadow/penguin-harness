@@ -151,8 +151,18 @@ RUN set -eux; \
 # Deployed inside the workspace and moved afterwards, which is release.yml's line verbatim.
 # The hoisted node-linker is part of that recipe — it keeps paths short enough for Windows,
 # and it is the layout `npm rebuild` walks in the next stage.
+#
+# lib/plugins/ is the bundled plugin directory, release.yml's `build-plugins` line verbatim: the
+# builtin plugins unpacked under node_modules/ beside the build's index, the sandbox backends
+# among them. The server loads them from there (it looks one directory above the entry's real
+# dist/, through the /usr/local/bin/penguin link). Shipped, not enabled:
+# nothing loads until a Project asks for it. It is built here, on the build platform, because
+# one directory serves every target — sandbox-bwrap vendors linux-x64 and linux-arm64 bwrap — so
+# the arm64 leg carries the same bytes. Building it downloads bwrap from conda-forge.
 RUN set -eux; \
     pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"; \
+    node scripts/build-plugins.mjs --out out/penguin/lib/plugins; \
+    test -f out/penguin/lib/plugins/node_modules/@penguinharness/sandbox-bwrap/.integrity; \
     cp -r packages/web/dist out/penguin/web; \
     mkdir -p /opt/penguin; \
     mv out/penguin/lib /opt/penguin/lib; \

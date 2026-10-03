@@ -4,6 +4,10 @@
   "type": "module",
   "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
   "license": "Apache-2.0",
+  "author": "Prism Shadow",
+  "categories": [
+    "sandbox"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",

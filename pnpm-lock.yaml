@@ -438,6 +438,9 @@ importers:
       remark-parse:
         specifier: ^11.0.0
         version: 11.0.0(supports-color@10.2.2)
+      semver:
+        specifier: ^7.7.4
+        version: 7.8.5
       smol-toml:
         specifier: ^1.3.0
         version: 1.6.1
@@ -469,6 +472,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      '@types/semver':
+        specifier: ^7.7.1
+        version: 7.8.0
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -2238,6 +2244,9 @@ packages:
 
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
+
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
 
   '@types/unist@2.0.11':
     resolution: {integrity: sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA==}
@@ -5855,6 +5864,7 @@ snapshots:
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
+      semver: 7.8.5
       smol-toml: 1.6.1
       tar: 7.5.22
       typescript: 5.9.3
@@ -5882,6 +5892,7 @@ snapshots:
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
+      semver: 7.8.5
       smol-toml: 1.6.1
       tar: 7.5.22
       typescript: 5.9.3
@@ -6425,6 +6436,8 @@ snapshots:
       '@types/node': 24.13.3
 
   '@types/retry@0.12.0': {}
+
+  '@types/semver@7.8.0': {}
 
   '@types/unist@2.0.11': {}
 

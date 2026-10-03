@@ -6,7 +6,7 @@
  * here, once per assets directory, before anything resolves from it.
  *
  * The output goes to `.unpacked/` inside the assets directory, laid out as the files were
- * before packing (`plugins/package.json`, `plugins/node_modules/…`, `node_modules/node-pty/…`).
+ * before packing (`plugins/index.json`, `plugins/node_modules/…`, `node_modules/node-pty/…`).
  * The assets directory is content-addressed, so its archives never change and one extraction
  * serves every later boot: `.complete`, written last, is what proves it finished — a directory
  * without it is a crash mid-extraction and is redone. The runtime removes it with the assets

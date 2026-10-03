@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { HotResources } from "@prismshadow/penguin-hmr";
 import { PLUGINS_RESOURCE_ID, PluginHost, pluginHostFrom } from "../src/plugin/host.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { integrityOf, writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
 import { loadPluginHost } from "../src/plugin/loader.js";
 import type { LoadedPlugin } from "../src/plugin/host.js";
 
@@ -95,6 +95,20 @@ describe("loadPluginHost", () => {
       const afterPush = await loadPluginHost(resources, root);
       expect(afterPush.entries().get("@acme/real")).not.toBe(held);
       expect(afterPush.entries().get("@acme/real")?.file).toBe(path.join(dir, "index.js"));
+
+      // Other content at the same path — a download replacing the package, whose tarball gives
+      // every file the same fixed mtime — is told apart by its integrity, and imported again.
+      resources.register(PLUGINS_RESOURCE_ID, afterPush);
+      const replaced = async (tag: string) => {
+        await writeFile(path.join(dir, ".integrity"), integrityOf("@acme/real", "1.0.0", tag));
+        const host = await loadPluginHost(resources, root);
+        resources.register(PLUGINS_RESOURCE_ID, host);
+        return host.entries().get("@acme/real");
+      };
+      const v1 = await replaced("v1");
+      expect(v1).not.toBe(afterPush.entries().get("@acme/real"));
+      expect(await replaced("v1")).toBe(v1);
+      expect(await replaced("v2")).not.toBe(v1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -108,9 +122,11 @@ describe("loadPluginHost", () => {
     // the previous build's copy kept running until the next push.
     const root = await rootAsking(["@acme/shipped"]);
     try {
+      // One name and version, two contents: a push's prefix, listed in its index.
       const build = async (dir: string, marker: string) => {
         const pkg = path.join(dir, "plugins", "node_modules", "@acme", "shipped");
         await writeClassPackage(pkg, { name: "@acme/shipped", module: marker });
+        await writeShippedIndex(path.join(dir, "plugins"));
       };
       const committed = path.join(root, "hmr", "store", "assets", "old");
       const booting = path.join(root, "hmr", "store", "assets", "new");

@@ -18,11 +18,12 @@ export interface LoadedPlugin {
    */
   file?: string | null;
   /**
-   * The entry file's modification time when it was imported. A file rewritten in place keeps
-   * its path, so the path alone would reuse the old code; absent on an older generation's
-   * entry, which is then imported again.
+   * Which content was imported: the package's integrity, or `mtime:<ms>` for a package that
+   * records none (plugin/loader.ts `contentStamp`). A package replaced in place keeps its path,
+   * so the path alone would reuse the old code. An older generation's entry carries a number or
+   * nothing here, which matches no stamp, so it is imported again.
    */
-  stamp?: number | null;
+  stamp?: string | number | null;
   /** Nodes the plugin adds under the root. */
   modules: ModuleDef[];
   /** Nodes the plugin stands in for, by the replaced node's name. */

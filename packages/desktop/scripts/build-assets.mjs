@@ -45,10 +45,10 @@ for (const required of [launcherModule, path.join(distDir, "pty-payload.js")]) {
   }
 }
 
-// The builtin plugins, as the npm prefix the bundled server resolves from
-// (`<app>/plugins/package.json` + `plugins/node_modules/<name>/…`; the server's
-// plugin/loader.ts looks one directory above `dist/`). The packages as npm publishes
-// them, installed by npm (scripts/build-plugins.mjs), from its content cache when unchanged.
+// The builtin plugins, as the bundled plugin directory the bundled server loads them from
+// (`<app>/plugins/index.json` + `plugins/node_modules/<name>/…`; the server looks one directory
+// above `dist/`). The packages as npm publishes them, unpacked (scripts/build-plugins.mjs),
+// from its content cache when unchanged.
 const { buildBuiltinPlugins, stagePrefix } = await import(
   pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "build-plugins.mjs")).href
 );

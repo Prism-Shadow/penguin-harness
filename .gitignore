@@ -8,6 +8,10 @@ dist/
 *.tsbuildinfo
 # web assets copied into the server package at npm publish time
 packages/server/web-dist/
+# the builtin plugin prefix the web e2e stages beside the server's dist (packages/web/e2e/run.sh)
+packages/server/plugins/
+# Written by the release (scripts/cli-plugin-index.mjs): the CLI npm package's plugin index.
+packages/cli/plugins/
 
 # secrets / local config
 .env

@@ -12,18 +12,18 @@ harness 从头到尾有了插件：服务端的注册表抽象与共享索引格
 
 ## 注册表与索引格式
 
-- **插件注册表（plugin registry）**是一个插件索引条目来源。本次实现两种——服务端包内嵌索引的**内置注册表（builtin registry）**，以及拉取 `index.json` URL 的 **HTTP 注册表**。两者共用同一个校验器，远端索引不会比内嵌索引获得更多信任。
-- 所有注册表共享同一份**插件索引格式**，参考 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目，含 `name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`。条目的 `name` 就是 Project 插件清单里写的包名。
+- **插件注册表（plugin registry）**是一个插件索引条目来源。本次实现两种——提供运行中构建自带索引（`plugins/index.json`）的**内置注册表（builtin registry）**，以及拉取 `index.json` URL 的 **HTTP 注册表**。两者共用同一个校验器，远端索引不会比构建的索引获得更多信任。
+- 所有注册表共享同一份**插件索引格式**：扁平数组，每个元素是插件的一个版本条目，含 `name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`。条目的 `name` 就是 Project 插件清单里写的包名。
 - `GET /api/plugins/registry`（任何已登录用户可访问）返回已配置注册表合并后的索引。内置注册表列出本构建自带的包：四个沙盒后端——bubblewrap（Linux）、Seatbelt（macOS）、MXC（Windows）与 DSH 适配器——以及语言楼层。
 - 说明文档按条目单独通过 `GET /api/plugins/registry/readme?name=…` 获取，而不随索引下发：列表每次进入页面都要完整发送，而说明文档体积大，且只有被打开的那个条目才需要。该端点只对部署自己列出的条目作答，因此无法用来探测存在哪些插件；注册表没有某条目的说明文档时返回 null，而不是猜一个 URL。说明文档就是各包自己的 `README.md`，从本机的包里读取，因此目录里不存在第二份会与之漂移的副本；测试把每个条目的 name、version、description 与 license 钉在包自己声明的值上。
 
 ## 以 npm 包的本来面目发布
 
-`scripts/build-plugins.mjs` 取 `plugins/*` 下每个带代码入口的包，先跑包自己的 `build`，再用 `pnpm pack` 打成 tarball——与 `npm publish` 送出的完全一样，`files` 照旧生效——然后用 `npm install` 把这些 tarball 装进一个按 npm 前缀布局的暂存目录：`plugins/package.json`（其 `dependencies` 记录发布了哪些包）加 `plugins/node_modules/<name>/…`，每个包的依赖像在任何地方一样由 npm 装在旁边。包的任何部分都不被改写：`package.json`、`exports`、`dist/`、生成的 `ifaces.json` 与 `README.md` 都以包自己的构建产出的样子到达目标。SDK 不在装入的依赖之列——插件只对 `@prismshadow/penguin-core` 的类型编译，运行时共用宿主那一份。暂存前缀按所有插件的源码、清单、README 与构建配置的哈希缓存在 `node_modules/.cache/penguin-plugins/` 下，没碰它们的推送不会再构建、打包或安装。
+`scripts/build-plugins.mjs` 取 `plugins/*` 下每个带代码入口的包，先跑包自己的 `build`，再用 `pnpm pack` 打成 tarball（只打一次）——与 `npm publish` 送出的完全一样，`files` 照旧生效——然后把这份 tarball 解压进一个前缀：`plugins/index.json`（每个插件一行，带它那份 tarball 的 integrity）加 `plugins/node_modules/<name>/…`，每个包旁边写 `.integrity`。插件自己打包自己，它声明的依赖不被安装。包的任何部分都不被改写：`package.json`、`exports`、`dist/`、生成的 `ifaces.json` 与 `README.md` 都以包自己的构建产出的样子到达目标。SDK 不在包里——插件只对 `@prismshadow/penguin-core` 的类型编译，运行时共用宿主那一份。暂存前缀按所有插件的源码、清单、README 与构建配置的哈希缓存在 `node_modules/.cache/penguin-plugins/` 下，没碰它们的推送不会再构建或打包。
 
-热推送把前缀放进资产（`plugins/…`）；桌面构建把它暂存到 `skills/` 旁边（`scripts/build-assets.mjs`、`electron-builder.yml`）。加载器按顺序解析：`<root>/plugins`（数据根自己的前缀）、已提交推送的 `plugins/`（从 `harness.json` 读取，无需宿主）、安装目录的 `plugins/`、安装入口——按 Node 的方式查找包，读 import 方会读到的入口（`exports` 的 import 条件或 `main`）。
+热推送把前缀放进资产（`plugins/…`）；桌面构建把它暂存到 `skills/` 旁边（`scripts/build-assets.mjs`、`electron-builder.yml`）。加载器在两个前缀里找名字——`<root>/plugins`（下载的）与运行中构建的（有推送时是推送的 `plugins/`，否则是安装目录的）——取各 Project 要求的最高版本，读 import 方会读到的入口（`exports` 的 import 条件或 `main`）。
 
-**随构建发布不等于已安装。** `builtin` 只是「这个包从哪来」的标签，绝不是第二种安装方式：构建带来的插件在目录里标为*内置*——安装它不会经过网络——但它的安装、加载与移除与其他插件完全一样，由 Project 把它列进清单。只有随构建发布的插件可以被要求；构建没有带的名字会被拒绝而不是写入清单，因此 Project 永远不会指名一个不在机器上的包。
+**随构建发布不等于已安装。** `builtin` 只是「这个包从哪来」的标签，绝不是第二种安装方式：构建带来的插件在目录里标为*内置*——安装它不会经过网络——但它的安装、加载与移除与其他插件完全一样，由 Project 把它列进清单。构建没有带的插件先下载，到了机器上才写入清单，因此 Project 永远不会指名一个不在机器上的包。
 
 ## 插件页
 

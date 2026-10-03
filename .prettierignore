@@ -10,6 +10,10 @@ packages/desktop/stage/
 # scripts/build-assets.mjs copies in beside them (formatted in their own packages)
 packages/desktop/out/
 packages/desktop/skills/
+# the builtin plugin prefix scripts/build-plugins.mjs stages (the desktop build's, and the one
+# the web e2e puts beside the server's dist), with the index.json it writes
+packages/desktop/plugins/
+packages/server/plugins/
 
 # Frost's MiSans slices and their @font-face sheet, written by scripts/build-misans.py (a
 # formatter pass would read as drift against the script's own output)
