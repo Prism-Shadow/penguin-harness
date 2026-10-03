@@ -4,7 +4,8 @@
  *
  * Host-gated — a package whose whole job is kernel confinement can only be proven on a
  * host that has bubblewrap; elsewhere the suite skips and profile.test.ts still pins
- * the profile and the fail-closed path. The backend is driven DIRECTLY here (no
+ * the profile and the fail-closed path (unless PENGUIN_MUST_RUN names it; see
+ * scripts/must-run.mjs). The backend is driven DIRECTLY here (no
  * SandboxService): what a plugin package owes is that its own confinement works, and
  * routing/settings are the harness's behavior, tested there with fakes.
  */
@@ -14,7 +15,8 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { CommandSessionManager } from "@prismshadow/penguin-core";
 import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
-import { createPenguinBwrapProvider } from "../src/index.js";
+import { createPenguinBwrapProvider, loadPenguinBwrapProvider } from "../src/index.js";
+import { mustRun } from "../../../scripts/must-run.mjs";
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-bwrap-live-"));
 const outsideProbe = path.join(homedir(), `penguin-bwrap-live-${process.pid}.txt`);
@@ -23,14 +25,16 @@ const provider = createPenguinBwrapProvider();
 /** null = spawn unconfined; otherwise confine under this policy (workspaceRoot filled per spawn). */
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
-const usable = (() => {
+const cannotOpen = await (async () => {
   try {
+    if ((await loadPenguinBwrapProvider()) === null) return "penguin-bwrap runs on Linux only";
     provider.confine(["true"], { mode: "read-only", workspaceRoot: ws });
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
   }
 })();
+const usable = mustRun("sandbox-bwrap", cannotOpen);
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>

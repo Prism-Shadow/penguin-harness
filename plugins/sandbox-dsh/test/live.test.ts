@@ -4,7 +4,8 @@
  * spawns through core's command sessions, real kernel denials.
  *
  * Host-gated the way DSH gates its own backend e2e: one real confine decides
- * usability, and a host with no usable backend skips. The adaptor is driven DIRECTLY
+ * usability, and a host with no usable backend skips (unless PENGUIN_MUST_RUN names it;
+ * see scripts/must-run.mjs). The adaptor is driven DIRECTLY
  * (no SandboxService): what this package owes is that DSH's confinement works behind
  * our interface; routing and settings are the harness's behavior, tested there.
  */
@@ -15,25 +16,32 @@ import path from "node:path";
 import { CommandSessionManager } from "@prismshadow/penguin-core";
 import type { SandboxProvider } from "@prismshadow/penguin-core/plugin";
 import { loadDshAdaptor } from "../src/index.js";
+import { mustRun } from "../../../scripts/must-run.mjs";
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-dsh-live-"));
 const outsideProbe = path.join(homedir(), `penguin-dsh-live-${process.pid}.txt`);
 
-const provider: SandboxProvider | null = await loadDshAdaptor().catch(() => null);
+let loadError = "the DSH adaptor did not load";
+const provider: SandboxProvider | null = await loadDshAdaptor().catch((err: unknown) => {
+  loadError = err instanceof Error ? err.message : String(err);
+  return null;
+});
 
 /** null = spawn unconfined; otherwise confine under this mode. */
 let mode: "read-only" | "workspace-write" | null = null;
 
-const usable =
-  provider !== null &&
-  (() => {
-    try {
-      provider.confine(["true"], { mode: "workspace-write", workspaceRoot: ws });
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+const cannotOpen =
+  provider === null
+    ? loadError
+    : (() => {
+        try {
+          provider.confine(["true"], { mode: "workspace-write", workspaceRoot: ws });
+          return null;
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err);
+        }
+      })();
+const usable = mustRun("sandbox-dsh", cannotOpen);
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>

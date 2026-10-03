@@ -3,7 +3,8 @@
  * core's command sessions, real kernel denials.
  *
  * Host-gated — this suite can only run where Seatbelt exists, so it skips everywhere
- * else and profile.test.ts carries the deterministic coverage. Written to be the exact
+ * else and profile.test.ts carries the deterministic coverage (unless PENGUIN_MUST_RUN
+ * names it; see scripts/must-run.mjs). Written to be the exact
  * counterpart of the bwrap package's live suite, so the two backends are held to the
  * same behavioral bar.
  */
@@ -14,6 +15,7 @@ import path from "node:path";
 import { CommandSessionManager } from "@prismshadow/penguin-core";
 import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
 import { canonicalPath, createSeatbeltProvider } from "../src/index.js";
+import { mustRun } from "../../../scripts/must-run.mjs";
 
 const ws = canonicalPath(mkdtempSync(path.join(tmpdir(), "penguin-seatbelt-live-")));
 const outsideProbe = path.join(homedir(), `penguin-seatbelt-live-${process.pid}.txt`);
@@ -22,14 +24,15 @@ const provider = createSeatbeltProvider();
 /** null = spawn unconfined; otherwise confine under this policy (workspaceRoot filled per spawn). */
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
-const usable = (() => {
+const cannotOpen = (() => {
   try {
     provider.confine(["true"], { mode: "read-only", workspaceRoot: ws });
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
   }
 })();
+const usable = mustRun("sandbox-seatbelt", cannotOpen);
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
