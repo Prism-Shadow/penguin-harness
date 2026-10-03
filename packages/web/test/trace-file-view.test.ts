@@ -12,14 +12,21 @@
  *   failed says so in place of its rows.
  * - Each round's context ring is bounded by the file's context window, and by 128k when the
  *   analysis (from an older server) carries none.
+ * - Opening a file asks once to scroll its newest round into view — the open round drawn last —
+ *   and no refresh after it asks again, not even one that opens a new round for a reader
+ *   following the run.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { TraceAnalysisResponse, TraceTaskStats } from "@prismshadow/penguin-server/api";
-import { TraceFileBody } from "../src/features/traces/trace-file-view";
-import type { RoundEntry } from "../src/features/traces/trace-file-view";
+import {
+  EMPTY_FILE,
+  TraceFileBody,
+  fileAfterAnalysis,
+} from "../src/features/traces/trace-file-view";
+import type { FileState, RoundEntry } from "../src/features/traces/trace-file-view";
 import { TRACE_ROUNDS_PAGE } from "../src/features/traces/trace-rounds";
 import { humanizeTokens } from "../src/lib/format";
 import { S } from "../src/lib/strings";
@@ -203,5 +210,49 @@ describe("the context ring", () => {
   it("falls back to 128k when the analysis carries no window", () => {
     const html = render({ analysis: analysisOf(3), expanded: [] });
     expect(ringOf(html)).toContain(`${used}/${humanizeTokens(128_000)}`);
+  });
+});
+
+describe("opening a file", () => {
+  /** The view's state after each analysis in turn, from a file it has not shown yet. */
+  const statesAfter = (...analyses: TraceAnalysisResponse[]): FileState[] => {
+    const states: FileState[] = [];
+    let state = EMPTY_FILE;
+    for (const a of analyses) {
+      state = fileAfterAnalysis(state, a);
+      states.push(state);
+    }
+    return states;
+  };
+  /** The scroll requests a run of analyses makes: the view scrolls whenever `reveal` is set. */
+  const scrollRequests = (states: FileState[]): number[] =>
+    states.flatMap((s) => (s.reveal === null ? [] : [s.reveal]));
+
+  it("scrolls the open newest round into view once, on the first analysis only", () => {
+    const states = statesAfter(
+      analysisOf(1200),
+      // A turn settles inside the newest round, then a new round starts: both are refreshes.
+      analysisOf(1200),
+      analysisOf(1201),
+    );
+
+    expect(scrollRequests(states)).toEqual([1199]);
+    // The refresh still follows the run: the reader was on the newest round, so the new one opens.
+    expect([...states[2]!.expanded].sort((a, b) => a - b)).toEqual([1199, 1200]);
+  });
+
+  it("the round it scrolls to is the last card drawn, and the open one", () => {
+    const [opened] = statesAfter(analysisOf(1200));
+    const html = render({ analysis: opened!.analysis!, expanded: [...opened!.expanded] });
+
+    const drawn = [...html.matchAll(/data-round="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(drawn.at(-1)).toBe(opened!.reveal);
+    const lastCard = html.slice(html.lastIndexOf("data-round="));
+    expect(lastCard).toContain('aria-expanded="true"');
+    expect(count(html, /aria-expanded="true"/g)).toBe(1);
+  });
+
+  it("a file with no round yet scrolls nowhere until its first round appears", () => {
+    expect(scrollRequests(statesAfter(analysisOf(0), analysisOf(0), analysisOf(1)))).toEqual([0]);
   });
 });

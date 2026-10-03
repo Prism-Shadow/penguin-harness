@@ -159,3 +159,18 @@ export function expandedAfterAnalysis(
   }
   return new Set([...expanded, freshNewest]);
 }
+
+/**
+ * The round to scroll into view once an analysis lands: on the analysis that opens the file
+ * (the same one expandedAfterAnalysis opens on its newest round), that newest round — the last
+ * card drawn, below up to TRACE_ROUNDS_PAGE − 1 collapsed ones. Null on every refresh after it,
+ * including one that opens a new round for a reader following the run: a settled turn never
+ * moves the reader's scroll.
+ */
+export function revealAfterAnalysis(
+  previous: readonly RoundRange[] | null,
+  fresh: readonly RoundRange[],
+): number | null {
+  if (previous !== null && newestRound(previous) !== null) return null;
+  return newestRound(fresh);
+}

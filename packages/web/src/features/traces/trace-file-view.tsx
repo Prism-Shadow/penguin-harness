@@ -8,7 +8,7 @@
  * hover), followed by that round's execution timeline and all of its messages.
  *
  * Loading is per round: opening a file reads only its analysis — every number on the panel and
- * every round's message index range — and the file's newest round is open and read. The other
+ * every round's message index range — and the file's newest round is open, read and scrolled into view. The other
  * rounds show their chips collapsed; opening one reads that round's range alone
  * (trace-rounds.ts). Round cards are drawn from the newest end, TRACE_ROUNDS_PAGE at a time,
  * behind an "earlier rounds" control, so a file of thousands of rounds is still a short list.
@@ -29,7 +29,7 @@
  * highlights the other (only one bar / one message lights up at a time);
  * clicking a bar scrolls to the corresponding message and pins the highlight for PIN_MS.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -71,6 +71,7 @@ import {
   TRACE_ROUNDS_PAGE,
   expandedAfterAnalysis,
   loadRoundEvents,
+  revealAfterAnalysis,
   roundSpan,
   roundsToRead,
   visibleRounds,
@@ -245,13 +246,30 @@ function durationSplit(apiMs: number, toolMs: number): string {
   )}${S.chat.statParenClose}`;
 }
 
-/** What the view shows before a file's analysis lands, and after a switch to another file. */
-interface FileState {
+/** A file's analysis and what it decided: the view's state per file, reset on a switch to another file. */
+export interface FileState {
   analysis: TraceAnalysisResponse | null;
   /** Open rounds, by taskIndex. Held beside the analysis: a fresh analysis decides which new round opens. */
   expanded: ReadonlySet<number>;
+  /**
+   * The round the latest analysis asks to scroll into view: the newest one on the analysis that
+   * opened the file, null on every refresh. The view scrolls when this becomes non-null.
+   */
+  reveal: number | null;
 }
-const EMPTY_FILE: FileState = { analysis: null, expanded: new Set() };
+
+/** What the view shows before a file's analysis lands, and after a switch to another file. */
+export const EMPTY_FILE: FileState = { analysis: null, expanded: new Set(), reveal: null };
+
+/** The view's state once an analysis of its file lands, from the state it held before. */
+export function fileAfterAnalysis(prev: FileState, analysis: TraceAnalysisResponse): FileState {
+  const previous = prev.analysis?.tasks ?? null;
+  return {
+    analysis,
+    expanded: expandedAfterAnalysis(previous, analysis.tasks, prev.expanded),
+    reveal: revealAfterAnalysis(previous, analysis.tasks),
+  };
+}
 
 /** `rounds` without its failed reads: a refresh retries them. The same map when there are none. */
 function withoutFailures(rounds: ReadonlyMap<number, RoundEntry>): ReadonlyMap<number, RoundEntry> {
@@ -339,10 +357,7 @@ export function TraceFileView({
       .getAgentTraceAnalysis(projectId, agentId, sessionId, index)
       .then((a) => {
         if (signal.cancelled) return;
-        setFile((prev) => ({
-          analysis: a,
-          expanded: expandedAfterAnalysis(prev.analysis?.tasks ?? null, a.tasks, prev.expanded),
-        }));
+        setFile((prev) => fileAfterAnalysis(prev, a));
         setRounds(withoutFailures);
         setError(null);
       })
@@ -387,6 +402,18 @@ export function TraceFileView({
         .catch((err: unknown) => land({ ...range, status: "failed", error: apiErrorText(err) }));
     }
   }, [analysis, expanded, shownRounds, rounds, projectId, agentId, sessionId, index]);
+
+  // Opening a file brings its open newest round into view: it is the last card, under the
+  // summary and the collapsed rounds drawn before it, so without this the panel opens on
+  // everything but the round it just opened. The card's top goes to the top of the panel, so
+  // its body — still being read — unfolds below it without moving it. Instant, not smooth: a
+  // smooth scroll would sweep past every card above it. Only the analysis that opened the file
+  // sets `reveal`; a refresh clears it, so a settled turn never moves the reader's scroll.
+  const reveal = file.reveal;
+  useLayoutEffect(() => {
+    if (reveal === null) return;
+    rootRef.current?.querySelector(`[data-round="${reveal}"]`)?.scrollIntoView({ block: "start" });
+  }, [reveal]);
 
   // The error takes the whole view only while there is nothing to take it from: this re-reads
   // on every settled turn now, so a blip mid-read would otherwise blank a file the user is in
@@ -635,7 +662,9 @@ export function TraceFileBody({
         const tokens = st.tokens;
         const compactionBadge = compactionBadgeLabel(st);
         return (
-          <Card key={st.taskIndex} padding="none">
+          // `data-round` is what a file's first open scrolls to; the margin keeps the card off
+          // the panel's top edge once it is there.
+          <Card key={st.taskIndex} padding="none" data-round={st.taskIndex} className="scroll-mt-3">
             <button
               type="button"
               data-slot="head"
