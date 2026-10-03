@@ -16,7 +16,7 @@ description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让�
 | Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
 | Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，四个 Agent Tuning Skill 都随 `agent-tuning` 插件提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，五个 Agent Tuning Skill 都随 `agent-tuning` 插件提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
 
 ### 角色之间的调用
 
@@ -79,6 +79,18 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 最终的一致性检查通过后，Builder 把选中那次 Pilot 的单次运行结果直接记为 **Formal Baseline**（正式基线），不重跑，也不补跑其他运行。随后删掉临时副本和其他校准用的脚手架。
 
 没达到期望分数不会让 Benchmark 作废。发布门槛固定为 85 分：Formal Baseline 低于 85 就发布。只有两种情况 `benchmark-design` 才报告 `calibration_failed`：没有任何可冻结的有效 Pilot 结果，或者到了迭代上限，所有有效版本的得分仍不低于 85。
+
+## 复现已有 benchmark
+
+向 `benchmark-reproduction` 提供 GitHub URL、benchmark 名称或本地源码。
+命中 reference 时按对应配方构造，GDPevo 是其中一个；未命中时走通用流程，也可由用户给出自定义 prompt。
+原始 training/testing 划分生成 `<name>_train` 与 `<name>_test`。
+长程任务保留相同任务定义，通过明确的 trial／时间切点和环境状态交接分开执行。
+
+Skill 生成原生 Statement/Rubric，委派 `agent-evaluation` 跑少量完整冒烟测试，
+检查评估中心可见性，再询问是否跑全量。冒烟结果不算全量基线。
+复现保持原题难度，低于 85 分的校准门槛只适用于新建题目。
+数据和必要的适配器按需生成到 Project 中，不打包进 Penguin，也不设为默认 benchmark。
 
 `agent-optimization` 定义通用输入、角色边界、评估和输出格式，reference 定义
 Penguin（默认）、ACE、AWM 的具体方法。在请求中指定方法名称即可选择，只读取对应 reference。
@@ -183,6 +195,7 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 | --- | --- |
 | `agent-initialization` | 把需求变成可用的 Agent：编写它的 `AGENTS.md`，安装它需要的 Skill |
 | `benchmark-design` | 设计并校准包含多道题目的能力 Benchmark |
+| `benchmark-reproduction` | 复现已有 benchmark，先冒烟验证，再询问全量评估 |
 | `agent-evaluation` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
 | `agent-optimization` | 根据 Benchmark 的结果改进 Agent |
 

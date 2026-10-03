@@ -53,6 +53,20 @@ Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/st
 
 Before launch, snapshot every file under the Case's `statement/` and `rubric/` directories. Require a usable Rubric whose scoring items total exactly 100 points. Create a unique Workspace under `<test_agent_dir>/workspaces/`, resolve it to an absolute canonical path, and verify that the resolved path remains under that directory. Copy only `statement/` into it. The Test Agent may see the Statement and its own State, but never the Rubric, Gold answers, scoring rules, or Evaluator reasoning.
 
+If the Rubric has a `Runtime` section, follow its prerequisite, preparation,
+scoring and cleanup instructions for this cell. It may reference resources inside
+this Benchmark and a private temporary run directory outside the Test Workspace.
+Prepare before Student launch, verify readiness, and bind runtime values only in
+the copied Statement; keep the Benchmark and Agent State unchanged. Snapshot the
+prepared Workspace as the launch baseline. Reset or restore state as the declared
+protocol requires, including temporal continuation. Keep graders and private data
+away from the Student. Always clean up owned resources after scoring or failure.
+Retain this cell's exact workspace/run paths and process handle across tool calls;
+never select a most-recent directory or another parallel cell's process. A service
+must survive its launching tool call and remain healthy through scoring.
+Missing prerequisites or failed preparation return `evaluation_failed`; never
+silently replace a required environment or count infrastructure failure as zero.
+
 ## Run and verify
 
 Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Snapshot the isolated Workspace and record the existing Trace files.
@@ -84,6 +98,13 @@ Inspect only new or changed Traces. Bind exactly one root Test Trace whose Works
 ## Score
 
 Inspect only the isolated Workspace, the bound root Trace, its directly referenced child Traces, and the private Rubric. Apply every scoring item and allowed equivalent. Keep Rubric contents, Gold answers, per-item scoring, and scoring rationale private.
+
+When the Rubric specifies an executable grader, use its declared command, accepted
+exit codes and score conversion. Give it the explicit Student artifact path,
+never a default path that might select a reference answer. Its result is
+authoritative; do not substitute an LLM regrade. Runtime logs are readable only
+for this cell's diagnosis. Invalid grader output or an infrastructure error is
+`evaluation_failed`; preserve scored wrong answers as the Rubric defines them.
 
 A wrong answer, missing artifact, malformed output, or task failure attributable to the Test Agent is scored behavior and returns `status: ok`. A launcher, Trace-binding, or Evaluator failure is not scored. Return `benchmark_invalid` when the Rubric cannot be applied and `evaluation_failed` when the score is non-finite or outside `0..100`.
 

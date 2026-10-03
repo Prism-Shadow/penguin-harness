@@ -107,7 +107,7 @@ Root 的固定强 system prompt 应至少明确以下职责：
 | --- | --- |
 | [Agent Initialization](../../../plugins/agent-tuning/skills/agent-initialization/SKILL.md) | 创建独立 Student、Agent State、业务 Skill 和基线版本 |
 | [Benchmark Design](../../../plugins/agent-tuning/skills/benchmark-design/SKILL.md) | 新造训练题并校准 |
-| Benchmark Reproduction | 按需拉取已有 benchmark，保留原协议并转换为 Penguin 格式，冒烟验证后再询问全量评估 |
+| [Benchmark Reproduction](../../../plugins/agent-tuning/skills/benchmark-reproduction/SKILL.md) | 按需拉取已有 benchmark，保留原协议并转换为 Penguin 格式，冒烟验证后再询问全量评估 |
 | [Agent Evaluation](../../../plugins/agent-tuning/skills/agent-evaluation/SKILL.md) | 每次执行一个 case/run，绑定 trace 并返回原有评分 YAML；由调用方组织并行 |
 | [Agent Optimization](../../../plugins/agent-tuning/skills/agent-optimization/SKILL.md) | 通用训练入口；默认选 Penguin，也可选 ACE/AWM reference，复用评估、版本与输出约定 |
 | Plugin / Session / trace | Teacher 使用 Agent Tuning 并读取选定方法 reference，Student 装业务能力；分别记录执行，供分析与监管 |
@@ -127,7 +127,7 @@ ACE/AWM 保留最后有效且完成测量的版本，不自动套用严格提分
 
 Benchmark 按用户提供的 GitHub link、名称或本地源码按需复现，不预装数据。`benchmark-reproduction` 优先使用 reference，未命中则走通用方法；用户要求自定义但没给方案时，先问“你想怎么构造？”。原数据有 train/test 就生成 `<name>_train` 和 `<name>_test`；长程任务两份 benchmark 使用相同任务定义，按事先声明的 trial／时间切点和环境状态交接分开执行。
 
-GDPevo 作为 reference 配方 保留，已核查版本含 24 个业务组，每组 5 train + 5 test。可先选 `011` 银行信贷与 `018` 法院业务，分别训练 harness。数据、运行环境和必要的小适配器由复现 Skill 生成到具体 benchmark 中，不加入 Penguin 默认初始化或核心代码。Docker 不可用时，可验证后使用本地模式并说明差别；评分沿用原始实现。
+GDPevo 作为 [reference 配方](../../../plugins/agent-tuning/skills/benchmark-reproduction/references/gdpevo.md) 保留，已核查版本含 24 个业务组，每组 5 train + 5 test。可先选 `011` 银行信贷与 `018` 法院业务，分别训练 harness。数据、运行环境和必要的小适配器由复现 Skill 生成到具体 benchmark 中，不加入 Penguin 默认初始化或核心代码。Docker 不可用时，可验证后使用本地模式并说明差别；评分沿用原始实现。
 
 复现先检查少量完整执行、评分、清理和评估中心可见性；冒烟结果不充当全量基线。验证后询问是否跑全量。新建 benchmark 的 `<85` 校准门槛不用于复现现有题目。用户手动构造的数据也不会在加载 `default_agent` 时自动重建。
 ACE 首轮计划每组 3 次更新、每题每版运行 1 次；两组训练共 40 次，初始／最终测试共 20 次，另计 Teacher/Judge 开销。AWM 默认 1 轮。以上是实验计划，不是已取得的效果；两种方法比较时显式列出各自预算，不把不同调用次数当成同等成本。

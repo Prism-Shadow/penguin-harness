@@ -26,7 +26,7 @@ optimization entry point. Select names case-insensitively.
 If another method is requested, resolve its supplied instructions or ask which
 method to implement; do not silently substitute Penguin. Method-specific inputs
 and defaults come from the reference. Initialization and benchmark construction
-belong to `agent-initialization` and `benchmark-design`;
+belong to `agent-initialization`, `benchmark-design` or `benchmark-reproduction`;
 perform them first only when requested and allowed by the selected method.
 
 ## Inputs and run declaration
@@ -107,8 +107,8 @@ model_id: <student_model_id>
 Ask the evaluator to pass configured Student thinking explicitly when launching
 the Student; for stored `none`, omit the unsupported flag and clear only
 `PENGUIN_SESSION_ID` for that command, keeping explicit identity/model/workspace
-flags and connection/auth environment. Keep `--source benchmark` and bind the
-actual Student trace.
+flags and connection/auth environment. Use the benchmark's Runtime instructions
+when present. Keep `--source benchmark` and bind the actual Student trace.
 
 Require one plain protocol YAML response and matching case/run/Agent/version/runtime,
 finite `0..100` score, nullable cost, duration and session ID. A formatting repair

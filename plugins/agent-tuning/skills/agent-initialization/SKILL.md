@@ -71,7 +71,7 @@ Common library bundles, so you don't under-equip the target:
 
 - **App builder** (builds apps or web frontends): `penguin-sdk`, `web-design`, `unified-llm-api`.
 - **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
-- **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
+- **Evaluation loop**: `benchmark-design` (new tasks), `benchmark-reproduction` (existing benchmarks), `agent-evaluation`, `agent-optimization`.
 
 When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks.
 
@@ -141,6 +141,10 @@ Nothing changes in the middle of a context, so a hook you just wrote will not fi
 ## Set name and description
 
 In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. For an existing Agent, edit only these two fields unless the user explicitly requested a `thinking_level` change.
+
+Replace existing YAML fields rather than appending duplicate keys. Validate the
+complete document with a parser that rejects duplicates, as Penguin's `yaml`
+parser does; a permissive parser can accept a config that Penguin cannot load.
 
 ## Creating a brand-new agent
 

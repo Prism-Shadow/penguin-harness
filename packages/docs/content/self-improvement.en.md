@@ -16,7 +16,7 @@ Building a Benchmark and optimizing an agent run in two independent top-level Se
 | Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
 | Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
 
-No built-in agent is reserved for a role: each role is a Skill, and the four Agent Tuning Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+No built-in agent is reserved for a role: each role is a Skill, and the five Agent Tuning Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
 
 ### How the roles call each other
 
@@ -79,6 +79,21 @@ The desired baseline score is a target, not a gate:
 After a final consistency review, the Builder records the selected Pilot's one-run result directly as the **Formal Baseline**, without rerunning or backfilling runs. It then removes the temporary copy and other calibration scaffolding.
 
 Missing the desired score does not invalidate a Benchmark. The publish gate is a fixed 85: a Formal Baseline below 85 is published. `benchmark-design` reports `calibration_failed` only when no valid Pilot result can be frozen, or when every valid revision still scores 85 or above at the iteration limit.
+
+## Reproduce an existing benchmark
+
+Use `benchmark-reproduction` with a GitHub URL, benchmark name or local checkout.
+It chooses a known reference recipe (including GDPevo), otherwise a generic
+conversion, or a user-supplied construction prompt. Official training/testing
+splits become `<name>_train` and `<name>_test`. Long-running tasks keep identical
+task definitions and use an explicit trial/time boundary and environment handoff.
+
+The Skill builds native Statement/Rubric files, checks a few complete executions
+through `agent-evaluation`, verifies Evaluation Center visibility, then asks before
+running the full evaluation. Smoke results are development checks, not a full
+baseline. Existing task difficulty is preserved; the below-85 calibration gate
+applies only to newly designed benchmarks. Datasets and adapters are created on
+demand in the Project, not bundled into Penguin or installed as defaults.
 
 `agent-optimization` defines general inputs, role boundaries, evaluation and output
 formats. Its references define Penguin (the default), ACE and AWM. Use a method
@@ -184,6 +199,7 @@ Every score can be traced back to the run that produced it.
 | --- | --- |
 | `agent-initialization` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
 | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark |
+| `benchmark-reproduction` | Reproduce an existing benchmark and verify smoke runs before a full evaluation |
 | `agent-evaluation` | Run and score one isolated Benchmark Case run |
 | `agent-optimization` | Improve an agent from Benchmark results |
 
