@@ -1,11 +1,13 @@
 /**
  * The channel claim: which channels the plugin takes over from the organization's mention
- * delivery (the room of a roadmap under discussion, answered from the ledger on disk at every
- * question), and that a claimed message is handled at once — relayed to the room sessions,
- * no desk told.
+ * delivery (the room of a roadmap under discussion, answered by one query on a read-only
+ * connection to the organization's store at every question), and that a claimed message is
+ * handled at once — relayed to the room sessions, no desk told.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { roomClaim, type RoadmapService } from "../src/index.js";
+import { companyDbPath, roomClaim, type RoadmapService } from "../src/index.js";
 import { BOSS, ORG, PROJECT, post, world, writeChannel, type World } from "./fakes.js";
 
 const room = (channelId: string) => ({ projectId: PROJECT, orgId: ORG, channelId });
@@ -52,7 +54,15 @@ describe("the channel claim", () => {
 
   it("does not claim a channel that is no roadmap's room, or an established one's — and reads each change at once", async () => {
     const claim = roomClaim(w.root, () => {});
-    // No ledger at all yet.
+    // No store at all yet.
+    expect(claim(room("room_a"))).toBe(false);
+    // A store without the roadmap tables (only the proposals plugin opened it) claims nothing.
+    const file = companyDbPath(w.root, PROJECT, ORG);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const sqlite = process.getBuiltinModule("node:sqlite");
+    const other = new sqlite.DatabaseSync(file);
+    other.exec("CREATE TABLE IF NOT EXISTS proposals (number INTEGER PRIMARY KEY)");
+    other.close();
     expect(claim(room("room_a"))).toBe(false);
     const n = await openA();
     expect(claim(room("room_b"))).toBe(false);
