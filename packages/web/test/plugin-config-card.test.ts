@@ -266,9 +266,7 @@ describe("the settings card", () => {
     const cell = html.slice(at, html.indexOf("</td>", at));
     // The value is announced as it reads, "locked" after it in visually hidden text: no
     // aria-label on a role-less span (not announced) and nothing aria-hidden.
-    expect(cell).toContain(
-      `>Off<span class="sr-only"> (${en.settings.pluginCellLocked})</span>`,
-    );
+    expect(cell).toContain(`>Off<span class="sr-only"> (${en.settings.pluginCellLocked})</span>`);
     expect(cell).not.toContain("aria-hidden");
     expect(cell).not.toContain("aria-label");
     expect(cell).not.toContain("<svg");

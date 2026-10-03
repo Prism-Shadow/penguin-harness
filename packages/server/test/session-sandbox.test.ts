@@ -450,7 +450,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
   });
 
   it("an approval-mode change alone leaves the policy unchecked and untouched", async () => {
-    const { t, owner, projectId } = await ownerProject("owner-mode-only");
+    const { t, owner, projectId } = await ownerProject("owner-modeonly");
     try {
       type Read = { session: { sessionId: string; approvalMode: string; sandbox: SessionSandbox } };
       const id = (

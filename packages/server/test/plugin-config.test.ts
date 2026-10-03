@@ -459,9 +459,9 @@ describe("a table field", () => {
       level: "high",
     });
     // A save of another cell does not carry the stored locked value along.
-    expect(applyUpdate(TABLE, { presets: stored }, { presets: { free: { enabled: true } } })).toEqual(
-      { presets: { fixed: { name: "Mine" }, free: { enabled: true } } },
-    );
+    expect(
+      applyUpdate(TABLE, { presets: stored }, { presets: { free: { enabled: true } } }),
+    ).toEqual({ presets: { fixed: { name: "Mine" }, free: { enabled: true } } });
   });
 
   it("stores only the cells that differ from the declaration", () => {

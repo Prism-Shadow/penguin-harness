@@ -71,7 +71,9 @@ export function tableDraftOf(field: PluginConfigField, stored: unknown): TableDr
     for (const [id, cells] of Object.entries(saved[ADDED] as Record<string, unknown>)) {
       if (!ROW_ID.test(id) || declared.has(id) || !isRecord(cells)) continue;
       if (!columns.every((c) => cellFits(c, cells[c.name]))) continue;
-      added[id] = Object.fromEntries(columns.map((c) => [c.name, cells[c.name] as string | boolean]));
+      added[id] = Object.fromEntries(
+        columns.map((c) => [c.name, cells[c.name] as string | boolean]),
+      );
     }
   }
   const ids = [...Object.keys(rows), ...Object.keys(added)];
