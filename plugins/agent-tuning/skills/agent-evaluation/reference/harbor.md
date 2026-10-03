@@ -1,39 +1,42 @@
-# Harbor-backed Cases
+# Cases run through Harbor
 
-A Benchmark whose `benchmark_config.toml` says `kind = "harbor"` keeps its tasks in a repository, not in its Case directories. Each Case directory is `CASE-NNN-<task>`, where `<task>` is a [Harbor](https://github.com/harbor-framework/harbor) task directory in that repository; the Case's `statement/README.md` describes the task and how it is launched, and its `rubric/README.md` scores the verifier's reward out of 100. One evaluation cell is one Harbor trial: Harbor starts the task's container in Docker, the PenguinHarness adapter installs the PenguinHarness CLI inside it and runs the Test Agent there, and the task's own verifier grades what the agent left.
+A Case is run through Harbor when its `statement/README.md` has a `## How this case is run` section that names the [Harbor](https://github.com/harbor-framework/harbor) framework, links a repository at a 40-character commit and gives the `harbor run` launch. Its task is a Harbor task directory kept in that repository, not in the Case directory: the Case directory is `CASE-NNN-<task>`, the statement describes the task and how it is launched, and `rubric/README.md` scores the verifier's reward out of 100. One evaluation cell is one Harbor trial: Harbor starts the task's container in Docker, the PenguinHarness adapter installs the PenguinHarness CLI inside it and runs the Test Agent there, and the task's own verifier grades what the agent left.
 
-This file replaces the Workspace launch, the Trace binding and the Rubric judgement of `SKILL.md` for such a Case. The Contract, the visibility rules, the failure codes and the Return format stay as `SKILL.md` states them.
+The repository's README section *Running a task (for agents)*, which the statement links, is the authority on how a trial is run: fetching the repository at a commit, the launch, concurrency and Docker networks, retries, what `result.json` holds, credentials and failures. This file says only what PenguinHarness adds: where the checkout lives, what the Test Agent's State is, and how a trial becomes a protocol result. It replaces the Workspace launch, the Trace binding and the Rubric judgement of `SKILL.md` for such a Case; the Contract, the visibility rules, the failure codes and the Return format stay as `SKILL.md` states them.
 
 **The model, and no credentials.** Every cell runs the request's `provider` / `model_id`, which the caller fixes as `SKILL.md`'s "For the caller" says: the pair its own instructions name, else its own Session's model from its Environment. When it cannot determine the model, the caller stops and asks the user. Neither the caller nor a cell ever reads the server's `api-token` file, a Project's `.project_config.toml` (it holds the model keys) or the server's auth database `web.db`, and neither calls the server's HTTP API with a token read from disk — not to find the model, and not to check its key. The adapter reads the saved model entry itself, and the repository's helper prints the one host a cell needs (§B.3).
 
-The `[harbor]` table of `benchmark_config.toml` names everything below:
+**What the statement gives.** Nothing in `benchmark_config.toml` marks such a Benchmark or names its repository; every value below is read from the Case's statement:
 
-| Key | Meaning |
+| Value | In the statement |
 | --- | --- |
-| `repo`, `ref` | The repository, and the commit to run (a branch is resolved to one first) |
-| `path` | The folder of the task directories inside the repository |
-| `agent` | The adapter's import path inside the repository's `agents/` |
-| `harbor_version` | The Harbor release to run |
-| `run_timeout`, `max_turns` | The per-trial soft timeout and turn cap |
-| `allow_agent_hosts` | Hosts a task without network still has to reach, besides the model provider |
-| `setup` | Optional: a command to run once in a fresh checkout, before any trial |
+| `REPO` | The repository: the **Task** line's link up to `/tree/` |
+| `SHA` | The commit in that link, `/tree/<SHA>/`; the run-rules link and the checkout sentence name the same one |
+| `TASK_PATH`, `TASK` | `-p <TASK_PATH>` and `-i <TASK>` of the launch |
+| `HARBOR_VERSION` | `harbor==<HARBOR_VERSION>` of the launch |
+| `AGENT` | `-a <AGENT>` of the launch: the adapter inside the repository's `agents/` |
+| `RUN_TIMEOUT`, `MAX_TURNS` | `--ak run_timeout=<RUN_TIMEOUT>` and `--ak max_turns=<MAX_TURNS>` of the launch: the per-trial soft timeout and turn cap |
+| The host line | `--allow-agent-host <model provider API host>`: present only for a task whose agent phase has no network (§B.3) |
+| The overlay line | `--extra-docker-compose tools/docker/shared-network.yaml`: present only where the repository allows the shared network (§A.9) |
+
+`SHA` must be 40 lowercase hexadecimal characters, and the Case id without its `CASE-NNN-` prefix must equal `TASK`; otherwise the Case is `benchmark_invalid`. So is a statement that links a branch or a tag: never resolve one to a commit. A statement with both the host line and the overlay line is `benchmark_invalid` as well: the repository never allows the shared network for a task without network.
 
 ## A. The caller: shared setup once, then the cells
 
-The agent that fans out the cells performs steps 1–8 once, before its first `run_subagent` for the Benchmark, then runs the cells as "Running the cells" below says. A worker that finds no ready checkout does not race it: it takes the same lock, and either waits behind whoever holds it or, holding it, performs these steps itself. A checkout is named by the commit it holds and, once ready, is never changed or deleted — cells of this evaluation and of any other read it at the same time.
+The agent that fans out the cells performs steps 1–9 once, before its first `run_subagent` for the Benchmark, then runs the cells as "Running the cells" below says. A worker that finds no ready checkout does not race it: it takes the same lock, and either waits behind whoever holds it or, holding it, performs these steps itself. A checkout is named by the commit it holds and, once ready, is never changed or deleted — cells of this evaluation and of any other read it at the same time.
 
 1. **Tools.** Require `docker info` to reach a daemon as the current user, `docker compose version` to report v2, `uv --version` (it provides `uvx`), `tar`, `python3`, and `curl` or `git`. When one is missing the evaluation cannot run on this machine: a caller says which tool is missing and stops; a worker returns `evaluation_failed`.
-2. **The commit.** `SHA` is the 40-character commit id `ref` names. What ships pins `ref` to one, which is used as it is. Resolving a branch or tag is only the fallback for a `ref` that is not a commit id: on GitHub, `curl -fsSL -H "Accept: application/vnd.github.sha" "https://api.github.com/repos/<owner>/<repo>/commits/<ref>"` prints the id; elsewhere, it is the first column of `git ls-remote "<repo>" "<ref>"`; and every cell resolves it the same way. Then:
+2. **The checkout's place,** named by the statement's commit:
 
    ```bash
    PROJECT_DIR="<app_data_dir>"
    CHECKOUT_ROOT="$PROJECT_DIR/benchmarks/.harbor"
-   CHECKOUT="$CHECKOUT_ROOT/<last path segment of repo>-$SHA"   # e.g. penguin-harness-benchmark-<40 hex>
+   CHECKOUT="$CHECKOUT_ROOT/<last path segment of REPO>-$SHA"   # e.g. penguin-harness-benchmark-<40 hex>
    ```
 
 3. **Ready already?** When `$CHECKOUT/.penguin-ready` exists, the checkout is complete: use it, and go to step 7. A `$CHECKOUT` without that file was not made by these steps: leave it alone; a caller tells the user, a worker returns `evaluation_failed`.
 4. **Lock.** `mkdir -p "$CHECKOUT_ROOT"`, then `mkdir "$CHECKOUT.lock"`: it succeeds for exactly one process. Any other checks every 10 seconds until `$CHECKOUT/.penguin-ready` exists (then uses the checkout) or the lock is gone (then tries to take it). A lock older than 60 minutes with no ready checkout is stale: remove it and take it.
-5. **Build the checkout beside it,** never in it, holding the lock:
+5. **Build the checkout beside it,** never in it, holding the lock. Fetch the commit as the run rules do, the archive first:
 
    ```bash
    TMP="$(mktemp -d "$CHECKOUT_ROOT/.fetch-XXXXXX")"
@@ -41,44 +44,45 @@ The agent that fans out the cells performs steps 1–8 once, before its first `r
    curl -fsSL "https://codeload.github.com/<owner>/<repo>/tar.gz/$SHA" | tar -xz -C "$TMP" --strip-components=1
    ```
 
-   For another host, or when the archive fails, start again from a fresh empty `$TMP` with git: `git -C "$TMP" init -q && git -C "$TMP" fetch -q --depth 1 "<repo>" "$SHA" && git -C "$TMP" checkout -q FETCH_HEAD`. Then, inside `$TMP`: `uvx --from harbor==<harbor_version> harbor --version` downloads and caches the pinned Harbor (nothing is installed globally), and, when `[harbor].setup` is present, run it (rag-bench-essential downloads its pinned upstream commit and generates its task directories this way). Run Harbor and its Python only from inside a checkout, never from the home directory, where a stray Python file can shadow the standard library.
+   For another host, or when the archive fails, start again from a fresh empty `$TMP` with git: `git -C "$TMP" init -q && git -C "$TMP" fetch -q --depth 1 "<REPO>" "$SHA" && git -C "$TMP" checkout -q FETCH_HEAD`. Then, inside `$TMP`, `uvx --from harbor==<HARBOR_VERSION> harbor --version` downloads and caches the pinned Harbor (nothing is installed globally). There is no setup step: the repository commits every task directory. Run Harbor and its Python only from inside a checkout, never from the home directory, where a stray Python file can shadow the standard library.
 6. **Publish,** in one rename: `touch "$TMP/.penguin-ready"`, then `[ -e "$CHECKOUT" ] || mv "$TMP" "$CHECKOUT"`, then `[ ! -e "$TMP" ] || rm -r "$TMP"` (nothing is left there unless another process published first) and `rmdir "$CHECKOUT.lock"`. When a step fails before this, remove `$TMP` and the lock: no checkout is ever seen half-made. Delete with `rm -r`, never `rm -rf`: PenguinHarness's default command policy refuses any command that holds a recursive force delete, the whole command with it.
-7. **Images,** optional. Terminal-Bench and DeepSWE tasks run prebuilt images, and DeepSWE's are several GB each; pulling them once here keeps parallel trials from pulling the same image at the same time: `cd "$CHECKOUT" && uvx --from harbor==<harbor_version> python tools/select_tasks.py images <benchmark_id> | xargs -n1 -P4 docker pull`.
-8. **The shared network,** only for the repository's Terminal-Bench and Terminal-Bench-Science tasks: `[harbor].path` is `benchmarks/terminal-bench/tasks` or `benchmarks/terminal-bench-science/tasks`, and the checkout has `tools/docker/shared-network.yaml`. That Compose overlay puts a trial's main container on one existing bridge network, `penguin-bench`, instead of a network of its own, so these trials stop using up the host's Docker address pools; the repository allows it only for these single-container tasks, whose agent phase has a public network. Create the network once per host, unless it exists:
+7. **The run rules.** Read the section *Running a task (for agents)* of `$CHECKOUT/README.md`: the text the statement links, at the same commit. The steps below and §B carry it out; follow it for anything this file does not cover.
+8. **Images,** optional. Pulling a benchmark's prebuilt images once here keeps parallel trials from pulling the same image at the same time (DeepSWE's are several GB each), as the README's pre-pull does: `cd "$CHECKOUT" && uvx --from harbor==<HARBOR_VERSION> python tools/select_tasks.py images <dir> | xargs -r -n1 -P4 docker pull`, where `<dir>` is the directory `TASK_PATH` names under `benchmarks/`. It prints nothing for a benchmark whose tasks build their own images.
+9. **The shared network,** only when the statement's launch has the overlay line. That Compose overlay puts a trial's main container on one existing bridge network, `penguin-bench`, instead of a network of its own, so these trials stop using up the host's Docker address pools. Create the network once per host as the run rules say, unless it exists:
 
    ```bash
    docker network inspect penguin-bench >/dev/null 2>&1 || docker network create --subnet 10.233.0.0/16 penguin-bench
    ```
 
-   A create that fails because the network exists by now lost a race and is fine; one that fails because the subnet overlaps another network is repeated with another free private range, such as `10.234.0.0/16`. Never use the overlay for DeepSWE (`benchmarks/deep-swe/tasks`): its agent phase has no network, and a network named on the main container bypasses the egress sidecar Harbor enforces that with. AutomationBench and rag-bench-essential are not on the repository's list either, so their trials keep networks of their own.
+   A create that fails because the network exists by now lost a race and is fine; one that fails because the subnet overlaps another network is repeated with another free private range, such as `10.234.0.0/16`. Never add the overlay to a launch whose statement lacks it: the repository allows it only for single-container tasks whose agent phase has a public network, and on a task without network it would bypass the egress sidecar Harbor enforces that with.
 
 ### Running the cells
 
-Send every cell the same `provider` and `model_id` (`SKILL.md`, "For the caller"), and run **at most four cells at a time** unless the user named another limit: start the next only when a running one has returned (`run_subagent` with `run_in_background` keeps four going). Each trial asks Docker for networks of its own — even on the shared network, a separate verifier container does — and a host has only a few free address pools; a trial that finds none fails before the Test Agent starts.
+Send every cell the same `provider` and `model_id` (`SKILL.md`, "For the caller"), and run **at most four cells at a time** unless the user named another limit (the README's rule): start the next only when a running one has returned (`run_subagent` with `run_in_background` keeps four going).
 
-When a cell returns `evaluation_failed`, check whether that was the reason. Its trial records Docker's error in `exception_info`; this prints a file name when it does:
+A cell whose trial Docker could not give a network was not measured: run it once more at lower concurrency, and never count it as a score of 0 (the README's rule). Such a cell returns `evaluation_failed`, and its trial records Docker's error in `exception_info`; this prints a file name when it does:
 
 ```bash
 JOB="$(ls -dt "$PROJECT_DIR/benchmarks/<benchmark_id>/.jobs/<case_id>-run<run>-"*/ | head -n 1)"
 grep -rlE --include=result.json 'non-overlapping IPv4 address pool|address pools have been fully subnetted' "$JOB"
 ```
 
-Then Docker had no network to give and nothing was measured. Lower the number of cells you run at once — halve it, down to one — wait until no more than that many are running, and run the failed cell once more, with a new `run_subagent` and the same request. Never count such a cell as a score of 0: when its second attempt fails as well, the cell has no score, so stop and tell the user which cells are missing and why instead of recording the evaluation. Any other `evaluation_failed` is handled as the caller's own instructions say.
+Then halve the number of cells you run at once, down to one, wait until no more than that many are running, and run the failed cell again with a new `run_subagent` and the same request. When that attempt fails as well, the cell has no score: stop and tell the user which cells are missing and why instead of recording the evaluation. Any other `evaluation_failed` is handled as the caller's own instructions say.
 
 ## B. One cell: one Harbor trial
 
-Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Resolve `PROJECT_DIR`, `PROJECT_ID` and `PENGUIN_HOME` exactly as `SKILL.md`'s Run step does, and `SHA` and `CHECKOUT` as §A does; when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Then:
+Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Read the statement's values as "What the statement gives" says. Resolve `PROJECT_DIR`, `PROJECT_ID` and `PENGUIN_HOME` exactly as `SKILL.md`'s Run step does, and `CHECKOUT` as §A does; when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Read the run rules (§A.7) unless this Session already has. Then:
 
-1. **The task.** `TASK` is the Case id without its `CASE-NNN-` prefix. Require `$CHECKOUT/<path>/$TASK/task.toml`, and require the Case's statement to launch that same task (`-i <TASK>`); otherwise return `benchmark_invalid`.
+1. **The task.** Require `$CHECKOUT/$TASK_PATH/$TASK/task.toml`; otherwise return `benchmark_invalid`.
 2. **The thinking level.** The adapter takes `low`, `medium`, `high`, `xhigh` or `max`. A Test Agent configured with any other level cannot be evaluated here: return `evaluation_failed`.
-3. **The network.** Read `network_mode` from the `[agent]` table of the task's `task.toml`. When it is `no-network`, the agent reaches its model only through Harbor's allowlist: add `--allow-agent-host "$HOST"`, where `HOST` is what the repository's helper prints for the requested model — the one host that model's requests go to, read from the same Project configuration the adapter copies:
+3. **The model's host,** only when the statement's launch has the host line. The agent of a task without network reaches its model only through Harbor's allowlist, so the line names the one host that model's requests go to. The repository's helper prints it for the requested model, from the same Project configuration the adapter copies:
 
    ```bash
-   HOST="$(cd "$CHECKOUT" && uvx --from harbor==<harbor_version> python tools/agent_host.py \
+   HOST="$(cd "$CHECKOUT" && uvx --from harbor==<HARBOR_VERSION> python tools/agent_host.py \
      --host-penguin-home "$PENGUIN_HOME" --host-project-id "$PROJECT_ID" -m "<provider>/<model_id>")"
    ```
 
-   When it prints nothing or fails, return `evaluation_failed`. Do not read the configuration yourself, and do not take the host from `penguin config model list`: its endpoint column is empty for a model that uses its provider's default endpoint. Add one `--allow-agent-host` for each entry of `[harbor].allow_agent_hosts` as well.
+   When it prints nothing or fails, return `evaluation_failed`. Do not read the configuration yourself, and do not take the host from `penguin config model list`: its endpoint column is empty for a model that uses its provider's default endpoint.
 4. **The Test Agent's State,** packed so the container runs the requested Agent rather than a stock one. The archive carries what makes the Agent what it is — its config, `AGENTS.md`, Skills, hooks and tools — and leaves out its vault, its memory and its schedules:
 
    ```bash
@@ -92,29 +96,27 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
 
    `$JOBS_DIR/$JOB_NAME` must not exist yet: Harbor resumes an existing job directory instead of running a new trial, so pick a new timestamp when it does.
 5. **The PenguinHarness version.** `PENGUIN_VERSION` is the `version` field of `penguin version --json`, the release number; the container installs `@prismshadow/penguin-cli` at that version from npm.
-6. **The shared network.** When §A step 8 covers this Benchmark and the task's `network_mode` (step 3) is not `no-network`, require `docker network inspect penguin-bench` to succeed, creating the network as step 8 says when it does not, and add `--extra-docker-compose "$CHECKOUT/tools/docker/shared-network.yaml"` to the launch. Otherwise add nothing: the trial makes a network of its own.
-7. **Launch,** in the foreground, from the checkout:
+6. **The shared network,** only when the statement's launch has the overlay line: require `docker network inspect penguin-bench` to succeed, creating the network as §A.9 says when it does not. A launch without the line runs without it: the trial makes a network of its own.
+7. **Launch** the statement's command, in the foreground, from the checkout. Fill in its placeholders — `<provider>/<model_id>` with the request's pair, `<level>` with the configured `thinking_level`, `<penguin version>` with `$PENGUIN_VERSION`, `<model provider API host>` with `$HOST`, `<job name>` with `$JOB_NAME` and `<jobs dir>` with `$JOBS_DIR` — and insert `--ak agent_state_tar="$STATE_TAR" --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID"` before `--agent-setup-timeout-multiplier`. Change nothing else. Without the host and overlay lines, it reads:
 
    ```bash
    cd "$CHECKOUT"
-   export PYTHONPATH="$CHECKOUT/agents"
-   uvx --from harbor==<harbor_version> harbor run \
-     -p "<path>" -i "$TASK" \
-     -a "<agent>" -m "<provider>/<model_id>" \
+   export PYTHONPATH="$PWD/agents"
+   uvx --from harbor==<HARBOR_VERSION> harbor run -p <TASK_PATH> -i "$TASK" \
+     -a <AGENT> -m "<provider>/<model_id>" \
      --ak thinking=<thinking_level> --ak penguin_version="$PENGUIN_VERSION" \
-     --ak run_timeout=<run_timeout> --ak max_turns=<max_turns> \
+     --ak run_timeout=<RUN_TIMEOUT> --ak max_turns=<MAX_TURNS> \
      --ak agent_state_tar="$STATE_TAR" \
      --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID" \
-     --agent-setup-timeout-multiplier 2.5 \
-     -k 1 -n 1 --job-name "$JOB_NAME" -o "$JOBS_DIR" -y
+     --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name "$JOB_NAME" -o "$JOBS_DIR" -y
    rm -f "$STATE_TAR"
    ```
 
-   Insert the `--allow-agent-host` flags of step 3 and the overlay of step 6 before `-k`. A trial takes from a few minutes to an hour — an image pull or build, the adapter's install, the run itself up to `run_timeout`, then the verifier — so wait for the command to finish.
+   When the statement has them, its `--allow-agent-host "$HOST" \` and `--extra-docker-compose tools/docker/shared-network.yaml \` lines stay where it puts them, before the inserted options. A trial takes from a few minutes to an hour — an image pull or build, the adapter's install, the run itself up to `RUN_TIMEOUT`, then the verifier — so wait for the command to finish.
 
 The adapter, not you, reads the requested model's entry, its saved API key included, from `$PENGUIN_HOME/$PROJECT_ID/.project_config.toml`, and copies it into the task container alone, outside the trial directory. Never pass a key with `--ae`, in an environment variable or anywhere on the command line: Harbor writes the agent's environment into the job's `config.json`. When Harbor reports that the model is not configured or has no saved key, return `evaluation_failed`: external configuration is required, and the user saves the key for that model on the Models page.
 
-Retry a launch only when the trial shows that the Test Agent never started: no `agent_execution.started_at` in its `result.json` (an image that could not be pulled or built, a Docker error, an install that ran out of time). Apply a specific repair first — pull the image, free disk space, raise `--agent-setup-timeout-multiplier` — and use a new job name. Once the agent phase has started, never run the cell again. A trial Docker could not give a network is the exception (its `exception_info` says `non-overlapping IPv4 address pool` or `address pools have been fully subnetted`): the repair is fewer trials at once, which only the caller controls, so return `evaluation_failed` without retrying and leave the retry to the caller (§A, "Running the cells").
+Retries follow the README's rule, with these consequences for a cell: a trial whose Test Agent never started (no `agent_execution.started_at` in its `result.json`) is launched again only after a specific repair — pull the image, free disk space, raise `--agent-setup-timeout-multiplier` — and under a new job name; once the agent phase has started, the cell is never run again; and a trial Docker could not give a network is not retried here: return `evaluation_failed`, and the caller retries it at lower concurrency (§A, "Running the cells").
 
 ## C. Score
 
