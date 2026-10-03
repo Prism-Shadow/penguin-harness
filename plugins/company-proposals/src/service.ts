@@ -1447,7 +1447,7 @@ export class ProposalService {
     });
     if (written === null) return this.view(store, number, caller);
     this.notify(org, number, written.seq, "material_added");
-    void this.graphs.kick(this.graphContext(org, stores));
+    void this.graphs.kick(this.graphContext(projectId, orgId, org, stores));
     return this.view(store, number, caller);
   }
 
@@ -1631,7 +1631,7 @@ export class ProposalService {
         (now) => requireUnregistered(now, candidate),
       );
       // The graph places it once its server is probed: at once, not at the next window.
-      void this.graphs.kick(this.graphContext(org, stores), false);
+      void this.graphs.kick(this.graphContext(projectId, orgId, org, stores), false);
       return { deployments: registryOf(registered) };
     } catch (err) {
       if (err instanceof DeploymentRegistryError) {
@@ -1642,10 +1642,15 @@ export class ProposalService {
   }
 
   /** What the graph refresher reads of an organization. */
-  private graphContext(org: OrgView, stores: OrgStores): GraphContext {
+  private graphContext(
+    projectId: string,
+    orgId: string,
+    org: OrgView,
+    stores: OrgStores,
+  ): GraphContext {
     return {
-      key: `${org.projectId}/${org.orgId}`,
-      orgDir: path.join(this.deps.root, org.projectId, "organizations", org.orgId),
+      key: `${projectId}/${orgId}`,
+      orgDir: path.join(this.deps.root, projectId, "organizations", orgId),
       store: stores.graph,
       deployments: stores.deployments,
       inputs: async () => {
@@ -1679,7 +1684,7 @@ export class ProposalService {
     opts: { refresh?: boolean } = {},
   ): Promise<ProposalGraphResponse> {
     const { org, stores } = await this.open(projectId, orgId, actor);
-    return this.graphs.read(this.graphContext(org, stores), opts);
+    return this.graphs.read(this.graphContext(projectId, orgId, org, stores), opts);
   }
 
   /** A deploy run ended: what the deployments run is read again, and the graph with it. */
@@ -1688,7 +1693,7 @@ export class ProposalService {
     const stores = this.stores.get(key);
     if (stores === undefined) return;
     void this.deps.gateway.organization(projectId, orgId).then((org) => {
-      if (org !== null) return this.graphs.kick(this.graphContext(org, stores), false);
+      if (org !== null) return this.graphs.kick(this.graphContext(projectId, orgId, org, stores), false);
     });
   }
 

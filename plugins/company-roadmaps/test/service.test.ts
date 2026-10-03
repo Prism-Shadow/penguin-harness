@@ -7,13 +7,11 @@
  * and the one stacked on it learns the number; an owner reopens it. Nothing here starts a
  * server or a Session.
  */
-import fs from "node:fs/promises";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   RoadmapError,
-  ledgerPath,
-  parseLedger,
-  type LedgerLine,
+  SqliteRoadmapStore,
+  companyDbPath,
   type RoadmapService,
 } from "../src/index.js";
 import { BOSS, ORG, PROJECT, asAgent, post, world, writeChannel, type World } from "./fakes.js";
@@ -31,9 +29,17 @@ async function refusal(run: Promise<unknown>): Promise<{ status: number; code: s
   throw new Error("expected a refusal");
 }
 
-/** The organization's roadmap ledger as it stands on disk. */
-async function ledgerOf(root: string): Promise<LedgerLine[]> {
-  return parseLedger(await fs.readFile(ledgerPath(root, P, O), "utf8")).lines;
+/** Every roadmap event of the organization, in the order written, read from its store on disk. */
+async function eventsOf(root: string): Promise<Array<{ kind: string; number: number; by: string; note?: string }>> {
+  const store = SqliteRoadmapStore.open(companyDbPath(root, P, O));
+  try {
+    return store
+      .list()
+      .flatMap((r) => r.events.map((e) => ({ ...e, number: r.number })))
+      .sort((a, b) => a.seq - b.seq);
+  } finally {
+    store.close();
+  }
 }
 
 const BODY = `# Queue migration
@@ -727,7 +733,7 @@ describe("the approvals", () => {
     });
     expect(w.proposals.created).toEqual([]);
     expect(w.gateway.desks).toEqual([]);
-    const lines = (await ledgerOf(w.root)).length;
+    const lines = (await eventsOf(w.root)).length;
     const both = await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
     // Created through company-proposals: the owner the author, the item's title and brief.
     expect(w.proposals.created).toEqual([
@@ -747,16 +753,15 @@ describe("the approvals", () => {
       delivered: true,
       approvals: { person: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
     });
-    expect((await ledgerOf(w.root)).slice(lines).map((l) => l.kind)).toEqual([
+    expect((await eventsOf(w.root)).slice(lines).map((l) => l.kind)).toEqual([
       "approved",
       "delegated",
       "linked",
     ]);
-    expect((await ledgerOf(w.root)).at(-1)).toMatchObject({
+    expect((await eventsOf(w.root)).at(-1)).toMatchObject({
       kind: "linked",
       number: n,
-      key: "ledger",
-      proposal: 200,
+      note: "ledger → proposal #200",
       by: "agent:acme_dev",
     });
     // The owner is told once, with the number; the one stacked on it learns the number too.
@@ -778,13 +783,13 @@ describe("the approvals", () => {
   it("records no approval when the proposal cannot be created: the item stays a brief and the approval can be given again", async () => {
     const n = await established();
     await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
-    const lines = (await ledgerOf(w.root)).length;
+    const lines = (await eventsOf(w.root)).length;
     w.proposals.refuse = "author must be an employee of acme: acme_dev";
     expect(await refusal(service.approve(P, O, n, "ledger", BOSS))).toEqual({
       status: 409,
       code: "proposal_not_created",
     });
-    expect(await ledgerOf(w.root)).toHaveLength(lines);
+    expect(await eventsOf(w.root)).toHaveLength(lines);
     expect(w.gateway.desks).toEqual([]);
     const again = await service.approve(P, O, n, "ledger", BOSS);
     expect(again.roadmap.delegations.ledger).toMatchObject({ stage: "delegated", proposal: 200 });

@@ -4,7 +4,7 @@
  * where those two are written; an employee who does not moderate writes no body and is not told.
  */
 import { describe, expect, it } from "vitest";
-import type { Roadmap } from "../src/ledger.js";
+import type { Roadmap } from "../src/domain.js";
 import { cloneBrief } from "../src/lines.js";
 
 const roadmap: Roadmap = {
