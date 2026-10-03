@@ -1,5 +1,5 @@
 /**
- * The sidebar's manual order of its groups (Workspace folders / Agents), lib/group-order.ts.
+ * The sidebar's manual order of its groups (Workspace folders / Agents), features/session-list/group-order.ts.
  *
  * - Given time mode, an order is neither stored nor read back: its buckets are a fixed ladder.
  * - Given no Project or nothing stored, the order is empty and reading writes nothing.

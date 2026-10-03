@@ -1,5 +1,5 @@
 /**
- * Row pins in the sidebar's conversation list (lib/pinned-sessions.ts), kept per Project in
+ * Row pins in the sidebar's conversation list (features/session-list/pinned-sessions.ts), kept per Project in
  * localStorage because the server has no pin field.
  *
  * - Given no Project or nothing stored, nothing is pinned, and reading writes nothing.
