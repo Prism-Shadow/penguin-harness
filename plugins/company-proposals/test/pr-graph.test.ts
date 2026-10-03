@@ -70,7 +70,8 @@ function fakeRepo(fail: string[] = []) {
     [`${D0}...${A1}`, rel("ahead", 2, 0, D0)],
     [`${A1}...${B1}`, rel("ahead", 1, 0, A1)],
     [`${A1}...${C1}`, rel("ahead", 3, 0, A1)],
-    [`${B1}...${E1}`, rel("diverged", 2, 5, D0)],
+    // No merge base: the grandparent is not asked (rule 2a).
+    [`${B1}...${E1}`, rel("diverged", 2, 5, null)],
     [`${A1}...${A0}`, rel("behind", 0, 4, A0)],
     [`${A1}...${G1}`, rel("ahead", 3, 0, A1)],
     [`${D0}...${X}`, rel("ahead", 9, 0, D0)],
