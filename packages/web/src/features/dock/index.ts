@@ -1,3 +1,5 @@
+export { DockLauncher } from "./dock-launcher";
+
 export { docksOnScreen } from "./dock-state";
 
 export { openPanel } from "./dock-state";
@@ -25,8 +27,6 @@ export type { DockPanelDefinition } from "./panel-registry";
 export type { PanelId } from "./panel-registry";
 
 export { DockPanel } from "./dock-panel";
-
-export { DockLauncher } from "./dock-launcher";
 
 export { useDockMount } from "./use-dock-mount";
 
