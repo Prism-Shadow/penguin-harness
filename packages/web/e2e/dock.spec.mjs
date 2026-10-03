@@ -11,6 +11,9 @@
  *   puts the dock away;
  * - a whole dock moves to the other edge via its header button, a single tab via drag
  *   onto the drop targets;
+ * - full screen is a dock at its largest below the toolbar (the right dock over its row, the
+ *   bottom dock up to the toolbar; its box stays in the flow), entered by its header toggle or a
+ *   drag past the max and left the same ways; a dock it covers coming on stage ends it;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
  *   style) and survives a reload; the bottom dock's height ratio is a global preference;
  * - a new shell starts in the conversation's Workspace, not the home directory;
@@ -214,6 +217,91 @@ test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps t
   await right.locator('[data-tab-id="trace"]').getByTestId("dock-tab-close").click();
   await expect(dockAt(page, "right")).toHaveCount(0);
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
+});
+
+test("full screen is a dock at its largest below the toolbar — by its button or a drag past the max", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sessionId = await createSession(page.request, projectId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+
+  await openViaPicker(page, "right", "trace");
+  const right = dockAt(page, "right");
+  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  // The composer measures the conversation column; wait out the dock's expand transition.
+  const composer = page.getByPlaceholder(/输入消息/);
+  let settled = null;
+  await expect
+    .poll(async () => {
+      const box = await composer.boundingBox();
+      const same = settled !== null && box !== null && box.width === settled.width;
+      settled = box;
+      return same;
+    })
+    .toBe(true);
+  const rowBox = () => page.locator("[data-dock-row]").boundingBox();
+  const headerBox = (dock) => dock.getByTestId("dock-header").boundingBox();
+
+  // The header button: the right dock covers its own row — the conversation column — while the
+  // toolbar with the title and the statistics stays, and nothing under the cover reflowed.
+  await right.getByTestId("dock-fullscreen").click();
+  await expect(right).toHaveAttribute("data-fullscreen", "full");
+  let row = await rowBox();
+  let header = await headerBox(right);
+  expect(Math.round(header.x)).toBe(Math.round(row.x));
+  expect(Math.round(header.y)).toBe(Math.round(row.y));
+  expect(Math.round(header.width)).toBe(Math.round(row.width));
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByTestId("dock-toggle-right")).toBeVisible();
+  await expect(page.getByTestId("dock-fullscreen-exit")).toHaveCount(0);
+  expect((await composer.boundingBox()).width).toBe(settled.width);
+
+  // The bottom dock is not under the cover, so bringing it forward leaves the right one full.
+  await page.keyboard.press("Control+Alt+3");
+  const bottom = dockAt(page, "bottom");
+  await expect(bottom).toBeVisible();
+  await bottom.getByTestId("dock-pick-memory").click();
+  await expect(bottom.locator('[data-tab-id="memory"][data-active="true"]')).toBeVisible();
+  await expect(right).toHaveAttribute("data-fullscreen", "full");
+
+  // The header button leaves in place.
+  await right.getByTestId("dock-fullscreen").click();
+  await expect(right).not.toHaveAttribute("data-fullscreen");
+
+  // Dragging the right boundary well past the widest it may be snaps into full screen ...
+  const handle = page.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]:visible');
+  let hb = await handle.boundingBox();
+  row = await rowBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(row.x + 40, hb.y + hb.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect(right).toHaveAttribute("data-fullscreen", "full");
+  // ... and dragging the surface's leading edge back snaps out.
+  hb = await handle.boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + 300, hb.y + hb.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect(right).not.toHaveAttribute("data-fullscreen");
+
+  // A full-screen bottom dock grows up to the toolbar, over the row and the right dock with it;
+  // the right dock coming back on stage, from under the cover, ends it.
+  await bottom.getByTestId("dock-fullscreen").click();
+  await expect(bottom).toHaveAttribute("data-fullscreen", "full");
+  row = await rowBox();
+  header = await headerBox(bottom);
+  expect(Math.round(header.y)).toBe(Math.round(row.y));
+  expect(Math.round(header.x)).toBe(Math.round(row.x));
+  await page.getByTestId("dock-toggle-right").click(); // hides the covered right dock: still full
+  await expect(bottom).toHaveAttribute("data-fullscreen", "full");
+  await page.getByTestId("dock-toggle-right").click(); // brings it back on stage: full ends
+  await expect(dockAt(page, "right")).toBeVisible();
+  await expect(bottom).not.toHaveAttribute("data-fullscreen");
 });
 
 test("tabs of every kind share a dock: switch, close a panel tab, terminals numbered", async ({

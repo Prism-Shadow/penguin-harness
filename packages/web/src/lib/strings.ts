@@ -298,9 +298,12 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
-    /** Touch-only: the bottom dock's height toggle, standing in for a boundary drag. */
-    maximize: "放大到整屏",
-    restore: "还原高度",
+    /** The dock header's fullscreen toggle while the dock is at its usual size. */
+    fullscreen: "全屏",
+    /** The same toggle while the dock is fullscreen: it leaves in place. */
+    exitFullscreen: "退出全屏",
+    /** A tab whose panel has no definition registered (a plugin's panel before it loads). */
+    panelUnavailable: "此面板暂不可用",
   },
 
   /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
@@ -1686,6 +1689,8 @@ export const zh = {
     /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
     baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
+    /** A base URL that is set but is not an absolute http(s) URL (the group settings refuse to save it). */
+    baseUrlInvalid: "base URL 须为以 http:// 或 https:// 开头的完整地址",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>

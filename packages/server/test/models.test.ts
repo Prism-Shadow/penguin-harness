@@ -27,8 +27,9 @@
  * - Group connections (`[providers.<id>]`): GET reports each group's masked key and every row's
  *   effective connection with its sources; a PUT `providers` change or the group route sets and
  *   clears per field and keeps the rest, a cleared field reading as none; the group route is
- *   owner-only and refuses an id no group could carry; any group takes a protocol, and a row's
- *   own still wins; a group key leaves a row's own key in place, and the connectivity test uses
+ *   owner-only and refuses an id no group could carry; a group base URL that is not an absolute
+ *   http(s) URL is refused on both routes (a blank one clears); any group takes a protocol, and
+ *   a row's own still wins; a group key leaves a row's own key in place, and the connectivity test uses
  *   the row's key, else the group's, on the group's endpoint; a group key reaches only the rows
  *   on its endpoint's origin (never Atria, never a row re-pointed at another host); a
  *   user-defined group's table goes with its last row.
@@ -2081,6 +2082,53 @@ describe("group connections ([providers.<id>])", () => {
     expect(((await cleared.json()) as ModelsResponse).providers["penguin-go"]).toEqual({
       baseUrl: "https://relay-proxy.example/api",
     });
+  });
+
+  it("a group base URL that is not an absolute http(s) URL is a 400 on both write routes and writes nothing; a valid one is stored and a blank one clears it", async () => {
+    const models = [{ provider: "vllm", modelId: "qwen3.8-27b-local" }];
+    expect((await api.put(url(), { models })).status).toBe(200);
+    const before = await readFile(cfgFile(), "utf8");
+    for (const baseUrl of ["not-a-url", "lab.example/v1", "ftp://lab.example/v1"]) {
+      const viaGroup = await api.put(groupUrl("vllm"), { baseUrl });
+      expect(viaGroup.status, baseUrl).toBe(400);
+      const groupError = ((await viaGroup.json()) as ErrorBody).error;
+      expect(groupError.code, baseUrl).toBe("bad_request");
+      expect(groupError.message, baseUrl).toContain("baseUrl");
+      const viaTable = await api.put(url(), { providers: { vllm: { baseUrl } }, models });
+      expect(viaTable.status, baseUrl).toBe(400);
+      expect(((await viaTable.json()) as ErrorBody).error.code, baseUrl).toBe("bad_request");
+    }
+    expect(await readFile(cfgFile(), "utf8")).toBe(before);
+
+    const viaGroup = await api.put(groupUrl("vllm"), { baseUrl: " http://10.0.0.5:8000/v1 " });
+    expect(viaGroup.status).toBe(200);
+    expect(((await viaGroup.json()) as ModelsResponse).providers.vllm?.baseUrl).toBe(
+      "http://10.0.0.5:8000/v1",
+    );
+    const viaTable = await api.put(url(), {
+      providers: { vllm: { baseUrl: "https://gpu.example/v1" } },
+      models,
+    });
+    expect(viaTable.status).toBe(200);
+    const stored = (await viaTable.json()) as ModelsResponse;
+    expect(stored.providers.vllm?.baseUrl).toBe("https://gpu.example/v1");
+    expect(pick(stored, "vllm", "qwen3.8-27b-local").effective).toMatchObject({
+      baseUrl: "https://gpu.example/v1",
+      baseUrlSource: "provider",
+    });
+
+    // Blank is not a URL to check: it clears, on either route.
+    const clearedByGroup = await api.put(groupUrl("vllm"), { baseUrl: "  " });
+    expect(clearedByGroup.status).toBe(200);
+    expect(((await clearedByGroup.json()) as ModelsResponse).providers.vllm?.baseUrl).toBe(
+      undefined,
+    );
+    await api.put(groupUrl("vllm"), { baseUrl: "https://gpu.example/v1" });
+    const clearedByTable = await api.put(url(), { providers: { vllm: { baseUrl: "" } }, models });
+    expect(clearedByTable.status).toBe(200);
+    expect(((await clearedByTable.json()) as ModelsResponse).providers.vllm?.baseUrl).toBe(
+      undefined,
+    );
   });
 
   it("a group key leaves a model's own key in place, and the connectivity test runs each model on its own key, else the group's, at the group's endpoint", async () => {

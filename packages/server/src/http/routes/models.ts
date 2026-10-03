@@ -115,8 +115,10 @@ function requireProviderId(id: string, label: string): string {
 /**
  * Validate one group connection change (`PUT /models/providers/:provider`, or a member of the
  * whole-table PUT's `providers`). Per field: omitted keeps it; `baseUrl` / `clientType` take a
- * string or `null` (null and the empty string clear); `apiKey` a non-empty string;
- * `clearApiKey` a boolean. Every group takes a protocol: a row's own always wins over it.
+ * string or `null` (null and a blank string clear); `apiKey` a non-empty string;
+ * `clearApiKey` a boolean. A base URL that is set must be an absolute http(s) URL, as /detect
+ * and /list require: every model of the group without one of its own is sent there. Every
+ * group takes a protocol: a row's own always wins over it.
  */
 function parseProviderUpdate(value: unknown, label: string): ProviderConnectionUpdate {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -128,7 +130,11 @@ function parseProviderUpdate(value: unknown, label: string): ProviderConnectionU
     if (p.baseUrl !== null && (typeof p.baseUrl !== "string" || p.baseUrl.length > 2000)) {
       throw badRequest(`${label}.baseUrl must be null or a string of at most 2000 characters.`);
     }
-    update.baseUrl = p.baseUrl ? p.baseUrl : null;
+    const baseUrl = p.baseUrl?.trim();
+    if (baseUrl && !isHttpUrl(baseUrl)) {
+      throw badRequest(`${label}.baseUrl must be an absolute http(s) URL.`);
+    }
+    update.baseUrl = baseUrl ? baseUrl : null;
   }
   if (p.clientType !== undefined) {
     if (p.clientType !== null && (typeof p.clientType !== "string" || p.clientType.length > 64)) {
@@ -310,7 +316,8 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   // per field — the group settings dialog and Disconnect (`{ clearApiKey: true }`) both land
   // here. Rows are untouched, so a model with its own value keeps it, its own protocol
   // included: any group takes a protocol. An id that is neither a built-in group nor a
-  // user-group name is `400 invalid_provider`.
+  // user-group name is `400 invalid_provider`; a base URL that is not an absolute http(s) URL
+  // is a 400 too (parseProviderUpdate), the same check the whole-table PUT's `providers` gets.
   app.put("/providers/:provider", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
