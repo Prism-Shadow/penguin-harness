@@ -23,7 +23,7 @@ import { FinancePage } from "./finance-page";
 import { ChannelView } from "./channel-view";
 import { HandbookPage } from "./handbook-page";
 import { useOrgPages } from "./use-org-pages";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 
 /** The component of each builtin renderer a contributed company-mode page may name. */
 const ORG_PAGE_COMPONENTS: Readonly<Record<string, ComponentType>> = {

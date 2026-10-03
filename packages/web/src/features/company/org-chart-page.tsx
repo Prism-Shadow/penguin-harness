@@ -52,7 +52,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneInk } from "../../lib/tone";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";

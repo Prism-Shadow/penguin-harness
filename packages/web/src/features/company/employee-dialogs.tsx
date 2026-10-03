@@ -61,7 +61,7 @@ import {
 import type { AvatarCrop } from "../../lib/avatar-image";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";

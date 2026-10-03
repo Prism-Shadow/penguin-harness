@@ -9,7 +9,7 @@
  * "New channel" is the header's own trailing action rather than a pinned row above the list;
  * the organization's desks follow the list as their own group (org-session-groups.tsx).
  *
- * The list itself is the store's (state/company.tsx): one listing per organization, refreshed
+ * The list itself is the store's (features/company/company-state.tsx): one listing per organization, refreshed
  * when a message event says a counter moved, so the sidebar, the rail and the channel view
  * never disagree about what is unread.
  */
@@ -39,7 +39,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { Icon } from "../../components/ui/group-list";
 import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "../../lib/company-nav";

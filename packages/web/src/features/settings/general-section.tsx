@@ -24,7 +24,7 @@ import {
   writeNotificationsEnabled,
 } from "../../lib/notification-pref";
 import type { NotificationAccess } from "../../lib/notification-pref";
-import { useCompany } from "../../state/company";
+import { useCompany } from "../company";
 import { resolveSystemLocale, useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { useTheme } from "../../state/theme";

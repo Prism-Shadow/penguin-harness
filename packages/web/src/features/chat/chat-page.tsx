@@ -53,8 +53,7 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { switchDeskModel } from "../company";
-import { useCompany } from "../../state/company";
+import { switchDeskModel, useCompany } from "../company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkbenchTabs, WorkbenchFrame, WorkbenchTabStrip } from "../workbenches";

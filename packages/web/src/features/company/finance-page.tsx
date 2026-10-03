@@ -68,7 +68,7 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";

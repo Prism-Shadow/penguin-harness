@@ -51,7 +51,7 @@ import { formatDateTime, formatMoney, formatRelativeShort } from "../../lib/form
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useLocale } from "../../state/locale";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";

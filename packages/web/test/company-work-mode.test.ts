@@ -1,6 +1,6 @@
 /**
  * The work mode the shell stands in across the two switches that make company mode available
- * (state/company.tsx), driven against the store: `setServerEnabled` is what the Provider calls
+ * (features/company/company-state.tsx), driven against the store: `setServerEnabled` is what the Provider calls
  * with every read of /api/me, and `applyPrefs` what it calls when the preferences arrive. Each
  * case says where the choice ends up (the localStorage mirror and the `PUT /api/me/prefs` the
  * fetch fake records) as well as what the shell shows.
@@ -19,7 +19,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 import { BETA_NOTICE_KEY } from "../src/features/company/company-beta";
 import { WORK_MODE_KEY } from "../src/lib/work-mode";
-import { companyModeAvailable, createCompanyStore, effectiveWorkMode } from "../src/state/company";
+import {
+  companyModeAvailable,
+  createCompanyStore,
+  effectiveWorkMode,
+} from "../src/features/company/company-state";
 import { json, stubFetch } from "./helpers/fetch";
 import type { FakeFetch } from "./helpers/fetch";
 import { memoryStorage, stubLocalStorage } from "./helpers/storage";
