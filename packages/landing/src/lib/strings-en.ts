@@ -463,7 +463,14 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     groups: [
       {
         title: "Office Productivity",
-        skills: ["data-analysis", "firecrawl", "browser-automation", "bento-slides", "humanizer"],
+        skills: [
+          "data-analysis",
+          "firecrawl",
+          "browser-automation",
+          "bento-slides",
+          "humanizer",
+          "a2ui",
+        ],
       },
       {
         title: "Software Development",
