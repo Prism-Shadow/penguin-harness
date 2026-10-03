@@ -169,6 +169,14 @@ export class PrStatusReader {
     return { statuses, refreshed };
   }
 
+  /**
+   * The organization is being deleted: its batch in flight (a `gh` call, then one write) is
+   * awaited, so nothing writes to its store once the store is closed.
+   */
+  async retire(orgKey: string): Promise<void> {
+    await this.inFlight.get(orgKey);
+  }
+
   /** One batch per organization at a time; a batch asked while one runs is skipped, the next read asks again. */
   private refresh(
     orgKey: string,

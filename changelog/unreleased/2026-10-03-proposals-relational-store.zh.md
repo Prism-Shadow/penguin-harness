@@ -30,6 +30,13 @@ company-proposals 与 company-roadmaps 两个插件不再整份重放只追加�
 - 各部署的服务器改为在每次刷新时探测，不再在每次读图时探测；重启后第一次刷新之前，部署的提交显示为尚未探测。
 - PR 状态在存储中缓存 5 分钟，在后台以一次批量读取刷新；读提案不再等待 `gh`。报告 `merged` 仍立即询问 forge，并回写结果。
 
+## 删除组织
+
+- 删除组织时先把它标记为删除中：直到目录移走之前，宿主路由、插件路由与调度器都把它当作不存在（404）。
+- 新增槽 `OrganizationModule.retirements`，供插件在目录移动之前释放它为该组织持有的资源；每份贡献最多等待 30 秒，超时或抛错会被记录，不阻止删除。company-proposals 贡献的一份中止该组织的 PR 关系图刷新（连同其 `git` 与 `gh` 子进程）、PR 状态批量读取与正在运行的部署脚本（按被终止的运行记录），并关闭它的 `company.db` 连接；company-roadmaps 贡献的一份等待该组织进行中的写入与转发，然后关闭连接。其他组织不受影响，已删组织的库不会被重新打开；之后以同一 id 新建的组织从空库开始。
+- 组织正在运行的会话——桌面、工单会话、讨论室与讨论，以及它们的后台命令（例如一次 Claude Code 运行）——在目录移动之前被中止，不等待其结束。
+- 目录移动失败时（例如 Windows 上仍有文件被打开），答 409 `organization_busy`，消息带操作系统给出的原因与路径，不再答 500，组织保持原状。
+
 ## 兼容性
 
 此前写下的内容一概不读：`proposals.jsonl` 与 `roadmaps.jsonl`（以及[此前兼容性条目](2026-10-03-backward-compatibility-impl-branch.zh.md)为它们描述的旧形态）、`server_settings` 中的 `company-proposals:reads:*` 键，以及 `proposals.jsonl` 中的 `deployment` 行。组织的提案、roadmap、已读位置与部署登记从空开始。旧文件原样留在磁盘上，不做导入。部署需要用 `penguin org proposal deployment add` 重新登记。

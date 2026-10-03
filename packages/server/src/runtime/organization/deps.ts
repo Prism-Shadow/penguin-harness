@@ -36,6 +36,12 @@ export interface OrgTaskRunner {
  */
 export interface OrgRunsShape extends OrgTaskRunner {
   invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Interrupts the Session's current Task; false when nothing runs (a delete stops the organization's sessions). */
+  abortTask(sessionId: string): boolean;
+  /** A loaded Session's background commands; empty when it is not loaded. */
+  listProcesses(sessionId: string): Array<{ processId: string; running: boolean }>;
+  /** Kills one running background command of a loaded Session. */
+  killProcess(sessionId: string, processId: string): boolean;
   /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
   onModelChanged(
     listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
@@ -172,12 +178,34 @@ export interface OrgDeps {
    */
   channelClaimed?: (channel: OrgChannelRef) => boolean;
   /**
+   * Organizations being deleted, by orgLockKey: loadOrg answers null for them, so every route,
+   * pass and gateway read treats the organization as gone while a delete releases what it
+   * holds (retire.ts). Optional so a test may leave it out; the service fills one in.
+   */
+  deleting?: Set<string>;
+  /**
+   * What plugins release when an organization is deleted (OrgGatewaySlots.retirements), in the
+   * order contributed. Optional: without a contributor a delete only moves the directory.
+   */
+  retirements?: ReadonlyArray<OrgRetirement>;
+  /**
+   * Stops one Session without waiting for it: its Task aborted, its running background
+   * commands killed, its surface closed. Optional: a test that binds none stops nothing.
+   */
+  stopSession?: (sessionId: string) => void;
+  /**
    * The Project's machines, as far as company mode needs them. Optional: a server with no
    * machines (and every test that binds none) runs each organization it holds.
    */
   machines?: OrgMachines;
   now?: () => number;
   log?: (line: string) => void;
+}
+
+/** One plugin's retirement of an organization (OrgGatewaySlots.retirements), by contribution id. */
+export interface OrgRetirement {
+  id: string;
+  retire: (org: { projectId: string; orgId: string }) => Promise<void>;
 }
 
 /** One call to a machine's own API, as that machine's authenticated caller (machines/machine-api.ts). */

@@ -28,6 +28,7 @@ import type {
   PluginConfig,
   SessionIndex,
 } from "@prismshadow/penguin-server/plugin";
+import { RetiredOrgs } from "./org-retire.js";
 import { CONFIG_GROUP, configOf, type RoadmapConfig } from "./config.js";
 import type { ProposalCreator } from "./proposals.js";
 import {
@@ -284,6 +285,8 @@ export class RoadmapService {
   private readonly locks = new Map<string, Promise<unknown>>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private relaying: Promise<void> | null = null;
+  /** Organizations being (or already) deleted, whose store may not open again (org-retire.ts). */
+  private readonly retired = new RetiredOrgs();
 
   constructor(private readonly deps: ServiceDeps) {
     this.rules = { ...defaultRules, ...deps.rules };
@@ -301,11 +304,17 @@ export class RoadmapService {
   // Plumbing
   // -------------------------------------------------------------------------
 
-  /** An organization's store, opened on first use. */
-  private store(projectId: string, orgId: string): RoadmapStore {
+  /**
+   * An organization's store, opened on first use. `seen` is the RetiredOrgs stamp taken before
+   * the gateway found the organization: a retired organization opens again only for such a read.
+   */
+  private store(projectId: string, orgId: string, seen?: number): RoadmapStore {
     const key = `${projectId}/${orgId}`;
     let store = this.stores.get(key);
     if (store === undefined) {
+      if (!this.retired.admit(key, seen)) {
+        throw new RoadmapError(404, "org_not_found", `No organization ${orgId}.`);
+      }
       store = SqliteRoadmapStore.open(companyDbPath(this.deps.root, projectId, orgId), () =>
         this.now(),
       );
@@ -338,11 +347,12 @@ export class RoadmapService {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new RoadmapError(404, "not_found", "Company mode is off.");
     }
+    const seen = this.retired.stamp();
     const org = await this.deps.gateway.organization(projectId, orgId);
     if (org === null) throw new RoadmapError(404, "org_not_found", `No organization ${orgId}.`);
     const principal = await this.deps.gateway.principalOf(projectId, orgId, actor);
     const agentId = principal.startsWith("agent:") ? principal.slice("agent:".length) : null;
-    return { org, caller: { principal, agentId }, store: this.store(projectId, orgId) };
+    return { org, caller: { principal, agentId }, store: this.store(projectId, orgId, seen) };
   }
 
   private require(store: RoadmapStore, number: number): Roadmap {
@@ -1360,6 +1370,8 @@ export class RoadmapService {
       try {
         if (!this.deps.gateway.companyModeEnabled()) return;
         for (const { projectId, orgId } of await this.knownOrgs()) {
+          // A retired organization is not reopened by a pass: its delete is running or done.
+          if (!this.retired.admit(`${projectId}/${orgId}`)) continue;
           const store = this.store(projectId, orgId);
           for (const r of store.list({ status: "discussing" })) {
             if (r.status !== "discussing") continue;
@@ -1388,6 +1400,21 @@ export class RoadmapService {
       void this.relayOnce();
     }, 1000);
     this.timer.unref?.();
+  }
+
+  /**
+   * The organization is being deleted (org-retire.ts): its writes and relay passes in flight
+   * awaited, its connection closed, its lock chain dropped; its store opens again only for an
+   * organization found anew.
+   */
+  async retire(projectId: string, orgId: string): Promise<void> {
+    const key = `${projectId}/${orgId}`;
+    this.retired.retire(key);
+    await this.locks.get(key);
+    const store = this.stores.get(key);
+    this.stores.delete(key);
+    this.locks.delete(key);
+    store?.close();
   }
 
   async stop(): Promise<void> {

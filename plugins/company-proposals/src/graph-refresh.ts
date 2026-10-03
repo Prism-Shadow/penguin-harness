@@ -79,6 +79,8 @@ export interface RefresherDeps {
 
 interface OrgState {
   running: Promise<void> | null;
+  /** Aborts this organization's refresh alone (its git and gh children with it): the organization is being deleted. */
+  abort: AbortController;
   /** What each registered deployment runs, by id, as the last probe of its server read it. */
   readings: Map<string, DeploymentReading>;
   /** When the last refresh started, for the floor on refreshes a read triggers for a missing comparison. */
@@ -103,7 +105,7 @@ export class GraphRefresher {
   private org(key: string): OrgState {
     let s = this.orgs.get(key);
     if (s === undefined) {
-      s = { running: null, readings: new Map(), startedAt: 0 };
+      s = { running: null, abort: new AbortController(), readings: new Map(), startedAt: 0 };
       this.orgs.set(key, s);
     }
     return s;
@@ -112,6 +114,19 @@ export class GraphRefresher {
   /** Stops every refresh in flight (its git and gh children with it); the plugin is stopping. */
   stop(): void {
     this.abort.abort();
+  }
+
+  /**
+   * The organization is being deleted: its refresh in flight is aborted (its git and gh
+   * children with it) and awaited, and what is kept of it in memory is dropped. A refresh that
+   * starts for it afterwards starts from nothing, as for a new organization.
+   */
+  async retire(key: string): Promise<void> {
+    const state = this.orgs.get(key);
+    if (state === undefined) return;
+    this.orgs.delete(key);
+    state.abort.abort();
+    await state.running;
   }
 
   /** Whether a refresh of this organization is running. */
@@ -233,7 +248,7 @@ export class GraphRefresher {
   }
 
   private async refresh(ctx: GraphContext, state: OrgState, force: boolean): Promise<void> {
-    const signal = this.abort.signal;
+    const signal = AbortSignal.any([this.abort.signal, state.abort.signal]);
     const { project, proposals } = await ctx.inputs();
     const registered = await ctx.deployments.list();
     // The deployments' servers, on the same beat as the probe.

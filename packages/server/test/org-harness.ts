@@ -89,6 +89,10 @@ export async function makeOrgHarness(opts: {
   nowMs: number;
   /** Which server this is and how it reaches another; none = a server with no machines. */
   machines?: OrgMachines;
+  /** What plugins release when an organization is deleted; none by default. */
+  retirements?: OrgDeps["retirements"];
+  /** How a deleted organization's session is stopped; none by default. */
+  stopSession?: OrgDeps["stopSession"];
 }): Promise<OrgHarness> {
   const projectId = opts.projectId ?? "p1";
   const owner = opts.ownerUserId ?? "alice";
@@ -216,6 +220,8 @@ export async function makeOrgHarness(opts: {
     notifyProject: (_p, event) => void events.push(event),
     companyModeEnabled: () => flags.companyMode,
     ...(opts.machines !== undefined ? { machines: opts.machines } : {}),
+    ...(opts.retirements !== undefined ? { retirements: opts.retirements } : {}),
+    ...(opts.stopSession !== undefined ? { stopSession: opts.stopSession } : {}),
     now: () => clock.nowMs,
     log: () => {},
   };

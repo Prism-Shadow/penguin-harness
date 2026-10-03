@@ -136,4 +136,20 @@ export interface OrgGatewaySlots {
    * claim that throws is recorded and counts as not claiming.
    */
   channelClaims: Slot<{ description: string }, (channel: OrgChannelRef) => boolean>;
+  /**
+   * A plugin that holds resources of an organization — a database connection opened on first
+   * use, work in flight, processes whose working directory is inside the organization — and
+   * gives them up when the organization is deleted. Called only by a delete, under the
+   * organization's lock, after the organization is marked as being deleted (its gateway view
+   * answers null, so the plugin's routes answer 404 and no new work starts) and before its
+   * directory moves to the trash. A retirement aborts that organization's work in flight,
+   * closes its connections and drops its caches, and leaves every other organization alone.
+   * Each is awaited in turn for at most 30 s; one that times out or throws is recorded and does
+   * not stop the delete. Pausing an organization calls none, and a plugin that stops releases
+   * what it holds through its own stop path.
+   */
+  retirements: Slot<
+    { description: string },
+    (org: { projectId: string; orgId: string }) => Promise<void>
+  >;
 }

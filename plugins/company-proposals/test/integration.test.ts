@@ -57,7 +57,11 @@ describe("the company-proposals plugin on a real server", () => {
 
   it("is loaded, and contributes the proposals page as a company-mode page", async () => {
     const [row] = await harness.installedPlugins();
-    expect(row).toMatchObject({ active: true, modules: ["CompanyProposalsPlugin"], replaces: [] });
+    expect(row).toMatchObject({
+      active: true,
+      modules: ["CompanyProposalsPlugin", "ProposalsRetirement"],
+      replaces: [],
+    });
     const { pages } = await api.get<Contributions>("/api/contributions");
     expect(pages.find((p) => p.id === "company-proposals.page")).toMatchObject({
       key: "org-proposals",

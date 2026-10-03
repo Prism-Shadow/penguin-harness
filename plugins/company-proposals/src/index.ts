@@ -32,6 +32,12 @@ import type {
 import { ProposalService } from "./service.js";
 import { DeployService } from "./deploy.js";
 import { ROUTES_ID, proposalRoutes } from "./routes.js";
+import {
+  retireListeners,
+  retireRegistered,
+  type OrgRef,
+  type RetireListener,
+} from "./org-retire.js";
 
 export {
   COMPANY_DB,
@@ -78,6 +84,8 @@ export {
 } from "./deploy.js";
 export type { DeployDeps, DeployRequest, DeployScope } from "./deploy.js";
 export { startProcess } from "./deploy-process.js";
+export { RetiredOrgs, retireListeners, retireOrg, retireRegistered } from "./org-retire.js";
+export type { OrgRef, RetireListener } from "./org-retire.js";
 export type { DeployProcess, StartProcess } from "./deploy-process.js";
 export {
   CONFIG_GROUP,
@@ -249,6 +257,13 @@ export class CompanyProposalsPlugin {
       onFinished: (projectId, orgId) => service.deployFinished(projectId, orgId),
     });
     this.routes = proposalRoutes(service, deploys);
+    // An organization being deleted: its deploy runs, then the rest of what the service holds.
+    const retire: RetireListener = (org) =>
+      service.retire(org.projectId, org.orgId, () => deploys.retire(org.projectId, org.orgId));
+    retireListeners.add(retire);
+    effect(() => {
+      retireListeners.delete(retire);
+    });
   }
 
   /**
@@ -271,6 +286,33 @@ export class CompanyProposalsPlugin {
   }
 }
 
-const plugin: Plugin = { modules: [CompanyProposalsPlugin] };
+/** The retirement's contribution id, as the manifest names it. */
+export const RETIRE_ID = "company-proposals.retirement";
+
+/**
+ * The retirement, as a node of its own: it contributes to the organization module, so it must
+ * not require the organization gateway that module provides (a cycle). It hands the
+ * organization to the retirements the plugin's module registered (org-retire.ts).
+ */
+@Component({
+  contributes: {
+    "OrganizationModule.retirements": [
+      {
+        id: "company-proposals.retirement",
+        description:
+          "Stops the organization's PR graph refresh and deploy runs and closes its proposals database.",
+      },
+    ],
+  },
+})
+export class ProposalsRetirement {
+  @Bind(RETIRE_ID) retire!: (org: OrgRef) => Promise<void>;
+
+  setup() {
+    this.retire = retireRegistered;
+  }
+}
+
+const plugin: Plugin = { modules: [CompanyProposalsPlugin, ProposalsRetirement] };
 
 export default plugin;

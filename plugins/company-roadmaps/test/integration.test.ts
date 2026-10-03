@@ -52,13 +52,13 @@ describe("the company-roadmaps plugin on a real server", () => {
     await harness?.stop();
   });
 
-  it("is loaded, both nodes: the gateway, the session runtime and company-proposals resolved, and the claim taken by the organization module without a cycle", async () => {
+  it("is loaded, all three nodes: the gateway, the session runtime and company-proposals resolved, and the claim and the retirement taken by the organization module without a cycle", async () => {
     const row = (await harness.installedPlugins()).find((r) =>
       r.modules.includes("CompanyRoadmapsPlugin"),
     );
     expect(row).toMatchObject({
       active: true,
-      modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim"],
+      modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim", "RoadmapsRetirement"],
       replaces: [],
     });
   });

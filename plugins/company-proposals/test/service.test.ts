@@ -19,6 +19,8 @@ import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import plugin, {
   sectionSource,
   CompanyProposalsPlugin,
+  ProposalsRetirement,
+  RETIRE_ID,
   PAGE_ID,
   ProposalError,
   ProposalService,
@@ -2364,13 +2366,17 @@ describe("the declared test groups", () => {
 });
 
 describe("the manifest", () => {
-  it("agrees with the code half: the generated table names the routes, the page and the module", () => {
+  it("agrees with the code half: the generated table names the routes, the page and the modules", () => {
     const table = JSON.parse(readFileSync(path.join(PLUGIN_DIR, "ifaces.json"), "utf8")) as {
       modules: Record<string, { contributes: Record<string, Array<{ id: string; nav?: string }>> }>;
       plugin: { modules: string[] };
     };
-    expect(plugin.modules).toEqual([CompanyProposalsPlugin]);
-    expect(table.plugin.modules).toEqual(["CompanyProposalsPlugin"]);
+    expect(plugin.modules).toEqual([CompanyProposalsPlugin, ProposalsRetirement]);
+    expect(table.plugin.modules).toEqual(["CompanyProposalsPlugin", "ProposalsRetirement"]);
+    const retirement = table.modules.ProposalsRetirement;
+    expect(retirement?.contributes["OrganizationModule.retirements"]?.[0]?.id).toBe(RETIRE_ID);
+    // The retirement node must not require what the organization module provides: that is a cycle.
+    expect(JSON.stringify(retirement)).not.toContain("CompanyModule");
     const manifest = table.modules.CompanyProposalsPlugin;
     expect(manifest?.contributes["HttpModule.routes"]?.[0]?.id).toBe(ROUTES_ID);
     expect(manifest?.contributes["WebModule.pages"]?.[0]).toMatchObject({

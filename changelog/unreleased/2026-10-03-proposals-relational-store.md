@@ -30,6 +30,13 @@ The company-proposals and company-roadmaps plugins stopped replaying append-only
 - Deployments' servers are probed at each refresh instead of at every graph read; until the first refresh after a restart a deployment's commit reads as not probed yet.
 - PR statuses are cached in the store for 5 minutes and read in one background batch; reading a proposal no longer waits for `gh`. Reporting `merged` still asks the forge at once and writes the answer back.
 
+## Deleting an organization
+
+- Deleting an organization marks it as being deleted first: until its directory has moved, its routes, the plugins' routes and the scheduler treat it as gone (404).
+- A new slot, `OrganizationModule.retirements`, lets a plugin release what it holds of an organization before the move; each contribution is awaited for at most 30 s, and one that times out or throws is recorded without stopping the delete. company-proposals contributes one that stops the organization's PR graph refresh (with its `git` and `gh` children), its PR status batch and its running deploy scripts (recorded as killed runs), and closes its `company.db` connection; company-roadmaps contributes one that awaits the organization's writes and relay pass and closes its connection. Other organizations are not touched, and nothing reopens the deleted organization's store; an organization created later under the same id starts from an empty store.
+- The organization's running sessions — desks, ticket sessions, rooms and discussions, and their background commands such as a Claude Code run — are aborted, without waiting, before the move.
+- A move that fails (a file still held open on Windows, say) answers 409 `organization_busy` with the system's reason and the path, instead of 500, and the organization stays as it was.
+
 ## Compatibility
 
 Nothing written before this change is read: `proposals.jsonl` and `roadmaps.jsonl` (and the shapes the [earlier compatibility entries](2026-10-03-backward-compatibility-impl-branch.md) described for them), the `company-proposals:reads:*` keys in `server_settings`, and the `deployment` lines in `proposals.jsonl`. An organization's proposals, roadmaps, read positions and registered deployments start empty. The old files are left on disk untouched; there is no import. Deployments are registered again with `penguin org proposal deployment add`.

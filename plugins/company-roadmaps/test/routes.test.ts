@@ -15,6 +15,8 @@ import plugin, {
   DEFAULT_RELAY_DEPTH,
   ROUTES_ID,
   RoadmapRoomClaim,
+  RoadmapsRetirement,
+  RETIRE_ID,
   configOf,
   roadmapRoutes,
 } from "../src/index.js";
@@ -142,10 +144,19 @@ describe("the manifest", () => {
       plugin: { modules: string[] };
     };
 
-  it("names the two modules, their contributions, and what each requires of the harness", () => {
-    expect(plugin.modules).toEqual([CompanyRoadmapsPlugin, RoadmapRoomClaim]);
+  it("names the three modules, their contributions, and what each requires of the harness", () => {
+    expect(plugin.modules).toEqual([CompanyRoadmapsPlugin, RoadmapRoomClaim, RoadmapsRetirement]);
     const t = table();
-    expect(t.plugin.modules).toEqual(["CompanyRoadmapsPlugin", "RoadmapRoomClaim"]);
+    expect(t.plugin.modules).toEqual([
+      "CompanyRoadmapsPlugin",
+      "RoadmapRoomClaim",
+      "RoadmapsRetirement",
+    ]);
+    const retirement = t.modules.RoadmapsRetirement;
+    expect(
+      (retirement?.contributes["OrganizationModule.retirements"]?.[0] as { id: string }).id,
+    ).toBe(RETIRE_ID);
+    expect(JSON.stringify(retirement)).not.toContain("CompanyModule");
     const claim = t.modules.RoadmapRoomClaim;
     expect((claim?.contributes["OrganizationModule.channelClaims"]?.[0] as { id: string }).id).toBe(
       CLAIM_ID,

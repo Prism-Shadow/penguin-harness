@@ -44,6 +44,7 @@ import { GITHUB_NAME, ghRunner, parsePullUrl, type RunGh } from "./pr-status.js"
 import { ImplBranchError, branchTip } from "./impl-branch.js";
 import { ProposalError } from "./service.js";
 import { startProcess, type StartProcess } from "./deploy-process.js";
+import { retireRuns, type RetiringRun } from "./deploy-retire.js";
 
 /** The registry's file name inside the organization directory. */
 export const DEPLOY_SCRIPTS_FILE = "deploy-scripts.json";
@@ -134,12 +135,11 @@ export function argvOf(raw: unknown, what: string, opts: { min: number }): strin
   });
 }
 
-interface LiveRun {
+interface LiveRun extends RetiringRun {
   run: ProposalDeployRun;
   /** The kept tail of the output, and how many characters were dropped before it. */
   output: string;
   dropped: number;
-  orgKey: string;
 }
 
 export class DeployService {
@@ -417,9 +417,6 @@ export class DeployService {
       exitCode: null,
       error: null,
     };
-    const live: LiveRun = { run, output: "", dropped: 0, orgKey };
-    this.runs.set(run.id, live);
-    this.prune(orgKey);
     const label = `[company-proposals] deploy ${run.id} ${plan.script} ${headLabel(plan)}@${plan.head.slice(0, 12)}`;
     this.deps.log(`${label} started by ${run.by}`);
     const proc = (this.deps.start ?? startProcess)(plan.argv, {
@@ -437,6 +434,16 @@ export class DeployService {
         PENGUIN_DEPLOY_BY: run.by,
       },
     });
+    const live: LiveRun = {
+      run,
+      output: "",
+      dropped: 0,
+      orgKey,
+      proc,
+      ended: new Promise((resolve) => proc.onExit(() => resolve())),
+    };
+    this.runs.set(run.id, live);
+    this.prune(orgKey);
     let timedOut = false;
     const timeoutMs = this.deps.timeoutMs ?? DEPLOY_TIMEOUT_MS;
     const timer = setTimeout(() => {
@@ -466,6 +473,15 @@ export class DeployService {
       this.deps.onFinished?.(scope.org.projectId, scope.org.orgId);
     });
     return run;
+  }
+
+  /** The organization is being deleted: its runs stopped and forgotten (deploy-retire.ts). */
+  retire(projectId: string, orgId: string): Promise<void> {
+    const file = this.file(projectId, orgId);
+    return retireRuns(this.runs, `${projectId}/${orgId}`, KILL_GRACE_MS).then(async () => {
+      await this.writes.get(file)?.catch(() => undefined);
+      this.writes.delete(file);
+    });
   }
 
   /** Forget the oldest finished runs past RUNS_KEPT for one organization. */

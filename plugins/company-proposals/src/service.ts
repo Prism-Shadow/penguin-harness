@@ -77,6 +77,7 @@ import { SqliteProposalStore } from "./store-write.js";
 import { SqliteGraphStore } from "./graph-store.js";
 import { companyDbPath } from "./schema.js";
 import { DeploymentStore, deploymentsPath } from "./deploy-store.js";
+import { RetiredOrgs, retireOrg } from "./org-retire.js";
 import { GithubForge, NoForge } from "./forge.js";
 import { LocalGitMirror, githubUrl, mirrorDir } from "./git-mirror.js";
 import { GraphRefresher, type GraphContext } from "./graph-refresh.js";
@@ -205,6 +206,8 @@ export class ProposalService {
   private readonly graphs: GraphRefresher;
   /** The default rules, with any replaced. */
   private readonly rules: ProposalRules;
+  /** Organizations being (or already) deleted, whose stores may not open again (org-retire.ts). */
+  private readonly retired = new RetiredOrgs();
 
   constructor(private readonly deps: ServiceDeps) {
     const forge = deps.forge ?? new GithubForge(deps.gh);
@@ -232,6 +235,26 @@ export class ProposalService {
     this.graphs.stop();
     for (const s of this.stores.values()) s.proposals.close();
     this.stores.clear();
+  }
+
+  /**
+   * The organization is being deleted (org-retire.ts): its deploy runs (`deploys`, the deploy
+   * service's), graph refresh and PR status batch stopped and awaited, its connection closed and
+   * what is kept of it dropped; its stores open again only for an organization found anew.
+   */
+  retire(projectId: string, orgId: string, deploys: () => Promise<void>): Promise<void> {
+    const key = `${projectId}/${orgId}`;
+    return retireOrg({
+      key,
+      retired: this.retired,
+      stores: this.stores,
+      graph: (k) => this.graphs.retire(k),
+      prStatus: (k) => this.prStatus.retire(k),
+      deploys,
+      forget: (k) => {
+        for (const c of [...this.concluding]) if (c.startsWith(`${k}/`)) this.concluding.delete(c);
+      },
+    });
   }
 
   /** The skipped graph settings last reported, logged once per change like the test groups'. */
@@ -346,11 +369,17 @@ export class ProposalService {
     return this.deps.now?.() ?? Date.now();
   }
 
-  /** An organization's stores, opened on first use. */
-  private storesOf(projectId: string, orgId: string): OrgStores {
+  /**
+   * An organization's stores, opened on first use. `seen` is the RetiredOrgs stamp taken before
+   * the gateway found the organization: a retired organization opens again only for such a read.
+   */
+  private storesOf(projectId: string, orgId: string, seen?: number): OrgStores {
     const key = `${projectId}/${orgId}`;
     let s = this.stores.get(key);
     if (s === undefined) {
+      if (!this.retired.admit(key, seen)) {
+        throw new ProposalError(404, "org_not_found", `Organization does not exist: ${orgId}`);
+      }
       const proposals = SqliteProposalStore.open(
         companyDbPath(this.deps.root, projectId, orgId),
         () => this.now(),
@@ -380,6 +409,7 @@ export class ProposalService {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new ProposalError(404, "company_mode_off", "Company mode is off.");
     }
+    const seen = this.retired.stamp();
     const org = await this.deps.gateway.organization(projectId, orgId);
     if (org === null) {
       throw new ProposalError(404, "org_not_found", `Organization does not exist: ${orgId}`);
@@ -389,7 +419,7 @@ export class ProposalService {
     if (agentId === null && !org.userIds.includes(actor.userId)) {
       throw new ProposalError(403, "project_access", "Not a member of this Project.");
     }
-    const stores = this.storesOf(projectId, orgId);
+    const stores = this.storesOf(projectId, orgId, seen);
     return {
       org,
       store: stores.proposals,
@@ -411,11 +441,12 @@ export class ProposalService {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new ProposalError(404, "company_mode_off", "Company mode is off.");
     }
+    const seen = this.retired.stamp();
     const org = await this.deps.gateway.organization(projectId, orgId);
     if (org === null) {
       throw new ProposalError(404, "org_not_found", `Organization does not exist: ${orgId}`);
     }
-    return { org, store: this.storesOf(projectId, orgId).proposals };
+    return { org, store: this.storesOf(projectId, orgId, seen).proposals };
   }
 
   private requireProposal(store: SqliteProposalStore, number: number): Proposal {

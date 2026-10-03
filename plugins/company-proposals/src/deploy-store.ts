@@ -65,6 +65,11 @@ export class DeploymentStore {
     private readonly now: () => number = Date.now,
   ) {}
 
+  /** Settles once every append started so far has landed (or failed). */
+  async settled(): Promise<void> {
+    await this.chain;
+  }
+
   /** Every registered deployment, in the order they were registered. */
   async list(): Promise<RegisteredDeployment[]> {
     return parseDeployments(await this.text());

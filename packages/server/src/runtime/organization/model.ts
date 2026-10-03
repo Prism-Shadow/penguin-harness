@@ -9,6 +9,7 @@ import type { Desks, OrgChart, OrgConfig, OrgEmployee } from "../../organization
 import { ORG_CONFIG_DEFAULTS, ancestorsOf } from "../../organization/files.js";
 import { ceoAgentId, workspaceDir } from "../../organization/paths.js";
 import type { OrgDeps } from "./deps.js";
+import { orgLockKey } from "./locks.js";
 
 export interface LoadedOrg {
   projectId: string;
@@ -28,6 +29,8 @@ export async function loadOrg(
   projectId: string,
   orgId: string,
 ): Promise<LoadedOrg | null> {
+  // An organization being deleted is gone already for everything but the delete itself.
+  if (deps.deleting?.has(orgLockKey(projectId, orgId)) === true) return null;
   const dir = deps.store.dir(projectId, orgId);
   const configFile = await deps.store.readConfig(dir);
   if (configFile === null) return null;
