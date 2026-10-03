@@ -49,11 +49,6 @@ export function isWorkbenchId(id: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && id !== "." && id !== "..";
 }
 
-export function isSafeRelPath(rel: string): boolean {
-  if (rel === "" || rel.startsWith("/") || rel.includes("\\")) return false;
-  return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
-}
-
 async function walk(dir: string, prefix = ""): Promise<string[]> {
   let entries: import("node:fs").Dirent[];
   try {

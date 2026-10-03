@@ -1,3 +1,4 @@
+import { isSafeRelPath } from "../http/static-files.js";
 /**
  * WorkbenchService: boots every workbench folder of an Agent as a module tree of its own.
  *
@@ -61,7 +62,6 @@ import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
 import { loadTypeScript } from "../plugin/typescript.js";
 import {
   historyDir,
-  isSafeRelPath,
   isTempName,
   isWorkbenchId,
   listFolders,

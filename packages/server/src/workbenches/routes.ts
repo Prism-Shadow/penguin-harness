@@ -15,13 +15,12 @@
  * Every route requires access to the Project; the UI and api routes are what the
  * workbench's own page (an iframe in the Web App, same-origin cookie auth) talks to.
  */
-import fs from "node:fs/promises";
-import path from "node:path";
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import { mediaType } from "../http/media-type.js";
+import { uiFileResponse } from "../http/static-files.js";
 import { requireValidId } from "../http/validate.js";
 import type { Access } from "../mechanisms/projects.js";
 import type {
@@ -32,27 +31,7 @@ import type {
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { WorkbenchNotFound } from "./service.js";
 
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".htm": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".ico": "image/x-icon",
-  ".txt": "text/plain; charset=utf-8",
-  ".map": "application/json; charset=utf-8",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-};
-
-/** The largest request body a workbench's handler is handed. */
+/** The largest request body a workbench handler is handed. */
 const MAX_BODY_BYTES = 50 * 1024 * 1024;
 /** Never shown to a workbench: they are the app's credentials, not the workbench's. */
 const WITHHELD_REQUEST_HEADERS = new Set(["cookie", "authorization", "proxy-authorization"]);
@@ -270,13 +249,8 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     const id = c.req.param("id");
     const rel = c.req.path.split(`/workbenches/${id}/ui/`)[1] ?? "";
     const file = await deps.workbenches.uiFile(projectId, agentId, id, decodeURIComponent(rel));
-    if (file === null)
-      throw new HttpError(404, "not_found", "No such file in the workbench's ui/.");
-    const body = await fs.readFile(file);
-    return c.body(body, 200, {
-      "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream",
-      "cache-control": "no-cache",
-    });
+    if (file === null) throw new HttpError(404, "not_found", "No such file in the workbench's ui/.");
+    return uiFileResponse(c, file);
   });
 
   // The same files for every workbench, but only under one that exists: a page of another
