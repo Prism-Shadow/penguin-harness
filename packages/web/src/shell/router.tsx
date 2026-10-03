@@ -40,27 +40,7 @@ import { SessionsProvider } from "../state/sessions";
 import { CompanyProvider } from "../state/company";
 import { AppLayout } from "../components/layout/app-layout";
 import { LoginPage } from "../pages/login";
-import { PAGES, type PageEntry } from "./page-table";
-import type { WebAppPage } from "./page-table";
 import { webAppDeps } from "./deps";
-
-/**
- * The renderers the manifest may name. A page is a module.json entry plus one line here;
- * a server-contributed page renders only when its `builtin` is in this registry.
- */
-const BUILTIN_PAGES: Record<string, React.ComponentType> = {};
-
-function renderPage(page: PageEntry): React.ReactNode {
-  if ("iframe" in page.renderer) {
-    return (
-      <iframe title={page.key} src={page.renderer.iframe.src} className="h-full w-full border-0" />
-    );
-  }
-  const Component = BUILTIN_PAGES[page.renderer.builtin];
-  return Component === undefined ? <Navigate to="/chat" replace /> : <Component />;
-}
-
-/** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
   const { user } = useAuth();
   // Plugin-contributed grammars, adopted once for the signed-in tree (see the hook). Called
@@ -124,12 +104,12 @@ function RootFrame() {
 }
 
 /**
- * The routes: the pages the modules contributed (WebApp's bindings), plus the pages still
- * declared in src/module.json, which render through the builtin registry — except the
- * `nav: "org"` ones, which OrgRoutes mounts under the organization layout.
+/**
+ * The routes: the pages the modules contributed (WebApp's bindings). Company contributions
+ * are read and mounted under the organization layout by OrgRoutes
+ * (features/company/org-routes.tsx).
  */
 function appRoutes(pages: readonly WebAppPage[]) {
-  const manifestPages = PAGES.filter((page) => page.nav !== "org");
   return createRoutesFromElements(
     <Route element={<RootFrame />}>
       <Route path="/login" element={<LoginRoute />} />
@@ -155,9 +135,6 @@ function appRoutes(pages: readonly WebAppPage[]) {
           .map(({ id, path, Component }) => (
             <Route key={id} path={path} element={<Component />} />
           ))}
-        {manifestPages.map((page) => (
-          <Route key={page.id} path={page.path} element={renderPage(page)} />
-        ))}
         {/* Settings and user management live in the settings dialog now (see
             SettingsDialog); their old routes fall through to the catch-all. */}
         <Route path="*" element={<Navigate to="/chat" replace />} />

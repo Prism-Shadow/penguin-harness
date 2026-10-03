@@ -1,27 +1,30 @@
 /**
- * The page table with what the server's plugins contribute folded in (GET /api/contributions,
- * lib/pages.ts `mergePages`) — read here for its company-mode pages (`nav: "org"`): the router
- * mounts them under the organization layout and the sidebar draws their rows.
+ * The pages the server's plugins contribute that this build can render (GET /api/contributions,
+ * web-app/page-table.ts `contributedPages`) — read here for its company-mode pages (`nav: "org"`):
+ * company mode routes them under the organization layout (org-routes.tsx) and the sidebar draws
+ * their rows.
  *
  * One fetch per signed-in user, shared by every caller through a module-level store. Until it
- * answers — and if it never does — the table is the local manifest alone: no contributed page
- * is load-bearing.
+ * answers — and if it never does — there are none: no contributed page is load-bearing.
  *
  * TODO(contributions-provider): the web UI stack's state/contributions.tsx (ContributionsProvider,
- * which also carries the session surfaces) holds this same merged table for the whole tree. Once
- * both stacks are on one line, read `useContributions().pages` instead and delete this module.
+ * which also carries the session surfaces) holds the same contributed pages for the whole tree.
+ * Once both stacks are on one line, read `useContributions().pages` instead and delete this module.
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import * as api from "../../api/endpoints";
-import { PAGES, mergePages, type PageEntry } from "../../web-app/page-table";
+import { useWebAppPages } from "../../web-app";
+import { contributedPages, type PageEntry } from "../../web-app/page-table";
 import { useAuth } from "../../state/auth";
 import { ORG_PAGE_RENDERERS } from "./company-nav";
 
 /** The builtin renderers a contributed company-mode page may name; one naming another is skipped. */
 const ORG_RENDERER_NAMES: ReadonlySet<string> = new Set(Object.keys(ORG_PAGE_RENDERERS));
 
+type RemotePages = ReadonlyArray<Record<string, unknown>>;
+
 let loadedFor: string | null = null;
-let pages: readonly PageEntry[] = PAGES;
+let remote: RemotePages = [];
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void): () => void {
@@ -32,24 +35,26 @@ function subscribe(listener: () => void): () => void {
 function load(userId: string | null): void {
   if (userId === loadedFor) return;
   loadedFor = userId;
-  pages = PAGES;
+  remote = [];
   listeners.forEach((l) => l());
   if (userId === null) return;
   api.getContributions().then(
     (res) => {
       if (loadedFor !== userId) return;
-      pages = mergePages(PAGES, res.pages, ORG_RENDERER_NAMES);
+      remote = res.pages;
       listeners.forEach((l) => l());
     },
     () => {
-      // Nothing to fold in: the App stays on its local manifest, which is a complete App.
+      // Nothing to fold in: the App stays on its own pages, which make a complete App.
     },
   );
 }
 
-/** The merged page table (local manifest plus contributed pages this build can render). */
+/** The contributed pages this build can render beside the app's own. */
 export function useOrgPages(): readonly PageEntry[] {
   const userId = useAuth().user?.userId ?? null;
+  const local = useWebAppPages();
   useEffect(() => load(userId), [userId]);
-  return useSyncExternalStore(subscribe, () => pages);
+  const pages = useSyncExternalStore(subscribe, () => remote);
+  return useMemo(() => contributedPages(local, pages, ORG_RENDERER_NAMES), [local, pages]);
 }

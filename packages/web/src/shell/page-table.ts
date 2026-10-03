@@ -7,12 +7,11 @@
  *
  * Pages a pushed platform or a plugin contributes arrive from the server (GET
  * /api/contributions) in the `PageEntry` shape, which names a renderer instead of carrying a
- * component; `mergePages` folds those in — a page whose renderer this build does not carry is
- * skipped, since there is nothing to draw it with.
+ * component; `contributedPages` picks the ones to mount beside this table — a page whose
+ * renderer this build does not carry is skipped, since there is nothing to draw it with.
  */
 import type { ComponentType } from "react";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
-import manifest from "../module.json";
 
 /** One page as its feature declares it: the data half of a `pages` contribution. */
 export interface PageData {
@@ -67,29 +66,26 @@ export interface PageEntry {
   renderer: { builtin: string } | { iframe: { src: string; namespace: string } };
 }
 
-/** The pages still declared in src/module.json rather than contributed by a module. */
-export const PAGES: readonly PageEntry[] = manifest.contributes["web.pages"] as PageEntry[];
-
 /**
- * The company-mode pages of a merged table — every one the server contributed under
- * `nav: "org"` — in contribution order. The local manifest has none: the organization's own
- * six pages are the company layout's fixed children, not entries here.
+ * The company-mode pages among the contributed ones — every one the server contributed under
+ * `nav: "org"` — in contribution order. The app's own table has none: the organization's own
+ * six pages are company mode's fixed routes (features/company/org-routes.tsx).
  */
 export function orgPagesOf(pages: readonly PageEntry[]): PageEntry[] {
   return pages.filter((p) => p.nav === "org" && p.released);
 }
 
 /**
- * Local pages plus server-contributed ones this build can render. A server entry whose
- * key a local page already owns is ignored — the local manifest wins for its own pages.
+ * The server-contributed pages this build can render, beside the app's own `local` pages. A
+ * server entry whose key a local page already owns is ignored — the app's own page wins.
  */
-export function mergePages(
-  local: readonly PageEntry[],
+export function contributedPages(
+  local: readonly { key: string }[],
   remote: ReadonlyArray<Record<string, unknown>>,
   builtinRenderers: ReadonlySet<string>,
 ): PageEntry[] {
   const keys = new Set(local.map((p) => p.key));
-  const out = [...local];
+  const out: PageEntry[] = [];
   for (const entry of remote) {
     const page = entry as Partial<PageEntry>;
     if (typeof page.key !== "string" || typeof page.path !== "string" || keys.has(page.key))

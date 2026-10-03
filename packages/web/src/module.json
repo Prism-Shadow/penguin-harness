@@ -1,9 +1,0 @@
-{
-  "name": "web",
-  "provides": {
-    "web": "WebShell"
-  },
-  "contributes": {
-    "web.pages": []
-  }
-}
