@@ -14,8 +14,8 @@
  * is a static line: no button, no chevron, no hover.
  *
  * Expand policy, two layers deep: the body opens while the activity runs, so its rows are on
- * screen as they are appended, and closes itself once it settles, leaving the one-line summary
- * the head exists to be; the rows inside it stay closed — the reader sees that a step happened
+ * screen as they are appended, and folds itself away once it settles, leaving the one-line
+ * summary the head exists to be; the rows inside it stay closed — the reader sees that a step happened
  * and how long it took, not its contents, until they ask. The caller's state bridges the gaps
  * between two steps (a work group the model may still add to counts as running), so the card
  * closes once and stays closed rather than flickering on every step. Once the reader toggles it
@@ -33,6 +33,13 @@
  * step's start to its latest's end, so a group that merely stays open between steps does not
  * tick, or the number would climb past the span and snap back when the group settles.
  *
+ * The settle is one movement in three parts, each on the theme's motion: the head's label, mark
+ * and details ease into their settled ink (`theme.css`), the settled glyph and the settled title
+ * arrive under `data-reveal` (only for a change the reader watched — a card that loads settled
+ * reveals nothing), and the body folds away through `Fold` rather than vanishing, the reply
+ * below rising with it. Rows appended to an open body arrive under `data-reveal` too; the rows a
+ * body opens with do not, so reopening a finished card replays nothing.
+ *
  * Three hooks: the card is a frame (its head the head, its body the body), the head is an
  * activity row of the caller's kind with the state folded onto the hook's three (a failure is
  * an error, anything settled is done), and the rows hang off the head one level down as a tree,
@@ -43,6 +50,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { Key, ReactNode } from "react";
+import { useArrived } from "../../../motion/use-arrived";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
 import { DurationSlot } from "../../feedback/duration-slot/duration-slot";
@@ -58,6 +66,7 @@ import {
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
 import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/disclosure-row";
+import { Fold } from "../../layout/fold/fold";
 
 /**
  * The title's ink says the state with the mark: live work in the success ink, a failure in the
@@ -73,6 +82,30 @@ const TITLE_INK: Readonly<Record<ActivityMark["state"], string>> = {
 export interface ActivityGroupRow {
   key: Key;
   content: ReactNode;
+}
+
+/**
+ * The rows under an open head. The rows present when the body opens are its content; a row
+ * appended while it is open arrives under `data-reveal`. Decided per mount of the body, so the
+ * attribute stays put on a row for as long as it is mounted (removing it mid-way would cut the
+ * reveal short), and a body reopened later mounts every row settled.
+ */
+function ActivityRows({ rows }: { rows: readonly ActivityGroupRow[] }) {
+  const [present] = useState(() => new Set(rows.map((row) => row.key)));
+  return (
+    <>
+      {rows.map((row, index) => (
+        <div
+          key={row.key}
+          data-depth="1"
+          data-last={index === rows.length - 1 ? "true" : undefined}
+          data-reveal={present.has(row.key) ? undefined : true}
+        >
+          {row.content}
+        </div>
+      ))}
+    </>
+  );
 }
 
 export interface ActivityGroupProps {
@@ -134,7 +167,11 @@ export function ActivityGroup({
   const inFlight = stepRunning ?? state === "running";
   const [open, setOpen] = useState(running);
   const userToggled = useRef(false);
+  /** The reader closed the card: land the view on it once the fold has finished. */
+  const landOnClose = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  // The state changed while on screen: the title swapped in for it and the settled glyph arrive.
+  const settledHere = useArrived(hookState);
   const hasChildren = children !== undefined && children !== null;
   const expandable = rows !== undefined || hasChildren;
 
@@ -153,8 +190,12 @@ export function ActivityGroup({
   const parts = (
     <>
       <ActivityMarkSlot mark={mark ?? <StatusIcon state={state} label={stateLabel} />} />
+      {/* Keyed by the state, so the running title (and Frost's sweep across it) leaves with
+          its element and the settled one arrives as a new one. */}
       <span
+        key={hookState}
         data-slot="label"
+        data-reveal={settledHere || undefined}
         className={`${DISCLOSURE_HEADER_TITLE_CLASS} ${TITLE_INK[hookState]}`}
       >
         {title}
@@ -203,13 +244,11 @@ export function ActivityGroup({
           onClick={() => {
             userToggled.current = true;
             // Collapsing while the head is stuck: the card's top sits above the fold, so bring the
-            // (now head-only) card back into view once React commits; `nearest` makes every other
-            // case a no-op. A forced-open card keeps its body, so that click moves nothing.
-            const willClose = open && !pending;
+            // (now head-only) card back into view once the fold has finished; `nearest` makes
+            // every other case a no-op. A forced-open card keeps its body, so that click moves
+            // nothing.
+            landOnClose.current = open && !pending;
             setOpen((v) => !v);
-            if (willClose) {
-              requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
-            }
           }}
           className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
           data-slot="head"
@@ -228,26 +267,21 @@ export function ActivityGroup({
           {parts}
         </div>
       )}
-      {shown && rows !== undefined && (
-        <div
+      {expandable && (
+        <Fold
+          open={shown}
           data-slot="body"
-          className="ui-tree anim-fade divide-y divide-line-muted border-t border-line"
+          bodyClassName={
+            rows !== undefined ? "ui-tree divide-y divide-line-muted border-t border-line" : ""
+          }
+          onClosed={() => {
+            if (!landOnClose.current) return;
+            landOnClose.current = false;
+            rootRef.current?.scrollIntoView({ block: "nearest" });
+          }}
         >
-          {rows.map((row, index) => (
-            <div
-              key={row.key}
-              data-depth="1"
-              data-last={index === rows.length - 1 ? "true" : undefined}
-            >
-              {row.content}
-            </div>
-          ))}
-        </div>
-      )}
-      {shown && rows === undefined && (
-        <div data-slot="body" className="anim-fade">
-          {children}
-        </div>
+          {() => (rows !== undefined ? <ActivityRows rows={rows} /> : children)}
+        </Fold>
       )}
     </div>
   );

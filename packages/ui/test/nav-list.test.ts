@@ -1,7 +1,8 @@
 /**
  * NavList and NavRow (src/components/navigation/nav-list/nav-list.tsx): a named navigation whose
  * current row is the page, whose glyphs are decoration, whose labels are never mono, and whose
- * rows follow the list's orientation.
+ * rows follow the list's orientation. Selection moves as a fill — the arriving row's eases in
+ * slower than the departing row's leaves — and never as a weight, which cannot ease.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -47,6 +48,26 @@ describe("NavList", () => {
     expect(html).toContain("overflow-x-auto sm:flex-col");
     expect(classTokens(html)).toEqual(expect.arrayContaining(["shrink-0", "sm:w-full"]));
     expect(classTokens(list())).toContain("w-full");
+  });
+});
+
+describe("selection", () => {
+  it("eases the arriving fill in slower than the departing one leaves, on either surface", () => {
+    for (const surface of ["default", "muted"] as const) {
+      const arriving = navRowClass({ active: true, surface }).split(" ");
+      const resting = navRowClass({ surface }).split(" ");
+      expect(arriving).toEqual(expect.arrayContaining(["transition-colors", "duration-200"]));
+      expect(resting).toEqual(expect.arrayContaining(["transition-colors", "duration-150"]));
+    }
+  });
+
+  it("is a fill and the full ink, never a heavier weight", () => {
+    for (const surface of ["default", "muted"] as const) {
+      const active = navRowClass({ active: true, surface }).split(" ");
+      expect(active).toContain("text-fg");
+      expect(active.filter((token) => token.startsWith("font-"))).toEqual([]);
+    }
+    expect(classTokens(list()).filter((token) => token.startsWith("font-"))).toEqual([]);
   });
 });
 

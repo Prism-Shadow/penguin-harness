@@ -5,6 +5,11 @@
  * and a harness event alike; a failure's title takes the danger ink, and the title stays
  * sentence case (a theme uppercases it through the hook, never the component). The app's
  * containers decide the state; this reads what the card draws.
+ *
+ * The settle's motion, as far as a first render shows it: the body is a fold (the theme's layout
+ * motion folds it away when the run settles), and a card that renders already settled, or rows
+ * that are there when the body opens, carry no `data-reveal` — a transcript that loads moves
+ * nothing. (The reveal itself needs a change on screen; fold.test.ts covers the fold's phases.)
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -38,9 +43,21 @@ describe("ActivityGroup", () => {
     );
     expect(html).toContain(">2 steps</span>");
     expect(html).toContain('data-slot="progress"');
-    expect(html).toMatch(/<div data-slot="body" class="ui-tree [^"]*">/);
+    expect(html).toMatch(
+      /<div data-layout-motion="true" data-fold="settled" data-slot="body" class="grid"><div class="min-h-0 ui-tree [^"]*">/,
+    );
     expect(html).toContain('<div data-depth="1">first step</div>');
     expect(html).toContain('<div data-depth="1" data-last="true">second step</div>');
+  });
+
+  it("moves nothing on a first render: no reveal on the title, the mark or the rows already there", () => {
+    for (const props of [
+      { state: "running" as const, title: "Running", rows: ROWS },
+      { durationMs: 2300, rows: ROWS },
+      { state: "failed" as const, title: "Failed", pending: true, rows: ROWS },
+    ]) {
+      expect(card(props)).not.toContain("data-reveal");
+    }
   });
 
   it("starts collapsed once settled, its duration settled and no progress slot", () => {
@@ -78,8 +95,9 @@ describe("ActivityGroup", () => {
 
   it("keeps a one-piece body out of the tree, and its title in sentence case", () => {
     const html = card({ kind: "event", state: "running", title: "Compacting", children: "report" });
-    expect(html).toContain('<div data-slot="body" class="anim-fade">report</div>');
+    expect(html).toContain('data-slot="body" class="grid"><div class="min-h-0">report</div>');
     expect(html).not.toContain("ui-tree");
+    expect(classTokens(html)).not.toContain("anim-fade");
     expect(classTokens(html)).not.toContain("uppercase");
   });
 });

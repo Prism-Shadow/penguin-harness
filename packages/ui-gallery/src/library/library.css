@@ -169,6 +169,11 @@ html[data-framed] body {
 .lib-stream-sizer {
   visibility: hidden;
 }
+/* The same script as a tool call's output: the output block on its own, ruled off above as it is
+   under its row, at the reply's measure; the block brings its own padding. */
+.lib-stream-output {
+  padding: 0;
+}
 /* A line a row truncates, for the tooltip board. */
 .lib-truncated {
   display: block;

@@ -63,10 +63,21 @@ export const DISCLOSURE_HEADER_TITLE_CLASS = "shrink-0 text-xs font-semibold";
 
 /**
  * The expanded plain-text body, the tool cards' output styling (an exec_command's expanded
- * output): a ruled, mono-sized `<pre>` block under its row.
+ * output): a ruled, mono-sized `<pre>` block under its row — without its height cap.
  */
-export const DISCLOSURE_OUTPUT_PRE_CLASS =
-  "max-h-72 overflow-auto whitespace-pre-wrap border-t border-line-muted px-3 py-2 text-xs leading-5 text-fg-muted";
+export const DISCLOSURE_OUTPUT_CLASS =
+  "whitespace-pre-wrap border-t border-line-muted px-3 py-2 text-xs leading-5 text-fg-muted";
+
+/**
+ * The output block's height cap: 18rem, scrolling inside. An output that streams takes it only
+ * once settled (`StreamText`'s `settledClassName`): while it streams it grows with the
+ * transcript, as replies and thinking do, since a nested scrollbox would carry the theme's veil
+ * and caret off with its first screen and strand the live tail the transcript follows.
+ */
+export const DISCLOSURE_OUTPUT_CAP_CLASS = "max-h-72 overflow-auto";
+
+/** A settled output block: the block with its cap (a harness note's report, a finished task's output). */
+export const DISCLOSURE_OUTPUT_PRE_CLASS = `${DISCLOSURE_OUTPUT_CAP_CLASS} ${DISCLOSURE_OUTPUT_CLASS}`;
 
 /**
  * The expanded Markdown body — the thinking and compaction sections. The block the output body
@@ -82,8 +93,9 @@ export const DISCLOSURE_OUTPUT_PRE_CLASS =
  * `[&>*:first-child]:mt-0` utility here: the `.md-body` margins it has to beat are unlayered, and
  * an unlayered declaration wins over `@layer utilities` at any specificity.
  *
- * No `whitespace-pre-wrap` (these bodies are prose) and no height cap: both bodies stream, and a
- * nested scrollbox would strand the live tail the transcript's own follow scrolls to.
+ * No `whitespace-pre-wrap` (these bodies are prose) and no height cap: both bodies stream (through
+ * `StreamText`), and a nested scrollbox would strand the live tail the transcript's own follow
+ * scrolls to.
  */
 export const DISCLOSURE_BODY_MD_CLASS =
   "md-body md-body-flush border-t border-line-muted px-3 py-2 text-sm leading-relaxed text-fg-muted";
