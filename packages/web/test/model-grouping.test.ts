@@ -102,6 +102,7 @@ describe("groupModelRows", () => {
       "openai",
       "anthropic",
       "siliconflow",
+      "atlascloud",
       "zhipu",
       "moonshot",
       "minimax",

@@ -75,6 +75,7 @@ describe("protocolPathForModel", () => {
     for (const provider of [
       "fireworks",
       "siliconflow",
+      "atlascloud",
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
