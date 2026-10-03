@@ -108,7 +108,7 @@ import {
 
 import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
-import { DraftView } from "./draft-view";
+import { DraftView } from "./body/draft-view";
 import { prepareNewChatDraft } from "./new-chat";
 import {
   heldRouteSession,

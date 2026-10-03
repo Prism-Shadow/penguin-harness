@@ -8,6 +8,10 @@ export { currentDockScope } from "./dock-state";
 
 export { isTabShown } from "./dock-state";
 
+export { adoptDockScope } from "./dock-state";
+
+export { setDockConversation } from "./dock-terminal";
+
 export { dockPanelDefinition } from "./panel-registry";
 
 export { panelLabel } from "./panel-registry";
@@ -26,8 +30,6 @@ export { DockLauncher } from "./dock-launcher";
 
 export { useDockMount } from "./use-dock-mount";
 
-export { setDockConversation } from "./dock-terminal";
-
 export { TERMINAL_PANEL } from "./dock-terminal";
 
 export { subscribeTerminalPanelOffered } from "./dock-terminal";
@@ -35,8 +37,6 @@ export { subscribeTerminalPanelOffered } from "./dock-terminal";
 export { terminalPanelOffered } from "./dock-terminal";
 
 export { reownTerminals } from "./dock-terminal";
-
-export { adoptDockScope } from "./dock-state";
 
 export { closedDockView } from "./dock-state";
 
