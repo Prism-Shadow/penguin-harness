@@ -2720,6 +2720,7 @@ export class SessionsModule {
       sandboxDefaults: () => sandbox.currentSettings(),
       sandboxDimensions: () => [...new Set(sandbox.backends().flatMap((b) => b.dimensions))],
       sandboxUnavailable: () => sandbox.failures(),
+      sandboxBackends: () => sandbox.backends().map((b) => b.name),
       // The Sandbox card's presets, read per view: a rename there reaches the next read.
       sandboxPresets: () =>
         sandboxPresetsOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP)),

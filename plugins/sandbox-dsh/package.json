@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/sandbox-dsh",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
   "license": "Apache-2.0",

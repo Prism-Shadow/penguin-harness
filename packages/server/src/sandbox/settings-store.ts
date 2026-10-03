@@ -337,9 +337,9 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Temporary directory writable",
             titleZh: "临时目录可写",
             description:
-              "Confined commands, hook scripts and file tools may write the system temp directory, in either mode. Shells and most tools need one to start; off keeps it read-only too.",
+              "Confined commands, hook scripts and file tools may write the system temp directory, in either mode. Shells and most tools need one to start; off keeps it read-only too. Off needs a backend that can close it — sandbox-dsh cannot — and is greyed out where the backends in use cannot.",
             descriptionZh:
-              "被封禁的命令、钩子脚本与文件工具在两种模式下都可以写系统临时目录。Shell 与大多数工具需要它才能启动；关闭后临时目录同样只读。",
+              "被封禁的命令、钩子脚本与文件工具在两种模式下都可以写系统临时目录。Shell 与大多数工具需要它才能启动；关闭后临时目录同样只读。关闭需要能关闭它的后端（sandbox-dsh 不能），在用的后端不能关闭时显示为灰色。",
             default: true,
           },
           maskPaths: {

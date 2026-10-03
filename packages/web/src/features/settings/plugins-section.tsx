@@ -37,6 +37,7 @@ import {
   THIS_SERVER_KEY,
   backendToOffer,
   dismissBackendPrompt,
+  installInOrder,
 } from "../../lib/sandbox-backend-prompt";
 import { dispatchPluginConfigSaved } from "../../lib/plugin-config-event";
 import { MachinePicker } from "../machines/machine-picker";
@@ -52,6 +53,7 @@ import {
 import type { Draft } from "./plugin-config-draft";
 import { ConfigField } from "./plugin-config-field";
 import { ConfigHeading } from "./plugin-config-heading";
+import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
 import {
   Button,
@@ -326,10 +328,11 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   };
 
   /**
-   * Installs the offered backends the way the Plugins page does, one after another: into this Project's table for
-   * the machine on screen only — this server's own machine id when the card shows this server,
-   * so no other machine is asked to run it. Afterwards the card's live parts (notices, the
-   * backend report) are read again; drafts being edited are kept.
+   * Installs the offered backends the way the Plugins page does, one after another: into this
+   * Project's table for the machine on screen only — this server's own machine id when the card
+   * shows this server, so no other machine is asked to run it. A request that fails stops the
+   * run and is reported; either way the prompt closes and the card's live parts (notices, the
+   * backend report) are read again, so what did install shows; drafts being edited are kept.
    */
   const installOffered = async (dontAskAgain: boolean) => {
     if (offered === null || installing) return;
@@ -337,32 +340,25 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       toastError(S.settings.sandboxBackendPrompt.noProject);
       return;
     }
-    const pkgs = offered;
     setInstalling(true);
+    let target = machine;
+    await installInOrder(
+      offered,
+      async (pkg) => {
+        const to = (target ??= (await api.getInstalledPlugins(projectId)).machineId);
+        const res = await api.installPlugin(projectId, pkg, to);
+        return res.plugins.find((p) => p.specifier === pkg)?.error;
+      },
+      {
+        installed: (pkg) => toastSuccess(S.plugins.deploymentInstalledToast(pkg)),
+        failed: (pkg, error) => toastError(S.plugins.deploymentFailedToast(pkg, error)),
+        threw: (e) => toastError(apiErrorText(e)),
+      },
+    );
+    closePrompt(dontAskAgain);
     try {
-      const target = machine ?? (await api.getInstalledPlugins(projectId)).machineId;
-      for (const pkg of pkgs) {
-        const res = await api.installPlugin(projectId, pkg, target);
-        const row = res.plugins.find((p) => p.specifier === pkg);
-        if (row?.error !== undefined) toastError(S.plugins.deploymentFailedToast(pkg, row.error));
-        else toastSuccess(S.plugins.deploymentInstalledToast(pkg));
-      }
-      closePrompt(dontAskAgain);
       const config = await api.adminGetPluginConfig(machine);
-      setEntries((prev) =>
-        (prev ?? []).map((e) => {
-          const next = config.plugins.find((p) => p.name === e.name);
-          if (next === undefined) return e;
-          const { notices: _n, actions: _a, backend: _b, unavailable: _u, ...rest } = e;
-          return {
-            ...rest,
-            ...(next.notices !== undefined ? { notices: next.notices } : {}),
-            ...(next.actions !== undefined ? { actions: next.actions } : {}),
-            ...(next.backend !== undefined ? { backend: next.backend } : {}),
-            ...(next.unavailable !== undefined ? { unavailable: next.unavailable } : {}),
-          };
-        }),
-      );
+      setEntries((prev) => withLiveParts(prev ?? [], config.plugins));
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {

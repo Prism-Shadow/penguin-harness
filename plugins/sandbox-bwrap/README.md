@@ -1,8 +1,8 @@
 # Bubblewrap sandbox backend
 
 Confines command subprocesses with [bubblewrap](https://github.com/containers/bubblewrap),
-talking to `bwrap` directly. Implements **all three** dimensions of the harness sandbox
-interface — filesystem writes, network isolation and path masking.
+talking to `bwrap` directly. Implements filesystem writes, network isolation, path masking
+and closing the temporary directory (a policy that does not grant temp leaves `/tmp` read-only).
 
 ## Requirements
 

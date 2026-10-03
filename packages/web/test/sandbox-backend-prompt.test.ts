@@ -1,6 +1,7 @@
 /**
  * When the Sandbox card offers to install backends: every default together, only where none for
- * the OS is installed; "Don't ask again" holds per machine; broken storage never hides the prompt.
+ * the OS is installed; "Don't ask again" holds per machine; broken storage never hides the prompt;
+ * a failing install stops the run and resolves.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -8,6 +9,7 @@ import {
   backendPromptDismissed,
   backendToOffer,
   dismissBackendPrompt,
+  installInOrder,
 } from "../src/lib/sandbox-backend-prompt";
 import type { PromptStorage } from "../src/lib/sandbox-backend-prompt";
 
@@ -28,6 +30,13 @@ describe("the default-backend prompt", () => {
     [{}, null],
   ])("offers %j: %j", (report, offer) => {
     expect(backendToOffer(report, "m1", memoryStorage())).toEqual(offer);
+  });
+
+  it("offers the one package an older server reports as a bare string, not its characters", () => {
+    const old = { backend: { installed: false, recommended: "@penguinharness/sandbox-bwrap" } };
+    expect(backendToOffer(old as never, "m1", memoryStorage())).toEqual([
+      "@penguinharness/sandbox-bwrap",
+    ]);
   });
 
   it("remembers don't-ask-again per machine, in this browser's storage only", () => {
@@ -52,5 +61,30 @@ describe("the default-backend prompt", () => {
     expect(backendPromptDismissed("m1", garbage)).toBe(false);
     dismissBackendPrompt("m1", garbage);
     expect(backendPromptDismissed("m1", garbage)).toBe(true);
+  });
+});
+
+describe("installing the offered backends", () => {
+  it("reports each, and stops at a request that throws without rejecting", async () => {
+    const events: string[] = [];
+    const tried: string[] = [];
+    await expect(
+      installInOrder(
+        ["a", "b", "c", "d"],
+        async (pkg) => {
+          tried.push(pkg);
+          if (pkg === "b") return "load failed";
+          if (pkg === "c") throw new Error("network down");
+          return undefined;
+        },
+        {
+          installed: (pkg) => events.push(`ok ${pkg}`),
+          failed: (pkg, error) => events.push(`failed ${pkg}: ${error}`),
+          threw: (e) => events.push(`threw ${(e as Error).message}`),
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(events).toEqual(["ok a", "failed b: load failed", "threw network down"]);
+    expect(tried).toEqual(["a", "b", "c"]);
   });
 });

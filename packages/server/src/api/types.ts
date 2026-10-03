@@ -1602,6 +1602,11 @@ export interface SessionSandbox {
    */
   masksPaths?: boolean;
   /**
+   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
+   * composer names when a level is beyond what they enforce. Absent with none in use.
+   */
+  backendsInUse?: string[];
+  /**
    * Response only, ignored in requests: the sandbox backends that are enabled here but failed
    * to load or failed their check (a WSL distro not set up, a wrong program path), each with
    * why. A backend for another platform is not listed. With none mounted and one listed, the
@@ -5673,11 +5678,12 @@ export interface PluginConfigBackend {
   recommended?: string[];
 }
 
-/** One enum option a settings group cannot honour on this machine, and why. */
+/** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
   field: string;
   /** A `table` field's column: the option is unavailable in every cell of that column. */
   column?: string;
+  /** An enum option, or a boolean field's position: "true" or "false". */
   value: string;
   reason: string;
   reasonZh?: string;

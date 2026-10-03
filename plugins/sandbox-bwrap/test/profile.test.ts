@@ -162,6 +162,7 @@ describe("penguin-bwrap provider", () => {
       "fs-write",
       "network",
       "mask-paths",
+      "closed-temp",
     ]);
   });
 

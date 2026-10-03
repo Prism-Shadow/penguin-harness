@@ -74,8 +74,50 @@ export function backendToOffer(
   storage: PromptStorage | null = defaultStorage(),
 ): string[] | null {
   const report = entry.backend;
-  if (report === undefined || report.installed || (report.recommended ?? []).length === 0) {
-    return null;
+  const recommended = recommendedOf(report?.recommended);
+  if (report === undefined || report.installed || recommended.length === 0) return null;
+  return backendPromptDismissed(machine, storage) ? null : recommended;
+}
+
+/**
+ * The report's packages as a list. TODO(recommended-string-compat): a remote machine running a
+ * server from before the list form reports one package as a bare string, which spreading would
+ * split into characters; remove once every machine runs a server with the list form.
+ */
+function recommendedOf(recommended: readonly string[] | string | undefined): string[] {
+  if (recommended === undefined) return [];
+  return typeof recommended === "string" ? [recommended] : [...recommended];
+}
+
+/** How a run of installs is reported, package by package. */
+export interface InstallReport {
+  installed(pkg: string): void;
+  /** The server installed the package but it failed to load, with why. */
+  failed(pkg: string, error: string): void;
+  /** A request threw: the run stops there. */
+  threw(error: unknown): void;
+}
+
+/**
+ * Installs the offered packages one after another (`install` answers a package's load error, or
+ * undefined). A request that throws ends the run — the packages after it are not tried — and
+ * resolves rather than rejects, so the caller always gets to close the prompt and read the
+ * card again, showing what did install.
+ */
+export async function installInOrder(
+  pkgs: readonly string[],
+  install: (pkg: string) => Promise<string | undefined>,
+  report: InstallReport,
+): Promise<void> {
+  for (const pkg of pkgs) {
+    let error: string | undefined;
+    try {
+      error = await install(pkg);
+    } catch (e) {
+      report.threw(e);
+      return;
+    }
+    if (error !== undefined) report.failed(pkg, error);
+    else report.installed(pkg);
   }
-  return backendPromptDismissed(machine, storage) ? null : [...report.recommended!];
 }

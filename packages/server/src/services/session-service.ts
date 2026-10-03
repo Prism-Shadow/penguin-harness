@@ -256,6 +256,8 @@ export interface SessionServiceDeps {
   sandboxDimensions?: () => readonly SandboxDimension[];
   /** The enabled sandbox backends that failed to load or failed their check, with why. */
   sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
+  /** The names of the sandbox backends in use, in routing preference (none when absent). */
+  sandboxBackends?: () => readonly string[];
   /** The Sandbox card's presets table, in table order (absent: the view carries none). */
   sandboxPresets?: () => readonly SessionSandboxPreset[];
   /** The Sandbox card's switch: whether new Sessions start confined (absent: not reported). */
@@ -283,14 +285,18 @@ export class SessionService {
 
   /** A policy as the composer sees it, with which of its levels this server can enforce. */
   sandboxView(policy: SandboxSettings): SessionSandbox {
-    return sessionSandboxOf(
-      policy,
-      this.sandboxDimensions(),
-      this.deps.sandboxUnavailable?.() ?? [],
-      this.deps.sandboxPresets?.(),
-      this.deps.sandboxSwitchOn?.(),
-      this.defaultSandbox(),
-    );
+    const backends = this.deps.sandboxBackends?.() ?? [];
+    return {
+      ...sessionSandboxOf(
+        policy,
+        this.sandboxDimensions(),
+        this.deps.sandboxUnavailable?.() ?? [],
+        this.deps.sandboxPresets?.(),
+        this.deps.sandboxSwitchOn?.(),
+        this.defaultSandbox(),
+      ),
+      ...(backends.length > 0 ? { backendsInUse: [...backends] } : {}),
+    };
   }
 
   /**

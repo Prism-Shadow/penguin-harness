@@ -132,6 +132,7 @@ export function PermissionSelect({
   // mounted, every preset that confines: not installed, or enabled but failing its check, with
   // the first such backend's reason.
   const failed = firstUnavailableBackend(sandbox);
+  const inUse = sandbox.backendsInUse?.join(", ");
   const blockText = (block: PresetBlock): { reason: string; note?: string } =>
     block === "above-ceiling"
       ? { reason: P.aboveCeiling, note: P.adminOnly }
@@ -144,8 +145,8 @@ export function PermissionSelect({
                 block === "local-unsupported"
                   ? P.localUnsupported
                   : block === "mask-unsupported"
-                    ? P.maskUnsupported
-                    : P.noNetworkUnsupported,
+                    ? P.maskUnsupported(inUse)
+                    : P.noNetworkUnsupported(inUse),
             };
   const hintOf = (p: SessionSandboxPreset, block: PresetBlock | null) => {
     const { blocks, allows } = presetEffects(p);

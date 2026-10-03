@@ -15,6 +15,7 @@ import fs from "node:fs";
 import type { SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   SandboxDimension,
+  SandboxLimit,
   SandboxPolicy,
   SandboxProvider,
   SandboxProviderSource,
@@ -195,11 +196,15 @@ export class SandboxService {
     name: string;
     dimensions: readonly SandboxDimension[];
     mechanism?: string;
+    limits?: readonly SandboxLimit[];
   }> {
     return byPreference(this.mounted).map(({ name, provider }) => ({
       name,
       dimensions: providerDimensions(provider),
       ...(provider.mechanism !== undefined ? { mechanism: provider.mechanism } : {}),
+      ...(provider.limits !== undefined && provider.limits.length > 0
+        ? { limits: provider.limits }
+        : {}),
     }));
   }
 
@@ -251,11 +256,16 @@ export class SandboxService {
         ...(settings.writableTemp !== false ? { writableTemp: true } : {}),
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
-      // the classification consumer (denial vs runner failure) lands with escalation.
+      // the classification consumer (denial vs runner failure) lands with escalation. The
+      // rules' informational lines are what the runner reports on every run (the Landlock
+      // launcher on an older kernel): the spawn drops them from the command's stderr.
       const confined = provider.confine(argv, policy);
-      return confined.env === undefined
-        ? { argv: confined.argv }
-        : { argv: confined.argv, env: confined.env };
+      const runnerLines = confined.runnerFailureRules.flatMap((r) => r.informationalLines ?? []);
+      return {
+        argv: confined.argv,
+        ...(confined.env !== undefined ? { env: confined.env } : {}),
+        ...(runnerLines.length > 0 ? { runnerLines } : {}),
+      };
     };
   }
 

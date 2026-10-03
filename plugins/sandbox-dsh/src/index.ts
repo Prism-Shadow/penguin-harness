@@ -27,6 +27,7 @@ import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
   Plugin,
+  SandboxLimit,
   SandboxProvider,
   SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
@@ -161,6 +162,36 @@ export function rungName(platform: NodeJS.Platform, runner: string | undefined):
 }
 
 /**
+ * What the rung leaves open, for the settings card. DSH's policy takes the mode and the
+ * Workspace and nothing more, so no rung grants the Session's scratchpad (SandboxPolicy
+ * .writableRoots). Landlock grants the host's own /tmp; on a kernel older than Landlock ABI 5
+ * the launcher governs only part of the file accesses, and says so on every run (dropped from
+ * the command's stderr, see the core's ConfinedSpawn.runnerLines).
+ */
+export function rungLimits(rung: string, enforcement: "full" | "partial"): SandboxLimit[] {
+  const limits: SandboxLimit[] = [
+    {
+      text: `${rung}: under Workspace Write the Session scratchpad is not writable — DSH's policy takes the Workspace alone — so commands cannot write the plan, goal or attachment files kept there.`,
+      textZh: `${rung}：仅工作区可写下 Session scratchpad 不可写（DSH 的策略只接受工作区），命令无法写入其中的计划、目标与附件文件。`,
+    },
+  ];
+  if (rung !== "Landlock") return limits;
+  limits.push({
+    text: "Landlock: under Workspace Write the temporary directory is the host's shared /tmp, writable by every confined command; it cannot be closed or made private here.",
+    textZh:
+      "Landlock：仅工作区可写下，临时目录就是宿主共享的 /tmp，每条受限命令都可写；本机无法关闭它，也无法让它私有。",
+  });
+  if (enforcement === "partial") {
+    limits.push({
+      text: "Landlock (partial): this kernel's Landlock ABI is older than 5 (Linux 6.10), so ioctl on device files outside the Workspace is not restricted; below ABI 3 (Linux 6.2) truncating a file outside the Workspace is not restricted either.",
+      textZh:
+        "Landlock（partial）：本机内核的 Landlock ABI 低于 5（Linux 6.10），工作区外设备文件上的 ioctl 不受限制；低于 ABI 3（Linux 6.2）时，截断工作区外的文件也不受限制。",
+    });
+  }
+  return limits;
+}
+
+/**
  * Mount the stock DSH chain on a bare cordis Context — exactly how DSH's own tests mount it —
  * after checking, on Windows, that its ACL runner can start the session shell at all.
  */
@@ -179,16 +210,19 @@ export async function loadDshAdaptor(host: DshLoadHost = {}): Promise<SandboxPro
   // `ctx.plugin` is cordis's own API name, not this repo's vocabulary.
   await ctx.plugin(LocalSandboxProvider, {});
   const dsh = ctx.sandbox;
-  // The chain picks its rung on the first confine; do that here, so a host where no rung works
-  // fails this load with DSH's reason instead of mounting a backend that refuses every command,
-  // and the settings card can name the rung that serves. Nothing is spawned but the chain's own
-  // probes, whose verdict DSH keeps for the provider's lifetime.
+  // The chain picks its rung on the first confine; do that here, so the settings card can name
+  // the rung that serves. On Linux, whose chain has two rungs, that is the chain's functional
+  // probes (DSH keeps the verdict for the provider's lifetime), and a host where neither works
+  // fails this load with DSH's reason instead of mounting a backend that refuses every command.
+  // macOS and Windows have a single rung, which DSH selects unprobed: this proves nothing there.
   const probe = dsh.confine([process.execPath], { mode: "read-only", workspaceRoot: tmpdir() });
+  const rung = rungName(platform, probe.argv[0]);
   return {
-    // DSH's own words: "Network and process visibility are outside this vocabulary."
+    // DSH's own words: "Network and process visibility are outside this vocabulary." Nor can it
+    // close the temporary directory (`closed-temp`): every rung grants one under workspace-write.
     dimensions: ["fs-write"],
-    mechanism:
-      rungName(platform, probe.argv[0]) + (probe.enforcement === "partial" ? " (partial)" : ""),
+    mechanism: rung + (probe.enforcement === "partial" ? " (partial)" : ""),
+    limits: rungLimits(rung, probe.enforcement),
     confine(argv, policy): ConfinedArgv {
       if (policy.mode === "danger-full-access") {
         // Unreachable: this backend implements only fs-write, so the service never hands it a

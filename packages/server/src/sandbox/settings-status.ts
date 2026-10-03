@@ -39,6 +39,7 @@ const DIMENSION_WORDS: Record<SandboxDimension, readonly [string, string]> = {
   network: ["network isolation", "网络隔离"],
   "network-local": ["localhost-only network", "仅本机网络"],
   "mask-paths": ["masked paths", "屏蔽路径"],
+  "closed-temp": ["closing the temporary directory", "关闭临时目录"],
 };
 
 /** "a", "a and b", "a, b and c". */
@@ -51,41 +52,80 @@ function andList(items: readonly string[]): string {
 type MountedBackend = ReturnType<Sandbox["backends"]>[number];
 
 /**
- * The card's headline while a backend serves: what this machine enforces, by the backend a
- * policy goes to first, and what it does not. Each installed backend that is not in use is
- * disclosed under it with its reason — the refusal names its own remedy (bubblewrap's names the
- * optional root step on Ubuntu) — and a save of the card checks them again.
+ * The card's headline while a backend serves: what this machine enforces, by the backends a
+ * policy can go to, and what it does not. A backend is named when it covers a dimension none
+ * preferred over it does — the backend serving every policy alone where it covers all the
+ * others do. Under it are disclosed the named backends' own limits on this host, then each
+ * installed backend that is not in use with its reason — the refusal names its own remedy
+ * (bubblewrap's names the optional root step on Ubuntu) — and that a save of the card checks
+ * them again.
  */
 export function enforcementNotice(
   backends: readonly MountedBackend[],
   failures: ReadonlyArray<{ name: string; reason: string }>,
 ): PluginConfigNotice {
-  const serving = backends[0]!;
-  const by =
-    serving.mechanism !== undefined ? `${serving.mechanism} (${serving.name})` : serving.name;
-  const covered = SANDBOX_DIMENSIONS.filter((d) => backends.some((b) => b.dimensions.includes(d)));
+  const serving: MountedBackend[] = [];
+  const covered: SandboxDimension[] = [];
+  for (const backend of backends) {
+    const adds = backend.dimensions.filter((d) => !covered.includes(d));
+    if (adds.length === 0) continue;
+    serving.push(backend);
+    covered.push(...adds);
+  }
+  const nameOf = (b: MountedBackend) =>
+    b.mechanism !== undefined ? `${b.mechanism} (${b.name})` : b.name;
+  const enforced = SANDBOX_DIMENSIONS.filter((d) => covered.includes(d));
   const missing = SANDBOX_DIMENSIONS.filter((d) => !covered.includes(d));
   const en = (ds: readonly SandboxDimension[]) => andList(ds.map((d) => DIMENSION_WORDS[d][0]));
   const zh = (ds: readonly SandboxDimension[]) => ds.map((d) => DIMENSION_WORDS[d][1]).join("、");
   const notice: PluginConfigNotice = {
     tone: "muted",
     text:
-      `Enforced here: ${en(covered)}, by ${by}.` +
+      `Enforced here: ${en(enforced)}, by ${andList(serving.map(nameOf))}.` +
       (missing.length > 0 ? ` Not enforced here: ${en(missing)}.` : ""),
     textZh:
-      `本机实施：${zh(covered)}，由 ${by} 实施。` +
+      `本机实施：${zh(enforced)}，由 ${serving.map(nameOf).join("、")} 实施。` +
       (missing.length > 0 ? `本机不实施：${zh(missing)}。` : ""),
   };
-  if (failures.length === 0) return notice;
-  const lines = failures.map(
-    ({ name, reason }) => `${name} is installed but not in use: ${reason}`,
-  );
-  const linesZh = failures.map(({ name, reason }) => `${name} 已安装但未启用：${reason}`);
-  return {
-    ...notice,
-    details: [...lines, "Saving this card checks these backends again."].join("\n"),
-    detailsZh: [...linesZh, "保存此卡片会重新检查这些后端。"].join("\n"),
-  };
+  const limits = serving.flatMap((b) => b.limits ?? []);
+  const lines = [
+    ...limits.map((l) => l.text),
+    ...failures.map(({ name, reason }) => `${name} is installed but not in use: ${reason}`),
+  ];
+  const linesZh = [
+    ...limits.map((l) => l.textZh ?? l.text),
+    ...failures.map(({ name, reason }) => `${name} 已安装但未启用：${reason}`),
+  ];
+  if (failures.length > 0) {
+    lines.push("Saving this card checks these backends again.");
+    linesZh.push("保存此卡片会重新检查这些后端。");
+  }
+  return lines.length === 0
+    ? notice
+    : { ...notice, details: lines.join("\n"), detailsZh: linesZh.join("\n") };
+}
+
+/**
+ * The temp choice where no mounted backend can close the temporary directory (the DSH adaptor
+ * alone, whose temp stays writable): its off position is greyed out and a save turning it off
+ * refused. With none mounted every confining choice is refused alike, which the card's warning
+ * says.
+ */
+export function unavailableClosedTemp(
+  backends: readonly MountedBackend[],
+): PluginConfigUnavailable[] {
+  if (backends.length === 0 || backends.some((b) => b.dimensions.includes("closed-temp"))) {
+    return [];
+  }
+  const names = backends.map((b) => b.name).join(", ");
+  return [
+    {
+      field: "writableTemp",
+      value: "false",
+      reason: `the sandbox backend in use here (${names}) cannot close the temporary directory: it stays writable`,
+      reasonZh: `本机在用的沙盒后端（${names}）无法关闭临时目录：它始终可写`,
+    },
+  ];
 }
 
 /**
@@ -173,7 +213,10 @@ export class SandboxSettingsStatus {
       // card, one that failed its check — a wrong program path — loads again, no restart.
       saved: () => sandbox.retryFailed(),
       // Greyed out with the reason; a save choosing one is refused.
-      unavailable: () => unavailableNetworks(sandbox.backends()),
+      unavailable: () => [
+        ...unavailableNetworks(sandbox.backends()),
+        ...unavailableClosedTemp(sandbox.backends()),
+      ],
       notices: (stored, configuration): PluginConfigNotice[] => {
         const notices: PluginConfigNotice[] = [];
         const prePreset = prePresetNotice(stored, configuration);

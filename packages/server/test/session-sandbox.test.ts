@@ -95,13 +95,6 @@ describe("picking a Session's sandbox from the composer", () => {
     expect(sessionSandboxOf({ mode: "workspace-write" }).advanced).toBeUndefined();
     expect(sessionSandboxOf({ mode: "workspace-write", writableTemp: false }).advanced).toBe(true);
     expect(sessionSandboxOf({ mode: "workspace-write", maskPaths: ["/k"] }).advanced).toBe(true);
-    // Only masked paths set `masksPaths`: a read-only temp needs no further backend.
-    expect(sessionSandboxOf({ mode: "workspace-write", writableTemp: false }).masksPaths).toBe(
-      undefined,
-    );
-    expect(
-      sessionSandboxOf({ mode: "workspace-write", maskPaths: ["/k"] }, ["fs-write"]),
-    ).toMatchObject({ masksPaths: true, maskPathsSupported: false, confinementSupported: true });
     expect(sessionSandboxOf({ mode: "workspace-write" }).presets).toBeUndefined();
     const view = sessionSandboxOf({ mode: "read-only" }, [], [], DEFAULT_PRESETS as never);
     expect(view.presets).toEqual(DEFAULT_PRESETS);

@@ -38,7 +38,7 @@ function backend(seen: Seen[]): ModuleDef {
           {
             id: "test.provider",
             name: "test-backend",
-            dimensions: ["fs-write", "network", "mask-paths"],
+            dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
           },
           // Installed for another platform: it declines here, and says nothing on the card.
           { id: "elsewhere.provider", name: "other-platform", dimensions: ["fs-write"] },
@@ -61,7 +61,7 @@ function backend(seen: Seen[]): ModuleDef {
         bind: {
           "elsewhere.provider": Promise.resolve(null),
           "test.provider": {
-            dimensions: ["fs-write", "network", "mask-paths"],
+            dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
             confine(argv: readonly string[], policy: SandboxPolicy) {
               seen.push({ policy, runner: config.get("sandbox-test").runner });
               return {
@@ -113,7 +113,7 @@ describe("sandbox settings group", () => {
       expect.objectContaining({
         tone: "muted",
         // What this machine enforces, by the backend that serves (no mechanism declared: its name).
-        text: "Enforced here: file writes, network isolation and masked paths, by test-backend. Not enforced here: localhost-only network.",
+        text: "Enforced here: file writes, network isolation, masked paths and closing the temporary directory, by test-backend. Not enforced here: localhost-only network.",
       }),
     ]);
     const child = entries.find((e) => e.name === "sandbox-test")!;
@@ -358,7 +358,7 @@ describe("sandbox settings group", () => {
       (e) => e.name === "sandbox",
     )!;
     expect(card.notices?.map((n) => n.text)).toEqual([
-      "Enforced here: file writes, by probed. Not enforced here: network isolation, localhost-only network and masked paths.",
+      "Enforced here: file writes, by probed. Not enforced here: network isolation, localhost-only network, masked paths and closing the temporary directory.",
     ]);
     // Nothing failed any more: nothing to disclose under it.
     expect(card.notices?.[0]?.details).toBeUndefined();

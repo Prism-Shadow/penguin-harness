@@ -89,6 +89,7 @@ export interface PluginConfigUnavailable {
   field: string;
   /** A `table` field's column: the option is unavailable in every cell of that column. */
   column?: string;
+  /** An enum option, or a boolean field's position: "true" or "false". */
   value: string;
   reason: string;
   reasonZh?: string;
@@ -211,7 +212,9 @@ export class PluginConfigPage {
             }
             continue;
           }
-          if (update[u.field] === u.value) {
+          // A boolean field's position is named "true" / "false".
+          const sent = update[u.field];
+          if ((typeof sent === "boolean" ? String(sent) : sent) === u.value) {
             throw new PluginConfigError(
               u.field,
               `"${u.field}" cannot be "${u.value}" here: ${u.reason}`,

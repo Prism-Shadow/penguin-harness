@@ -257,7 +257,7 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
     }));
   const usable = new Map<string, boolean>();
   return {
-    dimensions: ["fs-write", "network", "mask-paths"],
+    dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
     mechanism: "bubblewrap",
     confine(argv, policy): ConfinedArgv {
       const { runner, probeTimeoutMs } = settings();
@@ -295,7 +295,7 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
       {
         id: "sandbox-bwrap.provider",
         name: "penguin-bwrap",
-        dimensions: ["fs-write", "network", "mask-paths"],
+        dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
       },
     ],
     "PluginConfigProvider.groups": [
