@@ -3,7 +3,7 @@ title: Self-Improvement
 description: How Skills build a Benchmark, score an agent on it, and keep only the changes that raise its score, with every version snapshotted and every score traceable.
 ---
 
-Self-improvement in PenguinHarness is a loop: build a Benchmark for an agent, score the agent on it, change the agent, and keep a change only when the score strictly improves. The loop adds no runtime of its own. Skills orchestrate the ordinary agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and every result is a file in the Project.
+The default Penguin method is a loop: build a Benchmark for an agent, score the agent on it, change the agent, and keep a change only when the score strictly improves. The loop adds no runtime of its own. Skills orchestrate the ordinary agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and every result is a file in the Project.
 
 Building a Benchmark and optimizing an agent run in two independent top-level Sessions, and each single evaluation is delegated through the built-in `run_subagent` tool. The top-level prompt supplies the settings for the task: the agent, the Benchmark, the capability, the scores and the rounds. The Skills own everything else: call relationships, calibration, Freeze, the result protocol, repair, rollback and reporting.
 
@@ -16,7 +16,7 @@ Building a Benchmark and optimizing an agent run in two independent top-level Se
 | Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
 | Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
 
-No built-in agent is reserved for a role: each role is a Skill, and all four Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+No built-in agent is reserved for a role: each role is a Skill, and the four Agent Tuning Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
 
 ### How the roles call each other
 
@@ -29,7 +29,7 @@ Both callers first check that each Evaluator's complete response is plain protoc
 
 ## The information barrier
 
-A score is only meaningful while the agent under test cannot see how it is scored. Each role therefore reads a different part of a Benchmark:
+A score is only meaningful while the agent under test cannot see private scoring information. The following table describes the default Penguin method; ACE and AWM declare their training feedback permissions in their references. Testing remains outside the Teacher context.
 
 | Role | Reads | Does not read |
 | --- | --- | --- |
@@ -80,11 +80,16 @@ After a final consistency review, the Builder records the selected Pilot's one-r
 
 Missing the desired score does not invalidate a Benchmark. The publish gate is a fixed 85: a Formal Baseline below 85 is published. `benchmark-design` reports `calibration_failed` only when no valid Pilot result can be frozen, or when every valid revision still scores 85 or above at the iteration limit.
 
+`agent-optimization` defines general inputs, role boundaries, evaluation and output
+formats. Its references define Penguin (the default), ACE and AWM. Use a method
+name in the request to select it; read only that method. The strict-improvement
+loop below describes Penguin, not a rule imposed on every method.
+
 ## Optimizing an agent
 
 After the user confirms that the first step is complete, they start a second top-level Session in a new conversation, and set the `runs` per Case for every Candidate, a target score and a round limit. The Optimizer checks that the Benchmark is `published` and has a complete Formal Baseline for the agent, and then follows `agent-optimization`. If a prerequisite is missing, it stops and explains.
 
-The **Reference** is the Agent State currently kept as best, together with its complete evaluation. Each round tests one **Candidate** built from it:
+For the default Penguin method, the **Reference** is the Agent State currently kept as best, together with its complete evaluation. Each round tests one **Candidate** built from it:
 
 1. Diagnose capability gaps from the per-Case scores and the score-linked Traces.
 2. State one falsifiable hypothesis and make one bounded change: behavioral guidance in `AGENTS.md`, a focused Skill of the agent's own, or safe `system_config.yaml` fields. The Candidate's version is the Reference version + 1, and a rejected version number is never reused.

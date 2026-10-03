@@ -3,7 +3,7 @@ title: 自我进化
 description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让分数提高的改动；每个版本都有快照，每个分数都能追溯。
 ---
 
-PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在上面给 Agent 打分，修改 Agent，只有分数严格提升才保留改动。这个循环不额外引入任何运行机制，而是由 Skill 编排普通的 Agent 机制：评估是普通的 Session，优化是普通的文件编辑，每个结果都是 Project 里的文件。
+默认的 Penguin 优化方法是一个循环：为 Agent 构建 Benchmark，在上面给 Agent 打分，修改 Agent，只有分数严格提升才保留改动。这个循环不额外引入任何运行机制，而是由 Skill 编排普通的 Agent 机制：评估是普通的 Session，优化是普通的文件编辑，每个结果都是 Project 里的文件。
 
 构建 Benchmark 和优化 Agent 分别在两个独立的顶层 Session 中运行，每一次单独的评估则通过内置的 `run_subagent` 工具委派出去。顶层 Prompt 提供这次任务的设定：Agent、Benchmark、要考察的能力、分数和轮数。其余一切都由 Skill 负责：调用关系、校准、Freeze、结果协议、修复、回滚和汇报。
 
@@ -16,7 +16,7 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 | Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
 | Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，四个 Skill 都随 `agent-tuning` 插件提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，四个 Agent Tuning Skill 都随 `agent-tuning` 插件提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
 
 ### 角色之间的调用
 
@@ -29,7 +29,7 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 
 ## 信息隔离
 
-被测的 Agent 看不到评分方式，分数才有意义。因此每个角色读取的是 Benchmark 的不同部分：
+被测 Agent 不应看到私有评分信息。下表描述默认 Penguin 方法；ACE、AWM 在各自 reference 中声明训练反馈权限。测试信息始终不进入 Teacher 上下文。
 
 | 角色 | 读取 | 不读取 |
 | --- | --- | --- |
@@ -79,6 +79,10 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 最终的一致性检查通过后，Builder 把选中那次 Pilot 的单次运行结果直接记为 **Formal Baseline**（正式基线），不重跑，也不补跑其他运行。随后删掉临时副本和其他校准用的脚手架。
 
 没达到期望分数不会让 Benchmark 作废。发布门槛固定为 85 分：Formal Baseline 低于 85 就发布。只有两种情况 `benchmark-design` 才报告 `calibration_failed`：没有任何可冻结的有效 Pilot 结果，或者到了迭代上限，所有有效版本的得分仍不低于 85。
+
+`agent-optimization` 定义通用输入、角色边界、评估和输出格式，reference 定义
+Penguin（默认）、ACE、AWM 的具体方法。在请求中指定方法名称即可选择，只读取对应 reference。
+下文的严格提分循环描述的是 Penguin 方法，不是所有方法必须遵守的规则。
 
 ## 优化 Agent
 

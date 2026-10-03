@@ -1,131 +1,185 @@
 ---
 name: agent-optimization
-description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
+description: Optimize a Student Harness from training traces using Penguin, ACE, AWM, or a specified method, with shared evaluation, versioning and output contracts.
 ---
 
 # Agent Optimization
 
-Improve one Test Agent through an evidence → hypothesis → Candidate → evaluation → accept or rollback loop. Use public Statements, scores, and Test Traces as black-box feedback. Delegate every evaluation to an `agent-evaluation` subagent; never run or score the Test Agent directly.
+Act as the Teacher. This Skill owns the general inputs, role boundaries, evaluation
+protocol and output format. A selected reference owns the algorithm: how to
+diagnose traces, propose edits, admit candidates and choose the final version.
+Read only that reference; never combine selection policies implicitly.
 
 ## Before you start
 
-If the request does not identify the Test Agent, frozen Benchmark, desired target score, positive Run count, and round limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them.
+Resolve an existing Test Agent, a published frozen training Benchmark and the
+method. Ask for missing required inputs; do not ask again for information already
+provided. With no method specified, use Penguin, preserving the ordinary
+optimization entry point. Select names case-insensitively.
 
-## Goal and contract
+| Method | Reference | Source |
+| --- | --- | --- |
+| Penguin (default) | [penguin.md](references/penguin.md) | Penguin's existing optimization method |
+| ACE | [ace.md](references/ace.md) | RSI method from a paper titled as Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models |
+| AWM | [awm.md](references/awm.md) | RSI method from a paper titled as Agent Workflow Memory |
 
-Require an explicit Test Agent, a frozen Benchmark with a complete valid Formal Baseline, a desired target score, a positive `runs` value, and a positive round limit. The Benchmark's `benchmark_config.toml` must say `status = "published"`; a `draft` Benchmark is still being built and is not frozen, and a `failed` one never finished calibrating, so stop and explain in either case. `runs` is the number of Runs per Case for every Candidate in this optimization Session. Freeze it for the Session; do not infer it from `benchmark_config.toml` or the Formal Baseline. Read the evaluation `(provider, model_id, thinking_level)` from the complete Evaluation that matches the current Agent State; do not require the user to repeat it. An Evaluation without any part of this runtime is incomplete and cannot be used as a Reference. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If a prerequisite is missing, stop and explain what is needed. Do not create the missing Agent, Benchmark, or Baseline, and do not evaluate the Test Agent directly.
+If another method is requested, resolve its supplied instructions or ask which
+method to implement; do not silently substitute Penguin. Method-specific inputs
+and defaults come from the reference. Initialization and benchmark construction
+belong to `agent-initialization` and `benchmark-design`;
+perform them first only when requested and allowed by the selected method.
 
-A **Reference** is the Agent State currently kept as best, together with its complete Evaluation on the frozen Benchmark.
+## Inputs and run declaration
 
-Each round starts from the Reference and tests a bounded, general **Candidate**. Evaluate every Candidate on the frozen Case set with the requested `runs` count and the Reference evaluation runtime. The initial Formal Baseline has one Run per Case; do not rerun or backfill it to the requested count. Compare each Candidate's stored top-level average directly with the current Reference score even when their Run counts differ. Accept the Candidate only when the change is admissible, its Evaluation is complete and valid, and its top-level `score` is strictly higher than the Reference Evaluation's `score`. An accepted Candidate and its Evaluation become the next Reference; otherwise restore the previous Reference. Stop early when the Reference reaches the desired target; otherwise run no more than the requested number of complete valid Candidate rounds.
+| Input | Contract |
+| --- | --- |
+| `test_agent_id` | Experimental Student whose Harness is optimized |
+| `benchmark_id` | Frozen training Benchmark; `train_benchmark_id` is an accepted alias, conflicting values are invalid |
+| `case_ids` | Explicit training subset, or all cases; `train_case_ids` is an accepted alias |
+| `method` | Penguin by default; otherwise the named reference/instructions |
+| `runs`, `rounds`, `target_score` | Values required or defaulted by the method; record its baseline repeat policy too |
+| Runtime | Complete Student provider/model pair and configured thinking; Teacher/Judge settings recorded separately |
+| Test handoff | Optional separate testing Benchmark/cases for an independent Reporter after final freeze |
 
-## Access and changes
-
-Resolve paths from the Environment's App Data Dir without recursively discovering the Project:
+Resolve paths only from Environment App Data Dir and these IDs:
 
 ```text
-PROJECT_DIR = <app_data_dir>
-PROJECT_ID = <basename_of_project_dir>
-PENGUIN_HOME = <parent_of_project_dir>
 TARGET = <app_data_dir>/agents/<test_agent_id>
 STATE = <target>/agent_state
-TRACES = <target>/traces
-BENCHMARK = <app_data_dir>/benchmarks/<benchmark_id>
-SCOREBOARD = <benchmark>/scoreboard.yaml
+TRAIN = <app_data_dir>/benchmarks/<benchmark_id>
 SNAPSHOTS = <target>/snapshots
+OUT = <Teacher workspace>/optimization/<experiment_id>
 ```
 
-The Benchmark is Project-level rather than owned by the Test Agent: it sits beside `agents/` and may evaluate several Agents. `test_agent_id` names the one this Session optimizes, and every Evaluation records it. Use only the Evaluations whose `agent_id` is that Agent as a Reference or for diagnosis.
+Reject traversal, symlink escape, conflicting IDs and concurrent edits to one
+Student State. OUT must be outside Student State and task workspaces. Before any
+run, write `OUT/experiment.yaml` with the resolved method, IDs, case set, data/State
+hashes, runtime, budgets and the following declarations:
 
-Inspect only the requested Test Agent and Benchmark: the Agent State, public Statements, Scoreboard, and score-linked Test Traces or artifacts from the Baseline and this optimization, including rejected Candidates.
+- `artifact`, `source`, `feedback`, `updater`, `frequency`, `topology`, `selection`,
+  `mode`, `scope`: method characteristics, following Awesome-RSI's dimensions.
+- Exact writable paths and separately permitted training scores, item feedback,
+  Rubric and gold. A capability in a taxonomy is not blanket read/write permission.
+- Baseline source/repeats, proposal and evaluation budgets, stopping conditions,
+  and the method's final-version rule. Testing never selects versions.
 
-Do not inspect Rubrics, Gold answers, private scoring conditions, Evaluator State, Workspace, or Trace, other Agents, or Project secrets. If private evaluation information enters the Optimizer context, restore the active Candidate and stop as contaminated.
+Use an existing matching evaluation to resolve Student runtime when the method
+requires one. Otherwise accept an explicit complete provider/model pair, or
+inherit both from the Teacher Environment. Read thinking from the full Student
+config, defaulting to medium only if absent. Freeze this runtime for comparisons;
+record any unequal sampling or method adaptation rather than hiding it.
 
-Modify only the Test Agent State and the versioned snapshot required to protect it. Do not change the frozen Benchmark, Test Traces, or Project configuration. The only Benchmark write is appending a complete accepted Candidate Evaluation to `scoreboard.yaml`.
+## Common execution boundaries
 
-## Optimization loop
+`Teacher Agent = Teacher Model + Teacher Harness`;
+`Student Agent = Student Harness + Student Model`.
+Both models and the Teacher Harness normally stay fixed. The
+Student Harness is the optimization target. Students have fresh contexts and
+solve only their tasks; no persistent self-editing during execution. Analysis
+workers propose changes, and the Teacher publishes after all batch workers end.
 
-For each round:
+Keep each batch's State, cases and runtime immutable. Hash all persistent State
+except the vault before/after execution, including memory/tools/hooks. A workflow
+may use multiple Teachers or Students without sharing their task conversations.
+Rules learned from trace data need case/session evidence and applicable conditions.
+Allowed training gold may support business rules, not case-answer lookup tables.
 
-1. **Establish the Reference.** Confirm that its complete Evaluation covers the frozen Case set, uses the frozen evaluation runtime, and matches the current Agent State version. Do not require its Run count to equal the requested Candidate `runs` count.
-2. **Diagnose capability gaps.** Compare each Case's `runs[].score` on the fixed `0..100` scale; use the Evaluation's top-level average `score` only for whole-version comparison. Use public Statements, score-linked Test Traces, and prior accepted or rejected attempts to identify observable behaviors that general Agent State changes could improve. Use repeated Runs to distinguish stable behavior from variation.
-3. **State a falsifiable hypothesis.** Choose the related gaps to address, connect them to a bounded Candidate, and state which observable decisions or artifacts should change and why. A change that only adds analysis steps without predicting a behavioral change is not a useful hypothesis. If the current diagnosis is exhausted, use the remaining public evidence and prior attempts to construct a different admissible Candidate.
-4. **Create one Candidate from the Reference.** Apply the change and its Candidate version under the construction and rollback rules below. Do not carry rejected Candidate files into the next attempt.
-5. **Check admissibility.** Confirm that the change is general, uses no private evaluation information, and modifies only permitted Test Agent State.
-6. **Evaluate the Candidate.** Delegate the complete frozen Case set × requested `runs` matrix in parallel under the evaluation rules below and assemble all returned cells. Do not modify the Candidate while any cell is in flight.
-7. **Decide.** Accept the Candidate only when every cell is valid and its Evaluation's top-level average `score` is strictly higher than the Reference Evaluation's `score`. Otherwise restore the Reference. Record separately whether the predicted Case behavior changed; a higher Evaluation score accepts the Candidate even when the stated hypothesis was not supported.
-8. **Persist and continue.** Immediately append and verify every accepted Candidate Evaluation before starting another round. An accepted Candidate becomes the next Reference. Use valid results from rejected Candidates only as evidence for a later hypothesis. Stop when the Reference reaches the desired target. Otherwise complete the requested number of valid Candidate rounds unless infrastructure, contamination, concurrent State changes, or the inability to construct any admissible Candidate creates a concrete blocker. At the round limit, retain the highest-scoring accepted Reference.
+Only read selected training evidence and authorized feedback. Do not inspect
+Evaluator private reasoning, other Agents, credentials or testing contents. For
+detailed feedback, use a separate authorized training-feedback worker on the same
+saved prediction and frozen scorer; do not rerun the Student to obtain feedback.
+Record what this feedback exposes and verify its score agrees with the evaluation.
 
-A round counts only after one Candidate has a complete valid Evaluation. Corrected requests, validity repairs, and evaluation retries do not consume the round limit. A complete valid Evaluation of a rejected Candidate does count.
-
-## Build and roll back a Candidate
-
-Create one Candidate per round from the current Reference. Put behavioral guidance in `AGENTS.md`, reusable target-owned capabilities in a focused Skill, and runtime limits in safe `system_config.yaml` fields. Do not edit `system_prompt` unless requested, modify library-provided Skills for target-specific behavior, or change `model.thinking_level`; the Reference Scoreboard fixes the evaluation thinking level.
-
-Candidate version numbers only increase. Start with `Reference version + 1` and never reuse a rejected version. Before changing the Agent State, save the original contents and record any files the Candidate creates.
-
-Before changing each Reference State, ensure `<target>/snapshots/v<Reference version>.tar.gz` exists. Reuse it when present. Otherwise create it yourself before editing by atomically archiving `agent_state/` while excluding `.vault.toml`; validate the archived version and never overwrite an existing same-version snapshot. If snapshot creation fails, stop before changing Agent State and report the failure.
-
-Keep the exact original-file record for fast in-round rollback.
-
-If the Candidate is rejected or cannot be evaluated, restore the Reference files and version, remove files created by the Candidate, and verify the restoration. If another process changes the Agent State, stop without overwriting it.
-
-## Delegate evaluation
-
-For each frozen Case, dispatch exactly the requested number of Run cells, using one-based Run indices `1..runs`. Call `run_subagent` for each cell with:
+Every scored cell goes through `agent-evaluation` in a fresh worker. The Teacher
+does not run or score the Student directly. Use its unchanged request:
 
 ```text
-Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
 protocol_version: 1
 case_id: <case_id>
-run: <1_based_run_index>
-expected_version: <test_agent_state_version>
+run: <one_based_run_index>
+expected_version: <Student_State_version>
 test_agent_id: <test_agent_id>
 benchmark_id: <benchmark_id>
-provider: <provider>
-model_id: <model_id>
+provider: <student_provider>
+model_id: <student_model_id>
 ```
 
-Inspect the complete streamed and final worker response. Before reading `status`, `score`, or any other protocol field, verify that the worker-authored text is exactly one plain protocol YAML document. Narration, headings, code fences, summaries, or scoring details are not valid protocol. Ask the same Evaluator to resend only the clean YAML from its existing result; do not rerun the Test Agent for a formatting repair and do not extract YAML from the invalid response yourself. Transport metadata added by `run_subagent` is not worker-authored text. If private evaluation information appears, follow the contamination rule above.
+Ask the evaluator to pass configured Student thinking explicitly when launching
+the Student; for stored `none`, omit the unsupported flag and clear only
+`PENGUIN_SESSION_ID` for that command, keeping explicit identity/model/workspace
+flags and connection/auth environment. Keep `--source benchmark` and bind the
+actual Student trace.
 
-For every scored result, require its `agent_id` to equal the requested Test Agent and its actual `provider`, `model_id`, and `thinking_level` to equal the Reference runtime. A mismatch invalidates the Candidate matrix and stops optimization; never compare or record scores produced under a different runtime.
+Require one plain protocol YAML response and matching case/run/Agent/version/runtime,
+finite `0..100` score, nullable cost, duration and session ID. A formatting repair
+resends the saved result from the same worker without execution or rescoring.
+Wrong/missing answers are scored behavior; infrastructure failure is not zero.
+Require a nonempty unique case set and positive integer run/round/concurrency
+values after applying method defaults. Teacher and Judge runtimes default to the
+controller unless explicitly overridden; record their requested and actual
+identity separately, not from the Student fields in the evaluator result.
+Stop on `version_changed`, `benchmark_invalid`, runtime mismatch or unrepairable
+evaluation failure. Repair an unstarted launch only with evidence, a specific
+correction and remaining budget; never repeat a completed Student for a better score.
 
-Correct and resend an `invalid_request`. Stop on `version_changed` or `benchmark_invalid`.
+## Version and output contract
 
-For `evaluation_failed`, keep the same Candidate and incomplete matrix. Ask the same Evaluator to diagnose and repair the failed cell, then rerun only that cell when evidence proves the Test Agent did not start. Every retry must apply a new, specific repair; never repeat an unchanged request or launch, and do not impose a numeric retry limit while distinct safe repairs remain. Do not inspect private Evaluator State or abandon the Candidate to design the next version. Stop when no new safe repair remains, external configuration is required, or it is unclear whether the Test Agent started.
+Before changing a measured State, create or verify `snapshots/v<N>.tar.gz`, excluding
+`.vault.toml`. Never overwrite a snapshot or reuse a rejected candidate number.
+Record original bytes and created files, stage only allowed edits, publish while
+all workers are idle, and increment the integer State version. Custom Skills use
+`YYYY.MM.DD.N` versions as Agent Initialization specifies. Model settings stay fixed.
 
-## Record and report
+Apply the reference's accept/retain rule. If rollback is required, restore only
+recorded files/version and remove only candidate-created files after workers stop.
+If another process changed State, stop without overwriting it. Keep proposals,
+raw cells, accepted/rejected versions, evidence, costs and failures in OUT.
 
-Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediately after acceptance and verify the stored Agent id, version, score, matrix, and Session ids before continuing. Obtain the current UTC timestamp from the environment, for example with `date -u +"%Y-%m-%dT%H:%M:%SZ"`, rather than inferring UTC from a displayed local time. Use the same field names as the Baseline:
+Append complete retained evaluations under `TRAIN/scoreboard.yaml`'s `evaluations`
+list using the established shape below. Partial/invalid or rejected matrices stay
+in OUT. Do not change the schema to carry method-specific fields.
 
 ```yaml
-- time: <ISO-8601 timestamp>
+- time: <actual UTC timestamp>
   agent_id: <test_agent_id>
-  version: <Candidate version>
-  provider: <provider>
-  model_id: <model_id>
-  thinking_level: <thinking_level>
-  summary_title: >-
-    <public title>
-  summary: >-
-    <public summary>
-  score: <average of the Case scores>
-  cost: <average of known Case costs, or null when every Case cost is null>
-  duration_ms: <average of the Case durations>
+  version: <measured State version>
+  provider: <actual provider>
+  model_id: <actual model>
+  thinking_level: <configured thinking>
+  summary_title: <public conclusion>
+  summary: <public change and result>
+  score: <mean of case scores>
+  cost: <mean of known case costs or null>
+  duration_ms: <mean case duration>
   cases:
     - case: <case_id>
-      score: <average of the Run scores>
-      cost: <average of known Run costs, or null when every Run cost is null>
-      duration_ms: <average of the Run durations>
+      score: <mean of run scores>
+      cost: <mean of known run costs or null>
+      duration_ms: <mean run duration>
       runs:
-        - score: <Run score>
-          cost: <Run cost or null>
-          duration_ms: <Run duration>
-          session_id: <Test Session id>
+        - score: <0_to_100>
+          cost: <number_or_null>
+          duration_ms: <integer>
+          session_id: <Student session ID>
 ```
 
-After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation, including its `agent_id`, before reporting success or continuing.
+Write run means per case and case means overall. Ignore null costs in means;
+all unknown is null. Score means use two decimals, cost means six and duration
+means integer milliseconds; preserve recorded run cost precision. Parse the full
+scoreboard and verify identity, version, matrix and session references. Do not add
+`max_score`, `aggregate` or another runtime that recomputes stored averages.
 
-Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`. Do not record rejected Candidates in the Scoreboard.
+Finish with the retained State path/version/hash, snapshot, method and supervision,
+baseline/candidate measurements, accepted/rejected decisions, evidence references,
+all-role total cost, stop reason and limitations. Never report a score for an
+unevaluated State. Scoreboard averages are not total experiment costs.
 
-Report the Baseline and every fully evaluated Candidate with its score, Run count, version, change, decision, and Test Session ids. Make the one-Run Formal Baseline and requested Candidate `runs` count explicit. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. Include the final retained version, stop reason, and known limitations. Never report a score for an Agent State that was not evaluated.
+For independent testing, hand initial/final snapshots and matched runtime/repeats
+to a separate Reporter. It restores each on an idle experimental Student, runs
+the declared testing matrix without learning, records test scores separately and
+restores the final State. No testing feedback returns to the Teacher or causes
+more training. Without that handoff, report training results only.
+
+These are Skill-level role boundaries, not guaranteed sandbox enforcement.
+Default/Root supervision is an independent design concern; do not make the Teacher
+its own supervisor or claim an observer/control capability that is not available.

@@ -1,6 +1,6 @@
 # 用 Teacher 训练企业专用 Harness
 
-更新于 2026-10-03。本文规定 FDE 场景与 Penguin 的设计方向，具体 Skill/reference 按后续阶段接入；Default/Root Agent 的监管职责尚未接入运行时。
+更新于 2026-10-03。本文规定 FDE 场景与 Penguin 的设计方向；Default/Root Agent 的监管职责尚未接入运行时。
 
 配套资料：[文献综述](fde-rsi-literature-review.md)、[候选清单](fde-rsi-candidates.md)。通用约定写在 Agent Tuning 的 Skill 中，具体方法写在对应 reference 中。
 
@@ -91,7 +91,7 @@ Root 的固定强 system prompt 应至少明确以下职责：
 
 框架允许全部 Student Harness 组件成为训练对象，具体算法只修改声明的部分。模型权重、评分器、测试数据和凭证不属于修改目标。涉及 harness 代码时使用独立候选 checkout／构建，保持 Teacher、监管者与评分环境稳定。
 
-第一版由 `agent-optimization` 定义输入、声明和输出格式，具体方法见 Penguin、ACE、AWM。公共接口保持为：**trace bundle → harness proposal → 按算法检查与评估 → 发布版本**，外层独立监管。
+第一版由 `agent-optimization` 定义输入、声明和输出格式，具体方法见 [Penguin](../../../plugins/agent-tuning/skills/agent-optimization/references/penguin.md)、[ACE](../../../plugins/agent-tuning/skills/agent-optimization/references/ace.md)、[AWM](../../../plugins/agent-tuning/skills/agent-optimization/references/awm.md)。公共接口保持为：**trace bundle → harness proposal → 按算法检查与评估 → 发布版本**，外层独立监管。
 
 后续按需要增加小型公共工具：候选版本和快照、代码构建／回归检查、trace 检索、运行观察与停止接口。只有具体需求出现时再补隔离能力或搜索调度，不为尚未实现的论文预建完整引擎，也不把某种算法的条目格式或接受规则强加给其他算法。
 
@@ -120,8 +120,8 @@ Penguin 默认 reference 保留“严格提分才接受”、禁止读 Rubric、
 
 | 算法 | 适配机制与实现入口 |
 | --- | --- |
-| ACE | reference：独立 Reflector/Curator 从成功和失败轨迹提出规则 delta，Teacher 批量发布到 playbook Skill；文字去重、batch 大小与论文不同，明确作为适配 |
-| AWM | reference：从成功训练经历归纳参数化子流程，Teacher 合并发布；公开自判和训练评分是两种准入配置，不从失败轨迹编造已执行流程 |
+| ACE | [reference](../../../plugins/agent-tuning/skills/agent-optimization/references/ace.md)：独立 Reflector/Curator 从成功和失败轨迹提出规则 delta，Teacher 批量发布到 playbook Skill；文字去重、batch 大小与论文不同，明确作为适配 |
+| AWM | [reference](../../../plugins/agent-tuning/skills/agent-optimization/references/awm.md)：从成功训练经历归纳参数化子流程，Teacher 合并发布；公开自判和训练评分是两种准入配置，不从失败轨迹编造已执行流程 |
 
 ACE/AWM 保留最后有效且完成测量的版本，不自动套用严格提分 gate。固定读取业务 Skill 的说明在基线前就准备好，避免把加载修复算作学习收益。具体参数、算法和原论文差异放在各自 reference 中；运行与输出约定由通用 Skill 定义。
 
