@@ -56,6 +56,9 @@ export const LANGUAGE_LOADERS = new Map<string, () => Promise<unknown>>(
 export const LANGUAGE_ALIASES = new Map(
   Object.entries({
     "c++": "cpp",
+    // An A2UI block's body is one JSON object; one shown as source (it could not be drawn) is
+    // highlighted as the JSON it is.
+    a2ui: "json",
     bash: "shellscript",
     cjs: "javascript",
     cts: "typescript",
