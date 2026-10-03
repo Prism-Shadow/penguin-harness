@@ -174,6 +174,34 @@ describe("mentions by name", () => {
     });
   });
 
+  it("ends a handle where the server does: not before a - or . that runs on into a word", () => {
+    const mentions = (text: string) =>
+      mentionRuns(text, names)
+        .filter((r) => r.mention)
+        .map((r) => [r.text, r.mention]);
+    // An id-shaped token takes the whole run, as the server reads it: `@all-hands` is not `all`.
+    expect(mentions("@all-hands and @all.hands")).toEqual([
+      ["@all-hands", "all-hands"],
+      ["@all.hands", "all.hands"],
+    ]);
+    // A name is not found in front of one either…
+    expect(mentions("ping @Ada Lovelace-x and @Ada Lovelace.y")).toEqual([
+      ["@Ada", "Ada"],
+      ["@Ada", "Ada"],
+    ]);
+    // …while a sentence's own punctuation after it is no part of it.
+    expect(mentions("thanks @Ada Lovelace. And @Ada Lovelace, @all.")).toEqual([
+      ["@Ada Lovelace", "agent:acme_ada"],
+      ["@Ada Lovelace", "agent:acme_ada"],
+      ["@all", "all"],
+    ]);
+    // A name in a script without word boundaries needs none.
+    expect(mentions("@小明-你好 @小明.ok")).toEqual([
+      ["@小明", "agent:acme_dev_a"],
+      ["@小明", "agent:acme_dev_a"],
+    ]);
+  });
+
   it("still reads ids and the explicit forms, and offers no handle for a name that is just the id", () => {
     expect(names.has("acme_qa")).toBe(false);
     expect(mentionRuns("@acme_qa and @agent:acme_dev_a.", names).filter((r) => r.mention)).toEqual([

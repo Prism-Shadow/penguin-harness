@@ -17,6 +17,7 @@ export const AVATAR_MAX_CHARS = 131072;
 const AVATAR_MAX_BYTES = 256 * 1024;
 const DATA_URL = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/;
 const EXT = { png: "png", jpeg: "jpg", webp: "webp" } as const;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
 
 export function avatarsDir(dir: string): string {
@@ -32,7 +33,30 @@ export function parseAvatarDataUrl(
   }
   const m = DATA_URL.exec(raw);
   if (m === null) return { ok: false, error: "avatar must be a png, jpeg or webp data URL" };
-  return { ok: true, ext: EXT[m[1] as keyof typeof EXT], bytes: Buffer.from(m[2]!, "base64") };
+  const format = m[1] as keyof typeof EXT;
+  const bytes = Buffer.from(m[2]!, "base64");
+  if (!holdsFormat(bytes, format)) return { ok: false, error: `avatar is not a ${format} image` };
+  return { ok: true, ext: EXT[format], bytes };
+}
+
+/**
+ * Whether the bytes start the way the declared format does — the same signatures the CLI reads
+ * a file's type by (`imageMime` in its org command). The data URL's label alone is a claim, and
+ * what is stored is served back under it.
+ */
+function holdsFormat(bytes: Buffer, format: keyof typeof EXT): boolean {
+  switch (format) {
+    case "png":
+      return bytes.subarray(0, 8).equals(PNG_SIGNATURE);
+    case "jpeg":
+      return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    case "webp":
+      return (
+        bytes.length >= 12 &&
+        bytes.subarray(0, 4).toString("latin1") === "RIFF" &&
+        bytes.subarray(8, 12).toString("latin1") === "WEBP"
+      );
+  }
 }
 
 async function existing(dir: string, agentId: string): Promise<string[]> {
