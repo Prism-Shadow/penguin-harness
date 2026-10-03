@@ -14,6 +14,7 @@ import {
   namesThrough,
   open024,
   open029,
+  openAgentStateHandover,
   openChannels,
   openDeskNotices,
   openFresh,
@@ -21,6 +22,7 @@ import {
   openOrgCaches,
   openPreProfile,
   openPromotions,
+  PORT_FORWARDS_V1_DDL,
   record,
   shape,
   stampThrough,
@@ -302,6 +304,7 @@ describe("machines-columns → current: browser-extensions", () => {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "browser-extensions",
         "agent-api",
+        "port-forwards-legacy-shape",
         "port-forwards",
         "port-forwards-adoption",
         "port-forwards-direction",
@@ -532,5 +535,77 @@ describe("the first form of port_forwards → current: port-forwards-direction",
     } finally {
       db.close();
     }
+  });
+});
+
+describe("a numbered root with the first form of port_forwards: port-forwards-legacy-shape", () => {
+  const row = (db: DatabaseSync) =>
+    db.prepare("SELECT id, direction, remote_port, local_port FROM port_forwards").all();
+  const indexes = (db: DatabaseSync) =>
+    (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'port_forwards' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .all() as { name: string }[]
+    ).map((i) => i.name);
+
+  it("adopts the agent-state hand-over build's root on the swap path: direction added, the forward kept as `in`", () => {
+    const db = openAgentStateHandover();
+    const fresh = openFresh();
+    try {
+      expect(columns(db, "port_forwards")).not.toContain("direction");
+      const r = migrate(db, { swapPath: true });
+      expect(r.adopted).toBe(true);
+      expect(r.applied).toContain("port-forwards-legacy-shape");
+      expect(r.applied.indexOf("port-forwards-legacy-shape")).toBe(
+        r.applied.indexOf("port-forwards") - 1,
+      );
+      expect(row(db)).toEqual([{ id: "f1", direction: "in", remote_port: 3000, local_port: 3000 }]);
+      expect(indexes(db)).toEqual(["idx_port_forwards_local_in", "idx_port_forwards_machine"]);
+      expect(shape(db)).toBe(shape(fresh));
+      // The numbered stamp is left as that build wrote it.
+      expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: 14 });
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("a second run is a no-op", () => {
+    const db = openAgentStateHandover();
+    try {
+      migrate(db, { swapPath: true });
+      const before = { shape: shape(db), rows: row(db), ledger: appliedMigrations(db) };
+      expect(migrate(db)).toEqual({ adopted: false, applied: [], deferred: [] });
+      expect({ shape: shape(db), rows: row(db), ledger: appliedMigrations(db) }).toEqual(before);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a fresh database ends in the same shape, and a root that ran everything else runs it last as a no-op", () => {
+    const db = openFresh();
+    const fresh = openFresh();
+    try {
+      migrate(db);
+      expect(shape(db)).toBe(shape(fresh));
+      const ran = db.prepare(
+        "DELETE FROM schema_migrations WHERE name = 'port-forwards-legacy-shape'",
+      );
+      ran.run();
+      const before = shape(db);
+      expect(migrate(db).applied).toEqual(["port-forwards-legacy-shape"]);
+      expect(shape(db)).toBe(before);
+      expect(appliedMigrations(db).at(-1)).toBe("port-forwards-legacy-shape");
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("is declared immediately before port-forwards", () => {
+    const names = MIGRATIONS.map((m) => m.name);
+    expect(names.indexOf("port-forwards-legacy-shape")).toBe(names.indexOf("port-forwards") - 1);
   });
 });

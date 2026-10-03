@@ -225,6 +225,41 @@ export function openDeskNotices(): DatabaseSync {
   return db;
 }
 
+/**
+ * The first form of `port_forwards`: what port-forwards created on the roots that ran it
+ * before its DDL was changed in place, and what port-forwards-adoption creates on a root
+ * without the table — no direction, one local port per forward.
+ */
+export const PORT_FORWARDS_V1_DDL = `
+  CREATE TABLE port_forwards (
+    id          TEXT PRIMARY KEY,
+    machine_id  TEXT NOT NULL,
+    workspace   TEXT NOT NULL,
+    remote_port INTEGER NOT NULL,
+    local_port  INTEGER NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL,
+    UNIQUE (machine_id, workspace, remote_port)
+  );
+  CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+`;
+
+/**
+ * A root the agent-state hand-over build (5bc2d06, numbered migrations through 14,
+ * browser-sites) left: no ledger, `user_version` 14, no model tables yet, and `port_forwards`
+ * in its first form with one forward saved.
+ */
+export function openAgentStateHandover(): DatabaseSync {
+  const db = openFresh();
+  db.exec("DROP TABLE model_provider_auth_tokens; DROP TABLE model_promotions;");
+  db.exec("DROP INDEX idx_port_forwards_local_in; DROP TABLE port_forwards;");
+  db.exec(PORT_FORWARDS_V1_DDL);
+  db.prepare(
+    "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run("f1", "m1", "/home/dev/site", 3000, 3000, "2026-09-21T00:00:00.000Z");
+  db.exec("PRAGMA user_version = 14");
+  return db;
+}
+
 /** Through model-promotions: provider auth refresh tokens do not exist yet. */
 export function openPromotions(): DatabaseSync {
   const db = openFresh();

@@ -9,6 +9,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { migrate } from "./migrations/index.js";
+import { portForwardsLegacyShape } from "./migrations/steps/port-forwards-legacy-shape.js";
 import { SCHEMA_SQL } from "./schema.js";
 
 // Fetch the runtime module via process.getBuiltinModule (node >=22.3): avoids static
@@ -57,6 +58,17 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // lock rather than failing SQLITE_BUSY at once.
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA foreign_keys = ON;");
+  // Before SCHEMA_SQL: its index on port_forwards.direction fails on a table in the first
+  // form a numbered build left. One transaction, as the ledger would run it, so a crash
+  // mid-rebuild leaves the old table. Goes with that migration (see its TODO).
+  db.exec("BEGIN");
+  try {
+    portForwardsLegacyShape.up(db);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
   db.exec(SCHEMA_SQL);
   // Columns added to the schema after a web.db was formed: CREATE TABLE IF NOT EXISTS never
   // touches an existing table, so they are ALTERed in here. Keep the list in sync with
