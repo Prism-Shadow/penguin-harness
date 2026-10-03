@@ -1628,6 +1628,7 @@ export const en: Strings = {
     baseUrlSuffixTitle:
       "The client appends the protocol path shown at the field's right edge to the base URL",
     baseUrlRequired: "A base URL is required",
+    baseUrlInvalid: "The base URL must be a full URL starting with http:// or https://",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>

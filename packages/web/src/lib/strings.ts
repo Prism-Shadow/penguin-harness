@@ -1686,6 +1686,8 @@ export const zh = {
     /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
     baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
+    /** A base URL that is set but is not an absolute http(s) URL (the group settings refuse to save it). */
+    baseUrlInvalid: "base URL 须为以 http:// 或 https:// 开头的完整地址",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>

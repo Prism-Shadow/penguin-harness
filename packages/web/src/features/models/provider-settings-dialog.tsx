@@ -13,16 +13,18 @@
  * quote it (Restore defaults puts the catalog's values back). Where the catalog names the
  * vendor's model list, a link to it closes the dialog's body.
  *
- * Saving sends the fields that changed and nothing else (`PUT …/models/providers/:id`), and never
- * probes the endpoint, with one exception: a custom or user-defined group given a base URL, left
- * on "Not set" and holding no model with a protocol of its own has nothing that decides how its
- * models are spoken to, so the endpoint is asked once first (a miss saves on Chat Completions, as
- * the model dialog does).
+ * Saving refuses a base URL that is set but is not an absolute http(s) URL (the field says so),
+ * sends the fields that changed and nothing else (`PUT …/models/providers/:id`), and never probes
+ * the endpoint, with one exception: a custom or user-defined group given a base URL and left on
+ * "Not set", with a model that has no protocol of its own (or no model yet), has nothing that
+ * decides how that model is spoken to, so the endpoint is asked once first (a miss saves on Chat
+ * Completions, as the model dialog does). The dialog cannot be closed while a save, that probe
+ * included, is in flight, and a save whose dialog went away before the write writes nothing.
  *
  * Everything that decides what is shown and what is sent is a pure function below, so the rules
  * are checked without a DOM; the component only holds the draft and runs the requests.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ModelProtocolDetectRequest,
   ModelsResponse,
@@ -140,10 +142,26 @@ export function providerBaseUrlMissing(
 }
 
 /**
+ * Why saving refuses the base URL as typed, or null: blank where the group needs one
+ * (providerBaseUrlMissing), or set but not an absolute http(s) URL — every model of the group
+ * without a base URL of its own would be sent there, and the server refuses it as well.
+ */
+export function providerBaseUrlError(
+  providerId: string,
+  rows: readonly GroupRow[],
+  draft: Pick<ProviderSettingsDraft, "baseUrl">,
+): string | null {
+  if (providerBaseUrlMissing(providerId, rows, draft)) return S.models.baseUrlRequired;
+  const baseUrl = draft.baseUrl.trim();
+  return baseUrl !== "" && !detectableBaseUrl(baseUrl) ? S.models.baseUrlInvalid : null;
+}
+
+/**
  * Whether saving asks the endpoint for its protocol first: only where nothing else would decide
- * it — a custom or user-defined group, given a base URL, left on "Not set", with no model that
- * stores a protocol of its own. A protocol picked, a built-in group and a model's own protocol
- * all mean there is nothing to probe for.
+ * it — a custom or user-defined group, given a base URL, left on "Not set", with some model that
+ * stores no protocol of its own and so would follow the group's (a group with no model yet
+ * counts: the models added to it will). A protocol picked, a built-in group, and every model
+ * storing its own protocol all mean there is nothing to probe for.
  */
 export function providerDetectOnSave(
   providerId: string,
@@ -154,7 +172,7 @@ export function providerDetectOnSave(
     isCustomLikeGroup(providerId) &&
     draft.baseUrl.trim() !== "" &&
     draft.clientType === null &&
-    !rows.some((r) => r.clientType.trim() !== "")
+    (rows.length === 0 || rows.some((r) => r.clientType.trim() === ""))
   );
 }
 
@@ -177,6 +195,74 @@ export function providerDetectRequest(
     provider: providerId,
     ...(apiKey ? { apiKey } : draft.clearApiKey ? { clearApiKey: true } : {}),
   };
+}
+
+/** What a probe found: the protocol, and the URL it answered on where that differs from the one probed. */
+export interface ProbeFound {
+  clientType: string;
+  baseUrl?: string;
+}
+
+/**
+ * One probe of the endpoint the draft names (providerDetectRequest). Null when there is no URL
+ * to probe or nothing answered; a failed request throws.
+ */
+export async function probeGroupProtocol(
+  projectId: string,
+  providerId: string,
+  group: ProviderConnectionDto | undefined,
+  draft: Pick<ProviderSettingsDraft, "apiKey" | "clearApiKey" | "baseUrl">,
+): Promise<ProbeFound | null> {
+  const body = providerDetectRequest(providerId, group, draft);
+  if (body === null) return null;
+  const res = await api.detectProtocol(projectId, body);
+  if (!res.detected) return null;
+  // The protocol may have answered on a tidied-up form of the URL; the field takes the one that
+  // answered whenever it differs from what was probed.
+  return {
+    clientType: res.detected,
+    ...(res.baseUrl !== undefined && res.baseUrl !== body.baseUrl ? { baseUrl: res.baseUrl } : {}),
+  };
+}
+
+/** What one Save of the group settings came to. */
+export type GroupSaveResult =
+  | { kind: "invalid"; baseUrlError: string }
+  | { kind: "unchanged" }
+  | { kind: "dismissed" }
+  | { kind: "saved"; res: ModelsResponse };
+
+/**
+ * One Save of the group settings: the base URL checked (providerBaseUrlError, nothing sent on a
+ * refusal); the endpoint probed first where nothing else decides the protocol
+ * (providerDetectOnSave; `probe` is the dialog's Detect, a miss saves on Chat Completions); then
+ * the fields that changed written (`PUT …/models/providers/:id`). `dismissed` is asked once the
+ * probe is back, right before the write: a dialog closed or taken down meanwhile writes nothing.
+ * A failed write throws.
+ */
+export async function saveGroupSettings(
+  projectId: string,
+  providerId: string,
+  group: ProviderConnectionDto | undefined,
+  rows: readonly GroupRow[],
+  draft: ProviderSettingsDraft,
+  steps: { probe: () => Promise<ProbeFound | null>; dismissed: () => boolean },
+): Promise<GroupSaveResult> {
+  const baseUrlError = providerBaseUrlError(providerId, rows, draft);
+  if (baseUrlError !== null) return { kind: "invalid", baseUrlError };
+  let next = draft;
+  if (providerDetectOnSave(providerId, rows, draft)) {
+    const found = await steps.probe();
+    next = {
+      ...draft,
+      clientType: found?.clientType ?? DEFAULT_CUSTOM_CLIENT_TYPE,
+      ...(found?.baseUrl !== undefined ? { baseUrl: found.baseUrl } : {}),
+    };
+  }
+  if (steps.dismissed()) return { kind: "dismissed" };
+  const update = providerSettingsUpdate(group, next);
+  if (update === null) return { kind: "unchanged" };
+  return { kind: "saved", res: await api.putProviderConnection(projectId, providerId, update) };
 }
 
 /**
@@ -228,6 +314,16 @@ export function ProviderSettingsDialog({
   const [saving, setSaving] = useState(false);
   /** Run counter: a manual pick or an edited URL supersedes a probe still in flight. */
   const detectSeq = useRef(0);
+  /** Set once the dialog is closed or taken down: a save still in flight then writes nothing. */
+  const dismissed = useRef(false);
+  // Reset on mount as well as set on unmount: StrictMode's rehearsal unmount must not leave a
+  // live dialog marked as gone.
+  useEffect(() => {
+    dismissed.current = false;
+    return () => {
+      dismissed.current = true;
+    };
+  }, []);
 
   const id = provider.id;
   const customLike = isCustomLikeGroup(id);
@@ -252,36 +348,25 @@ export function ProviderSettingsDialog({
   // Detect needs a URL to probe: the field's, else the one the group stores.
   const detectable = providerDetectRequest(id, group, draft) !== null;
 
-  /** One probe of the draft's endpoint; resolves to what it found, or null. */
-  const detect = async (
-    mode: "manual" | "save",
-  ): Promise<{ clientType: string; baseUrl?: string } | null> => {
+  /** One probe of the draft's endpoint, shown in the dialog; resolves to what it found, or null. */
+  const detect = async (mode: "manual" | "save"): Promise<ProbeFound | null> => {
     const failed = () => {
       setDetectFailed(true);
       if (mode === "save") toastInfo(S.models.detectFellBack);
       else toastError(S.models.detectFailedBody);
     };
-    const body = providerDetectRequest(id, group, draft);
-    if (body === null) {
-      failed();
-      return null;
-    }
     const seq = ++detectSeq.current;
     setDetecting(true);
     setDetectFailed(false);
     try {
-      const res = await api.detectProtocol(projectId, body);
+      const found = await probeGroupProtocol(projectId, id, group, draft);
       if (seq !== detectSeq.current) return null;
-      if (!res.detected) {
+      if (found === null) {
         failed();
         return null;
       }
-      // The protocol may have answered on a tidied-up form of the URL; the field takes the one
-      // that answered whenever it differs from what was probed.
-      const served =
-        res.baseUrl !== undefined && res.baseUrl !== body.baseUrl ? res.baseUrl : undefined;
-      set({ clientType: res.detected, ...(served !== undefined ? { baseUrl: served } : {}) });
-      return { clientType: res.detected, ...(served !== undefined ? { baseUrl: served } : {}) };
+      set(found);
+      return found;
     } catch {
       if (seq === detectSeq.current) failed();
       return null;
@@ -308,30 +393,23 @@ export function ProviderSettingsDialog({
     set({ clientType });
   };
 
+  // `saving` covers the whole save, its probe included, so that nothing closes the dialog while
+  // the save may still write.
   const save = async () => {
-    if (providerBaseUrlMissing(id, rows, draft)) {
-      setBaseUrlError(S.models.baseUrlRequired);
-      return;
-    }
-    let next = draft;
-    if (providerDetectOnSave(id, rows, draft)) {
-      const found = await detect("save");
-      next = {
-        ...draft,
-        clientType: found?.clientType ?? DEFAULT_CUSTOM_CLIENT_TYPE,
-        ...(found?.baseUrl !== undefined ? { baseUrl: found.baseUrl } : {}),
-      };
-    }
-    const update = providerSettingsUpdate(group, next);
-    if (update === null) {
-      toastInfo(S.common.noChangesToSave);
-      return;
-    }
     setSaving(true);
     try {
-      const res = await api.putProviderConnection(projectId, id, update);
-      toastSuccess(S.common.saved);
-      onSaved(res);
+      const result = await saveGroupSettings(projectId, id, group, rows, draft, {
+        probe: () => detect("save"),
+        dismissed: () => dismissed.current,
+      });
+      if (result.kind === "invalid") setBaseUrlError(result.baseUrlError);
+      else if (result.kind === "unchanged") toastInfo(S.common.noChangesToSave);
+      else if (result.kind === "saved") {
+        toastSuccess(S.common.saved);
+        // Taken down mid-write (the page switched Project): the write landed, but the table it
+        // answered with is not the one on screen now.
+        if (!dismissed.current) onSaved(result.res);
+      }
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -339,18 +417,25 @@ export function ProviderSettingsDialog({
     }
   };
 
+  /** Every way out of the dialog (Cancel, Esc, the backdrop, ×); none while a save is in flight. */
+  const close = () => {
+    if (saving) return;
+    dismissed.current = true;
+    onClose();
+  };
+
   const busy = saving || detecting;
   return (
     <Modal
       open
       title={S.models.groupSettingsTitle(provider.label)}
-      onClose={() => !saving && onClose()}
+      onClose={close}
       // Wide enough for the longest catalog endpoint and its protocol path to read whole in
       // the base URL field (66 + 17 monospace columns, plus the suffix menu's chevron).
       widthClass="sm:max-w-3xl"
       footer={
         <>
-          <Button size="sm" disabled={saving} onClick={onClose}>
+          <Button size="sm" disabled={saving} onClick={close}>
             {S.common.cancel}
           </Button>
           <Button size="sm" variant="primary" disabled={busy} onClick={() => void save()}>

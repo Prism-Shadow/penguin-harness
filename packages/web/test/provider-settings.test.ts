@@ -12,11 +12,15 @@
  *   GROUP key), on the URL in the field or — left blank — the one the group stores; with neither
  *   there is nothing to probe, and the catalog's endpoint is never probed in their place.
  * - Given Save, the endpoint is probed only when nothing decides the protocol: a custom or
- *   user-defined group given a base URL, left on "Not set", with no model storing its own. A
- *   protocol picked, a model's own protocol (Atria's, in custom) and a built-in group never
- *   trigger it.
+ *   user-defined group given a base URL, left on "Not set", with a model that stores no protocol
+ *   of its own (or no model yet). A protocol picked, every model storing its own (Atria alone, in
+ *   custom) and a built-in group never trigger it.
  * - Given a custom or user-defined group with a model that stores no base URL, a blank group base
  *   URL is refused; a built-in group never refuses one.
+ * - Given Save on a base URL that is not an absolute http(s) URL, the field says why and nothing
+ *   is sent. Given a group with one model lacking its own protocol, the endpoint is probed and the
+ *   protocol found is saved; given every model storing its own, only the changed fields go out.
+ *   Given the dialog dismissed while the probe is in flight, nothing is written.
  * - Given a group whose file values differ from the catalog's, and models that carry values of
  *   their own, the dialog shows the file's values and says nothing else: no catalog value, no
  *   line under the fields, no count of the models' own values.
@@ -39,7 +43,7 @@ import {
   presetProviderTable,
   providerInfo,
 } from "@prismshadow/penguin-core/model-catalog";
-import type { ProviderConnectionDto } from "@prismshadow/penguin-server/api";
+import type { ModelsResponse, ProviderConnectionDto } from "@prismshadow/penguin-server/api";
 import {
   applyProviderUpdate,
   groupKeyMissesRow,
@@ -55,10 +59,13 @@ import {
   providerDetectOnSave,
   providerDetectRequest,
   providerSettingsUpdate,
+  probeGroupProtocol,
+  saveGroupSettings,
 } from "../src/features/models/provider-settings-dialog";
 import { userProviderInfo } from "../src/features/models/model-grouping";
 import { ProtocolSuffixMenu } from "../src/features/models/protocol-suffix";
 import { S } from "../src/lib/strings";
+import { json, stubFetch } from "./helpers/fetch";
 
 // The dialog is a Modal, which portals to document.body; the server renderer has no portals, so
 // here a portal renders in place. Nothing else about react-dom changes. (The Modal also notes
@@ -188,24 +195,110 @@ describe("Detect in the group settings", () => {
 describe("Save asks the endpoint only when nothing decides the protocol", () => {
   const typed = { baseUrl: "http://10.0.0.5:8000/v1", clientType: null };
 
-  it("detects on a custom-like group with a base URL, on Not set, with no model protocol", () => {
+  it("detects on a custom-like group with a base URL, on Not set, while some model would follow the group's protocol", () => {
     expect(providerDetectOnSave("my-group", [row(), row()], typed)).toBe(true);
+    // One model storing its own protocol does not settle the others'.
+    expect(
+      providerDetectOnSave("my-group", [row(), row({ clientType: "ant-messages" })], typed),
+    ).toBe(true);
+    expect(providerDetectOnSave("custom", [atriaRow, row()], typed)).toBe(true);
+    // No model yet: the ones added later will follow the group.
     expect(providerDetectOnSave("custom", [], typed)).toBe(true);
   });
 
-  it("does not detect when a protocol is picked, a model stores one, or the group is built-in", () => {
+  it("does not detect when a protocol is picked, every model stores one, or the group is built-in", () => {
     expect(providerDetectOnSave("my-group", [row()], { ...typed, clientType: "openai-chat" })).toBe(
       false,
     );
     expect(
-      providerDetectOnSave("my-group", [row(), row({ clientType: "ant-messages" })], typed),
+      providerDetectOnSave(
+        "my-group",
+        [row({ clientType: "ant-messages" }), row({ clientType: "openai-chat" })],
+        typed,
+      ),
     ).toBe(false);
-    // Custom holding Atria: its row stores a protocol, which settles it.
+    // Custom holding Atria alone: its row stores a protocol, which settles it.
     expect(providerDetectOnSave("custom", [atriaRow], typed)).toBe(false);
     for (const id of ["vllm", "openrouter", "deepseek"]) {
       expect(providerDetectOnSave(id, [row()], typed), id).toBe(false);
     }
     expect(providerDetectOnSave("my-group", [row()], { ...typed, baseUrl: " " })).toBe(false);
+  });
+});
+
+describe("Save, as the dialog runs it", () => {
+  const ANSWER: ModelsResponse = { providers: {}, models: [] };
+  const typed = { ...initialDraft(undefined), baseUrl: "http://10.0.0.5:8000/v1" };
+
+  /** One Save over the fetch fake, probing with the dialog's own probe. */
+  const save = (
+    providerId: string,
+    rows: ReturnType<typeof row>[],
+    draft: ReturnType<typeof initialDraft>,
+    dismissed: () => boolean = () => false,
+  ) =>
+    saveGroupSettings("p1", providerId, undefined, rows, draft, {
+      probe: () => probeGroupProtocol("p1", providerId, undefined, draft),
+      dismissed,
+    });
+
+  it("refuses a base URL that is not an absolute http(s) URL with the field's error, and sends nothing", async () => {
+    const network = stubFetch(() => json(ANSWER));
+    for (const baseUrl of ["not-a-url", "10.0.0.5:8000/v1", "ftp://10.0.0.5/v1"]) {
+      for (const id of ["my-group", "openrouter"]) {
+        expect(await save(id, [row()], { ...typed, baseUrl }), `${id} ${baseUrl}`).toEqual({
+          kind: "invalid",
+          baseUrlError: S.models.baseUrlInvalid,
+        });
+      }
+    }
+    expect(network.requests).toEqual([]);
+  });
+
+  it("probes where one model has no protocol of its own, and saves the protocol found", async () => {
+    const network = stubFetch((req) =>
+      req.method === "POST"
+        ? json({ detected: "openai-responses", baseUrl: typed.baseUrl, probes: [] })
+        : json(ANSWER),
+    );
+    const result = await save("my-group", [row(), row({ clientType: "ant-messages" })], typed);
+    expect(result).toEqual({ kind: "saved", res: ANSWER });
+    expect(network.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      "POST /api/projects/p1/models/detect",
+      "PUT /api/projects/p1/models/providers/my-group",
+    ]);
+    expect(network.requests[1]!.body).toEqual({
+      baseUrl: typed.baseUrl,
+      clientType: "openai-responses",
+    });
+  });
+
+  it("does not probe where every model stores its own protocol: only the base URL is sent", async () => {
+    const network = stubFetch(() => json(ANSWER));
+    const rows = [row({ clientType: "ant-messages" }), row({ clientType: "openai-chat" })];
+    expect(await save("my-group", rows, typed)).toEqual({ kind: "saved", res: ANSWER });
+    expect(network.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      "PUT /api/projects/p1/models/providers/my-group",
+    ]);
+    expect(network.requests[0]!.body).toEqual({ baseUrl: typed.baseUrl });
+  });
+
+  it("writes nothing when the dialog is dismissed while the probe is in flight", async () => {
+    let probing!: () => void;
+    const probeSent = new Promise<void>((resolve) => (probing = resolve));
+    let answer!: (res: Response) => void;
+    const network = stubFetch((req) => {
+      if (req.method !== "POST") return json(ANSWER);
+      probing();
+      return new Promise<Response>((resolve) => (answer = resolve));
+    });
+    let dismissed = false;
+    const pending = save("my-group", [row()], typed, () => dismissed);
+    await probeSent;
+    dismissed = true;
+    answer(json({ detected: "openai-chat", probes: [] }));
+    expect(await pending).toEqual({ kind: "dismissed" });
+    expect(network.requests.map((r) => r.method)).toEqual(["POST"]);
   });
 });
 
