@@ -43,9 +43,20 @@ given these and `example-benchmark` once each, so a deleted one stays deleted.
   Benchmark, and the manual create route still wrote plain ones only.
 - **Web App.** A Harbor Benchmark's card and page title carried a neutral **Harbor** tag, and its
   page linked the repository at `ref` under **Task files**. The Evaluate tab added one line on what
-  the run needs: Docker and uv where the evaluator agent runs, and a saved API key for the tested
-  agent's model. A run recorded as `harbor:<trial>` showed a button that copies the trial's name.
-- **Skill.** `agent-evaluation` (agent-tuning `2026.10.02.1`) gained `reference/harbor.md`. The
+  the run needs: Docker and uv where the evaluator agent runs, and a saved API key for the model
+  the evaluation runs on. A run recorded as `harbor:<trial>` showed a button that copies the
+  trial's name.
+- **The model under test.** The Evaluate prompt, the same for every Benchmark, stopped pointing at
+  a model the Test Agent "is configured with": it named the evaluation conversation's own model,
+  which the evaluator agent read once from the `Provider` and `Model ID` lines of its Environment
+  and sent in every cell's request, at the Test Agent's configured thinking level. The prompt
+  named no model itself, so a model changed in the composer before sending was the one tested;
+  the dialog's model hint said so. `agent-evaluation` gave every caller the same rule (its own
+  instructions' pair, else its Session's; stop and ask the user when neither is complete), and
+  caller and worker alike a rule never to read the server's `api-token`, a Project's
+  `.project_config.toml` or the server's `web.db`, nor to call the server API with a token read
+  from disk.
+- **Skill.** `agent-evaluation` (agent-tuning `2026.10.03.1`) gained `reference/harbor.md`. The
   caller resolved `ref` to a commit and built a checkout named by it under `benchmarks/.harbor/`,
   published in one rename and never changed afterwards. Each cell ran one Harbor trial with the
   repository's PenguinHarness adapter, which carried the tested agent's Agent State (without its
@@ -56,7 +67,8 @@ given these and `example-benchmark` once each, so a deleted one stays deleted.
   step. `benchmark-design` left Harbor Benchmarks alone, and `agent-optimization` used them like
   any published Benchmark without reading the tasks' tests or the verifier's output.
 - **Docs.** The Evaluation Center page gained a "Built-in Harbor Benchmarks" section, and both
-  it and the Self-Improvement page described the once-per-Project rule.
+  it and the Self-Improvement page described the once-per-Project rule and the model an
+  evaluation from the Evaluate tab runs on.
 
 ## Existing Projects
 

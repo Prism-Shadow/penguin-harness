@@ -11,6 +11,12 @@ The top-level Benchmark Designer or Optimizer owns all Case and Run loops, concu
 
 Operate silently. Call tools without progress messages. Across all streamed and final responses, the only worker-authored text must be the final plain protocol YAML. Emit no narration, headings, Markdown fences, summaries, private scoring details, or other text.
 
+## For the caller
+
+The agent that fans out the cells — a Benchmark Designer, an Optimizer, or an agent asked to evaluate a Test Agent — fixes `provider` and `model_id` once, before its first `run_subagent`, and sends that pair in every request of the evaluation. It is the pair the caller's own instructions name (the user's request, or an Optimizer's Reference evaluation); when they name none, it is the caller's own Session's model, the `Provider` and `Model ID` lines of its Environment. An Agent stores no model — the `model` block of its `system_config.yaml` holds limits and a thinking level, never a provider or model id — so never look for one in the Test Agent's files, never fall back to a Project default, and never ask the server for one. When neither source gives a complete pair, stop and ask the user. The thinking level is not the caller's to choose: every worker reads it from the Test Agent's configuration.
+
+A caller never reads a credential — the server's `api-token` file, a Project's `.project_config.toml` (it holds the model keys), the server's auth database `web.db`, or a vault — and never calls the server's HTTP API with a token read from disk. Workers are bound by the same rule (Contract).
+
 ## Before you start
 
 Use this Skill only for a complete request from a `run_subagent` caller. If the request is incomplete or inconsistent, return `invalid_request` through the protocol instead of asking the user a question.
@@ -34,7 +40,7 @@ One request represents one Test Agent execution. The `run` value identifies that
 
 Return a **scored result** when the Test Agent ran and the Rubric could be applied. Wrong, malformed, or missing Test Agent output is still a scored result. Return an **evaluation failure** when the request, Benchmark, launch, version check, Trace binding, or scoring process prevents a valid score.
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent and Benchmark. Never read a Project configuration file, credential, or vault. The one exception is a Harbor-backed Case's model API host, which the benchmark repository's helper prints for you (`reference/harbor.md` §B.3); no other part of the configuration reaches you. Never use `penguin config model list` for it either: that listing masks each key but still shows its last 4 characters.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent and Benchmark. Never read a Project configuration file, credential, or vault: not the server's `api-token` file, not `.project_config.toml` (it holds the model keys), not the server's auth database `web.db`. Never call the server's HTTP API with a token read from disk either. The one exception is a Harbor-backed Case's model API host, which the benchmark repository's helper prints for you (`reference/harbor.md` §B.3); no other part of the configuration reaches you. Never use `penguin config model list` for it either: that listing masks each key but still shows its last 4 characters.
 
 ## Prepare
 

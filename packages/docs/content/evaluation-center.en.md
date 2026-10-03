@@ -58,8 +58,8 @@ Their cards carry a **Harbor** tag. Each case runs as a [Harbor](https://github.
 **Before you evaluate**
 
 - The machine the evaluator agent runs on has Docker with Compose v2 and [uv](https://docs.astral.sh/uv/), and can reach GitHub, Docker Hub, nodejs.org, the npm registry and the model provider.
-- The tested agent's model has its API key saved on the **Models** page. The evaluation copies that one model entry into each task container; it needs no Vault entry.
-- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.02.1 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
+- The model the evaluation runs on, the evaluation conversation's, has its API key saved on the **Models** page. The evaluation copies that one model entry into each task container; it needs no Vault entry.
+- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.03.1 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
 
 You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The **Evaluate** tab names the prerequisites above in one line. The evaluation fetches the repository once, then runs one Harbor trial per case and run: the tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
 
@@ -79,7 +79,7 @@ AI writes the cases for an agent, trial-runs each case to calibrate its difficul
 
 The dialog's "Done by … in a new conversation" line names the agent that does the writing: the Project's default agent, not the Test Agent.
 
-The Builder runs the Test Agent on the model of this new conversation, for the trial runs and for the baseline. Evaluations started later from the **Evaluate** tab run the agent on the model it is configured with, and the chart gives each model its own line. To keep the baseline on the same line as later scores, pick the Test Agent's configured model in the composer before you send.
+The Builder runs the Test Agent on the model of this new conversation, for the trial runs and for the baseline. Evaluations started later from the **Evaluate** tab do the same with their own conversation's model, and the chart gives each model its own line. To keep later scores on the baseline's line, evaluate on the model the baseline used.
 
 While the cases are being written, the Benchmark's card shows **Being built**. The Benchmark opens once the baseline is recorded. If calibration fails, the card shows **Creation failed**; the owner then deletes the Benchmark and creates it again.
 
@@ -166,7 +166,7 @@ An evaluation runs an agent on every case of a Benchmark and adds one labelled s
 4. Optional: change **Model of the evaluation conversation** (preset to the Project's default model) or **Runs per case** (preset to the Benchmark's configured count), and add a **Note**.
 5. Select **Edit in a new conversation**, review the prompt, and send it.
 
-The dialog has no field for the model or thinking level the tested agent runs on. **Model of the evaluation conversation** only sets the model of the conversation that dispatches and totals the runs.
+The tested agent runs on the model of the evaluation conversation: the one set in **Model of the evaluation conversation**, or the one you pick in the composer before you send. Its thinking level is the one it is configured with; the dialog does not change it.
 
 The evaluation conversation, and every Test Session it starts, is filed under the **Evaluations** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
 
@@ -217,7 +217,7 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 - **Status.** `status` in `benchmark_config.toml` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask.
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
-- **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
+- **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark_config.toml`, so it is not listed, and you can delete it by hand.
 - **The example and the built-in Benchmarks.** `default_agent`'s initialization and every later load give the Project each of them it has not been given yet, and record it in `benchmarks/.seeded.json`; a deleted one is not written back. A directory of your own under a built-in Harbor id is never written into, and that built-in is given once the directory is gone. An `example-benchmark` left by an earlier release is recorded as given and kept as it is; one you had deleted before upgrading is written once more.
 - **Built-in Harbor Benchmarks.** Their `benchmark_config.toml` says `kind = "harbor"` and names the repository, its ref and the task folder in a `[harbor]` table. The `agent-evaluation` Skill reads them and runs one Harbor trial per cell in place of a Workspace session; its `reference/harbor.md` has the steps.

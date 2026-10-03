@@ -13,12 +13,14 @@
  * rests on preselected — the evaluator on both tabs, the optimizer on its own — so the
  * `[use_skills]` block names them on send and the model reads them before it acts; a model
  * left to its own devices sometimes scored the runs itself instead of delegating to
- * agent-evaluation. The evaluation runtime is never picked in this dialog —
- * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
- * what that agent's baseline recorded, so scores stay comparable. A Harbor Benchmark's Evaluate
- * tab adds one line on what its runs need (Docker and uv where the evaluator runs, a saved key
- * for the tested agent's model); the prompt is the same, since the Skill reads the Benchmark's
- * kind itself. Mounted fresh per Benchmark.
+ * agent-evaluation. Evaluate tests on that conversation's own model, at the tested agent's
+ * configured thinking level: an agent stores no model of its own. The prompt names no model —
+ * the evaluator reads its Session's model from its Environment — so one changed in the composer
+ * after the prefill is still the one tested, and the text never goes stale. Optimize reuses what
+ * that agent's baseline recorded, so scores stay comparable. A Harbor Benchmark's Evaluate tab
+ * adds one line on what its runs need (Docker and uv where the evaluator runs, a saved key for
+ * the model); the prompt is the same, since the Skill reads the Benchmark's kind itself. Mounted
+ * fresh per Benchmark.
  */
 import { useEffect, useState } from "react";
 import type {
