@@ -32,11 +32,14 @@
  * (a plugin's, stored before the plugin loads) is kept as it is and rendered as a placeholder
  * until its definition arrives; only a key that cannot be a panel id at all is dropped.
  *
- * One surface at a time can be FULLSCREEN, covering the chat page's column; that is the one
- * piece of state here that is transient — in memory, never stored, cleared by a scope switch and
- * by the breakpoint flipping — and it holds only while its surface is on screen and is the dock
- * touched last (checked after every mutation, in commit()). Anything that brings the OTHER dock
- * forward drops it, so what was asked for is seen rather than opening under the cover.
+ * One surface at a time can be FULLSCREEN — the dock grown as far as its own edge goes: the right
+ * dock over its row (the conversation beside it, with the toolbar above and the bottom dock below
+ * still in view), the bottom dock or the narrow merged view up to the toolbar (over the row, and
+ * the right dock in it). That is the one piece of state here that is transient — in memory, never
+ * stored, cleared by a scope switch and by the breakpoint flipping — and it holds only while its
+ * surface is on screen with tabs and no dock it COVERS is brought forward (checked after every
+ * mutation, in commit()): the right dock taking the stage under a fullscreen bottom dock drops
+ * it, so what was asked for is seen rather than opening under the cover.
  *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar toggles the docks, the global hotkey flips the terminal, AppLayout points the
@@ -215,7 +218,7 @@ let scope = NO_SCOPE;
 // are on every render path, and one live object per scope keeps switching cheap.
 let layout: ScopeLayout = scopes[scope] ?? emptyScope();
 /**
- * The surface covering the chat page's column, by the position it renders at ("bottom" for the
+ * The surface grown to its fullscreen cover, by the position it renders at ("bottom" for the
  * narrow merged view), or null. In memory only: a reload, a scope switch and the breakpoint
  * flipping all start in the normal layout. The rules live in the fullscreen section below.
  */
@@ -622,7 +625,7 @@ export function hideView(view: DockView): void {
 
 // --------------------------------------------------------------------------- fullscreen
 
-/** The surface covering the chat page's column ("bottom" for the narrow merged view), or null. */
+/** The surface grown to its fullscreen cover ("bottom" for the narrow merged view), or null. */
 export function fullscreenDock(): DockPosition | null {
   return fullscreen;
 }
@@ -645,14 +648,18 @@ function fullscreenEligible(position: DockPosition): boolean {
 }
 
 /**
- * Drops fullscreen when its surface stopped qualifying: it was hidden, its last tab left, or
- * (wide) the OTHER dock was touched — activated, opened, or had something moved into it — which
- * would otherwise happen invisibly under the cover. Runs in commit(), after every mutation.
+ * Drops fullscreen when its surface stopped qualifying — hidden, or its last tab gone — and when a
+ * dock it COVERS takes the stage, which would otherwise happen invisibly under the cover. Only the
+ * bottom dock's cover reaches another dock: it climbs to the toolbar, over the right dock, so the
+ * right dock being touched — activated, opened, or had something moved into it — ends it. The
+ * right dock's cover is its own row, with the bottom dock still in view below it, so the bottom
+ * dock opening, being touched or receiving a tab leaves it alone; so does anything within the
+ * merged view, which is every dock there is. Runs in commit(), after every mutation.
  */
 function reconcileFullscreen(): void {
   if (fullscreen === null) return;
-  const holds = fullscreenEligible(fullscreen) && (narrow || layout.focus === fullscreen);
-  if (!holds) fullscreen = null;
+  const coveredTakesStage = !narrow && fullscreen === "bottom" && layout.focus === "right";
+  if (!fullscreenEligible(fullscreen) || coveredTakesStage) fullscreen = null;
 }
 
 /**

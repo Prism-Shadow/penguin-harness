@@ -29,10 +29,12 @@
  *   the shell again.
  * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
  *   one has none.
- * - At most one surface covers the window (fullscreen), and only an open dock with tabs enters it.
- *   It lasts while that dock is open and the one touched last: hiding it, closing its last tab, or
- *   anything activating in the other dock ends it, while switching tabs within it does not. A
- *   scope switch ends it too, and it is never stored.
+ * - At most one surface is fullscreen, and only an open dock with tabs enters it. It lasts while
+ *   that dock is open with tabs and no dock it covers comes forward: the right dock's cover is its
+ *   own row, so the bottom dock opening or activating leaves it, while the bottom dock's cover
+ *   reaches the right dock, so the right dock opening or activating ends it. Hiding the surface or
+ *   closing its last tab ends either; switching tabs within it does not. A scope switch ends it
+ *   too, and it is never stored.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "./helpers/storage";
@@ -487,27 +489,35 @@ describe("fullscreen", () => {
     expect(dock.fullscreenDock()).toBe("right");
   });
 
-  it("exits when a tab of the other dock activates", () => {
+  it("right: survives the bottom dock opening, activating and receiving a panel", () => {
     dock.openPanel("memory", "bottom");
-    dock.openPanel("workspace", "right");
-    dock.setDockFullscreen("right");
-    dock.activateTab("memory");
-    expect(dock.fullscreenDock()).toBeNull();
-  });
-
-  it("exits when openPanel lands in the other dock", () => {
     dock.openPanel("builtin-browser", "bottom");
     dock.openPanel("workspace", "right");
     dock.setDockFullscreen("right");
-    // The agent opens the browser, whose tab lives at the bottom: shown, not left under the cover.
+    dock.toggleDock("bottom"); // hidden
+    dock.toggleDock("bottom"); // open again, focused — it shows below the covered row
+    dock.activateTab("memory");
+    // The agent opens the browser, whose tab lives at the bottom: shown there, under nothing.
     dock.openPanel("builtin-browser");
+    expect(dock.fullscreenDock()).toBe("right");
+  });
+
+  it("bottom: ends when the right dock is toggled open", () => {
+    dock.openPanel("workspace", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.toggleDock("right");
     expect(dock.fullscreenDock()).toBeNull();
   });
 
-  it("exits when the other dock is toggled open", () => {
-    dock.openPanel("workspace", "right");
-    dock.setDockFullscreen("right");
-    dock.toggleDock("bottom");
+  it("bottom: ends when a tab of the right dock activates or a panel lands there", () => {
+    dock.openPanel("memory", "right");
+    dock.openPanel("workspace", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.activateTab("memory"); // the covered dock takes the stage
+    expect(dock.fullscreenDock()).toBeNull();
+
+    dock.setDockFullscreen("bottom");
+    dock.openPanel("trace"); // a new panel lands in the right dock by default
     expect(dock.fullscreenDock()).toBeNull();
   });
 

@@ -13,22 +13,26 @@
  *
  * The border belongs to the open state only: with border-box sizing a collapsed dock would still
  * paint its 1px, leaving a hairline where nothing is. The resize handle is the caller's too, shown
- * only while open: an overlay straddling the bottom dock's top edge (it costs no height), and a
- * layout sibling before the right dock (it must cost real width, so the conversation measures
- * the same under every surface).
+ * only while open and seated by the frame: an overlay straddling the bottom dock's top edge (it
+ * costs no height), and the one item of a spacer before the right dock (it must cost real width,
+ * so the conversation measures the same under every surface).
  *
- * A surface can go FULLSCREEN, covering its host — the caller names the element, the chat page's
- * column; the navigation beside it stays. The box in the flow keeps its size as a placeholder —
- * the conversation beside or above it does not reflow, so nothing under the cover scrolls or
- * refits — and only the content box inside it lifts off (`fixed`, at `DOCK_FULLSCREEN_Z`); the
- * bodies are the same elements, so a terminal, a file preview or an editor draft carries over
- * untouched. The handle stays in the flow but inert (its width is part of the placeholder's
- * footprint). The header's own toggle is the way back; there is no other control.
+ * A surface can go FULLSCREEN — grown as far as its own edge goes, which is the element the
+ * caller names: the right dock's row (the conversation beside it; the toolbar above and the
+ * bottom dock below stay in view), the bottom dock's area up to the toolbar (the row and itself,
+ * over the right dock). The box in the flow keeps its size as a placeholder — the conversation
+ * beside or above it does not reflow, so nothing under the cover scrolls or refits — and only the
+ * content box inside it lifts off (`fixed`, at `DOCK_FULLSCREEN_Z`); the bodies are the same
+ * elements, so a terminal, a file preview or an editor draft carries over untouched. The resize
+ * handle moves to the lifted box's LEADING edge (the right dock's left, the bottom dock's top),
+ * where a pull back inward is the way out by drag, while the placeholder keeps the handle's
+ * footprint without a second bar; the header's own toggle is the other way back.
  *
  * The flip is the theme's layout motion, in three phases the root announces as
  * `data-fullscreen` (absent in the flow): ENTERING lifts the box at its docked rect and sends it
- * to the host's on the next frame, so the transition has two values to run between; FULL follows
- * the host live (the navigation column folds, the window resizes) with no transition; EXITING
+ * to the cover's on the next frame, so the transition has two values to run between; FULL follows
+ * the cover live — the navigation column folds, the window resizes, the bottom dock opens or
+ * resizes under a fullscreen right dock and its row changes height — with no transition; EXITING
  * sends it back to the docked rect, which the root still holds, and the box rejoins the flow when
  * the transition ends. The inside never reflows on the way: a wrapper lays the header and body out
  * at the size the box is heading to, anchored to the box's top and to the edge both rects share
@@ -47,6 +51,7 @@ import type {
   Ref,
   RefObject,
 } from "react";
+import { RESIZE_HANDLE_PX } from "../../layout/resize-handle/resize-handle";
 
 export type DockEdge = "right" | "bottom";
 
@@ -56,7 +61,7 @@ export type DockEdge = "right" | "bottom";
  * tree), under the dialogs and drawers (z-50), the portaled menus and tooltips (z-[60]) and the
  * toasts (z-[100]), so the dock's own confirmations, its "+" menu and its tooltips still paint
  * over it. Content laid over the surface by coordinates (the built-in browser's page) takes the
- * step above (+1).
+ * step above (+1), and so does the resize handle seated on the surface's leading edge.
  */
 export const DOCK_FULLSCREEN_Z = 40;
 
@@ -140,7 +145,10 @@ function sizeOf(rect: Rect): Size {
   return { width: rect.width, height: rect.height };
 }
 
-/** The rect a lifted surface covers: the host the caller names, or the viewport without one. */
+/**
+ * The rect a lifted surface covers: the element the caller names (the right dock's row, the
+ * bottom dock's area), or the viewport without one.
+ */
 function hostRect(host: HTMLElement | null): Rect {
   if (host === null)
     return { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
@@ -312,9 +320,10 @@ function useFullscreenPhase(
     };
   }, [phase, launch, boxRef]);
 
-  // Full: follow the host's rect as it changes — its size through a ResizeObserver (the
-  // navigation column folding animates the host's width), its place through the window — with
-  // no transition, so the cover sticks to the host rather than trailing it.
+  // Full: follow the covered element's rect as it changes — its size through a ResizeObserver
+  // (the navigation column folding animates its width; the bottom dock opening, closing or
+  // resizing under a fullscreen right dock changes the row's height), its place through the
+  // window — with no transition, so the cover sticks to the element rather than trailing it.
   useEffect(() => {
     if (phase !== "full") return;
     const follow = () => {
@@ -373,7 +382,12 @@ export interface DockFrameProps {
   movable?: boolean;
   /** The shown tab's body, or the picker while the dock has no tabs. */
   children: ReactNode;
-  /** The resize handle, rendered only while open (inert while the surface is lifted). */
+  /**
+   * The resize handle (a `ResizeHandle`), rendered only while open. The frame seats it: the right
+   * dock's, given without `edge`, fills the 6px spacer before the box; the bottom dock's, given
+   * with `edge: "start"`, straddles the box's top edge. While the surface is lifted the same
+   * element sits on the lifted box's leading edge instead, and the spacer keeps its footprint.
+   */
   handle?: ReactNode;
   /** Layers that belong to the dock but float over the page (a drag overlay, a confirmation). */
   overlays?: ReactNode;
@@ -386,7 +400,8 @@ export interface DockFrameProps {
    */
   fullscreen?: boolean;
   /**
-   * The element a fullscreen surface covers, read when the surface lifts and followed while it
+   * The element a fullscreen surface covers — the dock grown as far as its own edge goes: the
+   * right dock's row, the bottom dock's area — read when the surface lifts and followed while it
    * is full; the viewport when absent or null.
    */
   fullscreenHost?: () => HTMLElement | null;
@@ -446,17 +461,44 @@ export function DockFrame({
   const lifted = phase !== "docked";
   const moving = animate && (phase === "entering" || phase === "exiting");
 
-  // The handle keeps its place in the flow while the surface is lifted — the right dock's is a
-  // layout sibling whose width is part of the placeholder's footprint — but takes no pointer and
-  // no focus: the content it would resize is laid over the host, not beside the conversation.
-  let handleNode: ReactNode = null;
-  if (open && lifted)
-    handleNode = (
-      <div inert className="contents">
-        {handle}
-      </div>
-    );
-  else if (open) handleNode = handle;
+  // The handle's seat. In the flow the seat is `display: contents`, so the handle lays itself out
+  // as the caller placed it: the right dock's as the one item of the spacer before the root — the
+  // spacer, not the handle, is what costs the row its `RESIZE_HANDLE_PX`, so the footprint stays
+  // while the handle is away — and the bottom dock's as the overlay straddling the root's top
+  // edge. Lifted, the seat is a fixed box on the lifted surface's LEADING edge, where a pull back
+  // inward is the way out: a band straddling the right dock's left edge for the handle to fill, a
+  // zero-height line along the bottom dock's top edge for the overlay handle to straddle as it
+  // straddles the root's. It takes the step above the surface (the box comes later in the tree,
+  // so an equal index would paint it over the handle) and follows the box's rect, with the box's
+  // layout motion while it moves. The SEAT changes, never the handle: one element through every
+  // phase, so a drag that began on it in the flow goes on when the snap lifts the surface
+  // mid-gesture — a remounted handle would keep the pointer's capture and never report the
+  // release that ends the drag. There is one handle at a time.
+  const seatStyle: CSSProperties | undefined =
+    lifted && box !== null
+      ? position === "right"
+        ? {
+            top: box.top,
+            left: box.left - RESIZE_HANDLE_PX / 2,
+            width: RESIZE_HANDLE_PX,
+            height: box.height,
+            zIndex: DOCK_FULLSCREEN_Z + 1,
+          }
+        : {
+            top: box.top,
+            left: box.left,
+            width: box.width,
+            height: 0,
+            zIndex: DOCK_FULLSCREEN_Z + 1,
+          }
+      : undefined;
+  const seatClass =
+    seatStyle === undefined ? "contents" : position === "right" ? "fixed flex" : "fixed";
+  const seat = open ? (
+    <div data-layout-motion={moving ? "" : undefined} style={seatStyle} className={seatClass}>
+      {handle}
+    </div>
+  ) : null;
 
   // Lifted: a fixed box at the rect the phase machine gives it, transitioning its place and size
   // through the theme's layout motion while it enters or exits, clipping what the inside lays out
@@ -519,7 +561,7 @@ export function DockFrame({
           open ? "border-t border-line" : ""
         }`}
       >
-        {handleNode}
+        {seat}
         {content}
         {overlays}
       </div>
@@ -528,7 +570,8 @@ export function DockFrame({
 
   return (
     <>
-      {handleNode}
+      {/* The spacer: `w-1.5` is RESIZE_HANDLE_PX, the width the handle costs the row. */}
+      {seat !== null && <div className="flex w-1.5 shrink-0">{seat}</div>}
       <div
         ref={rootRef}
         data-testid="dock"

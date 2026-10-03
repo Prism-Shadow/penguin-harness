@@ -28,15 +28,20 @@
  * way. The boundary with the chat content resizes the dock — the right dock through the shared
  * side-panel width, the bottom dock through its height ratio.
  *
- * FULLSCREEN lays the surface over the chat page's column — the conversation, its toolbar and
- * the other dock; the navigation beside it stays, with its own fold (the store says which
- * surface, if any; the frame draws it, keeping the dock's own box in the flow so nothing
- * underneath reflows, and animates the flip with the theme's layout motion). The strip, the "+"
- * menu and the detach button keep working; what has no meaning with the surface covering the
- * page is put away — the move button, the header drag, dragging a tab out to the other edge, the
- * resize handle. The header's toggle (now corners in) is the one way back, and the store drops
- * fullscreen by itself when the surface stops qualifying (hidden, emptied, or the other dock
- * brought forward). Esc is left alone: the terminal, the editor and web pages each own it.
+ * FULLSCREEN is the surface grown as far as its own edge goes, the toolbar above it staying in
+ * view: the right dock covers its row — the conversation beside it, with the bottom dock still
+ * showing below — and the bottom dock (or the narrow merged view) climbs to the toolbar, over the
+ * row and the right dock in it (the store says which surface, if any; the frame draws it, keeping
+ * the dock's own box in the flow so nothing underneath reflows, and animates the flip with the
+ * theme's layout motion). The strip, the "+" menu and the detach button keep working; what has no
+ * meaning for a surface grown past its edge is put away — the move button, the header drag,
+ * dragging a tab out to the other edge. The boundary drag is how the flip happens by gesture:
+ * pulled past the dock's maximum size by a small slack, the dock snaps to fullscreen and the drag
+ * is over; while fullscreen the handle sits on the cover's leading edge, and a pull back inward
+ * past the slack (or a double click) snaps it back to its stored size. The header's toggle (now
+ * corners in) is the other way back, and the store drops fullscreen by itself when the surface
+ * stops qualifying (hidden, emptied, or a dock it covers brought forward). Esc is left alone: the
+ * terminal, the editor and web pages each own it.
  */
 import {
   useCallback,
@@ -47,6 +52,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   CloseIcon,
   ConfirmModal,
@@ -120,6 +126,7 @@ import {
   type DockView,
 } from "./dock-state";
 import {
+  maxWidthFor,
   persistPanelWidth,
   resetPanelWidth,
   setPanelWidth,
@@ -132,6 +139,15 @@ import {
  * other offered panel follows in registry order, which is where a plugin's panel lands.
  */
 const PICKER_LEAD: readonly PanelId[] = ["agents", "builtin-browser"];
+
+/**
+ * How far past the dock's maximum size a boundary drag pulls before the dock snaps to fullscreen,
+ * and how far back inward from the cover's leading edge a drag pulls before it snaps out, in px.
+ * Enough that a drag meant to stop at the maximum never tips over (the size clamps there and the
+ * pointer habitually overshoots by a little), small enough that the snap feels like the next
+ * notch rather than a separate journey.
+ */
+const FULLSCREEN_SNAP_PX = 40;
 
 /**
  * A terminal tab's body: adopts the shown terminal's pooled container. Only while shown —
@@ -264,8 +280,8 @@ export function DockPanel({
 
   const activeTab = tabs.find((tab) => tabKey(tab) === activeKey) ?? null;
 
-  // The store decides which surface (if any) covers the window; this one is it while it is open
-  // and the store names its position (the merged view's is "bottom", like the bottom dock's).
+  // The store decides which surface (if any) is fullscreen; this one is it while it is open and
+  // the store names its position (the merged view's is "bottom", like the bottom dock's).
   const fullscreen = open && fullscreenDock() === position;
 
   // ---------------------------------------------------------------------------- selection
@@ -320,7 +336,8 @@ export function DockPanel({
   const headerDragProps = usePointerDrag<object>({
     begin: (event) =>
       // The merged view spans both docks, so "move the dock" has no target of its own; a
-      // fullscreen surface has no edge to move to either, the other one being under the cover.
+      // fullscreen surface is not moved either — it has grown past its edge, and the move
+      // controls are put away with it.
       merged ||
       fullscreen ||
       (event.target as HTMLElement).closest("button, [data-testid='dock-tab']")
@@ -361,7 +378,7 @@ export function DockPanel({
       if (!stripEl) return;
       // Out of the strip (with a little slack): the gesture becomes "move to the other
       // edge" — the same overlay as moving a dock, with the preview showing the landing.
-      // Not while fullscreen, when the other edge is under the cover: the drag stays a reorder.
+      // Not while fullscreen, where the move controls are put away: the drag stays a reorder.
       const strip = stripEl.getBoundingClientRect();
       if (!fullscreen && (event.clientY < strip.top - 20 || event.clientY > strip.bottom + 20)) {
         setTabDrag({ active: true, candidate: dockDropCandidate(event.clientX, event.clientY) });
@@ -408,25 +425,83 @@ export function DockPanel({
   // (it must cost real width), so the handle's events cannot `closest()` their way to the
   // dock — the ref is how both handles reach the box they resize.
   const rootRef = useRef<HTMLDivElement | null>(null);
+  // Set by a snap into or out of fullscreen mid-drag: the rest of that gesture's moves change
+  // nothing, and its release persists nothing — the snap already did what the drag was for.
+  const snapped = useRef(false);
 
-  /** One move of a boundary drag: the pointer's position, as the dock's new size. */
+  /**
+   * The element a fullscreen surface covers — the dock grown as far as its own edge goes. The
+   * right dock's is its row ([data-dock-row]: the conversation beside it, the toolbar above
+   * untouched, the bottom dock still in view below). The bottom dock's, and the narrow merged
+   * view's, is the area from the row's top to the page column's bottom ([data-dock-area]: the row
+   * and itself, over the right dock). Read when the surface lifts and followed while it is full,
+   * so the frame need not know the page; the snap below measures it too.
+   */
+  const coveredElement = () =>
+    document.querySelector<HTMLElement>(horizontal ? "[data-dock-area]" : "[data-dock-row]");
+
+  /**
+   * A snap into or out of fullscreen ends the gesture: the drag's hold on the layout motion lifts
+   * first, so the flip animates, and the pointer's remaining moves until its release change
+   * nothing. One synchronous flush for both changes, because on their own they would reach the
+   * screen in two renders in the wrong order — the store's change re-renders in React's sync lane
+   * while a state set from a window listener waits for the continuous one — and the first of them
+   * would paint the flip with the drag still counted as running, landing it without its motion.
+   */
+  const snapTo = (target: DockPosition | null): void => {
+    snapped.current = true;
+    flushSync(() => {
+      setResizing(false);
+      setDockFullscreen(target);
+    });
+  };
+
+  /**
+   * One move of a boundary drag: the pointer's position, as the dock's new size — and, past the
+   * dock's maximum by the slack, the snap to fullscreen (the stored size stays at the maximum).
+   * While fullscreen the handle sits on the cover's leading edge, and only a pull back inward past
+   * the slack means anything: the snap out, to the stored size.
+   */
   const resizeTo = (event: PointerEvent): void => {
+    if (snapped.current) return;
+    if (fullscreen) {
+      const covered = coveredElement()?.getBoundingClientRect();
+      if (!covered) return;
+      const inward = horizontal ? event.clientY - covered.top : event.clientX - covered.left;
+      if (inward > FULLSCREEN_SNAP_PX) snapTo(null);
+      return;
+    }
     const pane = rootRef.current?.getBoundingClientRect();
     if (!pane) return;
+    // The picker (no tabs) never goes fullscreen — the store refuses it and the header offers no
+    // button — so its drag simply stops at the maximum.
+    const canSnap = tabs.length > 0;
     if (horizontal) {
       // The ratio's basis is the chat page column ([data-dock-host]), the same box the
-      // rendered height is computed from below.
+      // rendered height is computed from below; the ratio clamps at its ceiling, which is the
+      // maximum the snap measures against.
       const host = document.querySelector("[data-dock-host]")?.getBoundingClientRect();
       if (!host || host.height === 0) return;
-      setBottomRatio((pane.bottom - event.clientY) / host.height);
+      const asked = pane.bottom - event.clientY;
+      setBottomRatio(asked / host.height);
+      if (canSnap && asked > DOCK_RATIO_MAX * host.height + FULLSCREEN_SNAP_PX) snapTo(position);
     } else {
-      setPanelWidth(pane.right - event.clientX);
+      const asked = pane.right - event.clientX;
+      setPanelWidth(asked); // clamps at the maximum
+      if (canSnap && asked > maxWidthFor(window.innerWidth) + FULLSCREEN_SNAP_PX) {
+        // The width is stored here, once, in place of the release that would have stored it.
+        persistPanelWidth();
+        snapTo(position);
+      }
     }
   };
   const resizeEnd = (committed: boolean): void => {
     setResizing(false);
-    // Once per drag, not per frame; an abandoned drag stores nothing.
-    if (committed && !horizontal) persistPanelWidth();
+    const snappedHere = snapped.current;
+    snapped.current = false;
+    // Once per drag, not per frame; an abandoned drag stores nothing, and a drag that snapped
+    // stored its width at the snap.
+    if (committed && !horizontal && !snappedHere) persistPanelWidth();
   };
 
   // The bottom dock's height in PIXELS: ratio × the measured chat column, with the same
@@ -458,23 +533,25 @@ export function DockPanel({
     Math.min(DOCK_RATIO_MAX * hostHeight, Math.max(DOCK_MIN_HEIGHT_PX, bottomRatio() * hostHeight)),
   );
 
-  const onResizerDoubleClick = useCallback(
-    () => (horizontal ? resetBottomRatio() : resetPanelWidth()),
-    [horizontal],
-  );
+  // A double click on the handle: back to the default size — or, on the cover's leading edge,
+  // back out of fullscreen, which is what "back" means for a surface grown past every size.
+  const onResizerDoubleClick = useCallback(() => {
+    if (fullscreen) {
+      setDockFullscreen(null);
+      return;
+    }
+    if (horizontal) resetBottomRatio();
+    else resetPanelWidth();
+  }, [horizontal, fullscreen]);
 
   // ------------------------------------------------------------------------------ fullscreen
 
   // The header's button toggles in place (corners out ↔ corners in): a flip made there keeps the
   // focus where it is, and a quick second click lands on the same button rather than on whatever
-  // slid into its slot. It is the only control — the surface covers the page column, not the
-  // window, so nothing needs to float over it as a way out.
+  // slid into its slot. It is the explicit control; the boundary drag's snap (above) is the other,
+  // and nothing floats over the surface as a way out. What the surface covers is coveredElement's.
   const coarsePointer = useCoarsePointer();
   const toggleFullscreen = () => setDockFullscreen(fullscreen ? null : position);
-  // What the surface covers: the chat page column ([data-dock-host]) — the same box the bottom
-  // dock's height ratio and the drop preview measure. Read when the surface lifts and followed
-  // while it is full, so the frame need not know the page.
-  const dockHost = () => document.querySelector<HTMLElement>("[data-dock-host]");
   // The built-in browser lays its page over the panel's slot by coordinates and caches, per slot,
   // which ancestors clip it and whether it sits in a lifted surface. The frame's phase — not the
   // store's flag — is what changes both: the box is lifted, and clipping, through its enter and
@@ -731,8 +808,10 @@ export function DockPanel({
   );
 
   // The boundary handle: on the bottom dock an overlay straddling the top edge (it costs no
-  // height), on the right dock a layout sibling (it must cost real width). The store clamps
-  // the size a drag asks for.
+  // height), on the right dock a layout sibling (it must cost real width); the frame seats it,
+  // and moves the same element onto the cover's leading edge while the surface is fullscreen, so
+  // a drag that snaps the surface in or out keeps its pointer and ends on the release as usual.
+  // The store clamps the size a drag asks for.
   const handle = (
     <ResizeHandle
       data-testid="dock-resizer"
@@ -760,7 +839,7 @@ export function DockPanel({
       headerProps={headerDragProps}
       movable={!merged && !fullscreen}
       fullscreen={fullscreen}
-      fullscreenHost={dockHost}
+      fullscreenHost={coveredElement}
       onFullscreenPhase={onFullscreenPhase}
       tabs={
         // Drag sideways to reorder, drag out to move onto the other edge.
