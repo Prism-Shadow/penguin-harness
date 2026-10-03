@@ -14,7 +14,10 @@ import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 /** localStorage key: a JSON array of the machine keys whose prompt was dismissed for good. */
 export const BACKEND_PROMPT_DISMISSED_KEY = "penguin.sandboxBackendPromptDismissed";
 
-/** The key for the server this page is served from, which has no machine id on the picker. */
+/**
+ * The key for the server this page is served from, which has no machine id: the Plugins page's
+ * machine-picker value for it too (a machine id is never this short).
+ */
 export const THIS_SERVER_KEY = "*";
 
 /** The storage this reads and writes — localStorage, or a stub in tests. */

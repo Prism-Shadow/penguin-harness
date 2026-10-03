@@ -33,7 +33,11 @@ import { localizedText } from "../chat/skill-use";
 import { apiErrorText } from "../../lib/api-error";
 import { useSessions } from "../../state/sessions";
 import { useProject } from "../../state/project";
-import { backendToOffer, dismissBackendPrompt } from "../../lib/sandbox-backend-prompt";
+import {
+  THIS_SERVER_KEY,
+  backendToOffer,
+  dismissBackendPrompt,
+} from "../../lib/sandbox-backend-prompt";
 import { dispatchPluginConfigSaved } from "../../lib/plugin-config-event";
 import { MachinePicker } from "../machines/machine-picker";
 import { AdvancedFold } from "./advanced-fold";
@@ -58,9 +62,6 @@ import {
   toastInfo,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-
-/** The picker's value for this server; a machine id is never this short. */
-const THIS_SERVER = "*";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the
@@ -316,11 +317,11 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
    * to install its default one. The switch stays on in the draft whatever the answer.
    */
   const offerBackend = (entry: PluginConfigEntry) => {
-    const pkg = backendToOffer(entry, machine ?? THIS_SERVER);
+    const pkg = backendToOffer(entry, machine ?? THIS_SERVER_KEY);
     if (pkg !== null) setOffered(pkg);
   };
   const closePrompt = (dontAskAgain: boolean) => {
-    if (dontAskAgain) dismissBackendPrompt(machine ?? THIS_SERVER);
+    if (dontAskAgain) dismissBackendPrompt(machine ?? THIS_SERVER_KEY);
     setOffered(null);
   };
 
@@ -374,12 +375,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         <MachinePicker
           aria-label={S.settings.pluginConfigMachine}
           choices={[
-            { value: THIS_SERVER, label: S.plugins.thisServer },
+            { value: THIS_SERVER_KEY, label: S.plugins.thisServer },
             ...machineIds.map((id) => ({ value: id, label: nameOf(id) })),
           ]}
-          value={machine ?? THIS_SERVER}
+          value={machine ?? THIS_SERVER_KEY}
           onChange={(v) => {
-            if (busy === null) setMachine(v === THIS_SERVER ? null : v);
+            if (busy === null) setMachine(v === THIS_SERVER_KEY ? null : v);
           }}
         />
       </div>
