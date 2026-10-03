@@ -103,7 +103,7 @@ describe("Md code", () => {
   });
 
   it("lets a surface add adapters over the settled map without losing the code block", () => {
-    expect(Object.keys(SETTLED_MD_COMPONENTS).sort()).toEqual(["a", "pre"]);
+    expect(Object.keys(SETTLED_MD_COMPONENTS).sort()).toEqual(["a", "li", "p", "pre"]);
     const html = renderStatic(
       createElement(Md, {
         text: "![alt](pic.png)\n\n```\nx\n```",
