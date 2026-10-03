@@ -13,12 +13,16 @@
  * Closed and finished, nothing is rendered. A body that mounts open is `settled` and does not
  * tween, so a page load moves nothing. Closing keeps the body mounted and `inert` until the
  * track's own transition ends — or at once when its computed duration is zero, or when it is not
- * rendered at all (a hidden ancestor runs no transition, so no event would ever come). The inner
- * box clips only while the track moves: at rest its content may paint past it (a focus ring, a
- * row's shadow), and `overflow: clip` rather than `hidden`, since a hidden box would become the
- * scroll container its sticky rows stick to. Content that grows inside an open fold is not a
- * transition — only the track value tweens — so rows arriving in a running group never animate
- * height.
+ * rendered at all (a hidden ancestor runs no transition, so no event would ever come).
+ *
+ * The clip is on the track's own box, and only while it moves. Between `0fr` and `1fr` a browser
+ * gives the box f of the content's height but the row only f² of it (a flex track under one `fr`
+ * is sized against the box's own intrinsic size), so a body clipped at its row would vanish ahead
+ * of the space it leaves, a blank band below it; clipped at the box, what shows is always the
+ * box. At rest nothing clips, so a focus ring or a row's shadow may paint past it; and it is
+ * `overflow: clip`, never `hidden`, since a hidden box would become the scroll container its
+ * sticky rows stick to. Content that grows inside an open fold is not a transition — only the
+ * track value tweens — so rows arriving in a running group never animate height.
  *
  * `children` may be a function, called only while the body renders, for a body that costs
  * something to build when it is folded away (a session group's rows).
@@ -98,10 +102,10 @@ export function Fold({
     if (event.target !== event.currentTarget || event.propertyName !== TRACK) return;
     setPhase((current) => foldStep(current, { ended: true }));
   };
-  const trackClass = ["grid", className].filter((part) => part !== "").join(" ");
-  const bodyClass = ["min-h-0", phase === "settled" ? "" : "overflow-clip", bodyClassName]
+  const trackClass = ["grid", phase === "settled" ? "" : "overflow-clip", className]
     .filter((part) => part !== "")
     .join(" ");
+  const bodyClass = ["min-h-0", bodyClassName].filter((part) => part !== "").join(" ");
   return (
     <div
       ref={trackRef}
