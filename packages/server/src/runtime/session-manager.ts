@@ -73,7 +73,6 @@ import type {
   ServerEvent,
   SessionBackgroundTasks,
   SessionStatus,
-  TelemetrySessionReport,
 } from "../api/types.js";
 import type { RecallableFile } from "../services/task-attachments.js";
 import { cliShimDir } from "../services/cli-shim.js";
@@ -940,29 +939,26 @@ export class SessionManager {
    * (the draft flow subscribes only after the input publish) loses the user's own message.
    */
   /**
-   * What each loaded Session holds, as its own structures report it — telemetry's machine
-   * view (V8 cannot attribute heap to a Session). Computed per call; nothing is kept. The
-   * channel hub and the live tail outlive a swap, so an instance an older runtime built may
-   * have no counter to read: that reads as null, not as zero.
+   * Telemetry's `session.memory`: one sample per loaded Session with its `memoryCost`, the bytes
+   * it holds in 内存 — its resumed history, the stream events its channel keeps for a page
+   * that reconnects, and the partial replies still streaming. Taken when the buffer is read.
+   * A channel or live tail an older runtime built may have no counter; that part counts zero.
    */
-  runtimeReport(now: number = Date.now()): TelemetrySessionReport[] {
-    return [...this.entries.values()].map((entry) => {
+  recordMemory(telemetry: Telemetry): void {
+    for (const entry of this.entries.values()) {
       const channel = this.deps.channels.peek(entry.sessionId) as
-        { bufferedEvents?: number; bufferedBytes?: number; subscriberCount?: number } | undefined;
-      const live = this.liveTail.size?.(entry.sessionId);
-      return {
-        session: entry.sessionId,
-        status: entry.status,
-        resumedHistory: entry.session.resumedHistory?.length ?? null,
-        channelEvents: channel === undefined ? 0 : (channel.bufferedEvents ?? null),
-        channelBytes: channel === undefined ? 0 : (channel.bufferedBytes ?? null),
-        subscribers: channel === undefined ? 0 : (channel.subscriberCount ?? null),
-        liveFragments: live?.fragments ?? null,
-        liveBytes: live?.bytes ?? null,
-        followUps: entry.followUps.length,
-        idleMs: Math.max(0, now - entry.lastActivityMs),
-      };
-    });
+        { bufferedBytes?: number } | undefined;
+      const history = entry.session.resumedHistory;
+      const memoryCost =
+        (history === undefined ? 0 : JSON.stringify(history).length) +
+        (channel?.bufferedBytes ?? 0) +
+        (this.liveTail.size?.(entry.sessionId).bytes ?? 0);
+      telemetry.record({
+        probe: "session.memory",
+        keys: { session: entry.sessionId },
+        attrs: { memoryCost },
+      });
+    }
   }
 
   pendingInputs(sessionId: string): OmniMessage[] {
@@ -2117,7 +2113,7 @@ export class SessionManager {
       "session.load",
       { session: sessionId },
       () => this.deps.loader.load(row),
-      (loaded) => ({ n: loaded.resumedHistory?.length }),
+      (loaded) => ({ attrs: { messages: loaded.resumedHistory?.length ?? 0 } }),
     );
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
@@ -2541,12 +2537,8 @@ export class SessionManager {
 
   /** turn.badge: one state flip on both channels — the list row's badge and task_state. */
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {
-    timeIn(
-      this.deps.telemetry,
-      "turn.badge",
-      { session: entry.sessionId },
-      () => this.publishStateNow(entry, state),
-      () => ({ attrs: { state } }),
+    timeIn(this.deps.telemetry, "turn.badge", { session: entry.sessionId }, () =>
+      this.publishStateNow(entry, state),
     );
   }
 
@@ -2882,8 +2874,9 @@ export class SessionsModule {
       now: () => this.clock.now(),
       telemetry: this.telemetry,
     });
-    // Read only when the machine view is asked for (telemetry/routes.ts).
-    this.telemetry?.addReport("sessions", () => manager.runtimeReport());
+    // Taken only when the telemetry buffer is read (telemetry/routes.ts).
+    const telemetry = this.telemetry;
+    telemetry?.addSnapshot(() => manager.recordMemory(telemetry));
     const sessionService = new SessionService({
       root: config.root,
       sessions: sessionsRepo,

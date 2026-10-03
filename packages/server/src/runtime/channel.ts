@@ -73,12 +73,7 @@ export class Channel {
     return this.listeners.size;
   }
 
-  /** Events held for replay right now (telemetry's per-session report; read-only). */
-  get bufferedEvents(): number {
-    return this.buffer.length;
-  }
-
-  /** Their size, in the units the byte cap counts (UTF-16 length of the serialized data). */
+  /** The size of the events held for a page that reconnects (UTF-16 length of the serialized data): telemetry's session.memory counts it. */
   get bufferedBytes(): number {
     return this.bufferBytes;
   }

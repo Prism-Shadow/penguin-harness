@@ -156,28 +156,14 @@ export class TraceIndexService implements TraceIndex {
       // pass behind the in-flight one instead of piggybacking on possibly-gated work.
       return opts.force === true
         ? existing.then(() => this.reconcileAgent(projectId, agentId, opts))
-        : // Joined a pass already in flight: what this caller waited, counted apart from the pass.
-          spanIn(
-            this.telemetry,
-            "trace.reconcile",
-            {},
-            () => existing,
-            () => ({ attrs: { shared: true } }),
-          );
+        : existing;
     }
     const run = this.doReconcile(projectId, agentId, opts.force === true).finally(() => {
       this.inflight.delete(key);
     });
     this.inflight.set(key, run);
-    return spanIn(
-      this.telemetry,
-      "trace.reconcile",
-      {},
-      () => run,
-      () => ({
-        attrs: { force: opts.force === true },
-      }),
-    );
+    // One sample per pass, on the call that ran it; a caller that joins a pass in flight adds none.
+    return spanIn(this.telemetry, "trace.reconcile", {}, () => run);
   }
 
   /** Reconciles every Agent of a Project (the subagent-pointer resolver's miss path). */

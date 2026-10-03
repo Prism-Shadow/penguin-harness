@@ -19,7 +19,6 @@ export type TurnSegment = (typeof TURN_SEGMENTS)[number];
 interface SegmentTally {
   count: number;
   totalMs: number;
-  maxMs: number;
 }
 
 const round = (ms: number): number => Math.round(ms * 10) / 10;
@@ -58,10 +57,9 @@ export class TurnTally {
   readonly #now: () => number;
   readonly #startedAt: number;
   readonly #segments = new Map<TurnSegment, SegmentTally>(
-    TURN_SEGMENTS.map((s) => [s, { count: 0, totalMs: 0, maxMs: 0 }]),
+    TURN_SEGMENTS.map((s) => [s, { count: 0, totalMs: 0 }]),
   );
   #messages = 0;
-  #requests = 0;
   #modelMs = 0;
   /** When the model request in flight began; null between requests. */
   #requestAt: number | null = null;
@@ -77,7 +75,6 @@ export class TurnTally {
     if (msg.origin !== undefined && msg.origin.length > 0) return;
     const type = (msg.payload as { type?: string }).type;
     if (type === "request_begin") {
-      this.#requests += 1;
       this.#requestAt = this.#now();
     } else if (type === "request_end" && this.#requestAt !== null) {
       this.#modelMs += this.#now() - this.#requestAt;
@@ -109,7 +106,6 @@ export class TurnTally {
     const s = this.#segments.get(segment)!;
     s.count += 1;
     s.totalMs += ms;
-    if (ms > s.maxMs) s.maxMs = ms;
   }
 
   /**
@@ -120,20 +116,17 @@ export class TurnTally {
   samples(status: "ok" | "error"): TelemetrySampleInput[] {
     const end = this.#now();
     const modelMs = this.#modelMs + (this.#requestAt !== null ? end - this.#requestAt : 0);
-    const segmentMs = [...this.#segments.values()].reduce((sum, s) => sum + s.totalMs, 0);
     return [
       {
         probe: "turn.run",
         durMs: end - this.#startedAt,
-        n: this.#messages,
         status,
-        attrs: { modelMs: round(modelMs), requests: this.#requests, serverMs: round(segmentMs) },
+        attrs: { messages: this.#messages, modelMs: round(modelMs) },
       },
       ...[...this.#segments].map(([segment, s]) => ({
         probe: `turn.${segment}`,
         durMs: s.totalMs,
-        n: s.count,
-        attrs: { maxMs: round(s.maxMs) },
+        attrs: { messages: s.count },
       })),
     ];
   }

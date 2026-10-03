@@ -1,7 +1,7 @@
 /**
  * The telemetry read surface (PRFC-0008 "看哪" / "权限"), admin only:
  *
- *   GET    /api/telemetry?view=probes|sessions|samples|machine[&probe=][&session=][&limit=]
+ *   GET    /api/telemetry?view=probes|sessions|samples[&probe=][&session=][&limit=]
  *   DELETE /api/telemetry    — empties the buffer
  *
  * Admin only for the reason unattributed errors are: the samples carry other users' Session
@@ -15,9 +15,8 @@ import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
 import { summarizeProbes, summarizeSessions } from "./buffer.js";
-import { machineView } from "./machine.js";
 
-const VIEWS = ["probes", "sessions", "samples", "machine"] as const;
+const VIEWS = ["probes", "sessions", "samples"] as const;
 type View = (typeof VIEWS)[number];
 
 export function telemetryRoutes(telemetry: Telemetry): Hono<AppEnv> {
@@ -49,13 +48,11 @@ export function telemetryRoutes(telemetry: Telemetry): Hono<AppEnv> {
       query.limit = limit;
     }
     const enabled = telemetry.on();
+    // The current state (process and Session 内存) joins the buffer as of this read.
+    telemetry.snapshot();
     const buffered = enabled ? telemetry.samples({}).length : 0;
     const body: TelemetryResponse = { enabled, view, buffered };
-    if (view === "machine") {
-      // Read now, not buffered — and not while off: the Sessions' report is asked only here.
-      if (enabled)
-        body.machine = machineView(telemetry.generations(), telemetry.report("sessions"));
-    } else if (view === "samples") {
+    if (view === "samples") {
       body.samples = telemetry.samples(query);
     } else {
       // The summaries are over every match; `limit` narrows only the raw listing.

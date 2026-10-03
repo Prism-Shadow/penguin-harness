@@ -6,25 +6,13 @@
  * the switch says; the platform's boot code makes one-line calls into this and nothing else.
  *
  * The generation count lives in the runtime's registry so it outlives the swap: how many
- * creates this process has run (the number every sample carries) and, per platform bundle, how
- * many times that bundle was created — the same build pushed twice shows as a repeat.
+ * creates this process has run — the number every sample carries.
  */
-import { createHash } from "node:crypto";
 import { HMR_UPGRADE_PATH } from "@prismshadow/penguin-hmr";
 import type { TelemetrySampleInput } from "../api/types.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
 import { TELEMETRY_GENERATION_RESOURCE_ID, TELEMETRY_HANDOVER_RESOURCE_ID } from "./service.js";
 import type { GenerationRecord, TelemetryHandover } from "./service.js";
-
-/**
- * This platform bundle's identity: a short hash of the address it was imported from, the
- * cache-busting query dropped. A push lands in a content-addressed store, so the same build
- * pushed twice is the same address imported again.
- */
-const BUNDLE_ID = createHash("sha256")
-  .update(import.meta.url.split("?")[0]!)
-  .digest("hex")
-  .slice(0, 12);
 
 interface Registry {
   claim<T>(id: string): T | undefined;
@@ -37,7 +25,6 @@ export class BootTimings {
   readonly #samples: TelemetrySampleInput[] = [];
   readonly #previous: GenerationRecord | undefined;
   readonly #handover: TelemetryHandover | undefined;
-  readonly #creates: number;
   readonly #cause: "boot" | "push" | "reassemble";
   /** What this App measures of its own going, left for its successor. */
   readonly #going: TelemetryHandover;
@@ -48,11 +35,9 @@ export class BootTimings {
   ) {
     this.#previous = resources.claim<GenerationRecord>(TELEMETRY_GENERATION_RESOURCE_ID);
     this.generation = (this.#previous?.n ?? 0) + 1;
-    this.#creates = (this.#previous?.bundles?.[BUNDLE_ID] ?? 0) + 1;
     this.#cause = reassembling ? "reassemble" : this.#previous === undefined ? "boot" : "push";
     resources.register(TELEMETRY_GENERATION_RESOURCE_ID, {
       n: this.generation,
-      bundles: { ...this.#previous?.bundles, [BUNDLE_ID]: this.#creates },
     } satisfies GenerationRecord);
     this.#handover = resources.claim<TelemetryHandover>(TELEMETRY_HANDOVER_RESOURCE_ID);
     this.#going = { generation: this.generation };
@@ -91,7 +76,7 @@ export class BootTimings {
   /**
    * Hands everything to the generation's Telemetry: the kept samples, the whole create() as
    * `boot.create`, the predecessor's park and dispose (only when it is the generation this one
-   * follows — a create that failed leaves no dispose behind), the generation, and memory.
+   * follows — a create that failed leaves no dispose behind), why this generation started, and the process's 内存.
    */
   flush(telemetry: Telemetry | null): void {
     if (telemetry?.on() !== true) return;
@@ -106,22 +91,8 @@ export class BootTimings {
         telemetry.record({ probe: "hmr.dispose", durMs: handover.disposeMs, keys });
       }
     }
-    telemetry.record({
-      probe: "hmr.generation",
-      n: this.generation,
-      attrs: {
-        cause: this.#cause,
-        bundle: BUNDLE_ID,
-        creates: this.#creates,
-        repeat: this.#creates > 1,
-      },
-    });
-    const memory = process.memoryUsage();
-    telemetry.record({
-      probe: "process.memory",
-      bytes: memory.rss,
-      attrs: { heapUsed: memory.heapUsed, heapTotal: memory.heapTotal, external: memory.external },
-    });
+    telemetry.record({ probe: "hmr.generation", attrs: { cause: this.#cause } });
+    telemetry.record({ probe: "process.memory", attrs: { memoryCost: process.memoryUsage().rss } });
   }
 }
 

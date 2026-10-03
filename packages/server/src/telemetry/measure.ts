@@ -5,7 +5,7 @@
 import type { TelemetryKeys, TelemetrySampleInput } from "../api/types.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
 
-type Describe<T> = (result: T) => Pick<TelemetrySampleInput, "n" | "bytes" | "attrs">;
+type Describe<T> = (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">;
 
 export function spanIn<T>(
   telemetry: Telemetry | undefined,

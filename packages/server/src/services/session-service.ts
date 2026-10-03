@@ -500,7 +500,7 @@ export class SessionService {
       {},
       () =>
         new Map(this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r])),
-      (r) => ({ n: r.size }),
+      (r) => ({ attrs: { rows: r.size } }),
     );
     // One query for the whole Project's organization-owned sessions, looked up per row
     // below: the company caches are small, and a lookup per row would put a statement
@@ -521,7 +521,7 @@ export class SessionService {
         "sessions.list.reconcile",
         {},
         () => this.discoverTraces(projectId, agentId),
-        (t) => ({ n: t.size }),
+        (t) => ({ attrs: { traces: t.size } }),
       );
       for (const row of rows.values()) {
         if (!row.hasTrace && traces.has(row.sessionId)) {

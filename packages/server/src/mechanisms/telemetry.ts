@@ -4,7 +4,6 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
-  TelemetryGenerations,
   TelemetryKeys,
   TelemetryQuery,
   TelemetrySample,
@@ -46,19 +45,20 @@ export abstract class Telemetry extends Interface<{
     probe: string,
     keys: TelemetryKeys,
     run: () => T,
-    describe?: (result: T) => Pick<TelemetrySampleInput, "n" | "bytes" | "attrs">,
+    describe?: (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">,
   ): T;
   /** The buffered samples matching the query, oldest first. */
   samples(query: TelemetryQuery): TelemetrySample[];
   /** Empties the buffer. */
   clear(): void;
   /**
-   * Registers a self-report under `name` (the Sessions' is "sessions"): read only when the
-   * machine view is asked for, never on a schedule. A later registration replaces it.
+   * Registers something that records the current state as samples (the Sessions record one
+   * `session.memory` each). Taken only when the buffer is read, never on a schedule.
    */
-  addReport(name: string, read: () => unknown): void;
-  /** Reads the report registered under `name`; undefined when none is. */
-  report(name: string): unknown;
-  /** This App's generation number and how many times each platform bundle has been created in this process. */
-  generations(): TelemetryGenerations;
+  addSnapshot(take: () => void): void;
+  /**
+   * Records the current state into the buffer: `process.memory`, then every registered
+   * snapshot. The read route calls it before answering; while off it does nothing.
+   */
+  snapshot(): void;
 }>() {}

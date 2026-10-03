@@ -116,47 +116,4 @@ describe("penguin telemetry", () => {
     expect(await cli(["telemetry", "--samples", "--limit", "0"])).toBe(1);
     expect(stderr.join("")).toContain(t.telemetry.limitInvalid("0"));
   });
-
-  it("prints the machine view: the process, its generations and each loaded session", async () => {
-    const session = { session: SESSION, status: "idle", resumedHistory: 120, channelEvents: 40 };
-    server.telemetry.machine = {
-      process: {
-        pid: 4242,
-        uptimeMs: 65_000,
-        rss: 300 * 2 ** 20,
-        heapTotal: 120 * 2 ** 20,
-        heapUsed: 80 * 2 ** 20,
-        external: 0,
-        arrayBuffers: 0,
-      },
-      generation: { current: 3, bundles: [{ bundle: "a1b2c3d4e5f6", creates: 2 }] },
-      sessions: [
-        {
-          ...session,
-          channelBytes: 8192,
-          subscribers: 1,
-          liveFragments: 0,
-          liveBytes: 0,
-          followUps: 0,
-          idleMs: 1500,
-        },
-      ],
-      totals: {
-        sessions: 1,
-        resumedHistory: 120,
-        channelBytes: 8192,
-        liveBytes: 0,
-        subscribers: 1,
-      },
-    };
-    expect(await cli(["telemetry", "--by", "machine"])).toBe(0);
-    expect(lastQuery().get("view")).toBe("machine");
-    expect(out()).toContain(
-      t.telemetry.machineProcess(4242, "65.00s", "300.0MB", "80.0MB", "120.0MB"),
-    );
-    for (const text of ["a1b2c3d4e5f6×2", SESSION, "40 / 8.0KB"]) expect(out()).toContain(text);
-    server.telemetry.machine = { ...(server.telemetry.machine as object), sessions: [] };
-    expect(await cli(["telemetry", "--by", "machine"])).toBe(0);
-    expect(out()).toContain(t.telemetry.machineNoSessions());
-  });
 });

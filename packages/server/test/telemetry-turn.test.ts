@@ -1,6 +1,6 @@
 /**
  * The per-run segment tally behind telemetry's turn.* samples (PRFC-0008): counts and sums per
- * segment with the slowest call kept, and the model's share measured from each top-level
+ * segment, and the model's share measured from each top-level
  * request_begin to its request_end — a subagent's requests (origin set) are its own run's.
  */
 import { describe, expect, it } from "vitest";
@@ -44,16 +44,15 @@ describe("TurnTally", () => {
       "turn.errors",
       "turn.usage",
     ]);
-    expect(byProbe.get("turn.fanout")).toMatchObject({ durMs: 8, n: 3, attrs: { maxMs: 5 } });
-    expect(byProbe.get("turn.tail")).toMatchObject({ durMs: 3, n: 3, attrs: { maxMs: 1 } });
-    expect(byProbe.get("turn.usage")).toMatchObject({ durMs: 9, n: 3, attrs: { maxMs: 3 } });
+    expect(byProbe.get("turn.fanout")).toMatchObject({ durMs: 8, attrs: { messages: 3 } });
+    expect(byProbe.get("turn.tail")).toMatchObject({ durMs: 3, attrs: { messages: 3 } });
+    expect(byProbe.get("turn.usage")).toMatchObject({ durMs: 9, attrs: { messages: 3 } });
     // A segment whose work threw still counts, and rethrows.
-    expect(byProbe.get("turn.errors")).toMatchObject({ durMs: 0, n: 1 });
+    expect(byProbe.get("turn.errors")).toMatchObject({ durMs: 0, attrs: { messages: 1 } });
     expect(byProbe.get("turn.run")).toMatchObject({
       durMs: 20,
-      n: 3,
       status: "ok",
-      attrs: { modelMs: 0, requests: 0, serverMs: 20 },
+      attrs: { messages: 3, modelMs: 0 },
     });
   });
 
@@ -73,9 +72,8 @@ describe("TurnTally", () => {
     const run = tally.samples("error").find((s) => s.probe === "turn.run")!;
     expect(run).toMatchObject({
       durMs: 204,
-      n: 4,
       status: "error",
-      attrs: { modelMs: 170, requests: 2 },
+      attrs: { messages: 4, modelMs: 170 },
     });
   });
 });

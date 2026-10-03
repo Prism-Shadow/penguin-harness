@@ -2,13 +2,12 @@
  * `penguin telemetry` — the server's in-memory telemetry readings (PRFC-0008), from
  * GET /api/telemetry (admin only).
  *
- *   penguin telemetry [--by probe|session|machine] [--samples] [--probe <name>] [--session <id>]
+ *   penguin telemetry [--by probe|session] [--samples] [--probe <name>] [--session <id>]
  *                     [--all] [--limit <n>] [--json] [--server <url>]
  *   penguin telemetry on | off | clear [--server <url>]
  *
  * Default prints the per-probe summary (count, p50, p95, max, bytes); `--by session` the
- * per-session one; `--by machine` this process as it stands (memory, App generations, what each
- * loaded session holds); `--samples` the samples themselves, oldest first. Run inside a session
+ * per-session one; `--samples` the samples themselves, oldest first. Run inside a session
  * (PENGUIN_SESSION_ID set), the view is narrowed to that session unless `--session` names
  * another or `--all` lifts it — a filter for reading, not a boundary: the route answers admins
  * only, whatever is asked. `on` / `off` flip the system setting, `clear` empties the buffer.
@@ -23,7 +22,7 @@ import { resolveConnection, ServerClient } from "../client.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
-const BYS = ["probe", "session", "machine"] as const;
+const BYS = ["probe", "session"] as const;
 
 function formatMs(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return "-";
@@ -96,14 +95,7 @@ export function registerTelemetryCommand(program: Command, t: Messages): void {
           : opts.all !== true && ownSession !== undefined && ownSession !== ""
             ? ownSession
             : undefined;
-      const view =
-        opts.samples === true
-          ? "samples"
-          : by === "session"
-            ? "sessions"
-            : by === "machine"
-              ? "machine"
-              : "probes";
+      const view = opts.samples === true ? "samples" : by === "session" ? "sessions" : "probes";
       const params = new URLSearchParams({ view });
       if (opts.probe !== undefined) params.set("probe", String(opts.probe));
       if (session !== undefined) params.set("session", session);
@@ -121,53 +113,6 @@ export function registerTelemetryCommand(program: Command, t: Messages): void {
       const out = process.stdout;
       if (!res.enabled) {
         out.write(`${t.telemetry.off()}\n`);
-        return;
-      }
-      if (view === "machine") {
-        const m = res.machine;
-        if (m === undefined) return void out.write(`${t.telemetry.empty()}\n`);
-        out.write(
-          `${t.telemetry.machineProcess(
-            m.process.pid,
-            formatMs(m.process.uptimeMs),
-            formatBytes(m.process.rss),
-            formatBytes(m.process.heapUsed),
-            formatBytes(m.process.heapTotal),
-          )}\n`,
-        );
-        out.write(
-          `${t.telemetry.machineGeneration(
-            m.generation.current === null ? "-" : String(m.generation.current),
-            m.generation.bundles.map((b) => `${b.bundle}×${b.creates}`).join(", ") || "-",
-          )}\n`,
-        );
-        const loaded = m.sessions ?? [];
-        if (loaded.length === 0) return void out.write(`${t.telemetry.machineNoSessions()}\n`);
-        const count = (n: number | null) => (n === null ? "-" : String(n));
-        out.write(
-          renderTable(
-            [
-              t.telemetry.colSession(),
-              t.telemetry.colStatus(),
-              t.telemetry.colHistory(),
-              t.telemetry.colChannel(),
-              t.telemetry.colSubscribers(),
-              t.telemetry.colLive(),
-              t.telemetry.colIdle(),
-            ],
-            loaded.map((s) => [
-              s.session,
-              s.status,
-              count(s.resumedHistory),
-              s.channelEvents === null
-                ? "-"
-                : `${s.channelEvents} / ${formatBytes(s.channelBytes)}`,
-              count(s.subscribers),
-              formatBytes(s.liveBytes),
-              formatMs(s.idleMs),
-            ]),
-          ),
-        );
         return;
       }
       if (session !== undefined && opts.session === undefined) {

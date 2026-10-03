@@ -1,6 +1,6 @@
 /**
  * Telemetry's second batch of probes on a test App (PRFC-0008): a turn's server-side segments,
- * the session list, a generation's going recorded by its successor, the machine view — and
+ * the session list, a generation's going recorded by its successor, the 内存 snapshot — and
  * none of it while the switch is off.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -114,7 +114,7 @@ describe("telemetry probes", () => {
       attrs: { queued: false },
     });
     expect(one(all, "session.load")).toMatchObject({
-      n: 3,
+      attrs: { messages: 3 },
       status: "ok",
       keys: { session: SID, request },
     });
@@ -122,21 +122,18 @@ describe("telemetry probes", () => {
     const task = run.keys.task;
     expect(task).toMatch(/^[0-9a-f-]{36}$/);
     expect(run).toMatchObject({
-      n: 4,
       status: "ok",
       keys: { session: SID, request },
-      attrs: { requests: 1 },
+      attrs: { messages: 4 },
     });
     expect(run.attrs!.modelMs as number).toBeGreaterThanOrEqual(MODEL_MS - 5);
     for (const segment of ["turn.tail", "turn.fanout", "turn.errors", "turn.usage"]) {
       expect(one(all, segment), segment).toMatchObject({
-        n: 4,
+        attrs: { messages: 4 },
         keys: { session: SID, task, request },
       });
     }
-    expect(all.filter((s) => s.probe === "turn.badge").map((s) => s.attrs?.state)).toEqual(
-      expect.arrayContaining(["running", "idle"]),
-    );
+    expect(all.filter((s) => s.probe === "turn.badge").length).toBeGreaterThanOrEqual(2);
     // The next Task finds the Session loaded (no session.load), under a task id of its own.
     await runTask();
     await waitFor(() => telemetryNode().samples({ probe: "turn.run" }).length === 2);
@@ -146,7 +143,7 @@ describe("telemetry probes", () => {
     for (const content of [INPUT, ANSWER]) expect(dump).not.toContain(content);
   });
 
-  it("records the session list's segments, and a reconcile apart from the callers that shared it", async () => {
+  it("records the session list's segments, and one reconcile per pass however many callers joined it", async () => {
     await turn(true);
     // The row was inserted behind the registry's back, so the list runs a hydration pass.
     expect((await admin.get(`/api/projects/${P}/agents/${A}/sessions`)).status).toBe(200);
@@ -163,10 +160,7 @@ describe("telemetry probes", () => {
       t.deps.traceIndex.reconcileAgent(P, A),
       t.deps.traceIndex.reconcileAgent(P, A),
     ]);
-    expect((await samples("trace.reconcile")).map((s) => s.attrs?.shared ?? false)).toEqual([
-      false,
-      true,
-    ]);
+    expect(await samples("trace.reconcile")).toHaveLength(1);
   });
 
   it("records a generation's park and dispose in its successor, and where each generation came from", async () => {
@@ -177,29 +171,21 @@ describe("telemetry probes", () => {
     const all = await samples();
     expect(one(all, "hmr.park").keys.generation).toBe(1);
     expect(one(all, "hmr.dispose").keys.generation).toBe(1);
-    // The same bundle created twice in this process: what a repeated push looks like.
     expect(one(all, "hmr.generation")).toMatchObject({
-      n: 2,
-      attrs: { cause: "reassemble", creates: 2, repeat: true },
+      keys: { generation: 2 },
+      attrs: { cause: "reassemble" },
     });
-    expect(one(all, "process.memory").bytes).toBeGreaterThan(0);
   });
 
-  it("serves the machine view while on, and asks the Sessions nothing while off", async () => {
+  it("records the process's and each loaded Session's 内存 when read — only while on", async () => {
     await runTask();
     expect(await read("?view=samples")).toMatchObject({ enabled: false, samples: [] });
-    let asked = 0;
-    telemetryNode().addReport("sessions", () => {
-      asked += 1;
-      return [];
-    });
-    expect((await read("?view=machine")).machine).toBeUndefined();
-    expect(asked).toBe(0);
-
     await turn(true);
-    const { machine } = await read("?view=machine");
-    expect(machine!.process.rss).toBeGreaterThan(0);
-    expect(machine!.generation).toMatchObject({ current: 1, bundles: [{ creates: 1 }] });
-    expect(asked).toBe(1);
+    const all = await samples();
+    expect(
+      all.filter((s) => s.probe === "process.memory").at(-1)?.attrs?.memoryCost,
+    ).toBeGreaterThan(0);
+    const session = all.find((s) => s.probe === "session.memory" && s.keys.session === SID);
+    expect(session?.attrs?.memoryCost).toBeGreaterThan(0);
   });
 });
