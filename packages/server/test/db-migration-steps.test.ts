@@ -597,10 +597,7 @@ describe("a numbered root with the first form of port_forwards: port-forwards-le
     try {
       migrate(db);
       expect(shape(db)).toBe(shape(fresh));
-      const ran = db.prepare(
-        "DELETE FROM schema_migrations WHERE name = 'port-forwards-legacy-shape'",
-      );
-      ran.run();
+      db.exec("DELETE FROM schema_migrations WHERE name = 'port-forwards-legacy-shape'");
       const before = shape(db);
       expect(migrate(db).applied).toEqual(["port-forwards-legacy-shape"]);
       expect(shape(db)).toBe(before);
