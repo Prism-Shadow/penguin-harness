@@ -85,11 +85,24 @@ function itemOf(r: Row): DraftItem {
 
 export class SqliteRoadmapStore implements RoadmapStore {
   private readonly cache = new Map<string, StatementSync>();
+  /** Called inside every write transaction of this view: an Action run's start row (scoped). */
+  private sink: ((db: DatabaseSync) => void) | null = null;
 
   constructor(
     readonly db: DatabaseSync,
     private readonly now: () => number = Date.now,
   ) {}
+
+  /**
+   * A view of this store whose every write transaction also calls `sink` before it commits —
+   * the run's start row, so the run and its write commit together.
+   */
+  scoped(sink: ((db: DatabaseSync) => void) | undefined): SqliteRoadmapStore {
+    if (sink === undefined) return this;
+    const view = Object.create(this) as SqliteRoadmapStore;
+    view.sink = sink;
+    return view;
+  }
 
   static open(file: string, now?: () => number): SqliteRoadmapStore {
     return new SqliteRoadmapStore(openCompanyDb(file), now);
@@ -187,7 +200,7 @@ export class SqliteRoadmapStore implements RoadmapStore {
     ).all(...args) as Row[]) {
       const k = `${String(r.number)}/${String(r.key)}`;
       const got = approvals.get(k) ?? {};
-      got[String(r.role) as keyof Delegation["approvals"]] = { by: String(r.by), at: String(r.at) };
+      got[String(r.role)] = { by: String(r.by), at: String(r.at) };
       approvals.set(k, got);
     }
     const delegations = group(
@@ -266,6 +279,7 @@ export class SqliteRoadmapStore implements RoadmapStore {
           `INSERT INTO roadmap_events (seq, number, at, by, kind, note) VALUES (?, ?, ?, ?, ?, ?)`,
         ).run(seq, w.number, at, w.by, w.kind, noteOf(w) ?? null);
       }
+      this.sink?.(this.db);
     });
     return this.get(first.number)!;
   }

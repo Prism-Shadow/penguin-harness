@@ -3,9 +3,9 @@
  * `OrganizationModule.retirements`, contributed by index.ts's retirement node). The plugin keeps
  * per organization what it opened on first use: the `company.db` connection (proposals, the PR
  * graph and the PR status cache share it), the deployment registry's append chain, the graph
- * refresher's state with any refresh in flight (git and gh children), the PR status batch in
- * flight, and the deploy runs. A retirement stops and awaits that organization's work, closes
- * its connection and drops what is kept of it; other organizations are not touched.
+ * refresher's state with any refresh in flight (git and gh children) and the PR status batch in
+ * flight. A retirement stops and awaits that organization's work, closes its connection and
+ * drops what is kept of it; other organizations are not touched.
  *
  * Until the host has moved the directory, nothing may open the organization's stores again —
  * a new connection would hold the file open (Windows refuses the move) or write into the trashed
@@ -59,20 +59,17 @@ export interface RetireParts {
   graph(key: string): Promise<void>;
   /** Awaits the organization's PR status batch in flight. */
   prStatus(key: string): Promise<void>;
-  /** Stops and awaits the organization's deploy runs. */
-  deploys(): Promise<void>;
   /** Drops every other in-memory entry of the organization. */
   forget(key: string): void;
 }
 
 /**
- * The retirement itself: refuse new opens first, then stop the work that writes (deploys, whose
- * end kicks the graph; the graph refresh; the PR status batch), then close the connection.
+ * The retirement itself: refuse new opens first, then stop the work that writes (the graph
+ * refresh, the PR status batch), then close the connection.
  */
 export async function retireOrg(parts: RetireParts): Promise<void> {
   const { key } = parts;
   parts.retired.retire(key);
-  await parts.deploys();
   await parts.graph(key);
   await parts.prStatus(key);
   const stores = parts.stores.get(key);

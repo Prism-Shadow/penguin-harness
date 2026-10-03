@@ -1,25 +1,13 @@
 /**
  * The roadmap routes, mounted by the harness's HTTP module at
- * `/api/projects/:projectId/organizations/:orgId/roadmaps` behind its cookie gate.
+ * `/api/projects/:projectId/organizations/:orgId/roadmaps` behind its cookie gate. They are the
+ * reads; every write is a roadmap Action, run through company-proposals' Action registry
+ * (`POST …/actions/:key/runs`, builtin-actions.ts).
  *
  *   GET    /[?channel=&status=]      the roadmaps (a room's, for the channel page's side panel)
- *   POST   /                         open one (a person or an employee): { name, employees, channelId?, brief?, parent? } — without
- *                                    a channelId the roadmap opens its own unlisted room
  *   GET    /:number                  one roadmap: record, body, items, delegations, room sessions, events
- *   PATCH  /:number                  { name } rename (a person or the moderator)
- *   PUT    /:number/draft            { record?, body?, items? } (a person or the moderator; while discussing)
- *   POST   /:number/establish        end the discussion; roadmap items derive their roadmaps, proposal items stay
- *                                    briefs (a person or the moderator)
- *   POST   /:number/items/:key/approve  one of a proposal item's two approvals: a person's, or the
- *                                    moderator's; with both, its owner is told (nothing is created)
- *   POST   /:number/items/:key/link  { proposal } link the proposal created for an approved item (its
- *                                    owner or a person)
- *   POST   /:number/adopt            { proposal, title, owner, brief? } take an existing proposal in as a
- *                                    proposal item (a person or the moderator; discussing or established)
- *   POST   /:number/reopen           { reason } an owner, an employee of the room, or a person
- *   POST   /:number/room             { channelId } bind the room of a derived roadmap
  *
- * Every route answers 404 while company mode is off. A write from inside a Session carries
+ * Every route answers 404 while company mode is off. A read from inside a Session carries
  * `sessionId` / `agentId`, honoured only behind the local API token — the rule the
  * organization routes and company-proposals follow.
  */
@@ -46,19 +34,6 @@ function actorOf(c: Context, claims: Record<string, unknown>): OrgActor {
 
 function actorOfQuery(c: Context): OrgActor {
   return actorOf(c, { sessionId: c.req.query("sessionId"), agentId: c.req.query("agentId") });
-}
-
-async function jsonBody(c: Context): Promise<Record<string, unknown>> {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    throw new RoadmapError(400, "bad_request", "Body must be a JSON object.");
-  }
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new RoadmapError(400, "bad_request", "Body must be a JSON object.");
-  }
-  return body as Record<string, unknown>;
 }
 
 function numberParam(c: Context): number {
@@ -98,106 +73,9 @@ export function roadmapRoutes(service: RoadmapService): Hono {
     );
   });
 
-  app.post("/", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    const parent = body.parent;
-    if (parent !== undefined && (typeof parent !== "number" || !Number.isInteger(parent))) {
-      throw new RoadmapError(400, "bad_request", "parent must be a roadmap number.");
-    }
-    if (body.brief !== undefined && typeof body.brief !== "string") {
-      throw new RoadmapError(400, "bad_request", "brief must be a string.");
-    }
-    return c.json(
-      await service.create(
-        p,
-        o,
-        {
-          name: body.name as string,
-          ...(body.channelId !== undefined ? { channelId: body.channelId as string } : {}),
-          employees: body.employees as string[],
-          ...(typeof body.brief === "string" ? { brief: body.brief } : {}),
-          ...(parent !== undefined ? { parent: parent as number } : {}),
-        },
-        actorOf(c, body),
-      ),
-      201,
-    );
-  });
-
   app.get("/:number", async (c) => {
     const [p, o] = orgOf(c);
     return c.json(await service.get(p, o, numberParam(c), actorOfQuery(c)));
-  });
-
-  app.patch("/:number", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(await service.rename(p, o, numberParam(c), body.name, actorOf(c, body)));
-  });
-
-  app.put("/:number/draft", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(
-      await service.draft(
-        p,
-        o,
-        numberParam(c),
-        {
-          ...(body.record !== undefined ? { record: body.record as string } : {}),
-          ...(body.body !== undefined ? { body: body.body as string } : {}),
-          ...(body.items !== undefined ? { items: body.items } : {}),
-        },
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/establish", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(await service.establish(p, o, numberParam(c), actorOf(c, body)));
-  });
-
-  app.post("/:number/items/:key/approve", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    const key = c.req.param("key") ?? "";
-    return c.json(await service.approve(p, o, numberParam(c), key, actorOf(c, body)));
-  });
-
-  app.post("/:number/items/:key/link", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    const key = c.req.param("key") ?? "";
-    return c.json(await service.link(p, o, numberParam(c), key, body.proposal, actorOf(c, body)));
-  });
-
-  app.post("/:number/adopt", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(
-      await service.adopt(
-        p,
-        o,
-        numberParam(c),
-        { proposal: body.proposal, title: body.title, owner: body.owner, brief: body.brief },
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/reopen", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(await service.reopen(p, o, numberParam(c), body.reason, actorOf(c, body)));
-  });
-
-  app.post("/:number/room", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(await service.bindRoom(p, o, numberParam(c), body.channelId, actorOf(c, body)));
   });
 
   return app;

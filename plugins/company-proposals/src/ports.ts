@@ -34,9 +34,8 @@ import type { Proposal, ProposalImpl, ProposalImplSide } from "./domain.js";
 /** Who reads: the per-caller parts of a read (unread counts, pending comments) depend on it. */
 export interface Viewer {
   principal: string;
-  userId: string;
-  /** A person, not an employee: only a person has a read position. */
-  person: boolean;
+  /** Whose read position counts: a person's user id, an employee's principal. */
+  reader: string;
 }
 
 /** A queue row: everything the list shows, without the text of any revision. */

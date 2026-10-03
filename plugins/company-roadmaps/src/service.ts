@@ -40,7 +40,15 @@ import {
   type RoadmapStatus,
   type RoadmapWrite,
 } from "./domain.js";
-import { defaultRules, moderatorOf, type Caller, type RoadmapRules } from "./guards.js";
+import {
+  approvalRole,
+  defaultAct,
+  moderatorOf,
+  rolesOf,
+  type Caller,
+  type WriteAct,
+} from "./guards.js";
+import type { Subject } from "./action-shapes.js";
 import type { RoadmapStore } from "./ports.js";
 import { COMPANY_DB, companyDbPath } from "./schema.js";
 import { SqliteRoadmapStore } from "./store.js";
@@ -103,8 +111,6 @@ export interface ServiceDeps {
   log: Pick<Log, "line">;
   pluginConfig?: Pick<PluginConfig, "get">;
   now?: () => number;
-  /** Default rules replaced (guards.ts). */
-  rules?: Partial<RoadmapRules>;
 }
 
 interface RelayRoom {
@@ -281,16 +287,13 @@ export function basesOf(items: readonly DraftItem[]): Map<string, string | null>
 
 export class RoadmapService {
   private readonly stores = new Map<string, RoadmapStore>();
-  private readonly rules: RoadmapRules;
   private readonly locks = new Map<string, Promise<unknown>>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private relaying: Promise<void> | null = null;
   /** Organizations being (or already) deleted, whose store may not open again (org-retire.ts). */
   private readonly retired = new RetiredOrgs();
 
-  constructor(private readonly deps: ServiceDeps) {
-    this.rules = { ...defaultRules, ...deps.rules };
-  }
+  constructor(private readonly deps: ServiceDeps) {}
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -343,6 +346,7 @@ export class RoadmapService {
     projectId: string,
     orgId: string,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<{ org: OrgView; caller: Caller; store: RoadmapStore }> {
     if (!this.deps.gateway.companyModeEnabled()) {
       throw new RoadmapError(404, "not_found", "Company mode is off.");
@@ -352,7 +356,12 @@ export class RoadmapService {
     if (org === null) throw new RoadmapError(404, "org_not_found", `No organization ${orgId}.`);
     const principal = await this.deps.gateway.principalOf(projectId, orgId, actor);
     const agentId = principal.startsWith("agent:") ? principal.slice("agent:".length) : null;
-    return { org, caller: { principal, agentId }, store: this.store(projectId, orgId, seen) };
+    // A run's writes go through a view that writes its start row in each transaction.
+    return {
+      org,
+      caller: { principal, agentId },
+      store: this.store(projectId, orgId, seen).scoped(act?.inTx),
+    };
   }
 
   private require(store: RoadmapStore, number: number): Roadmap {
@@ -476,9 +485,11 @@ export class RoadmapService {
     orgId: string,
     req: OpenRequest,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     const result = await this.withLock(projectId, orgId, async () => {
-      const { org, caller, store } = await this.open(projectId, orgId, actor);
+      const { org, caller, store } = await this.open(projectId, orgId, actor, act);
+      (act ?? defaultAct("roadmap.open", caller, ORGANIZATION)).check(null);
       const name = text(req.name, "name", 120);
       const given = req.channelId === undefined ? null : text(req.channelId, "channelId", 64);
       const employees = this.employeeList(req.employees, org, "employees");
@@ -590,12 +601,12 @@ export class RoadmapService {
     number: number,
     req: DraftRequest,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { org, caller, store } = await this.open(projectId, orgId, actor);
-      const r = this.require(store, number);
-      this.rules.requireStatus(r, "discussing");
-      this.rules.moderatorOrPerson(r, caller);
+      const { org, caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.draft", caller, roadmapSubject(number));
+      a.check(this.require(store, number));
       const entry: RoadmapWrite & { kind: "draft" } = {
         kind: "draft",
         number,
@@ -617,7 +628,7 @@ export class RoadmapService {
       if (entry.record === undefined && entry.body === undefined && entry.items === undefined) {
         throw badRequest("Send at least one of record, body, items.");
       }
-      store.write(entry);
+      store.write(entry, (now) => a.check(now));
       return { roadmap: this.view(this.require(store, number)), hints: [] };
     });
   }
@@ -635,14 +646,15 @@ export class RoadmapService {
     orgId: string,
     number: number,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     // The derived roadmaps that got a room: their room sessions open once the lock is let go.
     const discussing: number[] = [];
     const result = await this.withLock(projectId, orgId, async () => {
-      const { caller, store } = await this.open(projectId, orgId, actor);
+      const { caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.establish", caller, roadmapSubject(number));
       const r = this.require(store, number);
-      this.rules.requireStatus(r, "discussing");
-      this.rules.moderatorOrPerson(r, caller);
+      a.check(r);
       if (r.body.trim() === "")
         throw new RoadmapError(
           400,
@@ -659,7 +671,7 @@ export class RoadmapService {
           `Cites naming no section of the body: ${unknown.join("; ")}`,
         );
       }
-      store.write({ kind: "established", number, by: caller.principal });
+      store.write({ kind: "established", number, by: caller.principal }, (now) => a.check(now));
       const hints: string[] = [];
       const bases = basesOf(r.items);
       const briefed: Array<DraftItem & { kind: "proposal" }> = [];
@@ -816,14 +828,17 @@ export class RoadmapService {
     number: number,
     key: string,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { caller, store } = await this.open(projectId, orgId, actor);
+      const { caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.item.approve", caller, itemSubject(number, key));
       const r = this.require(store, number);
-      const { role, item, second } = this.rules.approve(r, key, caller);
+      a.check(r);
+      const { role, item, last } = approvalRole(r, key, caller, rolesOf(a.config));
       const d = r.delegations[key]!;
       let made: { number: number; rebriefed: boolean } | null = null;
-      if (second) {
+      if (last) {
         try {
           made = await proposalOfApproval(this.deps.proposals, projectId, orgId, {
             linked: d.proposal,
@@ -884,15 +899,11 @@ export class RoadmapService {
                     },
                   ]),
             ],
-        (now) => {
-          this.rules.approve(now, key, caller);
-          this.rules.approvalOnBrief(now, key, d.brief);
-        },
+        (now) => a.check(now, { params: { brief: d.brief } }),
       );
       const hints: string[] = [];
       const now = this.require(store, number).delegations[key]!;
-      const { person, moderator: mod } = now.approvals;
-      if (made !== null && person !== undefined && mod !== undefined) {
+      if (made !== null) {
         const proposal = made.number;
         const base = now.base === null ? null : (r.items.find((x) => x.key === now.base) ?? null);
         const baseProposal = now.base === null ? undefined : r.delegations[now.base]?.proposal;
@@ -906,8 +917,7 @@ export class RoadmapService {
                   title: base.title,
                   ...(baseProposal !== undefined ? { proposal: baseProposal } : {}),
                 },
-          person,
-          moderator: mod,
+          approvals: Object.entries(now.approvals).map(([role, x]) => ({ role, ...x })),
           proposal,
           rebriefed: made.rebriefed,
         });
@@ -946,28 +956,38 @@ export class RoadmapService {
     key: string,
     proposal: unknown,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { caller, store } = await this.open(projectId, orgId, actor);
+      const { caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.item.link", caller, itemSubject(number, key));
       const r = this.require(store, number);
-      const { existing } = this.rules.link(r, key, caller);
+      a.check(r);
       const d = r.delegations[key]!;
+      // A brief is linked to the proposal it already is: delegated and linked at once.
+      const existing = d.stage === "brief";
       const item = r.items.find((x) => x.key === key)!;
       if (!isProposalNumber(proposal)) throw badRequest("proposal must be a proposal number.");
-      if (existing) {
-        store.write({
-          kind: "delegated",
-          number,
-          key,
-          owner: d.owner,
-          brief: d.brief,
-          base: d.base,
-          child: null,
-          delivered: false,
-          by: caller.principal,
-        });
-      }
-      store.write({ kind: "linked", number, key, proposal, by: caller.principal });
+      const linked: RoadmapWrite = { kind: "linked", number, key, proposal, by: caller.principal };
+      store.write(
+        existing
+          ? [
+              {
+                kind: "delegated",
+                number,
+                key,
+                owner: d.owner,
+                brief: d.brief,
+                base: d.base,
+                child: null,
+                delivered: false,
+                by: caller.principal,
+              },
+              linked,
+            ]
+          : linked,
+        (now) => a.check(now),
+      );
       const hints: string[] = [];
       await this.tellStacked(projectId, orgId, store, r, item, proposal, caller, hints);
       return { roadmap: this.view(this.require(store, number)), hints };
@@ -1015,11 +1035,13 @@ export class RoadmapService {
     number: number,
     req: AdoptRequest,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { org, caller, store } = await this.open(projectId, orgId, actor);
+      const { org, caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.adopt", caller, roadmapSubject(number));
       const r = this.require(store, number);
-      this.rules.adopt(r, caller);
+      a.check(r);
       if (!isProposalNumber(req.proposal)) throw badRequest("proposal must be a proposal number.");
       const proposal = req.proposal;
       const title = text(req.title, "title", 200);
@@ -1052,21 +1074,27 @@ export class RoadmapService {
         stackedOn: null,
         proposal,
       };
-      store.write({ kind: "adopted", number, item, by: caller.principal });
-      if (r.status === "established") {
-        store.write({
-          kind: "delegated",
-          number,
-          key,
-          owner,
-          brief,
-          base: null,
-          child: null,
-          delivered: false,
-          by: caller.principal,
-        });
-        store.write({ kind: "linked", number, key, proposal, by: caller.principal });
-      }
+      const adopted: RoadmapWrite = { kind: "adopted", number, item, by: caller.principal };
+      store.write(
+        r.status === "established"
+          ? [
+              adopted,
+              {
+                kind: "delegated",
+                number,
+                key,
+                owner,
+                brief,
+                base: null,
+                child: null,
+                delivered: false,
+                by: caller.principal,
+              },
+              { kind: "linked", number, key, proposal, by: caller.principal },
+            ]
+          : adopted,
+        (now) => a.check(now),
+      );
       return { roadmap: this.view(this.require(store, number)), hints: [] };
     });
   }
@@ -1078,14 +1106,15 @@ export class RoadmapService {
     number: number,
     reason: unknown,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     const why = text(reason, "reason", 4000);
     const hints = await this.withLock(projectId, orgId, async () => {
-      const { caller, store } = await this.open(projectId, orgId, actor);
-      const r = this.require(store, number);
-      this.rules.reopen(r, caller);
+      const { caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.reopen", caller, roadmapSubject(number));
+      a.check(this.require(store, number));
       store.write({ kind: "reopened", number, reason: why, by: caller.principal }, (now) =>
-        this.rules.reopen(now, caller),
+        a.check(now),
       );
       const reopened = this.require(store, number);
       const line = reopenLine(reopened, caller.principal, why, moderatorOf(reopened) ?? "");
@@ -1123,15 +1152,18 @@ export class RoadmapService {
     number: number,
     channelId: unknown,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     await this.withLock(projectId, orgId, async () => {
-      const { caller, store } = await this.open(projectId, orgId, actor);
+      const { caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.room", caller, roadmapSubject(number));
       const r = this.require(store, number);
-      this.rules.requireStatus(r, "awaiting_room");
-      this.rules.moderatorOrPerson(r, caller);
+      a.check(r);
       const id = text(channelId, "channelId", 64);
       await this.requireRoom(projectId, orgId, id, r.employees);
-      store.write({ kind: "room", number, channelId: id, by: caller.principal });
+      store.write({ kind: "room", number, channelId: id, by: caller.principal }, (now) =>
+        a.check(now),
+      );
     });
     const hints = await this.relayRoadmap(projectId, orgId, number);
     return { roadmap: await this.get(projectId, orgId, number, actor), hints };
@@ -1143,17 +1175,16 @@ export class RoadmapService {
     number: number,
     name: unknown,
     actor: OrgActor,
+    act?: WriteAct,
   ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
-      const { caller, store } = await this.open(projectId, orgId, actor);
-      const r = this.require(store, number);
-      this.rules.moderatorOrPerson(r, caller);
-      store.write({
-        kind: "renamed",
-        number,
-        name: text(name, "name", 120),
-        by: caller.principal,
-      });
+      const { caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.rename", caller, roadmapSubject(number));
+      a.check(this.require(store, number));
+      store.write(
+        { kind: "renamed", number, name: text(name, "name", 120), by: caller.principal },
+        (now) => a.check(now),
+      );
       return { roadmap: this.view(this.require(store, number)), hints: [] };
     });
   }
@@ -1448,3 +1479,16 @@ export class RoadmapService {
     this.stores.clear();
   }
 }
+
+/** The subjects of a use case called directly, for the default guard of its Action. */
+const ORGANIZATION: Subject = { kind: "organization", id: "", text: "organization" };
+const roadmapSubject = (number: number): Subject => ({
+  kind: "roadmap",
+  id: String(number),
+  text: `roadmap:${number}`,
+});
+const itemSubject = (number: number, key: string): Subject => ({
+  kind: "item",
+  id: `${number}/${key}`,
+  text: `item:${number}/${key}`,
+});

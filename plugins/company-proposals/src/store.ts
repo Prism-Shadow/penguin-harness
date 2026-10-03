@@ -107,14 +107,12 @@ function revisionOf(row: Row): ProposalRevision {
  * to the indexes schema.ts declares.
  */
 export const READS = {
-  /** The queue for a person: the unread count is a range scan of proposal_events_by_number. */
-  queuePerson: `SELECT p.number, p.status, p.revision, p.author, p.implementer, p.delegated_by,
+  /** The queue for a reader (a person or an employee): the unread count is a range scan of proposal_events_by_number. */
+  queue: `SELECT p.number, p.status, p.revision, p.author, p.implementer, p.delegated_by,
       p.created_at, p.updated_at, p.title, (SELECT count(*) FROM proposal_events e
         WHERE e.number = p.number AND e.seq > coalesce(r.seq, 0) AND e.by <> :me) AS unread
      FROM proposals p LEFT JOIN proposal_reads r ON r.user_id = :user AND r.number = p.number
      ORDER BY p.number DESC`,
-  queueEmployee: `SELECT p.number, p.status, p.revision, p.author, p.implementer, p.delegated_by,
-      p.created_at, p.updated_at, p.title, 0 AS unread FROM proposals p ORDER BY p.number DESC`,
   pendingCounts: `SELECT number, count(*) AS n FROM proposal_comments
      WHERE by = ? AND batch_id IS NULL GROUP BY number`,
   headRevision: `SELECT root, scope, tests, sections FROM proposal_revisions WHERE number = ? AND revision = ?`,
@@ -146,10 +144,7 @@ export class ProposalReads {
   }
 
   list(viewer: Viewer): ProposalSummary[] {
-    // An employee has no read position and no unread count.
-    const rows = viewer.person
-      ? (this.q(READS.queuePerson).all({ me: viewer.principal, user: viewer.userId }) as Row[])
-      : (this.q(READS.queueEmployee).all() as Row[]);
+    const rows = this.q(READS.queue).all({ me: viewer.principal, user: viewer.reader }) as Row[];
     const pending = new Map<number, number>();
     for (const r of this.q(READS.pendingCounts).all(viewer.principal) as Row[]) {
       pending.set(num(r.number), num(r.n));
@@ -252,7 +247,7 @@ export class ProposalReads {
     return this.q(`SELECT 1 FROM proposals WHERE number = ?`).get(number) !== undefined;
   }
 
-  /** A person's read position on a proposal: the last seq they saw, 0 for none. */
+  /** A reader's position on a proposal: the last seq they saw, 0 for none. */
   readSeq(userId: string, number: number): number {
     const r = this.q(`SELECT seq FROM proposal_reads WHERE user_id = ? AND number = ?`).get(
       userId,

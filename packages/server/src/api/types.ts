@@ -7190,66 +7190,134 @@ export interface ProposalDeploymentRegisterRequest {
   url?: string;
 }
 
+/** Where an ActionRun came from. */
+export type ActionRunVia = "web" | "cli" | "session" | "api";
+
+/** How an ActionRun ended; null while it runs. */
+export type ActionRunOutcome = "succeeded" | "refused" | "failed" | "aborted" | "abandoned";
+
 /**
- * A deploy script an organization registered (company-proposals): the command a deploy to
- * `id` runs on the server that holds the organization, in its shared workspace. How it builds
- * and where it ships is the script's business; the deploy hands it the PR head.
+ * One execution of an Action (company-proposals' Action registry): who ran which Action on
+ * what, from where, and how it ended. The Activity is these, newest first.
  */
-export interface ProposalDeployScript {
+export interface ActionRunView {
   id: string;
-  /** The argument vector (no shell); a deploy appends its extra arguments. */
-  command: string[];
-  description: string;
-  /** `user:<id>`: who registered it. */
+  /** The Action's key, `proposal.approve`. */
+  key: string;
+  /** The contribution that ran, `company-proposals.action.approve`. */
+  contribution: string;
+  subjectKind: string;
+  /** The subject as written, `proposal:12`. */
+  subject: string;
+  /** The subject's commit when the run started (a deploy's head); null for a subject without one. */
+  commit: string | null;
+  params: Record<string, unknown>;
+  /** `user:<id>` or `agent:<id>`. */
   by: string;
-  at: string;
-}
-
-/** `GET …/proposals/deploy-scripts`. */
-export interface ProposalDeployScriptsResponse {
-  scripts: ProposalDeployScript[];
-}
-
-/** What a deploy runs: the script, the PR head it is given, and the full argument vector. */
-export interface ProposalDeployPlan {
-  script: string;
-  /** `owner/repo` of the head. */
-  repo: string;
-  /** The PR deployed; null for an impl branch with no PR. */
-  pr: number | null;
-  prUrl: string | null;
-  branch: string;
-  head: string;
-  /** The proposal whose impl this is; null for a PR no proposal registered. */
-  proposal: number | null;
-  argv: string[];
-}
-
-export type ProposalDeployStatus = "running" | "succeeded" | "failed" | "timed_out";
-
-export interface ProposalDeployRun extends ProposalDeployPlan {
-  id: string;
-  status: ProposalDeployStatus;
-  /** `agent:<id>` or `user:<id>`. */
-  by: string;
+  via: ActionRunVia;
+  sessionId: string | null;
+  requestId: string | null;
   startedAt: string;
-  finishedAt: string | null;
-  exitCode: number | null;
-  /** Why the script could not start or was stopped, when it did not simply exit. */
-  error: string | null;
+  /** null while the run has not ended. */
+  outcome: ActionRunOutcome | null;
+  /** The HTTP status the run answered. */
+  status: number | null;
+  code: string | null;
+  message: string | null;
+  /** What the run returned (the proposal after it, a process's exit). */
+  result: unknown;
+  /** After hooks that failed: the write stands, each failure is listed. */
+  hookErrors: string[];
+  endedAt: string | null;
 }
 
-/** `POST …/proposals/deploys`: the run started, or (with `dryRun`) only its plan. */
-export type ProposalDeployStartResponse = { run: ProposalDeployRun } | { plan: ProposalDeployPlan };
+/** `POST …/actions/:key/runs` and `POST …/actions/by-id/:contribution/runs`. */
+export interface ActionRunRequest {
+  /** `organization`, `proposal:12`, `comment:12/<id>`, `discussion:12/<session>`, `roadmap:3`, `item:3/<key>`, `branch:<remote>/<branch>`, `pr:<owner>/<repo>#<n>`, `target:<id>`. */
+  subject: string;
+  params?: Record<string, unknown>;
+  /** A retry with the same id answers the first run instead of running again. */
+  requestId?: string;
+  /** The surface the run is started from (`session` is read off the caller). */
+  via?: "web" | "cli";
+}
 
-/** `GET …/proposals/deploys/:id?from=`: the run and its output from `from` (output kept is a bounded tail). */
-export interface ProposalDeployRunResponse {
-  run: ProposalDeployRun;
+/** The answer to a run: 200 once it ended, 202 while a process it started runs (follow it with `GET …/actions/runs/:id`). */
+export interface ActionRunAnswer {
+  run: ActionRunView;
+  result: unknown;
+}
+
+/** `GET …/actions/runs?subject=&by=&key=&before=&limit=`: one page of the Activity, newest first. */
+export interface ActionRunsResponse {
+  runs: ActionRunView[];
+  /** The `before` of the next page; null on the last. */
+  next: string | null;
+}
+
+/** `GET …/actions/runs/:id?from=`: one run, and its process output from an offset (a bounded tail). */
+export interface ActionRunResponse {
+  run: ActionRunView;
   output: string;
   /** Where `output` starts: `from`, or later when the earlier output was dropped. */
   from: number;
   /** The offset to ask from next. */
   next: number;
+}
+
+/** An Action bound in the organization, and whether the caller may run it on the subject asked about. */
+export interface ActionView {
+  key: string;
+  contribution: string;
+  subjects: string[];
+  /** Parameter name (`?`: optional) to its type. */
+  params: Record<string, string>;
+  description: string;
+  /** A plugin's own Action rather than a company module's. */
+  builtin: boolean;
+  /** With `?subject=`: the guard's answer for the caller now (parameters not considered). */
+  allowed?: boolean;
+  refusal?: { status: number; code: string; message: string };
+}
+
+/** `GET …/actions[?subject=]`: the bound Actions (those acting on that subject's kind). */
+export interface ActionsResponse {
+  actions: ActionView[];
+}
+
+/** One contribution to the Action registry and the organization's binding of it. */
+export interface ActionContributionView {
+  id: string;
+  kind: "action" | "guard" | "hook" | "subject";
+  key: string | null;
+  /** The contributing module. */
+  from: string;
+  builtin: boolean;
+  enabled: boolean;
+  position: number;
+  config: Record<string, unknown>;
+  subjects: string[];
+  when: "before" | "after" | null;
+  description: string;
+}
+
+/** A key two or more bound contributions answer: ambiguous when invoked. */
+export interface ActionConflict {
+  key: string;
+  kind: "action" | "guard";
+  contributions: string[];
+}
+
+/** `GET …/actions/contributions`: every contribution, bound or not, and those the registry left out. */
+export interface ActionContributionsResponse {
+  contributions: ActionContributionView[];
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+/** `GET …/actions/check`: the organization's conflicts. */
+export interface ActionCheckResponse {
+  conflicts: ActionConflict[];
+  skipped: Array<{ id: string; reason: string }>;
 }
 
 export interface ProposalDetail extends ProposalItem {

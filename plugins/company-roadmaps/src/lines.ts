@@ -5,14 +5,13 @@
  *
  * Two kinds of reader, two rules. A **room session** (the moderator's above all) works the
  * roadmap itself, so its texts carry the commands that answer them: `penguin org channel send`,
- * and this plugin's routes through `curl` with the session's control environment
- * (`PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_SESSION_ID`,
- * `PENGUIN_AGENT_ID`), whose `sessionId`/`agentId` claims attribute the write to the employee:
- * the draft, the establishment, the moderator's approval of a proposal item. A **desk** gets
+ * and the roadmap Actions (`POST …/actions/<key>/runs`) through `curl` with the session's
+ * control environment (`PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`,
+ * `PENGUIN_SESSION_ID`, `PENGUIN_AGENT_ID`), whose `sessionId`/`agentId` claims attribute the
+ * run to the employee: the draft, the establishment, the moderator's approval of a proposal item. A **desk** gets
  * only what happened and what it means. No desk line carries a write command, and no text
- * anywhere tells anyone to create a proposal card: the proposal of an item is opened only after a
- * person and the moderator both approved its brief, by whoever the organization assigns that
- * step to, not by this plugin's words.
+ * anywhere tells anyone to create a proposal card: the proposal of an item is created by its last
+ * approval, not by this plugin's words.
  */
 import type { DraftItem, Roadmap } from "./domain.js";
 import type { RoomMessage } from "./room.js";
@@ -23,6 +22,11 @@ export function routeOf(orgId: string, number: number | null, suffix = ""): stri
   return `${base}${number === null ? "" : `/${number}`}${suffix}`;
 }
 
+/** The route that runs an Action, as a session's shell spells it. */
+export function actionRouteOf(orgId: string, key: string): string {
+  return `$PENGUIN_API_URL/api/projects/$PENGUIN_PROJECT_ID/organizations/${orgId}/actions/${key}/runs`;
+}
+
 /** A `curl` that sends `fields` (literal JSON members) with the session's identity claim. */
 export function curlOf(method: string, url: string, fields: string[] = []): string {
   const claim = [
@@ -31,6 +35,19 @@ export function curlOf(method: string, url: string, fields: string[] = []): stri
   ];
   const body = [...claim, ...fields].join(",");
   return `curl -sS -X ${method} "${url}" -H "authorization: Bearer $PENGUIN_API_TOKEN" -H "content-type: application/json" -d "{${body}}"`;
+}
+
+/** A `curl` running Action `key` on `subject` with `params` (literal JSON members), as the session. */
+export function curlActionOf(
+  orgId: string,
+  key: string,
+  subject: string,
+  params: string[] = [],
+): string {
+  return curlOf("POST", actionRouteOf(orgId, key), [
+    `\\"subject\\":\\"${subject}\\"`,
+    `\\"params\\":{${params.join(",")}}`,
+  ]);
 }
 
 /** The same, with the body read from a JSON file the employee writes (claims included by them). */
@@ -90,14 +107,14 @@ export function cloneBrief(args: {
     lines.push(
       [
         "You moderate. Keep the draft as the discussion moves — your record of it, the body (the discussion written as a paper, in `## ` sections) and the items it leads to, each only a brief:",
-        '  write draft.json: {"sessionId": "$PENGUIN_SESSION_ID", "agentId": "$PENGUIN_AGENT_ID", "record": "...", "body": "...", "items": [{"key": "a", "kind": "proposal", "title": "...", "brief": "...", "owner": "<agent id>", "cites": ["<body section heading>"]}, {"key": "b", "kind": "roadmap", "title": "...", "brief": "...", "employees": ["<agent id>"], "cites": ["..."]}]}',
+        `  write draft.json: {"sessionId": "$PENGUIN_SESSION_ID", "agentId": "$PENGUIN_AGENT_ID", "subject": "roadmap:${r.number}", "params": {"record": "...", "body": "...", "items": [{"key": "a", "kind": "proposal", "title": "...", "brief": "...", "owner": "<agent id>", "cites": ["<body section heading>"]}, {"key": "b", "kind": "roadmap", "title": "...", "brief": "...", "employees": ["<agent id>"], "cites": ["..."]}]}}`,
         "  (substitute the two variables' values; any of record/body/items may be left out; a proposal item is stacked on the previous one unless it says `stackedOn`)",
         "  The body is shown as Markdown beside the room: cite a proposal as `proposal:<n>` (it becomes a link to that proposal), and add a note as a footnote (`…[^1]` in the text, `[^1]: the note` below).",
-        `  ${curlFileOf("PUT", routeOf(orgId, r.number, "/draft"), "draft.json")}`,
+        `  ${curlFileOf("POST", actionRouteOf(orgId, "roadmap.draft"), "draft.json")}`,
         'A proposal that exists already is taken in as it is, not written again: it is a proposal item with its number (`"proposal": <n>`, no cites needed) — keep such an item in the items you write. To take one in:',
-        `  ${curlOf("POST", routeOf(orgId, r.number, "/adopt"), ['\\"proposal\\":<n>', '\\"title\\":\\"<its title>\\"', '\\"owner\\":\\"<agent id>\\"'])}`,
-        "Nothing is created while the room discusses. When the room agrees, establish it — every roadmap item derives its own roadmap at once, but a proposal item stays a brief: nothing is created for it, and its owner is not told, until a person and you (the moderator) have both approved it:",
-        `  ${curlOf("POST", routeOf(orgId, r.number, "/establish"))}`,
+        `  ${curlActionOf(orgId, "roadmap.adopt", `roadmap:${r.number}`, ['\\"proposal\\":<n>', '\\"title\\":\\"<its title>\\"', '\\"owner\\":\\"<agent id>\\"'])}`,
+        "Nothing is created while the room discusses. When the room agrees, establish it — every roadmap item derives its own roadmap at once, but a proposal item stays a brief: nothing is created for it, and its owner is not told, until it has its approvals (yours as moderator and one other member's, unless the organization says otherwise):",
+        `  ${curlActionOf(orgId, "roadmap.establish", `roadmap:${r.number}`)}`,
       ].join("\n"),
     );
   }
@@ -136,9 +153,9 @@ export function relayLine(r: Roadmap, msg: RoomMessage): string {
 
 /**
  * The input the moderator's room session gets when the roadmap is established with proposal
- * items: they are briefs now, each waiting for two approvals — a person's (on the roadmaps page)
- * and the moderator's (this command). Approving says the brief is ready to become a proposal;
- * it creates nothing.
+ * items: they are briefs now, each waiting for its approvals — the moderator's (this command)
+ * and another member's, unless the organization binds other roles. Approving says the brief is
+ * ready to become a proposal; the last approval creates it.
  */
 export function approvalRequestLine(args: {
   orgId: string;
@@ -147,17 +164,17 @@ export function approvalRequestLine(args: {
 }): string {
   const { orgId, roadmap: r } = args;
   return [
-    `${tag(r)} established. Its proposal items are briefs now; each needs two approvals, and the second creates its proposal — a person's, given on the roadmaps page, and yours as moderator:`,
+    `${tag(r)} established. Its proposal items are briefs now; each needs its approvals — yours as moderator and another member's, unless the organization binds other roles — and the last creates its proposal:`,
     ...args.items.map((i) => `- [${i.key}] "${i.title}" — owner ${i.owner}: ${i.brief}`),
-    `Approve an item whose brief is ready: \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/approve"))}\`. The second approval — a person's and yours — creates the item's proposal, its owner the author, and links it; leave an item unapproved, or reopen the roadmap, when its brief is not ready.`,
-    `An item that is a proposal which exists already is not approved — there is no work to start: link it to that proposal, which delegates it without the two approvals and tells its owner nothing (an item you own yourself is linked by a person): \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/link"), ['\\"proposal\\":<n>'])}\`.`,
+    `Approve an item whose brief is ready: \`${curlActionOf(orgId, "roadmap.item.approve", `item:${r.number}/<key>`)}\`. The last approval creates the item's proposal, its owner the author, and links it; leave an item unapproved, or reopen the roadmap, when its brief is not ready.`,
+    `An item that is a proposal which exists already is not approved — there is no work to start: link it to that proposal, which delegates it without the approvals and tells its owner nothing (an item you own yourself is linked by someone else): \`${curlActionOf(orgId, "roadmap.item.link", `item:${r.number}/<key>`, ['\\"proposal\\":<n>'])}\`.`,
   ].join("\n");
 }
 
 /**
- * The desk line telling an owner that its proposal item was approved — by a person and by the
- * moderator, named with when — that its proposal is created and linked, with the number, and
- * what it is stacked on. It carries no command: the proposal is written in the step the
+ * The desk line telling an owner that its proposal item was approved — each approval named,
+ * with its role and when — that its proposal is created and linked, with the number, and what it
+ * is stacked on. It carries no command: the proposal is written in the step the
  * organization assigns for it. `rebriefed`: the item's changed brief was approved again and
  * the open proposal it is linked to got the new brief instead of a second proposal being made.
  */
@@ -165,8 +182,7 @@ export function approvedLine(args: {
   roadmap: Roadmap;
   item: DraftItem & { kind: "proposal" };
   base: { title: string; proposal?: number } | null;
-  person: { by: string; at: string };
-  moderator: { by: string; at: string };
+  approvals: ReadonlyArray<{ role: string; by: string; at: string }>;
   proposal: number;
   rebriefed?: boolean;
 }): string {
@@ -178,7 +194,7 @@ export function approvedLine(args: {
         ? `It is stacked on "${base.title}" — proposal #${base.proposal}: base your branch on that one's.`
         : `It is stacked on "${base.title}", which has no proposal number yet; you will be told when it has.`;
   return [
-    `${tag(r)} Your item [${item.key}] "${item.title}" is approved: by ${args.person.by} (${args.person.at}) and by the moderator ${args.moderator.by} (${args.moderator.at}).`,
+    `${tag(r)} Your item [${item.key}] "${item.title}" is approved: ${args.approvals.map((a) => `by ${a.by} as ${a.role} (${a.at})`).join(" and ")}.`,
     `Brief: ${item.brief}`,
     stacked,
     args.rebriefed === true

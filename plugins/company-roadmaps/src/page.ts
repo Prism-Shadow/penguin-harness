@@ -32,10 +32,11 @@
  * page's URL): the record, the body and the items, read again every few seconds. On its own,
  * `roadmaps/<n>` shows the detail only for a roadmap still waiting for its room.
  *
- * Once a roadmap is established, each proposal item is a brief until a person and the moderator
- * both approve it: the detail shows who approved and when, or that it is waiting, and gives the
- * person an Approve button (`POST …/items/<key>/approve`); the moderator approves from its room
- * session. Nothing on this page creates a proposal.
+ * Once a roadmap is established, each proposal item is a brief until it has its approvals (the
+ * moderator's and another member's by default): the detail shows who approved, in which role and
+ * when, or that it is waiting, and gives an Approve button (the `roadmap.item.approve` Action);
+ * the moderator approves from its room session. The page's writes are Actions
+ * (`POST …/actions/<key>/runs`); the last approval is what creates a proposal.
  *
  * An organization that runs on another machine is asked THERE, as the app asks it: the page
  * reads the Project's organization list once, and when the organization names a machine every
@@ -248,13 +249,11 @@ export const PAGE_STRINGS = {
     proposal: "proposal",
     brief: "brief",
     approvals: "approvals",
-    byPerson: "a person",
-    byModerator: "the moderator",
     waiting: "waiting",
     approve: "Approve",
     approveFailed: "Could not approve",
     approveHint:
-      "A proposal item is only a brief until a person and the moderator both approve it; nothing is created before that.",
+      "A proposal item is only a brief until it has its approvals (the moderator's and another member's by default); nothing is created before that.",
     noRoom: "This roadmap has no room yet.",
     onMachine:
       "This organization runs on machine {m}; its roadmaps are asked there, so the plugin has to be installed on that machine too.",
@@ -314,12 +313,11 @@ export const PAGE_STRINGS = {
     proposal: "提案",
     brief: "仅 brief",
     approvals: "批准",
-    byPerson: "人",
-    byModerator: "主持人",
     waiting: "待批准",
     approve: "批准",
     approveFailed: "批准失败",
-    approveHint: "提案条目在人和主持人都批准之前只是一段 brief，在此之前不会建任何东西。",
+    approveHint:
+      "提案条目在集齐批准（缺省为主持人一份、其他成员一份）之前只是一段 brief，在此之前不会建任何东西。",
     noRoom: "这份路线图还没有讨论室。",
     onMachine: "这个组织运行在机器 {m} 上；它的路线图要去那里问，所以那台机器上也得装这个插件。",
     updated: "{t} 更新",
@@ -448,15 +446,17 @@ try {
     return '<span class="pill ' + tone + '">' + esc(T[r.status] || r.status) + "</span>";
   };
   const moderatorOf = (r) => r.moderator || (r.employees && r.employees[0]) || "";
-  // A proposal item that is still a brief shows its two approvals — a person's and the
-  // moderator's, who and when, or "waiting" — and, where it may ("approvable"), the person's button.
+  // A proposal item that is still a brief shows the approvals given — the role, who and when — or
+  // "waiting", and, where it may ("approvable"), the Approve button; the server decides the role.
   const approvalLine = (i, d, approvable) => {
     if (i.kind !== "proposal" || !d || d.stage !== "brief") return "";
-    const a = d.approvals || {};
-    const one = (label, x) => esc(label) + " " + (x ? esc(String(x.by).replace(/^(user|agent):/, "")) + ' <span class="muted small">' + esc(x.at) + "</span>" : '<span class="muted">' + esc(T.waiting) + "</span>");
-    return '<div class="approvals"><span class="pill warn">' + esc(T.brief) + "</span> " + esc(T.approvals) + ": " + one(T.byPerson, a.person) + " · " + one(T.byModerator, a.moderator) +
-      (approvable && !a.person ? ' <button type="button" data-approve="' + esc(i.key) + '">' + esc(T.approve) + "</button>" : "") + "</div>";
+    const given = Object.entries(d.approvals || {});
+    const one = ([role, x]) => esc(role) + " " + esc(String(x.by).replace(/^(user|agent):/, "")) + ' <span class="muted small">' + esc(x.at) + "</span>";
+    return '<div class="approvals"><span class="pill warn">' + esc(T.brief) + "</span> " + esc(T.approvals) + ": " + (given.length === 0 ? '<span class="muted">' + esc(T.waiting) + "</span>" : given.map(one).join(" · ")) +
+      (approvable ? ' <button type="button" data-approve="' + esc(i.key) + '">' + esc(T.approve) + "</button>" : "") + "</div>";
   };
+  // An Action run: the answer's result, or the refusal as a failure.
+  const run = (key, subject, params) => request("POST", org + "/actions/" + key + "/runs", { subject, params, via: "web" }).then((a) => a.result);
   // A proposal's number: the one linked to the item, or the existing proposal it adopted.
   const itemLine = (i, d, approvable) => {
     const num = (d && d.proposal) || i.proposal;
@@ -554,7 +554,7 @@ try {
     const b = q("[data-submit]");
     if (b) b.disabled = true;
     try {
-      const made = await request("POST", org + "/roadmaps", { name, employees: form.picked });
+      const made = await run("roadmap.open", "organization", { name, employees: form.picked });
       form = null;
       const hints = (made.hints || []).map((h) => "<p>" + esc(h) + "</p>").join("");
       const n = String(made.roadmap.number);
@@ -645,7 +645,7 @@ try {
     const note = q("[data-note]");
     for (const b of main.querySelectorAll("[data-adopt]")) b.disabled = true;
     try {
-      await request("POST", org + "/roadmaps/" + shown + "/adopt", { proposal: Number(pick.getAttribute("data-adopt")), title: pick.getAttribute("data-title"), owner: pick.getAttribute("data-owner") });
+      await run("roadmap.adopt", "roadmap:" + shown, { proposal: Number(pick.getAttribute("data-adopt")), title: pick.getAttribute("data-title"), owner: pick.getAttribute("data-owner") });
       adopting = false;
       await one(shown);
     } catch (e) {
@@ -654,9 +654,8 @@ try {
     }
   }
   async function approve(key) {
-    const url = org + "/roadmaps/" + shown + "/items/" + encodeURIComponent(key) + "/approve";
     try {
-      await request("POST", url, {});
+      await run("roadmap.item.approve", "item:" + shown + "/" + key, {});
       await one(shown);
     } catch (e) {
       const slot = q("[data-approve-note]");

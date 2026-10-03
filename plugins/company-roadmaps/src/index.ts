@@ -12,8 +12,10 @@
  * never writes it); every employee in the room gets its desk cloned for the room — a session of
  * its own opened through the organization gateway — and the room's messages reach those
  * sessions through the session runtime (service.ts's relay). Establishing a roadmap ends the
- * discussion; a proposal item's second approval (a person's and the moderator's) creates its
- * proposal in company-proposals — through that plugin's module, wired below — and links it.
+ * discussion; a proposal item's last approval (the moderator's and another member's by default)
+ * creates its proposal in company-proposals — through that plugin's module, wired below — and
+ * links it. Every write is a roadmap Action contributed to company-proposals' Action registry
+ * (builtin-actions.ts); the routes here are the reads.
  */
 import type { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
@@ -30,6 +32,7 @@ import type {
 import { RoadmapService } from "./service.js";
 import { ProposalCreator } from "./proposals.js";
 import { ROUTES_ID, roadmapRoutes } from "./routes.js";
+import { roadmapCode } from "./builtin-actions.js";
 import { PAGE_ROUTES_ID, pageRoutes } from "./page.js";
 import { claimListeners, roomClaim, type ClaimListener } from "./claim.js";
 import {
@@ -53,8 +56,23 @@ export type {
 export { COMPANY_DB, ROADMAP_SCHEMA, companyDbPath, openCompanyDb } from "./schema.js";
 export { SqliteRoadmapStore, briefSha } from "./store.js";
 export type { RoadmapStore } from "./ports.js";
-export { defaultRules, moderatorOf } from "./guards.js";
-export type { Caller, RoadmapRules } from "./guards.js";
+export {
+  DEFAULT_APPROVAL_ROLES,
+  approvalRole,
+  defaultAct,
+  moderatorOf,
+  requireStatus,
+  roadmapGuards,
+  rolesOf,
+} from "./guards.js";
+export type { Caller, WriteAct } from "./guards.js";
+export {
+  ROADMAP_ACTION_IDS,
+  ROADMAP_SUBJECTS_ID,
+  roadmapCode,
+  writeActOf,
+} from "./builtin-actions.js";
+export type * from "./action-shapes.js";
 export {
   CHANNEL_ID,
   agentMembers,
@@ -107,6 +125,108 @@ export const CLAIM_ID = "company-roadmaps.channel-claim";
  */
 @Component({
   contributes: {
+    "CompanyActionRegistry.actions": [
+      {
+        id: "company-roadmaps.action.open",
+        kind: "action",
+        key: "roadmap.open",
+        subjects: ["organization"],
+        params: {
+          name: "string",
+          employees: "string[]",
+          "channelId?": "string",
+          "brief?": "string",
+          "parent?": "number.integer",
+        },
+        description: "Open a roadmap over a room, or one it opens for itself.",
+      },
+      {
+        id: "company-roadmaps.action.draft",
+        kind: "action",
+        key: "roadmap.draft",
+        subjects: ["roadmap"],
+        params: {
+          "record?": "string",
+          "body?": "string",
+          "items?": "object[]",
+        },
+        description: "Keep a roadmap's draft: its record, body and items.",
+      },
+      {
+        id: "company-roadmaps.action.establish",
+        kind: "action",
+        key: "roadmap.establish",
+        subjects: ["roadmap"],
+        description:
+          "Establish a roadmap: roadmap items derive their roadmaps, proposal items become briefs.",
+      },
+      {
+        id: "company-roadmaps.action.item-approve",
+        kind: "action",
+        key: "roadmap.item.approve",
+        subjects: ["item"],
+        description:
+          "Approve a proposal item's brief in one of the approval roles; the last creates its proposal.",
+      },
+      {
+        id: "company-roadmaps.action.item-link",
+        kind: "action",
+        key: "roadmap.item.link",
+        subjects: ["item"],
+        params: {
+          proposal: "number.integer",
+        },
+        description: "Link a proposal to a proposal item.",
+      },
+      {
+        id: "company-roadmaps.action.adopt",
+        kind: "action",
+        key: "roadmap.adopt",
+        subjects: ["roadmap"],
+        params: {
+          proposal: "number.integer",
+          title: "string",
+          owner: "string",
+          "brief?": "string",
+        },
+        description: "Take an existing proposal into a roadmap as a proposal item.",
+      },
+      {
+        id: "company-roadmaps.action.reopen",
+        kind: "action",
+        key: "roadmap.reopen",
+        subjects: ["roadmap"],
+        params: {
+          reason: "string",
+        },
+        description: "Reopen an established roadmap: the room discusses again.",
+      },
+      {
+        id: "company-roadmaps.action.rename",
+        kind: "action",
+        key: "roadmap.rename",
+        subjects: ["roadmap"],
+        params: {
+          name: "string",
+        },
+        description: "Rename a roadmap.",
+      },
+      {
+        id: "company-roadmaps.action.room",
+        kind: "action",
+        key: "roadmap.room",
+        subjects: ["roadmap"],
+        params: {
+          channelId: "string",
+        },
+        description: "Bind the room of a derived roadmap waiting for one.",
+      },
+      {
+        id: "company-roadmaps.subjects",
+        kind: "subject",
+        subjects: ["roadmap", "item"],
+      },
+    ],
     "HttpModule.routes": [
       {
         id: "company-roadmaps.routes",
@@ -194,6 +314,17 @@ export class CompanyRoadmapsPlugin {
   @Use("CompanyProposalsPlugin") private readonly proposals!: ProposalCreator;
   @Bind(ROUTES_ID) routes!: Hono;
   @Bind(PAGE_ROUTES_ID) page!: Hono;
+  // The code halves of the contributions to CompanyActionRegistry.actions (builtin-actions.ts).
+  @Bind("company-roadmaps.action.open") openAction!: unknown;
+  @Bind("company-roadmaps.action.draft") draftAction!: unknown;
+  @Bind("company-roadmaps.action.establish") establishAction!: unknown;
+  @Bind("company-roadmaps.action.item-approve") itemApproveAction!: unknown;
+  @Bind("company-roadmaps.action.item-link") itemLinkAction!: unknown;
+  @Bind("company-roadmaps.action.adopt") adoptAction!: unknown;
+  @Bind("company-roadmaps.action.reopen") reopenAction!: unknown;
+  @Bind("company-roadmaps.action.rename") renameAction!: unknown;
+  @Bind("company-roadmaps.action.room") roomAction!: unknown;
+  @Bind("company-roadmaps.subjects") subjects!: unknown;
 
   setup({ effect }: ClassCtx) {
     const service = new RoadmapService({
@@ -211,6 +342,17 @@ export class CompanyRoadmapsPlugin {
     });
     this.routes = roadmapRoutes(service);
     this.page = pageRoutes();
+    const code = roadmapCode(service);
+    this.openAction = code["company-roadmaps.action.open"];
+    this.draftAction = code["company-roadmaps.action.draft"];
+    this.establishAction = code["company-roadmaps.action.establish"];
+    this.itemApproveAction = code["company-roadmaps.action.item-approve"];
+    this.itemLinkAction = code["company-roadmaps.action.item-link"];
+    this.adoptAction = code["company-roadmaps.action.adopt"];
+    this.reopenAction = code["company-roadmaps.action.reopen"];
+    this.renameAction = code["company-roadmaps.action.rename"];
+    this.roomAction = code["company-roadmaps.action.room"];
+    this.subjects = code["company-roadmaps.subjects"];
     // What the claim node claims is relayed at once, not at the next poll (claim.ts).
     const listener: ClaimListener = (channel, number) => {
       setImmediate(() => {

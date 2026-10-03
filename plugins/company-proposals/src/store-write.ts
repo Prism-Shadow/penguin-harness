@@ -37,11 +37,35 @@ const notFound = (number: number): ProposalError =>
   new ProposalError(404, "proposal_not_found", `Proposal #${number} does not exist.`);
 
 export class SqliteProposalStore extends ProposalReads implements ProposalStore {
+  /** Called inside every write transaction of this view: an Action run's start row (scoped). */
+  private sink: ((db: DatabaseSync) => void) | null = null;
+
   constructor(
     db: DatabaseSync,
     private readonly now: () => number = Date.now,
   ) {
     super(db);
+  }
+
+  /**
+   * A view of this store whose every write transaction also calls `sink` before it commits —
+   * the run's start row, so the run and its write commit together. It shares the connection
+   * and the prepared statements.
+   */
+  scoped(sink: ((db: DatabaseSync) => void) | undefined): SqliteProposalStore {
+    if (sink === undefined) return this;
+    const view = Object.create(this) as SqliteProposalStore;
+    view.sink = sink;
+    return view;
+  }
+
+  /** One write transaction, the sink called last inside it. */
+  private atomic<T>(fn: () => T): T {
+    return immediate(this.db, () => {
+      const out = fn();
+      this.sink?.(this.db);
+      return out;
+    });
   }
 
   /**
@@ -88,7 +112,7 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
     plan: Plan<Proposal, T>,
     apply: (p: Proposal, planned: NonNullable<T>, seq: number, at: string) => number | void,
   ): Written | null {
-    const out = immediate(this.db, () => {
+    const out = this.atomic(() => {
       const p = this.get(number);
       if (p === null) throw notFound(number);
       const planned = plan(p, this.tx());
@@ -111,7 +135,7 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
   }
 
   create(plan: () => CreatePlan): { number: number; seq: number; created: boolean } {
-    return immediate(this.db, () => {
+    return this.atomic(() => {
       const c = plan();
       if (c.roadmap !== undefined) {
         const found = this.q(

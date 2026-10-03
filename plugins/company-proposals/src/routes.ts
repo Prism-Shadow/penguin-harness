@@ -2,68 +2,33 @@
  * The proposal routes, mounted by the harness's HTTP module at
  * `/api/projects/:projectId/organizations/:orgId/proposals` behind its cookie gate, so
  * `c.get("user")` is the signed-in user and `c.get("sessionVia")` says how they signed in.
+ * They are the reads; every write is an Action (`POST …/actions/:key/runs`, action-routes.ts).
  *
  *   GET    /                         the queue (each with the caller's unread count)
- *   POST   /                         start one: { author, brief, title? } (a person; an employee gets 403 roadmap_only —
- *                                   its new proposals come from approved roadmap items)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
  *   GET    /graph[?refresh=1]        the delivery repository's open PRs as a commit graph (graph-refresh.ts), with the deployments placed on it; refresh=1 waits for a refresh
  *   GET    /deployments              the deployment registry: the deployments registered, none by default (deployments.ts)
- *   POST   /deployments              anybody in the organization registers one: { id, url? } (url = a penguin server); a repeat is 409 deployment_registered
- *   GET    /deploy-scripts           the organization's deploy scripts (deploy-routes.ts)
- *   POST   /deploy-scripts           { id, command[], description? } register one (a person who is a server admin)
- *   DELETE /deploy-scripts/:id       remove one (a person who is a server admin)
- *   POST   /deploys                  { script, proposal | pr, head?, args?, dryRun? } run a script on a PR head (anybody in the organization)
- *   GET    /deploys/:id?from=        a run and its output from an offset
- *   POST   /adopt-impl               anybody in the organization: proposals without an impl PR take their latest delivery-repo `pr` material
  *   GET    /:number                  the proposal
- *   PUT    /:number/impl             { head?, base?, url? } the impl branch and/or its PR (anybody in the organization; one per proposal)
  *   GET    /:number/impl/diff        the impl branch's patch: merge base of base and head, up to head (read from GitHub)
  *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
  *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)
- *   PUT    /:number                  publish a revision: { markdown }
- *   PUT    /:number/brief            rewrite the brief: { brief } (the author or a person; the revisions stay)
- *   POST   /:number/ready | approve | reject { reason } | merged   (reject: a person or any employee;
- *                                   merged: a person, the implementer, or any employee once the impl PR is merged into its default branch)
- *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
- *   POST   /:number/discussions      a person opens a discussion with the owner (implementer, else author) → its session
- *   POST   /:number/discussions/:sessionId/conclude { text }  the conclusion, to the owner's desk (a person, or that session)
- *   POST   /:number/materials        { kind, url, label? }
- *   POST   /:number/feedback         { text, runtime? }
  *   GET    /:number/comments[?pending=1]  the comments (pending: batched, unresolved) with the text marked for an agent
- *   POST   /:number/comments         { sectionId, start, end, quote, text } (pending)
- *   POST   /:number/comments/request send the caller's pending comments as one batch
- *   PATCH  /:number/comments/:id     { text }   reword a pending comment (its writer only)
- *   DELETE /:number/comments/:id                withdraw a pending comment (its writer only)
- *   POST   /:number/comments/:id/resolve { text? }
- *   POST   /:number/read             { upTo }
+ *   POST   /:number/read             { upTo } the caller's read position (a person's or an employee's) — not an Action
  *
- * Every route answers 404 while company mode is off, as the organization routes do. A
- * write coming from inside a Session carries `sessionId` / `agentId`, which the service
- * attributes to the employee — under the same rule as the organization routes: the claim
- * is honoured only behind the local API token (see callerSessionId).
+ * Every route answers 404 while company mode is off, as the organization routes do. A read
+ * from inside a Session carries `sessionId` / `agentId` as query parameters, honoured only
+ * behind the local API token (route-input.ts).
  */
 import { Hono } from "hono";
-import type { ProposalImplRequest, ProposalMaterialKind } from "@prismshadow/penguin-server/api";
-import { MATERIAL_KINDS, ProposalError, type ProposalService } from "./service.js";
-import { ImplBranchError, branchRefOf } from "./impl-branch.js";
-import type { DeployService } from "./deploy.js";
-import { deployRoutes } from "./deploy-routes.js";
-import {
-  actorOf,
-  actorOfQuery,
-  jsonBody,
-  numberParam,
-  optionalString,
-  param,
-  requireString,
-} from "./route-input.js";
+import { ProposalError, type ProposalService } from "./service.js";
+import { ImplBranchError } from "./impl-branch.js";
+import { actorOf, actorOfQuery, jsonBody, numberParam, param } from "./route-input.js";
 
 /** The slot's contribution id, as the manifest names it. */
 export const ROUTES_ID = "company-proposals.routes";
 
-export function proposalRoutes(service: ProposalService, deploys: DeployService): Hono {
+export function proposalRoutes(service: ProposalService): Hono {
   const app = new Hono();
   app.onError((err, c) => {
     if (err instanceof ProposalError || err instanceof ImplBranchError) {
@@ -76,25 +41,6 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
   app.get("/", async (c) =>
     c.json(await service.list(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
   );
-
-  app.post("/", async (c) => {
-    const body = await jsonBody(c);
-    const created = await service.create(
-      param(c, "projectId"),
-      param(c, "orgId"),
-      {
-        ...(optionalString(body, "author", 64) !== undefined
-          ? { author: optionalString(body, "author", 64) }
-          : {}),
-        brief: requireString(body, "brief"),
-        ...(optionalString(body, "title", 200) !== undefined
-          ? { title: optionalString(body, "title", 200) }
-          : {}),
-      },
-      actorOf(c, body),
-    );
-    return c.json(created, 201);
-  });
 
   app.get("/test-groups", async (c) =>
     c.json(await service.listTestGroups(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
@@ -112,56 +58,11 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
     c.json(await service.deployments(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
   );
 
-  app.post("/deployments", async (c) => {
-    const body = await jsonBody(c);
-    const req = {
-      id: String(body.id ?? ""),
-      ...(body.url !== undefined && body.url !== null ? { url: String(body.url) } : {}),
-    };
-    return c.json(
-      await service.registerDeployment(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        req,
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/adopt-impl", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    return c.json(
-      await service.adoptImpl(param(c, "projectId"), param(c, "orgId"), actorOf(c, body)),
-    );
-  });
-
-  // Before `/:number`, which would otherwise take `deploy-scripts` and `deploys` for a number.
-  app.route("/", deployRoutes(deploys));
-
   app.get("/:number", async (c) =>
     c.json(
       await service.get(param(c, "projectId"), param(c, "orgId"), numberParam(c), actorOfQuery(c)),
     ),
   );
-
-  app.put("/:number/impl", async (c) => {
-    const body = await jsonBody(c);
-    const url = optionalString(body, "url", 2000);
-    const req: ProposalImplRequest = {
-      ...(url !== undefined ? { url } : {}),
-      ...(body.head !== undefined ? { head: branchRefOf(body.head, "head") } : {}),
-      ...(body.base !== undefined ? { base: branchRefOf(body.base, "base") } : {}),
-    };
-    return c.json(
-      await service.setImpl(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        req,
-        actorOf(c, body),
-      ),
-    );
-  });
 
   app.get("/:number/impl/diff", async (c) =>
     c.json(
@@ -173,174 +74,6 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
       ),
     ),
   );
-
-  app.put("/:number", async (c) => {
-    const body = await jsonBody(c);
-    return c.json(
-      await service.publish(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        requireString(body, "markdown", 200_000),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.put("/:number/brief", async (c) => {
-    const body = await jsonBody(c);
-    return c.json(
-      await service.editBrief(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        requireString(body, "brief"),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/ready", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    return c.json(
-      await service.ready(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/approve", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    return c.json(
-      await service.approve(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/reject", async (c) => {
-    const body = await jsonBody(c);
-    return c.json(
-      await service.reject(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        requireString(body, "reason", 4000),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/merged", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    return c.json(
-      await service.merged(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/implement", async (c) => {
-    const body = await jsonBody(c);
-    const message = optionalString(body, "message");
-    const workspace = optionalString(body, "workspace", 1000);
-    return c.json(
-      await service.implement(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        {
-          ...(optionalString(body, "agentId", 64) !== undefined
-            ? { agentId: optionalString(body, "agentId", 64) }
-            : {}),
-          ...(message !== undefined ? { message } : {}),
-          ...(workspace !== undefined ? { workspace } : {}),
-        },
-        // `agentId` names the implementer here; the caller's own claim travels as `callerAgentId`.
-        actorOf(c, body, { agentIdField: "callerAgentId" }),
-      ),
-      201,
-    );
-  });
-
-  app.post("/:number/discussions", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    return c.json(
-      await service.discuss(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        actorOf(c, body),
-      ),
-      201,
-    );
-  });
-
-  app.post("/:number/discussions/:sessionId/conclude", async (c) => {
-    const body = await jsonBody(c);
-    const sessionId = c.req.param("sessionId");
-    if (sessionId === undefined || sessionId === "") {
-      throw new ProposalError(404, "discussion_not_found", "Missing discussion session id.");
-    }
-    return c.json(
-      await service.conclude(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        sessionId,
-        requireString(body, "text", 20000),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/materials", async (c) => {
-    const body = await jsonBody(c);
-    const kind = requireString(body, "kind", 16) as ProposalMaterialKind;
-    if (!MATERIAL_KINDS.includes(kind)) {
-      throw new ProposalError(
-        400,
-        "bad_request",
-        `kind must be one of ${MATERIAL_KINDS.join(", ")}.`,
-      );
-    }
-    const label = optionalString(body, "label", 200);
-    return c.json(
-      await service.addMaterial(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        { kind, url: requireString(body, "url", 2000), ...(label !== undefined ? { label } : {}) },
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/feedback", async (c) => {
-    const body = await jsonBody(c);
-    const runtime = body.runtime;
-    if (runtime !== undefined && typeof runtime !== "boolean") {
-      throw new ProposalError(400, "bad_request", "runtime must be a boolean.");
-    }
-    return c.json(
-      await service.feedback(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        { text: requireString(body, "text"), ...(runtime !== undefined ? { runtime } : {}) },
-        actorOf(c, body),
-      ),
-    );
-  });
 
   app.get("/:number/revisions", async (c) =>
     c.json(
@@ -391,97 +124,6 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
         numberParam(c),
         { pending: pending === "1" || pending === "true" },
         actorOfQuery(c),
-      ),
-    );
-  });
-
-  app.post("/:number/comments", async (c) => {
-    const body = await jsonBody(c);
-    const offset = (key: "start" | "end"): number => {
-      const value = body[key];
-      if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-        throw new ProposalError(400, "bad_request", `${key} must be a non-negative integer.`);
-      }
-      return value;
-    };
-    return c.json(
-      await service.comment(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        {
-          sectionId: requireString(body, "sectionId", 64),
-          start: offset("start"),
-          end: offset("end"),
-          quote: requireString(body, "quote"),
-          text: requireString(body, "text"),
-        },
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/comments/request", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    return c.json(
-      await service.requestChanges(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.patch("/:number/comments/:id", async (c) => {
-    const body = await jsonBody(c);
-    const commentId = c.req.param("id");
-    if (commentId === undefined || commentId === "") {
-      throw new ProposalError(404, "comment_not_found", "Missing comment id.");
-    }
-    return c.json(
-      await service.editComment(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        commentId,
-        requireString(body, "text"),
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.delete("/:number/comments/:id", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    const commentId = c.req.param("id");
-    if (commentId === undefined || commentId === "") {
-      throw new ProposalError(404, "comment_not_found", "Missing comment id.");
-    }
-    return c.json(
-      await service.deleteComment(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        commentId,
-        actorOf(c, body),
-      ),
-    );
-  });
-
-  app.post("/:number/comments/:id/resolve", async (c) => {
-    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
-    const commentId = c.req.param("id");
-    if (commentId === undefined || commentId === "") {
-      throw new ProposalError(404, "comment_not_found", "Missing comment id.");
-    }
-    return c.json(
-      await service.resolve(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        numberParam(c),
-        commentId,
-        optionalString(body, "text"),
-        actorOf(c, body),
       ),
     );
   });

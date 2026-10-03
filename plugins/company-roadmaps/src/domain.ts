@@ -73,13 +73,17 @@ export interface Approval {
   at: string;
 }
 
-/** The two approvals a proposal item needs; the second creates its proposal. */
-export type ApprovalRole = "person" | "moderator";
+/**
+ * The role an approval was given in: one of the roles the organization's binding of
+ * `roadmap.item.approve` names (guards.ts; `moderator` and `member` by default). The approval
+ * that fills the last of them creates the item's proposal.
+ */
+export type ApprovalRole = string;
 
 /**
  * What an establishment did with one item. A proposal item is established as a **brief**
- * (`stage: "brief"`): nothing is created for it and its owner is not told, until a person and the
- * moderator have both approved that brief. Then its owner is told (`stage: "delegated"`). A
+ * (`stage: "brief"`): nothing is created for it and its owner is not told, until every approval
+ * role has approved that brief. Then its owner is told (`stage: "delegated"`). A
  * roadmap item derives its roadmap at once (`stage: "delegated"`).
  */
 export interface Delegation {
@@ -99,7 +103,7 @@ export interface Delegation {
    * The approvals of the brief as it stands: those given on its hash. A changed brief starts
    * again with none; the approvals of the old one stay in the store, not counted.
    */
-  approvals: Partial<Record<ApprovalRole, Approval>>;
+  approvals: Record<ApprovalRole, Approval>;
 }
 
 export interface RoadmapEvent {
