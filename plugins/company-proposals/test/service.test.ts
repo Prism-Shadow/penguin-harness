@@ -340,7 +340,10 @@ describe("ProposalService", () => {
     const alone = (await bare.json()) as Graph;
     expect(alone).toMatchObject({ repo: "", base: { branch: "dev" }, nodes: [] });
     expect(alone.errors[0]).toContain("no delivery repository");
-    expect(gitCalls).toEqual([[expect.stringMatching(/workspace$/), "remote", "-v"]]);
+    // The only git the read runs is the workspace's `git remote -v` (the impl registrations
+    // above refreshed the graph, which read it too); nothing reaches a remote.
+    expect(gitCalls.length).toBeGreaterThan(0);
+    for (const c of gitCalls) expect(c).toEqual([expect.stringMatching(/workspace$/), "remote", "-v"]);
 
     // Nothing set: the workspace remote holding the impl PR wins over `origin`, on the repository's
     // default branch while the stack base is empty, and the other remote annotates the graph.
