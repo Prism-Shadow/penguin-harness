@@ -80,7 +80,9 @@ function world() {
     orgDir: "/nowhere",
     store,
     deployments: { list: async () => deployments },
-    inputs: async () => ({ project, proposals, errors: [] }),
+    settings: () => project,
+    discover: async () => ({ project, errors: [] }),
+    proposals: () => proposals,
   };
   const settle = async () => {
     while (refresher.refreshing(ctx.key)) await new Promise((r) => setTimeout(r, 1));

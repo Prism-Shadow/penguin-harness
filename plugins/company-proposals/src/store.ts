@@ -29,8 +29,14 @@ export function implOf(row: Row | undefined): ProposalImpl | null {
   const baseRemote = strOrNull(row.base_remote);
   const prUrl = strOrNull(row.pr_url);
   return {
-    head: headRemote === null ? null : { remote: headRemote, branch: str(row.head_branch) },
-    base: baseRemote === null ? null : { remote: baseRemote, branch: str(row.base_branch) },
+    head:
+      headRemote === null
+        ? null
+        : { remote: headRemote, repo: str(row.head_repo), branch: str(row.head_branch) },
+    base:
+      baseRemote === null
+        ? null
+        : { remote: baseRemote, repo: str(row.base_repo), branch: str(row.base_branch) },
     pr: prUrl === null ? null : { url: prUrl, label: str(row.pr_label ?? prUrl) },
     by: str(row.by),
     at: str(row.at),

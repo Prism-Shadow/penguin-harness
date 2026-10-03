@@ -343,14 +343,18 @@ describe("ProposalService", () => {
       errors: string[];
     };
     // With nothing set and no GitHub remote in the workspace, the graph is the base branch alone.
+    // The impl registrations above refreshed the graph, and the refresher read the workspace's
+    // remotes (`git remote -v`, the only git it runs with no delivery repository); the read
+    // answers what it found and runs none itself.
+    await service.graphSettled(PROJECT, ORG);
+    const gitBefore = gitCalls.length;
     const bare = await call("GET", "/graph");
     expect(bare.status).toBe(200);
     const alone = (await bare.json()) as Graph;
     expect(alone).toMatchObject({ repo: "", base: { branch: "dev" }, nodes: [] });
     expect(alone.errors[0]).toContain("no delivery repository");
-    // The only git the read runs is the workspace's `git remote -v` (the impl registrations
-    // above refreshed the graph, which read it too); nothing reaches a remote.
-    expect(gitCalls.length).toBeGreaterThan(0);
+    expect(gitCalls.length).toBe(gitBefore);
+    expect(gitBefore).toBeGreaterThan(0);
     for (const c of gitCalls)
       expect(c).toEqual([expect.stringMatching(/workspace$/), "remote", "-v"]);
 

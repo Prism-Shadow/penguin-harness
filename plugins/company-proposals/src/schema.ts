@@ -102,12 +102,15 @@ CREATE TABLE IF NOT EXISTS proposal_impls (
   number      INTEGER PRIMARY KEY REFERENCES proposals(number),
   head_remote TEXT, head_branch TEXT,
   head_key    TEXT,
+  head_repo   TEXT,                                  -- owner/repo the head's remote named when it was registered
   base_remote TEXT, base_branch TEXT,
+  base_repo   TEXT,                                  -- owner/repo the base's remote named when it was registered
   pr_url      TEXT, pr_label TEXT,
   pr_key      TEXT,
   by          TEXT NOT NULL,
   at          TEXT NOT NULL,
   CHECK ((head_remote IS NULL) = (base_remote IS NULL) AND (head_remote IS NULL) = (head_key IS NULL)),
+  CHECK ((head_remote IS NULL) = (head_repo IS NULL) AND (base_remote IS NULL) = (base_repo IS NULL)),
   CHECK (head_key IS NOT NULL OR pr_key IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS proposal_impls_pr   ON proposal_impls (pr_key)   WHERE pr_key IS NOT NULL;

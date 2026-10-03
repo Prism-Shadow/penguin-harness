@@ -27,6 +27,8 @@ company-proposals 与 company-roadmaps 两个插件不再整份重放只追加�
 
 - 关系图读取按输入键保存的快照；读图从不执行 git，也不访问网络。刷新先对交付仓库执行一次 `git ls-remote` 探测；只有 ref 有变化时，才经 `gh api graphql` 批量读取 PR、把变化的 ref fetch 到 blobless bare mirror（组织目录下的 `git/<owner>/<repo>.git`），并在其中计算缺少的比较。
 - 探测窗口为 5 分钟（新设置 `graphRefreshMinutes`），连续无变化的探测使间隔加倍，最长 30 分钟；无人读图时不做任何探测。登记 impl、页面上的刷新按钮（`GET …/proposals/graph?refresh=1`，等待刷新完成）与部署运行结束会立即刷新。每个组织只有一个刷新器，以存储中的租约保证。关系图最多比仓库晚一个探测窗口，响应新增 `refreshing` 字段。
+- 声明的 impl 分支在登记时为每一侧解析一次其 remote 指向的 GitHub 仓库（读提案所在仓库的 `git remote -v`），并与该侧一同保存。关系图、impl 补丁与部署读取保存的仓库，不再重新读取 remotes；remote 之后改指别处时，已登记的 impl 只有在重新登记后才随之改变。
+- 未设置交付仓库时，共享工作区的 remotes 由刷新器按探测节奏读取，读图使用它找到的仓库；重启后第一次刷新之前，关系图只有栈底分支，并带 `refreshing`。
 - 各部署的服务器改为在每次刷新时探测，不再在每次读图时探测；重启后第一次刷新之前，部署的提交显示为尚未探测。
 - PR 状态在存储中缓存 5 分钟，在后台以一次批量读取刷新；读提案不再等待 `gh`。报告 `merged` 仍立即询问 forge，并回写结果。
 

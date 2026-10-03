@@ -19,6 +19,11 @@
  * One refresher per organization: single flight in the process, and a lease in the store so two
  * plugin instances side by side during a hot update never both fetch. The deployments' own
  * servers are probed on the same beat; what they run is kept in memory, as before.
+ *
+ * With no delivery repository set, the shared workspace's remotes decide it (`git remote -v`):
+ * the refresher reads them on its beat and keeps the project it found for the reads, so a read
+ * runs no git for that either. Until the first refresh found one, a read answers the base branch
+ * alone, `refreshing`.
  */
 import { randomUUID } from "node:crypto";
 import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
@@ -63,8 +68,15 @@ export interface GraphContext {
   orgDir: string;
   store: GraphStore;
   deployments: Pick<DeploymentStore, "list">;
-  /** The project, the proposals as the graph annotates them, and what could not be read for them. */
-  inputs(): Promise<{ project: Project; proposals: GraphProposal[]; errors: string[] }>;
+  /** The project as the settings set it, read on every use; `repo` null when none is set. No git. */
+  settings(): Project;
+  /**
+   * The project when no delivery repository is set: found from the shared workspace's remotes
+   * (runs `git remote -v`), with what could not be read. The refresher's alone; never throws.
+   */
+  discover(): Promise<{ project: Project; errors: string[] }>;
+  /** The proposals as the graph annotates them, from the store. No git. */
+  proposals(): GraphProposal[];
 }
 
 export interface RefresherDeps {
@@ -85,6 +97,8 @@ interface OrgState {
   readings: Map<string, DeploymentReading>;
   /** When the last refresh started, for the floor on refreshes a read triggers for a missing comparison. */
   startedAt: number;
+  /** The project the last refresh found, when no delivery repository is set; null before one ran. */
+  discovered: { project: Project; errors: string[] } | null;
 }
 
 export class GraphRefresher {
@@ -105,7 +119,13 @@ export class GraphRefresher {
   private org(key: string): OrgState {
     let s = this.orgs.get(key);
     if (s === undefined) {
-      s = { running: null, abort: new AbortController(), readings: new Map(), startedAt: 0 };
+      s = {
+        running: null,
+        abort: new AbortController(),
+        readings: new Map(),
+        startedAt: 0,
+        discovered: null,
+      };
       this.orgs.set(key, s);
     }
     return s;
@@ -142,8 +162,12 @@ export class GraphRefresher {
   /** The graph from the store; `refresh` waits for a forced refresh first (the page's button). */
   async read(ctx: GraphContext, opts: { refresh?: boolean } = {}): Promise<ProposalGraphResponse> {
     if (opts.refresh === true) await this.start(ctx, true);
-    const { project, proposals, errors } = await ctx.inputs();
     const state = this.org(ctx.key);
+    const set = ctx.settings();
+    const found = set.repo === null ? state.discovered : null;
+    const project = found?.project ?? set;
+    const errors = found?.errors ?? [];
+    const proposals = ctx.proposals();
     const registered = await ctx.deployments.list();
     const readings = registered.map(
       (d): DeploymentReading =>
@@ -157,11 +181,11 @@ export class GraphRefresher {
     );
     const checkedAt = new Date(this.now()).toISOString();
     if (project.repo === null) {
-      // No delivery repository: the base branch alone; the deployments still get probed.
+      // No delivery repository: the base branch alone; the deployments still get probed, and the
+      // workspace's remotes read again, on the refresher's beat (at once when none was read yet).
       if (
-        registered.length > 0 &&
         state.running === null &&
-        this.now() - state.startedAt >= this.windowMs()
+        (found === null || this.now() - state.startedAt >= this.windowMs())
       ) {
         void this.start(ctx, false);
       }
@@ -249,7 +273,12 @@ export class GraphRefresher {
 
   private async refresh(ctx: GraphContext, state: OrgState, force: boolean): Promise<void> {
     const signal = AbortSignal.any([this.abort.signal, state.abort.signal]);
-    const { project, proposals } = await ctx.inputs();
+    let project = ctx.settings();
+    if (project.repo === null) {
+      state.discovered = await ctx.discover();
+      project = state.discovered.project;
+    }
+    const proposals = ctx.proposals();
     const registered = await ctx.deployments.list();
     // The deployments' servers, on the same beat as the probe.
     const probing = readDeployments(registered, this.deps.probe).then((readings) => {

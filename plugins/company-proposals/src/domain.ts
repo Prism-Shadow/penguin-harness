@@ -62,10 +62,19 @@ export interface Proposal {
   seq: number;
 }
 
+/**
+ * A declared side of an impl branch, with the GitHub repository (`owner/repo`) its remote named
+ * when it was registered. The repository is resolved once, at registration (the remotes of the
+ * proposal's repository, `git remote -v`), and stored with the side: a read never asks git again.
+ */
+export interface ProposalImplSide extends ProposalBranchRef {
+  repo: string;
+}
+
 /** A proposal's impl: the declared branch pair (both null when only a PR was registered) and the PR. */
 export interface ProposalImpl {
-  head: ProposalBranchRef | null;
-  base: ProposalBranchRef | null;
+  head: ProposalImplSide | null;
+  base: ProposalImplSide | null;
   pr: { url: string; label: string } | null;
   by: string;
   at: string;

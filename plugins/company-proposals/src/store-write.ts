@@ -304,12 +304,13 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
   setImpl(number: number, plan: Plan<Proposal, ImplPlan | null>): Written | null {
     return this.write(number, plan, (_p, i, seq, at) => {
       this.q(
-        `INSERT INTO proposal_impls (number, head_remote, head_branch, head_key, base_remote,
-           base_branch, pr_url, pr_label, pr_key, by, at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO proposal_impls (number, head_remote, head_branch, head_key, head_repo,
+           base_remote, base_branch, base_repo, pr_url, pr_label, pr_key, by, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (number) DO UPDATE SET head_remote = excluded.head_remote,
            head_branch = excluded.head_branch, head_key = excluded.head_key,
-           base_remote = excluded.base_remote, base_branch = excluded.base_branch,
+           head_repo = excluded.head_repo, base_remote = excluded.base_remote,
+           base_branch = excluded.base_branch, base_repo = excluded.base_repo,
            pr_url = excluded.pr_url, pr_label = excluded.pr_label, pr_key = excluded.pr_key,
            by = excluded.by, at = excluded.at`,
       ).run(
@@ -317,8 +318,10 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
         i.head?.remote ?? null,
         i.head?.branch ?? null,
         i.head === null ? null : refKey(i.head),
+        i.head?.repo ?? null,
         i.base?.remote ?? null,
         i.base?.branch ?? null,
+        i.base?.repo ?? null,
         i.pr?.url ?? null,
         i.pr?.label ?? null,
         i.pr?.key ?? null,

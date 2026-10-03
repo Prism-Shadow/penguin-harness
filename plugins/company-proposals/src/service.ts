@@ -70,7 +70,13 @@ import {
   type ProbeServer,
 } from "./deployments.js";
 import { gitRunner, type RunGit } from "./workspace-remotes.js";
-import { ProposalError, type Project, type Proposal, type ProposalImpl } from "./domain.js";
+import {
+  ProposalError,
+  type Project,
+  type Proposal,
+  type ProposalImpl,
+  type ProposalImplSide,
+} from "./domain.js";
 import { defaultRules, isPerson, type Caller, type ProposalRules } from "./guards.js";
 import type { Forge, GitMirror, ProposalFacts, Viewer } from "./ports.js";
 import { SqliteProposalStore } from "./store-write.js";
@@ -282,9 +288,13 @@ export class ProposalService {
    * default branch, the origins the other remotes. `repo` is null when neither names one; each
    * fallback that could not be read is in `errors`.
    */
-  private async project(org: OrgView, facts: ProposalFacts[], errors: string[]): Promise<Project> {
+  /**
+   * The project as the settings set it, read on every use (no git): with a delivery repository
+   * set, the project; without one, `repo` is null and the shared workspace's remotes decide it
+   * (project(), which the graph refresher alone runs for the graph).
+   */
+  private settingsProject(): Project {
     const config = this.graphConfig();
-    const forge = (repo: string | null) => (repo === null ? "none" : "github") as Project["forge"];
     if (config.repo !== null) {
       // A set repository stacks on the set base, or the default one: never its default branch.
       return {
@@ -295,6 +305,23 @@ export class ProposalService {
         forge: "github",
       };
     }
+    return {
+      repo: null,
+      base: config.base,
+      baseDeclared: config.baseDeclared,
+      origins: config.origins,
+      forge: "none",
+    };
+  }
+
+  /**
+   * The project: the settings', or — no delivery repository set — the shared workspace's GitHub
+   * remote that holds the most impl PRs (`origin` on a tie). Runs `git remote -v` in that case.
+   */
+  private async project(org: OrgView, facts: ProposalFacts[], errors: string[]): Promise<Project> {
+    const set = this.settingsProject();
+    if (set.repo !== null) return set;
+    const config = this.graphConfig();
     let remotes: Array<{ name: string; repo: string }> = [];
     try {
       remotes = await this.remotesOfDir(org.workspace);
@@ -316,13 +343,7 @@ export class ProposalService {
       errors.push(
         `no delivery repository: none is set under Settings → Plugins → Company proposals and the shared workspace ${org.workspace} has no GitHub remote`,
       );
-      return {
-        repo: null,
-        base: config.base,
-        baseDeclared: config.baseDeclared,
-        origins: config.origins,
-        forge: forge(null),
-      };
+      return set;
     }
     const origins =
       config.origins.length > 0
@@ -333,7 +354,7 @@ export class ProposalService {
       base: config.base,
       baseDeclared: config.baseDeclared,
       origins,
-      forge: forge(picked.repo),
+      forge: "github",
     };
   }
 
@@ -518,8 +539,9 @@ export class ProposalService {
         p.impl === null
           ? null
           : {
-              head: p.impl.head,
-              base: p.impl.base,
+              // As declared: the stored repositories are the plugin's, not the API's.
+              head: declaredSide(p.impl.head),
+              base: declaredSide(p.impl.base),
               pr: p.impl.pr?.url ?? null,
               by: p.impl.by,
               at: p.impl.at,
@@ -1406,8 +1428,10 @@ export class ProposalService {
       }
       prKey = pr === null ? null : pullKey(pr.url);
     }
+    // Each side's repository is resolved here, once, and stored with it: reads use the stored one.
+    let remotes: Array<{ name: string; repo: string }> = [];
     if (head !== null && base !== null) {
-      const remotes = await this.remotesFor(org, p);
+      remotes = await this.remotesFor(org, p);
       const resolvedHead = lift(() => resolveRef(head!, remotes, "head"));
       lift(() => resolveRef(base!, remotes, "base"));
       if (sameRef(head, base)) {
@@ -1461,9 +1485,14 @@ export class ProposalService {
       head = null;
       base = null;
     }
+    const side = (ref: ProposalBranchRef | null, what: string): ProposalImplSide | null => {
+      if (ref === null) return null;
+      const resolved = lift(() => resolveRef(ref, remotes, what));
+      return { remote: ref.remote, repo: resolved.repo, branch: ref.branch };
+    };
     const plan = {
-      head,
-      base,
+      head: side(head, "head"),
+      base: side(base, "base"),
       pr: pr === null || prKey === null ? null : { ...pr, key: prKey },
       by: caller.principal,
     };
@@ -1494,19 +1523,16 @@ export class ProposalService {
   ): Promise<ProposalImplDiff> {
     const { org, store } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(store, number);
-    const resolved = await this.resolvedImpl(org, p);
+    const resolved = await this.resolvedImpl(p);
     if (resolved === null) throw noImpl(number);
     return liftAsync(() => compareBranches(this.gh(), resolved.base, resolved.head, resolved.pr));
   }
 
   /**
-   * The proposal's impl as GitHub names it: the declared pair resolved through the repository's
-   * remotes, or — registered as a PR alone — that PR's head and base, read from GitHub now.
+   * The proposal's impl as GitHub names it: the declared pair with the repositories stored at
+   * registration, or — registered as a PR alone — that PR's head and base, read from GitHub now.
    */
-  private async resolvedImpl(
-    org: OrgView,
-    p: Proposal,
-  ): Promise<{
+  private async resolvedImpl(p: Proposal): Promise<{
     head: ProposalResolvedBranch;
     base: ProposalResolvedBranch;
     pr: string | null;
@@ -1515,12 +1541,8 @@ export class ProposalService {
     if (impl === null) return null;
     const pr = impl.pr?.url ?? null;
     if (impl.head !== null && impl.base !== null) {
-      const remotes = await this.remotesFor(org, p);
-      return {
-        head: lift(() => resolveRef(impl.head!, remotes, "head")),
-        base: lift(() => resolveRef(impl.base!, remotes, "base")),
-        pr,
-      };
+      // The repositories resolved at registration, not the remotes as they read now.
+      return { head: impl.head, base: impl.base, pr };
     }
     const pull = await liftAsync(() => readPullBranches(this.gh(), pr!));
     return {
@@ -1687,21 +1709,22 @@ export class ProposalService {
       orgDir: path.join(this.deps.root, projectId, "organizations", orgId),
       store: stores.graph,
       deployments: stores.deployments,
-      inputs: async () => {
+      settings: () => this.settingsProject(),
+      discover: async () => {
         const errors: string[] = [];
+        const project = await this.project(org, stores.proposals.facts(), errors);
+        return { project, errors };
+      },
+      proposals: () => {
         const facts = stores.proposals.facts();
-        const [project, heads] = await Promise.all([
-          this.project(org, facts, errors),
-          this.declaredHeads(org, facts, errors),
-        ]);
-        const proposals: GraphProposal[] = facts.map((p) => ({
+        const heads = this.declaredHeads(facts);
+        return facts.map((p): GraphProposal => ({
           number: p.number,
           title: p.title,
           status: p.status,
           implPr: p.impl?.pr?.url ?? null,
           implBranch: heads.get(p.number) ?? null,
         }));
-        return { project, proposals, errors };
       },
     };
   }
@@ -1739,32 +1762,15 @@ export class ProposalService {
     }
   }
 
-  /**
-   * Each live proposal's declared impl head, resolved through its repository's remotes — read
-   * once per repository directory; a head whose remote names no GitHub repository keeps a null
-   * `repo` and is listed in `errors`.
-   */
-  private async declaredHeads(
-    org: OrgView,
+  /** Each live proposal's declared impl head, with the repository stored when it was registered. */
+  private declaredHeads(
     proposals: ProposalFacts[],
-    errors: string[],
-  ): Promise<Map<number, { label: string; repo: string | null; branch: string }>> {
-    const declared = proposals.filter((p) => p.status !== "rejected" && p.impl?.head != null);
-    const byRoot = new Map<string, Promise<Array<{ name: string; repo: string }>>>();
-    const out = new Map<number, { label: string; repo: string | null; branch: string }>();
-    for (const p of declared) {
-      if (!byRoot.has(p.root)) byRoot.set(p.root, this.remotesFor(org, p));
-    }
-    for (const p of declared) {
-      const head = p.impl!.head!;
-      const remotes = await byRoot.get(p.root)!;
-      let repo: string | null = null;
-      try {
-        repo = resolveRef(head, remotes, "head").repo;
-      } catch (err) {
-        errors.push(`proposal #${p.number}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      out.set(p.number, { label: refLabel(head), repo, branch: head.branch });
+  ): Map<number, { label: string; repo: string; branch: string }> {
+    const out = new Map<number, { label: string; repo: string; branch: string }>();
+    for (const p of proposals) {
+      const head = p.impl?.head;
+      if (p.status === "rejected" || head == null) continue;
+      out.set(p.number, { label: refLabel(head), repo: head.repo, branch: head.branch });
     }
     return out;
   }
@@ -1783,8 +1789,7 @@ export class ProposalService {
         const p = this.requireProposal(store, number);
         if (p.impl === null) return null;
         if (p.impl.head === null) return { pr: p.impl.pr!.url, head: null };
-        const remotes = await this.remotesFor(org, p);
-        const head = lift(() => resolveRef(p.impl!.head!, remotes, "head"));
+        const head = p.impl.head;
         return { pr: p.impl.pr?.url ?? null, head: { repo: head.repo, branch: head.branch } };
       },
       deliveryRepo: async () => (await this.project(org, store.facts(), [])).repo,
@@ -2059,8 +2064,15 @@ function implPrOf(
   return impl?.pr == null ? null : { ...impl.pr, by: impl.by, at: impl.at };
 }
 
-function sameSide(a: ProposalBranchRef | null, b: ProposalBranchRef | null): boolean {
-  return a === null || b === null ? a === b : sameRef(a, b);
+function declaredSide(side: ProposalImplSide | null): ProposalBranchRef | null {
+  return side === null ? null : { remote: side.remote, branch: side.branch };
+}
+
+/** Two stored sides are the same: the same branch, resolved to the same repository. */
+function sameSide(a: ProposalImplSide | null, b: ProposalImplSide | null): boolean {
+  return a === null || b === null
+    ? a === b
+    : sameRef(a, b) && a.repo.toLowerCase() === b.repo.toLowerCase();
 }
 
 const noImpl = (number: number): ProposalError =>

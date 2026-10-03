@@ -11,7 +11,6 @@
  * happen in the use case, outside the transaction.
  */
 import type {
-  ProposalBranchRef,
   ProposalComment,
   ProposalEvent,
   ProposalGraphResponse,
@@ -25,7 +24,7 @@ import type {
   ProposalTestEntry,
 } from "@prismshadow/penguin-server/api";
 import type { Comparison, ImplPull, OpenPull, ShutPull } from "./pr-chain.js";
-import type { Proposal, ProposalImpl } from "./domain.js";
+import type { Proposal, ProposalImpl, ProposalImplSide } from "./domain.js";
 
 // ---------------------------------------------------------------------------
 // ProposalStore
@@ -115,8 +114,8 @@ export interface StatusPlan {
 }
 
 export interface ImplPlan {
-  head: ProposalBranchRef | null;
-  base: ProposalBranchRef | null;
+  head: ProposalImplSide | null;
+  base: ProposalImplSide | null;
   pr: { url: string; label: string; key: string } | null;
   by: string;
 }
