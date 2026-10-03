@@ -121,9 +121,6 @@ export const MATERIAL_KINDS: readonly ProposalMaterialKind[] = [
   "url",
 ];
 
-/** How long a directory's `git remote -v` is reused by the reads (the graph's, the impl's). */
-const REMOTES_TTL_MS = 60_000;
-
 export interface ServiceDeps {
   gateway: OrgGateway;
   /** The Agent lifecycle: what an employee carries of the skills plugin, and installing it. */
@@ -208,11 +205,6 @@ export class ProposalService {
   private readonly graphs: GraphRefresher;
   /** The default rules, with any replaced. */
   private readonly rules: ProposalRules;
-  /** Each directory's GitHub remotes, briefly (remotesFor). */
-  private readonly remotes = new Map<
-    string,
-    { at: number; value: Promise<Array<{ name: string; repo: string }>> }
-  >();
 
   constructor(private readonly deps: ServiceDeps) {
     const forge = deps.forge ?? new GithubForge(deps.gh);
@@ -1503,14 +1495,9 @@ export class ProposalService {
     };
   }
 
-  /** A directory's GitHub remotes (`git remote -v`), kept a minute; a failure is not kept. */
-  private remotesOfDir(dir: string): Promise<Array<{ name: string; repo: string }>> {
-    const cached = this.remotes.get(dir);
-    if (cached !== undefined && this.now() - cached.at < REMOTES_TTL_MS) return cached.value;
-    const value = (this.deps.git ?? gitRunner())(dir, ["remote", "-v"]).then(remotesOf);
-    this.remotes.set(dir, { at: this.now(), value });
-    value.catch(() => this.remotes.delete(dir));
-    return value;
+  /** A directory's GitHub remotes (`git remote -v`, local: no network). */
+  private async remotesOfDir(dir: string): Promise<Array<{ name: string; repo: string }>> {
+    return remotesOf(await (this.deps.git ?? gitRunner())(dir, ["remote", "-v"]));
   }
 
   /** The GitHub remotes of the proposal's repository (its `root` in the shared workspace); none when git cannot say. */
@@ -1722,10 +1709,14 @@ export class ProposalService {
     errors: string[],
   ): Promise<Map<number, { label: string; repo: string | null; branch: string }>> {
     const declared = proposals.filter((p) => p.status !== "rejected" && p.impl?.head != null);
+    const byRoot = new Map<string, Promise<Array<{ name: string; repo: string }>>>();
     const out = new Map<number, { label: string; repo: string | null; branch: string }>();
     for (const p of declared) {
+      if (!byRoot.has(p.root)) byRoot.set(p.root, this.remotesFor(org, p));
+    }
+    for (const p of declared) {
       const head = p.impl!.head!;
-      const remotes = await this.remotesFor(org, p);
+      const remotes = await byRoot.get(p.root)!;
       let repo: string | null = null;
       try {
         repo = resolveRef(head, remotes, "head").repo;
