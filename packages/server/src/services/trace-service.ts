@@ -639,7 +639,7 @@ export class TraceService implements Traces {
     // The Trace files it reads are this sample's trace.read samples, keyed by the same session.
     return this.telemetry.span("session.messages", { session: sessionId }, read, (r) => ({
       n: r.messages.length,
-      attrs: { kind: req.kind, reachesEnd: r.reachesEnd },
+      attrs: { kind: req.kind },
     }));
   }
 

@@ -107,7 +107,7 @@ describe("telemetry", () => {
     expect(open).toMatchObject({
       status: "ok",
       keys: { session: SID },
-      attrs: { kind: "tail", reachesEnd: true },
+      attrs: { kind: "tail" },
     });
     expect(
       samples.find((s) => s.keys.request === request && s.probe === "trace.read"),
