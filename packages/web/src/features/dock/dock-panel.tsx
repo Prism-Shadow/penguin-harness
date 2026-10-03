@@ -119,7 +119,7 @@ import {
   resetPanelWidth,
   setPanelWidth,
   usePanelWidthValue,
-} from "../chat";
+} from "./use-panel-width";
 
 /**
  * The picker's leading rows, each shown only where the registry offers it: the agents, the

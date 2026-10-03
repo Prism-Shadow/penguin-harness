@@ -9,7 +9,7 @@ import { useMainChatControls } from "./main-chat-controls";
 import { useMainChatActions } from "./main-chat-actions";
 import { useMainChatDock } from "./main-chat-dock";
 
-export function useChatSession() {
+export function useChatController() {
   const scope0 = useMainChatInputs();
   const scope1 = useMainChatRouting(scope0);
   const scope2 = useMainChatTranscript(scope1);
@@ -21,4 +21,4 @@ export function useChatSession() {
   const scope8 = useMainChatDock(scope7);
   return scope8;
 }
-export type ChatSessionController = ReturnType<typeof useChatSession>;
+export type ChatController = ReturnType<typeof useChatController>;

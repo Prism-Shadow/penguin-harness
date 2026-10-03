@@ -1,6 +1,6 @@
 import { Skeleton, WallpaperSurface } from "@prismshadow/penguin-ui";
 import { WorkbenchFrame, WorkbenchTabStrip } from "../workbenches";
-import { useChatSession } from "./session/use-chat-session";
+import { useChatController } from "./session/use-chat-controller";
 import { createMainChatView } from "./body/main-chat-view";
 import { renderMainChatToolbar } from "./toolbar/main-chat-toolbar";
 import { renderMainChatBody } from "./body/main-chat-body";
@@ -8,7 +8,7 @@ import { renderMainChatDialogs } from "./session/main-chat-dialogs";
 
 /** Composition only: one controller, original guard, exact main render fragments. */
 export function ChatPage() {
-  const controller = useChatSession();
+  const controller = useChatController();
   const { projectId, pageAgentId } = controller;
   if (!projectId || (!controller.draft && !pageAgentId)) {
     return (

@@ -2,8 +2,8 @@
  * The chat module's public face: the drafts interface the sidebar and the session list `@Use`, the
  * new-chat draft's route and cache for the surfaces that seed it (an Agent card, a plugin's quick
  * start, "Create with AI", the Project's chat defaults), the draft storage an organization
- * channel's composer shares, the Skill text helpers, the transcript's follow-the-bottom scroller,
- * the short Session id, and the dock's shared panel width.
+ * channel's composer shares, the Skill text helpers, the transcript's follow-the-bottom scroller
+ * and the short Session id.
  */
 export { ChatDrafts } from "./iface";
 export type { ParkedDraft } from "./iface";
@@ -23,14 +23,6 @@ export type { ChatDefaultsChangedDetail } from "./chat-defaults-event";
 export { BOOK_ICON, filterSkills, localizedShortText, localizedText } from "../../lib/skill-use";
 export { createStreamFollow, stickToBottom } from "./stream-follow";
 export { shortSessionId } from "./agent-topology";
-export {
-  maxWidthFor,
-  panelWidth,
-  persistPanelWidth,
-  resetPanelWidth,
-  setPanelWidth,
-  usePanelWidthValue,
-} from "./use-panel-width";
 
 export { draftSessionTitle } from "./draft-sessions";
 
