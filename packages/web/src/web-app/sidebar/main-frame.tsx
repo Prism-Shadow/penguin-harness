@@ -29,7 +29,6 @@ import {
 } from "../../features/company";
 
 import { NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
-
 import type { MainSidebarView } from "./main-navigation";
 import { renderMainSessionList, renderMainSessionDialogs } from "../../features/session-list";
 

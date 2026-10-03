@@ -2,8 +2,8 @@ import type { DragEvent as ReactDragEvent } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { formatRelativeShort } from "../../lib/format";
 import { sessionBackgroundTasks, sessionRowActivity } from "../../lib/session-activity";
-import { SESSION_DRAG_MIME } from "../../lib/main-sidebar-persistence";
 import { SidebarSessionRow } from "./main-session-row";
+import { SESSION_DRAG_MIME } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarAgentNameById } from "./main-sidebar-agent-name-by-id";
 
 /** Consecutive live main statements 131..131, called once in original hook order. */

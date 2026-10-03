@@ -1,7 +1,7 @@
 import { Fold, GroupHeader } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { NEW_CHAT_ICON, DRAFTS_GROUP_KEY } from "../../lib/main-sidebar-persistence";
 import { DraftRow } from "./main-draft-row";
+import { DRAFTS_GROUP_KEY, NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarState } from "./main-sidebar-controller";
 
 export function renderMainListDrafts(scope: MainSidebarState) {

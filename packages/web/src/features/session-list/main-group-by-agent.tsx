@@ -9,10 +9,10 @@ import {
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
 import { Icon } from "../../components/ui/group-list";
-import { employmentsOf } from "../agents";
-import { GROUP_ACTION_CLASS } from "../../lib/main-sidebar-persistence";
 import { GroupBlock } from "./main-group-block";
 import { GroupPinButton } from "./main-group-pin-button";
+import { employmentsOf } from "../agents";
+import { GROUP_ACTION_CLASS } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarState } from "./main-sidebar-controller";
 
 export function renderMainGroupByAgent(scope: MainSidebarState) {

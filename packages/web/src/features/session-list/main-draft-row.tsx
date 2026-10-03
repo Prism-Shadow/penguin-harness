@@ -1,8 +1,10 @@
 import { ICONS, NAV_FILL } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Icon } from "../../components/ui/group-list";
-import { Truncated } from "../../components/ui/truncated";
+
 import { draftSessionTitle, type DraftSessionEntry } from "../chat";
+
+import { Truncated } from "../../components/ui/truncated";
 
 export function DraftRow({
   entry,
