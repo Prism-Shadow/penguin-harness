@@ -595,9 +595,9 @@ export class SessionService {
     /** Whether the creator is an administrator (may loosen past the settings). Default false. */
     isAdmin?: boolean;
     /**
-     * Session source marker: `schedule` when triggered by a scheduled task, `benchmark` when
-     * created by a Benchmark evaluation or optimization (the only value a client may send);
-     * defaults to user-created.
+     * Session source marker: `schedule` when triggered by a scheduled task, `benchmark` for a
+     * Test Session of a Benchmark evaluation, which `penguin run --source benchmark` creates
+     * (the only value a client may send); defaults to user-created.
      */
     source?: "schedule" | "benchmark";
     /**

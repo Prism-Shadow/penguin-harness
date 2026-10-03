@@ -141,7 +141,7 @@ export interface SessionMetaPayload {
   agent_state: string;
   /** Absolute path to the Workspace. */
   workspace: string;
-  /** Session origin: spawned by a subagent / triggered by a scheduled task / created by a Benchmark evaluation or optimization; absent = user-created. */
+  /** Session origin: spawned by a subagent / triggered by a scheduled task / a Benchmark evaluation's Test Session, created by `penguin run --source benchmark`; absent = user-created. */
   source?: "subagent" | "schedule" | "benchmark";
 }
 

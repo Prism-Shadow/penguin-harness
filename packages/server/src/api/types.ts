@@ -43,7 +43,7 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
+/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / a Benchmark evaluation's Test Session, created by `penguin run --source benchmark`. */
 export type SessionSource = "schedule" | "subagent" | "benchmark";
 
 // ---------------------------------------------------------------------------
