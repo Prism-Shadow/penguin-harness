@@ -5,7 +5,7 @@
  * merge — every drive of an employee being one `[proposal #<n>]` line on its desk, in
  * nobody's name and never to the employee that acted, every refusal the right one, pending comments invisible to employees,
  * unread counts moving with a person's read position, and the whole thing standing again
- * after the ledger is replayed. Nothing here starts a server or a Session.
+ * when a new service opens the same store. Nothing here starts a server or a Session.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -27,7 +27,8 @@ import plugin, {
   DEFAULT_TEST_GROUPS,
   DeployService,
   TEST_GROUP_LINE,
-  ledgerPath,
+  SqliteProposalStore,
+  companyDbPath,
   proposalRoutes,
   slugOf,
   testGroupsOf,
@@ -180,13 +181,13 @@ const githubGh: RunGh = async (args) => {
   return JSON.stringify({ state: "closed", merged: true, merged_at: "2026-09-23T00:00:00Z" });
 };
 
-class FakeSettings {
-  readonly values = new Map<string, string>();
-  get(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-  set(key: string, value: string): void {
-    this.values.set(key, value);
+/** What the organization's store holds, read through a connection of the test's own. */
+function storeOf<T>(root: string, read: (store: SqliteProposalStore) => T): T {
+  const store = SqliteProposalStore.open(companyDbPath(root, PROJECT, ORG));
+  try {
+    return read(store);
+  } finally {
+    store.close();
   }
 }
 
@@ -204,7 +205,6 @@ describe("ProposalService", () => {
   let root: string;
   let gateway: FakeGateway;
   let agents: FakeAgents;
-  let settings: FakeSettings;
   let service: ProposalService;
   const lines: string[] = [];
   const log = { line: (l: string) => lines.push(l) };
@@ -223,10 +223,9 @@ describe("ProposalService", () => {
     );
     gateway.org!.workspace = workspace;
     agents = new FakeAgents();
-    settings = new FakeSettings();
     lines.length = 0;
     githubCalls.length = 0;
-    service = new ProposalService({ gateway, agents, root, settings, log, gh: githubGh });
+    service = new ProposalService({ gateway, agents, root, log, gh: githubGh });
   });
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -274,7 +273,6 @@ describe("ProposalService", () => {
       gateway,
       agents,
       root,
-      settings,
       log,
       gh,
       git: async (cwd, args) => {
@@ -441,7 +439,6 @@ describe("ProposalService", () => {
       gateway,
       agents,
       root,
-      settings,
       log,
       gh,
       git: async () =>
@@ -588,7 +585,7 @@ describe("ProposalService", () => {
     });
     gateway = new FakeGateway();
     githubCalls.length = 0;
-    service = new ProposalService({ gateway, agents, root, settings, log, gh: githubGh });
+    service = new ProposalService({ gateway, agents, root, log, gh: githubGh });
     expect(await refused(() => service.list(PROJECT, ORG, OUTSIDER))).toEqual({
       status: 403,
       code: "project_access",
@@ -646,10 +643,7 @@ describe("ProposalService", () => {
   });
 
   it("an employee does not create a proposal; a person does", async () => {
-    const written = async (): Promise<number> =>
-      (await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8").catch(() => ""))
-        .split("\n")
-        .filter((l) => l.trim() !== "").length;
+    const written = async (): Promise<number> => storeOf(root, (s) => s.facts().length);
     // Neither on its own nor handed to a colleague: the way out is named, and nothing is written.
     for (const req of [
       { brief: "Rotate the API token" },
@@ -678,7 +672,7 @@ describe("ProposalService", () => {
     ]);
   });
 
-  it("a roadmap creates an employee's proposal: the created line names the item, and the author hears it from the roadmap", async () => {
+  it("a roadmap creates an employee's proposal: it records the item, and the author hears it from the roadmap", async () => {
     const number = await service.createFromRoadmap(PROJECT, ORG, {
       author: "acme_dev",
       title: "Roadmap ledger",
@@ -687,15 +681,14 @@ describe("ProposalService", () => {
       roadmap: { number: 3, key: "ledger" },
     });
     expect(number).toBe(1);
-    const text = await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8");
-    expect(JSON.parse(text.trim())).toMatchObject({
-      kind: "created",
+    expect(storeOf(root, (s) => s.get(1))).toMatchObject({
       number: 1,
       title: "Roadmap ledger",
       author: "acme_dev",
       delegatedBy: "agent:acme_ceo",
       brief: "An append-only ledger.",
       roadmap: { number: 3, key: "ledger" },
+      events: [{ kind: "created", by: "agent:acme_ceo" }],
     });
     // The roadmap tells the owner, with the number; this plugin does not tell it twice.
     expect(gateway.desks).toEqual([]);
@@ -715,9 +708,7 @@ describe("ProposalService", () => {
         roadmap: { number: 3, key: "x" },
       }),
     ).rejects.toMatchObject({ status: 400, code: "bad_request" });
-    expect(
-      (await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8")).trim().split("\n"),
-    ).toHaveLength(1);
+    expect(storeOf(root, (s) => s.facts())).toHaveLength(1);
   });
 
   it("the skills plugin is installed only where it is missing, and a library without it is only logged", async () => {
@@ -1029,7 +1020,6 @@ describe("ProposalService", () => {
       gateway,
       agents,
       root,
-      settings,
       log,
       pluginConfig: { get: (name) => (name === CONFIG_GROUP ? stored : {}) },
     });
@@ -1079,14 +1069,13 @@ describe("ProposalService", () => {
     );
   });
 
-  it("a revision written before tests existed reads with no tests", async () => {
+  it("a revision published without tests reads with no tests", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
-    const again = new ProposalService({ gateway, root, settings, agents, log: { line: () => {} } });
+    const again = new ProposalService({ gateway, root, agents, log: { line: () => {} } });
     const read = await again.get(PROJECT, ORG, n, BOSS);
     expect(read.tests).toEqual([]);
-    const text = await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8");
-    expect(text).not.toContain('"tests"');
+    expect(storeOf(root, (s) => s.revision(n, 1)?.tests)).toEqual([]);
   });
 
   it("the author's ready answers a request for changes: a revision after it, and every comment resolved", async () => {
@@ -1500,8 +1489,8 @@ describe("ProposalService", () => {
       ]);
       expect(race.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
       expect(gateway.desks.slice(before)).toHaveLength(2);
-      // The ledger replays to the same discussions.
-      const again = new ProposalService({ gateway, agents, root, settings, log });
+      // A new service over the same store reads the same discussions.
+      const again = new ProposalService({ gateway, agents, root, log });
       expect((await again.get(PROJECT, ORG, n, BOSS)).discussions).toEqual(
         (await service.get(PROJECT, ORG, n, BOSS)).discussions,
       );
@@ -1735,7 +1724,6 @@ describe("ProposalService", () => {
       gateway,
       agents,
       root,
-      settings,
       log,
       gh: async (args) => {
         asked.push([...args]);
@@ -1933,8 +1921,8 @@ describe("ProposalService", () => {
       code: "project_access",
     });
 
-    // The ledger replays to the same record.
-    const again = new ProposalService({ gateway, agents, root, settings, log });
+    // A new service over the same store reads the same record.
+    const again = new ProposalService({ gateway, agents, root, log });
     expect((await again.get(PROJECT, ORG, n, BOSS)).events.at(-1)).toMatchObject({
       kind: "rejected",
       by: "agent:acme_ceo",
@@ -2018,7 +2006,6 @@ describe("ProposalService", () => {
     const replay = new ProposalService({
       gateway,
       root,
-      settings,
       log: { line: () => {} },
       agents,
     });
@@ -2047,9 +2034,7 @@ describe("ProposalService", () => {
     // The position never moves back.
     await service.read(PROJECT, ORG, n, 1, BOSS);
     expect((await service.list(PROJECT, ORG, BOSS)).proposals[0]!.unread).toBe(1);
-    expect(settings.values.get("company-proposals:reads:proj/acme/boss")).toBe(
-      JSON.stringify({ [n]: detail.seq }),
-    );
+    expect(storeOf(root, (s) => s.readSeq("boss", n))).toBe(detail.seq);
   });
 
   it("a pending comment is its writer's to reword or withdraw; sent, or someone else's, it is not", async () => {
@@ -2107,8 +2092,8 @@ describe("ProposalService", () => {
       status: 409,
       code: "comment_sent",
     });
-    // The ledger replays to the same view.
-    const again = new ProposalService({ gateway, agents, root, settings, log });
+    // A new service over the same store reads the same view.
+    const again = new ProposalService({ gateway, agents, root, log });
     const replayed = await again.get(PROJECT, ORG, n, BOSS);
     expect(replayed.comments.map((x) => [x.id, x.text, x.batchId !== null])).toEqual([
       [sent.id, "sent words", true],
@@ -2172,8 +2157,8 @@ describe("ProposalService", () => {
       title: "Batch the ticket notices",
     });
     expect(gateway.desks).toHaveLength(desks);
-    // The ledger replays to the same brief.
-    const again = new ProposalService({ gateway, agents, root, settings, log });
+    // A new service over the same store reads the same brief.
+    const again = new ProposalService({ gateway, agents, root, log });
     expect((await again.get(PROJECT, ORG, n, BOSS)).brief).toBe("Batched ticket notices");
     expect((await again.list(PROJECT, ORG, BOSS)).proposals[0]?.title).toBe(
       "Batch the ticket notices",
@@ -2213,7 +2198,7 @@ describe("ProposalService", () => {
     expect(((await other.json()) as { error: { code: string } }).error.code).toBe("not_author");
   });
 
-  it("a desk that refuses never fails the write: the ledger has the line, the log has the reason", async () => {
+  it("a desk that refuses never fails the write: the store has the event, the log has the reason", async () => {
     gateway.refuse.set(
       "acme_dev",
       "acme_dev is paused by its budget for 2026-09; it was not told.",
@@ -2265,7 +2250,7 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
-    const again = new ProposalService({ gateway, agents, root, settings, log });
+    const again = new ProposalService({ gateway, agents, root, log });
     const replayed = await again.get(PROJECT, ORG, n, BOSS);
     expect(replayed).toEqual(await service.get(PROJECT, ORG, n, BOSS));
     expect(replayed.status).toBe("ready");
