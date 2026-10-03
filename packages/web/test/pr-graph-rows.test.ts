@@ -76,11 +76,11 @@ describe("NodeListSection", () => {
   it("gives every listed PR the deploy menu the page wraps its rows in", () => {
     const html = list((n, row) =>
       createElement(DeployableRow, {
+        projectId: "p",
+        orgId: "o",
         node: n,
-        scripts: [],
-        scriptsError: null,
+        subject: `pr:acme/app#${n.number}`,
         onPick: () => {},
-        onAssociate: () => {},
         children: row,
       }),
     );

@@ -149,4 +149,27 @@ describe("SqliteRoadmapStore", () => {
     expect(plan).toMatch(/roadmaps_by_channel/);
     store.close();
   });
+
+  it("calls a scoped view's sink inside each write transaction, and never for one the check refuses", () => {
+    const store = opened();
+    store.db.exec("CREATE TABLE sink_rows (n INTEGER)");
+    let calls = 0;
+    const view = store.scoped((db) => {
+      calls++;
+      db.prepare("INSERT INTO sink_rows (n) VALUES (?)").run(calls);
+    });
+    view.write({ kind: "renamed", number: 1, name: "Queue, again", by: "user:boss" });
+    expect(() =>
+      view.write({ kind: "renamed", number: 1, name: "Refused", by: "user:boss" }, () => {
+        throw new Error("refused");
+      }),
+    ).toThrow("refused");
+    // The refused write rolled back before its sink: one row, from the write that stood.
+    expect(store.db.prepare("SELECT n FROM sink_rows").all()).toEqual([{ n: 1 }]);
+    expect(store.get(1)?.name).toBe("Queue, again");
+    // The store itself, unscoped, calls no sink.
+    store.write({ kind: "renamed", number: 1, name: "Plain", by: "user:boss" });
+    expect(calls).toBe(1);
+    store.close();
+  });
 });

@@ -1,7 +1,8 @@
 /**
  * The plugin on the real server: installed through a Project's config, loaded by the real
  * loader, its requirements resolved from the tree (the organization gateway included), its
- * page contributed to the web slots, and its routes mounted behind the cookie gate —
+ * page contributed to the web slots, the Action registry's slot declared by the plugin and filled
+ * by its proposals module, and its routes mounted behind the cookie gate —
  * answering 404 while company mode is off, and 404 for an organization that does not exist
  * once it is on — and its settings group, declared on the Plugins page. Creating an organization needs a model to run its CEO, so the lifecycle
  * itself is exercised in service.test.ts over the gateway fake.
@@ -24,6 +25,8 @@ import { fetchProbe } from "../src/deployments.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = "/api/projects/default_project/organizations/acme/proposals";
+/** The Action routes: every write, the Activity. */
+const ACTIONS = "/api/projects/default_project/organizations/acme/actions";
 
 interface Contributions {
   pages: Array<{
@@ -38,7 +41,10 @@ interface Contributions {
 async function status(run: Promise<unknown>): Promise<{ status: number; code?: string }> {
   return run.then(
     () => ({ status: 200 }),
-    (e: HarnessApiError) => ({ status: e.status, code: (e as { code?: string }).code }),
+    (e: HarnessApiError) => ({
+      status: e.status,
+      code: (e.body as { error?: { code?: string } } | null)?.error?.code,
+    }),
   );
 }
 
@@ -55,11 +61,11 @@ describe("the company-proposals plugin on a real server", () => {
     await harness?.stop();
   });
 
-  it("is loaded, and contributes the proposals page as a company-mode page", async () => {
+  it("is loaded — the proposals module and the Action registry, whose slot the proposals module fills — and contributes the proposals page as a company-mode page", async () => {
     const [row] = await harness.installedPlugins();
     expect(row).toMatchObject({
       active: true,
-      modules: ["CompanyProposalsPlugin", "ProposalsRetirement"],
+      modules: ["CompanyProposalsPlugin", "CompanyActionRegistry", "ProposalsRetirement"],
       replaces: [],
     });
     const { pages } = await api.get<Contributions>("/api/contributions");
@@ -108,10 +114,21 @@ describe("the company-proposals plugin on a real server", () => {
   });
 
   it("answers 404 while company mode is off, and 404 for a missing organization once it is on", async () => {
+    const create = () =>
+      status(
+        api.post(`${ACTIONS}/proposal.create/runs`, {
+          subject: "organization",
+          params: { author: "x", brief: "y" },
+        }),
+      );
     expect((await status(api.get(BASE))).status).toBe(404);
+    expect((await create()).status).toBe(404);
+    expect((await status(api.get(ACTIONS))).status).toBe(404);
     await api.put("/api/admin/settings", { companyMode: true });
     const missing = await status(api.get(BASE));
     expect(missing.status).toBe(404);
-    expect((await status(api.post(`${BASE}`, { author: "x", brief: "y" }))).status).toBe(404);
+    expect((await create()).status).toBe(404);
+    expect(await status(api.get(ACTIONS))).toEqual({ status: 404, code: "org_not_found" });
+    expect((await status(api.get(`${ACTIONS}/runs`))).status).toBe(404);
   });
 });

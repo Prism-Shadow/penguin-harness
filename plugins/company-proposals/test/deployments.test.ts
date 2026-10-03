@@ -3,16 +3,17 @@
  * itself; a deployment is an id, and a penguin server deployment also has a url; a repeat
  * refused by id, by normalised url, or by the install id the url answers with; a registration
  * written as one `deployment` line of the organization's deployments.jsonl under the caller's
- * name — and a check that no concurrent registration can slip between.
+ * name, through the `target.register` Action — and a check that no concurrent registration can
+ * slip between.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Hono } from "hono";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
 import { DeploymentStore, deploymentsPath } from "../src/deploy-store.js";
-import { DeployService, ProposalService, proposalRoutes } from "../src/index.js";
+import { ProposalService } from "../src/index.js";
+import { actionApp, proposalContributions, type ActionApp } from "./action-harness.js";
 import {
   deploymentIdOf,
   identityOf,
@@ -180,13 +181,16 @@ describe("readDeployments", () => {
 describe("registering over the routes", () => {
   let root: string;
   let service: ProposalService;
+  let harness: ActionApp | undefined;
   let answers: Record<
     string,
     { installId: string; commit: string | null; describe: string | null } | Error
   >;
 
   const org: OrgView = {
+    projectId: PROJECT,
     orgId: ORG,
+    machineId: null,
     userIds: ["boss"],
     employees: [{ agentId: "acme_dev" }],
   } as unknown as OrgView;
@@ -205,6 +209,7 @@ describe("registering over the routes", () => {
 
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-deployments-"));
+    harness = undefined;
     answers = {
       "http://localhost": { installId: "self-id", commit: "a".repeat(40), describe: "v1" },
       "http://localhost:53531": {
@@ -228,31 +233,38 @@ describe("registering over the routes", () => {
     });
   });
   afterEach(async () => {
+    harness?.registry.stop();
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  const app = () => {
-    const a = new Hono();
-    a.use(async (c, next) => {
-      c.set("user" as never, { userId: "boss" } as never);
-      c.set("sessionVia" as never, "token" as never);
-      await next();
-    });
-    // The deploy half of the routes, unused here: these tests never reach a deploy route.
-    const deploys = new DeployService({
-      scope: (projectId, orgId, actor) => service.deployScope(projectId, orgId, actor),
-      root: os.tmpdir(),
-      log: () => undefined,
-    });
-    a.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service, deploys));
-    return a;
+  /**
+   * The registry's reads and its one write: GET …/proposals/deployments, and the
+   * `target.register` Action standing for what POST …/deployments was. A write answers like
+   * the route did: the Action's result, or its refusal.
+   */
+  const call = async (method: string, suffix: string, body?: Record<string, unknown>) => {
+    const a = (harness ??= actionApp({
+      gateway,
+      root,
+      project: PROJECT,
+      org: ORG,
+      contributions: proposalContributions(service),
+      service,
+    }));
+    if (method === "GET") {
+      return a.app.request(`http://localhost/p/${PROJECT}/o/${ORG}/proposals${suffix}`);
+    }
+    const { agentId, ...params } = body ?? {};
+    const actor: OrgActor = {
+      userId: "boss",
+      ...(typeof agentId === "string" ? { agentId } : {}),
+    };
+    const { status, body: answer } = await a.run("target.register", "organization", params, actor);
+    return {
+      status,
+      json: async () => (status === 200 ? answer.result : answer),
+    };
   };
-  const call = (method: string, suffix: string, body?: unknown) =>
-    app().request(`http://localhost/p/${PROJECT}/o/${ORG}/proposals${suffix}`, {
-      method,
-      headers: { "content-type": "application/json" },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
   const lines = async () =>
     (await fs.readFile(deploymentsPath(root, PROJECT, ORG), "utf8").catch(() => ""))
       .split("\n")

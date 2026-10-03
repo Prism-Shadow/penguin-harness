@@ -1,6 +1,6 @@
 /**
  * An item linked to its proposal whose brief changed at a later establishment: it is a brief
- * again, still linked, and its second approval creates nothing while that proposal is open —
+ * again, still linked, and its last approval creates nothing while that proposal is open —
  * company-proposals rewrites the proposal's brief, the link stays and the owner is told so. Only
  * a merged or rejected proposal gets a new one, linked in its place, as for an item with none.
  */
@@ -112,7 +112,7 @@ describe("a linked item approved again with a changed brief", () => {
       stage: "delegated",
       proposal: 200,
       delivered: true,
-      approvals: { person: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
+      approvals: { member: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
     });
     // The approval and the delegation are recorded; the link stands as it was.
     expect(eventKinds().slice(before)).toEqual(["approved", "delegated"]);

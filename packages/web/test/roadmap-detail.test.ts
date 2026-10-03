@@ -2,8 +2,8 @@
  * A roadmap in its room's column (features/company/roadmap-detail.tsx and the rows of
  * features/company/roadmaps.ts), via react-dom/server static markup: the items come before the
  * body, proposal items before roadmap items; a linked item is its proposal's row (number, title,
- * status), an unlinked one says its stage, and a brief shows its two approvals with the person's
- * Approve while theirs is missing; every employee is a face and a name, never an id; the record is
+ * status), an unlinked one says its stage, and a brief shows its approvals by role with Approve
+ * where the guard allows it; every employee is a face and a name, never an id; the record is
  * not drawn; the body is Markdown (headings, `proposal:<n>` capsules, footnotes) with no card.
  *
  * The employee face reads the company store, which a static render has no provider for: it is
@@ -22,7 +22,7 @@ vi.mock("../src/state/locale", () => ({ useLocale: () => ({ locale: "en" }) }));
 
 const roadmapDetail = await import("../src/features/company/roadmap-detail");
 const { RoadmapBody, RoadmapDetailView } = roadmapDetail;
-const { personMayApprove, roadmapRows } = await import("../src/features/company/roadmaps");
+const { roadmapRows } = await import("../src/features/company/roadmaps");
 const { S } = await import("../src/lib/strings");
 
 const roadmap = (over: Partial<OrgRoadmapDetail> = {}): OrgRoadmapDetail => ({
@@ -46,7 +46,7 @@ const roadmap = (over: Partial<OrgRoadmapDetail> = {}): OrgRoadmapDetail => ({
       proposal: 105,
       stage: "delegated",
       approvals: {
-        person: { by: "user:admin", at: "2026-09-29T03:33:30.000Z" },
+        member: { by: "user:admin", at: "2026-09-29T03:33:30.000Z" },
         moderator: { by: "agent:acme_ceo", at: "2026-09-29T03:28:54.000Z" },
       },
     },
@@ -74,12 +74,17 @@ const proposal105 = {
   status: "ready",
 } as ProposalItem;
 
-const render = (r: OrgRoadmapDetail, proposals = new Map([[105, proposal105]])) =>
+const render = (
+  r: OrgRoadmapDetail,
+  proposals = new Map([[105, proposal105]]),
+  approvable: ReadonlySet<string> = new Set(["b"]),
+) =>
   renderToStaticMarkup(
     createElement(RoadmapDetailView, {
       roadmap: r,
       names,
       proposals,
+      approvable,
       approving: null,
       onApprove: () => {},
       onOpenProposal: () => {},
@@ -95,32 +100,21 @@ describe("the column's rows", () => {
     const [a, b, r] = roadmapRows(roadmap());
     expect(a).toMatchObject({ proposal: 105, stage: "delegated", approvals: null });
     expect(b).toMatchObject({ proposal: null, stage: "brief", people: ["agent:acme_web"] });
-    expect(b?.approvals).toEqual({
-      person: null,
-      moderator: { by: "agent:acme_ceo", at: "2026-09-29T03:28:54.000Z" },
-    });
+    expect(b?.approvals).toEqual([
+      { role: "moderator", approval: { by: "agent:acme_ceo", at: "2026-09-29T03:28:54.000Z" } },
+    ]);
     expect(r).toMatchObject({ child: 4, people: ["agent:acme_web"] });
   });
 
   it("calls every item a draft while the roadmap is discussed, and offers no approval", () => {
     const rows = roadmapRows(roadmap({ status: "discussing" }));
     expect(rows.every((row) => row.stage === "draft" && row.approvals === null)).toBe(true);
-    expect(rows.some(personMayApprove)).toBe(false);
   });
 
   it("takes an adopted proposal's number while the roadmap is still discussed", () => {
     const r = roadmap({ status: "discussing", delegations: {} });
     r.items[1] = { ...r.items[1]!, proposal: 105 } as OrgRoadmapDetail["items"][number];
     expect(roadmapRows(r)[0]).toMatchObject({ key: "a", proposal: 105, stage: "draft" });
-  });
-
-  it("offers the person's approval only on a brief that does not have it yet", () => {
-    const [a, b] = roadmapRows(roadmap());
-    expect(personMayApprove(a!)).toBe(false);
-    expect(personMayApprove(b!)).toBe(true);
-    const approved = roadmap();
-    approved.delegations.b!.approvals!.person = { by: "user:admin", at: "2026-09-29T03:40:00Z" };
-    expect(personMayApprove(roadmapRows(approved)[1]!)).toBe(false);
   });
 
   it("reads a delegation from before the gate (no stage) as delegated", () => {
@@ -161,11 +155,20 @@ describe("the column", () => {
     expect(html).not.toContain(S.company.roadmaps.statusUnknown);
   });
 
-  it("says an unlinked brief's stage, its approvals, and offers the person's Approve", () => {
+  it("says an unlinked brief's stage and its approvals by role, and offers Approve where allowed", () => {
     expect(html).toContain(S.company.roadmaps.stage.brief);
     expect(html).toContain("brief b");
-    expect(html).toContain(S.company.roadmaps.waiting);
+    expect(html).toContain(">moderator<");
+    expect(html).not.toContain(S.company.roadmaps.waiting);
     expect(html).toContain(`>${S.company.roadmaps.approve}</button>`);
+  });
+
+  it("says a brief with no approval is waiting, and offers no Approve the guard refuses", () => {
+    const r = roadmap();
+    r.delegations.b!.approvals = {};
+    const none = render(r, new Map([[105, proposal105]]), new Set());
+    expect(none).toContain(S.company.roadmaps.waiting);
+    expect(none).not.toContain(`>${S.company.roadmaps.approve}</button>`);
   });
 
   it("shows every employee as a face and a name, never as an id", () => {

@@ -101,6 +101,21 @@ describe("proposalActions", () => {
     expect(proposalActions("merged", 0).discuss).toBe(false);
     expect(proposalActions("rejected", 0).discuss).toBe(false);
   });
+
+  it("follows the guards' answer once it is read, not the status", () => {
+    const allowed = new Set(["proposal.approve", "proposal.requestChanges"]);
+    // A drafting proposal the guard lets the caller approve: the bar offers it.
+    expect(proposalActions("drafting", 0, allowed)).toEqual({
+      discuss: false,
+      requestChanges: false,
+      approve: true,
+      reject: false,
+      markMerged: false,
+    });
+    // Request changes still needs pending comments to send.
+    expect(proposalActions("drafting", 2, allowed).requestChanges).toBe(true);
+    expect(proposalActions("ready", 2, new Set()).approve).toBe(false);
+  });
 });
 
 describe("the proposal reference grammar", () => {
@@ -269,6 +284,10 @@ describe("proposalsRoute", () => {
 
   it("shows the PR graph on its own segment", () => {
     expect(proposalsRoute("graph")).toEqual({ graph: true });
+  });
+
+  it("shows the Activity on its own segment", () => {
+    expect(proposalsRoute("activity")).toEqual({ activity: true });
   });
 });
 

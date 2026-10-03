@@ -46,6 +46,7 @@ export {
   defaultAct,
   mergedOnWord,
   proposalGuards,
+  rebriefFromRoadmap,
 } from "./guards.js";
 export type { Caller, PlannedImpl, WriteAct } from "./guards.js";
 export * from "./action-model.js";

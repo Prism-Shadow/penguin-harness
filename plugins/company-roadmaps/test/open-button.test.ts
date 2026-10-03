@@ -2,7 +2,8 @@
  * The "Open a roadmap" button, clicked in a real DOM (happy-dom): the page's own document and
  * script, a stand-in for the server's answers, and a person's clicks. The button unfolds a
  * form — a name and the organization's employees, no room to choose: the roadmap opens its own
- * — that sends the plugin's own `POST …/roadmaps` with the employees in the order picked (the
+ * — that runs the `roadmap.open` Action (`POST …/actions/roadmap.open/runs`) with the employees
+ * in the order picked (the
  * first moderates), and the page goes straight to the new roadmap's room — the app's own channel
  * page, through the app's history. Picking changes the form where it stands (nothing in the
  * dialog is drawn again), and a refusal keeps the form and says why. A roadmap on the list opens
@@ -182,13 +183,13 @@ function organization(
       return r ? { status: 200, body: r } : { status: 404, body: {} };
     }
     if (call.method === "GET" && call.url === `${ORG}/chart`) return { status: 200, body: CHART };
-    if (call.method === "POST" && call.url === `${ORG}/roadmaps`) {
+    if (call.method === "POST" && call.url === `${ORG}/actions/roadmap.open/runs`) {
       if (opts.refuse)
         return {
           status: opts.refuse.status,
           body: { error: { code: "x", message: opts.refuse.message } },
         };
-      const b = call.body as { name: string; employees: string[] };
+      const b = (call.body as { params: { name: string; employees: string[] } }).params;
       const number = roadmaps.length + 1;
       const roadmap = {
         number,
@@ -203,7 +204,7 @@ function organization(
         delegations: {},
       };
       roadmaps.push(roadmap);
-      return { status: 201, body: { roadmap, hints: opts.hints ?? [] } };
+      return { status: 200, body: { run: {}, result: { roadmap, hints: opts.hints ?? [] } } };
     }
     return { status: 404, body: {} };
   };
@@ -231,8 +232,12 @@ describe("the Open a roadmap button", () => {
     expect(post).toEqual([
       {
         method: "POST",
-        url: `${ORG}/roadmaps`,
-        body: { name: "Queue migration", employees: ["acme_web", "acme_dev"] },
+        url: `${ORG}/actions/roadmap.open/runs`,
+        body: {
+          subject: "organization",
+          params: { name: "Queue migration", employees: ["acme_web", "acme_dev"] },
+          via: "web",
+        },
         contentType: "application/json",
       },
     ]);
@@ -415,7 +420,7 @@ describe("a roadmap and its room", () => {
     expect(p.pushed).toEqual(["/org/proj/acme/roadmaps"]);
   });
 
-  it("shows a proposal item as a brief with its two approvals, and gives the person its Approve", async () => {
+  it("shows a proposal item as a brief with the approvals given, by role, and its Approve", async () => {
     const established = {
       ...SEEDED,
       status: "established",
@@ -444,8 +449,8 @@ describe("a roadmap and its room", () => {
     const approvals: string[] = [];
     const p = await page(
       (call, roadmaps) => {
-        if (call.method === "POST" && call.url === `${ORG}/roadmaps/1/items/a/approve`) {
-          approvals.push(call.url);
+        if (call.method === "POST" && call.url === `${ORG}/actions/roadmap.item.approve/runs`) {
+          approvals.push((call.body as { subject: string }).subject);
           roadmaps[0] = {
             ...established,
             delegations: {
@@ -454,12 +459,12 @@ describe("a roadmap and its room", () => {
                 stage: "delegated",
                 approvals: {
                   ...established.delegations.a.approvals,
-                  person: { by: "user:admin", at: "2026-09-29T02:05:00.000Z" },
+                  member: { by: "user:admin", at: "2026-09-29T02:05:00.000Z" },
                 },
               },
             },
           };
-          return { status: 200, body: { roadmap: roadmaps[0], hints: [] } };
+          return { status: 200, body: { run: {}, result: { roadmap: roadmaps[0], hints: [] } } };
         }
         return organization()(call, roadmaps);
       },
@@ -467,11 +472,11 @@ describe("a roadmap and its room", () => {
       { parent: "/org/proj/acme/channels/roadmap_1", own: "?view=detail&n=1" },
     );
     expect(p.text()).toContain(T.brief);
-    expect(p.text()).toContain(`${T.byModerator} acme_dev`);
-    expect(p.text()).toContain(`${T.byPerson} ${T.waiting}`);
+    expect(p.text()).toContain("moderator acme_dev");
+    expect(p.text()).not.toContain(T.waiting);
     expect(p.text()).toContain(T.approveHint);
     await p.click("button[data-approve]");
-    expect(approvals).toEqual([`${ORG}/roadmaps/1/items/a/approve`]);
+    expect(approvals).toEqual(["item:1/a"]);
     // Read again: approved by both, so no longer a brief and no button.
     expect(p.$("button[data-approve]")).toBeNull();
     expect(p.text()).not.toContain(T.waiting);
@@ -498,7 +503,7 @@ describe("a roadmap and its room", () => {
       (call, roadmaps) => {
         if (call.method === "GET" && call.url === `${ORG}/proposals`)
           return { status: 200, body: { proposals: PROPOSALS } };
-        if (call.method === "POST" && call.url === `${ORG}/roadmaps/1/adopt`) {
+        if (call.method === "POST" && call.url === `${ORG}/actions/roadmap.adopt/runs`) {
           adopted.push(call.body);
           roadmaps[0] = {
             ...established,
@@ -514,7 +519,7 @@ describe("a roadmap and its room", () => {
               },
             ],
           };
-          return { status: 200, body: { roadmap: roadmaps[0], hints: [] } };
+          return { status: 200, body: { run: {}, result: { roadmap: roadmaps[0], hints: [] } } };
         }
         return organization()(call, roadmaps);
       },
@@ -531,7 +536,13 @@ describe("a roadmap and its room", () => {
     expect(p.$<HTMLElement>("[data-overlay]").innerHTML).toContain("Old &lt;one&gt;");
     await p.click('button[data-adopt="107"]');
     // The implementer carries it (else the author); the title is the proposal's own.
-    expect(adopted).toEqual([{ proposal: 107, title: "Old <one>", owner: "acme_web" }]);
+    expect(adopted).toEqual([
+      {
+        subject: "roadmap:1",
+        params: { proposal: 107, title: "Old <one>", owner: "acme_web" },
+        via: "web",
+      },
+    ]);
     expect(p.$("[data-overlay]")).toBeNull();
     expect(p.text()).toContain(`${T.proposal} #107`);
     expect(p.text()).toContain(T.existing);

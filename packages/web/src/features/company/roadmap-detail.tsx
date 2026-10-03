@@ -5,7 +5,8 @@
  *
  * The items come first. A proposal item that has its proposal linked is that proposal's row —
  * its number, its current title as the link, its status; one that does not says where it stands
- * (a draft, a brief waiting for its two approvals with the person's Approve, or delegated). A
+ * (a draft, a brief waiting for its approvals — with Approve where the `roadmap.item.approve`
+ * Action's guard lets the caller give one — or delegated). A
  * linked proposal the organization's list does not hold (yet) wears a grey "status unknown" pill,
  * so a list that failed to load never leaves the rows bare. Every
  * employee the column names is a face and a name, never an id. The body is Markdown through the
@@ -16,6 +17,7 @@
  * The column is one of the app's own scrollers, so the app's thin scrollbar applies. The roadmap
  * is read again every {@link DETAIL_POLL_MS}, and the state is replaced only when the answer
  * changed, so the draft follows the discussion without the column redrawing under the reader.
+ * Under the body, the roadmap's Activity: the Action runs on it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -42,7 +44,8 @@ import { PROPOSAL_STATUS_TONE } from "../proposals/proposals-model";
 import { ChannelMessageBody } from "./channel-markdown";
 import { orgProposalPath } from "./company-nav";
 import { ErrorLine, PrincipalChip, TitleButton } from "./shared";
-import { personMayApprove, roadmapRows } from "./roadmaps";
+import { roadmapRows } from "./roadmaps";
+import { SubjectActivity } from "../proposals/activity-view";
 import type { RoadmapRow, RoadmapRowStage } from "./roadmaps";
 
 /** How often the column reads the roadmap again while it is open. */
@@ -73,6 +76,8 @@ export function RoadmapDetail({
   const [roadmap, setRoadmap] = useState<OrgRoadmapDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
+  /** The brief items the caller may approve now, as the guard answers. */
+  const [approvable, setApprovable] = useState<ReadonlySet<string>>(new Set());
   /** The last answer as read, so an unchanged answer does not replace the state. */
   const drawn = useRef("");
 
@@ -97,6 +102,34 @@ export function RoadmapDetail({
     const timer = window.setInterval(() => void load(), DETAIL_POLL_MS);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  // Which briefs the caller may approve: asked of the guard per brief whenever the answer changes
+  // (an approval given changes it, and with it who may give the next).
+  useEffect(() => {
+    let alive = true;
+    const keys =
+      roadmap === null
+        ? []
+        : roadmapRows(roadmap)
+            .filter((row) => row.stage === "brief")
+            .map((row) => row.key);
+    void Promise.all(
+      keys.map((key) =>
+        api.listOrgActions(projectId, orgId, `item:${number}/${key}`).then(
+          (res) =>
+            res.actions.some((a) => a.key === "roadmap.item.approve" && a.allowed === true)
+              ? key
+              : null,
+          () => null,
+        ),
+      ),
+    ).then((allowed) => {
+      if (alive) setApprovable(new Set(allowed.filter((k): k is string => k !== null)));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [projectId, orgId, number, roadmap]);
 
   const names = useMemo(
     () => new Map((company.orgChart?.employees ?? []).map((e) => [e.agentId, e.name])),
@@ -136,14 +169,23 @@ export function RoadmapDetail({
           </div>
         )
       ) : (
-        <RoadmapDetailView
-          roadmap={roadmap}
-          names={names}
-          proposals={proposals}
-          approving={approving}
-          onApprove={(key) => void approve(key)}
-          onOpenProposal={(n) => navigate(orgProposalPath(projectId, orgId, n))}
-        />
+        <>
+          <RoadmapDetailView
+            roadmap={roadmap}
+            names={names}
+            proposals={proposals}
+            approvable={approvable}
+            approving={approving}
+            onApprove={(key) => void approve(key)}
+            onOpenProposal={(n) => navigate(orgProposalPath(projectId, orgId, n))}
+          />
+          <SubjectActivity
+            projectId={projectId}
+            orgId={orgId}
+            subject={`roadmap:${number}`}
+            version={roadmap}
+          />
+        </>
       )}
     </div>
   );
@@ -162,6 +204,7 @@ export function RoadmapDetailView({
   roadmap: r,
   names,
   proposals,
+  approvable,
   approving,
   onApprove,
   onOpenProposal,
@@ -169,6 +212,8 @@ export function RoadmapDetailView({
   roadmap: OrgRoadmapDetail;
   names: ReadonlyMap<string, string>;
   proposals: ReadonlyMap<number, ProposalItem>;
+  /** The brief items the caller may approve now (the guard's answer). */
+  approvable: ReadonlySet<string>;
   approving: string | null;
   onApprove: (key: string) => void;
   onOpenProposal: (number: number) => void;
@@ -200,6 +245,7 @@ export function RoadmapDetailView({
               row={row}
               names={names}
               proposal={row.proposal === null ? null : (proposals.get(row.proposal) ?? null)}
+              mayApprove={approvable.has(row.key)}
               approving={approving === row.key}
               onApprove={() => onApprove(row.key)}
               onOpenProposal={onOpenProposal}
@@ -275,12 +321,13 @@ export function RoadmapBody({ text }: { text: string }) {
 /**
  * One item as a row of the proposals queue's shape: the number (the proposal's, else the item's
  * key), the title with its status pill, then a quiet line of who it names; a brief waiting for its
- * approvals adds who approved and when, and the person's Approve while theirs is missing.
+ * approvals adds who approved in which role and when, and Approve where the guard allows it.
  */
 function RoadmapItemRow({
   row,
   names,
   proposal,
+  mayApprove,
   approving,
   onApprove,
   onOpenProposal,
@@ -288,6 +335,7 @@ function RoadmapItemRow({
   row: RoadmapRow;
   names: ReadonlyMap<string, string>;
   proposal: ProposalItem | null;
+  mayApprove: boolean;
   approving: boolean;
   onApprove: () => void;
   onOpenProposal: (number: number) => void;
@@ -346,10 +394,17 @@ function RoadmapItemRow({
             className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row} text-xs text-gray-500 dark:text-gray-400`}
           >
             <span>{t.approvals}</span>
-            <ApprovalMark label={t.byPerson} approval={row.approvals.person} names={names} />
-            <span aria-hidden="true">·</span>
-            <ApprovalMark label={t.byModerator} approval={row.approvals.moderator} names={names} />
-            {personMayApprove(row) && (
+            {row.approvals.length === 0 ? (
+              <span className="text-gray-400 dark:text-gray-500">{t.waiting}</span>
+            ) : (
+              row.approvals.map((a, i) => (
+                <span key={a.role} className={`inline-flex items-center ${ICON_GAP.row}`}>
+                  {i > 0 && <span aria-hidden="true">·</span>}
+                  <ApprovalMark label={a.role} approval={a.approval} names={names} />
+                </span>
+              ))
+            )}
+            {mayApprove && (
               <Button size="sm" disabled={approving} onClick={onApprove}>
                 {t.approve}
               </Button>
@@ -361,30 +416,24 @@ function RoadmapItemRow({
   );
 }
 
-/** One of a brief's two approvals: who gave it and when, or that it is still waited for. */
+/** One approval of a brief: its role, who gave it and when. */
 function ApprovalMark({
   label,
   approval,
   names,
 }: {
   label: string;
-  approval: OrgRoadmapApproval | null;
+  approval: OrgRoadmapApproval;
   names: ReadonlyMap<string, string>;
 }) {
   const { locale } = useLocale();
   return (
     <span className={`inline-flex min-w-0 items-center ${ICON_GAP.tight}`}>
       <span>{label}</span>
-      {approval === null ? (
-        <span className="text-gray-400 dark:text-gray-500">{S.company.roadmaps.waiting}</span>
-      ) : (
-        <>
-          <PrincipalChip principal={approval.by} names={names} size={ICON_SIZE.rowLead} />
-          <span data-tooltip={formatDateTime(approval.at)}>
-            {formatRelativeShort(approval.at, locale)}
-          </span>
-        </>
-      )}
+      <PrincipalChip principal={approval.by} names={names} size={ICON_SIZE.rowLead} />
+      <span data-tooltip={formatDateTime(approval.at)}>
+        {formatRelativeShort(approval.at, locale)}
+      </span>
     </span>
   );
 }

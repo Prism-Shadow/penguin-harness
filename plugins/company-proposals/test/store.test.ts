@@ -92,13 +92,13 @@ describe("SqliteProposalStore", () => {
     expect(store.get(number)!.events.map((e) => e.kind)).toEqual(["created", "revised"]);
   });
 
-  it("answers the queue, a proposal, its revisions and a person's unread count", () => {
+  it("answers the queue, a proposal, its revisions and a reader's unread count", () => {
     const a = create("First").number;
     const b = create("Second").number;
     publish(a, 1);
     publish(a, 2);
     store.feedback(b, () => ({ text: "note", runtime: false, by: "agent:acme_qa" }));
-    const boss = { principal: "user:boss", userId: "boss", person: true };
+    const boss = { principal: "user:boss", reader: "boss" };
     let queue = store.list(boss);
     expect(queue.map((q) => [q.number, q.revision, q.unread])).toEqual([
       [b, 0, 1],
@@ -110,10 +110,12 @@ describe("SqliteProposalStore", () => {
     queue = store.list(boss);
     expect(queue.find((q) => q.number === a)!.unread).toBe(0);
     expect(store.readSeq("boss", a)).toBe(store.get(a)!.seq);
-    // An employee has no unread count.
-    expect(
-      store.list({ principal: "agent:acme_dev", userId: "boss", person: false })[0]!.unread,
-    ).toBe(0);
+    // An employee has a read position of its own, keyed by its principal.
+    const dev = { principal: "agent:acme_dev", reader: "agent:acme_dev" };
+    expect(store.list(dev).find((q) => q.number === a)!.unread).toBe(2);
+    store.markRead("agent:acme_dev", a, store.get(a)!.seq);
+    expect(store.list(dev).find((q) => q.number === a)!.unread).toBe(0);
+    expect(store.list(boss).find((q) => q.number === b)!.unread).toBe(1);
     expect(store.revisions(a).map((r) => r.revision)).toEqual([1, 2]);
     expect(store.revision(a, 1)).toMatchObject({ title: "Revision 1", sections: SECTIONS });
     expect(store.revision(a, 3)).toBeNull();
@@ -144,7 +146,7 @@ describe("SqliteProposalStore", () => {
         .map((r) => r.detail)
         .join("\n");
     const anyArgs = (sql: string) => sql.replace(/:me|:user/g, "'x'").replace(/\?/g, "1");
-    expect(plan(anyArgs(READS.queuePerson))).toMatch(/proposal_events_by_number/);
+    expect(plan(anyArgs(READS.queue))).toMatch(/proposal_events_by_number/);
     expect(plan(anyArgs(READS.pendingCounts))).toMatch(/proposal_comments_pending/);
     expect(plan(anyArgs(READS.events))).toMatch(/proposal_events_by_number/);
     expect(plan(anyArgs(READS.materials))).toMatch(/proposal_materials_by_number/);
@@ -156,8 +158,8 @@ describe("SqliteProposalStore", () => {
       expect(plan(anyArgs(sql))).toMatch(/USING PRIMARY KEY/);
     }
     for (const sql of Object.values(READS)) {
-      // The queues read every proposal on purpose; nothing else scans a table.
-      if (sql === READS.queuePerson || sql === READS.queueEmployee) continue;
+      // The queue reads every proposal on purpose; nothing else scans a table.
+      if (sql === READS.queue) continue;
       expect(plan(anyArgs(sql)), sql).not.toMatch(/^SCAN (proposal_\w+)$/m);
     }
   });

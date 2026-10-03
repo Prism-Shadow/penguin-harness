@@ -3,8 +3,10 @@
  * person delegates, the author publishes and marks ready, comments gather and go out as
  * one batch, the author resolves, an implementer's session opens, feedback, approval,
  * merge — every drive of an employee being one `[proposal #<n>]` line on its desk, in
- * nobody's name and never to the employee that acted, every refusal the right one, pending comments invisible to employees,
- * unread counts moving with a person's read position, and the whole thing standing again
+ * nobody's name and never to the employee that acted, every refusal the right one, pending
+ * comments their writer's alone, a person and an employee allowed alike (the default guards),
+ * unread counts moving with each reader's position, the writes through the Action routes where a
+ * route is exercised, and the whole thing standing again
  * when a new service opens the same store. Nothing here starts a server or a Session.
  */
 import fs from "node:fs/promises";
@@ -13,39 +15,31 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Hono } from "hono";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import plugin, {
   sectionSource,
+  CompanyActionRegistry,
   CompanyProposalsPlugin,
   ProposalsRetirement,
   RETIRE_ID,
+  ACTION_ROUTES_ID,
   PAGE_ID,
   ProposalError,
   ProposalService,
   ROUTES_ID,
   CONFIG_GROUP,
   DEFAULT_TEST_GROUPS,
-  DeployService,
   TEST_GROUP_LINE,
   SqliteProposalStore,
   companyDbPath,
-  proposalRoutes,
   slugOf,
   testGroupsOf,
 } from "../src/index.js";
 import type { RunGh } from "../src/pr-status.js";
 import { FakeForge, FakeMirror, cr, rel } from "./graph-fakes.js";
 import { withImplPr } from "../src/service.js";
-
-/** The deploy half of the routes, unused here: these tests never reach a deploy route. */
-const deploysFor = (s: ProposalService): DeployService =>
-  new DeployService({
-    scope: (projectId, orgId, actor) => s.deployScope(projectId, orgId, actor),
-    root: os.tmpdir(),
-    log: () => undefined,
-  });
+import { actionApp, proposalContributions, type ActionApp } from "./action-harness.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = "proj";
@@ -243,9 +237,44 @@ describe("ProposalService", () => {
       gh: githubGh,
     });
   });
+  /** The registries the tests opened: stopped, so their store connections close. */
+  const harnesses: ActionApp[] = [];
   afterEach(async () => {
+    for (const h of harnesses.splice(0)) h.registry.stop();
     await fs.rm(root, { recursive: true, force: true });
   });
+
+  /**
+   * The routes over the current service: the reads (`call`), and every write as the Action it
+   * is (`run`), answering like a route does — the Action's result, or the refusal's body.
+   */
+  function routes(): {
+    call: (method: string, suffix: string) => Promise<Response>;
+    run: (
+      key: string,
+      subject: string,
+      params?: Record<string, unknown>,
+      actor?: OrgActor,
+    ) => Promise<{ status: number; json: () => Promise<unknown> }>;
+  } {
+    const h = actionApp({
+      gateway,
+      root,
+      project: PROJECT,
+      org: ORG,
+      contributions: proposalContributions(service),
+      service,
+    });
+    harnesses.push(h);
+    return {
+      call: async (method, suffix) =>
+        h.app.request(`/p/${PROJECT}/o/${ORG}/proposals${suffix}`, { method }),
+      run: async (key, subject, params = {}, actor = BOSS) => {
+        const { status, body } = await h.run(key, subject, params, actor);
+        return { status, json: async () => (status === 200 ? body.result : body) };
+      },
+    };
+  }
 
   async function delegated(): Promise<number> {
     const created = await service.create(
@@ -291,47 +320,37 @@ describe("ProposalService", () => {
     });
     const first = await delegated();
     const second = await delegated();
-    const app = new Hono();
-    app.use(async (c, next) => {
-      c.set("user" as never, { userId: "boss" } as never);
-      c.set("sessionVia" as never, "token" as never);
-      await next();
-    });
-    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service, deploysFor(service)));
-    const call = (method: string, suffix: string, body?: unknown) =>
-      app.request(`/p/${PROJECT}/o/${ORG}/proposals${suffix}`, {
-        method,
-        headers: { "content-type": "application/json" },
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      });
+    const { call, run } = routes();
     const url = "https://github.com/acme/site/pull/11";
 
-    const set = await call("PUT", `/${first}/impl`, { url, agentId: "acme_dev" });
+    const set = await run("proposal.impl", `proposal:${first}`, { url }, author);
     expect(set.status).toBe(200);
     expect(((await set.json()) as { implPr: unknown }).implPr).toMatchObject({
       url,
       label: "acme/site#11",
       by: "agent:acme_dev",
     });
-    const taken = await call("PUT", `/${second}/impl`, { url, agentId: "acme_dev" });
+    const taken = await run("proposal.impl", `proposal:${second}`, { url }, author);
     expect(taken.status).toBe(409);
     expect(((await taken.json()) as { error: { code: string } }).error.code).toBe("impl_pr_taken");
     // Any employee registers one, not only the author or the implementer; the line says who.
     expect(
-      (await call("PUT", `/${second}/impl`, { url, agentId: "acme_qa" })).status,
+      (await run("proposal.impl", `proposal:${second}`, { url }, qa)).status,
       "a taken PR stays taken whoever asks",
     ).toBe(409);
     const third = await delegated();
-    const byQa = await call("PUT", `/${third}/impl`, {
-      url: "https://github.com/acme/site/pull/12",
-      agentId: "acme_qa",
-    });
+    const byQa = await run(
+      "proposal.impl",
+      `proposal:${third}`,
+      { url: "https://github.com/acme/site/pull/12" },
+      qa,
+    );
     expect(byQa.status).toBe(200);
     expect(((await byQa.json()) as { implPr: unknown }).implPr).toMatchObject({
       by: "agent:acme_qa",
     });
     expect(
-      (await call("PUT", `/${second}/impl`, { url: "https://example.com/x", agentId: "acme_dev" }))
+      (await run("proposal.impl", `proposal:${second}`, { url: "https://example.com/x" }, author))
         .status,
     ).toBe(400);
 
@@ -396,7 +415,7 @@ describe("ProposalService", () => {
     ]) {
       await service.addMaterial(PROJECT, ORG, second, { kind: "pr", url: u }, author);
     }
-    const adoptedByAgent = await call("POST", "/adopt-impl", { agentId: "acme_dev" });
+    const adoptedByAgent = await run("proposal.impl.adopt", "organization", {}, author);
     expect(adoptedByAgent.status).toBe(200);
     const adopted = (await adoptedByAgent.json()) as Awaited<ReturnType<typeof service.adoptImpl>>;
     expect(adopted.adopted).toEqual([
@@ -469,21 +488,11 @@ describe("ProposalService", () => {
     });
     const first = await delegated();
     const second = await delegated();
-    const app = new Hono();
-    app.use(async (c, next) => {
-      c.set("user" as never, { userId: "boss" } as never);
-      c.set("sessionVia" as never, "token" as never);
-      await next();
-    });
-    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service, deploysFor(service)));
-    const call = (method: string, suffix: string, body?: unknown) =>
-      app.request(`/p/${PROJECT}/o/${ORG}/proposals${suffix}`, {
-        method,
-        headers: { "content-type": "application/json" },
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      });
-    const codeOf = async (res: Response) =>
+    const { call, run } = routes();
+    const codeOf = async (res: { json: () => Promise<unknown> }) =>
       ((await res.json()) as { error: { code: string } }).error.code;
+    const impl = (n: number, params: Record<string, unknown>, actor: OrgActor = author) =>
+      run("proposal.impl", `proposal:${n}`, params, actor);
     const head = { remote: "fork", branch: "feat/x" };
     const base = { remote: "origin", branch: "main" };
 
@@ -493,21 +502,16 @@ describe("ProposalService", () => {
     expect(await codeOf(none)).toBe("no_impl");
 
     // Head and base go together, and each remote must name a GitHub repository.
-    expect((await call("PUT", `/${first}/impl`, { head, agentId: "acme_dev" })).status).toBe(400);
-    const unknown = await call("PUT", `/${first}/impl`, {
-      head: { remote: "nowhere", branch: "feat/x" },
-      base,
-      agentId: "acme_dev",
-    });
+    expect((await impl(first, { head })).status).toBe(400);
+    const unknown = await impl(first, { head: { remote: "nowhere", branch: "feat/x" }, base });
     expect(unknown.status).toBe(400);
     expect(await codeOf(unknown)).toBe("impl_remote_unknown");
     expect(
-      (await call("PUT", `/${first}/impl`, { head: { remote: "origin", branch: "a b" }, base }))
-        .status,
+      (await impl(first, { head: { remote: "origin", branch: "a b" }, base }, BOSS)).status,
     ).toBe(400);
 
     // The branch pair alone: no PR needed.
-    const set = await call("PUT", `/${first}/impl`, { head, base, agentId: "acme_dev" });
+    const set = await impl(first, { head, base });
     expect(set.status).toBe(200);
     const detail = (await set.json()) as { impl: unknown; implPr: unknown };
     expect(detail.impl).toMatchObject({ head, base, pr: null, by: "agent:acme_dev" });
@@ -515,23 +519,17 @@ describe("ProposalService", () => {
     expect((await service.get(PROJECT, ORG, first, BOSS)).impl).toMatchObject({ head, base });
 
     // The same head for a second proposal is taken.
-    const taken = await call("PUT", `/${second}/impl`, { head, base, agentId: "acme_qa" });
+    const taken = await impl(second, { head, base }, qa);
     expect(taken.status).toBe(409);
     expect(await codeOf(taken)).toBe("impl_branch_taken");
 
     // A PR whose head is another branch does not attach.
-    const mismatch = await call("PUT", `/${first}/impl`, {
-      url: "https://github.com/acme/site/pull/10",
-      agentId: "acme_dev",
-    });
+    const mismatch = await impl(first, { url: "https://github.com/acme/site/pull/10" });
     expect(mismatch.status).toBe(409);
     expect(await codeOf(mismatch)).toBe("impl_pr_mismatch");
 
     // The PR opened from the head attaches, and its base replaces the declared one.
-    const attached = await call("PUT", `/${first}/impl`, {
-      url: "https://github.com/acme/site/pull/9",
-      agentId: "acme_dev",
-    });
+    const attached = await impl(first, { url: "https://github.com/acme/site/pull/9" });
     expect(attached.status).toBe(200);
     const withPr = (await attached.json()) as { impl: unknown; implPr: unknown };
     expect(withPr.impl).toMatchObject({
@@ -669,33 +667,38 @@ describe("ProposalService", () => {
     expect(agents.updates).toEqual(["acme_dev"]);
   });
 
-  it("an employee does not create a proposal; a person does", async () => {
+  it("an employee creates a proposal as a person does, under its own name; it still needs an author", async () => {
     const written = async (): Promise<number> => storeOf(root, (s) => s.facts().length);
-    // Neither on its own nor handed to a colleague: the way out is named, and nothing is written.
-    for (const req of [
-      { brief: "Rotate the API token" },
-      { author: "acme_impl", brief: "Split" },
-    ]) {
-      const err = await service.create(PROJECT, ORG, req, author).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(ProposalError);
-      expect(err).toMatchObject({ status: 403, code: "roadmap_only" });
-      expect((err as Error).message).toContain("roadmap item");
-      expect((err as Error).message).toContain("new revision");
-    }
+    // No author named: refused, and nothing is written.
+    const err = await service
+      .create(PROJECT, ORG, { brief: "Rotate the API token" }, author)
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 400, code: "bad_request" });
     expect(await written()).toBe(0);
-    expect(gateway.desks).toEqual([]);
-    expect(agents.updates).toEqual([]);
-    // A person's create is as it was: one created line, and the author's desk is told.
+    // Handed to a colleague: one created line, the colleague's desk told, the employee its delegator.
+    const byEmployee = await service.create(
+      PROJECT,
+      ORG,
+      { author: "acme_impl", brief: "Split" },
+      author,
+    );
+    expect(byEmployee).toMatchObject({
+      number: 1,
+      author: "acme_impl",
+      delegatedBy: "agent:acme_dev",
+    });
+    // A person's create is as it was.
     const created = await service.create(
       PROJECT,
       ORG,
       { author: "acme_impl", brief: "Split the sweep" },
       BOSS,
     );
-    expect(created).toMatchObject({ number: 1, author: "acme_impl", delegatedBy: "user:boss" });
-    expect(await written()).toBe(1);
+    expect(created).toMatchObject({ number: 2, author: "acme_impl", delegatedBy: "user:boss" });
+    expect(await written()).toBe(2);
     expect(gateway.desks).toEqual([
-      { agentId: "acme_impl", text: expect.stringMatching(/^\[proposal #1\] boss asks you/) },
+      { agentId: "acme_impl", text: expect.stringMatching(/^\[proposal #1\] acme_dev asks you/) },
+      { agentId: "acme_impl", text: expect.stringMatching(/^\[proposal #2\] boss asks you/) },
     ]);
   });
 
@@ -768,15 +771,11 @@ describe("ProposalService", () => {
     expect(agents.updates).toEqual(["acme_dev"]);
   });
 
-  it("the author publishes, marks ready, and nobody else but a person may", async () => {
+  it("the author publishes and marks ready, and so may any other member", async () => {
     const n = await delegated();
     expect(await refused(() => service.ready(PROJECT, ORG, n, author))).toEqual({
       status: 409,
       code: "proposal_empty",
-    });
-    expect(await refused(() => service.publish(PROJECT, ORG, n, DOC, impl))).toEqual({
-      status: 403,
-      code: "not_author",
     });
     expect(await refused(() => service.publish(PROJECT, ORG, n, "no frontmatter", author))).toEqual(
       {
@@ -823,6 +822,10 @@ describe("ProposalService", () => {
     expect(second.sections[1]!.paragraphs[0]!.id).not.toBe(
       published.sections[1]!.paragraphs[0]!.id,
     );
+    // A colleague publishes too, under its own name.
+    const third = await service.publish(PROJECT, ORG, n, DOC, impl);
+    expect(third.revision).toBe(3);
+    expect(third.events.at(-1)).toMatchObject({ kind: "revised", by: "agent:acme_impl" });
   });
 
   it("the scope is checked at publish: an edit must exist under root, a missing path is refused with the likely one", async () => {
@@ -1149,7 +1152,7 @@ describe("ProposalService", () => {
     expect((await service.ready(PROJECT, ORG, n, author)).status).toBe("ready");
   });
 
-  it("a person may mark ready past unanswered changes", async () => {
+  it("anybody but the author may mark ready past unanswered changes — a colleague as a person may", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
@@ -1163,7 +1166,7 @@ describe("ProposalService", () => {
       BOSS,
     );
     await service.requestChanges(PROJECT, ORG, n, BOSS);
-    expect((await service.ready(PROJECT, ORG, n, BOSS)).status).toBe("ready");
+    expect((await service.ready(PROJECT, ORG, n, qa)).status).toBe("ready");
   });
 
   it("comments are the person's own until requested; one request is one batch and one line on the author's desk", async () => {
@@ -1180,14 +1183,6 @@ describe("ProposalService", () => {
       return { start, end: start + words.length, quote: words };
     };
     const first = at(changeSource, "notifyTicket");
-    expect(
-      await refused(() =>
-        service.comment(PROJECT, ORG, n, { sectionId: change.id, ...first, text: "x" }, author),
-      ),
-    ).toEqual({
-      status: 403,
-      code: "person_required",
-    });
     expect(
       await refused(() =>
         service.comment(PROJECT, ORG, n, { sectionId: "nope", ...first, text: "x" }, BOSS),
@@ -1292,12 +1287,6 @@ describe("ProposalService", () => {
     // No offsets: not the pair, not the words — the ids may carry digits of their own.
     expect(forAuthor.text).not.toContain(`${first.start}, ${first.end}`);
     expect(forAuthor.text).not.toMatch(/\bstart\b|\brange\b|\boffset\b/);
-    expect(
-      await refused(() => service.resolve(PROJECT, ORG, n, firstComment!.id, "done", impl)),
-    ).toEqual({
-      status: 403,
-      code: "not_author",
-    });
     const resolved = await service.resolve(
       PROJECT,
       ORG,
@@ -1352,12 +1341,6 @@ describe("ProposalService", () => {
       code: "proposal_empty",
     });
     await service.publish(PROJECT, ORG, n, DOC, author);
-    expect(
-      await refused(() => service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, impl)),
-    ).toEqual({
-      status: 403,
-      code: "not_author",
-    });
     expect(
       await refused(() => service.implement(PROJECT, ORG, n, { agentId: "ghost" }, author)),
     ).toEqual({
@@ -1536,23 +1519,11 @@ describe("ProposalService", () => {
       );
     });
 
-    it("only a person or the discussion's own session concludes it", async () => {
+    it("any member concludes it, once: a person, the discussion's session or another employee", async () => {
       const n = await delegated();
       await service.publish(PROJECT, ORG, n, DOC, author);
       const { sessionId } = await service.discuss(PROJECT, ORG, n, BOSS);
       const before = gateway.desks.length;
-      // The owner's desk is the same Agent, but not the discussion.
-      expect(
-        await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "x", author)),
-      ).toEqual({
-        status: 403,
-        code: "not_discussion",
-      });
-      expect(
-        await refused(() =>
-          service.conclude(PROJECT, ORG, n, sessionId, "x", inside("acme_qa", sessionId)),
-        ),
-      ).toEqual({ status: 403, code: "not_discussion" });
       expect(await refused(() => service.conclude(PROJECT, ORG, n, "nope", "x", BOSS))).toEqual({
         status: 404,
         code: "discussion_not_found",
@@ -1564,20 +1535,28 @@ describe("ProposalService", () => {
         },
       );
       expect(gateway.desks).toHaveLength(before);
-      // A person may conclude it from the outside.
-      await service.conclude(PROJECT, ORG, n, sessionId, "Agreed.", BOSS);
+      // A colleague's session concludes it as a person would; once concluded, nobody again.
+      const done = await service.conclude(
+        PROJECT,
+        ORG,
+        n,
+        sessionId,
+        "Agreed.",
+        inside("acme_qa", "desk-qa"),
+      );
+      expect(done.discussions[0]!.concluded).toMatchObject({ by: "agent:acme_qa" });
       expect(gateway.desks.slice(before).map((d) => d.agentId)).toEqual(["acme_dev"]);
+      expect(await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "x", BOSS))).toEqual({
+        status: 409,
+        code: "discussion_concluded",
+      });
     });
 
     it("refuses a discussion nobody can hold", async () => {
       const n = await delegated();
-      // An employee does not open one: the button is a person's.
-      expect(await refused(() => service.discuss(PROJECT, ORG, n, author))).toEqual({
-        status: 403,
-        code: "person_required",
-      });
+      // An employee opens one as a person does, and is refused for the same reasons.
       gateway.org!.status = "paused";
-      expect(await refused(() => service.discuss(PROJECT, ORG, n, BOSS))).toEqual({
+      expect(await refused(() => service.discuss(PROJECT, ORG, n, author))).toEqual({
         status: 409,
         code: "org_paused",
       });
@@ -1640,47 +1619,34 @@ describe("ProposalService", () => {
       expect(gateway.desks.slice(before)).toHaveLength(1);
     });
 
-    it("POST /:number/discussions opens one; POST …/:sessionId/conclude carries the session's identity", async () => {
+    it("proposal.discuss opens one; proposal.conclude carries the caller's identity and concludes once", async () => {
       const n = await delegated();
       await service.publish(PROJECT, ORG, n, DOC, author);
-      const app = new Hono();
-      let via = "password";
-      app.use(async (c, next) => {
-        c.set("user" as never, { userId: "boss" } as never);
-        c.set("sessionVia" as never, via as never);
-        await next();
-      });
-      app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service, deploysFor(service)));
-      const post = (suffix: string, body?: unknown) =>
-        app.request(`/p/${PROJECT}/o/${ORG}/proposals/${n}${suffix}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        });
-      const opened = await post("/discussions");
-      expect(opened.status).toBe(201);
+      const { run } = routes();
+      const opened = await run("proposal.discuss", `proposal:${n}`);
+      expect(opened.status).toBe(200);
       const { sessionId } = (await opened.json()) as { sessionId: string };
       expect(sessionId).toBe("impl-1");
-      const missing = await post(`/discussions/${sessionId}/conclude`, {});
+      const subject = `discussion:${n}/${sessionId}`;
+      const missing = await run("proposal.conclude", subject, {});
       expect(missing.status).toBe(400);
-      // Behind the local API token the session claim counts: the desk's is refused, the discussion's own is honoured.
-      via = "token";
-      const desk = await post(`/discussions/${sessionId}/conclude`, {
-        text: "x",
-        agentId: "acme_dev",
-        sessionId: "desk-dev",
-      });
-      expect(desk.status).toBe(403);
-      const ok = await post(`/discussions/${sessionId}/conclude`, {
-        text: "Agreed.",
-        agentId: "acme_dev",
-        sessionId,
-      });
-      expect(ok.status).toBe(200);
-      const detail = (await ok.json()) as {
+      // Any member concludes it — here the owner's desk, under its own name — and only once.
+      const desk = await run("proposal.conclude", subject, { text: "Agreed." }, author);
+      expect(desk.status).toBe(200);
+      const detail = (await desk.json()) as {
         discussions: Array<{ concluded: { by: string } | null }>;
       };
       expect(detail.discussions[0]!.concluded).toMatchObject({ by: "agent:acme_dev" });
+      const again = await run(
+        "proposal.conclude",
+        subject,
+        { text: "x" },
+        { userId: "boss", agentId: "acme_dev", sessionId },
+      );
+      expect(again.status).toBe(409);
+      expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
+        "discussion_concluded",
+      );
       expect(gateway.desks.filter((d) => d.text.includes("concluded (session"))).toHaveLength(1);
     });
   });
@@ -1855,10 +1821,6 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
-    expect(await refused(() => service.approve(PROJECT, ORG, n, author))).toEqual({
-      status: 403,
-      code: "person_required",
-    });
     expect(await refused(() => service.merged(PROJECT, ORG, n, impl))).toEqual({
       status: 409,
       code: "proposal_status",
@@ -1992,24 +1954,12 @@ describe("ProposalService", () => {
     });
   });
 
-  it("POST /:number/reject carries an employee's identity; the reason is required", async () => {
+  it("proposal.reject carries an employee's identity; the reason is required", async () => {
     const n = await delegated();
-    const app = new Hono();
-    app.use(async (c, next) => {
-      c.set("user" as never, { userId: "boss" } as never);
-      c.set("sessionVia" as never, "token" as never);
-      await next();
-    });
-    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service, deploysFor(service)));
-    const post = (body: unknown) =>
-      app.request(`/p/${PROJECT}/o/${ORG}/proposals/${n}/reject`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    const missing = await post({ agentId: "acme_qa" });
+    const { run } = routes();
+    const missing = await run("proposal.reject", `proposal:${n}`, {}, qa);
     expect(missing.status).toBe(400);
-    const ok = await post({ reason: "Not this quarter.", agentId: "acme_qa" });
+    const ok = await run("proposal.reject", `proposal:${n}`, { reason: "Not this quarter." }, qa);
     expect(ok.status).toBe(200);
     const detail = (await ok.json()) as {
       status: string;
@@ -2079,13 +2029,17 @@ describe("ProposalService", () => {
     });
   });
 
-  it("unread counts what happened since the person's read position, never their own doing; employees count nothing", async () => {
+  it("unread counts what happened since the reader's position, never their own doing — a person's or an employee's", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
     let list = await service.list(PROJECT, ORG, BOSS);
     expect(list.proposals[0]).toMatchObject({ number: n, unread: 2 });
+    // The author has a position of its own: the person's delegation is what it has not read.
+    expect((await service.list(PROJECT, ORG, author)).proposals[0]!.unread).toBe(1);
+    await service.read(PROJECT, ORG, n, (await service.get(PROJECT, ORG, n, author)).seq, author);
     expect((await service.list(PROJECT, ORG, author)).proposals[0]!.unread).toBe(0);
+    expect(storeOf(root, (s) => s.readSeq("agent:acme_dev", n))).toBeGreaterThan(0);
 
     const detail = await service.get(PROJECT, ORG, n, BOSS);
     await service.read(PROJECT, ORG, n, detail.seq, BOSS);
@@ -2099,6 +2053,8 @@ describe("ProposalService", () => {
     await service.read(PROJECT, ORG, n, 1, BOSS);
     expect((await service.list(PROJECT, ORG, BOSS)).proposals[0]!.unread).toBe(1);
     expect(storeOf(root, (s) => s.readSeq("boss", n))).toBe(detail.seq);
+    // The person's reading moved nothing of the author's: the approval is unread to it, its own feedback is not.
+    expect((await service.list(PROJECT, ORG, author)).proposals[0]!.unread).toBe(1);
   });
 
   it("a pending comment is its writer's to reword or withdraw; sent, or someone else's, it is not", async () => {
@@ -2170,7 +2126,7 @@ describe("ProposalService", () => {
     ]);
   });
 
-  it("the brief is rewritten in place by the author or a person: revisions, comments and approval stand, the author is told only while drafting", async () => {
+  it("the brief is rewritten in place by any member: revisions, comments and approval stand, the author is told only while drafting", async () => {
     const n = await delegated();
     gateway.desks.length = 0;
     // A person rewrites a drafting proposal's brief: the author is told, the event carries the new brief.
@@ -2195,11 +2151,12 @@ describe("ProposalService", () => {
     detail = await service.editBrief(PROJECT, ORG, n, "Batch the notices, once per sweep", author);
     expect(detail.events.at(-1)).toMatchObject({ kind: "brief_edited", by: "agent:acme_dev" });
     expect(gateway.desks).toHaveLength(1);
-    // Nobody else, no empty brief, no rewrite to the same words, no proposal that is not there.
-    expect(await refused(() => service.editBrief(PROJECT, ORG, n, "Mine now", qa))).toEqual({
-      status: 403,
-      code: "not_author",
-    });
+    // No empty brief, no rewrite to the same words — whoever asks — no proposal that is not there.
+    expect(
+      await refused(() =>
+        service.editBrief(PROJECT, ORG, n, "Batch the notices, once per sweep", qa),
+      ),
+    ).toEqual({ status: 409, code: "brief_unchanged" });
     expect(await refused(() => service.editBrief(PROJECT, ORG, n, "  ", BOSS))).toEqual({
       status: 400,
       code: "bad_request",
@@ -2241,22 +2198,15 @@ describe("ProposalService", () => {
     );
   });
 
-  it("PUT /:number/brief rewrites the brief with the caller's identity; a missing brief is a 400", async () => {
+  it("proposal.brief rewrites the brief with the caller's identity; a missing brief is a 400", async () => {
     const n = await delegated();
-    const app = new Hono();
-    app.use(async (c, next) => {
-      c.set("user" as never, { userId: "boss" } as never);
-      c.set("sessionVia" as never, "token" as never);
-      await next();
-    });
-    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service, deploysFor(service)));
-    const put = (body: unknown) =>
-      app.request(`/p/${PROJECT}/o/${ORG}/proposals/${n}/brief`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    const ok = await put({ brief: "Batch the ticket notices", agentId: "acme_dev" });
+    const { run } = routes();
+    const ok = await run(
+      "proposal.brief",
+      `proposal:${n}`,
+      { brief: "Batch the ticket notices" },
+      author,
+    );
     expect(ok.status).toBe(200);
     const detail = (await ok.json()) as {
       brief: string;
@@ -2264,14 +2214,17 @@ describe("ProposalService", () => {
     };
     expect(detail.brief).toBe("Batch the ticket notices");
     expect(detail.events.at(-1)).toMatchObject({ kind: "brief_edited", by: "agent:acme_dev" });
-    const missing = await put({});
+    const missing = await run("proposal.brief", `proposal:${n}`, {});
     expect(missing.status).toBe(400);
-    expect(await missing.json()).toEqual({
-      error: { code: "bad_request", message: "brief must be a non-empty string." },
+    expect(await missing.json()).toMatchObject({
+      error: { code: "bad_params", message: "Missing parameter: brief (string)." },
     });
-    const other = await put({ brief: "Not mine", agentId: "acme_qa" });
-    expect(other.status).toBe(403);
-    expect(((await other.json()) as { error: { code: string } }).error.code).toBe("not_author");
+    // Any member rewrites it, not only the author: the event says who.
+    const other = await run("proposal.brief", `proposal:${n}`, { brief: "Theirs now" }, qa);
+    expect(other.status).toBe(200);
+    expect(((await other.json()) as { events: Array<{ by: string }> }).events.at(-1)).toMatchObject(
+      { by: "agent:acme_qa" },
+    );
   });
 
   it("a desk that refuses never fails the write: the store has the event, the log has the reason", async () => {
@@ -2375,8 +2328,19 @@ describe("the manifest", () => {
       modules: Record<string, { contributes: Record<string, Array<{ id: string; nav?: string }>> }>;
       plugin: { modules: string[] };
     };
-    expect(plugin.modules).toEqual([CompanyProposalsPlugin, ProposalsRetirement]);
-    expect(table.plugin.modules).toEqual(["CompanyProposalsPlugin", "ProposalsRetirement"]);
+    expect(plugin.modules).toEqual([
+      CompanyProposalsPlugin,
+      CompanyActionRegistry,
+      ProposalsRetirement,
+    ]);
+    expect(table.plugin.modules).toEqual([
+      "CompanyProposalsPlugin",
+      "CompanyActionRegistry",
+      "ProposalsRetirement",
+    ]);
+    expect(table.modules.CompanyActionRegistry?.contributes["HttpModule.routes"]?.[0]?.id).toBe(
+      ACTION_ROUTES_ID,
+    );
     const retirement = table.modules.ProposalsRetirement;
     expect(retirement?.contributes["OrganizationModule.retirements"]?.[0]?.id).toBe(RETIRE_ID);
     // The retirement node must not require what the organization module provides: that is a cycle.

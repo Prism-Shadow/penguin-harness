@@ -7,7 +7,8 @@
  *
  * A proposal's impl is a branch pair — a head and the base it is measured against, each a git
  * remote of the proposal's repository (or `owner/repo`) and a branch — with the PR opened for
- * the head hanging on it once there is one. `impl` registers the pair, the PR, or both; `diff`
+ * the head hanging on it once there is one. `impl` registers the pair, the PR, or both (the
+ * `proposal.impl` Action; `--adopt` is `proposal.impl.adopt`); `diff`
  * prints the pair's patch, the merge base of base and head up to head, as the server read it
  * from GitHub.
  *
@@ -23,6 +24,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { Messages } from "../i18n.js";
 import type { DeployKit } from "./proposal-deploy.js";
+import { runAction } from "./action-client.js";
 
 function parseNumber(raw: string): number | null {
   const value = Number(raw.replace(/^#/, ""));
@@ -98,11 +100,15 @@ export function registerProposalImpl(proposal: Command, t: Messages, kit: Deploy
         opts: Record<string, unknown>,
       ) => {
         if (opts.adopt === true) {
-          const request = await kit.open(opts);
+          const request = await kit.openActions(opts);
           if (request === null) return;
-          const res = await request<ProposalAdoptImplResponse>("POST", "/adopt-impl", {
-            ...kit.actorFields(),
-          });
+          const res = await runAction<ProposalAdoptImplResponse>(
+            request,
+            "proposal.impl.adopt",
+            "organization",
+            {},
+            kit.actorFields(),
+          );
           if (res === null) return;
           if (opts.json === true) kit.printJson(res);
           else {
@@ -129,13 +135,18 @@ export function registerProposalImpl(proposal: Command, t: Messages, kit: Deploy
           kit.fail(t.org.proposalNumberInvalid(rawNumber));
           return;
         }
-        const request = await kit.open(opts);
+        const request = await kit.openActions(opts);
         if (request === null) return;
-        const detail = await request<ProposalDetail>("PUT", `/${number}/impl`, {
-          ...(rawUrl !== undefined ? { url: rawUrl } : {}),
-          ...(head != null && base != null ? { head, base } : {}),
-          ...kit.actorFields(),
-        });
+        const detail = await runAction<ProposalDetail>(
+          request,
+          "proposal.impl",
+          `proposal:${number}`,
+          {
+            ...(rawUrl !== undefined ? { url: rawUrl } : {}),
+            ...(head != null && base != null ? { head, base } : {}),
+          },
+          kit.actorFields(),
+        );
         if (detail === null) return;
         if (opts.json === true) kit.printJson(detail);
         else if (detail.impl?.head != null && detail.impl.base !== null)

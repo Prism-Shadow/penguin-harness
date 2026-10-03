@@ -1,7 +1,7 @@
 /**
  * features/proposals/pr-graph-model.ts unit tests: the stacks on the base are counted, a branch
  * node is named by its branch and deploys through its proposal, the `?proposal=` focus finds its
- * node, a deploy's arguments split, and a merged proposal folds. The layout itself is the
+ * node, and a merged proposal folds. The layout itself is the
  * server's (company-proposals smartlog.ts, tested there).
  */
 import { describe, expect, it } from "vitest";
@@ -13,7 +13,6 @@ import {
   foldedAsMerged,
   nodeOfProposal,
   nodeRef,
-  splitArgs,
 } from "../src/features/proposals/pr-graph-model";
 
 /** A PR's node key in these tests (its head branch), `""` for the base branch (0). */
@@ -98,13 +97,6 @@ describe("the proposal focus", () => {
     expect(focusedProposal(new URLSearchParams("proposal=0"))).toBeNull();
     expect(focusedProposal(new URLSearchParams("proposal=x"))).toBeNull();
     expect(focusedProposal(new URLSearchParams(""))).toBeNull();
-  });
-});
-
-describe("splitArgs", () => {
-  it("splits a deploy's extra arguments at whitespace and drops the empty ones", () => {
-    expect(splitArgs("  --extra-args   x\ty \n")).toEqual(["--extra-args", "x", "y"]);
-    expect(splitArgs("")).toEqual([]);
   });
 });
 

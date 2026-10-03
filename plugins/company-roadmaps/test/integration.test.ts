@@ -31,6 +31,7 @@ const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 /** company-proposals, which this plugin requires: it is installed with it. */
 const PROPOSALS_DIR = path.resolve(PLUGIN_DIR, "..", "company-proposals");
 const BASE = "/api/projects/default_project/organizations/acme/roadmaps";
+const ACTIONS = "/api/projects/default_project/organizations/acme/actions";
 
 async function status(run: Promise<unknown>): Promise<number> {
   return run.then(
@@ -60,6 +61,14 @@ describe("the company-roadmaps plugin on a real server", () => {
       active: true,
       modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim", "RoadmapsRetirement"],
       replaces: [],
+    });
+    // Its Actions go to company-proposals' registry, a module of that plugin's own.
+    const proposals = (await harness.installedPlugins()).find((r) =>
+      r.modules.includes("CompanyProposalsPlugin"),
+    );
+    expect(proposals).toMatchObject({
+      active: true,
+      modules: ["CompanyProposalsPlugin", "CompanyActionRegistry"],
     });
   });
 
@@ -92,10 +101,19 @@ describe("the company-roadmaps plugin on a real server", () => {
     });
   });
 
-  it("answers 404 while company mode is off, and 404 for a missing organization once it is on", async () => {
+  it("answers 404 while company mode is off, and 404 for a missing organization once it is on — the reads and the roadmap Actions alike", async () => {
+    const open = {
+      subject: "organization",
+      params: { name: "x", channelId: "room_a", employees: ["a"] },
+    };
     expect(await status(api.get(BASE))).toBe(404);
+    expect(await status(api.post(`${ACTIONS}/roadmap.open/runs`, open))).toBe(404);
     await api.put("/api/admin/settings", { companyMode: true });
     expect(await status(api.get(BASE))).toBe(404);
+    expect(await status(api.post(`${ACTIONS}/roadmap.open/runs`, open))).toBe(404);
+  });
+
+  it("has no write route of its own: a POST to the roadmaps is not found", async () => {
     expect(await status(api.post(BASE, { name: "x", channelId: "room_a", employees: ["a"] }))).toBe(
       404,
     );

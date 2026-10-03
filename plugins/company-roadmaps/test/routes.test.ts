@@ -1,12 +1,13 @@
 /**
- * The routes over the service: the refusals and their codes, the Session claim honoured only
- * behind the local API token, and the generated manifest agreeing with the code.
+ * The routes over the service: the reads at `…/roadmaps`, every write a roadmap Action run
+ * through company-proposals' registry at `…/actions/<key>/runs` — the refusals and their codes,
+ * the Session claim honoured only behind the local API token — and the generated manifest
+ * agreeing with the code.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
-import { Hono } from "hono";
 import plugin, {
   CLAIM_ID,
   CONFIG_GROUP,
@@ -20,120 +21,126 @@ import plugin, {
   configOf,
   roadmapRoutes,
 } from "../src/index.js";
-import { world, writeChannel, type World } from "./fakes.js";
+import { asAgent, world, writeChannel, type World } from "./fakes.js";
+import { actionApp, codeOf, type ActionApp } from "./action-harness.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = "/p/proj/o/acme/roadmaps";
 
 let w: World;
-let app: Hono;
+let a: ActionApp;
 
 beforeEach(async () => {
   w = await world();
   await writeChannel(w.root, "room_a", ["user:boss", "agent:acme_dev", "agent:acme_web"]);
-  app = new Hono();
-  app.use("*", async (c, next) => {
-    c.set("user" as never, { userId: "boss" } as never);
-    c.set("sessionVia" as never, (c.req.header("x-via") ?? "password") as never);
-    await next();
-  });
-  app.route("/p/:projectId/o/:orgId/roadmaps", roadmapRoutes(w.service()));
+  a = actionApp({ gateway: w.gateway, root: w.root, service: w.service() });
 });
 
-async function call(
-  method: string,
-  url: string,
-  body?: unknown,
-  via = "password",
-): Promise<{ status: number; json: Record<string, unknown> }> {
-  const res = await app.request(url, {
-    method,
-    headers: { "content-type": "application/json", "x-via": via },
-    ...(body !== undefined ? { body: typeof body === "string" ? body : JSON.stringify(body) } : {}),
-  });
-  return { status: res.status, json: (await res.json()) as Record<string, unknown> };
-}
-
-const code = (r: { json: Record<string, unknown> }) => (r.json.error as { code: string }).code;
 const open = { name: "Queue", channelId: "room_a", employees: ["acme_dev", "acme_web"] };
+const result = (r: { body: Record<string, unknown> }) =>
+  r.body.result as { roadmap: Record<string, unknown> & { number: number }; hints: string[] };
 
 describe("the routes", () => {
   it("answer 404 while company mode is off", async () => {
     w.gateway.enabled = false;
-    expect((await call("GET", BASE)).status).toBe(404);
-    expect((await call("POST", BASE, open)).status).toBe(404);
+    expect((await a.get(BASE)).status).toBe(404);
+    expect((await a.run("roadmap.open", "organization", open)).status).toBe(404);
   });
 
-  it("open a roadmap for a person (201), and for an employee speaking from its session (201)", async () => {
-    const made = await call("POST", BASE, open);
-    expect(made.status).toBe(201);
-    expect((made.json.roadmap as { number: number }).number).toBe(1);
-    const claim = { sessionId: "desk-acme_dev", agentId: "acme_dev" };
-    const byEmployee = await call("POST", BASE, { ...open, ...claim }, "token");
-    expect(byEmployee.status).toBe(201);
-    expect(byEmployee.json.roadmap).toMatchObject({ number: 2, createdBy: "agent:acme_dev" });
+  it("open a roadmap for a person, and for an employee speaking from its session", async () => {
+    const made = await a.run("roadmap.open", "organization", open);
+    expect(made.status).toBe(200);
+    expect(result(made).roadmap.number).toBe(1);
+    const byEmployee = await a.run("roadmap.open", "organization", open, asAgent("acme_dev"));
+    expect(byEmployee.status).toBe(200);
+    expect(result(byEmployee).roadmap).toMatchObject({ number: 2, createdBy: "agent:acme_dev" });
   });
 
   it("drop a Session claim that only a cookie backs: the write is the person's", async () => {
-    await call("POST", BASE, open);
+    await a.run("roadmap.open", "organization", open);
     const claim = { sessionId: "desk-acme_web", agentId: "acme_web" };
-    // acme_web is not the moderator — behind the token its draft is refused, behind a cookie it is the person's.
-    const asEmployee = await call("PUT", `${BASE}/1/draft`, { record: "x", ...claim }, "token");
-    expect([asEmployee.status, code(asEmployee)]).toEqual([403, "not_moderator"]);
-    expect((await call("PUT", `${BASE}/1/draft`, { record: "x", ...claim })).status).toBe(200);
+    // Behind a cookie the claim is dropped: the rename is the person's.
+    const res = await a.app.request("/p/proj/o/acme/actions/roadmap.rename/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-via": "password" },
+      body: JSON.stringify({ subject: "roadmap:1", params: { name: "Renamed" }, ...claim }),
+    });
+    expect(res.status).toBe(200);
+    // Behind the token the claim is honoured: the employee's rename is recorded as its own.
+    const claimed = await a.run(
+      "roadmap.rename",
+      "roadmap:1",
+      { name: "Again" },
+      asAgent("acme_web"),
+    );
+    expect(claimed.status).toBe(200);
+    const events = result(claimed).roadmap.events as Array<{ kind: string; by: string }>;
+    expect(events.filter((e) => e.kind === "renamed").map((e) => e.by)).toEqual([
+      "user:boss",
+      "agent:acme_web",
+    ]);
   });
 
-  it("refuse a body that is not a JSON object, a missing roadmap, and a draft item that is not well formed", async () => {
-    expect((await call("POST", BASE, "[1]")).status).toBe(400);
-    expect((await call("POST", BASE, "{no")).status).toBe(400);
-    expect((await call("GET", `${BASE}/7`)).status).toBe(404);
-    expect((await call("GET", `${BASE}/x`)).status).toBe(404);
-    await call("POST", BASE, open);
-    const bad = await call("PUT", `${BASE}/1/draft`, {
+  it("refuse a subject or params that do not fit, a missing roadmap, and a draft item that is not well formed", async () => {
+    expect((await a.run("roadmap.open", "roadmap:1", open)).status).toBe(400);
+    const missingParam = await a.run("roadmap.open", "organization", { name: "Q" });
+    expect([missingParam.status, codeOf(missingParam)]).toEqual([400, "bad_params"]);
+    expect((await a.get(`${BASE}/7`)).status).toBe(404);
+    expect((await a.get(`${BASE}/x`)).status).toBe(404);
+    expect((await a.run("roadmap.draft", "roadmap:7", { record: "x" })).status).toBe(404);
+    await a.run("roadmap.open", "organization", open);
+    const bad = await a.run("roadmap.draft", "roadmap:1", {
       items: [
         { key: "a", kind: "proposal", title: "T", brief: "B", owner: "nobody", cites: ["Why"] },
       ],
     });
-    expect([bad.status, code(bad)]).toEqual([400, "bad_request"]);
+    expect([bad.status, codeOf(bad)]).toEqual([400, "bad_request"]);
   });
 
   it("refuse to establish over a cite the body does not have (400 cite_unknown)", async () => {
-    await call("POST", BASE, open);
-    await call("PUT", `${BASE}/1/draft`, {
+    await a.run("roadmap.open", "organization", open);
+    await a.run("roadmap.draft", "roadmap:1", {
       body: "## Why\n",
       items: [
         { key: "a", kind: "proposal", title: "T", brief: "B", owner: "acme_dev", cites: ["How"] },
       ],
     });
-    const refused = await call("POST", `${BASE}/1/establish`, {});
-    expect([refused.status, code(refused)]).toEqual([400, "cite_unknown"]);
+    const refused = await a.run("roadmap.establish", "roadmap:1");
+    expect([refused.status, codeOf(refused)]).toEqual([400, "cite_unknown"]);
   });
 
-  it("have no archive or unarchive: a roadmap has no archive of its own (404)", async () => {
-    await call("POST", BASE, open);
-    for (const verb of ["archive", "unarchive"]) {
-      const res = await app.request(`${BASE}/1/${verb}`, {
-        method: "POST",
+  it("have no write routes of their own: writes are Actions", async () => {
+    await a.run("roadmap.open", "organization", open);
+    for (const [method, url] of [
+      ["POST", BASE],
+      ["PATCH", `${BASE}/1`],
+      ["PUT", `${BASE}/1/draft`],
+      ["POST", `${BASE}/1/establish`],
+      ["POST", `${BASE}/1/archive`],
+    ] as const) {
+      const res = await a.app.request(url, {
+        method,
         headers: { "content-type": "application/json" },
         body: "{}",
       });
       expect(res.status).toBe(404);
     }
-    const one = await call("GET", `${BASE}/1`);
-    expect(one.json.status).toBe("discussing");
-    expect(one.json).not.toHaveProperty("archived");
+    const one = await a.get(`${BASE}/1`);
+    expect(one.body.status).toBe("discussing");
+    expect(one.body).not.toHaveProperty("archived");
   });
 
   it("list a room's roadmaps, and filter by status", async () => {
-    await call("POST", BASE, open);
-    const listed = await call("GET", `${BASE}?channel=room_a&status=discussing`);
-    expect((listed.json.roadmaps as unknown[]).length).toBe(1);
-    expect(((await call("GET", `${BASE}?channel=room_b`)).json.roadmaps as unknown[]).length).toBe(
-      0,
-    );
-    expect(
-      ((await call("GET", `${BASE}?status=established`)).json.roadmaps as unknown[]).length,
-    ).toBe(0);
+    await a.run("roadmap.open", "organization", open);
+    const listed = await a.get(`${BASE}?channel=room_a&status=discussing`);
+    expect((listed.body.roadmaps as unknown[]).length).toBe(1);
+    expect(((await a.get(`${BASE}?channel=room_b`)).body.roadmaps as unknown[]).length).toBe(0);
+    expect(((await a.get(`${BASE}?status=established`)).body.roadmaps as unknown[]).length).toBe(0);
+  });
+
+  it("are read routes alone", () => {
+    const routes = roadmapRoutes(w.service()).routes.map((r) => `${r.method} ${r.path}`);
+    expect(routes.filter((r) => !r.startsWith("GET "))).toEqual([]);
   });
 });
 

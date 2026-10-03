@@ -223,13 +223,21 @@ export interface WriteAct {
   inTx?: (db: DatabaseSync) => void;
 }
 
-/** The default guard of `key`, for `caller` on `subject` (a use case called directly). */
-export function defaultAct(key: string, caller: Caller, subject: Subject): WriteAct {
+/**
+ * The default guard of `key`, for `caller` on `subject` (a use case called directly), under a
+ * binding's `config`.
+ */
+export function defaultAct(
+  key: string,
+  caller: Caller,
+  subject: Subject,
+  config: Record<string, unknown> = {},
+): WriteAct {
   const guard = roadmapGuards[key] ?? allow;
   const full: ActionCaller = { principal: caller.principal, agentId: caller.agentId, userId: "" };
   return {
-    config: {},
+    config,
     check: (state, opts) =>
-      guard({ caller: full, subject, state, params: opts?.params ?? {}, config: {}, running: 0 }),
+      guard({ caller: full, subject, state, params: opts?.params ?? {}, config, running: 0 }),
   };
 }

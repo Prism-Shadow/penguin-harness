@@ -36,9 +36,9 @@
  *                    | approve <n> | reject <n> --reason <s> | groups
  *                    | impl <n> [url] [--head <remote> <branch> --base <remote> <branch>] | impl --adopt
  *                    | diff <n> [--stat]
- *                    | deploy <n> --to <id> [--dry-run] [-- <args...>]
- *                    | deploy-script add <id> [--description <s>] -- <command...> | ls | rm <id>
- *                    (the company-proposals plugin's routes: without the plugin, every one is a 404)
+ *                    | deploy (<n> | --pr <n>) --to <id> [--head <sha>] [--dry-run] [-- <args...>]
+ *                    (the company-proposals plugin's routes; every write is an Action, see action.ts)
+ *   penguin org action ls | run | exec | runs | check | bind   (action.ts)
  *
  * Every subcommand takes `--org-id` (default: PENGUIN_ORG_ID, the variable company mode
  * adds to the control environment of desk and ticket sessions; there is no default
@@ -108,6 +108,8 @@ import {
 } from "../client.js";
 import { getSessionInfo } from "../server-session.js";
 import { registerProposalDeploy, type DeployKit } from "./proposal-deploy.js";
+import { actionRequester, runAction, type ActionRequester } from "./action-client.js";
+import { registerOrgAction } from "./action.js";
 import { implLine, registerProposalImpl } from "./proposal-impl.js";
 import { dim } from "../render.js";
 import { renderTable } from "../table.js";
@@ -152,8 +154,8 @@ const MATERIAL_KINDS: readonly ProposalMaterialKind[] = [
 ];
 /**
  * The 404 codes the organization routes answer with. A 404 carrying none of them comes from
- * nothing — the server has no route at all under `…/proposals`, which is what an organization
- * without the company-proposals plugin looks like — and is reported as that.
+ * nothing — the server has no route at all under `…/proposals` or `…/actions`, which is what an
+ * organization without the company-proposals plugin looks like — and is reported as that.
  */
 const ORG_404_CODES: ReadonlySet<string> = new Set([
   "company_mode_off",
@@ -161,8 +163,12 @@ const ORG_404_CODES: ReadonlySet<string> = new Set([
   "proposal_not_found",
   "comment_not_found",
   "discussion_not_found",
-  "deploy_script_not_found",
-  "deploy_not_found",
+  "action_not_found",
+  "run_not_found",
+  "contribution_not_found",
+  "roadmap_not_found",
+  "item_not_found",
+  "item_not_delegated",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -428,6 +434,10 @@ async function proposalRequest<T>(
     throw err;
   }
 }
+
+/** The organization's `…/actions` routes (every write), with the CLI's error reporting. */
+const actionsOf = (scope: OrgScope, t: Messages): ActionRequester =>
+  actionRequester(scope.client, scope.base, ORG_404_CODES, t, (message) => fail(t, message));
 
 /** Costs print with four decimals (cents matter at these magnitudes), budgets with two. */
 const usd = (cost: number): string => `$${cost.toFixed(4)}`;
@@ -2031,25 +2041,21 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     else printLine(t.org.handbookRemoved(rel));
   });
 
-  // ---- proposals (the company-proposals plugin's routes) ----
+  // ---- proposals (the company-proposals plugin's routes; every write is an Action) ----
 
   const proposal = org.command("proposal").description(t.org.proposalDesc);
-
+  /** Runs Action `key` on `subject` with the caller's identity; its result, or null after an error. */
+  const act = <T>(scope: OrgScope, key: string, subject: string, params: Record<string, unknown>) =>
+    runAction<T>(actionsOf(scope, t), key, subject, params, actorFields());
   /** The write commands that carry only the caller's identity and print the proposal's new state. */
-  const statusCommand = (name: string, description: string, action: string): void => {
+  const statusCommand = (name: string, description: string, key: string): void => {
     scoped(proposal.command(`${name} <number>`).description(description), t).action(
       async (raw: string, opts) => {
         const number = parseProposalNumber(raw, t);
         if (number === null) return;
         const scope = await orgScope(opts, t);
         if (scope === null) return;
-        const detail = await proposalRequest<ProposalDetail>(
-          scope,
-          t,
-          "POST",
-          `/${number}/${action}`,
-          { ...actorFields() },
-        );
+        const detail = await act<ProposalDetail>(scope, key, `proposal:${number}`, {});
         if (detail === null) return;
         if (opts.json === true) printJson(detail);
         else printLine(t.org.proposalStatusSet(detail.number, detail.status));
@@ -2148,11 +2154,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
   ).action(async (opts) => {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", "", {
+    const detail = await act<ProposalDetail>(scope, "proposal.create", "organization", {
       ...(opts.author !== undefined ? { author: String(opts.author) } : {}),
       brief: String(opts.brief),
       ...(opts.title !== undefined ? { title: String(opts.title) } : {}),
-      ...actorFields(),
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2177,9 +2182,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     }
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "PUT", `/${number}`, {
+    const detail = await act<ProposalDetail>(scope, "proposal.publish", `proposal:${number}`, {
       markdown,
-      ...actorFields(),
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2214,9 +2218,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     } else brief = String(opts.message);
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "PUT", `/${number}/brief`, {
+    const detail = await act<ProposalDetail>(scope, "proposal.brief", `proposal:${number}`, {
       brief,
-      ...actorFields(),
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2226,9 +2229,9 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     }
   });
 
-  statusCommand("ready", t.org.proposalReadyDesc, "ready");
-  statusCommand("approve", t.org.proposalApproveDesc, "approve");
-  statusCommand("merged", t.org.proposalMergedDesc, "merged");
+  statusCommand("ready", t.org.proposalReadyDesc, "proposal.ready");
+  statusCommand("approve", t.org.proposalApproveDesc, "proposal.approve");
+  statusCommand("merged", t.org.proposalMergedDesc, "proposal.merged");
 
   scoped(
     proposal
@@ -2241,9 +2244,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (number === null) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", `/${number}/reject`, {
+    const detail = await act<ProposalDetail>(scope, "proposal.reject", `proposal:${number}`, {
       reason: String(opts.reason),
-      ...actorFields(),
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2263,15 +2265,11 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (number === null) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    // `agentId` names the IMPLEMENTER here, so the caller's own identity travels as
-    // `callerAgentId` rather than under the field {@link actorFields} would use.
-    const { sessionId, agentId: callerAgentId } = actorFields();
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", `/${number}/implement`, {
-      ...(opts.agent !== undefined ? { agentId: String(opts.agent) } : {}),
+    // The implementer is a parameter (`agent`); the caller's own identity travels beside it.
+    const detail = await act<ProposalDetail>(scope, "proposal.implement", `proposal:${number}`, {
+      ...(opts.agent !== undefined ? { agent: String(opts.agent) } : {}),
       ...(opts.message !== undefined ? { message: String(opts.message) } : {}),
       ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
-      ...(sessionId !== undefined ? { sessionId } : {}),
-      ...(callerAgentId !== undefined ? { callerAgentId } : {}),
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2314,9 +2312,17 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       return <T>(method: string, suffix: string, body?: unknown) =>
         proposalRequest<T>(scope, t, method, suffix, body);
     },
+    openActions: async (opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return null;
+      return actionsOf(scope, t);
+    },
     actorFields,
     actorQuery: () => query(actorQuery()),
     fail: (message) => fail(t, message),
+    exit: (code) => {
+      process.exitCode = code;
+    },
     print: printLine,
     printJson,
     write: (text) => process.stdout.write(text),
@@ -2324,6 +2330,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
   };
   registerProposalImpl(proposal, t, kit);
   registerProposalDeploy(proposal, t, kit);
+  registerOrgAction(org, t, kit);
 
   const deployment = proposal.command("deployment").description(t.org.proposalDeploymentDesc);
   scoped(
@@ -2336,13 +2343,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const url = typeof opts.url === "string" ? opts.url : undefined;
-    const res = await proposalRequest<ProposalDeploymentsResponse>(
-      scope,
-      t,
-      "POST",
-      "/deployments",
-      { id, ...(url !== undefined ? { url } : {}), ...actorFields() },
-    );
+    const res = await act<ProposalDeploymentsResponse>(scope, "target.register", "organization", {
+      id,
+      ...(url !== undefined ? { url } : {}),
+    });
     if (res === null) return;
     if (opts.json === true) printJson(res);
     else {
@@ -2380,11 +2384,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (parsed === null) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", `/${number}/materials`, {
+    const detail = await act<ProposalDetail>(scope, "proposal.material", `proposal:${number}`, {
       kind: parsed.kind,
       url: parsed.url,
       ...(opts.label !== undefined ? { label: String(opts.label) } : {}),
-      ...actorFields(),
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2403,10 +2406,9 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (number === null) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", `/${number}/feedback`, {
+    const detail = await act<ProposalDetail>(scope, "proposal.feedback", `proposal:${number}`, {
       text: String(opts.message),
       ...(opts.runtime === true ? { runtime: true } : {}),
-      ...actorFields(),
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2433,12 +2435,11 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (refuseDotSegments(discussion, t)) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(
+    const detail = await act<ProposalDetail>(
       scope,
-      t,
-      "POST",
-      `/${number}/discussions/${enc(discussion)}/conclude`,
-      { text: String(opts.message), ...actorFields() },
+      "proposal.conclude",
+      `discussion:${number}/${discussion}`,
+      { text: String(opts.message) },
     );
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
@@ -2497,15 +2498,11 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (refuseDotSegments(commentId, t)) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(
+    const detail = await act<ProposalDetail>(
       scope,
-      t,
-      "POST",
-      `/${number}/comments/${enc(commentId)}/resolve`,
-      {
-        ...(opts.message !== undefined ? { text: String(opts.message) } : {}),
-        ...actorFields(),
-      },
+      "proposal.resolve",
+      `comment:${number}/${commentId}`,
+      opts.message !== undefined ? { text: String(opts.message) } : {},
     );
     if (detail === null) return;
     if (opts.json === true) printJson(detail);

@@ -10,7 +10,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
-import { ProposalService, SqliteProposalStore, companyDbPath, defaultRules } from "../src/index.js";
+import {
+  ProposalService,
+  SqliteProposalStore,
+  companyDbPath,
+  rebriefFromRoadmap,
+} from "../src/index.js";
 import type { Proposal } from "../src/domain.js";
 
 const PROJECT = "proj";
@@ -151,10 +156,10 @@ describe("rewriting a roadmap item's proposal brief", () => {
   it("rewrites by the default rule while open, not once merged or rejected", () => {
     const of = (status: Proposal["status"]) => ({ status }) as Proposal;
     for (const status of ["drafting", "ready", "approved"] as const) {
-      expect(defaultRules.rebriefFromRoadmap(of(status))).toBe(true);
+      expect(rebriefFromRoadmap(of(status))).toBe(true);
     }
     for (const status of ["merged", "rejected"] as const) {
-      expect(defaultRules.rebriefFromRoadmap(of(status))).toBe(false);
+      expect(rebriefFromRoadmap(of(status))).toBe(false);
     }
   });
 });

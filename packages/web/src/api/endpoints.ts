@@ -5,6 +5,10 @@
  * code must not enter the browser bundle).
  */
 import type {
+  ActionRunAnswer,
+  ActionRunResponse,
+  ActionRunsResponse,
+  ActionsResponse,
   AdminPasswordResetRequest,
   AdminUserCreateRequest,
   AdminUserCreateResponse,
@@ -149,10 +153,6 @@ import type {
   ProposalFileResponse,
   ProposalFeedbackRequest,
   ProposalGraphResponse,
-  ProposalDeployRunResponse,
-  ProposalDeployScript,
-  ProposalDeployScriptsResponse,
-  ProposalDeployStartResponse,
   ProposalImplDiff,
   ProposalImplementRequest,
   ProposalItem,
@@ -2345,7 +2345,7 @@ export type OrgRoadmapDraftItem =
     }
   | { key: string; kind: "roadmap"; title: string; brief: string; employees: string[] };
 
-/** Who gave one of a proposal item's two approvals, and when. */
+/** Who gave one of a proposal item's approvals, and when. */
 export interface OrgRoadmapApproval {
   by: string;
   at: string;
@@ -2361,7 +2361,8 @@ export interface OrgRoadmapDelegation {
   proposal?: number;
   /** A brief waits for its two approvals; absent on lines written before that gate, which read as delegated. */
   stage?: "brief" | "delegated";
-  approvals?: { person?: OrgRoadmapApproval; moderator?: OrgRoadmapApproval };
+  /** The approvals given, by role (`moderator` and `member` unless the organization binds other roles). */
+  approvals?: Record<string, OrgRoadmapApproval>;
 }
 
 /** One roadmap as the room's column reads it: the list row plus its moderator, body and items. */
@@ -2375,16 +2376,18 @@ export interface OrgRoadmapDetail extends OrgRoadmapItem {
 export const getOrgRoadmap = (projectId: string, orgId: string, number: number) =>
   apiFetch<OrgRoadmapDetail>(`${orgBase(projectId, orgId)}/roadmaps/${number}`);
 
-/** A person's approval of one proposal item's brief (the moderator approves from its room session). */
+/** An approval of one proposal item's brief, in the role the server finds for the caller (the `roadmap.item.approve` Action). */
 export const approveOrgRoadmapItem = (
   projectId: string,
   orgId: string,
   number: number,
   key: string,
 ) =>
-  apiFetch<{ roadmap: OrgRoadmapDetail; hints: string[] }>(
-    `${orgBase(projectId, orgId)}/roadmaps/${number}/items/${encodeURIComponent(key)}/approve`,
-    { method: "POST", body: {} },
+  actionResult<{ roadmap: OrgRoadmapDetail; hints: string[] }>(
+    projectId,
+    orgId,
+    "roadmap.item.approve",
+    `item:${number}/${key}`,
   );
 
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
@@ -3016,18 +3019,84 @@ const proposalsBase = (projectId: string, orgId: string) =>
 const proposalBase = (projectId: string, orgId: string, number: number) =>
   `${proposalsBase(projectId, orgId)}/${number}`;
 
-const proposalAction = <T>(
+// ---------------------------------------------------------------------------
+// Actions (company-proposals' Action registry): every write to the organization's proposals and
+// roadmaps is an Action run, `POST …/actions/<key>/runs`, recorded as an ActionRun.
+// ---------------------------------------------------------------------------
+
+const actionsBase = (projectId: string, orgId: string) => `${orgBase(projectId, orgId)}/actions`;
+
+/**
+ * Runs the Action `key` on `subject` (`proposal:12`, `comment:12/<id>`, `item:3/<key>`, …). The
+ * answer carries the run and its result; a run that started a process answers at once (202)
+ * with `result: null`, to be followed with `getOrgActionRun`.
+ */
+export const runOrgAction = (
   projectId: string,
   orgId: string,
-  number: number,
-  action: string,
-  body: unknown = {},
-) => apiFetch<T>(`${proposalBase(projectId, orgId, number)}/${action}`, { method: "POST", body });
+  key: string,
+  subject: string,
+  params: Record<string, unknown> = {},
+) =>
+  apiFetch<ActionRunAnswer>(`${actionsBase(projectId, orgId)}/${encodeURIComponent(key)}/runs`, {
+    method: "POST",
+    body: { subject, params, via: "web" },
+  });
+
+/** Runs an Action and answers its result, typed as the write it replaces answered. */
+const actionResult = async <T>(
+  projectId: string,
+  orgId: string,
+  key: string,
+  subject: string,
+  params: Record<string, unknown> = {},
+): Promise<T> => (await runOrgAction(projectId, orgId, key, subject, params)).result as T;
+
+/** The Actions bound in the organization; with a subject, those acting on it and whether the caller may run each now. */
+export const listOrgActions = (projectId: string, orgId: string, subject?: string) =>
+  apiFetch<ActionsResponse>(
+    `${actionsBase(projectId, orgId)}${subject === undefined ? "" : `?subject=${encodeURIComponent(subject)}`}`,
+  );
+
+/** What the Activity is narrowed by; `before` is the previous page's `next`. */
+export interface ActionRunsFilter {
+  subject?: string;
+  by?: string;
+  key?: string;
+  before?: string;
+  limit?: number;
+}
+
+/** One page of the Activity, newest first. */
+export const listOrgActionRuns = (
+  projectId: string,
+  orgId: string,
+  filter: ActionRunsFilter = {},
+) => {
+  const q = new URLSearchParams();
+  if (filter.subject) q.set("subject", filter.subject);
+  if (filter.by) q.set("by", filter.by);
+  if (filter.key) q.set("key", filter.key);
+  if (filter.before) q.set("before", filter.before);
+  if (filter.limit !== undefined) q.set("limit", String(filter.limit));
+  const qs = q.toString();
+  return apiFetch<ActionRunsResponse>(
+    `${actionsBase(projectId, orgId)}/runs${qs === "" ? "" : `?${qs}`}`,
+  );
+};
+
+/** One run, and its process output from `from`. */
+export const getOrgActionRun = (projectId: string, orgId: string, id: string, from: number) =>
+  apiFetch<ActionRunResponse>(
+    `${actionsBase(projectId, orgId)}/runs/${encodeURIComponent(id)}?from=${from}`,
+  );
+
+const proposalSubject = (number: number) => `proposal:${number}`;
+const commentSubject = (number: number, id: string) => `comment:${number}/${id}`;
 
 export const listOrgProposals = (projectId: string, orgId: string) =>
   apiFetch<ProposalsResponse>(proposalsBase(projectId, orgId));
 
-/** The delivery repository's open PRs as a commit graph, with each node's proposal and origins. */
 /** The PR graph as the server stores it; `refresh` waits for the server to read the repository again first. */
 export const getOrgProposalGraph = (
   projectId: string,
@@ -3038,41 +3107,12 @@ export const getOrgProposalGraph = (
     `${proposalsBase(projectId, orgId)}/graph${opts.refresh === true ? "?refresh=1" : ""}`,
   );
 
-/** The organization's deploy scripts: what the PR graph's node menu offers to deploy to. */
-export const getOrgDeployScripts = (projectId: string, orgId: string) =>
-  apiFetch<ProposalDeployScriptsResponse>(`${proposalsBase(projectId, orgId)}/deploy-scripts`);
-
-/** Registers a deploy script (a server admin's): the menu's "Associate …" action. */
-export const createOrgDeployScript = (
-  projectId: string,
-  orgId: string,
-  body: { id: string; command: string[]; description?: string },
-) =>
-  apiFetch<ProposalDeployScript>(`${proposalsBase(projectId, orgId)}/deploy-scripts`, {
-    method: "POST",
-    body,
-  });
-
-/** Run a deploy script on a PR head: the graph sends the PR and the head it showed, and the server refuses a head that moved. */
-export const startOrgDeploy = (
-  projectId: string,
-  orgId: string,
-  /** A PR, or a proposal whose impl branch is deployed (a branch node on the graph). */
-  body: { script: string; head: string; args: string[] } & ({ pr: number } | { proposal: number }),
-) =>
-  apiFetch<ProposalDeployStartResponse>(`${proposalsBase(projectId, orgId)}/deploys`, {
-    method: "POST",
-    body,
-  });
-
-/** A deploy run and its output from `from`. */
-export const getOrgDeployRun = (projectId: string, orgId: string, id: string, from: number) =>
-  apiFetch<ProposalDeployRunResponse>(
-    `${proposalsBase(projectId, orgId)}/deploys/${encodeURIComponent(id)}?from=${from}`,
-  );
-
 export const createOrgProposal = (projectId: string, orgId: string, body: ProposalCreateRequest) =>
-  apiFetch<ProposalItem>(proposalsBase(projectId, orgId), { method: "POST", body });
+  actionResult<ProposalItem>(projectId, orgId, "proposal.create", "organization", {
+    ...(body.author !== undefined ? { author: body.author } : {}),
+    brief: body.brief,
+    ...(body.title !== undefined ? { title: body.title } : {}),
+  });
 
 export const getOrgProposal = (projectId: string, orgId: string, number: number) =>
   apiFetch<ProposalDetail>(proposalBase(projectId, orgId, number));
@@ -3105,48 +3145,73 @@ export const publishOrgProposal = (
   orgId: string,
   number: number,
   body: ProposalPublishRequest,
-) => apiFetch<ProposalDetail>(proposalBase(projectId, orgId, number), { method: "PUT", body });
+) =>
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.publish", proposalSubject(number), {
+    markdown: body.markdown,
+  });
 
 export const readyOrgProposal = (projectId: string, orgId: string, number: number) =>
-  proposalAction<ProposalDetail>(projectId, orgId, number, "ready");
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.ready", proposalSubject(number));
 
 export const approveOrgProposal = (projectId: string, orgId: string, number: number) =>
-  proposalAction<ProposalDetail>(projectId, orgId, number, "approve");
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.approve", proposalSubject(number));
 
 export const rejectOrgProposal = (
   projectId: string,
   orgId: string,
   number: number,
   body: ProposalRejectRequest,
-) => proposalAction<ProposalDetail>(projectId, orgId, number, "reject", body);
+) =>
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.reject", proposalSubject(number), {
+    reason: body.reason,
+  });
 
 export const mergedOrgProposal = (projectId: string, orgId: string, number: number) =>
-  proposalAction<ProposalDetail>(projectId, orgId, number, "merged");
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.merged", proposalSubject(number));
 
 export const implementOrgProposal = (
   projectId: string,
   orgId: string,
   number: number,
   body: ProposalImplementRequest,
-) => proposalAction<ProposalDetail>(projectId, orgId, number, "implement", body);
+) =>
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.implement", proposalSubject(number), {
+    ...(body.agentId !== undefined ? { agent: body.agentId } : {}),
+    ...(body.message !== undefined ? { message: body.message } : {}),
+    ...(body.workspace !== undefined ? { workspace: body.workspace } : {}),
+  });
 
 /** A discussion with the owner (the implementer, else the author): the answer names its session. */
 export const discussOrgProposal = (projectId: string, orgId: string, number: number) =>
-  proposalAction<ProposalDetail & { sessionId: string }>(projectId, orgId, number, "discussions");
+  actionResult<ProposalDetail & { sessionId: string }>(
+    projectId,
+    orgId,
+    "proposal.discuss",
+    proposalSubject(number),
+  );
 
 export const addOrgProposalMaterial = (
   projectId: string,
   orgId: string,
   number: number,
   body: ProposalMaterialRequest,
-) => proposalAction<ProposalDetail>(projectId, orgId, number, "materials", body);
+) =>
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.material", proposalSubject(number), {
+    kind: body.kind,
+    url: body.url,
+    ...(body.label !== undefined ? { label: body.label } : {}),
+  });
 
 export const sendOrgProposalFeedback = (
   projectId: string,
   orgId: string,
   number: number,
   body: ProposalFeedbackRequest,
-) => proposalAction<ProposalDetail>(projectId, orgId, number, "feedback", body);
+) =>
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.feedback", proposalSubject(number), {
+    text: body.text,
+    ...(body.runtime !== undefined ? { runtime: body.runtime } : {}),
+  });
 
 /** A comment on one paragraph; pending (the commenter's own) until `requestOrgProposalChanges` batches it. */
 export const commentOrgProposal = (
@@ -3154,11 +3219,23 @@ export const commentOrgProposal = (
   orgId: string,
   number: number,
   body: ProposalCommentRequest,
-) => proposalAction<ProposalDetail>(projectId, orgId, number, "comments", body);
+) =>
+  actionResult<ProposalDetail>(projectId, orgId, "proposal.comment", proposalSubject(number), {
+    sectionId: body.sectionId,
+    start: body.start,
+    end: body.end,
+    quote: body.quote,
+    text: body.text,
+  });
 
-/** Every pending comment of the caller becomes one batch, and the author is told in the proposals channel. */
+/** Every pending comment of the caller becomes one batch, and the author is told. */
 export const requestOrgProposalChanges = (projectId: string, orgId: string, number: number) =>
-  proposalAction<ProposalDetail>(projectId, orgId, number, "comments/request");
+  actionResult<ProposalDetail>(
+    projectId,
+    orgId,
+    "proposal.requestChanges",
+    proposalSubject(number),
+  );
 
 export const editOrgProposalComment = (
   projectId: string,
@@ -3167,9 +3244,12 @@ export const editOrgProposalComment = (
   commentId: string,
   body: ProposalCommentEditRequest,
 ) =>
-  apiFetch<ProposalDetail>(
-    `${orgBase(projectId, orgId)}/proposals/${number}/comments/${encodeURIComponent(commentId)}`,
-    { method: "PATCH", body },
+  actionResult<ProposalDetail>(
+    projectId,
+    orgId,
+    "proposal.comment.edit",
+    commentSubject(number, commentId),
+    { text: body.text },
   );
 
 export const deleteOrgProposalComment = (
@@ -3178,9 +3258,11 @@ export const deleteOrgProposalComment = (
   number: number,
   commentId: string,
 ) =>
-  apiFetch<ProposalDetail>(
-    `${orgBase(projectId, orgId)}/proposals/${number}/comments/${encodeURIComponent(commentId)}`,
-    { method: "DELETE" },
+  actionResult<ProposalDetail>(
+    projectId,
+    orgId,
+    "proposal.comment.withdraw",
+    commentSubject(number, commentId),
   );
 
 export const resolveOrgProposalComment = (
@@ -3190,18 +3272,17 @@ export const resolveOrgProposalComment = (
   commentId: string,
   body: ProposalResolveRequest,
 ) =>
-  proposalAction<ProposalDetail>(
+  actionResult<ProposalDetail>(
     projectId,
     orgId,
-    number,
-    `comments/${encodeURIComponent(commentId)}/resolve`,
-    body,
+    "proposal.resolve",
+    commentSubject(number, commentId),
+    body.text !== undefined ? { text: body.text } : {},
   );
 
-/** The reader's position: everything up to `upTo` is read, so the proposal's unread count drops to what came after. */
 export const readOrgProposal = (
   projectId: string,
   orgId: string,
   number: number,
   body: ProposalReadRequest,
-) => proposalAction<void>(projectId, orgId, number, "read", body);
+) => apiFetch<void>(`${proposalBase(projectId, orgId, number)}/read`, { method: "POST", body });

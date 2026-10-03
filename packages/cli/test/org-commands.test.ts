@@ -65,6 +65,16 @@ const err = () => stderr.join("");
 const lastRequest = (method: string, suffix: string) =>
   server.requests.findLast((r) => r.method === method && r.path.endsWith(suffix));
 const org = () => server.orgs.get("acme")!;
+/** The body of the last run of Action `key` (company-proposals' `…/actions/<key>/runs`). */
+const lastAction = (key: string) => lastRequest("POST", `/actions/${key}/runs`)?.body;
+/** A run's body as the CLI sends it from the desk session: the subject, the parameters, its identity. */
+const fromDesk = (subject: string, params: Record<string, unknown>) => ({
+  subject,
+  params,
+  via: "cli",
+  sessionId: DESK_SESSION,
+  agentId: "dev1",
+});
 
 describe("penguin org ls / show / chart", () => {
   it("ls lists organizations with counts and spend; --json prints the response", async () => {
@@ -1443,23 +1453,21 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         "Batched notices",
       ]),
     ).toBe(0);
-    expect(lastRequest("POST", "/proposals")?.body).toEqual({
-      author: "dev1",
-      brief: "Batch the ticket notices",
-      title: "Batched notices",
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.create")).toEqual(
+      fromDesk("organization", {
+        author: "dev1",
+        brief: "Batch the ticket notices",
+        title: "Batched notices",
+      }),
+    );
     expect(out()).toBe(`${t.org.proposalCreated(1, "Batched notices")}\n`);
 
     // Without --author the server decides (the calling employee): nothing is sent for it.
     stdout.length = 0;
     expect(await cli(["org", "proposal", "create", "--brief", "Rotate the token"])).toBe(0);
-    expect(lastRequest("POST", "/proposals")?.body).toEqual({
-      brief: "Rotate the token",
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.create")).toEqual(
+      fromDesk("organization", { brief: "Rotate the token" }),
+    );
     expect(server.orgs.get("acme")!.proposals!.get(2)!.author).toBe("dev1");
 
     stdout.length = 0;
@@ -1477,11 +1485,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
   it("brief rewrites the brief from -m or --file with the caller's identity; show prints the new one", async () => {
     server.addProposal("acme", { number: 7, brief: "Write a proposal for the open PR #812" });
     expect(await cli(["org", "proposal", "brief", "7", "-m", "Batch the ticket notices"])).toBe(0);
-    expect(lastRequest("PUT", "/proposals/7/brief")?.body).toEqual({
-      brief: "Batch the ticket notices",
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.brief")).toEqual(
+      fromDesk("proposal:7", { brief: "Batch the ticket notices" }),
+    );
     expect(out()).toBe(`${t.org.proposalBriefRewritten(7)}\n`);
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));
@@ -1490,8 +1496,8 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     try {
       stdout.length = 0;
       expect(await cli(["org", "proposal", "brief", "7", "--file", file])).toBe(0);
-      expect(lastRequest("PUT", "/proposals/7/brief")?.body).toMatchObject({
-        brief: "Batch the notices,\nonce per sweep.\n",
+      expect(lastAction("proposal.brief")).toMatchObject({
+        params: { brief: "Batch the notices,\nonce per sweep.\n" },
       });
       expect(await cli(["org", "proposal", "brief", "7", "--file", path.join(dir, "no.md")])).toBe(
         1,
@@ -1522,11 +1528,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     fs.writeFileSync(file, markdown);
     try {
       expect(await cli(["org", "proposal", "publish", "3", "--file", file])).toBe(0);
-      expect(lastRequest("PUT", "/proposals/3")?.body).toEqual({
-        markdown,
-        sessionId: DESK_SESSION,
-        agentId: "dev1",
-      });
+      expect(lastAction("proposal.publish")).toEqual(fromDesk("proposal:3", { markdown }));
       expect(out()).toBe(`${t.org.proposalPublished(3, 1)}\n`);
       expect(
         await cli(["org", "proposal", "publish", "3", "--file", path.join(dir, "no.md")]),
@@ -1672,17 +1674,14 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     }
   });
 
-  it("implement names the implementer as agentId and the caller as callerAgentId, and prints the session", async () => {
+  it("implement names the implementer as the agent parameter beside the caller's own identity, and prints the session", async () => {
     server.addProposal("acme", { number: 2 });
     expect(
       await cli(["org", "proposal", "implement", "2", "--agent", "impl1", "-m", "Branch off dev"]),
     ).toBe(0);
-    expect(lastRequest("POST", "/proposals/2/implement")?.body).toEqual({
-      agentId: "impl1",
-      message: "Branch off dev",
-      sessionId: DESK_SESSION,
-      callerAgentId: "dev1",
-    });
+    expect(lastAction("proposal.implement")).toEqual(
+      fromDesk("proposal:2", { agent: "impl1", message: "Branch off dev" }),
+    );
     const sessions = server.orgs.get("acme")!.proposals!.get(2)!.sessions as string[];
     expect(sessions).toHaveLength(1);
     expect(out()).toBe(`${t.org.proposalImplementing(2, "impl1", sessions[0]!)}\n`);
@@ -1692,10 +1691,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     server.addProposal("acme", { number: 3, author: "dev1" });
     stdout.length = 0;
     expect(await cli(["org", "proposal", "implement", "3"])).toBe(0);
-    expect(lastRequest("POST", "/proposals/3/implement")?.body).toEqual({
-      sessionId: DESK_SESSION,
-      callerAgentId: "dev1",
-    });
+    expect(lastAction("proposal.implement")).toEqual(fromDesk("proposal:3", {}));
     const sessions = server.orgs.get("acme")!.proposals!.get(3)!.sessions as string[];
     expect(out()).toBe(`${t.org.proposalImplementing(3, "dev1", sessions[0]!)}\n`);
   });
@@ -1704,11 +1700,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     server.addProposal("acme", { number: 4 });
     const url = "https://github.com/acme/site/pull/12";
     expect(await cli(["org", "proposal", "impl", "4", url])).toBe(0);
-    expect(lastRequest("PUT", "/proposals/4/impl")?.body).toEqual({
-      url,
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.impl")).toEqual(fromDesk("proposal:4", { url }));
     expect(out()).toBe(`${t.org.proposalImplSet(4, url)}\n`);
     stdout.length = 0;
     expect(await cli(["org", "proposal", "show", "4"])).toBe(0);
@@ -1733,12 +1725,12 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         "main",
       ]),
     ).toBe(0);
-    expect(lastRequest("PUT", "/proposals/5/impl")?.body).toEqual({
-      head: { remote: "origin", branch: "feat/x" },
-      base: { remote: "origin", branch: "main" },
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.impl")).toEqual(
+      fromDesk("proposal:5", {
+        head: { remote: "origin", branch: "feat/x" },
+        base: { remote: "origin", branch: "main" },
+      }),
+    );
     expect(out()).toBe(`${t.org.proposalImplBranchSet(5, "origin/feat/x", "origin/main", null)}\n`);
     stdout.length = 0;
     expect(await cli(["org", "proposal", "show", "5"])).toBe(0);
@@ -1761,9 +1753,8 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         "main",
       ]),
     ).toBe(0);
-    expect(lastRequest("PUT", "/proposals/5/impl")?.body).toMatchObject({
-      url,
-      head: { branch: "feat/x" },
+    expect(lastAction("proposal.impl")).toMatchObject({
+      params: { url, head: { branch: "feat/x" } },
     });
     expect(out()).toBe(`${t.org.proposalImplBranchSet(5, "origin/feat/x", "origin/main", url)}\n`);
     // One without the other, or the wrong number of values, is refused before any request.
@@ -2048,11 +2039,11 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     ).toBe(0);
     expect(out()).toContain(t.org.deploymentRegistered("desk", "http://localhost:53531"));
     const post = server.requests.find(
-      (r) => r.method === "POST" && r.path.endsWith("/proposals/deployments"),
+      (r) => r.method === "POST" && r.path.endsWith("/actions/target.register/runs"),
     );
     expect(post?.body).toMatchObject({
-      id: "desk",
-      url: "http://localhost:53531",
+      subject: "organization",
+      params: { id: "desk", url: "http://localhost:53531" },
       agentId: "dev1",
     });
     stdout.length = 0;
@@ -2060,10 +2051,10 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "deployment", "add", "firmware"])).toBe(0);
     expect(out()).toContain(t.org.deploymentRegistered("firmware", null));
     const bare = server.requests.filter(
-      (r) => r.method === "POST" && r.path.endsWith("/proposals/deployments"),
+      (r) => r.method === "POST" && r.path.endsWith("/actions/target.register/runs"),
     )[1];
-    expect(bare?.body).toMatchObject({ id: "firmware", agentId: "dev1" });
-    expect(bare?.body).not.toHaveProperty("url");
+    expect(bare?.body).toMatchObject({ params: { id: "firmware" }, agentId: "dev1" });
+    expect((bare?.body as { params: object }).params).not.toHaveProperty("url");
     stdout.length = 0;
     expect(
       await cli([
@@ -2224,13 +2215,13 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         "PR 9",
       ]),
     ).toBe(0);
-    expect(lastRequest("POST", "/proposals/5/materials")?.body).toEqual({
-      kind: "pr",
-      url: "https://github.com/acme/site/pull/9",
-      label: "PR 9",
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.material")).toEqual(
+      fromDesk("proposal:5", {
+        kind: "pr",
+        url: "https://github.com/acme/site/pull/9",
+        label: "PR 9",
+      }),
+    );
     expect(out()).toBe(`${t.org.proposalMaterialAdded(5, "pr")}\n`);
     expect(await cli(["org", "proposal", "material", "add", "5", "video=https://x"])).toBe(1);
     expect(err()).toContain(t.org.proposalMaterialInvalid("video=https://x"));
@@ -2239,12 +2230,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(
       await cli(["org", "proposal", "feedback", "5", "-m", "Crashes on boot", "--runtime"]),
     ).toBe(0);
-    expect(lastRequest("POST", "/proposals/5/feedback")?.body).toEqual({
-      text: "Crashes on boot",
-      runtime: true,
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.feedback")).toEqual(
+      fromDesk("proposal:5", { text: "Crashes on boot", runtime: true }),
+    );
     expect(out()).toBe(`${t.org.proposalFeedbackRecorded(5)}\n`);
 
     for (const [command, status] of [
@@ -2254,20 +2242,15 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     ] as const) {
       stdout.length = 0;
       expect(await cli(["org", "proposal", command, "5"])).toBe(0);
-      expect(lastRequest("POST", `/proposals/5/${command}`)?.body).toEqual({
-        sessionId: DESK_SESSION,
-        agentId: "dev1",
-      });
+      expect(lastAction(`proposal.${command}`)).toEqual(fromDesk("proposal:5", {}));
       expect(out()).toBe(`${t.org.proposalStatusSet(5, status)}\n`);
     }
     stdout.length = 0;
     expect(await cli(["org", "proposal", "reject", "5", "--reason", "Out of scope"])).toBe(0);
     // An employee rejects as itself: the desk's identity rides with the reason.
-    expect(lastRequest("POST", "/proposals/5/reject")?.body).toEqual({
-      reason: "Out of scope",
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.reject")).toEqual(
+      fromDesk("proposal:5", { reason: "Out of scope" }),
+    );
     expect(out()).toBe(`${t.org.proposalStatusSet(5, "rejected")}\n`);
     expect(t.org.proposalRejectDesc).not.toContain("(a person)");
   });
@@ -2282,11 +2265,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       ],
     });
     expect(await cli(["org", "proposal", "conclude", "6", "-m", "Keep the digest."])).toBe(0);
-    expect(lastRequest("POST", `/proposals/6/discussions/${DESK_SESSION}/conclude`)?.body).toEqual({
-      text: "Keep the digest.",
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.conclude")).toEqual(
+      fromDesk(`discussion:6/${DESK_SESSION}`, { text: "Keep the digest." }),
+    );
     expect(out()).toBe(`${t.org.proposalConcluded(6, "dev1")}\n`);
 
     // A person outside any session names the discussion; without it nothing is sent.
@@ -2300,8 +2281,10 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(
       await cli(["org", "proposal", "conclude", "6", "--discussion", "disc-2", "-m", "Agreed."]),
     ).toBe(0);
-    expect(lastRequest("POST", "/proposals/6/discussions/disc-2/conclude")?.body).toEqual({
-      text: "Agreed.",
+    expect(lastAction("proposal.conclude")).toEqual({
+      subject: "discussion:6/disc-2",
+      params: { text: "Agreed." },
+      via: "cli",
     });
     // An unknown discussion is the server's 404, passed through.
     expect(await cli(["org", "proposal", "conclude", "6", "--discussion", "nope", "-m", "x"])).toBe(
@@ -2370,14 +2353,23 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
 
     stdout.length = 0;
     expect(await cli(["org", "proposal", "resolve", "4", "c1", "-m", "Named the caller"])).toBe(0);
-    expect(lastRequest("POST", "/proposals/4/comments/c1/resolve")?.body).toEqual({
-      text: "Named the caller",
-      sessionId: DESK_SESSION,
-      agentId: "dev1",
-    });
+    expect(lastAction("proposal.resolve")).toEqual(
+      fromDesk("comment:4/c1", { text: "Named the caller" }),
+    );
     expect(out()).toBe(`${t.org.proposalCommentResolved(4, "c1")}\n`);
     expect(await cli(["org", "proposal", "resolve", "4", "nope"])).toBe(1);
     expect(err()).toContain("comment_not_found");
+  });
+
+  it("an ambiguous Action key fails with the exact invocation of each contribution answering it", async () => {
+    server.addProposal("acme", { number: 5 });
+    org().actionConflicts = {
+      "proposal.approve": ["company-proposals.action.approve", "acme.action.approve"],
+    };
+    expect(await cli(["org", "proposal", "approve", "5"])).toBe(1);
+    expect(err()).toContain("action_ambiguous");
+    expect(err()).toContain(`  penguin org action exec company-proposals.action.approve\n`);
+    expect(err()).toContain(`  penguin org action exec acme.action.approve\n`);
   });
 
   it("says the plugin is missing when the proposals routes answer a plain 404", async () => {

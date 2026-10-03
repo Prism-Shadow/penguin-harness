@@ -47,10 +47,16 @@ export function isProposalClosed(status: ProposalStatus): boolean {
   return status === "merged" || status === "rejected";
 }
 
-/** What the person may do from the action bar, given the status and their pending comments. */
+/**
+ * What the caller may do from the action bar. `allowed` is the set of Action keys the server's
+ * guards allow the caller on this proposal now (`GET …/actions?subject=proposal:<n>`); the bar
+ * follows it rather than repeating the rules. Until it is read (null), the status alone decides.
+ * Requesting changes also needs pending comments to send — a parameter, not a guard.
+ */
 export function proposalActions(
   status: ProposalStatus,
   pendingComments: number,
+  allowed: ReadonlySet<string> | null = null,
 ): {
   requestChanges: boolean;
   approve: boolean;
@@ -59,13 +65,14 @@ export function proposalActions(
   discuss: boolean;
 } {
   const closed = isProposalClosed(status);
+  const may = (key: string, byStatus: boolean) => (allowed === null ? byStatus : allowed.has(key));
   return {
     // A discussion with the owner, while there is still something to decide.
-    discuss: !closed,
-    requestChanges: !closed && pendingComments > 0,
-    approve: status === "ready",
-    reject: !closed,
-    markMerged: status === "approved",
+    discuss: may("proposal.discuss", !closed),
+    requestChanges: may("proposal.requestChanges", !closed) && pendingComments > 0,
+    approve: may("proposal.approve", status === "ready"),
+    reject: may("proposal.reject", !closed),
+    markMerged: may("proposal.merged", status === "approved"),
   };
 }
 
@@ -411,12 +418,16 @@ export function orphanComments<T extends { revision: number }>(
 /** The segment the PR graph takes on the proposals route, where a number would stand (`proposals/graph`). */
 export const GRAPH_SEGMENT = "graph";
 
-/** What the `proposals/:number?` page shows: the queue, the PR graph, or one proposal. */
+/** The segment the Activity takes on the proposals route (`proposals/activity`). */
+export const ACTIVITY_SEGMENT = "activity";
+
+/** What the `proposals/:number?` page shows: the queue, the PR graph, the Activity, or one proposal. */
 export function proposalsRoute(
   param: string | undefined,
-): { queue: true } | { graph: true } | { number: number } {
+): { queue: true } | { graph: true } | { activity: true } | { number: number } {
   if (param === undefined) return { queue: true };
   if (param === GRAPH_SEGMENT) return { graph: true };
+  if (param === ACTIVITY_SEGMENT) return { activity: true };
   const n = Number(param);
   return Number.isSafeInteger(n) && n > 0 ? { number: n } : { queue: true };
 }

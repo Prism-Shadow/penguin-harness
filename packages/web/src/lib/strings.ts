@@ -6070,6 +6070,30 @@ Benchmark：
      * channels, and the roadmap column beside a roadmap's room on the channel page. Present only
      * while the plugin contributes its page.
      */
+    activity: {
+      title: "Activity",
+      open: "Activity",
+      openTitle: "本组织每一次 Action 的运行",
+      info: "提案与 roadmap 上的每一项写操作都是一个 Action，每次运行都列在这里——谁、对什么、经哪个入口执行、结局如何，被拒绝的尝试也在内。按时间倒序。",
+      subject: "对象",
+      by: "执行者",
+      key: "Action",
+      apply: "筛选",
+      clear: "清除",
+      loadMore: "加载更多",
+      empty: "还没有运行记录。",
+      loadFailed: "Activity 读取失败",
+      outcome: {
+        running: "运行中",
+        succeeded: "成功",
+        refused: "被拒绝",
+        failed: "失败",
+        aborted: "已中止",
+        abandoned: "已放弃",
+      },
+      via: { web: "经 Web", cli: "经 CLI", session: "经会话", api: "经 API" },
+      hookErrors: (errors: string) => `after 挂钩失败：${errors}`,
+    },
     roadmaps: {
       listTitle: "路线图",
       /** The fold under the five most recent, read as "更多 (n)" like the channel list's "已归档 (n)". */
@@ -6102,12 +6126,11 @@ Benchmark：
       statusUnknownHint: "提案列表还没读到这份提案；读到后这里显示它的状态。",
       openProposal: "打开提案",
       approvals: "批准",
-      byPerson: "人",
-      byModerator: "主持人",
       waiting: "待批准",
       approve: "批准",
       approveFailed: "批准失败",
-      approveHint: "提案条目在人和主持人都批准之前只是一段 brief，在此之前不会建任何东西。",
+      approveHint:
+        "提案条目在集齐批准（缺省为主持人一份、其他成员一份）之前只是一段 brief；最后一份批准建出提案。",
     },
     channels: {
       /** The sidebar's list, its groups and the dialog above it. */
@@ -6622,34 +6645,22 @@ Benchmark：
         deploy: {
           menu: "部署",
           menuTitle: "部署这张 PR 的 head",
-          to: (id: string): string => `部署到 ${id}`,
-          associate: "关联 …",
-          associateTitle: "关联一个操作",
-          associateName: "名称",
-          associateNameHint: "菜单里显示为：Deploy to <名称>",
-          associateId: (id: string): string => `登记为 ${id}`,
-          associateBase: "运行",
-          associateCustom: "自己写一条命令…",
-          associateSave: "关联",
-          dockOpen: (pr: string, id: string): string => `查看 ${pr} 部署到 ${id} 的过程`,
+          to: (name: string): string => `部署到 ${name}`,
+          dockOpen: (pr: string, name: string): string => `查看 ${pr} 部署到 ${name} 的过程`,
           dockDismiss: "移除",
           dockTitle: "部署",
-          none: "还没有部署脚本：服务器管理员用 penguin org proposal deploy-script add 登记",
-          loadFailed: "部署脚本读取失败",
-          title: (id: string): string => `部署到 ${id}`,
+          none: "还没有绑定部署 Action：由公司模块贡献，用 penguin org action bind 启用",
+          loadFailed: "部署 Action 读取失败",
+          title: (name: string): string => `部署到 ${name}`,
           what: (pr: string, head: string): string =>
-            `在服务器上运行部署脚本，部署 ${pr} 的 ${head}。`,
-          command: "将运行",
-          args: "额外参数",
-          argsHint: "按空格切分，接在登记的命令之后",
-          start: "部署",
-          cancel: "取消",
+            `在服务器上运行部署 Action，部署 ${pr} 的 ${head}。`,
+          action: "Action",
           close: "关闭",
           running: "部署中…",
           succeeded: "部署成功",
           failed: (exit: number | null, error: string | null): string =>
             `部署失败${exit === null ? "" : `（退出码 ${exit}）`}${error === null ? "" : `：${error}`}`,
-          timedOut: "部署超时，已停止",
+          refused: (reason: string): string => `部署被拒绝：${reason}`,
           noOutput: "（还没有输出）",
           keepsRunning: "关闭对话框不会停止部署；它会留在右下角，点击即可回来。",
         },
@@ -6678,7 +6689,7 @@ Benchmark：
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       head_moved: "这张 PR 的 head 已经变了：刷新关系图再部署。",
-      deploy_busy: "这个部署脚本正在运行，等它结束再部署。",
+      deploy_busy: "这个部署正在运行，等它结束再部署。",
       invalid_credentials: "用户名或密码错误。",
       too_many_attempts: "登录失败次数过多，请稍后重试。",
       password_mismatch: "当前密码不正确。",

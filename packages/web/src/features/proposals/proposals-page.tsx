@@ -101,6 +101,8 @@ import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "./proposal-links";
 import { ProposalFilePanel, useFilePanelWidth } from "./proposal-file-panel";
 import { ImplSection } from "./proposal-impl";
 import { GraphPage } from "./pr-graph-page";
+import { ActivityPage, SubjectActivity } from "./activity-view";
+import { useAllowedActions } from "./use-allowed-actions";
 import {
   PROPOSAL_STATUS_TONE,
   commentsInSection,
@@ -117,6 +119,7 @@ import {
   parseProposalHash,
   proposalActions,
   proposalsRoute,
+  ACTIVITY_SEGMENT,
   GRAPH_SEGMENT,
   paragraphSpan,
   rangeOfSelection,
@@ -185,6 +188,7 @@ export function OrgProposalsPage() {
   const route = proposalsRoute(params.number);
   if ("queue" in route) return <QueuePage />;
   if ("graph" in route) return <GraphPage />;
+  if ("activity" in route) return <ActivityPage />;
   return <DetailPage number={route.number} />;
 }
 
@@ -312,6 +316,16 @@ function QueuePage() {
       info={t.info}
       actions={
         <>
+          <Button
+            size="sm"
+            variant="secondary"
+            title={S.company.activity.openTitle}
+            onClick={() =>
+              navigate(orgContributedPagePath(projectId, orgId, `proposals/${ACTIVITY_SEGMENT}`))
+            }
+          >
+            {S.company.activity.open}
+          </Button>
           <Button
             size="sm"
             variant="secondary"
@@ -794,7 +808,9 @@ function DetailPage({ number }: { number: number }) {
     }
   };
 
-  const actions = detail === null ? null : proposalActions(detail.status, detail.pendingComments);
+  const allowed = useAllowedActions(projectId, orgId, `proposal:${number}`, detail);
+  const actions =
+    detail === null ? null : proposalActions(detail.status, detail.pendingComments, allowed);
   const owner = detail === null ? null : (detail.implementer ?? detail.author);
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
@@ -913,6 +929,15 @@ function DetailPage({ number }: { number: number }) {
                   </>
                 )
               }
+            />
+          )}
+
+          {detail !== null && (
+            <SubjectActivity
+              projectId={projectId}
+              orgId={orgId}
+              subject={`proposal:${number}`}
+              version={detail}
             />
           )}
 

@@ -2,8 +2,9 @@
  * The service over the gateway, session-runtime and session-index fakes and a real directory:
  * a person opens a roadmap over a room; every employee in it gets a room session (its desk
  * cloned for the room) and the room's messages reach those sessions — never a desk; the
- * moderator drafts; establishing ends the discussion (proposal items stay briefs until a person
- * and the moderator approve them, a roadmap item derives its roadmap); an owner links its proposal
+ * moderator drafts; establishing ends the discussion (proposal items stay briefs until they have
+ * their approvals — the moderator's and another member's by default —, a roadmap item derives its
+ * roadmap); an owner links its proposal
  * and the one stacked on it learns the number; an owner reopens it. Nothing here starts a
  * server or a Session.
  */
@@ -12,7 +13,9 @@ import {
   RoadmapError,
   SqliteRoadmapStore,
   companyDbPath,
+  defaultAct,
   type RoadmapService,
+  type WriteAct,
 } from "../src/index.js";
 import { BOSS, ORG, PROJECT, asAgent, post, world, writeChannel, type World } from "./fakes.js";
 
@@ -126,9 +129,9 @@ describe("opening a roadmap", () => {
     expect(dev?.title).toBe(`Queue migration · roadmap #${n}`);
     expect(dev?.body).toContain("Moderator: acme_dev (you)");
     expect(dev?.body).toContain("penguin org channel send --org-id acme --channel room_a");
-    expect(dev?.body).toContain("/draft");
+    expect(dev?.body).toContain("/actions/roadmap.draft/runs");
     expect(web?.body).toContain("Moderator: acme_dev.");
-    expect(web?.body).not.toContain("/establish");
+    expect(web?.body).not.toContain("roadmap.establish");
     // Every room session is told the room comes to it — so it does not wait for the room.
     for (const s of [dev, web]) {
       expect(s?.body).toContain(
@@ -419,12 +422,10 @@ describe("the room", () => {
 });
 
 describe("the draft", () => {
-  it("is kept by the moderator or a person; another employee is refused", async () => {
+  it("is kept by anyone while the room discusses: the moderator, another employee or a person", async () => {
     const n = await openA();
-    expect(await refusal(service.draft(P, O, n, { record: "x" }, asAgent("acme_web")))).toEqual({
-      status: 403,
-      code: "not_moderator",
-    });
+    const other = await service.draft(P, O, n, { record: "x" }, asAgent("acme_web"));
+    expect(other.roadmap.record).toBe("x");
     const { roadmap } = await service.draft(
       P,
       O,
@@ -489,8 +490,10 @@ describe("establishing", () => {
       status: 400,
       code: "cite_unknown",
     });
-    expect(await refusal(service.establish(P, O, n, asAgent("acme_web")))).toMatchObject({
-      status: 403,
+    // Another employee than the moderator meets the same rules a person does.
+    expect(await refusal(service.establish(P, O, n, asAgent("acme_web")))).toEqual({
+      status: 400,
+      code: "cite_unknown",
     });
   });
 
@@ -521,7 +524,8 @@ describe("establishing", () => {
     const asked = w.runner.to("room-1");
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain('[ledger] "Roadmap ledger"');
-    expect(asked[0]).toContain("/items/<key>/approve");
+    expect(asked[0]).toContain("/actions/roadmap.item.approve/runs");
+    expect(asked[0]).toContain(`item:${n}/<key>`);
     expect(asked[0]).not.toContain("proposal create");
     expect(w.runner.to("room-2")).toEqual([]);
   });
@@ -692,18 +696,15 @@ describe("an existing proposal taken in", () => {
     expect(w.gateway.desks).toEqual([]);
   });
 
-  it("is a person's or the moderator's act, once per proposal, on a roadmap being discussed or established", async () => {
+  it("is anyone's act, once per proposal, on a roadmap being discussed or established", async () => {
     const n = await openA();
-    expect(await refusal(service.adopt(P, O, n, OLD, asAgent("acme_web")))).toEqual({
-      status: 403,
-      code: "not_moderator",
-    });
     expect((await refusal(service.adopt(P, O, n, { ...OLD, proposal: 0 }, BOSS))).status).toBe(400);
     expect((await refusal(service.adopt(P, O, n, { ...OLD, title: "" }, BOSS))).status).toBe(400);
     expect((await refusal(service.adopt(P, O, n, { ...OLD, owner: "nobody" }, BOSS))).status).toBe(
       400,
     );
-    await service.adopt(P, O, n, OLD, BOSS);
+    // Another employee than the moderator takes it in as a person would.
+    await service.adopt(P, O, n, OLD, asAgent("acme_web"));
     expect(await refusal(service.adopt(P, O, n, OLD, BOSS))).toEqual({
       status: 409,
       code: "already_adopted",
@@ -726,12 +727,12 @@ describe("the approvals", () => {
     return n;
   }
 
-  it("needs a person and the moderator: one alone creates nothing, the second creates the proposal, links it and tells the owner its number", async () => {
+  it("needs the moderator and another member: one alone creates nothing, the second creates the proposal, links it and tells the owner its number", async () => {
     const n = await established();
     const first = await service.approve(P, O, n, "ledger", BOSS);
     expect(first.roadmap.delegations.ledger).toMatchObject({
       stage: "brief",
-      approvals: { person: { by: "user:boss" } },
+      approvals: { member: { by: "user:boss" } },
     });
     expect(w.proposals.created).toEqual([]);
     expect(w.gateway.desks).toEqual([]);
@@ -753,7 +754,7 @@ describe("the approvals", () => {
       stage: "delegated",
       proposal: 200,
       delivered: true,
-      approvals: { person: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
+      approvals: { member: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
     });
     expect((await eventsOf(w.root)).slice(lines).map((l) => l.kind)).toEqual([
       "approved",
@@ -769,8 +770,10 @@ describe("the approvals", () => {
     // The owner is told once, with the number; the one stacked on it learns the number too.
     expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_dev", "acme_web"]);
     const told = w.gateway.desks[0]!.text;
-    expect(told).toContain('Your item [ledger] "Roadmap ledger" is approved: by user:boss');
-    expect(told).toContain("and by the moderator agent:acme_dev");
+    expect(told).toContain(
+      'Your item [ledger] "Roadmap ledger" is approved: by user:boss as member',
+    );
+    expect(told).toContain("and by agent:acme_dev as moderator");
     expect(told).toContain("An append-only ledger.");
     expect(told).toContain("not stacked on another proposal");
     expect(told).toContain("proposal #200");
@@ -799,23 +802,29 @@ describe("the approvals", () => {
     expect(w.proposals.created.map((c) => c.delegatedBy)).toEqual(["user:boss"]);
   });
 
-  it("is given by a person or the moderator only, once each, to an established roadmap's proposal items", async () => {
+  it("is given once per role, once per principal, to an established roadmap's proposal items", async () => {
     const discussing = await openA();
     expect(await refusal(service.approve(P, O, discussing, "ledger", BOSS))).toEqual({
       status: 409,
       code: "not_established",
     });
     const n = await established();
-    expect(await refusal(service.approve(P, O, n, "ledger", asAgent("acme_web")))).toEqual({
-      status: 403,
-      code: "not_approver",
-    });
     expect(await refusal(service.approve(P, O, n, "tests", BOSS))).toEqual({
       status: 404,
       code: "item_not_found",
     });
-    await service.approve(P, O, n, "ledger", BOSS);
+    // An employee other than the moderator approves as a member, as a person would.
+    const member = await service.approve(P, O, n, "ledger", asAgent("acme_web"));
+    expect(member.roadmap.delegations.ledger?.approvals).toMatchObject({
+      member: { by: "agent:acme_web" },
+    });
+    // The member role is filled: nobody else fills it again.
     expect(await refusal(service.approve(P, O, n, "ledger", BOSS))).toEqual({
+      status: 409,
+      code: "already_approved",
+    });
+    // The same principal cannot fill a second role.
+    expect(await refusal(service.approve(P, O, n, "ledger", asAgent("acme_web")))).toEqual({
       status: 409,
       code: "already_approved",
     });
@@ -826,10 +835,37 @@ describe("the approvals", () => {
     });
   });
 
-  it("takes a brief that is a proposal which exists already by its link — from a person, or a moderator that does not own it — with no approvals and no start", async () => {
+  it("follows the roles the binding names: a person's role refuses an employee member and takes a person", async () => {
+    const n = await established();
+    const subject = { kind: "item", id: `${n}/ledger`, text: `item:${n}/ledger` };
+    const act = (principal: string, agentId: string | null): WriteAct => ({
+      ...defaultAct("roadmap.item.approve", { principal, agentId }, subject),
+      config: { roles: ["moderator", "person"] },
+    });
+    expect(
+      await refusal(
+        service.approve(P, O, n, "ledger", asAgent("acme_web"), act("agent:acme_web", "acme_web")),
+      ),
+    ).toEqual({ status: 403, code: "not_approver" });
+    const person = await service.approve(P, O, n, "ledger", BOSS, act("user:boss", null));
+    expect(person.roadmap.delegations.ledger?.approvals).toMatchObject({
+      person: { by: "user:boss" },
+    });
+    const both = await service.approve(
+      P,
+      O,
+      n,
+      "ledger",
+      asAgent("acme_dev"),
+      act("agent:acme_dev", "acme_dev"),
+    );
+    expect(both.roadmap.delegations.ledger).toMatchObject({ stage: "delegated", proposal: 200 });
+  });
+
+  it("takes a brief that is a proposal which exists already by its link — from anyone but its owner — with no approvals and no start", async () => {
     const n = await established();
     // The moderator is told how: an existing proposal is linked, not approved.
-    expect(w.runner.to("room-1").join("\n")).toContain("/items/<key>/link");
+    expect(w.runner.to("room-1").join("\n")).toContain("/actions/roadmap.item.link/runs");
     // From its owner's desk a brief still waits for both approvals.
     expect(await refusal(service.link(P, O, n, "page", 61, asAgent("acme_web")))).toEqual({
       status: 409,
@@ -861,7 +897,7 @@ describe("the approvals", () => {
     expect(again.roadmap.delegations.ledger).toMatchObject({ stage: "delegated", proposal: 60 });
   });
 
-  it("is linked by its owner only after both approvals, which have linked it already, and tells the owner stacked on it the number", async () => {
+  it("is linked by its owner only after its approvals, which have linked it already, and tells the owner stacked on it the number", async () => {
     const n = await established();
     expect(await refusal(service.link(P, O, n, "ledger", 60, asAgent("acme_dev")))).toEqual({
       status: 409,
@@ -874,19 +910,15 @@ describe("the approvals", () => {
       text: `[roadmap #${n} «Queue migration»] "Roadmap ledger", which your item [page] "Side panel" is stacked on, is proposal #200 now: base your branch on that one's.`,
     });
     w.gateway.desks = [];
-    expect(await refusal(service.link(P, O, n, "ledger", 60, asAgent("acme_web")))).toEqual({
-      status: 403,
-      code: "not_owner",
-    });
+    // Delegated, the item is linked again by anyone: another employee relinks it.
+    const relinked = await service.link(P, O, n, "ledger", 60, asAgent("acme_web"));
+    expect(relinked.roadmap.delegations.ledger).toMatchObject({ proposal: 60 });
     expect((await refusal(service.link(P, O, n, "tests", 61, BOSS))).status).toBe(404);
   });
 
-  it("is reopened by an owner who finds it lacking: the room discusses again and its sessions are told why", async () => {
+  it("is reopened by anyone who finds it lacking: the room discusses again and its sessions are told why", async () => {
     const n = await established();
     await post(w.root, "room_a", "user:boss", "said while established");
-    expect(await refusal(service.reopen(P, O, n, "x", asAgent("acme_ceo")))).toMatchObject({
-      status: 403,
-    });
     const { roadmap } = await service.reopen(
       P,
       O,
@@ -904,6 +936,11 @@ describe("the approvals", () => {
     await service.relayOnce();
     expect(w.runner.to("room-1").at(-1)).toContain("after the reopening");
     expect(w.runner.inputs.some((i) => i.text.includes("said while established"))).toBe(false);
+    // Only the status gates a reopening: anyone reopens, but not a roadmap already discussing.
+    expect(await refusal(service.reopen(P, O, n, "x", asAgent("acme_ceo")))).toEqual({
+      status: 409,
+      code: "not_established",
+    });
   });
 
   it("starts a changed brief again at the next establishment — its approvals gone — and leaves the rest as they stood", async () => {

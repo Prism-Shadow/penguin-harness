@@ -109,6 +109,8 @@ export interface FakeOrgState {
   proposals?: Map<number, Json>;
   /** What `GET …/proposals/graph` answers (ProposalGraphResponse); absent = 409 graph_not_configured. */
   proposalGraph?: Json;
+  /** Action keys the registry answers 409 action_ambiguous for, with the contributions answering each. */
+  actionConflicts?: Record<string, string[]>;
   /** The registry `…/proposals/deployments` answers; empty until a POST adds one (a repeated id is 409). */
   proposalDeployments?: Json[];
 }
@@ -943,7 +945,7 @@ export class FakeServer {
     rest: string,
     url: URL,
     body: Json | undefined,
-  ): Response {
+  ): Response | Promise<Response> {
     if (rest === "") {
       if (method === "POST") {
         const orgId = body?.orgId;
@@ -1255,8 +1257,129 @@ export class FakeServer {
     }
 
     if (a === "proposals") return this.handleProposals(method, org, b, c, segments[4], body, url);
+    if (a === "actions") return this.handleActions(method, org, b, c, body, url);
 
     return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+  }
+
+  // ---- company mode: the Action registry (company-proposals' `…/actions`) ----
+
+  /**
+   * `POST …/actions/<key>/runs`, reduced to what the CLI tests look at: a proposal Action is
+   * answered by the proposal route it stands for (the old write, so the ledger state the tests
+   * read moves the same way), wrapped as `{ run, result }`. A key in `actionConflicts` is
+   * ambiguous; an organization without the plugin answers a plain 404.
+   */
+  private async handleActions(
+    method: string,
+    org: FakeOrgState,
+    key: string | undefined,
+    tail: string | undefined,
+    body: Json | undefined,
+    url: URL,
+  ): Promise<Response> {
+    if (org.proposals === undefined) {
+      return this.error(404, "not_found", `No route for ${method} ${url.pathname}`);
+    }
+    if (method !== "POST" || key === undefined || tail !== "runs") {
+      return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+    }
+    const conflict = org.actionConflicts?.[key];
+    if (conflict !== undefined) {
+      return this.json(
+        {
+          error: {
+            code: "action_ambiguous",
+            message: `${conflict.length} bound action contributions answer ${key}.`,
+            contributions: conflict.map((id) => ({
+              contribution: id,
+              route: `POST …/actions/by-id/${id}/runs`,
+              cli: `penguin org action exec ${id}`,
+            })),
+          },
+        },
+        409,
+      );
+    }
+    const subject = String(body?.subject ?? "");
+    const params = (body?.params ?? {}) as Record<string, Json>;
+    const claims: Json = {
+      ...(isNonEmptyString(body?.sessionId) ? { sessionId: body.sessionId } : {}),
+      ...(isNonEmptyString(body?.agentId) ? { agentId: body.agentId } : {}),
+    };
+    const [kind, id = ""] = subject.split(":");
+    const [n, rest] = id.split("/");
+    const route = (
+      m: string,
+      b: string | undefined,
+      c?: string,
+      d?: string,
+      sent: Json = params,
+    ): Response | Promise<Response> =>
+      this.handleProposals(m, org, b, c, d, { ...sent, ...claims }, url);
+    let answer: Response | Promise<Response>;
+    switch (key) {
+      case "proposal.create":
+        answer = route("POST", undefined);
+        break;
+      case "proposal.publish":
+        answer = route("PUT", n);
+        break;
+      case "proposal.brief":
+        answer = route("PUT", n, "brief");
+        break;
+      case "proposal.ready":
+      case "proposal.approve":
+      case "proposal.merged":
+      case "proposal.reject":
+        answer = route("POST", n, key.slice("proposal.".length));
+        break;
+      case "proposal.implement": {
+        const { agent, ...others } = params;
+        answer = route("POST", n, "implement", undefined, {
+          ...others,
+          ...(agent !== undefined ? { agentId: agent } : {}),
+        });
+        break;
+      }
+      case "proposal.impl":
+        answer = route("PUT", n, "impl");
+        break;
+      case "proposal.material":
+        answer = route("POST", n, "materials");
+        break;
+      case "proposal.feedback":
+        answer = route("POST", n, "feedback");
+        break;
+      case "proposal.conclude":
+        answer = route("POST", n, "discussions", rest);
+        break;
+      case "proposal.requestChanges":
+        answer = route("POST", n, "comments", "request");
+        break;
+      case "proposal.resolve":
+        answer = route("POST", n, "comments", rest);
+        break;
+      case "target.register":
+        answer = route("POST", "deployments");
+        break;
+      default:
+        return this.error(404, "action_not_found", `No Action ${key} is bound (${kind}).`);
+    }
+    const res = await answer;
+    if (!res.ok) return res;
+    const result = (await res.json()) as Json;
+    return this.json({
+      run: {
+        id: "fake-run",
+        key,
+        subject,
+        params,
+        via: body?.via ?? "api",
+        outcome: "succeeded",
+      },
+      result,
+    });
   }
 
   // ---- company mode: proposals (the company-proposals plugin's routes) ----

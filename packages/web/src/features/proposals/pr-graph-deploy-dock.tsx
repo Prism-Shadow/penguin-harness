@@ -7,23 +7,28 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type {
-  ProposalDeployRun,
-  ProposalDeployScript,
+  ActionRunOutcome,
+  ActionRunView,
   ProposalGraphNode,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { CloseButton, Spinner } from "@prismshadow/penguin-ui";
+import { deployName } from "./pr-graph-deploy";
 import { nodeRef } from "./pr-graph-model";
 
-/** One deploy started from the graph: what was deployed where, and its run once it has one. */
+/** One deploy started from the graph: what was deployed with which Action, and its run once it has one. */
 export interface DeployJob {
   key: string;
   node: ProposalGraphNode;
-  script: ProposalDeployScript;
+  /** The node's subject (`pr:<owner>/<repo>#<n>`). */
+  subject: string;
+  /** The deploy Action's key. */
+  action: string;
   runId: string | null;
-  status: ProposalDeployRun["status"] | null;
+  /** How the run ended; null while it runs (or before it started). */
+  outcome: ActionRunOutcome | null;
 }
 
 const DOCK_POLL_MS = 3000;
@@ -55,20 +60,21 @@ export function useDeployJobs(projectId: string, orgId: string) {
     }
   }, [key, jobs]);
 
-  const start = useCallback((node: ProposalGraphNode, script: ProposalDeployScript) => {
+  const start = useCallback((node: ProposalGraphNode, subject: string, action: string) => {
     const job: DeployJob = {
-      key: `${node.key}:${script.id}:${Date.now()}`,
+      key: `${node.key}:${action}:${Date.now()}`,
       node,
-      script,
+      subject,
+      action,
       runId: null,
-      status: null,
+      outcome: null,
     };
     setJobs((js) => [...js, job]);
     setOpen(job.key);
   }, []);
-  const update = useCallback((jobKey: string, run: ProposalDeployRun) => {
+  const update = useCallback((jobKey: string, run: ActionRunView) => {
     setJobs((js) =>
-      js.map((j) => (j.key === jobKey ? { ...j, runId: run.id, status: run.status } : j)),
+      js.map((j) => (j.key === jobKey ? { ...j, runId: run.id, outcome: run.outcome } : j)),
     );
   }, []);
   const close = useCallback(() => {
@@ -97,12 +103,12 @@ export function DeployDock({
   jobs: readonly DeployJob[];
   open: string | null;
   onOpen: (jobKey: string) => void;
-  onStatus: (jobKey: string, run: ProposalDeployRun) => void;
+  onStatus: (jobKey: string, run: ActionRunView) => void;
   onDismiss: (jobKey: string) => void;
 }) {
   const t = S.company.proposals.graph.deploy;
   const shown = jobs.filter((j) => j.key !== open && j.runId !== null);
-  const running = shown.filter((j) => j.status === "running" || j.status === null);
+  const running = shown.filter((j) => j.outcome === null);
   const runningIds = running.map((j) => `${j.key}=${j.runId}`).join(",");
 
   useEffect(() => {
@@ -111,7 +117,7 @@ export function DeployDock({
     const timer = setInterval(() => {
       for (const job of running) {
         // `from` past any output: only the status is wanted here.
-        api.getOrgDeployRun(projectId, orgId, job.runId!, Number.MAX_SAFE_INTEGER).then(
+        api.getOrgActionRun(projectId, orgId, job.runId!, Number.MAX_SAFE_INTEGER).then(
           (res) => alive && onStatus(job.key, res.run),
           () => undefined,
         );
@@ -133,15 +139,13 @@ export function DeployDock({
       className="fixed right-4 bottom-4 z-40 flex max-w-sm flex-col gap-2"
     >
       {shown.map((job) => {
-        const live = job.status === "running" || job.status === null;
-        const tone = job.status === "succeeded" ? toneInk.success : live ? "" : toneInk.danger;
+        const live = job.outcome === null;
+        const tone = job.outcome === "succeeded" ? toneInk.success : live ? "" : toneInk.danger;
         const word = live
           ? t.running
-          : job.status === "succeeded"
+          : job.outcome === "succeeded"
             ? t.succeeded
-            : job.status === "timed_out"
-              ? t.timedOut
-              : t.failed(null, null);
+            : t.failed(null, null);
         return (
           <div
             key={job.key}
@@ -150,12 +154,12 @@ export function DeployDock({
             <button
               type="button"
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-              aria-label={t.dockOpen(nodeRef(job.node), job.script.id)}
+              aria-label={t.dockOpen(nodeRef(job.node), deployName(job.action))}
               onClick={() => onOpen(job.key)}
             >
               {live && <Spinner size="sm" label={t.running} />}
               <span className="min-w-0 truncate">
-                <span className="font-mono">{nodeRef(job.node)}</span> → {job.script.id}
+                <span className="font-mono">{nodeRef(job.node)}</span> → {deployName(job.action)}
               </span>
               <span className={`shrink-0 ${tone}`}>{word}</span>
             </button>

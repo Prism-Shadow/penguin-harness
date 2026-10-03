@@ -659,29 +659,67 @@ export interface Messages {
     proposalGraphAllOpt: string;
     /** The graph's first line, when the default view leaves other people's PRs out. */
     graphOthersHidden(n: number): string;
-    /** `proposal deploy <n> --to <id>`: run a registered deploy script on the impl PR head. */
+    /** `proposal deploy <n> --to <id>`: run the deploy Action `deploy.<id>` on the impl head (or a PR's). */
     proposalDeployDesc: string;
     proposalDeployTo: string;
+    proposalDeployPr: string;
+    proposalDeployHead: string;
     proposalDeployDryRun: string;
-    proposalDeployPlanned: (script: string, pr: string, head: string, argv: string) => string;
-    proposalDeployStarted: (run: string, script: string, pr: string, head: string) => string;
+    proposalDeployUsage: string;
+    proposalDeployPlanned: (
+      key: string,
+      subject: string,
+      allowed: boolean | null,
+      why: string,
+    ) => string;
+    proposalDeployStarted: (run: string, key: string, subject: string, head: string) => string;
     proposalDeploySucceeded: (run: string, head: string) => string;
     proposalDeployFailed: (
       run: string,
-      status: string,
+      outcome: string,
       exitCode: number | null,
-      error: string | null,
+      message: string | null,
     ) => string;
-    /** `proposal deploy-script …`: the organization's deploy scripts. */
-    deployScriptDesc: string;
-    deployScriptAddDesc: string;
-    deployScriptDescription: string;
-    deployScriptLsDesc: string;
-    deployScriptRmDesc: string;
-    deployScriptAdded: (id: string, command: string) => string;
-    deployScriptRemoved: (id: string) => string;
-    deployScriptNone: string;
-    deployScriptHeader: string[];
+    /** `org action …`: the organization's Actions, their runs and bindings. */
+    actionDesc: string;
+    actionLsDesc: string;
+    actionLsSubject: string;
+    actionLsAll: string;
+    actionRunDesc: string;
+    actionExecDesc: string;
+    actionParam: string;
+    actionParams: string;
+    actionRequestId: string;
+    actionParamInvalid: (value: string) => string;
+    actionRunsDesc: string;
+    actionRunsSubject: string;
+    actionRunsBy: string;
+    actionRunsKey: string;
+    actionRunsBefore: string;
+    actionRunsLimit: string;
+    actionLimitInvalid: (value: string) => string;
+    actionCheckDesc: string;
+    actionBindDesc: string;
+    actionBindOn: string;
+    actionBindOff: string;
+    actionBindPosition: string;
+    actionBindConfig: string;
+    actionBindOneOf: string;
+    actionPositionInvalid: (value: string) => string;
+    actionConfigInvalid: (value: string) => string;
+    actionsNone: string;
+    actionsHeader: string[];
+    contributionsHeader: string[];
+    actionRunsNone: string;
+    actionRunsHeader: string[];
+    actionRunsNext: (cursor: string) => string;
+    actionCheckNone: string;
+    actionConflict: (key: string, kind: string, contributions: string) => string;
+    actionBound: (contribution: string, enabled: boolean, position: number) => string;
+    actionRunStarted: (run: string, key: string, subject: string) => string;
+    actionRunEnded: (run: string, outcome: string, message: string | null) => string;
+    /** An ambiguous key's answer: each contribution's exact invocation. */
+    actionExecForm: (cli: string) => string;
     /** `proposal deployment add|ls`: the registry of deployments the graph places. */
     proposalDeploymentDesc: string;
     proposalDeploymentAddDesc: string;
@@ -1964,28 +2002,66 @@ const en: Messages = {
     proposalGraphAllOpt:
       "Draw every open PR, not only the organization's proposals and the PRs they are stacked on",
     proposalDeployDesc:
-      "Run one of the organization's deploy scripts on the proposal's impl PR head, on the server that holds the organization; arguments after -- go to the script",
-    proposalDeployTo: "The deploy script's id (deploy-script ls lists them)",
-    proposalDeployDryRun: "Resolve the head and print what would run, without running it",
-    proposalDeployPlanned: (script, pr, head, argv) =>
-      `${script} would run on ${pr} at ${head} (dry run): ${argv}`,
-    proposalDeployStarted: (run, script, pr, head) =>
-      `Deploy ${run}: ${script} on ${pr} at ${head}. Ctrl-C stops following; the run goes on.`,
+      "Run the organization's deploy Action deploy.<id> on the proposal's impl head (or a PR's with --pr), on the server that holds the organization; arguments after -- go to the deploy",
+    proposalDeployTo: "The deploy's id: the Action deploy.<id> (penguin org action ls lists them)",
+    proposalDeployPr: "Deploy this PR of the delivery repository instead of a proposal's impl",
+    proposalDeployHead:
+      "The head you looked at: the run is refused when the subject has moved past it",
+    proposalDeployDryRun:
+      "Print which Action would run on which subject and whether you may run it, without running it",
+    proposalDeployUsage: "Name a proposal number or --pr <n>, one of the two.",
+    proposalDeployPlanned: (key, subject, allowed, why) =>
+      `${key} would run on ${subject} (dry run): ${allowed === null ? "not bound in this organization" : allowed ? "allowed" : `refused — ${why}`}`,
+    proposalDeployStarted: (run, key, subject, head) =>
+      `Deploy ${run}: ${key} on ${subject} at ${head}. Ctrl-C stops following; the run goes on.`,
     proposalDeploySucceeded: (run, head) => `Deploy ${run} succeeded (${head}).`,
-    proposalDeployFailed: (run, status, exitCode, error) =>
-      `Deploy ${run} ${status.replace("_", " ")}${exitCode === null ? "" : ` (exit ${exitCode})`}${error === null ? "" : `: ${error}`}.`,
-    deployScriptDesc:
-      "The organization's deploy scripts: what a deploy runs, on the server that holds the organization",
-    deployScriptAddDesc:
-      "Register a deploy script: an id and the command after -- (run in the shared workspace, no shell; a server admin only)",
-    deployScriptDescription: "One line on where it deploys",
-    deployScriptLsDesc: "List the registered deploy scripts",
-    deployScriptRmDesc: "Remove a deploy script (a server admin only)",
-    deployScriptAdded: (id, command) => `Deploy script ${id} registered: ${command}`,
-    deployScriptRemoved: (id) => `Deploy script ${id} removed.`,
-    deployScriptNone:
-      "No deploy scripts. A server admin registers one with: penguin org proposal deploy-script add <id> -- <command>",
-    deployScriptHeader: ["ID", "COMMAND", "DESCRIPTION", "BY"],
+    proposalDeployFailed: (run, outcome, exitCode, message) =>
+      `Deploy ${run} ${outcome}${exitCode === null ? "" : ` (exit ${exitCode})`}${message === null || message === "" ? "" : `: ${message}`}.`,
+    actionDesc:
+      "The organization's Actions: every write to its proposals and roadmaps, their runs (the Activity) and bindings",
+    actionLsDesc: "List the Actions bound in the organization (--all: every contribution)",
+    actionLsSubject:
+      "Only the Actions acting on this subject, each with whether you may run it now",
+    actionLsAll: "Every contribution — actions, guards, hooks, subject resolvers — bound or not",
+    actionRunDesc: "Run the Action a key names on a subject (e.g. proposal:12)",
+    actionExecDesc: "Run one contribution exactly, by its id (what an ambiguous key asks for)",
+    actionParam:
+      "A parameter, name=value (the value as JSON when it parses, else a string); repeatable",
+    actionParams: "The parameters as one JSON object (--param flags override it)",
+    actionRequestId: "A retry with the same id answers the first run instead of running again",
+    actionParamInvalid: (value) => `Not a parameter (name=value) or a JSON object: ${value}`,
+    actionRunsDesc: "The Activity: the organization's runs, newest first",
+    actionRunsSubject: "Only the runs on this subject",
+    actionRunsBy: "Only the runs by this principal (user:<id> or agent:<id>)",
+    actionRunsKey: "Only the runs of this Action key",
+    actionRunsBefore: "The page before this cursor (what the last page printed as next)",
+    actionRunsLimit: "At most this many runs (1–200, default 50)",
+    actionLimitInvalid: (value) => `--limit must be 1–200: ${value}`,
+    actionCheckDesc: "List the keys two bound contributions answer (ambiguous when run)",
+    actionBindDesc:
+      "Bind a contribution in the organization: on or off, a hook's position, its config",
+    actionBindOn: "Bind it (it takes effect)",
+    actionBindOff: "Unbind it",
+    actionBindPosition: "A hook's place among the hooks of its key (lower first)",
+    actionBindConfig: "The contribution's config, a JSON object",
+    actionBindOneOf: "Name exactly one of --on and --off.",
+    actionPositionInvalid: (value) => `--position must be an integer: ${value}`,
+    actionConfigInvalid: (value) => `--config must be a JSON object: ${value}`,
+    actionsNone: "No Actions are bound in this organization.",
+    actionsHeader: ["KEY", "CONTRIBUTION", "SUBJECTS", "ALLOWED"],
+    contributionsHeader: ["ID", "KIND", "KEY", "ENABLED", "POSITION", "FROM"],
+    actionRunsNone: "No runs.",
+    actionRunsHeader: ["STARTED", "KEY", "SUBJECT", "BY", "VIA", "OUTCOME"],
+    actionRunsNext: (cursor) => `More: --before '${cursor}'`,
+    actionCheckNone: "No conflicts.",
+    actionConflict: (key, kind, contributions) => `${key} (${kind}): ${contributions}`,
+    actionBound: (contribution, enabled, position) =>
+      `${contribution} ${enabled ? "bound" : "unbound"} (position ${position}).`,
+    actionRunStarted: (run, key, subject) =>
+      `Run ${run}: ${key} on ${subject}. Ctrl-C stops following; the run goes on.`,
+    actionRunEnded: (run, outcome, message) =>
+      `Run ${run} ${outcome}${message === null || message === "" ? "" : `: ${message}`}.`,
+    actionExecForm: (cli) => `  ${cli}`,
     proposalDeploymentDesc:
       "The deployments somebody registered, which the PR graph places at the commit each one runs",
     proposalDeploymentAddDesc:
@@ -3254,27 +3330,60 @@ const zh: Messages = {
       "把交付仓库的 open PR 排成提交关系图，标出每张 PR 的提案和各 origin 在同名分支上的 PR",
     proposalGraphAllOpt: "画出全部 open PR，而不只是本组织的提案及其所叠在的 PR",
     proposalDeployDesc:
-      "在持有本组织的服务器上，对提案的 impl PR head 运行组织登记的某个部署脚本；-- 之后的参数原样传给脚本",
-    proposalDeployTo: "部署脚本的 id（deploy-script ls 可列出）",
-    proposalDeployDryRun: "只解析 head 并打印将要运行的命令，不运行",
-    proposalDeployPlanned: (script, pr, head, argv) =>
-      `${script} 将在 ${pr} 的 ${head} 上运行（演练）：${argv}`,
-    proposalDeployStarted: (run, script, pr, head) =>
-      `部署 ${run}：${script}，${pr} 的 ${head}。Ctrl-C 只停止跟随，部署照常进行。`,
+      "在持有本组织的服务器上，对提案的 impl head（或 --pr 指定的 PR）运行组织的部署 Action deploy.<id>；-- 之后的参数原样传给部署",
+    proposalDeployTo: "部署的 id：即 Action deploy.<id>（penguin org action ls 可列出）",
+    proposalDeployPr: "部署交付仓库的这张 PR，而不是某个提案的 impl",
+    proposalDeployHead: "你看到的 head：对象已不在这个提交上时，运行会被拒绝",
+    proposalDeployDryRun: "只打印将在哪个对象上运行哪个 Action、你能否运行，不运行",
+    proposalDeployUsage: "提案编号与 --pr <n> 二选一。",
+    proposalDeployPlanned: (key, subject, allowed, why) =>
+      `${key} 将在 ${subject} 上运行（演练）：${allowed === null ? "本组织未绑定" : allowed ? "允许" : `拒绝——${why}`}`,
+    proposalDeployStarted: (run, key, subject, head) =>
+      `部署 ${run}：${key}，${subject} 的 ${head}。Ctrl-C 只停止跟随，部署照常进行。`,
     proposalDeploySucceeded: (run, head) => `部署 ${run} 成功（${head}）。`,
-    proposalDeployFailed: (run, status, exitCode, error) =>
-      `部署 ${run} ${status === "timed_out" ? "超时" : "失败"}${exitCode === null ? "" : `（退出码 ${exitCode}）`}${error === null ? "" : `：${error}`}。`,
-    deployScriptDesc: "组织的部署脚本：部署时在持有本组织的服务器上运行什么",
-    deployScriptAddDesc:
-      "登记一个部署脚本：一个 id 加上 -- 之后的命令（在共享工作区里运行，不经 shell；仅服务器管理员）",
-    deployScriptDescription: "一句话说明它部署到哪里",
-    deployScriptLsDesc: "列出已登记的部署脚本",
-    deployScriptRmDesc: "移除一个部署脚本（仅服务器管理员）",
-    deployScriptAdded: (id, command) => `部署脚本 ${id} 已登记：${command}`,
-    deployScriptRemoved: (id) => `部署脚本 ${id} 已移除。`,
-    deployScriptNone:
-      "还没有部署脚本。服务器管理员可以这样登记：penguin org proposal deploy-script add <id> -- <command>",
-    deployScriptHeader: ["ID", "命令", "说明", "登记人"],
+    proposalDeployFailed: (run, outcome, exitCode, message) =>
+      `部署 ${run} 未成功（${outcome}）${exitCode === null ? "" : `（退出码 ${exitCode}）`}${message === null || message === "" ? "" : `：${message}`}。`,
+    actionDesc: "组织的 Action：对提案与 roadmap 的每一项写操作，及其运行记录（Activity）与绑定",
+    actionLsDesc: "列出本组织已绑定的 Action（--all：全部贡献）",
+    actionLsSubject: "只列作用于该对象的 Action，并标出你此刻能否运行",
+    actionLsAll: "全部贡献（action、guard、挂钩、对象解析），无论是否绑定",
+    actionRunDesc: "在一个对象（如 proposal:12）上运行某个键对应的 Action",
+    actionExecDesc: "按贡献 id 精确运行一份贡献（键有歧义时用它）",
+    actionParam: "一个参数，写作 name=value（能按 JSON 解析则按 JSON，否则为字符串）；可重复",
+    actionParams: "以一个 JSON 对象给出全部参数（--param 会覆盖其中的同名项）",
+    actionRequestId: "用同一个 id 重试时返回第一次的运行，不再执行",
+    actionParamInvalid: (value) => `不是参数（name=value）或 JSON 对象：${value}`,
+    actionRunsDesc: "Activity：本组织的运行记录，新的在前",
+    actionRunsSubject: "只列该对象上的运行",
+    actionRunsBy: "只列该执行者（user:<id> 或 agent:<id>）的运行",
+    actionRunsKey: "只列该 Action 键的运行",
+    actionRunsBefore: "这个游标之前的一页（上一页打印的 next）",
+    actionRunsLimit: "最多列出多少条（1–200，缺省 50）",
+    actionLimitInvalid: (value) => `--limit 须为 1–200：${value}`,
+    actionCheckDesc: "列出被两份及以上已绑定贡献应答的键（运行时会报歧义）",
+    actionBindDesc: "在本组织绑定一份贡献：启用或停用、挂钩的顺序、它的配置",
+    actionBindOn: "绑定（生效）",
+    actionBindOff: "解绑",
+    actionBindPosition: "挂钩在同一个键的挂钩中的顺序（小的在前）",
+    actionBindConfig: "该贡献的配置，一个 JSON 对象",
+    actionBindOneOf: "--on 与 --off 须恰好给出一个。",
+    actionPositionInvalid: (value) => `--position 须为整数：${value}`,
+    actionConfigInvalid: (value) => `--config 须为 JSON 对象：${value}`,
+    actionsNone: "本组织没有已绑定的 Action。",
+    actionsHeader: ["键", "贡献", "对象", "允许"],
+    contributionsHeader: ["ID", "种类", "键", "启用", "顺序", "来自"],
+    actionRunsNone: "没有运行记录。",
+    actionRunsHeader: ["开始", "键", "对象", "执行者", "入口", "结局"],
+    actionRunsNext: (cursor) => `更多：--before '${cursor}'`,
+    actionCheckNone: "没有冲突。",
+    actionConflict: (key, kind, contributions) => `${key}（${kind}）：${contributions}`,
+    actionBound: (contribution, enabled, position) =>
+      `${contribution} 已${enabled ? "绑定" : "解绑"}（顺序 ${position}）。`,
+    actionRunStarted: (run, key, subject) =>
+      `运行 ${run}：${key}，对象 ${subject}。Ctrl-C 只停止跟随，运行照常进行。`,
+    actionRunEnded: (run, outcome, message) =>
+      `运行 ${run} ${outcome}${message === null || message === "" ? "" : `：${message}`}。`,
+    actionExecForm: (cli) => `  ${cli}`,
     proposalDeploymentDesc: "员工登记的部署（deployment），关系图按各自所跑的 commit 标出它们",
     proposalDeploymentAddDesc: "按 id 登记一个部署；已在名单上的会被挡住",
     proposalDeploymentUrlOpt:

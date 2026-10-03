@@ -142,6 +142,12 @@ export interface PlannedImpl {
 
 const allow: Guard = () => undefined;
 
+/** Inside a write registering an impl (`params.planned`): it is no other proposal's. */
+const implNotTaken: Guard = onProposal((p, { params, tx }) => {
+  const planned = params.planned as PlannedImpl | undefined;
+  if (planned !== undefined && tx !== undefined) implUnique(p.number, planned, tx as ProposalTx);
+});
+
 /** The default guard of each built-in proposal Action, by key. */
 export const proposalGuards: Record<string, Guard> = {
   "proposal.create": allow,
@@ -226,12 +232,10 @@ export const proposalGuards: Record<string, Guard> = {
   }),
 
   /** Inside the write: the impl about to be registered is no other proposal's. */
-  "proposal.impl": onProposal((p, { params, tx }) => {
-    const planned = params.planned as PlannedImpl | undefined;
-    if (planned !== undefined && tx !== undefined) implUnique(p.number, planned, tx as ProposalTx);
-  }),
+  "proposal.impl": implNotTaken,
 
-  "proposal.impl.adopt": allow,
+  /** The adoption registers impls the same way: each inside its write, none another's. */
+  "proposal.impl.adopt": implNotTaken,
   "proposal.material": allow,
   "proposal.feedback": allow,
 

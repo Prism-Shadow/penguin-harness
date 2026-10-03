@@ -36,7 +36,7 @@ export function roadmapsPageSrc(
 
 /**
  * Where an item stands, as its row says it: `draft` while the roadmap is still discussed,
- * `brief` once established but still waiting for its two approvals (a proposal item), and
+ * `brief` once established but still waiting for its approvals (a proposal item), and
  * `delegated` once it went out — its proposal linked, or its roadmap derived, or on the way.
  */
 export type RoadmapRowStage = "draft" | "brief" | "delegated";
@@ -54,8 +54,8 @@ export interface RoadmapRow {
   /** The roadmap a roadmap item derived, when there is one. */
   child: number | null;
   stage: RoadmapRowStage;
-  /** A brief's two approvals (null where the row is not a brief). */
-  approvals: { person: OrgRoadmapApproval | null; moderator: OrgRoadmapApproval | null } | null;
+  /** The approvals a brief has, by role (null where the row is not a brief). */
+  approvals: Array<{ role: string; approval: OrgRoadmapApproval }> | null;
 }
 
 /**
@@ -82,7 +82,7 @@ export function roadmapRows(r: OrgRoadmapDetail): RoadmapRow[] {
       stage,
       approvals:
         stage === "brief"
-          ? { person: d?.approvals?.person ?? null, moderator: d?.approvals?.moderator ?? null }
+          ? Object.entries(d?.approvals ?? {}).map(([role, approval]) => ({ role, approval }))
           : null,
     };
   });
@@ -90,11 +90,6 @@ export function roadmapRows(r: OrgRoadmapDetail): RoadmapRow[] {
     ...rows.filter((x) => x.kind === "proposal"),
     ...rows.filter((x) => x.kind === "roadmap"),
   ];
-}
-
-/** A person may add their approval to a brief that does not have it yet. */
-export function personMayApprove(row: RoadmapRow): boolean {
-  return row.stage === "brief" && row.approvals !== null && row.approvals.person === null;
 }
 
 /**
