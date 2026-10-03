@@ -1,6 +1,7 @@
 /**
- * What the Sandbox card draws from its entry and draft: the switch alone while off, the table's
- * name boxes, "?"s, "(Default)" mark, row menus, pin toggles and locked cells.
+ * What the Sandbox card draws from its entry and draft: the switch alone while off, a notice's
+ * details folded under it, the table's name boxes, "?"s, "(Default)" mark, row menus, pin
+ * toggles and locked cells.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ReactElement } from "react";
@@ -62,6 +63,40 @@ describe("the settings card", () => {
       expect(heading({ enabled: true })).toContain(text);
     }
     expect(heading({ enabled: false })).toContain("Sandbox");
+  });
+
+  it("folds a notice's details under it, collapsed, in the page's language", () => {
+    const withDetails: PluginConfigEntry = {
+      ...ENTRY,
+      notices: [
+        {
+          tone: "muted",
+          text: "Enforced here: file writes, by Landlock (dsh-local).",
+          details:
+            "penguin-bwrap is installed but not in use: refused\nSaving this card checks these backends again.",
+          detailsZh: "penguin-bwrap 已安装但未启用：refused",
+        },
+      ],
+    };
+    const render = (locale: "en" | "zh") =>
+      renderToStaticMarkup(
+        createElement(ConfigHeading, {
+          entry: withDetails,
+          draft: { enabled: true },
+          nested: false,
+          disabled: false,
+          onAction: () => {},
+          locale,
+        }),
+      );
+    const html = render("en");
+    expect(html).toContain("Enforced here: file writes, by Landlock (dsh-local).");
+    // A disclosure: a button saying it is collapsed, controlling a hidden panel holding the text.
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*aria-controls="([^"]+)"/);
+    const panel = /<div id="[^"]+" hidden=""[^>]*>(.*?)<\/div>/.exec(html)?.[1] ?? "";
+    expect(panel).toContain("penguin-bwrap is installed but not in use: refused");
+    expect(render("zh")).toContain("penguin-bwrap 已安装但未启用：refused");
+    expect(heading({ enabled: true })).not.toContain("aria-expanded");
   });
 
   it("holds the effective name in the name box, the declared one when not renamed", () => {

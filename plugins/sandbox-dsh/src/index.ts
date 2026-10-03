@@ -21,6 +21,7 @@
  * them fails THIS load — reported fail-closed by the service — instead of failing the
  * whole platform bundle's import.
  */
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
@@ -150,6 +151,16 @@ export interface DshLoadHost {
 }
 
 /**
+ * The rung DSH's chain selected, by the program its wrap starts: on Linux bubblewrap when it
+ * passed the chain's probe, else the Landlock launcher; one rung each on macOS and Windows.
+ */
+export function rungName(platform: NodeJS.Platform, runner: string | undefined): string {
+  if (platform === "darwin") return "Seatbelt";
+  if (platform === "win32") return "the Windows ACL runner";
+  return runner === "bwrap" ? "bubblewrap" : "Landlock";
+}
+
+/**
  * Mount the stock DSH chain on a bare cordis Context — exactly how DSH's own tests mount it —
  * after checking, on Windows, that its ACL runner can start the session shell at all.
  */
@@ -168,9 +179,16 @@ export async function loadDshAdaptor(host: DshLoadHost = {}): Promise<SandboxPro
   // `ctx.plugin` is cordis's own API name, not this repo's vocabulary.
   await ctx.plugin(LocalSandboxProvider, {});
   const dsh = ctx.sandbox;
+  // The chain picks its rung on the first confine; do that here, so a host where no rung works
+  // fails this load with DSH's reason instead of mounting a backend that refuses every command,
+  // and the settings card can name the rung that serves. Nothing is spawned but the chain's own
+  // probes, whose verdict DSH keeps for the provider's lifetime.
+  const probe = dsh.confine([process.execPath], { mode: "read-only", workspaceRoot: tmpdir() });
   return {
     // DSH's own words: "Network and process visibility are outside this vocabulary."
     dimensions: ["fs-write"],
+    mechanism:
+      rungName(platform, probe.argv[0]) + (probe.enforcement === "partial" ? " (partial)" : ""),
     confine(argv, policy): ConfinedArgv {
       if (policy.mode === "danger-full-access") {
         // Unreachable: this backend implements only fs-write, so the service never hands it a

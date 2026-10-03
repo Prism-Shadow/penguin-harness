@@ -70,7 +70,8 @@ export function sessionSandboxOf(
   switchOn?: boolean,
   ceiling?: SandboxSettings,
 ): SessionSandbox {
-  const advanced = (policy.maskPaths ?? []).length > 0 || policy.writableTemp === false;
+  const masksPaths = (policy.maskPaths ?? []).length > 0;
+  const advanced = masksPaths || policy.writableTemp === false;
   const above = (p: SessionSandboxPreset) =>
     ceiling !== undefined &&
     aboveSandboxCeiling(p, { mode: ceiling.mode, network: networkOf(ceiling) }) !== null;
@@ -80,6 +81,8 @@ export function sessionSandboxOf(
     confinementSupported: dimensions.includes("fs-write"),
     noNetworkSupported: dimensions.includes("network"),
     localNetworkSupported: dimensions.includes("network-local"),
+    maskPathsSupported: dimensions.includes("mask-paths"),
+    ...(masksPaths ? { masksPaths: true } : {}),
     unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
     ...(presets !== undefined
       ? { presets: presets.map((p) => ({ ...p, ...(above(p) ? { aboveCeiling: true } : {}) })) }

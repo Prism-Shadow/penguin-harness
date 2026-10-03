@@ -8,12 +8,15 @@ interface — filesystem writes, network isolation and path masking.
 
 - Linux. On any other platform the backend declines to mount, so a policy is routed to a backend
   that host has.
-- Unprivileged user namespaces enabled. The backend probes functionally at load and
-  declines when the kernel will not grant them, rather than confining less than asked.
-  Ubuntu 23.10 and later (24.04 by default) grant them only to AppArmor-profiled programs
-  (`kernel.apparmor_restrict_unprivileged_userns=1`): the desktop `.deb` installs such a profile,
+- Unprivileged user namespaces enabled. The backend probes functionally at load and fails the
+  load when the kernel will not grant them, with what bwrap said, rather than confining less than
+  asked. Ubuntu 23.10 and later (24.04 by default) grant them only to AppArmor-profiled programs
+  (`kernel.apparmor_restrict_unprivileged_userns=1`): the desktop `.deb` installs such a profile;
   the CLI package, the one-line installer, npm and Docker cannot, because the profile needs root.
-  The one-time host step is in the CLI quickstart's "Sandbox on Ubuntu" section.
+  There `@penguinharness/sandbox-dsh`, which the Sandbox card installs beside this backend,
+  confines file writes through Landlock with no host step. The optional one-time root step that
+  lets this backend run, adding network isolation and masked paths, is in the CLI quickstart's
+  "Sandbox on Ubuntu" section.
 
 **It brings its own bubblewrap.** The package ships a binary per architecture
 (`vendor/linux-x64`, `vendor/linux-arm64`), pinned by URL and sha256 from conda-forge and

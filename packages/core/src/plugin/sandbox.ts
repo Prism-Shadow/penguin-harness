@@ -144,6 +144,12 @@ export interface SandboxProvider {
    * unimplemented dimension can never be silently ignored.
    */
   readonly dimensions?: readonly SandboxDimension[];
+  /**
+   * What enforces the confinement on this host, as an administrator would name it
+   * ("bubblewrap", "Landlock"). The settings card says what this machine enforces and by
+   * what; absent, it names the backend instead.
+   */
+  readonly mechanism?: string;
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv;
 }
 

@@ -139,7 +139,14 @@ export function PermissionSelect({
         ? { reason: P.noBackend, note: P.notInstalled }
         : block === "unavailable" && failed !== null
           ? { reason: P.backendUnavailable(failed.name, failed.reason), note: P.notAvailable }
-          : { reason: block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported };
+          : {
+              reason:
+                block === "local-unsupported"
+                  ? P.localUnsupported
+                  : block === "mask-unsupported"
+                    ? P.maskUnsupported
+                    : P.noNetworkUnsupported,
+            };
   const hintOf = (p: SessionSandboxPreset, block: PresetBlock | null) => {
     const { blocks, allows } = presetEffects(p);
     const list = (effects: string[]) =>

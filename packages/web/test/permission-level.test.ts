@@ -191,6 +191,29 @@ describe("the composer's presets", () => {
     expect(presetBlock(FULL, { mode: "read-only", network: "local" })).toBe("local-unsupported");
   });
 
+  it("greys out every preset, full access included, when the policy masks paths no backend here can", () => {
+    const blocks = (sandbox: SessionSandbox) =>
+      new Set(BUILTIN_PRESETS.map((p) => presetBlock(sandbox, p)));
+    // The DSH adaptor alone: files confined, masked paths not — every command would be refused.
+    const fsOnly: SessionSandbox = {
+      ...FULL,
+      confinementSupported: true,
+      noNetworkSupported: false,
+      localNetworkSupported: false,
+      maskPathsSupported: false,
+      masksPaths: true,
+    };
+    expect(blocks(fsOnly)).toEqual(new Set(["mask-unsupported"]));
+    // Nothing mounted at all: the reason is that, not the masks.
+    expect(blocks({ ...fsOnly, confinementSupported: false, unavailableBackends: [] })).toEqual(
+      new Set(["no-backend"]),
+    );
+    // A backend that masks, or a policy that masks nothing, or a server not reporting it: no block.
+    expect(blocks({ ...fsOnly, maskPathsSupported: true })).toEqual(new Set([null]));
+    expect(blocks({ ...fsOnly, masksPaths: undefined })).toEqual(new Set([null]));
+    expect(blocks({ ...FULL, masksPaths: true })).toEqual(new Set([null]));
+  });
+
   it("greys out a preset above the ceiling for a non-admin, never for an admin or the current one", () => {
     const presets = BUILTIN_PRESETS.map((p) =>
       p.mode === "danger-full-access" ? { ...p, aboveCeiling: true as const } : p,

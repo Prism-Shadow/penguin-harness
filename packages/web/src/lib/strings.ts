@@ -649,8 +649,9 @@ export const zh = {
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "安装沙盒后端",
-      body: (machine: string, pkg: string) =>
-        `${machine} 没有适用于其操作系统的沙盒后端，新会话暂时无法进入沙盒。是否安装 ${pkg}？`,
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} 没有适用于其操作系统的沙盒后端，新会话暂时无法进入沙盒。是否安装 ${pkgs.join(" 和 ")}？` +
+        (pkgs.length > 1 ? "两者都可用时，使用封禁范围更大的那个。" : ""),
       cost: "安装会重新装载服务器的插件，所有项目中正在进行的 Agent 运行都会停止。无论是否安装，开关都保持打开。",
       install: "安装",
       installing: "正在安装…",
@@ -2972,7 +2973,9 @@ Benchmark：
       notInstalled: "未安装",
       noBackend:
         "本服务器没有安装沙盒后端，命令无法被封禁。管理员可在插件页启用适用于本平台的后端（更多…）。",
-      noNetworkUnsupported: "本机的沙盒后端不支持断开网络",
+      noNetworkUnsupported: "本机的沙盒只封禁文件（sandbox-dsh 不隔离网络），无法断开网络",
+      maskUnsupported:
+        "本会话要对命令隐藏屏蔽路径，但本机没有能屏蔽路径的沙盒后端（sandbox-dsh 只封禁文件），每条命令都会被拒绝。管理员可在「更多…」里的沙盒卡片清空屏蔽路径。",
       notAvailable: "不可用",
       adminOnly: "仅管理员",
       aboveCeiling: "超出了本服务器的沙盒上限：只有管理员可以给会话这么大的权限。",

@@ -19,6 +19,17 @@ DSH's policy vocabulary governs **file-write effects only**, so this adaptor dec
 exactly `fs-write`. The sandbox service therefore never routes a `network` or
 `mask-paths` policy here, and the adaptor never has to silently drop a dimension it
 cannot honor — for those, use the bubblewrap, Seatbelt or WSL backend for your platform.
+Mounted beside one of those, it is used only where that backend is refused: the service
+routes every policy to the backend implementing the most dimensions.
+
+The chain picks its rung when the adaptor loads, so a host where no rung works fails the load
+with DSH's reason rather than mounting a backend that refuses every command, and the settings
+card names the rung that serves (`Landlock`, with `(partial)` on an older Landlock ABI).
+
+On Linux this is the floor the Sandbox card installs beside bubblewrap. Ubuntu 23.10 and later
+restrict unprivileged user namespaces to AppArmor-profiled programs, which refuses bubblewrap
+on an install that could not add a profile; Landlock needs neither a namespace nor root, so file
+writes stay confined there with no host step.
 
 ## Windows: run command sessions under PowerShell
 

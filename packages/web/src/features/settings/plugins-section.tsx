@@ -111,7 +111,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const nameOf = (id: string) => machineLabels.get(id) ?? id;
   const projectId = useProject().currentProject?.projectId ?? null;
   /** The backend package the install prompt offers, while it is open. */
-  const [offered, setOffered] = useState<string | null>(null);
+  const [offered, setOffered] = useState<string[] | null>(null);
   const [installing, setInstalling] = useState(false);
 
   const adopt = (list: PluginConfigEntry[]) => {
@@ -314,11 +314,11 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
 
   /**
    * The switch was turned on: if the machine reports no sandbox backend for its OS, ask whether
-   * to install its default one. The switch stays on in the draft whatever the answer.
+   * to install its default ones. The switch stays on in the draft whatever the answer.
    */
   const offerBackend = (entry: PluginConfigEntry) => {
-    const pkg = backendToOffer(entry, machine ?? THIS_SERVER_KEY);
-    if (pkg !== null) setOffered(pkg);
+    const pkgs = backendToOffer(entry, machine ?? THIS_SERVER_KEY);
+    if (pkgs !== null) setOffered(pkgs);
   };
   const closePrompt = (dontAskAgain: boolean) => {
     if (dontAskAgain) dismissBackendPrompt(machine ?? THIS_SERVER_KEY);
@@ -326,7 +326,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   };
 
   /**
-   * Installs the offered backend the way the Plugins page does: into this Project's table for
+   * Installs the offered backends the way the Plugins page does, one after another: into this Project's table for
    * the machine on screen only — this server's own machine id when the card shows this server,
    * so no other machine is asked to run it. Afterwards the card's live parts (notices, the
    * backend report) are read again; drafts being edited are kept.
@@ -337,14 +337,16 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       toastError(S.settings.sandboxBackendPrompt.noProject);
       return;
     }
-    const pkg = offered;
+    const pkgs = offered;
     setInstalling(true);
     try {
       const target = machine ?? (await api.getInstalledPlugins(projectId)).machineId;
-      const res = await api.installPlugin(projectId, pkg, target);
-      const row = res.plugins.find((p) => p.specifier === pkg);
-      if (row?.error !== undefined) toastError(S.plugins.deploymentFailedToast(pkg, row.error));
-      else toastSuccess(S.plugins.deploymentInstalledToast(pkg));
+      for (const pkg of pkgs) {
+        const res = await api.installPlugin(projectId, pkg, target);
+        const row = res.plugins.find((p) => p.specifier === pkg);
+        if (row?.error !== undefined) toastError(S.plugins.deploymentFailedToast(pkg, row.error));
+        else toastSuccess(S.plugins.deploymentInstalledToast(pkg));
+      }
       closePrompt(dontAskAgain);
       const config = await api.adminGetPluginConfig(machine);
       setEntries((prev) =>
@@ -536,7 +538,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         </p>
       </ConfirmModal>
       <SandboxBackendPrompt
-        pkg={offered}
+        pkgs={offered}
         machineName={machine === null ? S.plugins.thisServer : nameOf(machine)}
         busy={installing}
         onInstall={(dontAskAgain) => void installOffered(dontAskAgain)}

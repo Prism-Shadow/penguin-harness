@@ -1,9 +1,9 @@
 /**
- * When the Sandbox card offers to install a sandbox backend: the admin turned the switch on,
- * the machine reports no backend for its OS, it names a package to suggest, and nobody ticked
+ * When the Sandbox card offers to install sandbox backends: the admin turned the switch on,
+ * the machine reports no backend for its OS, it names packages to suggest, and nobody ticked
  * "Don't ask again" for that machine in this browser.
  *
- * The OS and the package come from the server (`PluginConfigEntry.backend`); this module never
+ * The OS and the packages come from the server (`PluginConfigEntry.backend`); this module never
  * guesses either. "Don't ask again" is remembered per machine in this browser only — it is a
  * question about this person's prompts, not a setting of the machine — so it is never sent to
  * a server. Storage that is unavailable or throws (a private window, blocked site data) reads
@@ -64,16 +64,18 @@ export function dismissBackendPrompt(
 }
 
 /**
- * The package to offer when the switch is turned on for this entry on this machine, or null
- * when there is nothing to ask: a backend for the OS is installed, the OS has no default, the
- * server does not report it, or the prompt was dismissed for this machine.
+ * The packages to offer, installed together, when the switch is turned on for this entry on this
+ * machine — or null when there is nothing to ask: a backend for the OS is installed, the OS has
+ * no default, the server does not report it, or the prompt was dismissed for this machine.
  */
 export function backendToOffer(
   entry: Pick<PluginConfigEntry, "backend">,
   machine: string,
   storage: PromptStorage | null = defaultStorage(),
-): string | null {
+): string[] | null {
   const report = entry.backend;
-  if (report === undefined || report.installed || report.recommended === undefined) return null;
-  return backendPromptDismissed(machine, storage) ? null : report.recommended;
+  if (report === undefined || report.installed || (report.recommended ?? []).length === 0) {
+    return null;
+  }
+  return backendPromptDismissed(machine, storage) ? null : [...report.recommended!];
 }

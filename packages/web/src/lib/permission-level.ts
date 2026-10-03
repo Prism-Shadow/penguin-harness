@@ -64,7 +64,8 @@ export const PERMISSION_LEVEL_GLYPH: Record<PermissionLevel, string> = {
  * cannot enforce. Only an explicit false from the server counts — one that does not report a
  * level is not second-guessed.
  */
-export type LevelBlock = "no-backend" | "unavailable" | "local-unsupported" | "none-unsupported";
+export type LevelBlock =
+  "no-backend" | "unavailable" | "local-unsupported" | "none-unsupported" | "mask-unsupported";
 
 /** The first enabled backend that is not in use, whose reason the composer shows, or null. */
 export function firstUnavailableBackend(
@@ -76,6 +77,17 @@ export function firstUnavailableBackend(
 /** The block for a level no mounted backend can enforce: why nothing is mounted. */
 function unmounted(sandbox: SessionSandbox): LevelBlock {
   return firstUnavailableBackend(sandbox) === null ? "no-backend" : "unavailable";
+}
+
+/**
+ * The block every level shares when the Session's policy masks paths (kept by every pick) and no
+ * mounted backend masks: each command would be refused, full access included. Only an explicit
+ * false counts, like the other flags.
+ */
+export function maskBlock(sandbox: SessionSandbox): LevelBlock | null {
+  if (sandbox.masksPaths !== true) return null;
+  if (sandbox.confinementSupported === false) return unmounted(sandbox);
+  return sandbox.maskPathsSupported === false ? "mask-unsupported" : null;
 }
 
 export function fsModeBlock(
@@ -281,8 +293,8 @@ export interface PresetPicker {
 }
 
 /**
- * Why a preset cannot be picked, or null when it can: its mode's enforcement block, else its
- * network's, else — given who is picking — the ceiling, which holds a non-admin only and never on
+ * Why a preset cannot be picked, or null when it can: the masked paths' enforcement block, else
+ * its mode's, else its network's, else — given who is picking — the ceiling, which holds a non-admin only and never on
  * the preset the Session is already on (picking it changes nothing).
  */
 export function presetBlock(
@@ -291,7 +303,10 @@ export function presetBlock(
     Partial<Pick<SessionSandboxPreset, "id" | "aboveCeiling">>,
   picker?: PresetPicker,
 ): PresetBlock | null {
-  const enforce = fsModeBlock(sandbox, preset.mode) ?? networkBlock(sandbox, preset.network);
+  const enforce =
+    maskBlock(sandbox) ??
+    fsModeBlock(sandbox, preset.mode) ??
+    networkBlock(sandbox, preset.network);
   if (enforce !== null) return enforce;
   if (
     picker !== undefined &&

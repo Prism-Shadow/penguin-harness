@@ -3,11 +3,12 @@
  * actions it offers
  * (what the deployment must do once on the machine, as buttons beside what each will do) and
  * its live notices — a spinner for work in progress, a strip for what needs attention, quiet
- * text for the rest. While the group's switch is off (as drafted), only the title is drawn:
- * the actions and notices concern the group in use.
+ * text for the rest; a notice's details fold under it, collapsed (the sandbox's headline
+ * discloses why an installed backend is not in use). While the group's switch is off (as
+ * drafted), only the title is drawn: the actions and notices concern the group in use.
  */
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
-import { Button, InfoPopover, NoticeStrip, Spinner } from "@prismshadow/penguin-ui";
+import { Button, HelpFold, InfoPopover, NoticeStrip, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Locale } from "../../state/locale";
@@ -71,22 +72,34 @@ export function ConfigHeading({
         </div>
       )}
       {live &&
-        (entry.notices ?? []).map((notice, i) =>
-          notice.tone === "progress" ? (
-            <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
-              <Spinner size="sm" label={S.common.loading} />
-              <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
-            </p>
-          ) : notice.tone === "attention" ? (
-            <NoticeStrip tone="attention" as="p" key={i} className="rounded-md px-3 py-2 text-xs">
-              {localized(notice.text, notice.textZh)}
-            </NoticeStrip>
-          ) : (
-            <p key={i} className="text-xs text-fg-muted">
-              {localized(notice.text, notice.textZh)}
-            </p>
-          ),
-        )}
+        (entry.notices ?? []).map((notice, i) => {
+          const details = localized(notice.details, notice.detailsZh);
+          const line =
+            notice.tone === "progress" ? (
+              <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
+                <Spinner size="sm" label={S.common.loading} />
+                <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
+              </p>
+            ) : notice.tone === "attention" ? (
+              <NoticeStrip tone="attention" as="p" key={i} className="rounded-md px-3 py-2 text-xs">
+                {localized(notice.text, notice.textZh)}
+              </NoticeStrip>
+            ) : (
+              <p key={i} className="text-xs text-fg-muted">
+                {localized(notice.text, notice.textZh)}
+              </p>
+            );
+          if (details === undefined) return line;
+          // No title of its own to anchor a "?" to: the fold names itself.
+          return (
+            <div key={i} className="space-y-1">
+              {line}
+              <HelpFold label={title}>
+                <p className="whitespace-pre-line break-words">{details}</p>
+              </HelpFold>
+            </div>
+          );
+        })}
     </div>
   );
 }

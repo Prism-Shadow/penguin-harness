@@ -9,8 +9,8 @@
  * and after every save. The service stays on the capability-free floor (a bare kernel boots
  * it with no database), and its parked context still carries the settings across a hot swap:
  * on boot a saved document wins, and with none saved the service keeps what the swap carried.
- * The card's live status (whether the saved policy can be enforced, which backends are in use
- * and why each other one is not) is `SandboxSettingsStatus`, in settings-status.ts.
+ * The card's live status (what this machine enforces, which backends are not in use and why)
+ * is `SandboxSettingsStatus`, in settings-status.ts.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { PluginConfig } from "../plugin/config.js";
@@ -142,9 +142,9 @@ export const SANDBOX_GROUP = "sandbox";
                 title: "Network",
                 titleZh: "网络",
                 description:
-                  "What a confined command, hook script or read_file URL may reach. Localhost allows only this machine, and needs a backend that can enforce it.",
+                  "What a confined command, hook script or read_file URL may reach. Localhost allows only this machine. Each limit needs a backend that can enforce it — sandbox-dsh confines files only — and is greyed out where the backends in use cannot.",
                 descriptionZh:
-                  "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。仅本机只允许访问本机，需要能实施它的后端。",
+                  "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。仅本机只允许访问本机。每种限制都需要能实施它的后端（sandbox-dsh 只封禁文件），在用的后端不能实施时显示为灰色。",
                 options: [
                   {
                     value: "open",
@@ -348,8 +348,9 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Masked paths",
             titleZh: "屏蔽路径",
             description:
-              "Paths hidden from confined commands, hook scripts and file tools, reads included.",
-            descriptionZh: "对被封禁的命令、钩子脚本与文件工具隐藏的路径，读取也不例外。",
+              "Paths hidden from confined commands, hook scripts and file tools, reads included. Needs a backend that masks paths — sandbox-dsh does not: without one, every command is refused while any is listed.",
+            descriptionZh:
+              "对被封禁的命令、钩子脚本与文件工具隐藏的路径，读取也不例外。需要能屏蔽路径的后端（sandbox-dsh 不能）：没有这样的后端时，只要列了路径，每条命令都会被拒绝。",
             hint: "One absolute path per line, at most 64.",
             hintZh: "每行一个绝对路径，最多 64 条。",
             maxItems: 64,

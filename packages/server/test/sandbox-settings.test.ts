@@ -112,7 +112,8 @@ describe("sandbox settings group", () => {
     expect(sandbox.notices).toEqual([
       expect.objectContaining({
         tone: "muted",
-        text: "Backends: test-backend (fs-write, network, mask-paths)",
+        // What this machine enforces, by the backend that serves (no mechanism declared: its name).
+        text: "Enforced here: file writes, network isolation and masked paths, by test-backend. Not enforced here: localhost-only network.",
       }),
     ]);
     const child = entries.find((e) => e.name === "sandbox-test")!;
@@ -356,7 +357,11 @@ describe("sandbox settings group", () => {
     const card = ((await saved.json()) as PluginConfigResponse).plugins.find(
       (e) => e.name === "sandbox",
     )!;
-    expect(card.notices?.map((n) => n.text)).toEqual(["Backends: probed (fs-write)"]);
+    expect(card.notices?.map((n) => n.text)).toEqual([
+      "Enforced here: file writes, by probed. Not enforced here: network isolation, localhost-only network and masked paths.",
+    ]);
+    // Nothing failed any more: nothing to disclose under it.
+    expect(card.notices?.[0]?.details).toBeUndefined();
     expect(sandbox.failures()).toEqual([]);
     sandbox.configure({ mode: "read-only" });
     expect(sandbox.confiner()(["true"], { workspaceDir: "/w" } as never).argv).toEqual([

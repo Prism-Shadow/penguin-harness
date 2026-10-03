@@ -577,8 +577,9 @@ export const en: Strings = {
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "Install a sandbox backend",
-      body: (machine: string, pkg: string) =>
-        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkg}?`,
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")}?` +
+        (pkgs.length > 1 ? " Where both work, the one that confines more is used." : ""),
       cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
       install: "Install",
       installing: "Installing…",
@@ -2874,7 +2875,10 @@ Scenarios:
       notInstalled: "Not installed",
       noBackend:
         "No sandbox backend is installed on this server, so commands cannot be confined. An administrator can enable this platform's backend on the Plugins page (More…).",
-      noNetworkUnsupported: "No sandbox backend on this machine can cut the network off",
+      noNetworkUnsupported:
+        "The sandbox on this machine confines files only (sandbox-dsh does not isolate the network), so it cannot cut the network off",
+      maskUnsupported:
+        "This session hides masked paths from its commands, and no sandbox backend on this machine can (sandbox-dsh confines files only), so every command would be refused. An administrator can clear the masked paths on the Sandbox card (More…).",
       /** The short note beside a level whose enabled backend failed its check. */
       notAvailable: "Unavailable",
       /** The short note beside a preset wider than the server's sandbox settings, for a non-admin. */
