@@ -96,6 +96,33 @@ function revisionOf(row: Row): ProposalRevision {
   };
 }
 
+/**
+ * The read paths' statements that carry the volume, named so a test can hold their query plans
+ * to the indexes schema.ts declares.
+ */
+export const READS = {
+  /** The queue for a person: the unread count is a range scan of proposal_events_by_number. */
+  queuePerson: `SELECT p.number, p.status, p.revision, p.author, p.implementer, p.delegated_by,
+      p.created_at, p.updated_at, p.title, (SELECT count(*) FROM proposal_events e
+        WHERE e.number = p.number AND e.seq > coalesce(r.seq, 0) AND e.by <> :me) AS unread
+     FROM proposals p LEFT JOIN proposal_reads r ON r.user_id = :user AND r.number = p.number
+     ORDER BY p.number DESC`,
+  queueEmployee: `SELECT p.number, p.status, p.revision, p.author, p.implementer, p.delegated_by,
+      p.created_at, p.updated_at, p.title, 0 AS unread FROM proposals p ORDER BY p.number DESC`,
+  pendingCounts: `SELECT number, count(*) AS n FROM proposal_comments
+     WHERE by = ? AND batch_id IS NULL GROUP BY number`,
+  headRevision: `SELECT root, scope, tests, sections FROM proposal_revisions WHERE number = ? AND revision = ?`,
+  revisionList: `SELECT revision, by, at FROM proposal_revisions WHERE number = ? ORDER BY revision`,
+  revision: `SELECT * FROM proposal_revisions WHERE number = ? AND revision = ?`,
+  events: `SELECT * FROM proposal_events WHERE number = ? ORDER BY seq`,
+  materials: `SELECT kind, label, url, by, at FROM proposal_materials WHERE number = ? ORDER BY id`,
+  comments: `SELECT * FROM proposal_comments WHERE number = ? ORDER BY ord`,
+  sessions: `SELECT * FROM proposal_sessions WHERE number = ? ORDER BY at, rowid`,
+  implByPr: `SELECT number FROM proposal_impls WHERE pr_key = ?`,
+  implByHead: `SELECT i.number, p.status FROM proposal_impls i JOIN proposals p ON p.number = i.number
+     WHERE i.head_key = ?`,
+} as const;
+
 /** The statements of the read paths, prepared once per connection. */
 export class ProposalReads {
   private readonly cache = new Map<string, StatementSync>();
@@ -113,22 +140,12 @@ export class ProposalReads {
   }
 
   list(viewer: Viewer): ProposalSummary[] {
-    const head = `SELECT p.number, p.status, p.revision, p.author, p.implementer, p.delegated_by,
-      p.created_at, p.updated_at, p.title`;
-    // The unread count is a range scan of proposal_events_by_number past the read position; an
-    // employee has no read position and no unread count.
+    // An employee has no read position and no unread count.
     const rows = viewer.person
-      ? (this.q(
-          `${head}, (SELECT count(*) FROM proposal_events e
-              WHERE e.number = p.number AND e.seq > coalesce(r.seq, 0) AND e.by <> :me) AS unread
-           FROM proposals p LEFT JOIN proposal_reads r ON r.user_id = :user AND r.number = p.number
-           ORDER BY p.number DESC`,
-        ).all({ me: viewer.principal, user: viewer.userId }) as Row[])
-      : (this.q(`${head}, 0 AS unread FROM proposals p ORDER BY p.number DESC`).all() as Row[]);
+      ? (this.q(READS.queuePerson).all({ me: viewer.principal, user: viewer.userId }) as Row[])
+      : (this.q(READS.queueEmployee).all() as Row[]);
     const pending = new Map<number, number>();
-    for (const r of this.q(
-      `SELECT number, count(*) AS n FROM proposal_comments WHERE by = ? AND batch_id IS NULL GROUP BY number`,
-    ).all(viewer.principal) as Row[]) {
+    for (const r of this.q(READS.pendingCounts).all(viewer.principal) as Row[]) {
       pending.set(num(r.number), num(r.n));
     }
     const materials = new Map<number, ProposalMaterial[]>();
@@ -167,14 +184,10 @@ export class ProposalReads {
     const head =
       revision === 0
         ? undefined
-        : (this.q(
-            `SELECT root, scope, tests, sections FROM proposal_revisions WHERE number = ? AND revision = ?`,
-          ).get(number, revision) as Row | undefined);
-    const sessions = this.q(
-      `SELECT * FROM proposal_sessions WHERE number = ? ORDER BY at, rowid`,
-    ).all(number) as Row[];
+        : (this.q(READS.headRevision).get(number, revision) as Row | undefined);
+    const sessions = this.q(READS.sessions).all(number) as Row[];
     const comments = (
-      this.q(`SELECT * FROM proposal_comments WHERE number = ? ORDER BY ord`).all(number) as Row[]
+      this.q(READS.comments).all(number) as Row[]
     ).map(commentOf);
     const batches = this.q(
       `SELECT id, revision FROM proposal_batches WHERE number = ? AND open = 1 ORDER BY at, id`,
@@ -195,9 +208,7 @@ export class ProposalReads {
       tests: head === undefined ? [] : (JSON.parse(str(head.tests)) as Proposal["tests"]),
       sections: head === undefined ? [] : (JSON.parse(str(head.sections)) as Proposal["sections"]),
       materials: (
-        this.q(
-          `SELECT kind, label, url, by, at FROM proposal_materials WHERE number = ? ORDER BY id`,
-        ).all(number) as Row[]
+        this.q(READS.materials).all(number) as Row[]
       ).map(materialOf),
       impl: implOf(
         this.q(`SELECT * FROM proposal_impls WHERE number = ?`).get(number) as Row | undefined,
@@ -223,7 +234,7 @@ export class ProposalReads {
         ),
       comments,
       events: (
-        this.q(`SELECT * FROM proposal_events WHERE number = ? ORDER BY seq`).all(number) as Row[]
+        this.q(READS.events).all(number) as Row[]
       ).map(eventOf),
       openBatches: batches.map((b) => ({
         id: str(b.id),
@@ -254,17 +265,12 @@ export class ProposalReads {
 
   revisions(number: number): Array<{ revision: number; by: string; at: string }> {
     return (
-      this.q(
-        `SELECT revision, by, at FROM proposal_revisions WHERE number = ? ORDER BY revision`,
-      ).all(number) as Row[]
+      this.q(READS.revisionList).all(number) as Row[]
     ).map((r) => ({ revision: num(r.revision), by: str(r.by), at: str(r.at) }));
   }
 
   revision(number: number, revision: number): ProposalRevision | null {
-    const row = this.q(`SELECT * FROM proposal_revisions WHERE number = ? AND revision = ?`).get(
-      number,
-      revision,
-    ) as Row | undefined;
+    const row = this.q(READS.revision).get(number, revision) as Row | undefined;
     return row === undefined ? null : revisionOf(row);
   }
 
@@ -303,14 +309,11 @@ export class ProposalReads {
     return {
       implsByPr: (prKey) =>
         (
-          this.q(`SELECT number FROM proposal_impls WHERE pr_key = ?`).all(prKey) as Row[]
+          this.q(READS.implByPr).all(prKey) as Row[]
         ).map((r) => num(r.number)),
       implsByHead: (headKey) =>
         (
-          this.q(
-            `SELECT i.number, p.status FROM proposal_impls i JOIN proposals p ON p.number = i.number
-              WHERE i.head_key = ?`,
-          ).all(headKey) as Row[]
+          this.q(READS.implByHead).all(headKey) as Row[]
         ).map((r) => ({ number: num(r.number), status: str(r.status) as ProposalStatus })),
     };
   }
