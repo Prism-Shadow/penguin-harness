@@ -1419,3 +1419,460 @@ describe("--org-id resolution", () => {
     expect(err()).toContain("org_not_found");
   });
 });
+
+describe("penguin org proposal (the company-proposals plugin's routes)", () => {
+  beforeEach(() => {
+    server.addEmployee("acme", { agentId: "dev1", title: "Developer" });
+    server.addEmployee("acme", { agentId: "impl1", title: "Engineer" });
+    server.addSession({ sessionId: DESK_SESSION, agentId: "dev1" });
+    process.env.PENGUIN_SESSION_ID = DESK_SESSION;
+    process.env.PENGUIN_AGENT_ID = "dev1";
+  });
+
+  it("create posts the author and the brief with the caller's identity, then ls lists it", async () => {
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "create",
+        "--author",
+        "dev1",
+        "--brief",
+        "Batch the ticket notices",
+        "--title",
+        "Batched notices",
+      ]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/proposals")?.body).toEqual({
+      author: "dev1",
+      brief: "Batch the ticket notices",
+      title: "Batched notices",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalCreated(1, "Batched notices")}\n`);
+
+    // Without --author the server decides (the calling employee): nothing is sent for it.
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "create", "--brief", "Rotate the token"])).toBe(0);
+    expect(lastRequest("POST", "/proposals")?.body).toEqual({
+      brief: "Rotate the token",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(server.orgs.get("acme")!.proposals!.get(2)!.author).toBe("dev1");
+
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "ls"])).toBe(0);
+    expect(out()).toContain("#1");
+    expect(out()).toContain("drafting");
+    expect(out()).toContain("Batched notices");
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "ls", "--status", "merged"])).toBe(0);
+    expect(out()).toBe(`${t.org.proposalsEmpty()}\n`);
+    expect(await cli(["org", "proposal", "ls", "--status", "open"])).toBe(1);
+    expect(err()).toContain(t.org.proposalStatusInvalid("open"));
+  });
+
+  it("brief rewrites the brief from -m or --file with the caller's identity; show prints the new one", async () => {
+    server.addProposal("acme", { number: 7, brief: "Write a proposal for the open PR #812" });
+    expect(await cli(["org", "proposal", "brief", "7", "-m", "Batch the ticket notices"])).toBe(0);
+    expect(lastRequest("PUT", "/proposals/7/brief")?.body).toEqual({
+      brief: "Batch the ticket notices",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalBriefRewritten(7)}\n`);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));
+    const file = path.join(dir, "brief.md");
+    fs.writeFileSync(file, "Batch the notices,\nonce per sweep.\n");
+    try {
+      stdout.length = 0;
+      expect(await cli(["org", "proposal", "brief", "7", "--file", file])).toBe(0);
+      expect(lastRequest("PUT", "/proposals/7/brief")?.body).toMatchObject({
+        brief: "Batch the notices,\nonce per sweep.\n",
+      });
+      expect(await cli(["org", "proposal", "brief", "7", "--file", path.join(dir, "no.md")])).toBe(
+        1,
+      );
+      expect(err()).toContain(t.org.bodyFileUnreadable(path.join(dir, "no.md")));
+      // Exactly one source: neither, or both, is refused before any request.
+      const before = server.requests.length;
+      expect(await cli(["org", "proposal", "brief", "7"])).toBe(1);
+      expect(await cli(["org", "proposal", "brief", "7", "-m", "x", "--file", file])).toBe(1);
+      expect(err()).toContain(t.org.proposalBriefOneSource);
+      expect(server.requests.length).toBe(before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "show", "7"])).toBe(0);
+    expect(out()).toContain(t.org.proposalBrief("Batch the notices,\nonce per sweep."));
+    expect(out()).toContain("brief_edited: Batch the notices,");
+  });
+
+  it("publish sends the file as one Markdown document; show prints the sections back", async () => {
+    server.addProposal("acme", { number: 3, title: "Old title" });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));
+    const file = path.join(dir, "proposal.md");
+    const markdown =
+      "---\ntitle: Batched notices\nscope:\n  - file: reconcile.ts\n---\n\n## Change\n\nOne paragraph.\n\n## Purpose\n\nFewer wake-ups.\n\n## Test\n\nOne case.\n";
+    fs.writeFileSync(file, markdown);
+    try {
+      expect(await cli(["org", "proposal", "publish", "3", "--file", file])).toBe(0);
+      expect(lastRequest("PUT", "/proposals/3")?.body).toEqual({
+        markdown,
+        sessionId: DESK_SESSION,
+        agentId: "dev1",
+      });
+      expect(out()).toBe(`${t.org.proposalPublished(3, 1)}\n`);
+      expect(
+        await cli(["org", "proposal", "publish", "3", "--file", path.join(dir, "no.md")]),
+      ).toBe(1);
+      expect(await cli(["org", "proposal", "publish", "x", "--file", file])).toBe(1);
+      expect(err()).toContain(t.org.proposalNumberInvalid("x"));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "show", "#3"])).toBe(0);
+    const text = out();
+    expect(text).toContain(t.org.proposalHead(3, "Batched notices", "drafting", 1));
+    expect(text).toContain("## Change\n\nOne paragraph.");
+    expect(text).toContain("## Test\n\nOne case.");
+    expect(text).toContain(`${t.org.proposalEvents()}\n`);
+    expect(text).toContain("revised r1");
+  });
+
+  it("show prints the tests after the sections, grouped unit, integration, e2e, bench, then the rest", async () => {
+    server.addProposal("acme", {
+      number: 5,
+      sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "One." }] }],
+      tests: [
+        {
+          kind: "new",
+          group: "e2e",
+          file: "e2e/flow.spec.ts",
+          description: "the whole flow",
+          state: "new",
+        },
+        {
+          kind: "existing",
+          group: "a11y",
+          file: "test/axe.test.ts",
+          description: "no violations",
+          state: "exists",
+        },
+        {
+          kind: "existing",
+          group: "unit",
+          file: "test/a.test.ts",
+          name: "^batches",
+          description: "batches the notices",
+          state: "exists",
+        },
+      ],
+    });
+    expect(await cli(["org", "proposal", "show", "5"])).toBe(0);
+    const text = out();
+    const block = [
+      t.org.proposalTests(),
+      "  unit (1):",
+      "    existing test/a.test.ts [^batches] — batches the notices (exists)",
+      "  e2e (1):",
+      "    new e2e/flow.spec.ts — the whole flow (new)",
+      "  a11y (1):",
+      "    existing test/axe.test.ts — no violations (exists)",
+    ].join("\n");
+    expect(text).toContain(block);
+    expect(text.indexOf("## Change")).toBeLessThan(text.indexOf(block));
+  });
+
+  it("show orders the test groups as declared and marks one no longer declared; groups lists the declaration", async () => {
+    server.addProposal("acme", {
+      number: 6,
+      tests: [
+        {
+          kind: "existing",
+          group: "unit",
+          file: "test/a.test.ts",
+          description: "a",
+          state: "exists",
+        },
+        {
+          kind: "existing",
+          group: "perf",
+          file: "test/p.bench.ts",
+          description: "p",
+          state: "exists",
+        },
+        { kind: "new", group: "e2e", file: "e2e/f.spec.ts", description: "f", state: "new" },
+      ],
+      testGroups: [
+        { id: "e2e", description: "the product end to end" },
+        { id: "unit", description: "one module" },
+      ],
+    });
+    expect(await cli(["org", "proposal", "show", "6"])).toBe(0);
+    const text = out();
+    expect(text).toContain(
+      [
+        "  e2e (1):",
+        "    new e2e/f.spec.ts — f (new)",
+        "  unit (1):",
+        "    existing test/a.test.ts — a (exists)",
+        `  perf (1) ${t.org.proposalGroupUndeclared()}:`,
+      ].join("\n"),
+    );
+    expect(await cli(["org", "proposal", "groups"])).toBe(0);
+    expect(
+      out().endsWith("unit: one module in isolation, no I/O\ne2e: the product end to end\n"),
+    ).toBe(true);
+    expect(lastRequest("GET", "/proposals/test-groups")).toBeDefined();
+  });
+
+  it("show prints the root and each scope entry as its kind, file and state; publish prints the server's hints", async () => {
+    server.addProposal("acme", {
+      number: 4,
+      root: "typst.ts",
+      scope: [
+        { kind: "edit", file: "src/a.ts", state: "exists" },
+        { kind: "new", file: "src/b.ts", state: "new", name: "Batch" },
+        { kind: "delete", file: "src/c.ts", state: "deleted" },
+        { kind: "rename", from: "src/d.ts", file: "src/e.ts", state: "renamed" },
+      ],
+      hints: ["src/b.ts is listed as new but already exists — is it an edit?"],
+    });
+    expect(await cli(["org", "proposal", "show", "4"])).toBe(0);
+    const text = out();
+    expect(text).toContain(
+      [
+        t.org.proposalScope("typst.ts"),
+        "  edit src/a.ts  [exists]",
+        "  new src/b.ts  [new]  /Batch/",
+        "  delete src/c.ts  [deleted]",
+        "  rename src/d.ts → src/e.ts  [renamed]",
+      ].join("\n"),
+    );
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));
+    const file = path.join(dir, "proposal.md");
+    fs.writeFileSync(file, "---\ntitle: T\n---\n\n## Change\n\nOne.\n");
+    try {
+      stdout.length = 0;
+      expect(await cli(["org", "proposal", "publish", "4", "--file", file])).toBe(0);
+      expect(out()).toBe(
+        `${t.org.proposalPublished(4, 1)}\n${t.org.proposalHint("src/b.ts is listed as new but already exists — is it an edit?")}\n`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("implement names the implementer as agentId and the caller as callerAgentId, and prints the session", async () => {
+    server.addProposal("acme", { number: 2 });
+    expect(
+      await cli(["org", "proposal", "implement", "2", "--agent", "impl1", "-m", "Branch off dev"]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/proposals/2/implement")?.body).toEqual({
+      agentId: "impl1",
+      message: "Branch off dev",
+      sessionId: DESK_SESSION,
+      callerAgentId: "dev1",
+    });
+    const sessions = server.orgs.get("acme")!.proposals!.get(2)!.sessions as string[];
+    expect(sessions).toHaveLength(1);
+    expect(out()).toBe(`${t.org.proposalImplementing(2, "impl1", sessions[0]!)}\n`);
+  });
+
+  it("implement without --agent sends no implementer: the author builds its own proposal", async () => {
+    server.addProposal("acme", { number: 3, author: "dev1" });
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "implement", "3"])).toBe(0);
+    expect(lastRequest("POST", "/proposals/3/implement")?.body).toEqual({
+      sessionId: DESK_SESSION,
+      callerAgentId: "dev1",
+    });
+    const sessions = server.orgs.get("acme")!.proposals!.get(3)!.sessions as string[];
+    expect(out()).toBe(`${t.org.proposalImplementing(3, "dev1", sessions[0]!)}\n`);
+  });
+
+  it("material add, feedback and the status commands post their bodies with the caller's identity", async () => {
+    server.addProposal("acme", { number: 5 });
+    expect(
+      await cli([
+        "org",
+        "proposal",
+        "material",
+        "add",
+        "5",
+        "pr=https://github.com/acme/site/pull/9",
+        "--label",
+        "PR 9",
+      ]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/proposals/5/materials")?.body).toEqual({
+      kind: "pr",
+      url: "https://github.com/acme/site/pull/9",
+      label: "PR 9",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalMaterialAdded(5, "pr")}\n`);
+    expect(await cli(["org", "proposal", "material", "add", "5", "video=https://x"])).toBe(1);
+    expect(err()).toContain(t.org.proposalMaterialInvalid("video=https://x"));
+
+    stdout.length = 0;
+    expect(
+      await cli(["org", "proposal", "feedback", "5", "-m", "Crashes on boot", "--runtime"]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/proposals/5/feedback")?.body).toEqual({
+      text: "Crashes on boot",
+      runtime: true,
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalFeedbackRecorded(5)}\n`);
+
+    for (const [command, status] of [
+      ["ready", "ready"],
+      ["approve", "approved"],
+      ["merged", "merged"],
+    ] as const) {
+      stdout.length = 0;
+      expect(await cli(["org", "proposal", command, "5"])).toBe(0);
+      expect(lastRequest("POST", `/proposals/5/${command}`)?.body).toEqual({
+        sessionId: DESK_SESSION,
+        agentId: "dev1",
+      });
+      expect(out()).toBe(`${t.org.proposalStatusSet(5, status)}\n`);
+    }
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "reject", "5", "--reason", "Out of scope"])).toBe(0);
+    expect(lastRequest("POST", "/proposals/5/reject")?.body).toMatchObject({
+      reason: "Out of scope",
+    });
+    expect(out()).toBe(`${t.org.proposalStatusSet(5, "rejected")}\n`);
+  });
+
+  it("conclude sends the discussion's conclusion from inside it, or from a person naming it", async () => {
+    // The CLI runs inside the discussion: PENGUIN_SESSION_ID is the discussion's session.
+    server.addProposal("acme", {
+      number: 6,
+      discussions: [
+        { sessionId: DESK_SESSION, agentId: "dev1", by: "user:admin", at: "x", concluded: null },
+        { sessionId: "disc-2", agentId: "dev1", by: "user:admin", at: "x", concluded: null },
+      ],
+    });
+    expect(await cli(["org", "proposal", "conclude", "6", "-m", "Keep the digest."])).toBe(0);
+    expect(lastRequest("POST", `/proposals/6/discussions/${DESK_SESSION}/conclude`)?.body).toEqual({
+      text: "Keep the digest.",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalConcluded(6, "dev1")}\n`);
+
+    // A person outside any session names the discussion; without it nothing is sent.
+    delete process.env.PENGUIN_SESSION_ID;
+    delete process.env.PENGUIN_AGENT_ID;
+    const before = server.requests.length;
+    expect(await cli(["org", "proposal", "conclude", "6", "-m", "x"])).toBe(1);
+    expect(err()).toContain(t.org.proposalDiscussionMissing);
+    expect(server.requests.length).toBe(before);
+    stdout.length = 0;
+    expect(
+      await cli(["org", "proposal", "conclude", "6", "--discussion", "disc-2", "-m", "Agreed."]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/proposals/6/discussions/disc-2/conclude")?.body).toEqual({
+      text: "Agreed.",
+    });
+    // An unknown discussion is the server's 404, passed through.
+    expect(await cli(["org", "proposal", "conclude", "6", "--discussion", "nope", "-m", "x"])).toBe(
+      1,
+    );
+    expect(err()).toContain("discussion_not_found");
+  });
+
+  it("comments prints the text with the passages marked under --pending, and resolve posts the note", async () => {
+    server.addProposal("acme", {
+      number: 4,
+      revision: 1,
+      sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "Alpha\nmore" }] }],
+      comments: [
+        {
+          id: "c1",
+          sectionId: "s1",
+          range: { start: 0, end: 5 },
+          quote: "Alpha",
+          paragraphId: "p1",
+          revision: 1,
+          text: "Say who calls it",
+          by: "user:admin",
+          at: "2026-09-21T00:00:00Z",
+          batchId: "b1",
+        },
+        {
+          id: "c2",
+          sectionId: "s1",
+          range: { start: 6, end: 10 },
+          quote: "more",
+          paragraphId: "p1",
+          revision: 1,
+          text: "Pending one",
+          by: "user:admin",
+          at: "2026-09-21T00:00:00Z",
+          batchId: null,
+        },
+        {
+          id: "c3",
+          sectionId: "s1",
+          range: { start: 0, end: 5 },
+          quote: "Older",
+          revision: 0,
+          text: "Done already",
+          by: "user:admin",
+          at: "2026-09-21T00:00:00Z",
+          batchId: "b0",
+          resolved: { by: "agent:dev1", at: "2026-09-21T00:00:00Z", text: "Rewritten" },
+        },
+      ],
+    });
+    expect(await cli(["org", "proposal", "comments", "4", "--pending"])).toBe(0);
+    expect(lastRequest("GET", "/proposals/4/comments")?.search).toContain("pending=1");
+    expect(out()).toBe(
+      "## Change\n\n⟦c1⟧Alpha⟦/c1⟧\nmore\n\n### Comments\n\n⟦c1⟧ user:admin (open): Say who calls it\n",
+    );
+
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "comments", "4"])).toBe(0);
+    const text = out();
+    expect(text).toContain("⟦c1⟧Alpha⟦/c1⟧\n⟦c2⟧more⟦/c2⟧");
+    expect(text).toContain("⟦c2⟧ user:admin (pending): Pending one");
+    expect(text).toContain("⟦c3⟧ user:admin (resolved: Rewritten): Done already");
+    expect(text).not.toContain("range");
+
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "resolve", "4", "c1", "-m", "Named the caller"])).toBe(0);
+    expect(lastRequest("POST", "/proposals/4/comments/c1/resolve")?.body).toEqual({
+      text: "Named the caller",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalCommentResolved(4, "c1")}\n`);
+    expect(await cli(["org", "proposal", "resolve", "4", "nope"])).toBe(1);
+    expect(err()).toContain("comment_not_found");
+  });
+
+  it("says the plugin is missing when the proposals routes answer a plain 404", async () => {
+    delete org().proposals;
+    expect(await cli(["org", "proposal", "ls"])).toBe(1);
+    expect(err()).toBe(`${t.error(t.org.proposalsPluginMissing())}\n`);
+    // A 404 that names an organization thing is that thing's, not the plugin's absence.
+    server.orgs.clear();
+    expect(await cli(["org", "proposal", "ls"])).toBe(1);
+    expect(err()).toContain("org_not_found");
+  });
+});

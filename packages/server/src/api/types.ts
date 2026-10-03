@@ -3315,6 +3315,12 @@ export type ServerEvent =
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
   /**
+   * A plugin's own event to the people of a Project: `plugin` is the package's short name
+   * (the id its module contributions carry, e.g. `company-proposals`), `data` whatever it
+   * publishes. The platform relays it; only the plugin's page reads it.
+   */
+  | { type: "plugin"; plugin: string; data: unknown }
+  /**
    * The user-channel counterpart of `task_state`: the same run-state flip, named by
    * `sessionId`, delivered on GET /api/events.
    *
@@ -6657,6 +6663,378 @@ export type CompanyServerEvent =
       state: "warned" | "paused" | "resumed";
       ratio: number;
     };
+
+// ---------------------------------------------------------------------------
+// Company proposals (the company-proposals plugin: /api/projects/:p/organizations/:o/proposals)
+//
+// The plugin owns the ledger and the routes; the page that draws a proposal is one of the
+// web app's builtin renderers, so the data contract lives here beside the other DTOs the
+// web build compiles against. Absent the plugin, none of these routes exist.
+// ---------------------------------------------------------------------------
+
+/** A proposal's lifecycle; a revision never changes it, a request for changes puts `ready` back to `drafting`. */
+export type ProposalStatus = "drafting" | "ready" | "approved" | "merged" | "rejected";
+
+/** One pair of the scope: a file, and optionally a pattern (a regular expression, with capture groups) over the names it touches. */
+/** What a scope entry does to its file: edit or delete one that exists, create a new one, or rename `from` to `file`. */
+export type ProposalScopeKind = "edit" | "new" | "delete" | "rename";
+
+/**
+ * A scope file's state in the working tree, as the owning server finds it when the proposal
+ * is read (under the proposal's `root`): `exists`, `missing` (an edit, a delete or a rename's
+ * source that is not there), `new` (a new file not written yet), `deleted` (a delete done),
+ * `renamed` (a rename whose source is still there and whose target is not yet).
+ */
+export type ProposalScopeState = "exists" | "new" | "missing" | "deleted" | "renamed";
+
+/**
+ * One entry of the scope: a file (relative to the proposal's `root`), what the change does to
+ * it, and optionally a pattern (a regular expression, capture groups allowed) over the names
+ * it touches. `from` is a rename's old path and appears on renames only.
+ */
+export interface ProposalScopeEntry {
+  kind: ProposalScopeKind;
+  file: string;
+  from?: string;
+  name?: string;
+  /** Computed on read (`GET …/:number`), never stored. */
+  state?: ProposalScopeState;
+}
+
+/** A listed test's state under the proposal's root, computed on read: an existing or deleted test is there or missing; a new one is there already (added to an existing file) or still to be written. */
+export type ProposalTestState = "exists" | "new" | "missing";
+
+/**
+ * One test that bears on the change: an existing one, one the change adds, or one it removes (`kind`), in a
+ * group (`unit`, `integration`, `e2e`, `bench` by convention — any short word is accepted),
+ * with a file (relative to `root`), optionally a pattern over the test names in it (a regular
+ * expression, like a scope entry's `name`), and a description of what it checks.
+ */
+export interface ProposalTestEntry {
+  kind: "existing" | "new" | "delete";
+  file: string;
+  name?: string;
+  group: string;
+  description: string;
+  /** Computed on read (`GET …/:number`), never stored. */
+  state?: ProposalTestState;
+}
+
+/** One paragraph of a section: the unit a comment anchors to. `id` is stable across revisions for unchanged text. */
+export interface ProposalParagraph {
+  id: string;
+  text: string;
+}
+
+export interface ProposalSection {
+  id: string;
+  heading: string;
+  paragraphs: ProposalParagraph[];
+}
+
+export type ProposalMaterialKind = "pr" | "issue" | "branch" | "doc" | "ticket" | "url";
+
+/** Where a GitHub pull request stands, as read from GitHub when the proposal is read. */
+export type ProposalPrStatus = "draft" | "open" | "merged" | "closed";
+
+export interface ProposalMaterial {
+  kind: ProposalMaterialKind;
+  label: string;
+  url: string;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+  /** A `pr` material on GitHub: its state, looked up on read and cached briefly — never stored; absent when unknown. */
+  status?: ProposalPrStatus;
+  /** When `status` was read. */
+  statusCheckedAt?: string;
+}
+
+/** A person's comment on one paragraph. Pending (`batchId` null) until the person requests changes; then part of a batch the author works through. */
+/**
+ * A person's comment on a passage: a range in one section's Markdown source (the section's
+ * paragraphs joined by a blank line, see the plugin's `sectionSource`), stored as offsets and
+ * re-anchored by its `quote` on every revision — agents never see the offsets, they see the
+ * passage wrapped in `⟦<id>⟧…⟦/<id>⟧` markers. Pending (`batchId` null) until the person
+ * requests changes; then part of a batch the author works through.
+ */
+export interface ProposalComment {
+  id: string;
+  /** The section the range lies in (section ids follow the heading, so they survive revisions). */
+  sectionId: string;
+  /** Offsets into the section's source, `[start, end)`, of the revision `revision`. */
+  range: { start: number; end: number };
+  /** The passage the range covered when written — what re-anchors it after a revision. */
+  quote: string;
+  /**
+   * The paragraph the range starts in, derived; absent when the passage is not in the current
+   * revision (the comment is then listed as one on revision `revision`).
+   */
+  paragraphId?: string;
+  /** The revision the range refers to: the current one, or the last one the passage was found in. */
+  revision: number;
+  text: string;
+  by: string;
+  at: string;
+  batchId: string | null;
+  resolved?: { by: string; at: string; text: string };
+}
+
+export type ProposalEventKind =
+  | "created"
+  | "revised"
+  | "ready"
+  | "changes_requested"
+  | "implementation_started"
+  | "material_added"
+  | "feedback"
+  | "runtime_feedback"
+  | "resolved"
+  | "approved"
+  | "merged"
+  | "rejected"
+  /** A channel message the plugin had to send did not go out (the text says to whom, and why). */
+  | "notify_failed"
+  /** The brief was rewritten (the text is the new brief); the revisions are untouched. */
+  | "brief_edited"
+  /** A person opened a discussion with the owner (the text is the owner's agent id). */
+  | "discussion_started"
+  /** A discussion's conclusion reached the owner's desk (the text is the conclusion). */
+  | "discussion_concluded";
+
+/** One thing that happened to a proposal; `seq` orders the whole ledger and is what a read position points at. */
+export interface ProposalEvent {
+  seq: number;
+  at: string;
+  kind: ProposalEventKind;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  /** One line for the timeline: the feedback text, the batch size, the material's label, the reason. */
+  text?: string;
+  /** The revision a `revised` event produced. */
+  revision?: number;
+}
+
+/** A proposal as the queue lists it. */
+export interface ProposalItem {
+  number: number;
+  title: string;
+  status: ProposalStatus;
+  revision: number;
+  /** The employee that writes it (`agentId`). */
+  author: string;
+  /** The employee that builds it, once `implement` named one. */
+  implementer: string | null;
+  /** The principal that started it: `user:<id>` for a person, `agent:<id>` for an employee proposing on its own. */
+  delegatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Events after the caller's read position, not counting the caller's own. */
+  unread: number;
+  /** The caller's pending comments (people only; 0 for an employee). */
+  pendingComments: number;
+  materials: ProposalMaterial[];
+}
+
+export interface ProposalDetail extends ProposalItem {
+  /** The delegation, as the person wrote it — or as the author or a person last rewrote it (`penguin org proposal brief`). */
+  brief: string;
+  /** The repository's directory relative to the organization's shared workspace ("" = the workspace itself); scope paths are relative to it. */
+  root: string;
+  /** The absolute directory the scope resolves under, on the server that owns the organization — present on a read and on a publish answer. */
+  base?: string;
+  /** Notes on the scope a publish accepted but that deserve a look (a `new` file that already exists, a rename target already there) — on the publish answer only. */
+  hints?: string[];
+  scope: ProposalScopeEntry[];
+  /** The tests that bear on the change, existing and new; `[]` on a revision written before tests existed. */
+  tests: ProposalTestEntry[];
+  sections: ProposalSection[];
+  /** Pending comments are the commenter's own until requested: an employee sees only batched ones. */
+  comments: ProposalComment[];
+  events: ProposalEvent[];
+  /** Implementation sessions, in the order they were opened. */
+  sessions: string[];
+  /** Discussions with the owner, in the order they were opened. */
+  discussions: ProposalDiscussion[];
+  /**
+   * The revision the standing approval covers, or null. An approval covers ONE revision: a
+   * later publish puts the proposal back to `ready`, and this stays at the approved one so
+   * the page can show what changed since.
+   */
+  approvedRevision: number | null;
+  /** The ledger's latest `seq`: what `POST …/read` should carry to mark everything read. */
+  seq: number;
+  /** The test groups the proposals plugin's configuration declares, in display order — on a read. */
+  testGroups?: ProposalTestGroup[];
+}
+
+/**
+ * A discussion: a session of the owner's Agent (the implementer, else the author) that a
+ * person opened from the proposal page to talk the proposal over — not the owner's desk. Its
+ * conclusion is delivered to the desk once; until then it is open.
+ */
+export interface ProposalDiscussion {
+  sessionId: string;
+  /** The owner the session runs as. */
+  agentId: string;
+  /** The person that opened it (`user:<id>`). */
+  by: string;
+  at: string;
+  /** Set once the conclusion reached the owner's desk. */
+  concluded: { by: string; at: string; text: string } | null;
+}
+
+/**
+ * A test group the proposals plugin's configuration declares (Settings → Plugins, one line
+ * `id: description` each; server-wide). A proposal's tests may only use declared groups, and
+ * the page shows them in the declared order.
+ */
+export interface ProposalTestGroup {
+  id: string;
+  description: string;
+}
+
+/** `GET …/organizations/:orgId/proposals/test-groups`. */
+export interface ProposalTestGroupsResponse {
+  groups: ProposalTestGroup[];
+}
+
+/** One revision as it was published: `GET …/:number/revisions/:rev`. */
+export interface ProposalRevision {
+  revision: number;
+  title: string;
+  /** The scope's root at this revision ("" = the shared workspace). */
+  root: string;
+  scope: ProposalScopeEntry[];
+  tests: ProposalTestEntry[];
+  sections: ProposalSection[];
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+}
+
+/** `GET …/:number/revisions`: every revision published, oldest first. */
+export interface ProposalRevisionsResponse {
+  revisions: Array<{ revision: number; by: string; at: string }>;
+}
+
+/**
+ * `GET …/:number/file?path=`: one file under the proposal's `base`, read-only, for the page's
+ * file panel. `path` is relative to `base` (as the scope and tests write it).
+ */
+export interface ProposalFileResponse {
+  path: string;
+  size: number;
+  /** A NUL byte in the first 8 KB; `content` is then null. */
+  binary: boolean;
+  /** Only the first 512 KB is sent. */
+  truncated: boolean;
+  content: string | null;
+  /** The file's extension, lowercase and without the dot ("" when none); the page maps it to a grammar. */
+  extension: string;
+}
+
+export interface ProposalsResponse {
+  proposals: ProposalItem[];
+}
+
+export interface ProposalCreateRequest {
+  /** The author employee's Agent id; default = the calling employee (a person has to name one). */
+  author?: string;
+  brief: string;
+  title?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+/** `PUT …/:number` — a revision: the whole proposal as one Markdown document (frontmatter `title` and `scope`, then the sections). */
+export interface ProposalPublishRequest {
+  markdown: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalImplementRequest {
+  /** The employee that builds it; default = the author itself. */
+  agentId?: string;
+  message?: string;
+  workspace?: string;
+  sessionId?: string;
+  /** The caller's identity claim (the CLI's PENGUIN_AGENT_ID); distinct from `agentId`, the implementer. */
+  callerAgentId?: string;
+}
+
+/** `POST …/:number/discussions/:sessionId/conclude` — the conclusion, delivered to the owner's desk. */
+export interface ProposalConcludeRequest {
+  text: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalMaterialRequest {
+  kind: ProposalMaterialKind;
+  url: string;
+  label?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalFeedbackRequest {
+  text: string;
+  /** From the test team's run of the dev branch rather than from building the proposal. */
+  runtime?: boolean;
+  sessionId?: string;
+  agentId?: string;
+}
+
+/** `POST …/:number/comments` — a comment on `[start, end)` of `sectionId`'s source; `quote` must equal that slice. */
+export interface ProposalCommentRequest {
+  sectionId: string;
+  start: number;
+  end: number;
+  quote: string;
+  text: string;
+}
+
+/**
+ * `GET …/:number/comments[?pending=1]` — the comments the caller may see (`pending`: the
+ * batched, unresolved ones — the author's work list), and `text`: the proposal's sections
+ * with every listed comment's passage wrapped in `⟦<id>⟧…⟦/<id>⟧`, followed by the comments
+ * by id. What an agent reads; it carries no offsets.
+ */
+export interface ProposalCommentsResponse {
+  number: number;
+  comments: ProposalComment[];
+  text: string;
+}
+
+/** `PATCH …/:number/comments/:id` — a pending comment reworded by the person who wrote it. */
+export interface ProposalCommentEditRequest {
+  text: string;
+}
+
+export interface ProposalResolveRequest {
+  text?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalRejectRequest {
+  reason: string;
+}
+
+export interface ProposalReadRequest {
+  upTo: number;
+}
+
+/** The `data` of the plugin event `company-proposals` publishes after every write. */
+export interface ProposalPluginEvent {
+  projectId: string;
+  orgId: string;
+  number: number;
+  seq: number;
+  kind: ProposalEventKind | "comment";
+}
 
 // ---------------------------------------------------------------------------
 // Web contributions (GET /api/contributions)

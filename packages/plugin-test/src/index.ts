@@ -148,8 +148,6 @@ export class HarnessApi {
   delete<T = void>(apiPath: string): Promise<T> {
     return this.call<T>("DELETE", apiPath);
   }
-
-
 }
 
 /** What the installed-plugins route lists for one plugin, as far as a test reads it. */

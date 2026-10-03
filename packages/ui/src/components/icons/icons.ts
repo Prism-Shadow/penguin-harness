@@ -236,6 +236,8 @@ export const ICONS = {
 
   /** A page with a folded corner. */
   file: "M6 3h8l4 4v14H6zM14 3v4h4",
+  /** A page with a folded corner and a check on it. */
+  fileCheck: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4",
   /** The same page with a plus: a whole file written. */
   filePlus: "M6 3h8l4 4v14H6zM12 11v6M9 14h6",
   /** A pen over a baseline (lucide pen-line): an edit in place. */
@@ -308,6 +310,8 @@ export const ICONS = {
 
   // --- Messages and actions -----------------------------------------------------------------
 
+  /** A speech bubble (lucide message-square): a comment. */
+  messageSquare: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   /** A speech bubble with a plus: putting something into a conversation rather than sending it. */
   messagePlus: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v6M9 10h6",
   /** A round speech bubble, open at its upper right, with two lines of text inside. */

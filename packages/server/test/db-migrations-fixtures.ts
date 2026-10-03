@@ -122,7 +122,9 @@ export function openFresh(): DatabaseSync {
  */
 export function open024(): DatabaseSync {
   const db = openFresh();
-  db.exec("DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;");
+  db.exec(
+    "DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;",
+  );
   dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);

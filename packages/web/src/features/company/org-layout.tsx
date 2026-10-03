@@ -291,12 +291,15 @@ export function OrgLayout() {
  */
 export function OrgPage({
   title,
+  heading,
   info,
   actions,
   wide = false,
   children,
 }: {
   title: string;
+  /** What the heading shows when it is more than the plain title (a title with its changes marked); `title` still names the "?". */
+  heading?: ReactNode;
   info?: string;
   actions?: ReactNode;
   /** Board-shaped pages take the whole width; the rest read better in a column. */
@@ -305,7 +308,7 @@ export function OrgPage({
 }) {
   return (
     <PageFrame width={wide ? "full" : "xl"}>
-      <PageHeader title={title} info={info} actions={actions} />
+      <PageHeader title={heading ?? title} info={info} actions={actions} />
       {children}
     </PageFrame>
   );
