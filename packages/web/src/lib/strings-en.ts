@@ -5896,6 +5896,17 @@ Scenarios:
       /** A refetch failed while the last good data is still on screen. */
       refreshFailed: "Refresh failed; showing the last loaded data",
     },
+    roadmaps: {
+      listTitle: "Roadmaps",
+      showMore: (n: number) => `Show ${n} more`,
+      showFewer: "Show fewer",
+      all: "All roadmaps",
+      open: "Open a roadmap",
+      none: "No roadmap under discussion yet.",
+      loadFailed: "Could not load the roadmaps",
+      panelTitle: (n: number) => `Roadmap #${n}`,
+      hidePanel: "Back to the room",
+    },
     channels: {
       listTitle: "Channels",
       drawerLabel: "Channel list",

@@ -6064,6 +6064,22 @@ Benchmark：
      * composer. The all-hands channel's stored name is never shown: `allHands` is its label
      * everywhere.
      */
+    /**
+     * The roadmaps a plugin keeps (company-roadmaps): the sidebar's ROADMAPS section below the
+     * channels, and the roadmap column beside a roadmap's room on the channel page. Present only
+     * while the plugin contributes its page.
+     */
+    roadmaps: {
+      listTitle: "路线图",
+      showMore: (n: number) => `再显示 ${n} 个`,
+      showFewer: "收起",
+      all: "全部路线图",
+      open: "开一份路线图",
+      none: "还没有讨论中的路线图。",
+      loadFailed: "路线图加载失败",
+      panelTitle: (n: number) => `路线图 #${n}`,
+      hidePanel: "回到讨论",
+    },
     channels: {
       /** The sidebar's list, its groups and the dialog above it. */
       listTitle: "频道",

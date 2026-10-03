@@ -31,7 +31,7 @@ import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/
 import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
-import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
+import { DEFAULT_EMPLOYEE_PLUGINS, channelClaimsOf } from "../src/runtime/organization/deps.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
@@ -2241,6 +2241,57 @@ describe("organization runtime", () => {
       ).toBe(0);
     });
 
+    it("a channel a plugin claims keeps its message — recorded, published — and wakes no desk", async () => {
+      const asked: Array<{ projectId: string; orgId: string; channelId: string }> = [];
+      deps.channelClaimed = (channel) => {
+        asked.push(channel);
+        return channel.channelId === DEFAULT_CHANNEL_ID;
+      };
+      const m = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: `@${HR} over to the room`,
+      });
+      expect(m.mentions).toEqual([`agent:${HR}`]);
+      expect(started).toHaveLength(0);
+      expect(asked).toEqual([{ projectId: P, orgId: ORG, channelId: DEFAULT_CHANNEL_ID }]);
+      expect(
+        events.some(
+          (e) =>
+            e.type === "org_channel" && (e as { message?: { id: string } }).message?.id === m.id,
+        ),
+      ).toBe(true);
+      const read = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
+      expect(read.messages.map((x) => x.id)).toContain(m.id);
+      // Unclaimed again, the channel delivers as it always did.
+      deps.channelClaimed = () => false;
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: `@${HR} back to your desk`,
+      });
+      expect(started).toHaveLength(1);
+    });
+
+    it("a claim that throws is recorded and does not claim", () => {
+      const failures: unknown[] = [];
+      const claimed = channelClaimsOf(
+        [
+          () => {
+            throw new Error("plugin bug");
+          },
+          (c) => c.channelId === "room_a",
+        ],
+        (err) => failures.push(err),
+      );
+      expect(claimed?.({ projectId: P, orgId: ORG, channelId: "room_a" })).toBe(true);
+      expect(claimed?.({ projectId: P, orgId: ORG, channelId: "room_b" })).toBe(false);
+      expect(failures).toHaveLength(2);
+      expect(channelClaimsOf([], () => {})).toBeUndefined();
+    });
+
     it("the system's own lines and a paused organization deliver nothing", async () => {
       await service.patch(P, ORG, { status: "paused" }, "alice");
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
@@ -2269,6 +2320,68 @@ describe("organization runtime", () => {
       ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
       hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
       started.length = 0;
+    });
+
+    it("an unlisted room is left out of every listing, yet is read, posted to and delivers its mentions like any channel", async () => {
+      const room = await service.gatewayOpenRoom({
+        projectId: P,
+        orgId: ORG,
+        channelId: "roadmap_1",
+        name: "Queue migration",
+        purpose: "Roadmap #1",
+        by: "user:alice",
+        agentIds: [HR],
+      });
+      expect(room).toEqual({ channelId: "roadmap_1" });
+      // Not on the channel list — neither a person's nor its own employee's.
+      expect(
+        (await service.channels(P, ORG, alice)).channels.map((c) => c.channelId),
+      ).not.toContain("roadmap_1");
+      expect(
+        (await service.channels(P, ORG, asHr())).channels.map((c) => c.channelId),
+      ).not.toContain("roadmap_1");
+      // Reached by its id: the person who opened it and its employee are in it.
+      const detail = await service.channel(P, ORG, "roadmap_1", alice);
+      expect(detail.members.map((m) => m.principal)).toEqual(["user:alice", `agent:${HR}`]);
+      expect(detail.name).toBe("Queue migration");
+      const m = await service.sendChannelMessage(P, ORG, "alice", "roadmap_1", {
+        text: `@${HR} over to you`,
+      });
+      expect(m.mentions).toEqual([`agent:${HR}`]);
+      expect(started).toHaveLength(1);
+      expect(
+        (await service.channelMessages(P, ORG, alice, "roadmap_1", {})).messages.map((x) => x.id),
+      ).toContain(m.id);
+      // The flag is on disk, and survives a membership change.
+      await service.addChannelMember(P, ORG, "roadmap_1", `agent:${CEO}`, alice);
+      const stored = await store.readChannel(orgDir(), "roadmap_1");
+      expect(stored?.parsed.ok && stored.parsed.value.unlisted).toBe(true);
+      expect(
+        (await service.channels(P, ORG, alice)).channels.map((c) => c.channelId),
+      ).not.toContain("roadmap_1");
+    });
+
+    it("refuses a room over a taken id, an id that is not a channel id, and an Agent that is not an employee", async () => {
+      const open = (channelId: string, agentIds: string[]) =>
+        service.gatewayOpenRoom({
+          projectId: P,
+          orgId: ORG,
+          channelId,
+          name: "Room",
+          purpose: "",
+          by: "user:alice",
+          agentIds,
+        });
+      await open("roadmap_2", [HR]);
+      await expect(open("roadmap_2", [HR])).rejects.toMatchObject({
+        status: 409,
+        code: "channel_exists",
+      });
+      await expect(open("Bad Id", [HR])).rejects.toMatchObject({ status: 400 });
+      await expect(open("roadmap_3", ["stranger"])).rejects.toMatchObject({
+        status: 400,
+        code: "not_an_employee",
+      });
     });
 
     it("a new channel holds only its creator; the all-hands channel holds everyone", async () => {

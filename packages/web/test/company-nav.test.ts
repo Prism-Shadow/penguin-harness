@@ -246,6 +246,33 @@ describe("contributed company-mode pages", () => {
     ).toEqual([]);
   });
 
+  it("draws no org-nav row for the roadmaps page — its roadmaps are the sidebar's own section, below the channels", () => {
+    const roadmaps = page({
+      key: "roadmaps",
+      path: "roadmaps/:number?",
+      renderer: { iframe: { src: "/api/company-roadmaps/page", namespace: "company-roadmaps" } },
+    });
+    const org = { projectId: "p", orgId: "acme" };
+    // Whichever order the plugins are listed in, the only contributed row is Proposals.
+    for (const listed of [
+      [page(), roadmaps],
+      [roadmaps, page()],
+    ]) {
+      expect(orgPageRows(listed, org).map((row) => row.key)).toEqual(["org-proposals"]);
+    }
+    expect(Object.keys(ORG_PAGE_RENDERERS)).toEqual(["OrgProposalsPage"]);
+    expect("roadmaps" in zh.nav.org).toBe(false);
+    expect("roadmaps" in en.nav.org).toBe(false);
+    // An iframe page keyed like a builtin renderer still draws nothing.
+    expect(
+      orgPageRows([page({ key: "OrgProposalsPage", renderer: { iframe: { src: "x" } } })], org),
+    ).toEqual([]);
+    // Two pages with one renderer keep the order they were contributed in.
+    expect(
+      orgPageRows([page({ key: "b" }), roadmaps, page({ key: "a" })], org).map((row) => row.key),
+    ).toEqual(["b", "a"]);
+  });
+
   it("addresses one proposal by its number under the proposals page", () => {
     expect(orgProposalPath("p", "acme", 12)).toBe("/org/p/acme/proposals/12");
   });

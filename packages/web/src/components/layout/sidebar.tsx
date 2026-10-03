@@ -217,6 +217,7 @@ import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
 import { CompanyBetaBadge } from "../../features/company/company-beta";
 import { ChannelSidebar } from "../../features/company/channel-sidebar";
+import { RoadmapsSidebar } from "../../features/company/roadmaps-sidebar";
 import { OrgSessionGroups } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_ICONS, ORG_PAGE_ICONS } from "../../features/company/company-nav-icons";
 import { dropsEmployeeGroup, employmentsOf } from "../../features/agents/agent-employment";
@@ -2162,9 +2163,15 @@ export function Sidebar({
       {inCompany ? (
         navOrg !== null ? (
           /* Company mode: the organization's channels, where development mode lists
-             conversations, and below them its 工位 group — one row per employee's desk. */
+             conversations; below them its ROADMAPS (while the roadmaps plugin is there) and
+             its 工位 group — one row per employee's desk. */
           <>
             <ChannelSidebar
+              projectId={navOrg.projectId}
+              orgId={navOrg.orgId}
+              {...(onNavigate ? { onNavigate } : {})}
+            />
+            <RoadmapsSidebar
               projectId={navOrg.projectId}
               orgId={navOrg.orgId}
               {...(onNavigate ? { onNavigate } : {})}

@@ -376,6 +376,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   /** Memory, knowledge and credit: the brain, the open book, the copyright mark. */
   brain: "pink",
   bookOpen: "pink",
+  foldedMap: "pink",
   copyright: "pink",
 
   /**

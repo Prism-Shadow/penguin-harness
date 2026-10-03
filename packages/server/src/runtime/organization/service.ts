@@ -58,7 +58,7 @@ import { userChannelKey } from "../../http/routes/events.js";
 import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
 import { OrgGateway } from "../../mechanisms/organization.js";
-import type { OrgCache, OrgView } from "../../mechanisms/organization.js";
+import type { OrgCache, OrgChannelRef, OrgView } from "../../mechanisms/organization.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type {
   AgentIndex,
@@ -117,7 +117,14 @@ import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget
 import type { OrgSpend } from "./budget.js";
 import { machineApi } from "../../machines/machine-api.js";
 import { Machines } from "../../machines/service.js";
-import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins, runsOn } from "./deps.js";
+import {
+  DEFAULT_EMPLOYEE_PLUGINS,
+  OrgRuns,
+  OrgSessions,
+  channelClaimsOf,
+  employeePlugins,
+  runsOn,
+} from "./deps.js";
 import type { OrgDeps } from "./deps.js";
 import { isMirrorPath, mirrorManifest, pullMirror, readMirrorFile } from "./mirror.js";
 import type { OrgMirrorEntry } from "./mirror.js";
@@ -2312,6 +2319,8 @@ export class OrganizationService {
     const channels: OrgChannelItem[] = [];
     for (const file of await this.deps.store.listChannels(org.dir)) {
       if (!file.parsed.ok) continue;
+      // An unlisted channel (a roadmap's room) is reached from the work it was opened for.
+      if (file.parsed.value.unlisted === true) continue;
       const item = await this.channelItem(org, file.channelId, file.parsed.value, caller);
       if (caller.agentId !== null && !item.isMember) continue;
       channels.push(item);
@@ -2757,6 +2766,68 @@ export class OrganizationService {
     });
   }
 
+  /**
+   * OrgGateway.openRoom: the routes' channel creation, unlisted, with its employees in it from
+   * the start. Refused (409 `org_runs_elsewhere`, as the routes refuse a write) for an
+   * organization that runs on another machine: what this server holds of it is a mirror, and the
+   * next copy from that machine would remove the room again.
+   */
+  async gatewayOpenRoom(args: {
+    projectId: string;
+    orgId: string;
+    channelId: string;
+    name: string;
+    purpose: string;
+    by: string;
+    agentIds: string[];
+  }): Promise<{ channelId: string }> {
+    const { projectId, orgId, channelId } = args;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireOrg(projectId, orgId);
+      const elsewhere = runsOn(this.deps, org.config);
+      if (elsewhere !== null) {
+        throw new HttpError(
+          409,
+          "org_runs_elsewhere",
+          `This organization runs on machine ${elsewhere}; open the room there.`,
+        );
+      }
+      if (!isChannelId(channelId)) {
+        throw badRequest(
+          "Channel id must be 2–64 characters: a lowercase letter, then lowercase letters, digits or underscores.",
+        );
+      }
+      if ((await this.deps.store.readChannel(org.dir, channelId)) !== null) {
+        throw new HttpError(409, "channel_exists", `Channel id is already taken: ${channelId}`);
+      }
+      const creator = parsePrincipal(args.by);
+      if (creator?.kind !== "agent" && creator?.kind !== "user") {
+        throw badRequest(`Not a principal: ${args.by}`);
+      }
+      const members: string[] = creator.kind === "user" ? [args.by] : [];
+      for (const agentId of args.agentIds) {
+        if (!org.byId.has(agentId)) {
+          throw new HttpError(400, "not_an_employee", `${agentId} is not an employee of ${orgId}`);
+        }
+        const principal = agentPrincipal(agentId);
+        if (!members.includes(principal)) members.push(principal);
+      }
+      const cfg: ChannelConfig = {
+        name: args.name.trim() || channelId,
+        purpose: args.purpose.trim(),
+        createdBy: args.by,
+        createdAt: new Date(this.now()).toISOString(),
+        archived: false,
+        members,
+        unlisted: true,
+      };
+      await this.deps.store.writeChannel(org.dir, channelId, cfg);
+      await appendChannelMessage(this.deps, org, channelId, systemMessage(channelCreated(args.by)));
+    });
+    await this.scheduler.reconcile(projectId, orgId);
+    return { channelId };
+  }
+
   /** {@link openTicketSession} without the ticket: the session is the employee's, marked as the organization's, and started on `body`. */
   async gatewayOpenSession(args: {
     projectId: string;
@@ -3173,13 +3244,25 @@ export class OrganizationModule {
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
   @Provide() orgGateway!: OrgGateway;
-  setup({ effect }: ClassCtx) {
+  setup({ effect, contributions }: ClassCtx) {
     const channels = this.channels as ChannelHub;
     const agentService = this.agentService;
     const agentConfig = this.agentConfig;
     const agentsRepo = this.agentsRepo;
     const runner = this.runner;
     const projectConfig = this.projectConfig;
+    // The channels plugins handle themselves (OrgGatewaySlots.channelClaims): none, and every
+    // channel delivers its mentions as before.
+    const channelClaimed = channelClaimsOf(
+      (contributions.channelClaims ?? []).map((c) => c.code as (channel: OrgChannelRef) => boolean),
+      (err, channel) =>
+        this.errors.record({
+          source: "organization",
+          err,
+          code: "org_channel_claim_failed",
+          ctx: { projectId: channel.projectId },
+        }),
+    );
     const deps: OrgDeps = {
       root: this.config.root,
       store: new OrgStore(this.config.root),
@@ -3226,6 +3309,7 @@ export class OrganizationModule {
         }
       },
       companyModeEnabled: () => this.settings.getCompanyMode(),
+      ...(channelClaimed !== undefined ? { channelClaimed } : {}),
       machines: {
         ownId: () => this.machines.ownId(),
         api: async (machineId) => {
@@ -3260,6 +3344,7 @@ export class OrganizationModule {
       deliverToDesk: (projectId, orgId, agentId, text) =>
         orgService.gatewayDeliverToDesk(projectId, orgId, agentId, text),
       openEmployeeSession: (args) => orgService.gatewayOpenSession(args),
+      openRoom: (args) => orgService.gatewayOpenRoom(args),
       notifyProject: deps.notifyProject,
     };
     // Only active while this App is; the successor's start() reconciles from the files.

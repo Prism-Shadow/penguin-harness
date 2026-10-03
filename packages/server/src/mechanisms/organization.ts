@@ -3,7 +3,7 @@
  * implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Opaque } from "@prismshadow/penguin-core/kernel";
+import type { Opaque, Slot } from "@prismshadow/penguin-core/kernel";
 import type { OrgCacheRepo } from "../db/repos/organizations.js";
 import type { ServerEvent } from "../api/types.js";
 
@@ -55,9 +55,10 @@ export interface OrgView {
 /**
  * OrgGateway: what a plugin may do with an organization without holding the organization
  * service — read it, attribute a write, put a line of work on an employee's desk (in nobody's
- * name), open a session for an employee the way a ticket session is opened, and notify the
- * Project's people. Every
- * method is a narrowing of OrganizationService; none adds behaviour the routes do not have.
+ * name), open a session for an employee the way a ticket session is opened, open an unlisted
+ * room for a piece of work, and notify the Project's people. Every method but `openRoom` is a
+ * narrowing of OrganizationService with no behaviour the routes do not have; `openRoom` is
+ * the routes' channel creation with one difference, the channel is left out of the listing.
  */
 export abstract class OrgGateway extends Interface<{
   /** The admin master switch: every company-mode surface answers 404 while it is off. */
@@ -91,6 +92,42 @@ export abstract class OrgGateway extends Interface<{
     body: string;
     workspace?: string;
   }): Promise<{ sessionId: string; workspace: string }>;
+  /**
+   * A room for one piece of work: a channel like any other — read, posted to, joined and left,
+   * its mentions delivered — except that the channel listing leaves it out, so it is reached
+   * from the work that opened it and not from the channel list. `by` opens it (a person joins
+   * it; an employee is recorded as its creator), and `agentIds` are the employees in it from
+   * the start. 409 `channel_exists` when the id is taken; 400 for an id that is not a channel
+   * id or an Agent that is not an employee.
+   */
+  openRoom(args: {
+    projectId: string;
+    orgId: string;
+    channelId: string;
+    name: string;
+    purpose: string;
+    by: string;
+    agentIds: string[];
+  }): Promise<{ channelId: string }>;
   /** A user-level event to everyone with access to the Project. */
   notifyProject(projectId: string, event: ServerEvent): void;
 }>() {}
+
+/** One channel of one organization, as a channel claim is asked about it. */
+export interface OrgChannelRef {
+  projectId: string;
+  orgId: string;
+  channelId: string;
+}
+
+export interface OrgGatewaySlots {
+  /**
+   * A plugin that handles a channel's messages itself. Before the scheduler delivers the
+   * mentions of a channel's new messages to desks it asks every claim; a channel any claim
+   * answers `true` for keeps everything else — the message is recorded, published and read as
+   * any other — but no mention in it wakes a desk: the claimant handles the message. Asked
+   * under the organization's lock, so a claim answers at once and does its work afterwards; a
+   * claim that throws is recorded and counts as not claiming.
+   */
+  channelClaims: Slot<{ description: string }, (channel: OrgChannelRef) => boolean>;
+}

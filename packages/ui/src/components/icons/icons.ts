@@ -236,6 +236,8 @@ export const ICONS = {
 
   /** A page with a folded corner. */
   file: "M6 3h8l4 4v14H6zM14 3v4h4",
+  /** A map of three folded panels (lucide map). */
+  foldedMap: "M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14",
   /** A page with a folded corner and a check on it. */
   fileCheck: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4",
   /** The same page with a plus: a whole file written. */

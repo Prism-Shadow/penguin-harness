@@ -131,6 +131,10 @@ class FakeGateway implements OrgGateway {
   notifyProject(_projectId: string, event: ServerEvent): void {
     this.events.push(event);
   }
+  // Proposals open no room; the gateway's room is company-roadmaps'.
+  async openRoom(args: { channelId: string }) {
+    return { channelId: args.channelId };
+  }
 }
 
 /** The Agent lifecycle as the service uses it: which employees carry the skills plugin, and the installs it asked for. */

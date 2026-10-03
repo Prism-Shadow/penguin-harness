@@ -946,6 +946,12 @@ export interface ChannelConfig {
   members?: string[];
   /** True only on the all-hands channel: membership is implicit and there is no list. */
   everyone?: boolean;
+  /**
+   * Left out of the channel listing: a channel opened for one piece of work (a roadmap's room)
+   * that is reached from that work, not from the channel list. Everything else — reading,
+   * posting, membership, mentions — is an ordinary channel's. Absent means listed.
+   */
+  unlisted?: boolean;
 }
 
 /**
@@ -979,6 +985,9 @@ export function parseChannelConfig(channelId: string, raw: string): ParseResult<
   if (typeof archived !== "boolean") return fail("archived must be a boolean");
   const everyone = table["everyone"] ?? false;
   if (typeof everyone !== "boolean") return fail("everyone must be a boolean");
+  const unlisted = table["unlisted"] ?? false;
+  if (typeof unlisted !== "boolean") return fail("unlisted must be a boolean");
+  if (unlisted && everyone) return fail("the all-hands channel cannot be unlisted");
   if (everyone !== (channelId === DEFAULT_CHANNEL_ID)) {
     return fail(
       everyone
@@ -1018,6 +1027,7 @@ export function parseChannelConfig(channelId: string, raw: string): ParseResult<
       createdAt: new Date(createdAt).toISOString(),
       archived,
       members,
+      ...(unlisted ? { unlisted: true } : {}),
     },
   };
 }
@@ -1030,6 +1040,7 @@ export function serializeChannelConfig(cfg: ChannelConfig): string {
     created_at: cfg.createdAt,
     archived: cfg.archived,
     ...(cfg.everyone === true ? { everyone: true } : { members: cfg.members ?? [] }),
+    ...(cfg.unlisted === true ? { unlisted: true } : {}),
   };
   return [
     "# channel.toml — a channel (the id is the directory name under channels/).",
@@ -1037,6 +1048,7 @@ export function serializeChannelConfig(cfg: ChannelConfig): string {
     "# mention reaches a desk. everyone = true marks the all-hands channel instead: every",
     "# employee and every Project member belongs to it and there is no list to keep.",
     "# archived: read-only, folded away in the UI, until a person unarchives it.",
+    "# unlisted: left out of the channel list — reached from the work it was opened for.",
     stringifyToml(table),
     "",
   ].join("\n");

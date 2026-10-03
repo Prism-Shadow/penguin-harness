@@ -341,6 +341,28 @@ describe("channel files", () => {
     expect(parseChannelConfig(DEFAULT_CHANNEL_ID, allRaw)).toEqual({ ok: true, value: all });
   });
 
+  it("round-trips an unlisted channel, and refuses an unlisted all-hands channel or a flag that is not a boolean", () => {
+    const room: ChannelConfig = { ...site, unlisted: true };
+    const raw = serializeChannelConfig(room);
+    expect(raw).toContain("unlisted = true");
+    expect(parseChannelConfig("site", raw)).toEqual({ ok: true, value: room });
+    // A listed channel writes no flag at all.
+    expect(serializeChannelConfig(site)).not.toContain("unlisted =");
+    expect(
+      parseChannelConfig("site", `${serializeChannelConfig(site)}\nunlisted = "yes"\n`),
+    ).toMatchObject({
+      ok: false,
+    });
+    const all = [
+      'name = "All hands"',
+      'created_by = "system"',
+      "created_at = 2026-09-03T01:00:00Z",
+      "everyone = true",
+      "unlisted = true",
+    ].join("\n");
+    expect(parseChannelConfig(DEFAULT_CHANNEL_ID, all)).toMatchObject({ ok: false });
+  });
+
   it("tolerates a hand edit: a bare datetime, a missing purpose, archived", () => {
     const raw = [
       'name = "Marketing"',
