@@ -99,11 +99,12 @@ import type { ComposerReference } from "../../lib/workspace-tree";
 import {
   compactionTally,
   heldThinkingSwitch,
+  modelLabel,
   needsThinkingSwitchConfirm,
   sessionThinkingLevel,
   thinkingLevelLabel,
   type StagedThinkingSwitch,
-} from "./thinking-level";
+} from "../model-picker";
 
 import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";

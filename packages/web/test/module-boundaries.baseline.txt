@@ -4,6 +4,7 @@
 # `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
 cycle: features/agents -> features/ai-create
 cycle: features/agents -> features/chat
+cycle: features/agents -> features/model-picker
 cycle: features/agents -> features/plugins
 cycle: features/agents -> features/schedules
 cycle: features/ai-create -> features/chat
@@ -13,16 +14,19 @@ cycle: features/chat -> features/ai-create
 cycle: features/chat -> features/builtin-browser
 cycle: features/chat -> features/company
 cycle: features/chat -> features/dock
+cycle: features/chat -> features/model-picker
 cycle: features/chat -> features/models
 cycle: features/chat -> features/schedules
 cycle: features/chat -> features/settings
 cycle: features/chat -> features/terminal
 cycle: features/company -> features/chat
+cycle: features/company -> features/model-picker
 cycle: features/company -> features/models
 cycle: features/company -> features/plugins
 cycle: features/dock -> features/builtin-browser
 cycle: features/dock -> features/chat
 cycle: features/dock -> features/terminal
+cycle: features/model-picker -> features/models
 cycle: features/models -> features/ai-create
 cycle: features/models -> features/chat
 cycle: features/plugins -> features/agents
@@ -30,7 +34,7 @@ cycle: features/plugins -> features/ai-create
 cycle: features/plugins -> features/chat
 cycle: features/plugins -> features/settings
 cycle: features/schedules -> features/ai-create
-cycle: features/schedules -> features/chat
+cycle: features/schedules -> features/model-picker
 cycle: features/schedules -> features/models
 cycle: features/settings -> features/builtin-browser
 cycle: features/settings -> features/company

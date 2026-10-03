@@ -1,12 +1,6 @@
-/**
- * The chat module's public face: the drafts interface the sidebar and the session list `@Use`, and
- * the Workspace picker the session list's create button opens.
- */
+/** The chat module's public face: the drafts interface the sidebar and the session list `@Use`. */
 export { ChatDrafts } from "./iface";
 export type { ParkedDraft } from "./iface";
-export { WorkspaceSelect } from "./workspace-select";
-export { SELECTABLE_THINKING_LEVELS } from "./thinking-level";
-export { ModelCatalogSelect, modelLabel } from "./model-select";
 export { dispatchChatDefaultsChanged, type ChatDefaultsChangedDetail } from "./chat-defaults-event";
 export { clearDraftChatDefaults, clearDraftModelRef } from "./draft-cache";
 
@@ -44,10 +38,6 @@ export { createStreamFollow } from "./stream-follow";
 
 export { stickToBottom } from "./stream-follow";
 
-export { effectiveThinkingLevel } from "./thinking-level";
-
-export { thinkingLevelLabel } from "./thinking-level";
-
 export { panelWidth } from "./use-panel-width";
 
 export { maxWidthFor } from "./use-panel-width";
@@ -61,7 +51,3 @@ export { setPanelWidth } from "./use-panel-width";
 export { usePanelWidthValue } from "./use-panel-width";
 
 export { useNewChat } from "./use-new-chat";
-
-export { pillClass } from "./workspace-select";
-export { ThinkingLevelSelect } from "./thinking-level-select";
-export { localizedText } from "../../lib/skill-use";

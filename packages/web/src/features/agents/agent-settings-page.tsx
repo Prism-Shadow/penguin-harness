@@ -24,7 +24,6 @@
  * While the machine cannot be asked, the page says why instead of showing anything stale.
  */
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
-
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   AgentConfigDto,
@@ -99,7 +98,7 @@ import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { effectiveThinkingLevel, ThinkingLevelSelect } from "../chat";
+import { effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
 
 type TabKey =
   | "overview"
