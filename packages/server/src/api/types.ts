@@ -256,6 +256,13 @@ export interface ServerSettings {
    * reports it so clients hide the mode switch. Organizations on disk are untouched.
    */
   companyMode: boolean;
+  /**
+   * Telemetry master switch (default off; PRFC-0008). On, the server's fixed probes record
+   * shape-only samples into a bounded in-memory buffer read at `GET /api/telemetry`; off, each
+   * probe costs one boolean check and no buffer exists. Takes effect at once, never persisted
+   * beyond the switch itself.
+   */
+  telemetry: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -289,6 +296,88 @@ export interface ServerSettingsUpdateRequest {
    * attachment unsendable. Violations are 400 `invalid_attachment_limit`.
    */
   attachmentTotalMb?: number;
+  /** Telemetry master switch; see `ServerSettings.telemetry`. */
+  telemetry?: boolean;
+}
+
+/**
+ * Correlation keys of a telemetry sample (PRFC-0008): what lets samples of different layers
+ * be lined up. `generation` is the App generation of a boot sample — the how-many-th create
+ * of this process.
+ */
+export interface TelemetryKeys {
+  request?: string;
+  session?: string;
+  generation?: number;
+}
+
+/** A sample as a probe hands it over; the buffer stamps `ts`. */
+export interface TelemetrySampleInput {
+  /** The probe, named by its layer: `http.request`, `boot.module`, `session.messages`, … */
+  probe: string;
+  durMs?: number;
+  bytes?: number;
+  status?: string;
+  keys?: TelemetryKeys;
+  /**
+   * The probe's own attributes: a fixed set per probe, each named for what it is (`messages`,
+   * `route`) and documented in the probe reference — never content (no paths, no text).
+   */
+  attrs?: Record<string, string | number | boolean>;
+}
+
+/** One recorded fact about the platform's shape: sizes, durations, counts — never content. */
+export interface TelemetrySample {
+  /** Recording time, epoch ms. */
+  ts: number;
+  probe: string;
+  durMs?: number;
+  bytes?: number;
+  status?: string;
+  keys: TelemetryKeys;
+  attrs?: Record<string, string | number | boolean>;
+}
+
+/** Which samples a read wants; every field narrows. */
+export interface TelemetryQuery {
+  probe?: string;
+  session?: string;
+  /** Only the newest `limit` of the matches. */
+  limit?: number;
+}
+
+/** One probe's figures over the buffered samples (durations in ms). */
+export interface TelemetryProbeSummary {
+  probe: string;
+  count: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxMs: number | null;
+  /** Sum of the samples' bytes; null when none of them carries a size. */
+  bytes: number | null;
+}
+
+/** One session's samples, per probe. */
+export interface TelemetrySessionSummary {
+  session: string;
+  count: number;
+  /** Newest sample's time, epoch ms. */
+  lastTs: number;
+  probes: Array<{ probe: string; count: number; totalMs: number; maxMs: number | null }>;
+}
+
+/**
+ * `GET /api/telemetry?view=probes|sessions|samples[&probe=][&session=][&limit=]` (admin only).
+ * `enabled: false` comes with empty lists: nothing is recorded while the switch is off.
+ */
+export interface TelemetryResponse {
+  enabled: boolean;
+  view: "probes" | "sessions" | "samples";
+  /** Samples in the buffer right now (before filtering). */
+  buffered: number;
+  probes?: TelemetryProbeSummary[];
+  sessions?: TelemetrySessionSummary[];
+  samples?: TelemetrySample[];
 }
 
 /**

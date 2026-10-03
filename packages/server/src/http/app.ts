@@ -11,9 +11,13 @@ import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth } from "../mechanisms/identity.js";
+import { telemetryRequests } from "../telemetry/http.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
+
+/** The request id header (PRFC-0008): answered on every sampled request, and reused when a request arrives carrying one — the machine proxy forwards it, so both servers' samples share the id. */
 
 /** The assembled business surface: one request in, one response (or a decline) out. */
 @Interface()
@@ -46,6 +50,7 @@ export class HttpModule {
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
   @Use() private readonly access!: Access;
+  @Use() private readonly telemetry?: Telemetry;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
     const errors = this.errors;
@@ -68,6 +73,8 @@ export class HttpModule {
         `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
       );
     });
+    // Telemetry's http.request, on both surfaces. While the switch is off it is one boolean check.
+    if (this.telemetry !== undefined) app.use("*", telemetryRequests(this.telemetry));
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
       const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());

@@ -72,6 +72,8 @@ import { loadPluginHost } from "../plugin/loader.js";
 import { migrate } from "../db/migrations.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
+import { BootTimings } from "../telemetry/boot.js";
 
 /**
  * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
@@ -260,12 +262,14 @@ async function createInner(
     );
   }
   const caps = claim.kind === "claimed" ? claim.caps : null;
+  // Telemetry's boot timings and this App's generation number (telemetry/boot.ts).
+  const boot = new BootTimings(ctx.resources);
   // A pushed platform carries its own migrations, which is the only way the tables its
   // business needs can reach a runtime older than they are — that runtime will never grow
   // them by restarting, because it does not have them. swapPath: this boot can be rolled
   // back, so a restart-only migration is refused here instead of being left behind. Before
   // any node is created: every repo below prepares its statements against this schema.
-  if (caps !== null) migrate(caps.db, { swapPath: true });
+  if (caps !== null) boot.time("boot.migrate", () => migrate(caps.db, { swapPath: true }));
   // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
   // the predecessor declared at the version this build also declares, hard-stop the
   // rest — a version bump or a dropped group means this create() does not speak the
@@ -297,6 +301,7 @@ async function createInner(
   // reads for ITSELF: the closure over the root's Projects, loaded here rather than handed
   // over by the runtime, so the rule for reading it ships by push like every other policy.
   // A bare kernel has no root to read and keeps whatever was already imported.
+  const pluginsAt = performance.now();
   const plugins =
     caps === null
       ? pluginHostFrom(ctx.resources)
@@ -308,6 +313,7 @@ async function createInner(
           // server's own id says which of those tables are its own.
           new MachinesRepo(caps.db).ownId(),
         );
+  boot.since("boot.plugins", pluginsAt);
   // Plus whatever a test stood up in process, which no closure could name (see the id).
   const injected = ctx.resources.claim<PluginHost | null>(HMR_TEST_PLUGINS_RESOURCE_ID);
   if (injected != null && typeof injected.entries === "function") {
@@ -334,14 +340,17 @@ async function createInner(
     // group and the terminal manager are modules wired by their manifests — checked as
     // data before any create() runs, created in dependency order. Sandbox backends the
     // plugin host registered enter the same tree as one contributing module.
+    const modulesAt = performance.now();
     tree = await bootModules(
       platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements(), reassemble),
       {
         ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
         resources: ctx.resources,
         parked: parkedModules(context),
+        onCreated: (module, ms) => boot.add({ probe: "boot.module", durMs: ms, attrs: { module } }),
       },
     );
+    boot.since("boot.modules", modulesAt);
     business = tree;
     terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
   }
@@ -419,6 +428,8 @@ async function createInner(
   );
   const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
   const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
+  const telemetry = business?.api<Telemetry>("TelemetryModule", "Telemetry") ?? null;
+  boot.flush(telemetry);
 
   return {
     log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),

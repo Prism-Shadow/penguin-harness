@@ -22,6 +22,7 @@ const settings = (companyMode: boolean): ServerSettings => ({
   attachmentMaxMb: 100,
   attachmentTotalMb: 500,
   companyMode,
+  telemetry: false,
 });
 
 /** Records what the switch sent and answers with the server's stored settings. */

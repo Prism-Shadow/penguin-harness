@@ -80,6 +80,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -278,6 +279,8 @@ export class TraceService implements Traces {
   /** The shared in-process Session-origin registry, single source of truth for `source` (narrow tests may omit). */
   @Use() private readonly sources?: SessionOrigins;
   @Use() private readonly projectConfig?: ProjectConfigStore;
+  /** Telemetry's session.messages and trace.read (PRFC-0008); narrow tests omit it. */
+  @Use() private readonly telemetry?: Telemetry;
   /**
    * The Project's current price for a paired reference — the same lookup the cost center
    * prices `usage_records` with, so the analysis' per-turn cost and the toolbar's figure come
@@ -323,7 +326,10 @@ export class TraceService implements Traces {
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
   private async readShard(path: string): Promise<OmniMessage[]> {
     this.observeShardRead?.(path);
-    return readTraceTolerant(path);
+    const read = () => readTraceTolerant(path);
+    return this.telemetry
+      ? this.telemetry.span("trace.read", {}, read, (m) => ({ attrs: { messages: m.length } }))
+      : read();
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */
@@ -547,6 +553,20 @@ export class TraceService implements Traces {
    * window: children referenced by older windows load when those windows do.
    */
   async readMessagesPage(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest,
+  ): Promise<MessagesPageResult> {
+    const read = () => this.messagesPage(projectId, agentId, sessionId, req);
+    if (!this.telemetry) return read();
+    // The Trace files it reads are this sample's trace.read samples, keyed by the same session.
+    return this.telemetry.span("session.messages", { session: sessionId }, read, (r) => ({
+      attrs: { kind: req.kind, messages: r.messages.length },
+    }));
+  }
+
+  private async messagesPage(
     projectId: string,
     agentId: string,
     sessionId: string,

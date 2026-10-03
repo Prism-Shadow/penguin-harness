@@ -3,7 +3,8 @@
  * GET|PUT /api/admin/settings — the server-global settings stored in server_settings:
  * the proxy settings (the "application uses the proxy" and "agent environment uses the
  * proxy" switches and their shared explicit address) and the upload limits (the
- * per-file and per-message attachment caps, in whole MB).
+ * per-file and per-message attachment caps, in whole MB), and the telemetry master switch
+ * (PRFC-0008; applied through the Telemetry node, which holds its value in memory).
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
  * rebuilt so new outbound connections follow the change without a restart (the agent
@@ -30,6 +31,8 @@ import type { ProxyControl } from "../../hmr/capabilities.js";
 export interface AdminSettingsRouteDeps {
   proxyControl: ProxyControl;
   serverSettingsRepo: Settings;
+  /** The telemetry switch lives with the other system settings, but its value is held (and applied) by the Telemetry node. */
+  telemetry: Telemetry;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
 import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
@@ -39,6 +42,7 @@ import {
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { Telemetry } from "../../mechanisms/telemetry.js";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -93,6 +97,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
       ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
+      telemetry: deps.telemetry.on(),
     },
   });
 
@@ -105,6 +110,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     const proxyForApp = optionalBoolean(body, "proxyForApp");
     const proxyForAgent = optionalBoolean(body, "proxyForAgent");
     const companyMode = optionalBoolean(body, "companyMode");
+    const telemetry = optionalBoolean(body, "telemetry");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const attachmentMaxMb =
@@ -132,6 +138,8 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     // Read per tick by the organization scheduler and per request by the organization routes, so
     // flipping it needs no restart: off holds every automatic trigger and 404s the routes.
     if (companyMode !== undefined) deps.serverSettingsRepo.setCompanyMode(companyMode);
+    // Stored and applied in one step: the next request is sampled (or not) without a restart.
+    if (telemetry !== undefined) deps.telemetry.setEnabled(telemetry);
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);
