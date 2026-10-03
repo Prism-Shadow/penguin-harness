@@ -28,7 +28,7 @@ export type ClaimListener = (channel: ChannelRef, number: number) => void;
 /** The service's listeners: registered at its setup, removed when its App stops. */
 export const claimListeners = new Set<ClaimListener>();
 
-/** The number of the roadmap under discussion (not archived) whose room this channel is, or null. */
+/** The number of the roadmap under discussion whose room this channel is, or null. */
 export function discussingRoomOf(root: string, channel: ChannelRef): number | null {
   let text: string;
   try {
@@ -37,7 +37,7 @@ export function discussingRoomOf(root: string, channel: ChannelRef): number | nu
     return null;
   }
   for (const r of foldLedger(parseLedger(text).lines).roadmaps.values()) {
-    if (r.channelId === channel.channelId && r.status === "discussing" && !r.archived) {
+    if (r.channelId === channel.channelId && r.status === "discussing") {
       return r.number;
     }
   }

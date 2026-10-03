@@ -107,6 +107,21 @@ describe("the routes", () => {
     expect([refused.status, code(refused)]).toEqual([400, "cite_unknown"]);
   });
 
+  it("have no archive or unarchive: a roadmap has no archive of its own (404)", async () => {
+    await call("POST", BASE, open);
+    for (const verb of ["archive", "unarchive"]) {
+      const res = await app.request(`${BASE}/1/${verb}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status).toBe(404);
+    }
+    const one = await call("GET", `${BASE}/1`);
+    expect(one.json.status).toBe("discussing");
+    expect(one.json).not.toHaveProperty("archived");
+  });
+
   it("list a room's roadmaps, and filter by status", async () => {
     await call("POST", BASE, open);
     const listed = await call("GET", `${BASE}?channel=room_a&status=discussing`);

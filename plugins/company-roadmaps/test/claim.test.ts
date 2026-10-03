@@ -50,16 +50,12 @@ describe("the channel claim", () => {
     expect(w.gateway.desks).toEqual([]);
   });
 
-  it("does not claim a channel that is no roadmap's room, a shelved room or an established one — and reads each change at once", async () => {
+  it("does not claim a channel that is no roadmap's room, or an established one's — and reads each change at once", async () => {
     const claim = roomClaim(w.root, () => {});
     // No ledger at all yet.
     expect(claim(room("room_a"))).toBe(false);
     const n = await openA();
     expect(claim(room("room_b"))).toBe(false);
-    expect(claim(room("room_a"))).toBe(true);
-    await service.setArchived(PROJECT, ORG, n, true, BOSS);
-    expect(claim(room("room_a"))).toBe(false);
-    await service.setArchived(PROJECT, ORG, n, false, BOSS);
     expect(claim(room("room_a"))).toBe(true);
     await service.draft(
       PROJECT,
@@ -75,5 +71,7 @@ describe("the channel claim", () => {
     );
     await service.establish(PROJECT, ORG, n, BOSS);
     expect(claim(room("room_a"))).toBe(false);
+    await service.reopen(PROJECT, ORG, n, "one more item", BOSS);
+    expect(claim(room("room_a"))).toBe(true);
   });
 });

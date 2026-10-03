@@ -36,7 +36,6 @@ describe("the fold", () => {
       channelId: "room_a",
       employees: ["acme_dev", "acme_web"],
       status: "discussing",
-      archived: false,
       record: "",
       body: "",
       items: [],
@@ -92,15 +91,16 @@ describe("the fold", () => {
     });
   });
 
-  it("archives on establishment, and a reopening lifts both", () => {
+  it("establishes — the status, and nothing archived — and a reopening discusses again", () => {
     const established = foldLedger([opened(1), line({ kind: "established", number: 1 })]);
-    expect(established.roadmaps.get(1)).toMatchObject({ status: "established", archived: true });
+    expect(established.roadmaps.get(1)?.status).toBe("established");
+    expect(established.roadmaps.get(1)).not.toHaveProperty("archived");
     const reopened = foldLedger([
       opened(1),
       line({ kind: "established", number: 1 }),
       line({ kind: "reopened", number: 1, reason: "missing a migration" }),
     ]);
-    expect(reopened.roadmaps.get(1)).toMatchObject({ status: "discussing", archived: false });
+    expect(reopened.roadmaps.get(1)?.status).toBe("discussing");
     expect(reopened.roadmaps.get(1)?.events.at(-1)).toMatchObject({
       kind: "reopened",
       note: "missing a migration",
@@ -194,20 +194,12 @@ describe("the fold", () => {
     ).toMatchObject({ stage: "delegated", approvals: {} });
   });
 
-  it("renames, archives and unarchives", () => {
+  it("renames", () => {
     const r = foldLedger([
       opened(1),
       line({ kind: "renamed", number: 1, name: "Queue, second pass" }),
-      line({ kind: "archived", number: 1 }),
     ]).roadmaps.get(1);
-    expect(r).toMatchObject({ name: "Queue, second pass", archived: true });
-    expect(
-      foldLedger([
-        opened(1),
-        line({ kind: "archived", number: 1 }),
-        line({ kind: "unarchived", number: 1 }),
-      ]).roadmaps.get(1)?.archived,
-    ).toBe(false);
+    expect(r).toMatchObject({ name: "Queue, second pass" });
   });
 
   it("opens and closes room sessions; a closed one stays in the history", () => {
@@ -249,6 +241,21 @@ describe("parsing", () => {
     const { lines, skipped } = parseLedger(text);
     expect(lines).toHaveLength(1);
     expect(skipped).toBe(3);
+  });
+
+  it("skips the archived and unarchived lines an older plugin wrote, and reads the roadmap as without them", () => {
+    const base = [opened(1), line({ kind: "established", number: 1 })];
+    const old = [
+      ...base,
+      { seq: 101, at, by: "user:boss", kind: "archived", number: 1 },
+      { seq: 102, at, by: "user:boss", kind: "unarchived", number: 1 },
+    ];
+    const { lines, skipped } = parseLedger(old.map((l) => JSON.stringify(l)).join("\n"));
+    expect(skipped).toBe(2);
+    const r = foldLedger(lines).roadmaps.get(1);
+    expect(r?.status).toBe("established");
+    expect(r).not.toHaveProperty("archived");
+    expect(r?.events.map((e) => e.kind)).toEqual(["opened", "established"]);
   });
 });
 

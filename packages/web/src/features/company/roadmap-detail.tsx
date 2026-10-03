@@ -49,15 +49,14 @@ import type { RoadmapRow, RoadmapRowStage } from "./roadmaps";
 export const DETAIL_POLL_MS = 10_000;
 
 const STAGE_TONE: Record<RoadmapRowStage, BadgeTone> = {
-  draft: "gray",
-  brief: "amber",
-  delegated: "gray",
+  draft: "neutral",
+  brief: "attention",
+  delegated: "neutral",
 };
 
-/** The roadmap's own status as a pill: waiting for a room is unfinished, a shelved discussion recedes. */
+/** The roadmap's own status as a pill: waiting for a room is unfinished. */
 function statusTone(r: OrgRoadmapDetail): BadgeTone {
-  if (r.archived && r.status !== "established") return "gray";
-  return r.status === "awaiting_room" ? "amber" : "green";
+  return r.status === "awaiting_room" ? "attention" : "success";
 }
 
 export function RoadmapDetail({
@@ -217,10 +216,7 @@ export function RoadmapDetailView({
           <h2 className="min-w-0 text-sm font-semibold text-gray-900 dark:text-gray-100">
             <span className="font-mono text-gray-400 dark:text-gray-500">#{r.number}</span> {r.name}
           </h2>
-          <Badge tone={statusTone(r)}>
-            {t.status[r.status] ?? r.status}
-            {r.archived && r.status !== "established" ? ` · ${t.archived}` : ""}
-          </Badge>
+          <Badge tone={statusTone(r)}>{t.status[r.status] ?? r.status}</Badge>
         </div>
         {r.moderator !== null && (
           <div
@@ -321,7 +317,7 @@ function RoadmapItemRow({
               {S.company.proposals.status[proposal.status] ?? proposal.status}
             </Badge>
           ) : row.child !== null ? (
-            <Badge tone="brand">{t.childRoadmap(row.child)}</Badge>
+            <Badge tone="info">{t.childRoadmap(row.child)}</Badge>
           ) : linked === null ? (
             <Badge tone={STAGE_TONE[row.stage]}>{t.stage[row.stage]}</Badge>
           ) : (
@@ -329,7 +325,7 @@ function RoadmapItemRow({
             // read, a machine link that dropped) or it does not carry this number. The row still
             // says it has a status, one the column could not read, instead of drawing none.
             <span data-tooltip={t.statusUnknownHint}>
-              <Badge tone="gray">{t.statusUnknown}</Badge>
+              <Badge tone="neutral">{t.statusUnknown}</Badge>
             </span>
           )}
         </div>

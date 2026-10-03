@@ -170,7 +170,6 @@ const ROADMAP = {
   number: 3,
   name: "Queue <migration>",
   status: "discussing",
-  archived: false,
   channelId: "room_a",
   record: "We agreed.",
   body: "## Why\nBecause.",
