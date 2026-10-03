@@ -294,6 +294,7 @@ describe("the booted page table", () => {
       // As the server might send it: the app checks each entry's fields itself.
       pages: remote as readonly object[] as ContributionsResponse["pages"],
       fileRenderers: [],
+      pageRemovals: [],
       agentTabs: [],
       sessionTabs: [],
       quickStarts: [],
