@@ -6735,8 +6735,22 @@ export type WebPageData = {
 /** A page contribution as GET /api/contributions answers it. */
 export type WebPageContribution = WebContribution & WebPageData;
 
+/**
+ * The data of one `WebModule.fileRenderers` contribution: the Workspace files it draws, by
+ * extension (without the dot, compared case-insensitively), and the renderer that draws one.
+ * Where the app shows it is the app's own choice (below a reply's paragraph that links the file).
+ */
+export type WebFileRendererData = {
+  extensions: string[];
+  renderer: RendererRef;
+};
+
+/** A file renderer contribution as GET /api/contributions answers it. */
+export type WebFileRendererContribution = WebContribution & WebFileRendererData;
+
 export interface ContributionsResponse {
   pages: WebPageContribution[];
+  fileRenderers: WebFileRendererContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
 }

@@ -188,6 +188,7 @@ export const router = new Router();
 // The demo boots its own page table and has no server-side plugin contributions.
 router.get("/api/contributions", (): ContributionsResponse => ({
   pages: [],
+  fileRenderers: [],
   agentTabs: [],
   sessionTabs: [],
 }));
