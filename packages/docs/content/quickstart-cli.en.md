@@ -159,6 +159,8 @@ After the build, run `pnpm penguin <args>` inside the repository as the dev runn
 
 The dev entry points (`pnpm penguin`, `pnpm dev`, `pnpm desktop`) default to a separate data root, `~/.penguin/dev-data`, while the linked or installed `penguin` keeps `~/.penguin/data`. Set `PENGUIN_HOME` to override. The desktop dev run also uses its own app identity (`PenguinHarness-Dev`), so it can run alongside an installed desktop app without conflicts.
 
+`pnpm dev` builds the CLI together with the server modules it imports, and `pnpm desktop` builds everything, so `penguin` in an agent's commands and in the Terminal panel is this checkout's build rather than the one installed on the machine.
+
 ### Install location and options
 
 | Item | Details |

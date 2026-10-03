@@ -51,6 +51,8 @@ Commands an agent runs with `exec_command` inherit the host environment, with th
 
 This installation's own `penguin` is first on the PATH of every command an agent runs. At startup the server writes a launcher script at `<root>/bin/penguin`, which runs the CLI entry from `PENGUIN_CLI_ENTRY` on the server's own Node, and puts that directory at the front of PATH for each command. So `penguin` inside a command is the harness the agent is running in, whatever version is installed globally on the machine.
 
+A terminal opened from the Terminal panel puts the same directory first on PATH once your own shell startup files have run, so `penguin` typed there is this installation's too.
+
 The directory is prepended inside the shell as well as in the environment, because commands run through a login shell whose profile often rewrites PATH afterwards. This also puts it ahead of a `PATH` set in the [Vault](#vault), which otherwise replaces the inherited value outright.
 
 The launcher is rewritten at every start, so the next start picks up a moved installation. When there is no entry to point at, no launcher is written and `penguin` resolves as it would without one.

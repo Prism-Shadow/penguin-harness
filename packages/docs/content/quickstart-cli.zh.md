@@ -159,6 +159,8 @@ pnpm install && pnpm build
 
 开发入口（`pnpm penguin`、`pnpm dev`、`pnpm desktop`）默认使用独立的数据目录 `~/.penguin/dev-data`，全局链接或正式安装的 `penguin` 仍使用 `~/.penguin/data`，设置 `PENGUIN_HOME` 可以覆盖。桌面应用的开发运行还使用独立的应用标识（`PenguinHarness-Dev`），因此可以和已安装的桌面应用同时运行，互不冲突。
 
+`pnpm dev` 会连同 CLI 所导入的服务器模块一起构建 CLI，`pnpm desktop` 则构建全部包，因此 Agent 命令和终端面板里的 `penguin` 都是这个检出构建出的版本，而不是机器上安装的那个。
+
 ### 安装位置与选项
 
 | 项目 | 说明 |
