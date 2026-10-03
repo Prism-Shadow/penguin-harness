@@ -3,6 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** fix
 - **Scope:** `web`, `server`, `docs`
+- **PR:** [#958](https://github.com/Prism-Shadow/penguin-harness/pull/958)
 
 [English](2026-10-03-load-performance.md)
 
