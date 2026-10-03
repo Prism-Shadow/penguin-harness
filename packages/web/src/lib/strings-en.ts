@@ -6351,6 +6351,13 @@ Scenarios:
         mergedFoldHide: (n: number): string => `Hide the ${n} merged proposal${n === 1 ? "" : "s"}`,
         mergedFoldTitle:
           "Merged proposals off the chain are done; they are folded so the lists show what still needs a hand",
+        segments: {
+          noRoadmap: "No roadmap",
+          openRoadmap: "Open the roadmap",
+          prs: (n: number): string => `${n} PR${n === 1 ? "" : "s"}`,
+          folded: (n: number): string =>
+            `${n} PR${n === 1 ? "" : "s"} folded — click the roadmap above to show them`,
+        },
         offSection: "Off the chain",
         offSectionHint:
           "Drawn on the graph but not on the chain, each with the reason: an old line, a branch not taken at a fork, or a layer on one of those.",

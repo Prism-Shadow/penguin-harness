@@ -211,9 +211,13 @@ const ROW_REM = 3.75;
 const LANE_REM = 1;
 const DOT_REM = 0.28;
 const TEXT_GAP_REM = 0.625;
+/** A roadmap heading or a folded run: a line shorter than a PR's two. */
+const HEAD_REM = 2.25;
 
 export interface GraphGeometry {
   row: number;
+  /** A roadmap heading's and a folded run's height. */
+  head: number;
   lane: number;
   dot: number;
   textGap: number;
@@ -233,6 +237,7 @@ export function graphGeometry(remPx: number): GraphGeometry {
   const rowY = (r: number): number => r * row + row / 2;
   return {
     row,
+    head: HEAD_REM * remPx,
     lane,
     dot: DOT_REM * remPx,
     textGap: TEXT_GAP_REM * remPx,
