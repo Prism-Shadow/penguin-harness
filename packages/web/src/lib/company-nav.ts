@@ -1,16 +1,4 @@
-/**
- * Company mode's navigation manifest and route grammar (pure, unit tested): the six page
- * entries in rendered order, the `/org/:projectId/:orgId/<page>` paths they lead to, the
- * `/channels/:channelId` path of a channel, the `<projectId>/<orgId>` key the shell remembers
- * an organization by, where a freshly created one opens and which key the shell becomes
- * current at when it does, and which organization `/org` resolves to when it is opened without
- * naming one (the page it then opens is the overview, the first entry below). The sidebar,
- * the collapsed rail and the router all derive their rows from this file, so the covered
- * range is pinned here (and in the unit tests) rather than duplicated.
- */
 
-/** The two work modes of the shell: development (the default) or company. */
-export type WorkMode = "dev" | "company";
 
 /**
  * Company-mode page entries, in rendered order: each key names its route segment, its S.nav
@@ -155,3 +143,12 @@ export function groupOrganizationsByProject<T extends { projectId: string }>(
     }))
     .filter((g) => g.organizations.length > 0);
 }
+
+/** Builtin contributed org pages retained in this framework-only stack.
+ * The six main org routes stay explicit; old proposals pages are split out.
+ * Iframe contributions remain available through contributedPages. */
+export const ORG_PAGE_RENDERERS = {} as const;
+export type OrgPageRenderer = keyof typeof ORG_PAGE_RENDERERS;
+
+import type { WorkMode } from "./company-context";
+export type { WorkMode } from "./company-context";

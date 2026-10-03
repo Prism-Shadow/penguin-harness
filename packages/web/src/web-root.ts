@@ -17,6 +17,7 @@ import table from "./ifaces.json";
 import { WebAppModule } from "./web-app/module";
 import type { WebApp } from "./web-app/module";
 import type { AppRouterProps } from "./web-app/router";
+import { SessionsModule } from "./state/sessions.module";
 import { ChatModule } from "./features/chat/module";
 import { AgentsModule } from "./features/agents/module";
 import { ModelsModule } from "./features/models/module";
@@ -27,10 +28,15 @@ import { BenchmarkModule } from "./features/benchmark/module";
 import { TerminalModule } from "./features/terminal/module";
 import { WorkbenchesModule } from "./features/workbenches/module";
 import { CompanyModule } from "./features/company/module";
+import { BuiltinBrowserModule } from "./features/builtin-browser/module";
+import { PaletteModule } from "./features/palette/module";
+import { SettingsModule } from "./features/settings/module";
+import { SchedulesModule } from "./features/schedules/module";
 
 @Module({
   children: [
     WebAppModule,
+    SessionsModule,
     ChatModule,
     AgentsModule,
     ModelsModule,
@@ -41,6 +47,10 @@ import { CompanyModule } from "./features/company/module";
     TerminalModule,
     WorkbenchesModule,
     CompanyModule,
+    BuiltinBrowserModule,
+    PaletteModule,
+    SettingsModule,
+    SchedulesModule,
   ],
 })
 export class WebRoot {}

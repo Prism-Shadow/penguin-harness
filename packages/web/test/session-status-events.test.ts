@@ -238,19 +238,22 @@ describe("events that need no change", () => {
     applyUserEvent(store, [], stateEvent("a", "running", STARTED), neverReload);
     applyUserEvent(
       store,
-      [], { type: "session_background", sessionId: "a", processes: 2, subagents: 1 },
+      [],
+      { type: "session_background", sessionId: "a", processes: 2, subagents: 1 },
       neverReload,
     );
     applyUserEvent(
       store,
-      [], { type: "session_title", sessionId: "a", title: "Login page bug" },
+      [],
+      { type: "session_title", sessionId: "a", title: "Login page bug" },
       neverReload,
     );
     applyUserEvent(store, [], { type: "session_approvals", sessionId: "a", count: 0 }, neverReload);
     // Zero onto an already-clear row is the same non-event.
     applyUserEvent(
       store,
-      [], { type: "session_background", sessionId: "b", processes: 0, subagents: 0 },
+      [],
+      { type: "session_background", sessionId: "b", processes: 0, subagents: 0 },
       neverReload,
     );
     expect(store.getState().sessions).toBe(before);
@@ -457,7 +460,8 @@ describe("other user-channel events keep their behaviour", () => {
     applyUserEvent(store, [], { type: "hello" }, neverReload);
     applyUserEvent(
       store,
-      [], {
+      [],
+      {
         type: "schedule_queued",
         projectId: "proj",
         agentId: "default_agent",

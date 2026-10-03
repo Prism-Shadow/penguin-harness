@@ -38,25 +38,29 @@ import { useRuntimeLanguages } from "../lib/use-runtime-languages";
 import { ProjectProvider } from "../state/project";
 import { MachinesProvider } from "../state/machines";
 import { SessionsProvider } from "../state/sessions";
-import { CompanyProvider, useCompany } from "../state/company";
+import { useCompany } from "../features/company";
 import { AppLayout } from "../components/layout/app-layout";
 import { LoginPage } from "../pages/login";
 import { webAppDeps } from "./deps";
 function RequireAuth() {
   const { user } = useAuth();
+  const { sessionProviders, userEvents } = webAppDeps.useDeps();
   // Plugin-contributed grammars, adopted once for the signed-in tree (see the hook). Called
   // before the early returns, because a hook cannot be conditional; it fetches only once a user
   // is signed in.
   useRuntimeLanguages(user != null);
   if (user === undefined) return null; // GET /api/me is still initializing
   if (user === null) return <Navigate to="/login" replace />;
+  // The contributed providers nest outermost first, inside the session list they may read.
+  const layout = sessionProviders.reduceRight<React.ReactNode>(
+    (inner, { id, Component }) => <Component key={id}>{inner}</Component>,
+    <AppLayout />,
+  );
   return (
     <ProjectProvider>
       <MachinesProvider>
-        <SessionsProvider>
-          <CompanyProvider>
-            <AppLayout />
-          </CompanyProvider>
+        <SessionsProvider userEvents={userEvents}>
+          <CompanyProvider>{layout}</CompanyProvider>
         </SessionsProvider>
       </MachinesProvider>
     </ProjectProvider>

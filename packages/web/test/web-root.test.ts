@@ -13,6 +13,13 @@
  * - Beside the booted table, a contributed page whose key the app owns is ignored, and the
  *   company-mode proposals page passes the renderers company mode carries.
  */
+import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
+import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
+import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
+import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browser-events";
+import { AppPalette } from "../src/features/palette/app-palette";
+import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
+import type { UserEventHandler } from "../src/state/user-events";
 import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, IfaceTable, ManifestTable } from "@prismshadow/penguin-core/kernel";
 import { beforeAll, describe, expect, it } from "vitest";
