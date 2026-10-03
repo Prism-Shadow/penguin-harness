@@ -45,7 +45,7 @@ cycle: features/settings -> features/company
 cycle: features/settings -> features/dock
 cycle: features/skills -> features/chat
 cycle: features/terminal -> features/dock
-features/chat/chat-page.tsx -> features/dock/composer-height.ts
+features/chat/body/main-chat-body.tsx -> features/dock/composer-height.ts
 features/chat/history-load-failed.tsx -> features/machines/machine-card.tsx
 features/chat/machine-away.ts -> features/machines/machines-view.ts
 features/company/handbook-page.tsx -> features/chat/workspace-browser.tsx

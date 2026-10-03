@@ -1,19 +1,27 @@
+import { SessionElapsed, sessionElapsedSplit } from "../session-stats";
 /**
  * The header's three statistics — Tokens, cost, elapsed — as the toolbar's chip row and the
  * details card both render them.
  */
 import { useEffect, useState, type ReactNode } from "react";
 
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../../lib/strings";
 import { humanizeDuration, humanizeDurationLive, humanizeTokens } from "../../../lib/format";
 import type { StreamModel } from "../../../lib/amsp/stream-model";
 import {
+  bucketCostUsd,
   liveSessionElapsedMs,
   sessionElapsedBreakdown,
+  type BucketPricing,
   type TaskStatsTracker,
 } from "../../../lib/amsp/task-stats";
 
-import type { CostStatDisplay } from "../header-stats";
+import { advanceCostStat, type CostStatDisplay, type CostStatHold } from "../header-stats";
+
+import { modelTaskStartCount } from "../agent-topology";
+import type { SessionStreamState } from "../use-session-stream";
+import type { Currency } from "../../../state/theme";
 
 /**
  * Elapsed value for the header statistics: while a Task runs it ticks once per second over the
@@ -22,29 +30,6 @@ import type { CostStatDisplay } from "../header-stats";
  * Whole seconds while ticking, decimals only on the settled value — same convention as
  * LiveDuration on running tool/thinking cards.
  */
-function SessionElapsed({
-  stats,
-  taskOpen,
-  taskStartLocalMs,
-}: {
-  stats: TaskStatsTracker;
-  taskOpen: boolean;
-  taskStartLocalMs: number;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!taskOpen) return;
-    // Load-bearing, not redundant: `now` still holds whatever the state last saw (mount time,
-    // or the final tick of a previous Task), and the first interval callback is a full second
-    // away. The first live render after a Task starts must not compute from that stale clock,
-    // so re-anchor immediately on entering the running state.
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [taskOpen]);
-  if (!taskOpen) return <>{humanizeDuration(stats.sessionElapsedMs)}</>;
-  return <>{humanizeDurationLive(liveSessionElapsedMs(stats, taskOpen, taskStartLocalMs, now))}</>;
-}
 
 /** The header's three statistics — the chip row and the info dropdown render these verbatim. */
 export interface HeaderStats {
@@ -59,7 +44,7 @@ export interface HeaderStats {
    * component has anything to report yet (a conversation that has not run shows the bare
    * time rather than a row of zeroes).
    */
-  elapsedSplit: string | null;
+  elapsedSplit: ReactNode | null;
 }
 
 /**
@@ -85,7 +70,11 @@ export function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderSt
         taskStartLocalMs={model.taskStartLocalMs}
       />
     ),
-    elapsedSplit: elapsedSplitText(stats),
+    elapsedSplit: sessionElapsedSplit({
+      stats,
+      taskOpen: model.taskOpen,
+      taskStartLocalMs: model.taskStartLocalMs,
+    }),
   };
 }
 
@@ -97,11 +86,56 @@ export function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderSt
  * also overlap each other. Both are why it is rendered as two measurements, not as a split of
  * the total (see sessionElapsedBreakdown).
  */
-function elapsedSplitText(stats: TaskStatsTracker): string | null {
-  const { apiMs, toolMs } = sessionElapsedBreakdown(stats);
-  if (apiMs <= 0 && toolMs <= 0) return null;
-  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
-    humanizeDuration(apiMs),
-    humanizeDuration(toolMs),
-  )}${S.chat.statParenClose}`;
+
+/** What the live statistics read off the conversation's controller. */
+export interface LiveStatsSession {
+  stream: Pick<SessionStreamState, "model" | "loading">;
+  selected: SessionInfo | null;
+  costHoldRef: { current: CostStatHold };
+  /** The Session's own Model's pricing, undefined when it has none. */
+  modelPricing: BucketPricing | undefined;
+  currency: Currency;
+}
+
+/**
+ * The header statistics for this render. Called once per page render, past the page's loading
+ * guard — never from a component that mounts only with a Session: the cost hold must see the
+ * render with no Session too, which is what re-keys it on a switch.
+ */
+export function liveHeaderStats({
+  stream,
+  selected,
+  costHoldRef,
+  modelPricing,
+  currency,
+}: LiveStatsSession): HeaderStats {
+  // Header statistics (chip row + info dropdown), live while a Task runs; recomputed every
+  // stream version bump, so the in-place-mutated model stats always read fresh. The cost chip
+  // advances its per-session hold with this render's observation (idempotent per observation,
+  // so a replayed render converges — see header-stats.ts).
+  const liveTaskUsd = stream.model.taskOpen
+    ? bucketCostUsd(
+        {
+          cacheRead: stream.model.stats.taskCacheRead,
+          cacheWrite: stream.model.stats.taskCacheWrite,
+          output: stream.model.stats.taskOutput,
+        },
+        modelPricing,
+      )
+    : null;
+  return headerStats(
+    stream.model,
+    advanceCostStat(costHoldRef.current, {
+      sessionId: selected?.sessionId ?? null,
+      // The cost tracker's Task boundary is the MODEL's, not the panel's: a completion notice
+      // opens a new Task (zeroing the per-Task usage buckets) even though the panel keeps it
+      // inside the launching Task's scope, so it must be counted here or the finished half's
+      // live cost is dropped instead of folded.
+      taskCount: modelTaskStartCount(stream.model.items),
+      taskOpen: stream.model.taskOpen,
+      loading: stream.loading,
+      liveUsd: liveTaskUsd,
+      currency,
+    }),
+  );
 }

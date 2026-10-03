@@ -18,6 +18,8 @@ import { sessionThinkingLevel } from "../../model-picker";
 import { ChatInput, type ComposerControl } from "../chat-input";
 
 import { approvalModeChoices } from "../approval-mode";
+import { agentPagePath } from "../session/main-chat-dock";
+import { machineForSession } from "../../../lib/session-machines";
 import type { DraftCache } from "../draft-cache";
 import type { SessionStreamState } from "../use-session-stream";
 
@@ -133,7 +135,9 @@ export function SessionComposer({
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       {...(compactionLimit !== undefined ? { compactionLimit } : {})}
       onChangeCompactionLimit={onChangeCompactionLimit}
-      onOpenAgentSettings={() => navigate(`/agents/${selected.agentId}?tab=runtime`)}
+      onOpenAgentSettings={() =>
+        navigate(agentPagePath(selected.agentId, machineForSession(selected.sessionId), "runtime"))
+      }
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}

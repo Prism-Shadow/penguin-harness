@@ -1,3 +1,5 @@
+export { noteScheduleEvent } from "./schedule-store";
+
 export { pendingScheduleSessions } from "./schedule-panel-state";
 
 export { useProjectSchedules } from "./schedule-store";

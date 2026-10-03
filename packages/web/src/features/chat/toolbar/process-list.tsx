@@ -44,7 +44,7 @@ export function ProcessList({
             data-tooltip={S.chat.processClearExitedHint}
             disabled={procBusy !== null}
             onClick={() => void onClearExitedProcesses()}
-            className="shrink-0 cursor-pointer whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
+            className="shrink-0 whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
           >
             {S.chat.processClearExited}
           </button>

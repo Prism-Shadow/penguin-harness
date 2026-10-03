@@ -1,18 +1,21 @@
 export { DockLauncher } from "./dock-launcher";
+export { setDockConversation } from "./dock-terminal";
+export { dockVersion } from "./dock-state";
+export { openPanel } from "./dock-state";
+export { panelDock } from "./dock-state";
+export { subscribeDock } from "./dock-state";
+export { adoptDockScope } from "./dock-state";
+export { isTabShown } from "./dock-state";
+export { useDockMount } from "./use-dock-mount";
+export { closedDockView } from "./dock-state";
+export { dockViews } from "./dock-state";
+export { DockPanel } from "./dock-panel";
 
 export { docksOnScreen } from "./dock-state";
-
-export { openPanel } from "./dock-state";
 
 export { dockWorkspace } from "./dock-terminal";
 
 export { currentDockScope } from "./dock-state";
-
-export { isTabShown } from "./dock-state";
-
-export { adoptDockScope } from "./dock-state";
-
-export { setDockConversation } from "./dock-terminal";
 
 export { dockPanelDefinition } from "./panel-registry";
 
@@ -26,10 +29,6 @@ export type { DockPanelDefinition } from "./panel-registry";
 
 export type { PanelId } from "./panel-registry";
 
-export { DockPanel } from "./dock-panel";
-
-export { useDockMount } from "./use-dock-mount";
-
 export { TERMINAL_PANEL } from "./dock-terminal";
 
 export { subscribeTerminalPanelOffered } from "./dock-terminal";
@@ -37,16 +36,6 @@ export { subscribeTerminalPanelOffered } from "./dock-terminal";
 export { terminalPanelOffered } from "./dock-terminal";
 
 export { reownTerminals } from "./dock-terminal";
-
-export { closedDockView } from "./dock-state";
-
-export { dockViews } from "./dock-state";
-
-export { dockVersion } from "./dock-state";
-
-export { panelDock } from "./dock-state";
-
-export { subscribeDock } from "./dock-state";
 
 export { isDockVisible } from "./dock-state";
 

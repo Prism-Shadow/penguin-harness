@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import type { AgentSummary, SessionInfo } from "@prismshadow/penguin-server/api";
 import { CopyButton } from "@prismshadow/penguin-ui";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { S } from "../../../lib/strings";
 import { formatDateTime } from "../../../lib/format";
 import { nameOnMachine } from "../../../lib/workspace-machines";
