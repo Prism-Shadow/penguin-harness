@@ -5,11 +5,15 @@
  * consumer `@Use`s it and hands it to its components through its own deps, so none of them
  * imports the chat page's draft files.
  *
- * `Chat` carries the page's slot, `sessionTabs`: tabs beside the conversation that another module
- * draws (the Agent's workflow pages), so the page names none of them.
+ * `Chat` carries the page's slots: `sessionTabs`, tabs beside the conversation that another module
+ * draws (the Agent's workflow pages), so the page names none of them; and `fileRenderers`, the
+ * named components a server's file renderer rule may pick to draw a Workspace file below the reply
+ * paragraph that links it (lib/file-renderers.ts).
  */
 import type { ComponentType } from "react";
 import { Interface, type Slot } from "@prismshadow/penguin-core/kernel";
+
+import type { FileRenderer } from "../../lib/file-renderers";
 
 /** One parked draft as a list shows it: unsent new-chat text set aside for later. */
 export interface ParkedDraft {
@@ -59,7 +63,15 @@ export interface SessionTabProps {
  */
 export type SessionTab = ComponentType<SessionTabProps>;
 
+/** The data half of a `fileRenderers` contribution. */
+export interface FileRendererData {
+  /** The name a rule's `builtin` renderer names it by. */
+  name: string;
+}
+
 export interface ChatSlots {
   /** A strip of tabs above the conversation. */
   sessionTabs: Slot<SessionTabData, SessionTab>;
+  /** A named file renderer. */
+  fileRenderers: Slot<FileRendererData, FileRenderer>;
 }

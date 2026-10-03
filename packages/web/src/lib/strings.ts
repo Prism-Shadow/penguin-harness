@@ -4852,6 +4852,9 @@ Benchmark：
 
   files: {
     title: "文件",
+    /** A reply's audio player (features/audio): its accessible name, and the line it becomes when the file cannot be played. */
+    audioLabel: (name: string) => `播放 ${name}`,
+    audioUnavailable: (name: string) => `无法播放 ${name}：文件不存在或格式不受支持。`,
     upload: "上传",
     download: "下载",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */

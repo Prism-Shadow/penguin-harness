@@ -31,6 +31,7 @@ import { attachmentFileName, splitAttachments } from "../../lib/attachments";
 import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
+import { ReplyTrailer } from "./reply-files-provider";
 import { MemoryChangesCard } from "./memory-changes-card";
 import { requestRetryRow } from "./request-retry-row";
 import { SessionThinking } from "./thinking-block";
@@ -346,18 +347,21 @@ export function MessageItem({
       // The body (Markdown, caret, the theme's reveal) is AssistantText; a nested reply's files
       // card follows the text once it is fully revealed. How the Request ended is not the
       // text's to say: the retry line, error banner or stop marker that follows says it.
+      // ReplyTrailer: a linked Workspace file's renderer below its paragraph (reply-files-provider.tsx).
       return (
-        <AssistantText text={item.text} streaming={item.streaming}>
-          {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
-          {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
-            <MessageFilesCard
-              text={item.text}
-              workspace={ctx.workspace ?? null}
-              statFiles={ctx.statFiles}
-              onOpenFile={ctx.onOpenFile}
-            />
-          )}
-        </AssistantText>
+        <ReplyTrailer>
+          <AssistantText text={item.text} streaming={item.streaming}>
+            {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
+            {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
+              <MessageFilesCard
+                text={item.text}
+                workspace={ctx.workspace ?? null}
+                statFiles={ctx.statFiles}
+                onOpenFile={ctx.onOpenFile}
+              />
+            )}
+          </AssistantText>
+        </ReplyTrailer>
       );
     case "thinking":
       return <SessionThinking item={item} />;

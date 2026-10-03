@@ -4622,6 +4622,9 @@ Scenarios:
 
   files: {
     title: "Files",
+    audioLabel: (name: string) => `Play ${name}`,
+    audioUnavailable: (name: string) =>
+      `Cannot play ${name}: the file is missing or its format is not supported.`,
     upload: "Upload",
     download: "Download",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */

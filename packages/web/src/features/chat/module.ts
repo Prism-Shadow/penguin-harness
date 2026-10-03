@@ -2,9 +2,10 @@ import { mainPanelDefinition as mainPanelmemory } from "./main-memory-panel";
 import { mainPanelDefinition as mainPanelagents } from "./main-agents-panel";
 /**
  * The chat page: the conversation, its draft and Session views, with the tabs
- * other modules contribute beside the conversation (`sessionTabs`, iface.ts); its drafts for the
- * surfaces that start and list them; and the two dock panels that show the conversation itself:
- * its subagents and its memory (panels/).
+ * other modules contribute beside the conversation (`sessionTabs`, iface.ts) and the named
+ * renderers for the Workspace files a reply links (`fileRenderers`); its drafts for the surfaces
+ * that start and list them; and the two dock panels that show the conversation itself: its
+ * subagents and its memory (panels/).
  */
 import type { ComponentType } from "react";
 import { Bind, Module, Provide, type ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -14,7 +15,7 @@ import { chatDrafts } from "./chat-drafts";
 import { AgentsPanel } from "./panels/agents-panel";
 import { MemoryPanel } from "./panels/memory-panel";
 import type { Chat, ChatDrafts } from "./iface";
-import { chatDeps, sessionTabsOf } from "./deps";
+import { chatDeps, fileRenderersOf, sessionTabsOf } from "./deps";
 
 @Module({
   contributes: {
@@ -58,7 +59,10 @@ export class ChatModule {
   @Provide() drafts: ChatDrafts = chatDrafts;
   setup({ contributions }: ClassCtx) {
     this.page = chatDeps.provide(
-      { sessionTabs: sessionTabsOf(contributions.sessionTabs ?? []) },
+      {
+        sessionTabs: sessionTabsOf(contributions.sessionTabs ?? []),
+        fileRenderers: fileRenderersOf(contributions.fileRenderers ?? []),
+      },
       ChatPage,
     );
     this.chat = {};
