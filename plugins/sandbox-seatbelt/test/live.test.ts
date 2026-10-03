@@ -3,10 +3,10 @@
  * core's command sessions, real kernel denials.
  *
  * Host-gated — this suite can only run where Seatbelt exists, so it skips everywhere
- * else and profile.test.ts carries the deterministic coverage — unless the run names
- * `sandbox-seatbelt` in PENGUIN_MUST_RUN, and then a host that cannot open it fails with the
- * reason (see liveSuite below). Written to be the exact counterpart of the bwrap
- * package's live suite, so the two backends are held to the same behavioral bar.
+ * else and profile.test.ts carries the deterministic coverage (unless PENGUIN_MUST_RUN
+ * names it; see scripts/must-run.mjs). Written to be the exact
+ * counterpart of the bwrap package's live suite, so the two backends are held to the
+ * same behavioral bar.
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -15,6 +15,7 @@ import path from "node:path";
 import { CommandSessionManager } from "@prismshadow/penguin-core";
 import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
 import { canonicalPath, createSeatbeltProvider } from "../src/index.js";
+import { mustRun } from "../../../scripts/must-run.mjs";
 
 const ws = canonicalPath(mkdtempSync(path.join(tmpdir(), "penguin-seatbelt-live-")));
 const outsideProbe = path.join(homedir(), `penguin-seatbelt-live-${process.pid}.txt`);
@@ -23,35 +24,6 @@ const provider = createSeatbeltProvider();
 /** null = spawn unconfined; otherwise confine under this policy (workspaceRoot filled per spawn). */
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
-/**
- * Whether a live suite runs, skips, or fails, given why this host cannot open it (null: it
- * can). PENGUIN_MUST_RUN is a comma-separated list of the environment-dependent suites a run
- * REQUIRES, each named by its directory under plugins/ (this one is `sandbox-seatbelt`): CI sets it
- * per platform, so a host that stops opening a named suite turns the run red with the probe's
- * reason instead of skipping — a skip reads like a pass. A suite the run does not name skips
- * where it cannot open, as on a developer's machine.
- *
- * A copy of the one in sandbox-bwrap's live suite, where its unit test lives: three test files
- * read one environment variable, and the three plugins share no test-only package to hold it
- * (each depends on core alone, which is no place for a test knob). Keep the copies identical;
- * they move into a shared helper once a suite outside the sandbox plugins reads PENGUIN_MUST_RUN.
- * Known weakness: each suite recognises only its own name, so a misspelled name in
- * PENGUIN_MUST_RUN is silently ignored.
- */
-function liveSuite(
-  suite: string,
-  cannotOpen: string | null,
-  env: NodeJS.ProcessEnv = process.env,
-): "run" | "skip" | { fail: string } {
-  if (cannotOpen === null) return "run";
-  const required = (env.PENGUIN_MUST_RUN ?? "").split(",");
-  if (!required.some((name) => name.trim() === suite)) return "skip";
-  return {
-    fail: `PENGUIN_MUST_RUN requires ${suite}, and this host cannot open it: ${cannotOpen}`,
-  };
-}
-
-/** Why this host cannot open the suite (null: it can) — the reason the backend refused with. */
 const cannotOpen = (() => {
   try {
     provider.confine(["true"], { mode: "read-only", workspaceRoot: ws });
@@ -60,9 +32,7 @@ const cannotOpen = (() => {
     return err instanceof Error ? err.message : String(err);
   }
 })();
-
-const verdict = liveSuite("sandbox-seatbelt", cannotOpen);
-const usable = verdict === "run";
+const usable = mustRun("sandbox-seatbelt", cannotOpen);
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
@@ -87,12 +57,6 @@ afterAll(() => {
   rmSync(ws, { recursive: true, force: true });
   rmSync(outsideProbe, { force: true });
 });
-
-if (typeof verdict === "object") {
-  it("penguin-seatbelt live enforcement opens on this host", () => {
-    throw new Error(verdict.fail);
-  });
-}
 
 describe.skipIf(!usable)("penguin-seatbelt live enforcement (host-gated)", () => {
   it("fs-write: the workspace is writable, the world outside it is not", async () => {

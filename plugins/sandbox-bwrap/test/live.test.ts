@@ -4,12 +4,9 @@
  *
  * Host-gated — a package whose whole job is kernel confinement can only be proven on a
  * host that has bubblewrap; elsewhere the suite skips and profile.test.ts still pins
- * the profile and the fail-closed path — unless the run names `sandbox-bwrap` in
- * PENGUIN_MUST_RUN, and then a host that cannot open it fails with the reason (see
- * liveSuite below). The bubblewrap under test is the one the plugin ships, which this
- * package's global setup (test/global-setup.ts) puts in place on Linux when it is
- * missing. The backend is driven DIRECTLY here (no SandboxService): what a plugin
- * package owes is that its own confinement works, and
+ * the profile and the fail-closed path (unless PENGUIN_MUST_RUN names it; see
+ * scripts/must-run.mjs). The backend is driven DIRECTLY here (no
+ * SandboxService): what a plugin package owes is that its own confinement works, and
  * routing/settings are the harness's behavior, tested there with fakes.
  */
 import { afterAll, describe, expect, it } from "vitest";
@@ -19,7 +16,7 @@ import path from "node:path";
 import { CommandSessionManager } from "@prismshadow/penguin-core";
 import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
 import { createPenguinBwrapProvider, loadPenguinBwrapProvider } from "../src/index.js";
-import { prepareVendoredBwrap } from "./global-setup.js";
+import { mustRun } from "../../../scripts/must-run.mjs";
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-bwrap-live-"));
 const outsideProbe = path.join(homedir(), `penguin-bwrap-live-${process.pid}.txt`);
@@ -28,39 +25,7 @@ const provider = createPenguinBwrapProvider();
 /** null = spawn unconfined; otherwise confine under this policy (workspaceRoot filled per spawn). */
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
-/**
- * Whether a live suite runs, skips, or fails, given why this host cannot open it (null: it
- * can). PENGUIN_MUST_RUN is a comma-separated list of the environment-dependent suites a run
- * REQUIRES, each named by its directory under plugins/ (this one is `sandbox-bwrap`): CI sets it
- * per platform, so a host that stops opening a named suite turns the run red with the probe's
- * reason instead of skipping — a skip reads like a pass. A suite the run does not name skips
- * where it cannot open, as on a developer's machine.
- *
- * The same few lines live in the sandbox-dsh and sandbox-seatbelt live suites: three test files
- * read one environment variable, and the three plugins share no test-only package to hold it
- * (each depends on core alone, which is no place for a test knob). Keep the copies identical;
- * they move into a shared helper once a suite outside the sandbox plugins reads PENGUIN_MUST_RUN.
- * Known weakness: each suite recognises only its own name, so a misspelled name in
- * PENGUIN_MUST_RUN is silently ignored.
- */
-function liveSuite(
-  suite: string,
-  cannotOpen: string | null,
-  env: NodeJS.ProcessEnv = process.env,
-): "run" | "skip" | { fail: string } {
-  if (cannotOpen === null) return "run";
-  const required = (env.PENGUIN_MUST_RUN ?? "").split(",");
-  if (!required.some((name) => name.trim() === suite)) return "skip";
-  return {
-    fail: `PENGUIN_MUST_RUN requires ${suite}, and this host cannot open it: ${cannotOpen}`,
-  };
-}
-
-/**
- * Why this host cannot open the suite, or null. The load-time check gives the reason a refusal
- * has (on Ubuntu, the user-namespace switch it names); the confine is the suite's own first step.
- */
-async function hostCannotOpen(): Promise<string | null> {
+const cannotOpen = await (async () => {
   try {
     if ((await loadPenguinBwrapProvider()) === null) return "penguin-bwrap runs on Linux only";
     provider.confine(["true"], { mode: "read-only", workspaceRoot: ws });
@@ -68,10 +33,8 @@ async function hostCannotOpen(): Promise<string | null> {
   } catch (err) {
     return err instanceof Error ? err.message : String(err);
   }
-}
-
-const verdict = liveSuite("sandbox-bwrap", await hostCannotOpen());
-const usable = verdict === "run";
+})();
+const usable = mustRun("sandbox-bwrap", cannotOpen);
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
@@ -107,60 +70,6 @@ afterAll(() => {
   rmSync(ws, { recursive: true, force: true });
   rmSync(outsideProbe, { force: true });
 });
-
-describe("PENGUIN_MUST_RUN and the bubblewrap under test", () => {
-  it("a suite the run requires fails instead of skipping", () => {
-    const reason = "'bwrap' is missing or refuses the base profile";
-    const cannotOpen = (mustRun?: string) =>
-      liveSuite(
-        "sandbox-bwrap",
-        reason,
-        mustRun === undefined ? {} : { PENGUIN_MUST_RUN: mustRun },
-      );
-    expect(cannotOpen("sandbox-bwrap,sandbox-dsh")).toEqual({
-      fail: `PENGUIN_MUST_RUN requires sandbox-bwrap, and this host cannot open it: ${reason}`,
-    });
-    expect(cannotOpen(" sandbox-dsh , sandbox-bwrap ")).toHaveProperty("fail");
-    // Not named (or named only as part of another name, or by its bare backend): skips, as it
-    // always has.
-    expect(cannotOpen(undefined)).toBe("skip");
-    expect(cannotOpen("")).toBe("skip");
-    expect(cannotOpen("sandbox-dsh,sandbox-seatbelt,sandbox-bwrap2")).toBe("skip");
-    expect(cannotOpen("bwrap")).toBe("skip");
-    // A host that opens it runs it, named or not.
-    expect(liveSuite("sandbox-bwrap", null, { PENGUIN_MUST_RUN: "sandbox-bwrap" })).toBe("run");
-    expect(liveSuite("sandbox-bwrap", null, {})).toBe("run");
-  });
-
-  it("the suite fetches the bubblewrap it ships when it is missing", async () => {
-    let vendored = 0;
-    let present = false;
-    const prepare = (platform: NodeJS.Platform) =>
-      prepareVendoredBwrap({
-        platform,
-        arch: "x64",
-        present: () => present,
-        vendor: async () => {
-          vendored++;
-          present = true;
-        },
-      });
-    expect(await prepare("darwin")).toBe("not-linux");
-    expect(await prepare("win32")).toBe("not-linux");
-    expect(vendored).toBe(0);
-    expect(await prepare("linux")).toBe("vendored");
-    expect(vendored).toBe(1);
-    // In place now: no second fetch.
-    expect(await prepare("linux")).toBe("present");
-    expect(vendored).toBe(1);
-  });
-});
-
-if (typeof verdict === "object") {
-  it("penguin-bwrap live enforcement opens on this host", () => {
-    throw new Error(verdict.fail);
-  });
-}
 
 describe.skipIf(!usable)("penguin-bwrap live enforcement (host-gated)", () => {
   it("fs-write: the workspace is writable, the world outside it is not", async () => {
