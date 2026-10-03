@@ -59,6 +59,7 @@ export * from "./components/forms/radio/radio";
 // W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
 // open (moved up from W3).
 export * from "./components/overlays/portal-panel/use-portal-panel";
+export * from "./components/overlays/hover-disclosure/use-hover-disclosure";
 export * from "./components/overlays/info-popover/info-popover";
 export * from "./components/overlays/info-popover/help-fold";
 export * from "./components/forms/select/select";

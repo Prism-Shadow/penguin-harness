@@ -7,6 +7,13 @@
  * interaction and the anatomy a theme's recipe reads cannot drift apart. The card's head reads
  * the header constants below, and the pieces both draw (the mark, the progress slot, the
  * chevron) are the small components at the end of this module.
+ *
+ * The body folds through `Fold`, the same fold the card's own body uses, so a row inside an open
+ * card opens and closes under the theme's layout motion rather than in one frame. The fold is
+ * the `body` slot (its track is the row's sibling, where a recipe's `~ [data-slot="body"]` finds
+ * it); the row's parts sit in the box inside the track. A row that mounts open is settled and
+ * moves nothing, and text streaming into an open body grows it without a tween, since only the
+ * track's value transitions.
  */
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -14,6 +21,7 @@ import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
+import { Fold } from "../fold/fold";
 
 /**
  * The row itself (collapsed and expanded share it; the hover fill is the "open or close me"
@@ -212,9 +220,10 @@ export interface DisclosureRowProps {
   under?: ReactNode;
   /**
    * The expanded body; the caller styles it (a Markdown body, an output `<pre>`, …), and the row
-   * wraps it in the `body` slot so a theme can treat every row's body alike. Without one the
-   * row is a static line — no button, no chevron, no hover — so a list mixing rows that open
-   * with rows that have nothing to show keeps one column.
+   * folds it in the `body` slot so a theme can treat every row's body alike. It is mounted only
+   * while open or folding closed, so a streaming body that the reader has not opened costs
+   * nothing. Without one the row is a static line — no button, no chevron, no hover — so a list
+   * mixing rows that open with rows that have nothing to show keeps one column.
    */
   children?: ReactNode;
 }
@@ -234,6 +243,8 @@ export function DisclosureRow({
   const strings = useUiStrings();
   const [open, setOpen] = useState(defaultOpen);
   const rootRef = useRef<HTMLDivElement>(null);
+  /** The reader closed the row: land the view on it once the fold has finished. */
+  const landOnClose = useRef(false);
   const ink = activity?.state === "error" ? "text-tone-danger-fg" : "text-fg-muted";
   const parts = (
     <>
@@ -264,13 +275,12 @@ export function DisclosureRow({
   }
   const rowClass = `${activity ? "ui-activity " : ""}${sticky ? `${DISCLOSURE_ROW_STICKY_CLASS} ` : ""}${DISCLOSURE_ROW_CLASS}`;
   const toggle = (): void => {
-    // Collapsing while the row is stuck: its real top sits above the fold, so land the view back
-    // on the row (`nearest` does not move for an expand or an in-view collapse).
-    const willClose = open;
+    // Collapsing while the row is stuck: its real top sits above the fold, so once the body has
+    // folded away land the view back on the row (`nearest` does not move for an expand or an
+    // in-view collapse). It waits for the fold's end rather than a frame, since while the body
+    // is still folding the row is still stuck and the view would land on the wrong place.
+    landOnClose.current = open;
     setOpen((v) => !v);
-    if (willClose) {
-      requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
-    }
   };
   return (
     <div ref={rootRef}>
@@ -319,7 +329,17 @@ export function DisclosureRow({
         </div>
       )}
       {under !== undefined && <div data-slot="under">{under}</div>}
-      {open && <div data-slot="body">{children}</div>}
+      <Fold
+        open={open}
+        data-slot="body"
+        onClosed={() => {
+          if (!landOnClose.current) return;
+          landOnClose.current = false;
+          rootRef.current?.scrollIntoView({ block: "nearest" });
+        }}
+      >
+        {children}
+      </Fold>
     </div>
   );
 }

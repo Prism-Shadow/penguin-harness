@@ -17,7 +17,7 @@ Each Project has its own model table: the models its conversations can use, grou
 In the sidebar, select **Models**. Models are listed in groups, one per provider.
 
 - **Groups.** Built-in groups follow the order in [Built-in provider groups](#built-in-provider-groups). Groups you create follow them, sorted by name. A built-in group with no models is hidden; **Custom** is always shown. The **TokenDance** group carries a **Recommended** tag.
-- **Pinned and folded groups.** TokenDance, Penguin Go, DeepSeek, OpenRouter, Google Gemini, OpenAI and Anthropic are pinned and always shown. Every other group, groups you create included, sits below them under a full-width bar that says how many it holds, such as "11 more groups"; select the bar to unfold or fold them. They start folded, and the browser remembers the choice. To pin a group or let it fold away, hover over its header or move focus to it, then select the lock after its name (**Pin** or **Unpin**); dragging a group onto a header in the other area moves it there too. Pins are saved in this browser and apply to every Project. While you search, matching groups from both areas show and the bar is hidden.
+- **Favorite and folded groups.** TokenDance, Penguin Go, DeepSeek, OpenRouter, Google Gemini, OpenAI and Anthropic are favorites and always shown. Every other group, groups you create included, sits below them under a full-width bar that says how many it holds, such as "11 more groups"; select the bar to unfold or fold them. They start folded, and the browser remembers the choice. To make a group a favorite or let it fold away, hover over its header or move focus to it, then select the star after its name (**Add to favorites** or **Remove from favorites**); dragging a group onto a header in the other area moves it there too. Favorites are saved in this browser and apply to every Project. While you search, matching groups from both areas show and the bar is hidden.
 - **Open and close groups.** Select a group's header to open or close it. On your first visit only the TokenDance group is open. The browser remembers which groups you opened, per Project.
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
@@ -37,7 +37,7 @@ Prices are shown per million Tokens, in the order cache read / cache write / out
 
 Select a card to open **Model settings**. It links to the provider's model list (**Get model IDs**), to the model's own page (**Model page**) and, like the group settings dialog, to the provider's key console (**Manage keys**).
 
-A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens, then, on hover or focus, the lock that pins it. On the right it holds, from left to right:
+A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens, then, on hover or focus, the star that makes it a favorite. On the right it holds, from left to right:
 
 - the group's balance, for TokenDance and DeepSeek once the group has a key, with a divider after it; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
@@ -48,7 +48,7 @@ While the TokenDance group has no key, a banner above the groups offers to conne
 
 The header has no button for entering a key: the group key is set in [Group settings](#group-settings) or written when the group connects.
 
-Only the Project owner can change models and credentials. Members can search, open and close groups, reorder and pin them in their own browser, see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
+Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them and mark favorites in their own browser, see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
 
 ## Add a model group
 

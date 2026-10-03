@@ -31,9 +31,9 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
-    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
-    pinEntry: "Pin",
-    unpinEntry: "Unpin",
+    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
+    pinEntry: "Add to favorites",
+    unpinEntry: "Remove from favorites",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
@@ -1583,8 +1583,8 @@ export const en: Strings = {
      * needs first and is the element that truncates.
      */
     recommendedGroup: "Recommended",
-    pinGroup: "Pin",
-    unpinGroup: "Unpin",
+    pinGroup: "Add to favorites",
+    unpinGroup: "Remove from favorites",
     foldedGroups: (n: number): string => (n === 1 ? "1 more group" : `${n} more groups`),
     discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
@@ -4129,12 +4129,9 @@ Scenarios:
     workMode: "Work mode",
     modeDev: "Development",
     modeCompany: "Company",
-    switchToCompany: "Switch to company mode",
-    switchToDev: "Switch to development mode",
     /**
      * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
-     * the work-mode switch (and the suffix the collapsed rail's tooltip carries in its place),
-     * the tag's own tooltip, and the one sentence shown both under the admin's master switch
+     * the work-mode switch, the tag's own tooltip, and the one sentence shown both under the admin's master switch
      * and as the notice a person gets the first time they enter the mode.
      */
     beta: "Beta",
@@ -4172,26 +4169,32 @@ Scenarios:
       "One sentence on why this organization exists; the CEO's first session starts from it",
     missionPlaceholder:
       "e.g. Maintain the PenguinHarness docs site and publish a weekly update digest",
-    /** The three examples under the mission field (org-examples.ts holds their order). */
-    missionExampleHint: "Click to fill the mission",
+    /**
+     * The example cards on the empty landing (org-examples.ts holds their order). A card shows
+     * the name and the one-line summary; the full mission is what a click fills the dialog with.
+     */
     missionExamples: {
       research: {
         name: "Research Paper Lab",
+        summary: "Runs experiments and writes papers for top-tier conferences",
         mission:
           "Set up a company that does research for me and produces papers fit for top-tier conferences. Experiments run autoresearch-style: fix the evaluation script and the metric first, edit one file only, give every experiment the same time budget, log each result as one line and keep only the changes that improve the metric. Before any experiment loop starts, the researcher asks me in the channel for resources — the machine and its GPU/CPU, concurrency, total hours, disk and data, paid APIs — then runs unattended inside what I approved and asks again before exceeding it. Papers go through adversarial review between two kinds of employee: reviewers reproduce the results, check baselines and ablations, hunt for test-set leakage and metric gaming, and return a score with required changes; authors revise or rebut point by point until the reviewer accepts.",
       },
       agentTuning: {
         name: "Agent Tuning Studio",
+        summary: "Improves your product agent's accuracy and user experience",
         mission:
           "Set up a company that optimizes my product Agent: raise its accuracy in real business use and improve the product experience.",
       },
       cloudReseller: {
         name: "Cloud Service Reseller",
+        summary: "Bundles low-priced cloud services and resells them at a markup",
         mission:
           "Set up a company that runs a cloud-service-style website for me: collect every low-priced service on the market, bundle and resell them at a markup to make money, and grow the site's SEO and visibility.",
       },
       mirror: {
         name: "Digital-twin company",
+        summary: "Gives each colleague a digital twin that answers and relays messages",
         mission:
           "Set up a company that mirrors our real company: I will give the CEO our real org chart and the CEO creates one digital twin per real employee; each twin's desk session is bound to that colleague's Feishu bot. A twin only receives its own colleague's messages by default, answers what it can on its own and relays the rest to the relevant colleague's twin, who passes it on to the real person. The CEO hires nobody on its own, schedules nothing and files no tickets; the company only relays and solves what it can.",
       },

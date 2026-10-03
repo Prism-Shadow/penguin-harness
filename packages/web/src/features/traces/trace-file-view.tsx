@@ -37,6 +37,7 @@ import {
   Card,
   CardHeader,
   Chevron,
+  Fold,
   GlyphIcon,
   Skeleton,
   StatChip,
@@ -652,50 +653,56 @@ export function TraceFileView({
               )}
             </button>
 
-            {open && (
-              <div data-slot="body" className="space-y-3 p-3">
-                {/* This round's timeline */}
-                {(t.segments.length > 0 || t.spans.length > 0 || t.otherSpans.length > 0) && (
-                  <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
-                    <p className="mb-1.5 text-xs font-medium text-gray-500">{S.traces.timeline}</p>
-                    <TimelineChart
-                      segments={t.segments}
-                      toolSpans={t.spans}
-                      otherSpans={t.otherSpans}
-                      highlight={highlight}
-                      onHighlight={onHighlight}
-                      onJump={jumpTo}
-                      hideTaskLabel
-                    />
-                  </div>
-                )}
-
-                {/* This round's messages */}
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-gray-500">
-                    {S.traces.messages}（{t.messages.length}）
-                  </p>
-                  {t.messages.length === 0 ? (
-                    <p className="text-xs text-gray-400">{S.common.none}</p>
-                  ) : (
-                    <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">
-                      {t.messages.map((msg, i) => {
-                        const rk = rowKeyOf(t.taskIndex, i);
-                        return (
-                          <EventRow
-                            key={i}
-                            msg={msg}
-                            rowKey={rk}
-                            matched={rk === hoveredRow || rk === pinnedRow}
-                            onHighlight={(h) => onHighlight(h)}
-                          />
-                        );
-                      })}
-                    </ul>
+            {/* The round's body folds under the theme's layout motion, and is built only while
+                it shows: a round's timeline and its rows are the costly part of this page. */}
+            <Fold open={open} data-slot="body" bodyClassName="space-y-3 p-3">
+              {() => (
+                <>
+                  {/* This round's timeline */}
+                  {(t.segments.length > 0 || t.spans.length > 0 || t.otherSpans.length > 0) && (
+                    <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
+                      <p className="mb-1.5 text-xs font-medium text-gray-500">
+                        {S.traces.timeline}
+                      </p>
+                      <TimelineChart
+                        segments={t.segments}
+                        toolSpans={t.spans}
+                        otherSpans={t.otherSpans}
+                        highlight={highlight}
+                        onHighlight={onHighlight}
+                        onJump={jumpTo}
+                        hideTaskLabel
+                      />
+                    </div>
                   )}
-                </div>
-              </div>
-            )}
+
+                  {/* This round's messages */}
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-gray-500">
+                      {S.traces.messages}（{t.messages.length}）
+                    </p>
+                    {t.messages.length === 0 ? (
+                      <p className="text-xs text-gray-400">{S.common.none}</p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">
+                        {t.messages.map((msg, i) => {
+                          const rk = rowKeyOf(t.taskIndex, i);
+                          return (
+                            <EventRow
+                              key={i}
+                              msg={msg}
+                              rowKey={rk}
+                              matched={rk === hoveredRow || rk === pinnedRow}
+                              onHighlight={(h) => onHighlight(h)}
+                            />
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
+            </Fold>
           </Card>
         );
       })}

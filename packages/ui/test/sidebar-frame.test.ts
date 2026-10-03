@@ -208,13 +208,13 @@ describe("SidebarNavEntry", () => {
     );
   });
 
-  it("draws the lock closed while pinned and open while not, the drawing carrying the state", () => {
+  it("draws the star solid on a favourite and as an outline otherwise, the drawing carrying the state", () => {
     const pinned = entry();
     const unpinned = entry({ pin: pin(false) });
-    expect(pinned).toContain(`d="${ICONS.lock}"`);
-    expect(pinned).not.toContain(`d="${ICONS.lockOpen}"`);
-    expect(unpinned).toContain(`d="${ICONS.lockOpen}"`);
-    expect(unpinned).not.toContain(`d="${ICONS.lock}"`);
+    expect(pinned).toContain(`<path d="${ICONS.star}" fill="currentColor">`);
+    expect(pinned).not.toContain(`<path d="${ICONS.star}" fill="none">`);
+    expect(unpinned).toContain(`<path d="${ICONS.star}" fill="none">`);
+    expect(unpinned).not.toContain(`<path d="${ICONS.star}" fill="currentColor">`);
   });
 
   it("reveals the pin as the conversation rows reveal their hover buttons, and always shows it where nothing hovers", () => {

@@ -1,6 +1,7 @@
 /**
- * The one disclosure body that mounts on open and folds both ways: a work group's rows, the
- * sidebar's folding nav entries, a session group's rows, a lazy folder's.
+ * The one disclosure body that mounts on open and folds both ways: a work group's rows and each
+ * row's own body inside it (a tool call's output, a thinking step's text), the sidebar's folding
+ * nav entries, a session group's rows, a lazy folder's, a Trace's task and event bodies.
  *
  * The body is a one-row grid whose track goes between `0fr` and `1fr`, never `auto`, and it
  * carries `data-layout-motion`, so the theme's layout tokens time it (Frost a long ease-out,

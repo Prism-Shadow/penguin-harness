@@ -3,8 +3,8 @@
  * row (the fold button and the Project or organization switcher), one pinned entry, the scroll
  * area, and the account row at the foot. The pieces the scroll area is built from are here too:
  * the page nav — pinned entries that always show, then the ones that fold away under a slim
- * toggle — its entries with their pin toggles (a lock) and the areas a dragged entry can land
- * in, the list's header with its label and its controls, the controls themselves, and the
+ * toggle — its entries with their favourite toggles (a star) and the areas a dragged entry can
+ * land in, the list's header with its label and its controls, the controls themselves, and the
  * switcher's and the account's buttons.
  *
  * The page nav and the list scroll together, so the nav rides up as the list is scrolled: the
@@ -257,13 +257,16 @@ export function SidebarNavArea({
   );
 }
 
-/** A nav entry's pin toggle, as its caller describes it. */
+/** A nav entry's favourite toggle, as its caller describes it. */
 export interface SidebarNavPin {
-  /** The entry is pinned: the lock is closed (open while it is not). */
+  /** The entry is a favourite, kept out of the fold: the star is solid (an outline while not). */
   pinned: boolean;
   /** The toggle's accessible name, the same either way: `aria-pressed` carries the state. */
   label: string;
-  /** The hint: the move a click makes ("Pin" while unpinned, "Unpin" while pinned). */
+  /**
+   * The hint: the move a click makes ("Add to favorites" while not one, "Remove from favorites"
+   * while it is).
+   */
   tooltip: string;
   onToggle: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   /** The toggle's node: a caller moving focus onto it once the entry has changed area reads it. */
@@ -292,13 +295,14 @@ export interface SidebarNavEntryProps extends Omit<
 }
 
 /**
- * A page entry on the navigation column that the reader can pin: the column's `NavRow`, with a
- * pin toggle over the row's end (a button cannot sit inside the row's link, so the toggle is laid
- * over the link's last pixels and the link keeps the whole row as its hit area). The toggle is the
- * conversation rows' hover button — flat, shown on the row's hover or its own focus, taking taps
- * only while shown — with one addition: where there is no hover at all it always shows, because
- * the toggle is then the only way to move an entry. The lock is closed while pinned and open
- * while not, so the drawing itself carries the state.
+ * A page entry on the navigation column that the reader can make a favourite, which keeps it out
+ * of the fold: the column's `NavRow`, with a star toggle over the row's end (a button cannot sit
+ * inside the row's link, so the toggle is laid over the link's last pixels and the link keeps the
+ * whole row as its hit area). The toggle is the conversation rows' hover button — flat, shown on
+ * the row's hover or its own focus, taking taps only while shown — with one addition: where there
+ * is no hover at all it always shows, because the toggle is then the only way to move an entry.
+ * The star is solid on a favourite and an outline otherwise, so the drawing itself carries the
+ * state.
  *
  * The row's hover answers to the entry as a whole, so its fill holds while the pointer is on the
  * toggle. A badge never hides and never shares the toggle's spot: at rest it sits at the row's
@@ -351,7 +355,7 @@ export function SidebarNavEntry({
           onClick={pin.onToggle}
           className={`${ROW_HOVER_BUTTON} hover:text-fg [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
         >
-          <GlyphIcon d={pin.pinned ? ICONS.lock : ICONS.lockOpen} size={ROW_ACTION_GLYPH} />
+          <GlyphIcon d={ICONS.star} size={ROW_ACTION_GLYPH} filled={pin.pinned} />
         </button>
       </span>
       {/* The badge's two places: the row's end, and — while the toggle shows — five and a half

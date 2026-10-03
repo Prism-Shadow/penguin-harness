@@ -1,11 +1,11 @@
 /**
  * Organization dialogs, invoked from the sidebar's organization switcher (and the empty
  * landing): create an organization — display name, the id (still required, generated from
- * that name by the field's own button), a one-sentence mission with three examples under it,
- * the Project it belongs to when the user has several, the model its sessions run on (the
- * Project default unless chosen), the company workspace (the organization's own directory
- * unless one is picked) and the CEO's monthly budget, which is the whole company's and is
- * typed in the currency the reader reads money in but stored in USD — and an organization's
+ * that name by the field's own button), a one-sentence mission, the Project it belongs to
+ * when the user has several, the model its sessions run on (the Project default unless
+ * chosen), the company workspace (the organization's own directory unless one is picked) and
+ * the CEO's monthly budget, which is the whole company's and is typed in the currency the
+ * reader reads money in but stored in USD — and an organization's
  * settings: name, mission, model, workspace, timezone, working language, approval mode, and
  * pause / resume — the one lifecycle control there is, since an organization is never deleted
  * through the App. Pause / resume writes its own PATCH the moment it is clicked; everything
@@ -68,7 +68,6 @@ import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "./company-nav";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
-import { ORG_EXAMPLES } from "./org-examples";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import {
   EMPTY_ORG_DRAFT,
@@ -227,47 +226,6 @@ function WorkspaceField({
         emptyLabel={S.company.workspaceEmpty}
         clearLabel={S.company.workspaceClear}
       />
-    </div>
-  );
-}
-
-/**
- * The three example missions under the mission field. A click takes the mission whole (the
- * click asks for THIS mission) and the display name only while the name is still empty, so
- * an example never overwrites what someone typed; the id is left to the generate button
- * beside it. One line each — the mission is long enough that a card of it would push the
- * rest of the form off the dialog, so the row carries the names and the tooltips carry what
- * each one actually says.
- *
- * The row is rendered inside the mission field and sits against it, not a field's distance
- * below: it fills that field in, and an unlabelled row a whole gap away reads as a field of
- * its own with its title missing.
- */
-function MissionExamples({
-  disabled,
-  onPick,
-}: {
-  disabled: boolean;
-  onPick: (example: { name: string; mission: string }) => void;
-}) {
-  return (
-    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-      {ORG_EXAMPLES.map((example) => {
-        const copy = S.company.missionExamples[example.id];
-        return (
-          <button
-            key={example.id}
-            type="button"
-            data-tooltip={`${copy.mission}\n${S.company.missionExampleHint}`}
-            data-tooltip-content="text"
-            disabled={disabled}
-            onClick={() => onPick(copy)}
-            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-          >
-            {copy.name}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -531,31 +489,21 @@ export function CreateOrganizationDialog({
             setIdError(undefined);
           }}
         />
-        <div>
-          <Textarea
-            label={S.company.mission}
-            required
-            size="sm"
-            rows={3}
-            value={mission}
-            error={missionError}
-            hint={S.company.missionHint}
-            placeholder={S.company.missionPlaceholder}
-            disabled={busy}
-            onChange={(e) => {
-              setMission(e.target.value);
-              setMissionError(undefined);
-            }}
-          />
-          <MissionExamples
-            disabled={busy}
-            onPick={(example) => {
-              setMission(example.mission);
-              setMissionError(undefined);
-              if (name.trim() === "") setName(example.name);
-            }}
-          />
-        </div>
+        <Textarea
+          label={S.company.mission}
+          required
+          size="sm"
+          rows={3}
+          value={mission}
+          error={missionError}
+          hint={S.company.missionHint}
+          placeholder={S.company.missionPlaceholder}
+          disabled={busy}
+          onChange={(e) => {
+            setMission(e.target.value);
+            setMissionError(undefined);
+          }}
+        />
         <ModelField
           models={models}
           loadError={modelsError}
