@@ -37,11 +37,35 @@ export interface NavPage {
   key: string;
   admin: boolean;
   released: boolean;
+  /** The page this one sits under (web-app/page-table.ts): it is not an entry of its own. */
+  parent?: string;
 }
 
-/** The nav as this user sees it: page keys, in table order. */
+const offered = (p: NavPage, isAdmin: boolean) => p.released && (isAdmin || !p.admin);
+
+/** The nav as this user sees it: the top-level page keys, in table order. */
 export function navKeysFor(pages: readonly NavPage[], isAdmin: boolean): readonly string[] {
-  return pages.filter((p) => p.released && (isAdmin || !p.admin)).map((p) => p.key);
+  return pages.filter((p) => p.parent === undefined && offered(p, isAdmin)).map((p) => p.key);
+}
+
+/**
+ * The pages each entry carries below it, by the entry's key, in table order and offered the
+ * way entries are. A child is not an entry: it has no pin choice and no drag, and it is drawn
+ * under its parent in whichever area the parent is, so folding or moving the parent moves it.
+ * The collapsed rail draws entries only, and lights the parent's while a child is open.
+ */
+export function navChildKeysFor(
+  pages: readonly NavPage[],
+  isAdmin: boolean,
+): ReadonlyMap<string, readonly string[]> {
+  const out = new Map<string, string[]>();
+  for (const p of pages) {
+    if (p.parent === undefined || !offered(p, isAdmin)) continue;
+    const siblings = out.get(p.parent);
+    if (siblings === undefined) out.set(p.parent, [p.key]);
+    else siblings.push(p.key);
+  }
+  return out;
 }
 
 /**

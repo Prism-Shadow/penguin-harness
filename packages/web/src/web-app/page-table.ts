@@ -27,6 +27,11 @@ export interface PageData {
   title?: string;
   titleZh?: string;
   icon?: string;
+  /**
+   * The key of the page this one sits under: the nav draws it as an indented row below that
+   * page (web-app/sidebar/nav-state.ts). One level only — see parentedPagesOf.
+   */
+  parent?: string;
 }
 
 /** A page with the component its feature bound, or the one a server-contributed page's renderer resolved to. */
@@ -54,6 +59,23 @@ export function pageTableOf(contributions: readonly Contributed[]): readonly Web
       Component: c.code as ComponentType,
     }))
     .sort((a, b) => a.order - b.order);
+}
+
+/**
+ * The table with every page whose `parent` cannot hold it dropped — from the nav and from the
+ * routes alike, so a page never shows up detached from where it belongs: a parent that is not
+ * in the table (its plugin is gone, or the page was never there), a parent that itself sits
+ * under another page (one level only; the child is refused, its parent stays), or the page's
+ * own key.
+ */
+export function parentedPagesOf(pages: readonly WebAppPage[]): readonly WebAppPage[] {
+  if (pages.every((p) => p.parent === undefined)) return pages;
+  const byKey = new Map(pages.map((p) => [p.key, p]));
+  return pages.filter((p) => {
+    if (p.parent === undefined) return true;
+    const parent = byKey.get(p.parent);
+    return parent !== undefined && parent !== p && parent.parent === undefined;
+  });
 }
 
 /** A page's nav name in the given language; the key stands in for a page that names none. */

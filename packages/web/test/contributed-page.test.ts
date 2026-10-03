@@ -4,11 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { contributedPagesOf } from "../src/web-app/contributions";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 
-const page = {
+const page: ContributionsResponse["pages"][number] = {
   id: "plugin.reports",
   from: "plugin",
   key: "reports",
   path: "/reports",
+  nav: "main",
+  admin: false,
   renderer: { builtin: "ReportsPage" },
 };
 const answer = (pages: ContributionsResponse["pages"]): ContributionsResponse => ({
