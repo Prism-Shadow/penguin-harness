@@ -1,6 +1,6 @@
 /**
  * The folded navigation column: a 48px strip of icon entries in place of the pinned sidebar. The
- * head holds the entries that stay put (the unfold button, a mode toggle), the middle is a
+ * head holds the entries that stay put (the unfold button), the middle is a
  * `<nav>` of entries that scrolls on its own when the window is too short for them, and the foot
  * holds the account's avatar. The scrollbar is hidden: at this width it would cost a third of the
  * strip.
@@ -40,7 +40,7 @@ export function railItemClass({
 }
 
 export interface RailProps {
-  /** The entries above the scrolling list: the unfold button, a mode toggle. */
+  /** The entries above the scrolling list: the unfold button. */
   head?: ReactNode;
   /** The entries: the rail's `<nav>`, which scrolls when the window is short. */
   children?: ReactNode;

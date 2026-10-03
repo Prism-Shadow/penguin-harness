@@ -14,6 +14,7 @@
 import { Fragment, useState } from "react";
 import {
   Badge,
+  Fold,
   GlyphIcon,
   ICONS,
   REHYPE_PLUGINS,
@@ -440,17 +441,22 @@ export function EventRow({
           {summarizeEvent(msg)}
         </span>
       </button>
-      {open && (
-        <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
-          <EventBody msg={msg} />
-          {/* Stop reason: bottom-right */}
-          {stopReason && (
-            <div className="mt-1.5 flex justify-end">
-              <Badge tone={stopReasonTone(stopReason)}>{stopReason}</Badge>
-            </div>
-          )}
-        </div>
-      )}
+      {/* The body folds under the theme's layout motion, and is built only while it shows: a
+          rendered event (Markdown, a code block, a table) costs something, and a Trace has
+          hundreds of rows the reader never opens. */}
+      <Fold open={open}>
+        {() => (
+          <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
+            <EventBody msg={msg} />
+            {/* Stop reason: bottom-right */}
+            {stopReason && (
+              <div className="mt-1.5 flex justify-end">
+                <Badge tone={stopReasonTone(stopReason)}>{stopReason}</Badge>
+              </div>
+            )}
+          </div>
+        )}
+      </Fold>
     </li>
   );
 }

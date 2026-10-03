@@ -36,9 +36,9 @@ export const zh = {
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
-    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
-    pinEntry: "常驻",
-    unpinEntry: "取消常驻",
+    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
+    pinEntry: "收藏",
+    unpinEntry: "取消收藏",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "概览",
@@ -298,9 +298,12 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
-    /** Touch-only: the bottom dock's height toggle, standing in for a boundary drag. */
-    maximize: "放大到整屏",
-    restore: "还原高度",
+    /** The dock header's fullscreen toggle while the dock is at its usual size. */
+    fullscreen: "全屏",
+    /** The same toggle while the dock is fullscreen: it leaves in place. */
+    exitFullscreen: "退出全屏",
+    /** A tab whose panel has no definition registered (a plugin's panel before it loads). */
+    panelUnavailable: "此面板暂不可用",
   },
 
   /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
@@ -1729,10 +1732,10 @@ export const zh = {
      * group, so a user who drags that group elsewhere still sees why it is called out.
      */
     recommendedGroup: "官方推荐",
-    /** A group header's lock: its name (aria-pressed carries the state), and the hint while pinned. */
-    pinGroup: "常驻",
-    unpinGroup: "取消常驻",
-    /** The bar that folds the groups that are not pinned, naming how many it holds. */
+    /** A group header's favourite star: its name (aria-pressed carries the state), and the hint while a favourite. */
+    pinGroup: "收藏",
+    unpinGroup: "取消收藏",
+    /** The bar that folds the groups that are not favourites, naming how many it holds. */
     foldedGroups: (n: number): string => `其余 ${n} 个分组`,
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
@@ -1781,6 +1784,8 @@ export const zh = {
     /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
     baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
+    /** A base URL that is set but is not an absolute http(s) URL (the group settings refuse to save it). */
+    baseUrlInvalid: "base URL 须为以 http:// 或 https:// 开头的完整地址",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
@@ -4302,12 +4307,9 @@ Benchmark：
     workMode: "工作模式",
     modeDev: "开发",
     modeCompany: "公司",
-    switchToCompany: "切换到公司模式",
-    switchToDev: "切换到开发模式",
     /**
      * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
-     * the work-mode switch (and the suffix the collapsed rail's tooltip carries in its place),
-     * the tag's own tooltip, and the one sentence shown both under the admin's master switch
+     * the work-mode switch, the tag's own tooltip, and the one sentence shown both under the admin's master switch
      * and as the notice a person gets the first time they enter the mode.
      */
     beta: "内测版",
@@ -4335,31 +4337,39 @@ Benchmark：
     /** Create dialog. */
     createTitle: "新建组织",
     orgId: "组织 id",
-    orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
+    orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线",
+    /** Behind the org id's "?": what the id is beyond its format. */
+    orgIdInfo: "组织 id 也是组织的目录名，创建后不可修改；可以点「用 AI 生成」从显示名或使命生成。",
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",
     missionHint: "一句话说明这个组织存在的目的；CEO 的初始化会话从它开始",
     missionPlaceholder: "例如：为 PenguinHarness 维护文档站，并每周发布一期更新摘要",
-    /** The three examples under the mission field (org-examples.ts holds their order). */
-    missionExampleHint: "点一下填入使命",
+    /**
+     * The example cards on the empty landing (org-examples.ts holds their order). A card shows
+     * the name and the one-line summary; the full mission is what a click fills the dialog with.
+     */
     missionExamples: {
       research: {
         name: "科研论文公司",
+        summary: "自主跑实验，写出可投顶会的论文",
         mission:
           "新建一个公司帮我做科研，产出可以投稿顶级会议的学术论文。实验按 autoresearch 的方式跑：先固定评测脚本与指标，只改一个文件，每次实验限定时长，结果逐行记入日志，只保留有提升的改动。开始任何实验循环之前，研究员先在群里向我申请资源——机器与 GPU/CPU、并发数、总时长、磁盘与数据、付费 API——批准后在额度内自主运行，要超出就再申请。论文由作者与审稿人两类员工对抗评审：审稿人复现结果、查基线与消融、找测试集泄漏与指标作弊，给出评分与必改项；作者逐条修改或反驳，直到审稿人接受。",
       },
       agentTuning: {
         name: "Agent 优化公司",
+        summary: "提升产品 Agent 的准确度与使用体验",
         mission: "新建一个公司帮我优化产品 Agent，提高 Agent 在实际业务中的准确度和产品体验",
       },
       cloudReseller: {
         name: "云服务转售站",
+        summary: "收集低价云服务，打包加价转售",
         mission:
           "新建一个公司帮我运营一个类似云服务的网站，收集市面上所有的低价服务，并且加价以后打包出售，目的是帮我赚钱，并且要提高站点的 SEO 和曝光程度",
       },
       mirror: {
         name: "员工数字分身公司",
+        summary: "为每位同事建数字分身，代为答疑和传话",
         mission:
           "新建一个公司，作为我们现实公司的镜像：我会把现实公司的组织图告诉 CEO，CEO 为每位现实员工创建一个数字分身；每个分身的工位会话绑定到那位同事的飞书机器人。分身默认只被动接收自己同事的消息，能自己解决的就直接回答，解决不了的转给相关同事的分身、再由对方分身转给真人。CEO 不主动招募、不排日程、不开工单，公司只做传话和自主解决问题。",
       },
@@ -4369,7 +4379,6 @@ Benchmark：
     modelField: "模型",
     modelInfo:
       "工位会话与工单会话默认使用的模型；员工在组织图里另有指定时以员工的为准。改动从下一次工作轮起生效。",
-    modelHint: "留空则使用 Project 的默认模型",
     /** The picker offers models only, so the way back to the Project default is its own control. */
     modelClear: "改回 Project 默认",
     /** The stored model is no longer in the Project's model list. */
@@ -4394,7 +4403,8 @@ Benchmark：
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "组织设置",
     timezone: "时区",
-    timezoneHint: "IANA 时区名，如 Asia/Shanghai；预算周期（自然月）与频道日志按它划分",
+    timezoneHint: "IANA 时区名，如 Asia/Shanghai",
+    timezoneInfo: "预算周期（自然月）与频道日志按这个时区划分",
     language: "工作语言",
     languageInfo:
       "组织的工作语言：手册、员工简报、CEO 初始化会话与各工位的输出都用这个语言；创建时按使命的语言自动判断。",
@@ -4579,9 +4589,6 @@ Benchmark：
       dutiesHint: "写进组织图，员工每次工作轮都会读到",
       workspace: "工作区",
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
-      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
-      hireWorkspaceHint:
-        "公共工作区下的子目录，或一个已存在的绝对路径；留空即以该员工的 Agent id 命名的子目录",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
       hireConfirm: (name: string, manager: string): string =>
@@ -4620,7 +4627,6 @@ Benchmark：
       hireAgentSection: "Agent",
       hirePositionSection: "职位",
       agentHint: "只列出本 Project 中尚未加入组织的 Agent",
-      budgetPlaceholder: "例如 30",
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
@@ -4687,7 +4693,7 @@ Benchmark：
       loadFailed: (error: string): string => `日历加载失败：${error}`,
       /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
       dismissHint: "知道了",
-      /** Under the start time: why two employees should not share one minute. */
+      /** Behind the start time's "?": why two employees should not share one minute. */
       staggerHint:
         "错峰安排：给每位员工各自的时刻，不要让多位员工在同一分钟触发，避免争抢预算与工单。",
       /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
@@ -4722,11 +4728,11 @@ Benchmark：
       noOwner: "未指定",
       /** The create dialog's default owner: whoever is filing the ticket. */
       ownerSelf: "自己",
-      ownerSelfHint: "留空则为自己",
       parent: "父工单",
       noParent: "无",
       notify: "通知人",
-      notifyHint: "逗号分隔的主体，如 agent:ceo, user:alice；状态变化时通知",
+      notifyHint: "逗号分隔的主体，如 agent:ceo, user:alice",
+      notifyInfo: "工单状态变化时通知这些主体",
       priority: "优先级",
       due: "截止",
       noDue: "无",

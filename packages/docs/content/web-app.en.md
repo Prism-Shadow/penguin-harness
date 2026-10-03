@@ -104,14 +104,14 @@ From top to bottom, the sidebar holds:
   - **About**, which shows the running version and opens the About dialog: the homepage and GitHub links, the release notes, the credits, and the software update where this session can update. See [Updates](/updates).
   - **Sign out**.
 
-### Pinned and collapsible entries
+### Favorite and collapsible entries
 
-**New chat** is always pinned. **Agents**, **Models** and **Plugins** are pinned by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
+**New chat** always shows. **Agents**, **Models** and **Plugins** are favorites by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
 
-To change which entries are pinned:
+To change which entries are favorites:
 
-- Point at an entry and select the pin at the end of its row. A filled pin means the entry is pinned; selecting it moves the entry into the collapsible area, and selecting an empty pin pins the entry. On a touch screen the pin is always shown.
-- Or drag an entry into the collapsible area to make it collapsible, or out of it to pin it.
+- Point at an entry and select the star at the end of its row. A filled star means the entry is a favorite; selecting it removes it from favorites and moves it into the collapsible area, and selecting an empty star adds it to favorites. On a touch screen the star is always shown.
+- Or drag an entry into the collapsible area to make it collapsible, or out of it to make it a favorite.
 
 Each area keeps the order of the table above, however its entries got there, and with nothing collapsible the chevron bar is gone. The choices are saved per browser. The collapsed rail shows every entry either way.
 
@@ -130,7 +130,7 @@ A dot on your avatar means a software update. Pointing at an entry names what is
 
 ### The collapsed rail and narrow windows
 
-**Collapse sidebar** shrinks the sidebar to a narrow rail of icons: **Expand sidebar**, the company mode toggle when available, **Last conversation**, **New chat**, the page entries, and your avatar, which opens the same account menu. Pointing at an icon, or focusing it, shows its name. The choice is remembered in the browser.
+**Collapse sidebar** shrinks the sidebar to a narrow rail of icons: **Expand sidebar**, **Last conversation**, **New chat**, the page entries, and your avatar, which opens the same account menu. In company mode, **Last conversation** gives way to the organization's **All hands** channel, **New chat** is left out, the page entries are the organization's pages, and the other channels and desks follow them. To switch work mode, expand the sidebar first. Pointing at an icon, or focusing it, shows its name. The choice is remembered in the browser.
 
 On a narrow window, the sidebar hides behind a menu button in a top bar and opens as a drawer.
 

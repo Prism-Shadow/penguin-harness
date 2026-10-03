@@ -31,9 +31,6 @@ const HEAD = "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z";
 /** The eye's almond, under both the open eye and the struck-through one. */
 const EYE = "M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z";
 
-/** The padlock's body, the same whether the shackle is seated or swung open. */
-const LOCK_BODY = "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z";
-
 /** The key's round bow, under the key and the struck-through key. */
 const KEY_BOW = "M11.39 11.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777z";
 
@@ -54,8 +51,9 @@ const ARCHIVE_BOX = "M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z";
  * drawing implies. A glyph drawn in strokes alone — an arrow, a chevron, a plus, a check, the
  * menu and slider lines, the text marks, the paperclip — has no entry, nor does one whose closed
  * parts are too small to read as a body (the fish hook's eye, the percent sign's rings), one
- * whose outline breaks where a slash crosses it (`shieldOff`), the checkbox frames, whose fill
- * would read as a state, or the trays, whose open top would leave the fill's edge in mid-air.
+ * whose outline breaks where a slash crosses it (`shieldOff`), the checkbox frames and the star,
+ * whose fill would read as a state (a solid star is a favourite), or the trays, whose open top
+ * would leave the fill's edge in mid-air.
  * Every value is closed subpaths only. An entry that is the line drawing itself (`ICONS.puzzle`)
  * follows a redraw of it, which must keep that drawing closed.
  */
@@ -120,8 +118,6 @@ export const DUOTONE: Readonly<Partial<Record<GlyphKey, string>>> = {
   gear: ICONS.gear,
   /** The tack's head and body; the stem stays a line. */
   pin: "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z",
-  lock: LOCK_BODY,
-  lockOpen: LOCK_BODY,
   wrench: ICONS.wrench,
   /** The plug's body below its prongs. */
   plug: "M6 6h12v4a6 6 0 0 1-12 0V6z",
@@ -338,11 +334,10 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   checkCircle: "green",
 
   /**
-   * Money, credentials and light: cost, coins and percentages, keys and locks, the bulb, the bolt
-   * and the sun, and the warning triangle.
+   * Money, credentials and light: cost, coins and percentages, keys, the bulb, the bolt, the sun
+   * and the star, and the warning triangle.
    */
-  lock: "amber",
-  lockOpen: "amber",
+  star: "amber",
   key: "amber",
   keyOff: "amber",
   coin: "amber",

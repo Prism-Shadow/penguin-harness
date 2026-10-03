@@ -1,7 +1,8 @@
 /**
  * DisclosureRow (src/components/layout/disclosure-row/disclosure-row.tsx): a collapsed row that
  * says so, and that carries the activity hook — kind, state and label slot — only for a work step;
- * an open row's body sits in the body slot a theme's recipe finds it by.
+ * an open row's body is a fold in the body slot a theme's recipe finds it by, settled when the
+ * row mounts open so a page load moves nothing (fold.test.ts covers the fold's phases).
  * The expanded bodies' classes are the web app's `disclosure-body` test.
  */
 import { createElement } from "react";
@@ -51,7 +52,7 @@ describe("DisclosureRow", () => {
     expect(html).not.toContain('data-slot="label"');
   });
 
-  it("holds an open row's body in the body slot, a failed step's label in the danger ink", () => {
+  it("folds an open row's body in the body slot, settled at mount, a failed step's label in the danger ink", () => {
     const html = renderStatic(
       createElement(DisclosureRow, {
         icon: null,
@@ -61,7 +62,11 @@ describe("DisclosureRow", () => {
         children: "body",
       }),
     );
-    expect(html).toContain('<div data-slot="body">body</div>');
+    // The fold's track is the row's sibling and carries the slot, so a recipe's
+    // `.ui-activity ~ [data-slot="body"]` still finds it; the body sits in the box inside.
+    expect(html).toMatch(
+      /<\/button><div data-layout-motion="true" data-fold="settled" data-slot="body" class="grid"><div class="min-h-0">body<\/div><\/div><\/div>$/,
+    );
     expect(html).toMatch(/class="[^"]*text-tone-danger-fg[^"]*" data-slot="label">Thinking</);
   });
 

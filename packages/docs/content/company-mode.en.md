@@ -35,7 +35,7 @@ An organization lives inside a Project, at `<project>/organizations/<org_id>/`, 
 1. In company mode, open the organization switcher and select **New organization**.
 2. Enter a **Display name**.
 3. Next to **Organization id**, select **Generate with AI** to derive an id from the name, or type one yourself.
-4. Enter the **Mission**, or select one of the four examples below the field to fill it in.
+4. Enter the **Mission**. With no organization yet, the company-mode landing lists four examples; selecting one opens this dialog with the name and the full mission filled in.
 5. Optional: choose a **Model**, a **Company workspace** and a **CEO budget**.
 6. Select **Create**. The CEO's desk session opens.
 

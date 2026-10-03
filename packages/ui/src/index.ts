@@ -59,6 +59,7 @@ export * from "./components/forms/radio/radio";
 // W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
 // open (moved up from W3).
 export * from "./components/overlays/portal-panel/use-portal-panel";
+export * from "./components/overlays/hover-disclosure/use-hover-disclosure";
 export * from "./components/overlays/info-popover/info-popover";
 export * from "./components/overlays/info-popover/help-fold";
 export * from "./components/forms/select/select";
@@ -92,6 +93,7 @@ export * from "./components/overlays/lightbox/lightbox";
 export * from "./motion/spring";
 export * from "./motion/sheet-physics";
 export * from "./motion/use-reduced-motion";
+export * from "./motion/use-arrived";
 
 // W3-C — notices: the notice strip, and the toast stack that renders its toasts through it
 // (with the `toast*` functions and their store).
@@ -126,11 +128,13 @@ export * from "./components/data/stat-tile/stat-tile";
 export * from "./components/data/stat-chip/stat-chip";
 
 // W4-B — layout and data: the card, the page frame and header, the ruled and the collapsible
-// section, the entity header, list rows, label/value pairs, the log well and the table family.
+// section, the fold every disclosure body tweens through, the entity header, list rows,
+// label/value pairs, the log well and the table family.
 export * from "./components/layout/card/card";
 export * from "./components/layout/page/page";
 export * from "./components/layout/ruled-section/ruled-section";
 export * from "./components/layout/collapsible-section/collapsible-section";
+export * from "./components/layout/fold/fold";
 export * from "./components/layout/entity-header/entity-header";
 export * from "./components/data/list-row/list-row";
 export * from "./components/data/key-value/key-value";
@@ -157,10 +161,12 @@ export * from "./components/charts/legend/legend";
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
 
-// W6-A1 — the transcript's messages: what the person sent and the run's notice lines, the
-// assistant reply with its caret and the theme-paced reveal behind it, and the changes card.
+// W6-A1 — the transcript's messages: what the person sent and the run's notice lines, streaming
+// text (a reply, thinking, a summary, a tool's output) with its caret and the theme-paced reveal
+// behind it, the assistant reply on it, and the changes card.
 // The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
 export * from "./components/chat/message-bubble/message-bubble";
+export * from "./components/chat/stream-text/stream-text";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";
 export * from "./components/chat/assistant-text/use-stream-reveal";

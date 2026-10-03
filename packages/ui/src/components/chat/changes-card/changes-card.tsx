@@ -7,7 +7,9 @@
  * its directory faded and its name in bold, and may end with a mark for what happened to the file
  * (written, edited). A row that opens something is a button whose right end says in words what a
  * click does — a trailing chevron would read as expand — and a row with nothing to open is plain
- * text. Past `foldAt` rows the card folds, behind a row that unfolds it.
+ * text. Past `foldAt` rows the card folds, behind a row that unfolds it; the rows past the fold
+ * open and close through `Fold`, under the theme's layout motion, so they arrive the way every
+ * other disclosure body in the transcript does rather than in one frame.
  *
  * The card is a transcript card, so it carries the `ui-frame` hook with its header as the `head`
  * slot and the rows as the `body`: a theme draws it the way it draws a tool call's card.
@@ -16,6 +18,7 @@ import { useState } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { Chevron } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { Fold } from "../../layout/fold/fold";
 import { namedHint } from "../../overlays/tooltip/tooltip";
 
 /**
@@ -90,8 +93,8 @@ export function ChangesCard({
   const [expanded, setExpanded] = useState(false);
   if (rows.length === 0) return null;
 
-  const visible = expanded ? rows : rows.slice(0, foldAt);
-  const hidden = rows.length - visible.length;
+  const shown = rows.slice(0, foldAt);
+  const folded = rows.slice(foldAt);
 
   const rowInner = (row: ChangesCardRow) => (
     <>
@@ -113,6 +116,30 @@ export function ChangesCard({
     </>
   );
 
+  const fileRow = (row: ChangesCardRow) =>
+    row.onOpen !== undefined ? (
+      <button
+        key={row.id}
+        type="button"
+        data-tooltip={row.tooltip}
+        onClick={row.onOpen}
+        className={`group ${ROW} ${ROW_HOVER} cursor-pointer`}
+      >
+        {rowInner(row)}
+        {/* A span, not a nested button: the row itself is the button. */}
+        <span
+          aria-hidden
+          className="shrink-0 text-xs text-fg-subtle transition-colors duration-150 group-hover:text-fg-muted"
+        >
+          {openHint}
+        </span>
+      </button>
+    ) : (
+      <div key={row.id} className={ROW}>
+        {rowInner(row)}
+      </div>
+    );
+
   return (
     <div className="ui-frame anim-msg my-3 overflow-hidden rounded-xl border border-line bg-surface">
       <div
@@ -132,39 +159,24 @@ export function ChangesCard({
         )}
       </div>
       <div data-slot="body" className="divide-y divide-line-muted">
-        {visible.map((row) =>
-          row.onOpen !== undefined ? (
+        {shown.map(fileRow)}
+        {folded.length > 0 && (
+          <>
+            {/* The fold's track is one child of the ruled list, so the list rules it off from
+                the rows above and the fold row below; the rows inside rule themselves. */}
+            <Fold open={expanded} bodyClassName="divide-y divide-line-muted">
+              {() => folded.map(fileRow)}
+            </Fold>
             <button
-              key={row.id}
               type="button"
-              data-tooltip={row.tooltip}
-              onClick={row.onOpen}
-              className={`group ${ROW} ${ROW_HOVER} cursor-pointer`}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+              className={`flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-fg-muted ${ROW_HOVER}`}
             >
-              {rowInner(row)}
-              {/* A span, not a nested button: the row itself is the button. */}
-              <span
-                aria-hidden
-                className="shrink-0 text-xs text-fg-subtle transition-colors duration-150 group-hover:text-fg-muted"
-              >
-                {openHint}
-              </span>
+              {expanded ? showLess : showMore(folded.length)}
+              <Chevron open={expanded} className="text-fg-subtle" size={ICON_SIZE.chevronDense} />
             </button>
-          ) : (
-            <div key={row.id} className={ROW}>
-              {rowInner(row)}
-            </div>
-          ),
-        )}
-        {(hidden > 0 || expanded) && rows.length > foldAt && (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className={`flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-fg-muted ${ROW_HOVER}`}
-          >
-            {expanded ? showLess : showMore(hidden)}
-            <Chevron open={expanded} className="text-fg-subtle" size={ICON_SIZE.chevronDense} />
-          </button>
+          </>
         )}
       </div>
     </div>

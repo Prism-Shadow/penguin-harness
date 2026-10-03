@@ -250,6 +250,16 @@ function connectionPatch(
   return { patch };
 }
 
+/** Whether a string is an absolute http(s) URL: the rule the server applies to a group's base URL. */
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** Writes a refusal to stderr and sets a failing exit code; nothing is written to the config. */
 function refuse(t: Messages, message: string): void {
   process.stderr.write(`${t.error(message)}\n`);
@@ -311,6 +321,12 @@ async function addGroupConnection(
   const { patch } = parsed;
   if (Object.keys(patch).length === 0) {
     refuse(t, t.providerNothingToSet(group));
+    return;
+  }
+  // The group's models without a base URL of their own are all sent here, so a typo would
+  // break every one of them at its next request: the check the server's group routes make.
+  if (typeof patch.base_url === "string" && !isHttpUrl(patch.base_url.trim())) {
+    refuse(t, t.providerInvalidBaseUrl(patch.base_url));
     return;
   }
   let cfg: ProjectConfig;

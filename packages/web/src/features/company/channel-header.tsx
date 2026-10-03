@@ -526,7 +526,7 @@ export function ChannelHeader({
         open={purposeOpen}
         title={S.company.channels.purposeTitle}
         label={S.company.channels.purpose}
-        hint={S.company.channels.purposeHint}
+        info={S.company.channels.purposeHint}
         initial={detail.purpose}
         multiline
         onClose={() => setPurposeOpen(false)}

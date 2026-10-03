@@ -44,6 +44,7 @@ import {
   Card,
   CardHeader,
   Chevron,
+  Fold,
   GlyphIcon,
   Skeleton,
   StatChip,
@@ -748,39 +749,43 @@ export function TraceFileBody({
               )}
             </button>
 
-            {open && (
-              <div data-slot="body" className="space-y-3 p-3">
-                {/* This round's timeline: drawn from the analysis, so it is there before the messages are read. */}
-                {timeline !== undefined &&
-                  (timeline.segments.length > 0 ||
-                    timeline.spans.length > 0 ||
-                    timeline.otherSpans.length > 0) && (
-                    <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
-                      <p className="mb-1.5 text-xs font-medium text-gray-500">
-                        {S.traces.timeline}
-                      </p>
-                      <TimelineChart
-                        segments={timeline.segments}
-                        toolSpans={timeline.spans}
-                        otherSpans={timeline.otherSpans}
-                        highlight={highlight}
-                        onHighlight={onHighlight}
-                        onJump={onJump}
-                        hideTaskLabel
-                      />
-                    </div>
-                  )}
+            {/* The round's body folds under the theme's layout motion, and is built only while
+                it shows: a round's timeline and its rows are the costly part of this page. */}
+            <Fold open={open} data-slot="body" bodyClassName="space-y-3 p-3">
+              {() => (
+                <>
+                  {/* This round's timeline: drawn from the analysis, so it is there before the messages are read. */}
+                  {timeline !== undefined &&
+                    (timeline.segments.length > 0 ||
+                      timeline.spans.length > 0 ||
+                      timeline.otherSpans.length > 0) && (
+                      <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
+                        <p className="mb-1.5 text-xs font-medium text-gray-500">
+                          {S.traces.timeline}
+                        </p>
+                        <TimelineChart
+                          segments={timeline.segments}
+                          toolSpans={timeline.spans}
+                          otherSpans={timeline.otherSpans}
+                          highlight={highlight}
+                          onHighlight={onHighlight}
+                          onJump={onJump}
+                          hideTaskLabel
+                        />
+                      </div>
+                    )}
 
-                {/* This round's messages */}
-                <RoundMessages
-                  round={st}
-                  entry={rounds.get(st.taskIndex)}
-                  hoveredRow={hoveredRow}
-                  pinnedRow={pinnedRow}
-                  onHighlight={onHighlight}
-                />
-              </div>
-            )}
+                  {/* This round's messages */}
+                  <RoundMessages
+                    round={st}
+                    entry={rounds.get(st.taskIndex)}
+                    hoveredRow={hoveredRow}
+                    pinnedRow={pinnedRow}
+                    onHighlight={onHighlight}
+                  />
+                </>
+              )}
+            </Fold>
           </Card>
         );
       })}

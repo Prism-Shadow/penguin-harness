@@ -992,6 +992,8 @@ export interface Messages {
   providerFlagConflict(flag: string, clearFlag: string): string;
   /** `model add` refused: a connection field was given an empty value (clearing takes its --clear-* flag). */
   providerBlankValue(flag: string, clearFlag: string): string;
+  /** `model add` without --model-id refused: --base-url is not an absolute http(s) URL. */
+  providerInvalidBaseUrl(baseUrl: string): string;
   /** `model add` without --model-id refused: no field to set or clear. */
   providerNothingToSet(group: string): string;
   /** `model add` without --model-id done; `overriding` = the group's models a changed field passes by (their own value, or a group key that does not reach their base URL). */
@@ -2015,6 +2017,8 @@ const en: Messages = {
   providerFlagConflict: (flag, clearFlag) => `${flag} and ${clearFlag} cannot be combined.`,
   providerBlankValue: (flag, clearFlag) =>
     `${flag} is empty. Pass a value, or ${clearFlag} to remove the stored one.`,
+  providerInvalidBaseUrl: (baseUrl) =>
+    `Invalid --base-url "${baseUrl}": a group's base URL must be a full URL starting with http:// or https://.`,
   providerNothingToSet: (group) =>
     `Nothing to change for group ${group}: pass --api-key, --base-url or --client-type, or one of the --clear-* flags.`,
   providerSaved: (group, overriding) =>
@@ -2961,6 +2965,8 @@ const zh: Messages = {
   providerFlagConflict: (flag, clearFlag) => `${flag} 与 ${clearFlag} 不能同时使用。`,
   providerBlankValue: (flag, clearFlag) =>
     `${flag} 为空。请给出取值，或用 ${clearFlag} 清除已存的值。`,
+  providerInvalidBaseUrl: (baseUrl) =>
+    `--base-url「${baseUrl}」无效：分组的 base URL 须为以 http:// 或 https:// 开头的完整地址。`,
   providerNothingToSet: (group) =>
     `分组 ${group} 没有要修改的内容：请给出 --api-key、--base-url 或 --client-type，或其中某一项的 --clear-* 选项。`,
   providerSaved: (group, overriding) =>

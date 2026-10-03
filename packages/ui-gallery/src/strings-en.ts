@@ -318,7 +318,7 @@ export const en: GalleryStrings = {
       "A menu from the top, a dialog from the centre, a toast from the bottom — each on the active theme's enter and exit tokens.",
     reveal: "Reveal",
     revealNote:
-      "Streamed text arrives chunk by chunk; each chunk moves once, on the reveal tokens, as it appears.",
+      "New rows appear inside a settled list; each moves once, on the reveal tokens, as it appears.",
     layout: "Layout",
     layoutNote: "The sidebar's width between expanded and rail, on the layout tokens.",
     replay: "Replay",
@@ -329,6 +329,13 @@ export const en: GalleryStrings = {
       toast: "Toast",
       trigger: "More",
       sidebarRows: ["New chat", "Agents", "Models"],
+      revealRows: [
+        { name: "read_file", detail: "package.json" },
+        { name: "grep", detail: "useStreamReveal" },
+        { name: "exec_command", detail: "Run the tests" },
+        { name: "apply_patch", detail: "src/app.ts" },
+        { name: "exec_command", detail: "Check formatting" },
+      ],
     },
     hookJobs: {
       "ui-glass":
@@ -348,7 +355,8 @@ export const en: GalleryStrings = {
         "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
-      "ui-stream": "a reply that is still streaming: each theme decides how new text appears",
+      "ui-stream":
+        "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
     },
@@ -804,6 +812,7 @@ export const en: GalleryStrings = {
     },
     streaming: {
       reply: "Assistant reply",
+      output: "Tool output",
       receiving: "Receiving…",
       received: "All received",
       modes: {

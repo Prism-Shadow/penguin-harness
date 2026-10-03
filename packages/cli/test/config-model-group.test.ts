@@ -3,7 +3,8 @@
  * parseAsync for the full command path): `model add --provider <group>` without `--model-id`
  * writes the group's connection to `[providers.<id>]` in the hidden .project_config.toml under
  * --root (mode 0600), sets and clears each field on its own, takes a protocol on any group, and
- * never touches a model's own value; the flags that describe one model are refused there.
+ * never touches a model's own value; the flags that describe one model, and a base URL that is
+ * not an absolute http(s) URL, are refused there.
  * `model remove --provider <group>` without `--model-id` drops the table and keeps the models.
  * The `--clear-*` flags clear a model's own value too. `model list` prints the groups' tables,
  * then what each model is used with, read from the file alone: a group value marked
@@ -289,6 +290,15 @@ describe("penguin config model add without --model-id: the group's connection", 
     const badName = await run(["add", "--provider", "My Lab", "--base-url", "http://x/v1"]);
     expect(badName.code).toBe(1);
     expect(badName.err).toContain("My Lab");
+    await expect(fs.access(configFile())).rejects.toThrow();
+  });
+
+  it("refuses a group base URL that is not an absolute http(s) URL, and writes nothing", async () => {
+    for (const baseUrl of ["not-a-url", "127.0.0.1:11434/v1", "ftp://lab.example/v1"]) {
+      const refused = await run(["add", "--provider", "my-lab", "--base-url", baseUrl]);
+      expect(refused.code, baseUrl).toBe(1);
+      expect(refused.err, baseUrl).toContain(`Invalid --base-url "${baseUrl}"`);
+    }
     await expect(fs.access(configFile())).rejects.toThrow();
   });
 });

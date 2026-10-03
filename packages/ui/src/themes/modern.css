@@ -691,10 +691,11 @@
   /* An activity card — a frame headed by an activity row: the agent's work group, a harness
      event, a one-line note — is lineless in every state, the way Codex and macOS list work: no
      card border, no fill, and no rule anywhere in it — none under the head, none between the
-     rows, none atop a row's expanded body (the `body` slot after an activity row, and the parts
-     it holds directly; a code block inside a body keeps its own box). Head and rows sit on the
-     page, painted in its colour so they stay opaque while they stick, spaced by whitespace; a
-     running step adds nothing but the sweep across its label. */
+     rows, none atop a row's expanded body (the `body` slot after an activity row is a fold: its
+     track, the box inside the track, and the parts that box holds directly; a code block inside
+     a part keeps its own box). Head and rows sit on the page, painted in its colour so they stay
+     opaque while they stick, spaced by whitespace; a running step adds nothing but the sweep
+     across its label. */
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) {
     border-color: transparent;
     background-color: transparent;
@@ -703,6 +704,12 @@
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > *,
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="body"],
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="body"] > *,
+  :root[data-theme="modern"]
+    .ui-frame:has(> .ui-activity)
+    .ui-activity
+    ~ [data-slot="body"]
+    > *
+    > *,
   :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="under"] > * {
     border-color: transparent;
   }
