@@ -3,6 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** fix
 - **Scope:** `server`, `web`, `cli`
+- **PR:** [#967](https://github.com/Prism-Shadow/penguin-harness/pull/967)
 
 [English](2026-10-03-provider-settings-fixes.md)
 
