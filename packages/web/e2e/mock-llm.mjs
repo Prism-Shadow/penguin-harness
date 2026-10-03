@@ -3,6 +3,8 @@
  * Branches on request body:
  *  - title request (prompt contains "concise title") -> short text
  *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
+ *  - "music link test" -> text linking Workspace audio files (music-file.spec: a player below each
+ *    linking paragraph; the link inside a code span gets none)
  *  - "files rewrite test <cmd>" -> tool_use(exec_command) running <cmd>, then a short final text
  *    (files-folders.spec: the Agent rewrites a file the Files panel has open)
  *  - subagent's own turns (its prompt is the only user text) -> tool_use(exec_command) first,
@@ -252,6 +254,21 @@ const server = http.createServer((req, res) => {
       block(res, 0, { type: "text", text: "" }, [
         { type: "text_delta", text: "findmarker one, findmarker two, and findmarker three.\n\n" },
         { type: "text_delta", text: "A second paragraph also says findmarker.\n" },
+      ]);
+      messageStop(res, "end_turn", 30);
+      return;
+    }
+
+    // Music test case: the first paragraph links one audio file twice (one player), the code
+    // span's look-alike link is not a link, and the second paragraph links a second file.
+    if (flat.includes("music link test")) {
+      block(res, 0, { type: "text", text: "" }, [
+        {
+          type: "text_delta",
+          text:
+            "Here is your tune: [Evening Theme](music/evening.wav), once more [again](music/evening.wav). " +
+            "Not this one: `[code](music/code.wav)`.\n\nAnd a chime: [Chime](chime.ogg).",
+        },
       ]);
       messageStop(res, "end_turn", 30);
       return;
