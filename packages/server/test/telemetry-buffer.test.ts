@@ -23,7 +23,7 @@ const sample = (probe: string, durMs?: number, extra: Partial<TelemetrySample> =
   }) as TelemetrySample;
 
 describe("telemetry buffer", () => {
-  it("drops the oldest past the count or the byte cap, compacts, and clears", () => {
+  it("drops the oldest past the count or the byte cap, even a lone oversized sample, compacts, and clears", () => {
     const byCount = new SampleRing(10, 1_000_000);
     for (let i = 0; i < 5000; i++) byCount.push(sample(`p${i}`));
     expect(byCount.list().map((s) => s.probe)).toEqual(
@@ -33,6 +33,9 @@ describe("telemetry buffer", () => {
     const byBytes = new SampleRing(1000, one * 2 + 1);
     for (let i = 0; i < 4; i++) byBytes.push(sample(`p${i}`));
     expect(byBytes.list().map((s) => s.probe)).toEqual(["p2", "p3"]);
+    const oversized = new SampleRing(1000, one - 1);
+    oversized.push(sample("p0"));
+    expect([oversized.size, oversized.bytes]).toEqual([0, 0]);
     byCount.clear();
     expect([byCount.size, byCount.bytes]).toEqual([0, 0]);
   });

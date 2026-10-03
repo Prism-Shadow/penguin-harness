@@ -605,11 +605,11 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
       const createdAt = opts.onCreated !== undefined ? performance.now() : 0;
       try {
         inst = await n.def.create(ctx, context);
+        opts.onCreated?.(mf.name, performance.now() - createdAt);
       } catch (err) {
         drain(disposers);
         throw err;
       }
-      opts.onCreated?.(mf.name, performance.now() - createdAt);
       // Exports: the alias is forwarded from the child that declares the interface — else
       // from the one child whose provision satisfies it — so the subtree offers it as one.
       for (const alias of mf.exports ?? []) {

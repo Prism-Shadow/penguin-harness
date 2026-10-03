@@ -44,11 +44,13 @@ export class SampleRing {
     this.#items.push(sample);
     this.#weights.push(weight);
     this.#bytes += weight;
-    while (this.size > this.maxSamples || (this.#bytes > this.maxBytes && this.size > 1)) {
+    while (this.size > this.maxSamples || this.#bytes > this.maxBytes) {
       this.#bytes -= this.#weights[this.#head]!;
       this.#head += 1;
     }
-    if (this.#head > 1024 && this.#head * 2 > this.#items.length) {
+    // A sample heavier than the whole cap evicts itself too, so the ring is empty, not over.
+    if (this.size === 0) this.clear();
+    else if (this.#head > 1024 && this.#head * 2 > this.#items.length) {
       this.#items = this.#items.slice(this.#head);
       this.#weights = this.#weights.slice(this.#head);
       this.#head = 0;

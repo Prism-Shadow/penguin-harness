@@ -157,7 +157,7 @@ describe("telemetry", () => {
     expect((await member.delete("/api/telemetry")).status).toBe(403);
     expect((await member.put("/api/admin/settings", { telemetry: false })).status).toBe(403);
     expect((await admin.delete("/api/telemetry")).status).toBe(200);
-    expect((await read("?view=samples&probe=session.messages")).samples).toEqual([]);
+    expect(await read("?view=samples")).toMatchObject({ buffered: 0, samples: [] });
     await turn(false);
     expect(await read()).toMatchObject({ enabled: false, buffered: 0 });
   });
