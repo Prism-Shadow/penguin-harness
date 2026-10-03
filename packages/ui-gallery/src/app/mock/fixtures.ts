@@ -1884,6 +1884,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       companyMode: false,
       browserExtensionsEnabled: true,
       agentApiEnabled: true,
+      telemetry: false,
     },
     project,
     members: [
